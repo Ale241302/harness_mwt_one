@@ -132,7 +132,7 @@ header `X-Forwarded-User-Email` validado por el Gateway Key (diseño Ola 2).
   (12 r/m por IP real de cliente vía `CF-Connecting-IP`).
 - `/opt/harness-mwt-one` en `700`, `.env` en `600`; respaldos en
   `/opt/backups/harness-mwt-one` (`700`).
-- **Pendiente:** rotar `DEEPSEEK_API_KEY` (requiere generar clave en el
-  proveedor) y la password root del VPS (compartida por chat).
+- `DEEPSEEK_API_KEY` rotada (15 sep 2026) y validada; password root **no** se rotó
+  por decisión del responsable.
 - `SESSION_SECRET` y la API key viven solo en `/opt/harness-mwt-one/.env` y
   nunca se suben al repositorio.

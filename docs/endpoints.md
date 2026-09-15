@@ -136,9 +136,8 @@ según la identidad del login. `client_b2b` no recibe las herramientas de gesti�
   alcance.
 - `core.users.tenant_uuid` existe pero está NULL: la fuente real de empresas es
   `user.legal_entity_ids` de la respuesta del login.
-- **Caveat del MCP (reportar):** la caché de tokens del MCP es por email, no por
-  tenant; un token ya cacheado (p. ej. modo global) puede saltarse `verify_tenant`
-  en peticiones posteriores. En el harness el tenant es fijo por sesión, así que
-  no hay mezcla; conviene arreglarlo del lado del MCP (clave de caché por tenant).
+- **Caché del MCP (corregido, 15 sep 2026):** la caché de tokens del MCP era por
+  email y podía saltarse `verify_tenant`; ahora la clave incluye el `client_id`.
+  Con token global cacheado, un tenant ajeno se deniega.
 - Antes de cualquier escritura de negocio, probar que un usuario sin permiso
   recibe denegación efectiva (no solo ocultamiento visual).
