@@ -95,6 +95,15 @@ El `Authorization: Bearer` no es un JWT válido: solo evita que el MCP
 (`MWT_MCP_OAUTH=1`) devuelva el challenge OAuth; la identidad real la aporta el
 header `X-Forwarded-User-Email` validado por el Gateway Key (diseño Ola 2).
 
+### MCP de FaberLoom (espacios)
+
+Si `FABERLOOM_MCP_URL` y `FABERLOOM_GATEWAY_KEY` están definidos, cada `dsh`
+arranca además con el MCP `faberloom` (espacios y futuros módulos). El gateway
+inyecta la identidad por usuario (`X-Faberloom-User-Id`) y la empresa
+(`X-MWT-Client-ID` cuando el usuario tiene una sola). El stack de FaberLoom vive
+en `/opt/faberloom` (`faberloom-mcp:8090`, red `harness-net`, volumen
+`faberloom-data`). `healthz` reporta `faberloomConfigured`.
+
 ## Límites por instancia (E1)
 
 - Cap de heap Node `--max-old-space-size=1024` y `--nofile=8192` por `dsh`
