@@ -1,0 +1,15 @@
+{
+  "name": "harness-mwt-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Auth gateway + per-user dsh supervisor for harness.mwt.one",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "http-proxy": "^1.18.1"
+  }
+}

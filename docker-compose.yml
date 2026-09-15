@@ -1,0 +1,41 @@
+name: harness-mwt-one
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: harness-mwt/gateway:latest
+    container_name: harness-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: "8080"
+      # El harness necesita escribir su estado bajo /data.
+      DSH_HOME: /data
+    volumes:
+      - harness_users:/data
+    networks:
+      - harness-net
+      - consola-mwt-one-net
+    # No publicamos puerto al host: mwt-nginx lo alcanza por la red
+    # harness-net como http://harness-gateway:8080.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  harness_users:
+    name: harness-users
+
+networks:
+  harness-net:
+    name: harness-net
+    driver: bridge
+  # Red del stack consola-mwt-one (MCP en consola-mwt-one-mcp:8765).
+  consola-mwt-one-net:
+    external: true
