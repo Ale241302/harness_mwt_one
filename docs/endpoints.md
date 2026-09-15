@@ -60,27 +60,41 @@ Clientes externos (Claude/Cowork)
 
 ## Datos de identidad
 
-| Dato | Ubicación |
+| Dato | Fuente verificada |
 |---|---|
 | Usuarios | `core.users` (6 registros) |
 | Roles (8) | `core.roles`: `superadmin`, `admin`, `manager`, `compras`, `finance`, `operator`, `client_b2b`, `viewer` |
-| Asignación | `core.user_roles` |
-| Tenant del usuario | `core.users.tenant_uuid` (será `X-MWT-Client-ID`) |
+| Rol efectivo | `core.users.role`; `core.user_roles` solo tenía 1 fila, no usar como fuente |
+| Rol, nombre y permisos | respuesta del login: `user.role`, `user.role_name`, `user.permissions` (`modules`, `actions`, `read_only`) |
+| Tenant del usuario | `user.legal_entity_ids` del login (**no** `core.users.tenant_uuid`, que está NULL) |
 
-## Cuentas de prueba
+## Evidencia de pruebas (14 sep 2026)
 
-Se usan cuentas reales con dos roles distintos para verificar aislamiento:
+### Login (`https://consola.mwt.one/api/auth/login/`)
 
-| Rol | Uso en pruebas |
+| Cuenta | Rol | Permisos | `legal_entity_ids` |
+|---|---|---|---|
+| `alejandro@muitowork.com` | `admin` | modules, actions | 3 |
+| `alvaro@muitowork.com` | `admin` | modules, actions | 3 |
+| `compras2@sondelsa.com` | `client_b2b` | modules, actions, `read_only` | 1 (`c588c410-…`) |
+| `logistica2@sondelsa.com` | `client_b2b` | modules, actions, `read_only` | 1 (`c588c410-…`) |
+
+Las cuatro cuentas inician sesión correctamente. Las contraseñas no se guardan aquí.
+
+### RBAC del MCP (identidad por cabecera, con handshake de sesión)
+
+| Identidad | Herramientas visibles |
 |---|---|
-| `admin` | Ve el conjunto completo de herramientas (referencia) |
-| `client_b2b` | Debe ver un subconjunto filtrado; sin acceso a datos de otros clientes |
+| `alejandro@muitowork.com` (admin) | **175** |
+| `compras2@sondelsa.com` (client_b2b) | **44** |
 
-Las contraseñas **no** se guardan en este repositorio. Se gestionan fuera de git.
+El filtrado por rol funciona de punta a punta: misma puerta, distinto conjunto
+según la identidad del login. `client_b2b` no recibe las herramientas de gestión.
 
 ## Notas
 
 - El tenant (`X-MWT-Client-ID`) hoy está **vacío** en el gateway → modo global.
-  Mapearlo desde `core.users.tenant_uuid` es tarea de E2.
+  El valor correcto por usuario es su `legal_entity_ids` del login; mapearlo es E2.
+- `core.users.tenant_uuid` existe pero está NULL: no usarlo como fuente sin poblarlo.
 - Antes de cualquier escritura de negocio, probar que un usuario sin permiso
   recibe denegación efectiva (no solo ocultamiento visual).
