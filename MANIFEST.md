@@ -38,6 +38,14 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 - `dsh` es developer preview: pueden aparecer cambios incompatibles (revisar al
   actualizar).
 
+## Límites por instancia (E1)
+
+| Variable | Valor por defecto | Efecto |
+|---|---|---|
+| `DSH_MAX_OLD_SPACE_MB` | `1024` | `--max-old-space-size` (heap Node por `dsh`) |
+| `DSH_NOFILE_LIMIT` | `8192` | `prlimit --nofile` por proceso |
+| `DSH_CPU_LIMIT_S` | `0` | `prlimit --cpu` (0 = sin límite) |
+
 ## Cómo verificar el despliegue
 
 ```bash

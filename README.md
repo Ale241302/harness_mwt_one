@@ -95,22 +95,43 @@ El `Authorization: Bearer` no es un JWT válido: solo evita que el MCP
 (`MWT_MCP_OAUTH=1`) devuelva el challenge OAuth; la identidad real la aporta el
 header `X-Forwarded-User-Email` validado por el Gateway Key (diseño Ola 2).
 
+## Límites por instancia (E1)
+
+- Cap de heap Node `--max-old-space-size=1024` y `--nofile=8192` por `dsh`
+  (aplicado con `prlimit`), configurables con `DSH_MAX_OLD_SPACE_MB`,
+  `DSH_NOFILE_LIMIT` y `DSH_CPU_LIMIT_S`.
+- No se usa `--as` (V8 reserva mucha memoria virtual y rompería Node) ni
+  `--nproc` (es por UID y afectaría a todas las instancias).
+
 ## Pendientes / límites
 
 - **Un proceso `dsh` por usuario**, no un contenedor por usuario (fase 2:
-  aislar en contenedores con límites de recursos).
-- **Tenant MCP** (`X-MWT-Client-ID`): hoy vacío → modo global. Falta mapear la
-  empresa del usuario (de `legal_entities` del login) por request.
+  aislamiento real de CPU/RAM/disco con cgroups).
+- **Tenant MCP** (`X-MWT-Client-ID`): hoy vacío → modo global. El valor correcto
+  es `user.legal_entity_ids` del login; mapearlo es E2.
 - **Modelo**: una sola `DEEPSEEK_API_KEY` compartida; sin costo por usuario.
 - **Persistencia de sesiones del gateway**: en memoria; un redeploy obliga a
   re-login (los `DSH_HOME` sí persisten en el volumen `harness-users`).
+- **Token de `dsh` en la URL** del redirect de login: endurecer a cookie de un
+  solo uso (hoy queda en logs).
+- **Mount de nginx de archivo**: `harness.conf`/`consola.conf` son bind-mount de
+  archivo; editarlos desde el host con reemplazo de inodo (`sed -i`, `docker cp`)
+  no se refleja en el contenedor. Aplicar desde dentro del contenedor o recrear
+  `mwt-nginx`.
 - El backend aún no está endurecido para imágenes/adjuntos grandes vía
   Cloudflare (límite 100 MB del plan).
 
-## Seguridad
+## Seguridad (estado tras E1)
 
-- El `MWT_MCP_GATEWAY_KEY` está **en claro** en `/opt/mwt/nginx/consola.conf`;
-  conviene rotarlo y moverlo a un secreto. Este stack lo lee del `.env`.
-- Rotar la `DEEPSEEK_API_KEY` y la password root compartidas por chat.
-- `SESSION_SECRET` y la API key viven solo en `/opt/harness-mwt-one/.env`
-  (chmod 600) y nunca se suben al repositorio.
+- `SESSION_SECRET` y `MWT_MCP_GATEWAY_KEY` **rotados**; sin valores en logs
+  (verificado).
+- `MWT_MCP_GATEWAY_KEY` sigue **en claro** en `/opt/mwt/nginx/consola.conf`
+  (lo necesita nginx como header); conviene moverlo a un secreto.
+- Cookie del gateway con `Secure`; HSTS activo; rate limit de `/login`
+  (12 r/m por IP real de cliente vía `CF-Connecting-IP`).
+- `/opt/harness-mwt-one` en `700`, `.env` en `600`; respaldos en
+  `/opt/backups/harness-mwt-one` (`700`).
+- **Pendiente:** rotar `DEEPSEEK_API_KEY` (requiere generar clave en el
+  proveedor) y la password root del VPS (compartida por chat).
+- `SESSION_SECRET` y la API key viven solo en `/opt/harness-mwt-one/.env` y
+  nunca se suben al repositorio.

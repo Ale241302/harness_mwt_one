@@ -38,6 +38,10 @@ const cfg = {
   // de arrancar procesos hijos.
   staticDshPort: process.env.STATIC_DSH_PORT ? Number(process.env.STATIC_DSH_PORT) : 0,
   staticDshToken: process.env.STATIC_DSH_TOKEN || '',
+  // E1 · límites por instancia dsh (aplicados con prlimit / NODE_OPTIONS).
+  maxOldSpaceMb: Number(process.env.DSH_MAX_OLD_SPACE_MB || 1024),
+  nofileLimit: Number(process.env.DSH_NOFILE_LIMIT || 8192),
+  cpuLimitS: Number(process.env.DSH_CPU_LIMIT_S || 0),
 }
 
 if (!cfg.sessionSecret) {
@@ -191,9 +195,20 @@ function startInstance(user) {
   fs.mkdirSync(home, { recursive: true })
   const patchFile = writeUserPatch(home, user)
   const port = allocatePort()
+  const dshArgs = ['--profile', 'web', '--patch', patchFile, '--no-open', '--port', String(port), '--trusted-host', cfg.publicHost]
+  // E1 · límites por proceso. --nofile y --cpu son por proceso (seguros);
+  // no se usa --as (V8 reserva mucha memoria virtual y rompería Node) ni
+  // --nproc (RLIMIT_NPROC es por UID y afectaría a todas las instancias).
+  const limits = []
+  if (cfg.nofileLimit > 0) limits.push(`--nofile=${cfg.nofileLimit}`)
+  if (cfg.cpuLimitS > 0) limits.push(`--cpu=${cfg.cpuLimitS}`)
+  const spawnCmd = limits.length ? 'prlimit' : cfg.dshBin
+  const spawnArgs = limits.length ? [...limits, '--', cfg.dshBin, ...dshArgs] : dshArgs
+  // Cap de heap de Node por instancia (evita que un usuario agote la RAM).
+  const nodeOptions = `${process.env.NODE_OPTIONS || ''} --max-old-space-size=${cfg.maxOldSpaceMb}`.trim()
   const child = spawn(
-    cfg.dshBin,
-    ['--profile', 'web', '--patch', patchFile, '--no-open', '--port', String(port), '--trusted-host', cfg.publicHost],
+    spawnCmd,
+    spawnArgs,
     {
       cwd: home,
       env: {
@@ -201,6 +216,7 @@ function startInstance(user) {
         DSH_HOME: home,
         DEEPSEEK_API_KEY: cfg.deepseekKey,
         DSH_WEB_URL: `https://${cfg.publicHost}/`,
+        NODE_OPTIONS: nodeOptions,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     },
