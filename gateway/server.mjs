@@ -31,6 +31,9 @@ const cfg = {
   mcpClientId: process.env.MWT_MCP_CLIENT_ID || '',
   // E2 · fijar X-MWT-Client-ID con la única empresa del usuario si tiene una sola.
   mcpClientIdFromUser: process.env.MWT_MCP_CLIENT_ID_FROM_USER !== '0',
+  // FaberLoom · MCP propio (espacios) por usuario.
+  faberloomUrl: process.env.FABERLOOM_MCP_URL || '',
+  faberloomGatewayKey: process.env.FABERLOOM_GATEWAY_KEY || '',
   sessionSecret: process.env.SESSION_SECRET || '',
   // Sesión del gateway (la del harness dura 30 días por defecto).
   cookieName: 'hgate',
@@ -117,35 +120,54 @@ function resolveClientId(user) {
   const ents = (user && (user.legalEntityIds || user.legal_entity_ids)) || []
   return ents.length === 1 ? String(ents[0]).toLowerCase() : ''
 }
-function renderPatch(user) {
-  const headers = {
-    'X-Forwarded-User-Email': user.email,
-    'X-MWT-Gateway-Key': cfg.mcpGatewayKey,
-    // Salta el challenge OAuth del MCP (MWT_MCP_OAUTH=1). No es un JWT.
-    Authorization: 'Bearer dsh-gateway',
-  }
-  const clientId = resolveClientId(user)
-  if (clientId) headers['X-MWT-Client-ID'] = clientId
+function renderEntry({ id, serverName, url, headers, toolTimeoutMs }) {
   const headerLines = Object.entries(headers)
     .map(([k, v]) => `          ${k}: ${yamlScalar(v)}`)
     .join('\n')
   return [
-    '- insert:',
-    '    - id: mcp-mwt',
+    `    - id: ${id}`,
     "      name: '@deepseek-ai/dsh-mcp-client'",
     '      config:',
-    '        serverName: mwt',
+    `        serverName: ${serverName}`,
     '        transport: streamable-http',
-    `        url: ${yamlScalar(cfg.mcpUrl)}`,
+    `        url: ${yamlScalar(url)}`,
     '        headers:',
     headerLines,
     '        failOnStartupError: false',
     '        reconnect:',
     '          enabled: true',
     '          maxAttempts: 30',
-    '        toolCallTimeoutMs: 120000',
-    '',
+    `        toolCallTimeoutMs: ${toolTimeoutMs}`,
   ].join('\n')
+}
+
+function renderPatch(user) {
+  const clientId = resolveClientId(user)
+  const entries = []
+
+  // MCP de MWT.ONE (identidad por cabecera).
+  {
+    const headers = {
+      'X-Forwarded-User-Email': user.email,
+      'X-MWT-Gateway-Key': cfg.mcpGatewayKey,
+      // Salta el challenge OAuth del MCP (MWT_MCP_OAUTH=1). No es un JWT.
+      Authorization: 'Bearer dsh-gateway',
+    }
+    if (clientId) headers['X-MWT-Client-ID'] = clientId
+    entries.push(renderEntry({ id: 'mcp-mwt', serverName: 'mwt', url: cfg.mcpUrl, headers, toolTimeoutMs: 120000 }))
+  }
+
+  // MCP de FaberLoom (espacios), con la identidad y la empresa del usuario.
+  if (cfg.faberloomUrl && cfg.faberloomGatewayKey) {
+    const headers = {
+      'X-Faberloom-User-Id': user.email,
+      'X-Faberloom-Gateway-Key': cfg.faberloomGatewayKey,
+    }
+    if (clientId) headers['X-MWT-Client-ID'] = clientId
+    entries.push(renderEntry({ id: 'mcp-faberloom', serverName: 'faberloom', url: cfg.faberloomUrl, headers, toolTimeoutMs: 120000 }))
+  }
+
+  return ['- insert:', ...entries, ''].join('\n')
 }
 
 // ── Supervisión de instancias dsh por usuario ─────────────────────────
@@ -302,6 +324,7 @@ app.get('/healthz', (_req, res) => {
     publicHost: cfg.publicHost,
     consolaApi: cfg.consolaApi,
     mcpConfigured: Boolean(cfg.mcpGatewayKey),
+    faberloomConfigured: Boolean(cfg.faberloomUrl && cfg.faberloomGatewayKey),
     instances: instances.size,
   })
 })
