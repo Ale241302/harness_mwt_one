@@ -58,6 +58,40 @@ Clientes externos (Claude/Cowork)
   principio de identidad. Hasta entonces no se mezclan ambos caminos sin
   registrar cuál usó cada llamada.
 
+## Flujo de login y obtención de empresas/rol/permisos
+
+Verificado el 14 sep 2026:
+
+1. El usuario entra en `https://harness.mwt.one/login`.
+2. El gateway hace `POST https://consola.mwt.one/api/auth/login/` y recibe
+   `user{ id, email, full_name, role, role_name, permissions, is_active, is_staff,
+   legal_entity_ids }` + `access`/`refresh`.
+3. El gateway abre un `dsh` por usuario e inyecta la **identidad** (email) en el MCP.
+4. En cada petición, el MCP resuelve empresas, rol y permisos por esa identidad y
+   filtra las herramientas. Evidencia: `mwt_whoami` devuelve `role`, `role_name`,
+   `permissions` y `legal_entity_ids`.
+
+El stack `mcp-gateway` (Authentik + ContextForge) es **parte del proyecto
+consola-mwt-one** (vive en `/opt/consola-mwt-one/mcp-gateway`) y sirve la ruta
+externa `https://mcp.mwt.one` (OAuth) para clientes como Claude/Cowork; por debajo
+usa el mismo servidor MCP (`consola-mwt-one-mcp:8765`).
+
+**Brecha:** el gateway no reenvía `legal_entity_ids` como `X-MWT-Client-ID`; el MCP
+resuelve por email. Mapear la empresa del usuario es tarea de E2.
+
+## Puertos publicados en el host (stack consola)
+
+| Contenedor | Host → contenedor |
+|---|---|
+| `consola-mwt-one-django` | 8100 → 8000 |
+| `consola-mwt-one-frontend` | 3101 → 80 |
+| `consola-mwt-one-postgres` | 5434 → 5432 |
+| `consola-mwt-one-redis` | 6380 → 6379 |
+
+Nota: el gateway del harness reparte puertos `dsh` desde `3100` **dentro de su
+contenedor** (no publicados al host). No hay conflicto real con el `3101` del
+frontend, pero conviene mover el rango base de `dsh` para evitar confusión.
+
 ## Datos de identidad
 
 | Dato | Fuente verificada |
