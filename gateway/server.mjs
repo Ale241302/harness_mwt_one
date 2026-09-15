@@ -29,6 +29,8 @@ const cfg = {
   mcpUrl: process.env.MWT_MCP_URL || 'http://consola-mwt-one-mcp:8765/mcp',
   mcpGatewayKey: process.env.MWT_MCP_GATEWAY_KEY || '',
   mcpClientId: process.env.MWT_MCP_CLIENT_ID || '',
+  // E2 · fijar X-MWT-Client-ID con la única empresa del usuario si tiene una sola.
+  mcpClientIdFromUser: process.env.MWT_MCP_CLIENT_ID_FROM_USER !== '0',
   sessionSecret: process.env.SESSION_SECRET || '',
   // Sesión del gateway (la del harness dura 30 días por defecto).
   cookieName: 'hgate',
@@ -105,6 +107,16 @@ function clearSessionCookie(res) {
 function yamlScalar(value) {
   return `'${String(value).replaceAll("'", "''")}'`
 }
+// E2 · Resuelve la empresa del usuario para X-MWT-Client-ID.
+// Solo se fija si el usuario tiene UNA sola empresa: el MCP valida que el valor
+// esté entre sus legal_entity_ids (verify_tenant) y con varias no hay una única
+// empresa correcta. MWT_MCP_CLIENT_ID fuerza un valor global para todos.
+function resolveClientId(user) {
+  if (cfg.mcpClientId) return cfg.mcpClientId
+  if (!cfg.mcpClientIdFromUser) return ''
+  const ents = (user && (user.legalEntityIds || user.legal_entity_ids)) || []
+  return ents.length === 1 ? String(ents[0]).toLowerCase() : ''
+}
 function renderPatch(user) {
   const headers = {
     'X-Forwarded-User-Email': user.email,
@@ -112,7 +124,8 @@ function renderPatch(user) {
     // Salta el challenge OAuth del MCP (MWT_MCP_OAUTH=1). No es un JWT.
     Authorization: 'Bearer dsh-gateway',
   }
-  if (cfg.mcpClientId) headers['X-MWT-Client-ID'] = cfg.mcpClientId
+  const clientId = resolveClientId(user)
+  if (clientId) headers['X-MWT-Client-ID'] = clientId
   const headerLines = Object.entries(headers)
     .map(([k, v]) => `          ${k}: ${yamlScalar(v)}`)
     .join('\n')
@@ -326,14 +339,17 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
   const user = data.user
   if (!user || !user.id || !user.email) return res.redirect(303, '/login?e=auth')
 
+  const legalEntityIds = Array.isArray(user.legal_entity_ids) ? user.legal_entity_ids : []
+  const sessionUser = { id: user.id, email: user.email, legalEntityIds }
+
   let inst
   try {
-    inst = await ensureInstance(user)
+    inst = await ensureInstance(sessionUser)
   } catch (err) {
     console.error('[gateway] no se pudo arrancar dsh:', err.message)
     return res.redirect(303, '/login?e=harness')
   }
-  setSessionCookie(res, { uid: user.id, email: user.email, name: user.full_name || '', exp: Date.now() + cfg.cookieTtlMs })
+  setSessionCookie(res, { uid: user.id, email: user.email, name: user.full_name || '', ents: legalEntityIds, exp: Date.now() + cfg.cookieTtlMs })
   // Redirige una sola vez con el token de proceso para que dsh fije su cookie.
   res.redirect(303, `/?token=${encodeURIComponent(inst.token)}`)
 })

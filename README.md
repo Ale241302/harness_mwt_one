@@ -107,8 +107,9 @@ header `X-Forwarded-User-Email` validado por el Gateway Key (diseño Ola 2).
 
 - **Un proceso `dsh` por usuario**, no un contenedor por usuario (fase 2:
   aislamiento real de CPU/RAM/disco con cgroups).
-- **Tenant MCP** (`X-MWT-Client-ID`): hoy vacío → modo global. El valor correcto
-  es `user.legal_entity_ids` del login; mapearlo es E2.
+- **Tenant MCP** (`X-MWT-Client-ID`): el gateway lo fija con la empresa del
+  usuario cuando tiene **una sola** (`legal_entity_ids` del login); con varias no
+  lo envía (E2 hecho). El MCP valida pertenencia y deniega con `TENANT_MISMATCH`.
 - **Modelo**: una sola `DEEPSEEK_API_KEY` compartida; sin costo por usuario.
 - **Persistencia de sesiones del gateway**: en memoria; un redeploy obliga a
   re-login (los `DSH_HOME` sí persisten en el volumen `harness-users`).

@@ -76,8 +76,12 @@ consola-mwt-one** (vive en `/opt/consola-mwt-one/mcp-gateway`) y sirve la ruta
 externa `https://mcp.mwt.one` (OAuth) para clientes como Claude/Cowork; por debajo
 usa el mismo servidor MCP (`consola-mwt-one-mcp:8765`).
 
-**Brecha:** el gateway no reenvía `legal_entity_ids` como `X-MWT-Client-ID`; el MCP
-resuelve por email. Mapear la empresa del usuario es tarea de E2.
+**Tenant (E2):** el gateway fija `X-MWT-Client-ID` con la empresa del usuario
+**cuando tiene una sola** (`legal_entity_ids`). Con varias empresas no envía el
+header (no hay una única correcta y el MCP rechazaría). El MCP valida que el
+valor esté entre las empresas del usuario (`verify_tenant`) y deniega con
+`TENANT_MISMATCH` si no. Evidencia: `compras2` (Sondel) con tenant SONEPAR →
+denegado; con Sondel → permitido.
 
 ## Puertos publicados en el host (stack consola)
 
@@ -127,8 +131,14 @@ según la identidad del login. `client_b2b` no recibe las herramientas de gesti�
 
 ## Notas
 
-- El tenant (`X-MWT-Client-ID`) hoy está **vacío** en el gateway → modo global.
-  El valor correcto por usuario es su `legal_entity_ids` del login; mapearlo es E2.
-- `core.users.tenant_uuid` existe pero está NULL: no usarlo como fuente sin poblarlo.
+- El tenant (`X-MWT-Client-ID`) se fija **solo si el usuario tiene una sola
+  empresa** (E2). Con varias (p. ej. un admin) queda en modo global dentro de su
+  alcance.
+- `core.users.tenant_uuid` existe pero está NULL: la fuente real de empresas es
+  `user.legal_entity_ids` de la respuesta del login.
+- **Caveat del MCP (reportar):** la caché de tokens del MCP es por email, no por
+  tenant; un token ya cacheado (p. ej. modo global) puede saltarse `verify_tenant`
+  en peticiones posteriores. En el harness el tenant es fijo por sesión, así que
+  no hay mezcla; conviene arreglarlo del lado del MCP (clave de caché por tenant).
 - Antes de cualquier escritura de negocio, probar que un usuario sin permiso
   recibe denegación efectiva (no solo ocultamiento visual).
