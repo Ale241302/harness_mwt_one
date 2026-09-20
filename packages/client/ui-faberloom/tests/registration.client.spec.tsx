@@ -131,7 +131,7 @@ describe('faberloom surface', () => {
       'faberloom-connections',
     ])
     expect(view.getByText('faberloom')).toBeTruthy()
-    expect(view.getByRole('heading', { name: '¿Qué quieres resolver hoy?' })).toBeTruthy()
+    expect(view.getByRole('heading', { name: 'What do you want to solve today?' })).toBeTruthy()
     await surface.dispose()
   })
 
@@ -142,7 +142,7 @@ describe('faberloom surface', () => {
     expect(overview).toHaveBeenCalledOnce()
 
     act(() => { runtime.panelInfo.set({ activePanelId: CONVERSAR }) })
-    const start = view.getByRole('button', { name: 'Empezar conversación' })
+    const start = view.getByRole('button', { name: 'Start a conversation' })
     start.click()
     expect(layout.selectPanel).toHaveBeenCalledWith(null)
 
@@ -155,15 +155,15 @@ describe('faberloom surface', () => {
   it('shows the empty state when the workspace has no rows', async () => {
     const { runtime, view } = await bench({ ok: true, value: EMPTY })
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
-    expect(await view.findByText('Sin datos todavía')).toBeTruthy()
+    expect(await view.findByText('No data yet')).toBeTruthy()
   })
 
   it('creates a space from the panel form and republishes the refreshed overview', async () => {
     const { runtime, createSpace, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
-    const input = await view.findByPlaceholderText('Nombre del espacio')
+    const input = await view.findByPlaceholderText('Space name')
     fireEvent.change(input, { target: { value: 'Marluvas' } })
-    fireEvent.click(view.getByRole('button', { name: 'Crear' }))
+    fireEvent.click(view.getByRole('button', { name: 'Create' }))
     await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Marluvas') })
   })
 })
