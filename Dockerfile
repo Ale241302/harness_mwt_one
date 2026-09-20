@@ -10,7 +10,12 @@
 # =====================================================================
 
 # ── Stage 1: build the harness fork ──────────────────────────────────
-FROM node:22-bookworm-slim AS harness-build
+FROM node:22.23.2-bookworm-slim AS harness-build
+
+# Real fork commit, injected by scripts/push-to-vps.ps1 via docker-compose build
+# args. It is recorded in the image so the built dsh is traceable to a source SHA
+# instead of an unattributed synthetic commit.
+ARG DSH_FORK_SHA=unknown
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends build-essential python3 pkg-config git ca-certificates curl \
@@ -29,13 +34,14 @@ ENV CI=1
 # commit hash; materialize one synthetic commit for the build.
 RUN git init -q \
  && git add -A \
- && git -c user.email=build@local -c user.name=build commit -qm "faberloom fork" \
+ && git -c user.email=build@local -c user.name=build commit -qm "faberloom fork ${DSH_FORK_SHA}" \
+ && printf '%s' "$DSH_FORK_SHA" > /src/deepseek-harness/.fork-sha \
  && git rev-parse HEAD
 RUN pnpm install --frozen-lockfile
 RUN pnpm run build
 
 # ── Stage 2: gateway runtime ─────────────────────────────────────────
-FROM node:22-bookworm-slim
+FROM node:22.23.2-bookworm-slim
 
 ENV NODE_ENV=production
 WORKDIR /app

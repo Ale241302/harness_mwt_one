@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # SHA real del fork, inyectado por scripts/push-to-vps.ps1 / deploy-vps.sh.
+        DSH_FORK_SHA: "${DSH_FORK_SHA:-unknown}"
     image: mwt-one-harness/gateway:latest
     container_name: mwt-one-harness-gateway
     restart: unless-stopped

@@ -1,7 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-09-15` (incluye E7-bis memoria Tencent + E8 respaldo)
-**Verificado en el VPS:** 15 de septiembre de 2026.
+**Tag de despliegue:** `deploy-2026-09-15` (commit `e2a61d4`, incluye E7-bis memoria Tencent + E8 respaldo)
+**Imagen desplegada actual:** build de `main` @ `a5cffb2f35` (producto FaberLoom + fixes de UI).
+**Verificado en el VPS:** 20 de septiembre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
@@ -13,12 +14,12 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | DeepSeek Harness (`dsh`) | `0.1.6-alpha.1` (**nuestro fork**) | Construido en la etapa 1 del `Dockerfile` desde `vendor/deepseek-harness-src.tgz` |
 | Fuente del harness | `git archive` del tree del push (rama `feat/faberloom-native`) | Incluye `packages/faberloom/*` y el perfil `faberloom` |
 | Perfil arrancado por usuario | `faberloom` | `DSH_PROFILE`; = `dsh-base` + `dsh-web-app` + `dsh-faberloom-app` |
-| Node.js (imagen) | `node:22-bookworm-slim`; `v22.23.2` en el contenedor | |
+| Node.js (imagen) | `node:22.23.2-bookworm-slim` (tag fijo, no `node:22`) | `v22.23.2` en el contenedor |
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
 | Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:c6d02e743c40…`; `:prev` = `sha256:5b8e0ab6777e…` |
-| Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` `:latest` | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack` |
+| Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
 

@@ -192,8 +192,9 @@ en `/opt/faberloom` (`faberloom-mcp:8090`, red `harness-net`, volumen
   archivo; editarlos desde el host con reemplazo de inodo (`sed -i`, `docker cp`)
   no se refleja en el contenedor. Aplicar desde dentro del contenedor o recrear
   `mwt-nginx`.
-- El backend aún no está endurecido para imágenes/adjuntos grandes vía
-  Cloudflare (límite 100 MB del plan).
+- El límite de subida se alinea con Cloudflare: nginx usa
+  `client_max_body_size 100m` (antes 320m, que fallaba en el edge). Subirlo
+  requiere antes ampliar el límite del plan/regla de Cloudflare.
 
 ## Seguridad (estado tras E1)
 

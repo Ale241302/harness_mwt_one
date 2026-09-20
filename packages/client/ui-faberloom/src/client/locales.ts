@@ -165,7 +165,6 @@ const es = {
   'mcp.emptyText': 'Crea un token y entrégalo al otro agente; podrás revocarlo cuando quieras.',
   'mcp.detail': 'Cómo conectarse',
   'mcp.endpoint': 'Punto de acceso',
-  'mcp.endpointValue': 'https://harness.mwt.one/mcp',
   'mcp.how': 'Autenticación',
   'mcp.howHint': 'El token va en la cabecera Authorization: Bearer.',
   'mcp.howText': 'El cliente habla MCP (Streamable HTTP) contra ese punto; cada llamada actúa como tú y los pasos con efecto siguen exigiendo concesión.',
@@ -376,7 +375,12 @@ const es = {
 /** The faberloom namespace key union. */
 export type FaberloomKey = keyof typeof es
 
-/** Second shipped locale, checked complete against the zh key set. */
-export const en: Record<FaberloomKey, string> = es
+/**
+ * Canonical FaberLoom dictionary (Spanish). The product ships Spanish-first, so
+ * the two locale slots the harness requires (`en`, `zh`) mirror this dictionary
+ * rather than duplicating divergent key sets; real translations are deferred and
+ * tracked in the plan. The copies are independent objects, not shared references.
+ */
+export const en: Record<FaberloomKey, string> = { ...es }
 /** First shipped locale, checked complete against the key union. */
-export const zh: Record<FaberloomKey, string> = es
+export const zh: Record<FaberloomKey, string> = { ...es }

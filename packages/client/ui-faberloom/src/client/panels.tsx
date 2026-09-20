@@ -1626,7 +1626,7 @@ function McpBlock(props: {
         <DataTable columns={columns} rows={tableRows} selectedId={null} onSelect={() => {}}
           emptyTitle={t('mcp.empty')} emptyText={t('mcp.emptyText')} />
         <Inspector title={t('mcp.detail')}>
-          <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{t('mcp.endpointValue')}</span></Field>
+          <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{`${typeof window === 'undefined' ? '' : window.location.origin}/mcp`}</span></Field>
           <Field label={t('mcp.how')} hint={t('mcp.howHint')}><span className={styles.cellMuted}>{t('mcp.howText')}</span></Field>
           <div className={styles.steps}>
             {rows.filter(row => row.revokedAt === null).map(row => (

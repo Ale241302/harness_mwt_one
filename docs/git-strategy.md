@@ -1,45 +1,49 @@
 # Estrategia de repositorios git
 
-Verificado/definido el 14 de septiembre de 2026.
+Actualizado el 20 de septiembre de 2026.
 
 ## Remotos
 
 | Remoto | URL | Uso |
 |---|---|---|
-| `origin` | `https://github.com/Ale241302/harness_mwt_one` | Nuestro repositorio. `push` aquí. Hoy vacío |
-| `upstream` | `https://github.com/deepseek-ai/deepseek-harness` | Solo referencia (`fetch`). `push` deshabilitado |
+| `origin` | `https://github.com/deepseek-ai/deepseek-harness` | Upstream de DeepSeek. Solo `fetch`; `push` no habilitado |
+| `fork` | `https://github.com/Ale241302/harness_mwt_one` | Nuestro repositorio. `push` aquí |
 
-Rama principal: `main`. Tag de la línea base desplegada: `deploy-2026-09-14`.
+Rama principal: `main`. Tags relevantes: `faberloom-0.1.0` (primer corte del
+producto), `deploy-2026-09-14` y `deploy-2026-09-15` (hitos de despliegue).
 
-## Por qué no se fusiona `upstream` aquí
+## Qué es este repositorio
 
-`mwt-one-harness` es la **capa de integración** (gateway de login + supervisión de
-`dsh` por usuario + futuros módulos de FaberLoom), no un fork del código de
-DeepSeek Harness. El harness se consume como **versión fijada** (`dsh 0.1.5-rc.2`)
-mediante npm en el `Dockerfile`.
+**Un fork del código de DeepSeek Harness con la capa de producto y la capa de
+despliegue.** En `main` conviven:
 
-Fusionar `upstream` en este repo crearía **historiales no relacionados** y
-conflictos en todo, justo lo que se quiere evitar. Por eso:
+- la fuente del harness (`packages/`, `apps/`, `vendor/`, …) tal como se compila;
+- la capa de integración de MWT.ONE: `gateway/` (login + supervisión de `dsh`
+  por usuario), `Dockerfile`, `docker-compose.yml`, `nginx/`, `skills-catalog/`,
+  `scripts/` y la documentación operativa (`README.mwt-one.md`, `MANIFEST.md`,
+  `docs/`).
 
-- `upstream` queda **solo para consultar** (`git fetch upstream`), nunca `merge`.
-- Las actualizaciones del harness se gestionan como **bump de versión** en
-  `Dockerfile` + `MANIFEST.md`, probadas en entorno de prueba antes de promover (E8).
+El fork se materializó en la rama `feat/faberloom-native` y se fusionó a `main`
+con historial no relacionado respecto de la rama de despliegue previa; a partir
+de ahí `main` es la única fuente.
 
-## Si en el futuro hay que modificar el código del harness
+## Cómo se construye el harness
 
-No meterlo en `origin`. Crear un **fork separado** (p. ej.
-`Ale241302/deepseek-harness`) con su propio `upstream`, y trabajar en ramas de
-modificación. Así se puede `git pull upstream` sin tocar nuestro producto.
+El harness **no se consume desde npm**. El `Dockerfile` (etapa 1) lo construye
+desde el tarball de fuente `vendor/deepseek-harness-src.tgz`, que
+`scripts/push-to-vps.ps1` genera con `git archive` del árbol del fork. El SHA
+real del fork se inyecta como `DSH_FORK_SHA` (build arg) para que la imagen no
+quede con un commit sintético sin trazabilidad.
 
-## Flujo de trabajo propuesto
+Versión fijada del fork: **`0.1.6-alpha.1`** (`package.json`). Cualquier versión
+anterior citada (`0.1.5-rc.2`) es histórica y ya no aplica.
 
-1. Rama de trabajo desde `main` (`feat/...`, `fix/...`).
-2. Commit y PR hacia `main` en `origin`.
-3. Tag de versión cuando corresponde.
-4. Despliegue al VPS con `scripts/push-to-vps.ps1 -Deploy`.
+## Actualizaciones del harness
 
-## Estado actual
-
-- `main` local con commit `ab6530b` y tag `deploy-2026-09-14`.
-- `origin` configurado; **pendiente** el primer `push` (requiere credencial/token
-  de GitHub del titular de la cuenta).
+- El fork se actualiza desde `upstream` en la rama de trabajo, no con `merge`
+  directo sobre `main` sin pruebas.
+- Una actualización se prueba en entorno aislado, se registra en `MANIFEST.md`
+  (motor, plugins, esquema) y se promueve con `scripts/update-harness.sh`, que
+  etiqueta la imagen anterior, reconstruye y revierte si el healthcheck falla.
+- `vendor/deepseek-harness-src.tgz` es un artefacto generado (ignorado por git);
+  no se versiona.

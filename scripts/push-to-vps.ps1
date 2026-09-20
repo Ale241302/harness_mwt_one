@@ -40,7 +40,10 @@ if (-not $SkipHarnessPackage) {
   $tree = (git -C $HarnessDir write-tree).Trim()
   git -C $HarnessDir archive --format=tar.gz -o $forkTar $tree
   if ($LASTEXITCODE -ne 0) { throw "git archive fallo en $HarnessDir" }
-  Write-Host ("    {0:N1} MB (tree {1})" -f ((Get-Item $forkTar).Length / 1MB), $tree)
+  # SHA real del fork: se inyecta como build arg para que la imagen quede
+  # trazable (el tarball no lleva .git, el Dockerfile sintetiza un commit).
+  $script:ForkSha = (git -C $HarnessDir rev-parse HEAD).Trim()
+  Write-Host ("    {0:N1} MB (tree {1}, HEAD {2})" -f ((Get-Item $forkTar).Length / 1MB), $tree, $script:ForkSha)
 }
 
 $tar = Join-Path $env:TEMP "mwt-one-harness.tgz"
@@ -58,7 +61,8 @@ $remote = "mkdir -p $RemoteDir && tar -xzf /tmp/mwt-one-harness.tgz -C $RemoteDi
 ssh -p $Port "${User}@${SshHost}" $remote
 
 if ($Deploy) {
+  $shaArg = if ([string]::IsNullOrEmpty($script:ForkSha)) { '' } else { "DSH_FORK_SHA=$($script:ForkSha) " }
   Write-Host "==> Desplegando (build del fork + up + nginx). El build tarda."
-  ssh -p $Port "${User}@${SshHost}" "cd $RemoteDir && bash scripts/deploy-vps.sh"
+  ssh -p $Port "${User}@${SshHost}" "cd $RemoteDir && ${shaArg}bash scripts/deploy-vps.sh"
 }
 Write-Host "OK"
