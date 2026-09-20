@@ -153,6 +153,7 @@ Real-API tests and demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, 
 - **Labels:** one PR `kind/*`, all material `area/*`, and native Issue Type ([taxonomy](.agents/notes/implemented/process/2026-08-08-unified-github-label-taxonomy.md)).
 - TODO markers: `FIXME`/`TODO`/`XXX` by urgency ([semantics](docs/development.md)).
 - Files end with exactly one trailing newline; `git diff --cached --check` (pre-commit) gates it.
+- Files are UTF-8 without a BOM. Edit them with byte-preserving tools: a shell rewrite that re-encodes (Windows `Set-Content -Encoding`, `iconv`, a non-UTF-8 redirect) mangles every non-ASCII character and adds a BOM. After any mass replacement, check that the file carries no double-encoding artifact (the sequences a UTF-8 file yields when its bytes are read as Latin-1 and written back) and that it does not start with a BOM.
 
 ## Defensive patterns
 

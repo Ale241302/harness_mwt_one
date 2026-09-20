@@ -39,6 +39,9 @@
       "path": "../../goal/goal"
     },
     {
+      "path": "../../faberloom/view"
+    },
+    {
       "path": "../../feedback/message-feedback"
     },
     {

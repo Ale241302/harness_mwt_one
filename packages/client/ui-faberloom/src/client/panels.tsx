@@ -1,0 +1,1618 @@
+/**
+ * FaberLoom module screens. Each screen is the same shape: a toolbar, a dense
+ * table of records, and a right-hand inspector that edits the selected record.
+ * Agentes and Skills have full editors; the remaining modules read the shared
+ * overview and expose their own row actions. The Conversar panel hands the user
+ * to the harness conversation, which owns the composer.
+ */
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+// Type-only: declares the sidebar shell's `sidebar.panellist` owner props.
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import {
+  IconAgentPresetOutline16,
+  IconAlarmClockOutline16,
+  IconApiOutline14,
+  IconChecklistOutline14,
+  IconDatabaseOutline16,
+  IconFolderOpenOutline16,
+  IconNewChatOutline16,
+} from '@deepseek-ai/dsh-client-ui-primitives'
+import type {
+  AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomConnection, FaberLoomExecutionRow,
+  FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomOverview,
+  FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
+  FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, TeachingSaveInput,
+  FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow,
+} from '@deepseek-ai/dsh-faberloom-view/types'
+import { Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, Toolbar, type Column } from './components.tsx'
+import type { createWorkspaceStore } from './store.ts'
+import type { FaberloomKey } from './locales.ts'
+import styles from './faberloom.module.css'
+
+/** One Remote result, as the generated client returns it. */
+type Result<T> = { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
+
+/** The business face every panel shares: reads, writes, and the lazy detail reads. */
+export interface FaberloomPanelInjected {
+  /** Re-read the workspace overview. */
+  load: () => void
+  /** Leave the panel and open the harness conversation (its composer). */
+  startConversation: () => void
+  /** Create a root space and refresh. */
+  createSpace: (title: string) => void
+  /** Rename one space and refresh. */
+  renameSpace: (id: string, title: string) => void
+  /** Create an agent and refresh. */
+  createAgent: (name: string) => void
+  /** Deactivate one agent and refresh. */
+  deactivateAgent: (id: string) => void
+  /** Remove one agent from the catalog permanently. */
+  purgeAgent: (id: string) => void
+  /** Create a board item awaiting review. */
+  createBoardItem: (title: string) => void
+  /** Approve or reject the current board revision. */
+  reviewBoardItem: (id: string, approve: boolean) => void
+  /** Reopen one reviewed board item for correction. */
+  reopenBoardItem: (id: string) => void
+  /** Create a draft routine. */
+  createRoutine: (name: string) => void
+  /** Activate or pause one routine. */
+  setRoutineActive: (id: string, active: boolean) => void
+  /** Record one statement on the agent-memory server. */
+  remember: (text: string) => void
+  /** Read one agent's full editable configuration. */
+  agentDetail: (id: string) => Promise<Result<FaberLoomAgentDetail | undefined>>
+  /** List the model pool the panels assign from. */
+  models: () => Promise<Result<readonly FaberLoomModelRow[]>>
+  /** Ask the recommender which model suits one agent. */
+  recommendModel: (agentId: string) => Promise<Result<FaberLoomModelRecommendation | undefined>>
+  /** List the owner's versioned teachings. */
+  teachings: () => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Record one teaching from a correction or a direct instruction. */
+  saveTeaching: (input: TeachingSaveInput) => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Edit one teaching, producing a new version. */
+  editTeaching: (id: string, text: string, reason: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Revoke one teaching. */
+  revokeTeaching: (id: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Read the owner's contextual performance evidence. */
+  performance: (agentId?: string, task?: string) => Promise<Result<FaberLoomPerformanceRow>>
+  /** List the owner's autonomy grants. */
+  grants: () => Promise<Result<readonly FaberLoomGrantRow[]>>
+  /** Grant one action. */
+  grant: (input: GrantSaveInput) => Promise<Result<readonly FaberLoomGrantRow[]>>
+  /** Revoke one grant. */
+  revokeGrant: (id: string) => Promise<Result<readonly FaberLoomGrantRow[]>>
+  /** List the MCP client tokens. */
+  mcpTokens: () => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
+  /** Mint one MCP client token. */
+  mintMcpToken: (input: McpTokenInput) => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
+  /** Revoke one MCP client token. */
+  revokeMcpToken: (token: string) => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
+  /** Save one agent's editable configuration. */
+  saveAgent: (id: string, input: AgentSaveInput) => Promise<Result<FaberLoomOverview>>
+  /** List the skills available to this owner. */
+  skills: () => Promise<Result<readonly FaberLoomSkillRow[]>>
+  /** Add or replace one uploaded skill. */
+  saveSkill: (name: string, markdown: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
+  /** Remove one uploaded skill. */
+  removeSkill: (name: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
+  /** List the owner's own connections (IMAP, backup). */
+  connections: () => Promise<Result<readonly FaberLoomConnection[]>>
+  /** Create or replace one connection. */
+  saveConnection: (input: { id?: string; kind: 'imap' | 'backup'; label: string; host?: string; port?: number; secure?: boolean; username?: string; secret?: string; destination?: string; retentionDays?: number }) => Promise<Result<readonly FaberLoomConnection[]>>
+  /** Remove one connection. */
+  removeConnection: (id: string) => Promise<Result<readonly FaberLoomConnection[]>>
+  /** Check one connection for real. */
+  probeConnection: (id: string) => Promise<Result<{ ok: boolean; detail: string }>>
+  /** Read one space's editable configuration. */
+  spaceDetail: (id: string) => Promise<Result<FaberLoomSpaceDetail | undefined>>
+  /** Save one space's editable configuration. */
+  saveSpace: (id: string, input: SpaceSaveInput) => Promise<Result<FaberLoomOverview>>
+  /** Read one routine's editable definition. */
+  routineDetail: (id: string) => Promise<Result<FaberLoomRoutineDetail | undefined>>
+  /** Save one routine's editable definition. */
+  saveRoutine: (id: string, input: RoutineSaveInput) => Promise<Result<FaberLoomOverview>>
+  /** Remove one routine definition. */
+  removeRoutine: (id: string) => Promise<Result<FaberLoomOverview>>
+  /** Read one board item's review state. */
+  boardDetail: (id: string) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** List one routine's executions. */
+  executions: (routineId?: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
+  /** Start a manual run of one routine. */
+  startRoutine: (routineId: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
+  /** Advance the owner's runnable steps. */
+  tickRoutine: (routineId: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
+  /** Reconcile one execution's pending effect. */
+  reconcileExecution: (id: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
+  /** Cancel one step's recorded effect. */
+  cancelExecutionEffect: (id: string, stepId: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
+}
+
+/** Binds one glyph to the sidebar panellist owner props. */
+function panelIcon(Glyph: ComponentType<{ size: number }>) {
+  return function FaberloomPanelIcon({ size, active }: PropsRuntime<'sidebar.panellist'>) {
+    return (
+      <span className={styles.navIcon} data-active={active}>
+        <Glyph size={size} />
+      </span>
+    )
+  }
+}
+
+/** Component props shared by every module screen. */
+type ScreenProps = PropsLocale<'faberloom'>
+  & PropsStore<ReturnType<typeof createWorkspaceStore>>
+  & InjectFace<FaberloomPanelInjected>
+
+/** Runs one lazy read once per mount, surfacing the failure message. */
+function useLazy<T>(run: () => Promise<Result<T>>, deps: readonly unknown[]) {
+  const [state, setState] = useState<{ kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'error'; message: string }>({ kind: 'loading' })
+  useEffect(() => {
+    let live = true
+    setState({ kind: 'loading' })
+    run()
+      .then((result) => { if (live) setState(result.ok ? { kind: 'ready', value: result.value } : { kind: 'error', message: result.error.message }) })
+      .catch((error: unknown) => { if (live) setState({ kind: 'error', message: String(error) }) })
+    return () => { live = false }
+  }, deps)
+  return state
+}
+
+/** Reads the shared overview and triggers the first load when a screen mounts. */
+function useOverview(props: ScreenProps) {
+  const { useStore, load } = props
+  const overview = useStore(state => state.overview)
+  const status = useStore(state => state.status)
+  const error = useStore(state => state.lastError)
+  useEffect(() => { if (overview === null) load() }, [overview, load])
+  return { overview, status, error }
+}
+
+/** Screen wrapper: keeps the scroll container and the split consistent. */function Screen({ title, subtitle, trailing, children }: {
+  title: string
+  subtitle?: string | undefined
+  trailing?: ReactNode | undefined
+  children: ReactNode
+}) {
+  return (
+    <section className={styles.screen}>
+      <Toolbar title={title} subtitle={subtitle} trailing={trailing} />
+      {children}
+    </section>
+  )
+}
+
+/** Write feedback line, shared by the editors. */
+function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null }) {
+  if (message === null) return null
+  return <StateBlock kind="error" title={t('state.writeError')} text={message} />
+}
+
+/** Espacios: list, create, and rename. */
+function spacesScreen() {
+  return function FaberloomSpaces(props: ScreenProps) {
+    const { t, createSpace, spaceDetail, saveSpace } = props
+    const { overview, status, error } = useOverview(props)
+    const [draft, setDraft] = useState('')
+    const [query, setQuery] = useState('')
+    const [selected, setSelected] = useState<string | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
+    const [title, setTitle] = useState('')
+    const [inherit, setInherit] = useState(true)
+    const [members, setMembers] = useState('')
+    const rows = useMemo(
+      () => (overview?.spaces ?? []).filter(space => space.title.toLowerCase().includes(query.trim().toLowerCase())),
+      [overview, query],
+    )
+    const detail = useLazy<FaberLoomSpaceDetail | undefined>(
+      () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : spaceDetail(selected),
+      [selected],
+    )
+
+    useEffect(() => {
+      if (detail.kind !== 'ready' || detail.value === undefined) return
+      setTitle(detail.value.title)
+      setInherit(detail.value.inheritContext)
+      setMembers(detail.value.members.join(', '))
+      setMessage(null)
+    }, [detail])
+
+    const columns: readonly Column<FaberLoomOverview['spaces'][number]>[] = [
+      { key: 'title', header: t('col.name'), cell: space => <span className={styles.cellName}>{space.title}</span> },
+      { key: 'parent', header: t('col.parent'), cell: space => <span className={styles.cellMuted}>{space.parentId ?? t('spaces.root')}</span> },
+    ]
+
+    return (
+      <Screen title={t('panel.spaces.title')} subtitle={t('panel.spaces.intro')}
+        trailing={(
+          <>
+            <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
+            <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.spaces.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
+            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => { createSpace(draft.trim()); setDraft('') }}>{t('action.create')}</button>
+          </>
+        )}>
+        <Feedback t={t} message={error ?? message} />
+        <div className={styles.split}>
+          {overview === null && status === 'loading'
+            ? <StateBlock kind="loading" title={t('state.loading')} />
+            : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} />}
+          <Inspector title={detail.kind === 'ready' && detail.value !== undefined ? detail.value.title : t('spaces.detail')}
+            footer={selected === null ? undefined : (
+              <button className={styles.primary} type="button" onClick={() => {
+                setMessage(null)
+                void saveSpace(selected, { title, inheritContext: inherit, members: members.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0) })
+                  .then((result) => { if (!result.ok) setMessage(result.error.message) })
+                  .catch((cause: unknown) => { setMessage(String(cause)) })
+              }}>{t('action.save')}</button>
+            )}>
+            {selected === null
+              ? <StateBlock kind="empty" title={t('spaces.selectTitle')} text={t('spaces.selectText')} />
+              : detail.kind === 'loading'
+                ? <StateBlock kind="loading" title={t('state.loading')} />
+                : detail.kind === 'error'
+                  ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+                  : detail.value === undefined
+                    ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
+                    : (
+                      <>
+                        <Field label={t('field.name')}><input type="text" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
+                        <Field label={t('field.parent')}><span className={styles.cellMuted}>{detail.value.parentId ?? t('spaces.root')}</span></Field>
+                        <Field label={t('field.inherit')} hint={t('spaces.inheritHint')}>
+                          <select value={inherit ? 'yes' : 'no'} onChange={(event) => { setInherit(event.target.value === 'yes') }}>
+                            <option value="yes">{t('spaces.inheritYes')}</option>
+                            <option value="no">{t('spaces.inheritNo')}</option>
+                          </select>
+                        </Field>
+                        <Field label={t('field.members')} hint={t('spaces.membersHint')}>
+                          <input type="text" value={members} onChange={(event) => { setMembers(event.target.value) }} />
+                        </Field>
+                        <Field label={t('field.sources')}>
+                          {detail.value.sources.length === 0
+                            ? <span className={styles.cellMuted}>{t('spaces.noSources')}</span>
+                            : <span className={styles.chips}>{detail.value.sources.map(source => <Chip key={`${source.kind}:${source.ref}`}>{source.kind}: {source.ref.slice(0, 8)}</Chip>)}</span>}
+                        </Field>
+                      </>
+                    )}
+          </Inspector>
+        </div>
+      </Screen>
+    )
+  }
+}
+
+/** Agentes: table plus the full editor. */
+function agentsScreen() {
+  return function FaberloomAgents(props: ScreenProps) {
+    const { t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, recommendModel } = props
+    const { overview, error } = useOverview(props)
+    const [selected, setSelected] = useState<string | null>(null)
+    const [query, setQuery] = useState('')
+    const [draftName, setDraftName] = useState('')
+    const [message, setMessage] = useState<string | null>(null)
+    const [saving, setSaving] = useState(false)
+    const [name, setName] = useState('')
+    const [responsibility, setResponsibility] = useState('')
+    const [assigned, setAssigned] = useState<readonly string[]>([])
+    const [exclusive, setExclusive] = useState(false)
+    const [primary, setPrimary] = useState('')
+    const [fallbacks, setFallbacks] = useState<readonly string[]>([])
+    const [escalation, setEscalation] = useState<readonly string[]>([])
+    const [escalationMode, setEscalationMode] = useState('manual')
+    const [escalationConditions, setEscalationConditions] = useState('')
+    const [budgetPerExecution, setBudgetPerExecution] = useState('')
+    const [budgetCurrency, setBudgetCurrency] = useState('')
+    const [budgetAttempts, setBudgetAttempts] = useState('')
+    const [budgetEscalations, setBudgetEscalations] = useState('')
+    const [recommendation, setRecommendation] = useState<FaberLoomModelRecommendation | null>(null)
+
+    const agents = useMemo(
+      () => (overview?.agents ?? []).filter(agent => agent.name.toLowerCase().includes(query.trim().toLowerCase())),
+      [overview, query],
+    )
+    const detail = useLazy<FaberLoomAgentDetail | undefined>(
+      () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : agentDetail(selected),
+      [selected],
+    )
+    const catalog = useLazy<readonly FaberLoomSkillRow[]>(() => props.skills(), [])
+    const pool = useLazy<readonly FaberLoomModelRow[]>(() => props.models(), [])
+
+    // Load the selected agent's configuration into the editable fields.
+    useEffect(() => {
+      if (detail.kind !== 'ready' || detail.value === undefined) return
+      setName(detail.value.name)
+      setResponsibility(detail.value.responsibility)
+      setAssigned(detail.value.skills)
+      setExclusive(detail.value.exclusive)
+      setPrimary(detail.value.primaryModelId ?? '')
+      setFallbacks(detail.value.fallbacks)
+      setEscalation(detail.value.escalation?.authorized ?? [])
+      setEscalationMode(detail.value.escalation?.mode ?? 'manual')
+      setEscalationConditions((detail.value.escalation?.conditions ?? []).join(', '))
+      setBudgetPerExecution(detail.value.budget === null ? '' : String(detail.value.budget.perExecution))
+      setBudgetCurrency(detail.value.budget?.currency ?? '')
+      setBudgetAttempts(detail.value.budget === null ? '' : String(detail.value.budget.maxAttempts))
+      setBudgetEscalations(detail.value.budget === null ? '' : String(detail.value.budget.maxEscalations))
+      setRecommendation(null)
+      setMessage(null)
+    }, [detail])
+
+    const columns: readonly Column<FaberLoomOverview['agents'][number]>[] = [
+      { key: 'name', header: t('col.name'), cell: agent => <span className={styles.cellName}>{agent.name}</span> },
+      { key: 'status', header: t('col.status'), cell: agent => <StatusDot on={agent.active} label={agent.active ? t('status.active') : t('status.inactive')} /> },
+      { key: 'space', header: t('col.space'), cell: agent => <span className={styles.cellMuted}>{agent.spaceId ?? t('spaces.root')}</span> },
+    ]
+
+    const save = (): void => {
+      if (selected === null) return
+      setSaving(true)
+      setMessage(null)
+      void saveAgent(selected, {
+        name,
+        responsibility,
+        skills: assigned,
+        exclusive,
+        primaryModelId: primary.length === 0 ? null : primary,
+        fallbacks,
+        escalation: escalation.length === 0 && escalationConditions.trim().length === 0
+          ? null
+          : { authorized: escalation, conditions: escalationConditions.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0), mode: escalationMode },
+        budget: budgetPerExecution.trim().length === 0
+          ? null
+          : {
+            perExecution: Number(budgetPerExecution),
+            currency: budgetCurrency.trim().length === 0 ? 'EUR' : budgetCurrency.trim(),
+            maxAttempts: budgetAttempts.trim().length === 0 ? 1 : Number(budgetAttempts),
+            maxEscalations: budgetEscalations.trim().length === 0 ? 0 : Number(budgetEscalations),
+          },
+      })
+        .then((result) => { if (!result.ok) setMessage(result.error.message) })
+        .catch((cause: unknown) => { setMessage(String(cause)) })
+        .finally(() => { setSaving(false) })
+    }
+
+    const editTitle = detail.kind === 'ready' && detail.value !== undefined
+      ? detail.value.name
+      : t('agents.editor')
+
+    return (
+      <Screen title={t('panel.agents.title')} subtitle={t('panel.agents.intro')}
+        trailing={(
+          <>
+            <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
+            <input className={styles.paneSearch} style={{ width: 200, padding: '8px 10px' }} value={draftName} placeholder={t('panel.agents.newPlaceholder')} onChange={(event) => { setDraftName(event.target.value) }} />
+            <button className={styles.primary} type="button" disabled={draftName.trim().length === 0} onClick={() => { createAgent(draftName.trim()); setDraftName('') }}>{t('action.create')}</button>
+          </>
+        )}>
+        <Feedback t={t} message={error ?? message} />
+        <div className={styles.split}>
+          <DataTable columns={columns} rows={agents} selectedId={selected} onSelect={setSelected}
+            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} />
+          <Inspector
+            title={editTitle}
+            status={detail.kind === 'ready' && detail.value !== undefined
+              ? <StatusDot on={detail.value.active} label={detail.value.active ? t('status.active') : t('status.inactive')} />
+              : undefined}
+            footer={selected === null ? undefined : (
+              <>
+                <span className={styles.tools}>
+                  <button className={styles.danger} type="button" onClick={() => { purgeAgent(selected); setSelected(null) }}>{t('action.delete')}</button>
+                  {detail.kind === 'ready' && detail.value?.active === true
+                    ? <button className={styles.ghost} type="button" onClick={() => { deactivateAgent(selected) }}>{t('action.deactivate')}</button>
+                    : null}
+                </span>
+                <span className={styles.tools}>
+                  <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.cancel')}</button>
+                  <button className={styles.primary} type="button" disabled={saving} onClick={save}>{t('action.save')}</button>
+                </span>
+              </>
+            )}
+          >
+            {selected === null
+              ? <StateBlock kind="empty" title={t('agents.selectTitle')} text={t('agents.selectText')} />
+              : detail.kind === 'loading'
+                ? <StateBlock kind="loading" title={t('state.loading')} />
+                : detail.kind === 'error'
+                  ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+                  : (
+                    <>
+                      <Field label={t('field.name')}>
+                        <input type="text" value={name} onChange={(event) => { setName(event.target.value) }} />
+                      </Field>
+                      <Field label={t('field.responsibility')} hint={t('agents.promptHint')}>
+                        <textarea value={responsibility} onChange={(event) => { setResponsibility(event.target.value) }} />
+                      </Field>
+                      <Field label={t('field.skills')}>
+                        {catalog.kind === 'loading'
+                          ? <StateBlock kind="loading" title={t('state.loading')} />
+                          : catalog.kind === 'error'
+                            ? <StateBlock kind="error" title={t('state.error')} text={catalog.message} />
+                            : (
+                              <SkillTransfer
+                                t={t}
+                                labels={{ available: t('skills.available'), assigned: t('skills.assigned'), search: t('action.search'), add: t('action.add'), remove: t('action.remove') }}
+                                available={catalog.value.map(skill => ({ name: skill.name, meta: skill.module ?? skill.description }))}
+                                assigned={assigned}
+                                onChange={setAssigned}
+                              />
+                            )}
+                      </Field>
+                      <Field label={t('field.modelPolicy')} hint={t('agents.modelHint')}>
+                        <div className={styles.grid2}>
+                          <select value={exclusive ? 'exclusive' : 'fallback'} onChange={(event) => { setExclusive(event.target.value === 'exclusive') }}>
+                            <option value="fallback">{t('agents.allowAlternatives')}</option>
+                            <option value="exclusive">{t('agents.onlyThisModel')}</option>
+                          </select>
+                          <span className={styles.hint}>{pool.kind === 'ready' ? `${String(pool.value.length)} ${t('agents.poolCount')}` : t('state.loading')}</span>
+                        </div>
+                      </Field>
+                      <Field label={t('field.primaryModel')} hint={t('agents.primaryHint')}>
+                        <select value={primary} onChange={(event) => { setPrimary(event.target.value); setRecommendation(null) }}>
+                          <option value="">{t('agents.modelUnset')}</option>
+                          {(pool.kind === 'ready' ? pool.value : []).map(model => (
+                            <option key={model.id} value={model.id}>{`${model.provider}/${model.model}${model.available ? '' : ` · ${t('agents.unavailable')}`}`}</option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label={t('field.fallbacks')} hint={t('agents.fallbacksHint')}>
+                        <div className={styles.steps}>
+                          {(pool.kind === 'ready' ? pool.value : []).map(model => (
+                            <label className={styles.stepFlag} key={model.id}>
+                              <input type="checkbox" checked={fallbacks.includes(model.id)}
+                                onChange={(event) => {
+                                  setFallbacks(event.target.checked ? [...fallbacks, model.id] : fallbacks.filter(id => id !== model.id))
+                                }} />
+                              {`${model.provider}/${model.model}`}
+                            </label>
+                          ))}
+                        </div>
+                      </Field>
+                      <Field label={t('field.escalation')} hint={t('agents.escalationHint')}>
+                        <div className={styles.steps}>
+                          <div className={styles.grid2}>
+                            <select value={escalationMode} onChange={(event) => { setEscalationMode(event.target.value) }}>
+                              <option value="manual">{t('agents.escalationManual')}</option>
+                              <option value="auto">{t('agents.escalationAuto')}</option>
+                            </select>
+                            <input type="text" value={escalationConditions} placeholder={t('agents.conditionsPlaceholder')} onChange={(event) => { setEscalationConditions(event.target.value) }} />
+                          </div>
+                          {(pool.kind === 'ready' ? pool.value : []).map(model => (
+                            <label className={styles.stepFlag} key={model.id}>
+                              <input type="checkbox" checked={escalation.includes(model.id)}
+                                onChange={(event) => {
+                                  setEscalation(event.target.checked ? [...escalation, model.id] : escalation.filter(id => id !== model.id))
+                                }} />
+                              {`${model.provider}/${model.model}`}
+                            </label>
+                          ))}
+                        </div>
+                      </Field>
+                      <Field label={t('field.budget')} hint={t('agents.budgetHint')}>
+                        <div className={styles.grid2}>
+                          <input type="text" value={budgetPerExecution} placeholder={t('agents.budgetAmount')} onChange={(event) => { setBudgetPerExecution(event.target.value) }} />
+                          <input type="text" value={budgetCurrency} placeholder={t('agents.budgetCurrency')} onChange={(event) => { setBudgetCurrency(event.target.value) }} />
+                          <input type="text" value={budgetAttempts} placeholder={t('agents.budgetAttempts')} onChange={(event) => { setBudgetAttempts(event.target.value) }} />
+                          <input type="text" value={budgetEscalations} placeholder={t('agents.budgetEscalations')} onChange={(event) => { setBudgetEscalations(event.target.value) }} />
+                        </div>
+                      </Field>
+                      <Field label={t('field.recommendation')} hint={t('agents.recommendHint')}>
+                        <div className={styles.steps}>
+                          <button className={styles.secondary} type="button" onClick={() => {
+                            setMessage(null)
+                            void recommendModel(selected ?? '').then((result) => {
+                              if (!result.ok) { setMessage(result.error.message); return }
+                              if (result.value === undefined) { setMessage(t('state.error')); return }
+                              setRecommendation(result.value)
+                            }).catch((cause: unknown) => { setMessage(String(cause)) })
+                          }}>{t('agents.suggestModel')}</button>
+                          {(pool.kind === 'ready' ? pool.value : []).length === 0
+                            ? <span className={styles.cellMuted}>{t('agents.poolEmpty')}</span>
+                            : null}
+                          {recommendation === null ? null : (
+                            <>
+                              <span className={styles.cellMuted}>
+                                {`${t('agents.recommended')}: ${recommendedLabel(recommendation.recommended, pool.kind === 'ready' ? pool.value : null, t('agents.noneAdmissible'))}`}
+                              </span>
+                              <button className={styles.rowAction} type="button" disabled={recommendation.recommended === null}
+                                onClick={() => { if (recommendation.recommended !== null) setPrimary(recommendation.recommended) }}>{t('action.apply')}</button>
+                              {recommendation.alternatives.map(candidate => (
+                                <span className={styles.cellMuted} key={candidate.modelId} title={candidate.reasons.join(' · ')}>
+                                  {`${modelLabel(candidate.modelId, pool.kind === 'ready' ? pool.value : null)} · ${candidate.estimatedCost === null ? t('agents.costUnknown') : String(candidate.estimatedCost)}${candidate.provisional ? ` · ${t('agents.provisional')}` : ''}`}
+                                </span>
+                              ))}
+                              {recommendation.uncertainty.length === 0 ? null : <span className={styles.cellMuted}>{recommendation.uncertainty.join(' · ')}</span>}
+                            </>
+                          )}
+                        </div>
+                      </Field>
+                    </>
+                  )}
+          </Inspector>
+        </div>
+      </Screen>
+    )
+  }
+}
+
+/** Readable label for one pool model, falling back to its id. */
+function modelLabel(id: string, models: readonly FaberLoomModelRow[] | null): string {
+  const model = models?.find(candidate => candidate.id === id)
+  return model === undefined ? id : `${model.provider}/${model.model}`
+}
+
+/** Label for a recommendation, naming the empty case. */
+function recommendedLabel(id: string | null, models: readonly FaberLoomModelRow[] | null, noneLabel: string): string {
+  return id === null ? noneLabel : modelLabel(id, models)
+}
+
+/** Skills: the role catalog plus the owner's uploads. */
+function skillsScreen() {
+  return function FaberloomSkills(props: ScreenProps) {
+    const { t, skills, saveSkill, removeSkill } = props
+    const [list, setList] = useState<readonly FaberLoomSkillRow[] | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
+    const [query, setQuery] = useState('')
+    const [moduleFilter, setModuleFilter] = useState('')
+    const [selected, setSelected] = useState<string | null>(null)
+    const [uploading, setUploading] = useState(false)
+
+    const apply = (result: Result<readonly FaberLoomSkillRow[]>): void => {
+      if (result.ok) setList(result.value)
+      else setMessage(result.error.message)
+    }
+
+    useEffect(() => {
+      let live = true
+      void skills().then((result) => { if (live) apply(result) }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
+      return () => { live = false }
+    }, [])
+
+    const modules = useMemo(
+      () => [...new Set((list ?? []).map(skill => skill.module).filter((value): value is string => value !== null))].sort(),
+      [list],
+    )
+    const rows = useMemo(() => (list ?? []).map(skill => ({ ...skill, id: skill.name })).filter(skill =>
+      (moduleFilter.length === 0 || skill.module === moduleFilter)
+      && (query.trim().length === 0 || skill.name.toLowerCase().includes(query.trim().toLowerCase()))), [list, moduleFilter, query])
+
+    const chosen = rows.find(row => row.name === selected) ?? null
+
+    const onFiles = (files: FileList | null): void => {
+      if (files === null || files.length === 0) return
+      setUploading(true)
+      setMessage(null)
+      const items = [...files]
+      void (async () => {
+        for (const file of items) {
+          const text = await file.text()
+          const name = file.name.replace(/\.md$/i, '')
+          const result = await saveSkill(name, text)
+          if (!result.ok) { setMessage(`${file.name}: ${result.error.message}`); break }
+          setList(result.value)
+        }
+      })().finally(() => { setUploading(false) })
+    }
+
+    const columns: readonly Column<FaberLoomSkillRow>[] = [
+      { key: 'name', header: t('col.name'), cell: skill => <span className={styles.cellName}>{skill.name}</span> },
+      { key: 'module', header: t('col.module'), cell: skill => <span className={styles.cellMuted}>{skill.module ?? '—'}{skill.action === null ? '' : ` · ${skill.action}`}</span> },
+      { key: 'origin', header: t('col.origin'), cell: skill => <Chip tone={skill.origin === 'owner' ? 'accent' : 'muted'}>{skill.origin === 'owner' ? t('skills.own') : t('skills.role')}</Chip> },
+      { key: 'used', header: t('col.usedBy'), cell: skill => <span className={styles.cellMuted}>{skill.assignedTo.length === 0 ? t('skills.unused') : String(skill.assignedTo.length)}</span> },
+    ]
+
+    return (
+      <Screen title={t('panel.skills.title')} subtitle={t('panel.skills.intro')}
+        trailing={(
+          <>
+            <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
+            <select className={styles.paneSearch} style={{ width: 170, padding: '8px 10px' }} value={moduleFilter} onChange={(event) => { setModuleFilter(event.target.value) }}>
+              <option value="">{t('skills.allModules')}</option>
+              {modules.map(module => <option key={module} value={module}>{module}</option>)}
+            </select>
+            <label className={styles.secondary}>
+              {uploading ? t('skills.uploading') : t('skills.upload')}
+              <input type="file" accept=".md,text/markdown" multiple style={{ display: 'none' }} onChange={(event) => { onFiles(event.target.files) }} />
+            </label>
+          </>
+        )}>
+        <Feedback t={t} message={message} />
+        <div className={styles.split}>
+          {list === null
+            ? <StateBlock kind="loading" title={t('state.loading')} />
+            : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+              emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} />}
+          <Inspector title={chosen?.name ?? t('skills.detail')}
+            footer={chosen === null || chosen.origin !== 'owner' ? undefined : (
+              <button className={styles.danger} type="button" onClick={() => {
+                void removeSkill(chosen.name).then((result) => { apply(result); setSelected(null) })
+              }}>{t('action.delete')}</button>
+            )}>
+            {chosen === null
+              ? <StateBlock kind="empty" title={t('skills.selectTitle')} text={t('skills.selectText')} />
+              : (
+                <>
+                  <Field label={t('field.module')}><span className={styles.cellMuted}>{chosen.module ?? '—'}{chosen.action === null ? '' : ` · ${chosen.action}`}</span></Field>
+                  <Field label={t('field.description')}><span className={styles.cellMuted}>{chosen.description.length === 0 ? '—' : chosen.description}</span></Field>
+                  <Field label={t('field.usedBy')}>
+                    {chosen.assignedTo.length === 0
+                      ? <span className={styles.cellMuted}>{t('skills.unused')}</span>
+                      : <span className={styles.chips}>{chosen.assignedTo.map(id => <Chip key={id}>{id.slice(0, 8)}</Chip>)}</span>}
+                  </Field>
+                  <Field label={t('field.origin')}><Chip tone={chosen.origin === 'owner' ? 'accent' : 'muted'}>{chosen.origin === 'owner' ? t('skills.own') : t('skills.role')}</Chip></Field>
+                </>
+              )}
+          </Inspector>
+        </div>
+      </Screen>
+    )
+  }
+}
+
+/** Mesa de trabajo: board items with approve/reject. */
+function boardScreen() {
+  return function FaberloomBoard(props: ScreenProps) {
+    const { t, createBoardItem, reviewBoardItem, reopenBoardItem, boardDetail } = props
+    const { overview, error } = useOverview(props)
+    const [draft, setDraft] = useState('')
+    const [selected, setSelected] = useState<string | null>(null)
+    const rows = overview?.board ?? []
+    const chosen = rows.find(row => row.id === selected) ?? null
+    const detail = useLazy<FaberLoomBoardDetail | undefined>(
+      () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : boardDetail(selected),
+      [selected],
+    )
+
+    const columns: readonly Column<FaberLoomOverview['board'][number]>[] = [
+      { key: 'title', header: t('col.title'), cell: item => <span className={styles.cellName}>{item.title}</span> },
+      { key: 'status', header: t('col.status'), cell: item => <Chip>{item.status}</Chip> },
+    ]
+
+    return (
+      <Screen title={t('panel.board.title')} subtitle={t('panel.board.intro')}
+        trailing={(
+          <>
+            <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.board.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
+            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => { createBoardItem(draft.trim()); setDraft('') }}>{t('action.create')}</button>
+          </>
+        )}>
+        <Feedback t={t} message={error} />
+        <div className={styles.split}>
+          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} />
+          <Inspector title={chosen?.title ?? t('board.detail')}
+            status={detail.kind === 'ready' && detail.value !== undefined ? <Chip>{detail.value.status}</Chip> : undefined}
+            footer={chosen === null ? undefined : (
+              <span className={styles.tools}>
+                <button className={styles.primary} type="button" onClick={() => { reviewBoardItem(chosen.id, true) }}>{t('action.approve')}</button>
+                <button className={styles.secondary} type="button" onClick={() => { reviewBoardItem(chosen.id, false) }}>{t('action.reject')}</button>
+                <button className={styles.ghost} type="button" onClick={() => { reopenBoardItem(chosen.id) }}>{t('action.reopen')}</button>
+              </span>
+            )}>
+            {chosen === null
+              ? <StateBlock kind="empty" title={t('board.selectTitle')} text={t('board.selectText')} />
+              : detail.kind === 'loading'
+                ? <StateBlock kind="loading" title={t('state.loading')} />
+                : detail.kind === 'error'
+                  ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+                  : detail.value === undefined
+                    ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
+                    : (
+                      <>
+                        <Field label={t('field.revision')}>
+                          <span className={styles.cellMuted}>{String(detail.value.version)}{detail.value.approvedRevision === null ? '' : ` · ${t('board.approved')} ${String(detail.value.approvedRevision)}`}</span>
+                        </Field>
+                        <Field label={t('field.summary')}><span className={styles.cellMuted}>{detail.value.summary.length === 0 ? '—' : detail.value.summary}</span></Field>
+                        <Field label={t('field.evidence')}>
+                          {detail.value.evidence.length === 0
+                            ? <span className={styles.cellMuted}>{t('board.noEvidence')}</span>
+                            : <span className={styles.chips}>{detail.value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry.slice(0, 24)}</Chip>)}</span>}
+                        </Field>
+                        <Field label={t('field.stale')}>
+                          <StatusDot on={!detail.value.stale} label={detail.value.stale ? (detail.value.staleReason ?? t('board.stale')) : t('board.fresh')} />
+                        </Field>
+                        <Field label={t('field.effects')}>
+                          {detail.value.effects.length === 0
+                            ? <span className={styles.cellMuted}>{t('board.noEffects')}</span>
+                            : (
+                              <span className={styles.chips}>
+                                {detail.value.effects.map(effect => <Chip key={effect.ref}>{effect.ref.slice(0, 16)}</Chip>)}
+                              </span>
+                            )}
+                        </Field>
+                      </>
+                    )}
+          </Inspector>
+        </div>
+      </Screen>
+    )
+  }
+}
+
+/** Rutinas: routines with the full definition editor. */
+function routinesScreen() {
+  return function FaberloomRoutines(props: ScreenProps) {
+    const {
+      t, createRoutine, setRoutineActive, routineDetail, saveRoutine, removeRoutine, executions,
+      startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
+    } = props
+    const { overview, error } = useOverview(props)
+    const [draft, setDraft] = useState('')
+    const [selected, setSelected] = useState<string | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
+    const [saving, setSaving] = useState(false)
+    const [name, setName] = useState('')
+    const [intent, setIntent] = useState('')
+    const [triggerKind, setTriggerKind] = useState('manual')
+    const [triggerMatch, setTriggerMatch] = useState('')
+    const [steps, setSteps] = useState<readonly FaberLoomRoutineStepRow[]>([])
+    const [expectedResult, setExpectedResult] = useState('')
+    const [permissions, setPermissions] = useState('')
+    const [failurePolicy, setFailurePolicy] = useState('review')
+    const rows = overview?.routines ?? []
+    const chosen = rows.find(row => row.id === selected) ?? null
+    const detail = useLazy<FaberLoomRoutineDetail | undefined>(
+      () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : routineDetail(selected),
+      [selected],
+    )
+    const [runs, setRuns] = useState<readonly FaberLoomExecutionRow[]>([])
+    const [runStep, setRunStep] = useState<Record<string, string>>({})
+    const loadedRuns = useLazy<readonly FaberLoomExecutionRow[]>(
+      () => selected === null ? Promise.resolve({ ok: true, value: [] }) : executions(selected),
+      [selected],
+    )
+
+    useEffect(() => {
+      if (loadedRuns.kind === 'ready') setRuns(loadedRuns.value)
+    }, [loadedRuns])
+
+    const applyRun = (call: Promise<Result<readonly FaberLoomExecutionRow[]>>): void => {
+      setMessage(null)
+      void call
+        .then((result) => { if (result.ok) setRuns(result.value); else setMessage(result.error.message) })
+        .catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    useEffect(() => {
+      if (detail.kind !== 'ready' || detail.value === undefined) return
+      setName(detail.value.name)
+      setIntent(detail.value.intent)
+      setTriggerKind(detail.value.triggerKind)
+      setTriggerMatch(detail.value.triggerMatch ?? '')
+      setSteps(detail.value.steps)
+      setExpectedResult(detail.value.expectedResult)
+      setPermissions(detail.value.permissions.join(', '))
+      setFailurePolicy(detail.value.failurePolicy)
+      setMessage(null)
+    }, [detail])
+
+    const columns: readonly Column<FaberLoomOverview['routines'][number]>[] = [
+      { key: 'name', header: t('col.name'), cell: routine => <span className={styles.cellName}>{routine.name}</span> },
+      { key: 'status', header: t('col.status'), cell: routine => <Chip>{routine.status}</Chip> },
+    ]
+
+    const editStep = (index: number, patch: Partial<FaberLoomRoutineStepRow>): void => {
+      setSteps(steps.map((step, at) => at === index ? { ...step, ...patch } : step))
+    }
+
+    return (
+      <Screen title={t('panel.routines.title')} subtitle={t('panel.routines.intro')}
+        trailing={(
+          <>
+            <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.routines.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
+            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => { createRoutine(draft.trim()); setDraft('') }}>{t('action.create')}</button>
+          </>
+        )}>
+        <Feedback t={t} message={error ?? message} />
+        <div className={styles.split}>
+          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} />
+          <Inspector title={detail.kind === 'ready' && detail.value !== undefined ? detail.value.name : t('routines.detail')}
+            status={chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
+            footer={selected === null ? undefined : (
+              <>
+                <span className={styles.tools}>
+                  <button className={styles.danger} type="button" onClick={() => {
+                    if (selected === null) return
+                    setMessage(null)
+                    void removeRoutine(selected)
+                      .then((result) => { if (!result.ok) setMessage(result.error.message); else setSelected(null) })
+                      .catch((cause: unknown) => { setMessage(String(cause)) })
+                  }}>{t('action.delete')}</button>
+                  <button className={styles.primary} type="button" onClick={() => { setRoutineActive(selected, true) }}>{t('action.activate')}</button>
+                  <button className={styles.secondary} type="button" onClick={() => { setRoutineActive(selected, false) }}>{t('action.pause')}</button>
+                  <button className={styles.primary} type="button" onClick={() => { applyRun(startRoutine(selected)) }}>{t('routines.start')}</button>
+                  <button className={styles.secondary} type="button" onClick={() => { applyRun(tickRoutine(selected)) }}>{t('routines.tick')}</button>
+                </span>
+                <button className={styles.primary} type="button" disabled={saving} onClick={() => {
+                  setSaving(true)
+                  setMessage(null)
+                  void saveRoutine(selected, {
+                    name, intent,
+                    triggerKind,
+                    triggerMatch: triggerMatch.trim().length === 0 ? null : triggerMatch,
+                    steps,
+                    expectedResult,
+                    permissions: permissions.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
+                    failurePolicy,
+                  })
+                    .then((result) => { if (!result.ok) setMessage(result.error.message) })
+                    .catch((cause: unknown) => { setMessage(String(cause)) })
+                    .finally(() => { setSaving(false) })
+                }}>{t('action.save')}</button>
+              </>
+            )}>
+            {selected === null
+              ? <StateBlock kind="empty" title={t('routines.selectTitle')} text={t('routines.selectText')} />
+              : detail.kind === 'loading'
+                ? <StateBlock kind="loading" title={t('state.loading')} />
+                : detail.kind === 'error'
+                  ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+                  : detail.value === undefined
+                    ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
+                    : (
+                      <>
+                        <Field label={t('field.name')}><input type="text" value={name} onChange={(event) => { setName(event.target.value) }} /></Field>
+                        <Field label={t('field.intent')} hint={t('routines.intentHint')}><textarea value={intent} onChange={(event) => { setIntent(event.target.value) }} /></Field>
+                        <Field label={t('field.trigger')}>
+                          <div className={styles.grid2}>
+                            <select value={triggerKind} onChange={(event) => { setTriggerKind(event.target.value) }}>
+                              <option value="manual">{t('routines.triggerManual')}</option>
+                              <option value="email">{t('routines.triggerEmail')}</option>
+                              <option value="event">{t('routines.triggerEvent')}</option>
+                              <option value="date">{t('routines.triggerDate')}</option>
+                              <option value="recurrence">{t('routines.triggerRecurrence')}</option>
+                            </select>
+                            <input type="text" value={triggerMatch} placeholder={t('routines.triggerMatchPlaceholder')} onChange={(event) => { setTriggerMatch(event.target.value) }} />
+                          </div>
+                        </Field>
+                        <Field label={t('field.steps')}>
+                          <div className={styles.steps}>
+                            {steps.map((step, index) => (
+                              <div className={styles.stepRow} key={`${step.id}-${String(index)}`}>
+                                <span className={styles.stepIndex}>{index + 1}</span>
+                                <input type="text" value={step.instruction} aria-label={t('field.instruction')} onChange={(event) => { editStep(index, { instruction: event.target.value }) }} />
+                                <input type="text" value={step.handler} aria-label={t('field.handler')} onChange={(event) => { editStep(index, { handler: event.target.value }) }} />
+                                <input type="text" value={step.waitFor ?? ''} aria-label={t('field.waitFor')} placeholder={t('routines.waitPlaceholder')} onChange={(event) => { editStep(index, { waitFor: event.target.value.length === 0 ? null : event.target.value }) }} />
+                                <label className={styles.stepFlag}>
+                                  <input type="checkbox" checked={step.effect} onChange={(event) => { editStep(index, { effect: event.target.checked }) }} />
+                                  {t('field.effect')}
+                                </label>
+                                <button className={styles.rowAction} type="button" aria-label={t('action.remove')} onClick={() => { setSteps(steps.filter((_, at) => at !== index)) }}>−</button>
+                              </div>
+                            ))}
+                            <button className={styles.secondary} type="button" onClick={() => {
+                              const id = `step-${String(Date.now()).slice(-6)}`
+                              setSteps([...steps, { id, instruction: '', handler: 'agent', dependsOn: [], waitFor: null, effect: false }])
+                            }}>{t('routines.addStep')}</button>
+                          </div>
+                        </Field>
+                        <Field label={t('field.expectedResult')}><textarea value={expectedResult} onChange={(event) => { setExpectedResult(event.target.value) }} /></Field>
+                        <Field label={t('field.permissions')} hint={t('routines.permissionsHint')}>
+                          <input type="text" value={permissions} onChange={(event) => { setPermissions(event.target.value) }} />
+                        </Field>
+                        <Field label={t('field.failurePolicy')}>
+                          <select value={failurePolicy} onChange={(event) => { setFailurePolicy(event.target.value) }}>
+                            <option value="review">{t('routines.failReview')}</option>
+                            <option value="stop">{t('routines.failStop')}</option>
+                            <option value="continue">{t('routines.failContinue')}</option>
+                          </select>
+                        </Field>
+                        <Field label={t('field.executions')} hint={t('routines.executionsHint')}>
+                          <div className={styles.steps}>
+                            {runs.length === 0
+                              ? <span className={styles.cellMuted}>{t('routines.noExecutions')}</span>
+                              : runs.map((run) => {
+                                const shown = run.steps.find(step => step.id === (runStep[run.id] ?? (run.steps[0]?.id ?? '')))
+                                return (
+                                  <div className={styles.run} key={run.id}>
+                                    <div className={styles.runRow}>
+                                      <Chip>{run.status}</Chip>
+                                      <span className={styles.cellMuted}>{`${t('routines.versionShort')}${String(run.routineVersion)}`} · {run.doneSteps}/{run.totalSteps}</span>
+                                      <span className={styles.cellMuted}>{run.waitingFor ?? run.reason ?? t('routines.ready')}</span>
+                                      {run.deadlineAt === null ? null : (
+                                        <span className={styles.cellMuted} title={run.deadlineAt}>{run.deadlineAt.slice(11, 16)}</span>
+                                      )}
+                                      <select aria-label={t('routines.effectStep')} value={runStep[run.id] ?? (run.steps[0]?.id ?? '')}
+                                        onChange={(event) => { setRunStep({ ...runStep, [run.id]: event.target.value }) }}>
+                                        {run.steps.map(step => (
+                                          <option key={step.id} value={step.id}>{step.id} · {step.status}</option>
+                                        ))}
+                                      </select>
+                                      <button className={styles.secondary} type="button" onClick={() => { applyRun(reconcileExecution(run.id)) }}>{t('routines.reconcile')}</button>
+                                      <button className={styles.rowAction} type="button" aria-label={t('routines.cancelEffect')}
+                                        onClick={() => { applyRun(cancelExecutionEffect(run.id, runStep[run.id] ?? (run.steps[0]?.id ?? ''))) }}>−</button>
+                                    </div>
+                                    {shown?.text === null || shown === undefined
+                                      ? null
+                                      : <p className={styles.runText} title={shown.text}>{shown.text}</p>}
+                                  </div>
+                                )
+                              })}
+                          </div>
+                        </Field>
+                      </>
+                    )}
+          </Inspector>
+        </div>
+      </Screen>
+    )
+  }
+}
+
+/** Ejecución: the owner's cases, with the task log and the correction form. */
+function executionsScreen() {
+  return function FaberloomExecutions(props: ScreenProps) {
+    const { t, executions, teachings, saveTeaching, performance } = props
+    const [runs, setRuns] = useState<readonly FaberLoomExecutionRow[]>([])
+    const [selected, setSelected] = useState<string | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
+    const [detected, setDetected] = useState('')
+    const [treatment, setTreatment] = useState('correction')
+    const [impact, setImpact] = useState('')
+    const [teachingText, setTeachingText] = useState('')
+    const [evidence, setEvidence] = useState<FaberLoomPerformanceRow | null>(null)
+
+    useEffect(() => {
+      let live = true
+      void executions().then((result) => {
+        if (!live) return
+        if (result.ok) setRuns(result.value)
+        else setMessage(result.error.message)
+      }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
+      return () => { live = false }
+    }, [])
+
+    const chosen = runs.find(run => run.id === selected) ?? null
+
+    useEffect(() => {
+      setEvidence(null)
+      if (chosen === null) return
+      let live = true
+      void performance(undefined, chosen.routineName).then((result) => { if (live && result.ok) setEvidence(result.value) })
+        .catch(() => { /* evidence is optional; the log still renders */ })
+      return () => { live = false }
+    }, [selected])
+
+    const columns: readonly Column<FaberLoomExecutionRow>[] = [
+      { key: 'routine', header: t('col.routine'), cell: run => <span className={styles.cellName}>{run.routineName}</span> },
+      { key: 'status', header: t('col.status'), cell: run => <Chip>{run.status}</Chip> },
+      { key: 'when', header: t('col.date'), cell: run => <span className={styles.cellMuted}>{run.updatedAt.slice(11, 16)}</span> },
+    ]
+
+    const propose = (): void => {
+      if (chosen === null || teachingText.trim().length === 0) return
+      setMessage(null)
+      void saveTeaching({
+        scope: 'case',
+        text: teachingText.trim(),
+        source: `caso ${chosen.id}`,
+        task: chosen.routineName,
+        active: treatment !== 'investigation',
+      }).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setTeachingText('')
+        setDetected('')
+        setImpact('')
+        return teachings()
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    return (
+      <Screen title={t('panel.executions.title')} subtitle={t('panel.executions.intro')}
+        trailing={<button className={styles.secondary} type="button" onClick={() => {
+          void executions().then((result) => { if (result.ok) setRuns(result.value); else setMessage(result.error.message) })
+        }}>{t('action.refresh')}</button>}>
+        <Feedback t={t} message={message} />
+        <div className={styles.split}>
+          <DataTable columns={columns} rows={runs} selectedId={selected} onSelect={setSelected}
+            emptyTitle={t('state.empty.title')} emptyText={t('panel.executions.empty')} />
+          <Inspector title={chosen === null ? t('executions.detail') : chosen.routineName}
+            status={chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
+            footer={chosen === null ? undefined : (
+              <button className={styles.primary} type="button" disabled={teachingText.trim().length === 0} onClick={propose}>{t('executions.applyCorrection')}</button>
+            )}>
+            {chosen === null
+              ? <StateBlock kind="empty" title={t('executions.selectTitle')} text={t('executions.selectText')} />
+              : (
+                <>
+                  <Field label={t('executions.input')}>
+                    <span className={styles.cellMuted}>
+                      {chosen.event === null ? t('executions.manualStart') : `${chosen.event.type} · ${chosen.event.subject ?? chosen.event.key}`}
+                    </span>
+                  </Field>
+                  <Field label={t('executions.context')}>
+                    <span className={styles.cellMuted}>{`${chosen.routineName} · ${t('routines.versionShort')}${String(chosen.routineVersion)}`}</span>
+                  </Field>
+                  <Field label={t('executions.decision')}>
+                    <span className={styles.cellMuted}>{`${chosen.status}${chosen.reason === null ? '' : ` · ${chosen.reason}`}`}</span>
+                  </Field>
+                  <Field label={t('executions.run')} hint={t('executions.runHint')}>
+                    <div className={styles.steps}>
+                      {chosen.steps.map(step => (
+                        <div className={styles.stepRow} key={step.id}>
+                          <span className={styles.stepIndex}>{step.id}</span>
+                          <Chip>{step.status}</Chip>
+                          <span className={styles.cellMuted}>{step.reason ?? ''}</span>
+                          <span className={styles.cellMuted}>{step.effect ? t('executions.effectStep') : ''}</span>
+                          {step.text === null ? null : <span className={styles.cellMuted} title={step.text}>{step.text.slice(0, 80)}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </Field>
+                  <Field label={t('executions.cost')}>
+                    <span className={styles.cellMuted}>{t('executions.costUnrecorded')}</span>
+                  </Field>
+                  <Field label={t('executions.review')}>
+                    <span className={styles.cellMuted}>{`${String(chosen.evidenceCount)} ${t('executions.evidence')}`}</span>
+                  </Field>
+                  <Field label={t('executions.effect')}>
+                    <span className={styles.cellMuted}>{chosen.steps.some(step => step.effect && step.status === 'completed') ? t('executions.effectApplied') : t('executions.effectNone')}</span>
+                  </Field>
+                  <Field label={t('executions.evidenceFor')} hint={t('executions.evidenceHint')}>
+                    <span className={styles.cellMuted}>
+                      {evidence === null
+                        ? t('state.loading')
+                        : `${t('executions.approved')} ${String(evidence.approved)} · ${t('executions.corrected')} ${String(evidence.corrected)} · ${t('executions.correctionRate')} ${evidence.correctionRate === null ? t('agents.costUnknown') : evidence.correctionRate.toFixed(2)}`}
+                    </span>
+                  </Field>
+                  <Field label={t('executions.whatDetected')}>
+                    <input type="text" value={detected} onChange={(event) => { setDetected(event.target.value) }} />
+                  </Field>
+                  <Field label={t('executions.treatment')}>
+                    <select value={treatment} onChange={(event) => { setTreatment(event.target.value) }}>
+                      <option value="correction">{t('executions.correctRecord')}</option>
+                      <option value="adjustment">{t('executions.laterAdjustment')}</option>
+                      <option value="investigation">{t('executions.investigate')}</option>
+                    </select>
+                  </Field>
+                  <Field label={t('executions.impact')}>
+                    <input type="text" value={impact} onChange={(event) => { setImpact(event.target.value) }} />
+                  </Field>
+                  <Field label={t('executions.teaching')} hint={t('executions.teachingHint')}>
+                    <textarea value={teachingText} onChange={(event) => { setTeachingText(event.target.value) }} />
+                  </Field>
+                </>
+              )}
+          </Inspector>
+        </div>
+      </Screen>
+    )
+  }
+}
+
+/** Memoria: the owner's rows from the agent-memory server plus the recall form. */
+function memoryScreen() {
+  return function FaberloomMemory(props: ScreenProps) {
+    const { t, remember } = props
+    const { overview, status, error } = useOverview(props)
+    const [draft, setDraft] = useState('')
+    const [selected, setSelected] = useState<string | null>(null)
+    const rows = overview?.memory ?? []
+    const chosen = rows.find(row => row.id === selected) ?? null
+
+    const columns: readonly Column<FaberLoomOverview['memory'][number]>[] = [
+      { key: 'text', header: t('col.text'), cell: row => <span className={styles.cellName}>{row.text}</span> },
+      { key: 'kind', header: t('col.kind'), cell: row => <Chip>{row.kind}</Chip> },
+      { key: 'at', header: t('col.date'), cell: row => <span className={styles.cellMuted}>{row.at}</span> },
+    ]
+
+    return (
+      <Screen title={t('panel.memory.title')} subtitle={t('panel.memory.intro')}
+        trailing={(
+          <>
+            <input className={styles.paneSearch} style={{ width: 260, padding: '8px 10px' }} value={draft} placeholder={t('panel.memory.rememberPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
+            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => { remember(draft.trim()); setDraft('') }}>{t('action.remember')}</button>
+          </>
+        )}>
+        <Feedback t={t} message={error} />
+        <p className={styles.hint}>{t('state.memoryPending')}</p>
+        <div className={styles.split}>
+          {overview === null && status === 'loading'
+            ? <StateBlock kind="loading" title={t('state.loading')} />
+            : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+              emptyTitle={t('state.empty.title')} emptyText={t('state.empty.memory')} />}
+          <Inspector title={chosen === null ? t('memory.detail') : chosen.kind}>
+            {chosen === null
+              ? <StateBlock kind="empty" title={t('memory.selectTitle')} text={t('memory.selectText')} />
+              : (
+                <>
+                  <Field label={t('field.text')}><span className={styles.cellMuted}>{chosen.text}</span></Field>
+                  <Field label={t('field.kind')}><Chip>{chosen.kind}</Chip></Field>
+                  <Field label={t('field.date')}><span className={styles.cellMuted}>{chosen.at}</span></Field>
+                </>
+              )}
+          </Inspector>
+        </div>
+        <TeachingsBlock
+          t={t}
+          teachings={props.teachings}
+          saveTeaching={props.saveTeaching}
+          editTeaching={props.editTeaching}
+          revokeTeaching={props.revokeTeaching}
+          performance={props.performance}
+        />
+      </Screen>
+    )
+  }
+}
+
+/** The versioned teachings registry, beside the agent-memory rows. */
+function TeachingsBlock(props: {
+  readonly t: ScreenProps['t']
+  readonly teachings: ScreenProps['teachings']
+  readonly saveTeaching: ScreenProps['saveTeaching']
+  readonly editTeaching: ScreenProps['editTeaching']
+  readonly revokeTeaching: ScreenProps['revokeTeaching']
+  readonly performance: ScreenProps['performance']
+}) {
+  const { t, teachings, saveTeaching, editTeaching, revokeTeaching, performance } = props
+  const [rows, setRows] = useState<readonly FaberLoomTeachingRow[]>([])
+  const [selected, setSelected] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [draftScope, setDraftScope] = useState('space')
+  const [draftText, setDraftText] = useState('')
+  const [draftTask, setDraftTask] = useState('')
+  const [editText, setEditText] = useState('')
+  const [editReason, setEditReason] = useState('')
+  const [evidence, setEvidence] = useState<string | null>(null)
+
+  const apply = (result: Result<readonly FaberLoomTeachingRow[]>): void => {
+    if (result.ok) setRows(result.value)
+    else setMessage(result.error.message)
+  }
+
+  useEffect(() => {
+    let live = true
+    void teachings().then((result) => { if (live) apply(result) }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
+    return () => { live = false }
+  }, [])
+
+  const chosen = rows.find(row => row.id === selected) ?? null
+
+  useEffect(() => {
+    if (chosen === null) { setEditText(''); setEvidence(null); return }
+    setEditText(chosen.text)
+    setEditReason('')
+    let live = true
+    void performance(undefined, chosen.task ?? undefined).then((result) => {
+      if (!live || !result.ok) return
+      const summary = result.value
+      setEvidence(`${t('executions.approved')} ${String(summary.approved)} · ${t('executions.corrected')} ${String(summary.corrected)} · ${t('executions.correctionRate')} ${summary.correctionRate === null ? t('agents.costUnknown') : summary.correctionRate.toFixed(2)}`)
+    }).catch(() => { /* evidence is optional */ })
+    return () => { live = false }
+  }, [selected, rows.length])
+
+  const columns: readonly Column<FaberLoomTeachingRow>[] = [
+    { key: 'text', header: t('col.text'), cell: row => <span className={styles.cellName}>{row.text}</span> },
+    { key: 'scope', header: t('field.scope'), cell: row => <Chip>{row.scope}</Chip> },
+    { key: 'status', header: t('col.status'), cell: row => <span className={styles.cellMuted}>{`${row.status} · ${t('routines.versionShort')}${String(row.version)}`}</span> },
+  ]
+
+  return (
+    <section className={styles.steps}>
+      <Toolbar title={t('teachings.title')} subtitle={t('teachings.intro')} />
+      <Feedback t={t} message={message} />
+      <div className={styles.grid2}>
+        <input type="text" value={draftText} placeholder={t('teachings.newText')} onChange={(event) => { setDraftText(event.target.value) }} />
+        <div className={styles.grid2}>
+          <select value={draftScope} onChange={(event) => { setDraftScope(event.target.value) }}>
+            <option value="space">{t('teachings.scopeSpace')}</option>
+            <option value="agent">{t('teachings.scopeAgent')}</option>
+            <option value="skill">{t('teachings.scopeSkill')}</option>
+            <option value="global">{t('teachings.scopeGlobal')}</option>
+          </select>
+          <input type="text" value={draftTask} placeholder={t('teachings.task')} onChange={(event) => { setDraftTask(event.target.value) }} />
+        </div>
+        <button className={styles.primary} type="button" disabled={draftText.trim().length === 0} onClick={() => {
+          setMessage(null)
+          void saveTeaching({ scope: draftScope, text: draftText.trim(), source: t('teachings.sourceUser'), task: draftTask, active: true })
+            .then((result) => { apply(result); if (result.ok) { setDraftText(''); setDraftTask('') } })
+            .catch((cause: unknown) => { setMessage(String(cause)) })
+        }}>{t('teachings.record')}</button>
+      </div>
+      <div className={styles.split}>
+        <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+          emptyTitle={t('teachings.empty')} emptyText={t('teachings.emptyText')} />
+        <Inspector title={chosen === null ? t('teachings.detail') : chosen.task ?? chosen.scope}
+          status={chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
+          footer={chosen === null ? undefined : (
+            <span className={styles.tools}>
+              <button className={styles.primary} type="button" disabled={editText.trim().length === 0 || chosen.status === 'revoked'}
+                onClick={() => {
+                  setMessage(null)
+                  void editTeaching(chosen.id, editText.trim(), editReason.trim().length === 0 ? t('teachings.reasonDefault') : editReason.trim())
+                    .then(apply)
+                    .catch((cause: unknown) => { setMessage(String(cause)) })
+                }}>{t('action.save')}</button>
+              <button className={styles.danger} type="button" disabled={chosen.status === 'revoked'}
+                onClick={() => {
+                  setMessage(null)
+                  void revokeTeaching(chosen.id).then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
+                }}>{t('teachings.revoke')}</button>
+            </span>
+          )}>
+          {chosen === null
+            ? <StateBlock kind="empty" title={t('teachings.selectTitle')} text={t('teachings.selectText')} />
+            : (
+              <>
+                <Field label={t('field.text')}><textarea value={editText} onChange={(event) => { setEditText(event.target.value) }} /></Field>
+                <Field label={t('teachings.reason')} hint={t('teachings.reasonHint')}>
+                  <input type="text" value={editReason} onChange={(event) => { setEditReason(event.target.value) }} />
+                </Field>
+                <Field label={t('field.scope')}><span className={styles.cellMuted}>{`${chosen.scope} · ${t('routines.versionShort')}${String(chosen.version)}`}</span></Field>
+                <Field label={t('teachings.source')}><span className={styles.cellMuted}>{`${chosen.source} · ${chosen.author}`}</span></Field>
+                <Field label={t('teachings.uses')}><span className={styles.cellMuted}>{String(chosen.uses.length)}</span></Field>
+                <Field label={t('executions.evidenceFor')}><span className={styles.cellMuted}>{evidence ?? t('state.loading')}</span></Field>
+              </>
+            )}
+        </Inspector>
+      </div>
+    </section>
+  )
+}
+
+/** Conexiones: per-user integrations, independent of the MWT.ONE MCP. */
+function connectionsScreen() {
+  return function FaberloomConnections(props: ScreenProps) {
+    const { t, connections, saveConnection, removeConnection, probeConnection } = props
+    const [list, setList] = useState<readonly FaberLoomConnection[] | null>(null)
+    const [selected, setSelected] = useState<string | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
+    const [probe, setProbe] = useState<string | null>(null)
+    const [kind, setKind] = useState<'imap' | 'backup'>('imap')
+    const [label, setLabel] = useState('')
+    const [host, setHost] = useState('')
+    const [port, setPort] = useState('993')
+    const [secure, setSecure] = useState(true)
+    const [username, setUsername] = useState('')
+    const [secret, setSecret] = useState('')
+    const [destination, setDestination] = useState('')
+    const [retention, setRetention] = useState('30')
+
+    const chosen = (list ?? []).find(row => row.id === selected) ?? null
+
+    useEffect(() => {
+      let live = true
+      void connections().then((result) => { if (live) { if (result.ok) setList(result.value); else setMessage(result.error.message) } })
+        .catch((cause: unknown) => { if (live) setMessage(String(cause)) })
+      return () => { live = false }
+    }, [])
+
+    // Load the selected connection into the form.
+    useEffect(() => {
+      if (chosen === null) return
+      setKind(chosen.kind)
+      setLabel(chosen.label)
+      setHost(chosen.host ?? '')
+      setPort(chosen.port === null ? '993' : String(chosen.port))
+      setSecure(chosen.secure !== false)
+      setUsername(chosen.username ?? '')
+      setSecret('')
+      setDestination(chosen.destination ?? '')
+      setRetention(chosen.retentionDays === null ? '30' : String(chosen.retentionDays))
+      setProbe(null)
+      setMessage(null)
+    }, [chosen])
+
+    const apply = (result: Result<readonly FaberLoomConnection[]>): void => {
+      if (result.ok) setList(result.value)
+      else setMessage(result.error.message)
+    }
+
+    const save = (): void => {
+      setMessage(null)
+      void saveConnection({
+        ...selected === null ? {} : { id: selected },
+        kind,
+        label: label.trim().length === 0 ? (kind === 'imap' ? t('connections.mailLabel') : t('connections.backupLabel')) : label.trim(),
+        ...kind === 'imap'
+          ? { host, port: Number(port), secure, username, ...secret.length === 0 ? {} : { secret } }
+          : { destination, retentionDays: Number(retention) },
+      })
+        .then((result) => { apply(result) })
+        .catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    const columns: readonly Column<FaberLoomConnection>[] = [
+      { key: 'label', header: t('col.name'), cell: row => <span className={styles.cellName}>{row.label}</span> },
+      { key: 'kind', header: t('col.kind'), cell: row => <Chip tone={row.kind === 'imap' ? 'accent' : 'muted'}>{row.kind === 'imap' ? t('connections.imap') : t('connections.backup')}</Chip> },
+      { key: 'target', header: t('col.target'), cell: row => <span className={styles.cellMuted}>{row.kind === 'imap' ? `${row.username ?? ''}@${row.host ?? ''}` : row.destination ?? ''}</span> },
+    ]
+
+    return (
+      <Screen title={t('panel.connections.title')} subtitle={t('panel.connections.intro')}
+        trailing={<button className={styles.primary} type="button" onClick={() => { setSelected(null); setMessage(null) }}>{t('connections.new')}</button>}>
+        <Feedback t={t} message={message} />
+        <div className={styles.split}>
+          {list === null
+            ? <StateBlock kind="loading" title={t('state.loading')} />
+            : <DataTable columns={columns} rows={list.map(row => ({ ...row }))} selectedId={selected} onSelect={setSelected}
+              emptyTitle={t('connections.emptyTitle')} emptyText={t('connections.emptyText')} />}
+          <Inspector title={chosen?.label ?? t('connections.newTitle')}
+            footer={(
+              <>
+                <span className={styles.tools}>
+                  {chosen === null ? null : <button className={styles.danger} type="button" onClick={() => { void removeConnection(chosen.id).then(apply); setSelected(null) }}>{t('action.delete')}</button>}
+                  {chosen === null ? null : (
+                    <button className={styles.secondary} type="button" onClick={() => {
+                      setProbe(null)
+                      void probeConnection(chosen.id).then((result) => {
+                        // `result.ok` is the Remote call; `result.value.ok` is the probe itself.
+                        if (!result.ok) { setProbe(`${t('connections.probeFail')}: ${result.error.message}`); return }
+                        setProbe(result.value.ok
+                          ? `${t('connections.probeOk')}: ${result.value.detail}`
+                          : `${t('connections.probeFail')}: ${result.value.detail}`)
+                      }).catch((cause: unknown) => { setProbe(String(cause)) })
+                    }}>{t('connections.probe')}</button>
+                  )}
+                </span>
+                <button className={styles.primary} type="button" onClick={save}>{t('action.save')}</button>
+              </>
+            )}>
+            <Field label={t('field.kind')}>
+              <select value={kind} onChange={(event) => { setKind(event.target.value === 'backup' ? 'backup' : 'imap') }}>
+                <option value="imap">{t('connections.imap')}</option>
+                <option value="backup">{t('connections.backup')}</option>
+              </select>
+            </Field>
+            <Field label={t('field.name')}>
+              <input type="text" value={label} onChange={(event) => { setLabel(event.target.value) }} />
+            </Field>
+            {kind === 'imap'
+              ? (
+                <>
+                  <div className={styles.grid2}>
+                    <Field label={t('field.host')}><input type="text" value={host} placeholder="imap.dominio.com" onChange={(event) => { setHost(event.target.value) }} /></Field>
+                    <Field label={t('field.port')}><input type="text" value={port} onChange={(event) => { setPort(event.target.value) }} /></Field>
+                  </div>
+                  <div className={styles.grid2}>
+                    <Field label={t('field.username')}><input type="text" value={username} onChange={(event) => { setUsername(event.target.value) }} /></Field>
+                    <Field label={t('field.password')} hint={chosen?.hasSecret === true ? t('connections.secretKept') : undefined}>
+                      <input type="password" value={secret} onChange={(event) => { setSecret(event.target.value) }} />
+                    </Field>
+                  </div>
+                  <Field label={t('field.tls')}>
+                    <select value={secure ? 'yes' : 'no'} onChange={(event) => { setSecure(event.target.value === 'yes') }}>
+                      <option value="yes">{t('connections.tlsYes')}</option>
+                      <option value="no">{t('connections.tlsNo')}</option>
+                    </select>
+                  </Field>
+                </>
+              )
+              : (
+                <div className={styles.grid2}>
+                  <Field label={t('field.destination')} hint={t('connections.destHint')}>
+                    <input type="text" value={destination} placeholder={t('connections.destPlaceholder')} onChange={(event) => { setDestination(event.target.value) }} />
+                  </Field>
+                  <Field label={t('field.retention')}><input type="text" value={retention} onChange={(event) => { setRetention(event.target.value) }} /></Field>
+                </div>
+              )}
+            {probe === null ? null : <StateBlock kind={probe.startsWith(t('connections.probeOk')) ? 'empty' : 'error'} title={probe} />}
+          </Inspector>
+        </div>
+        <McpBlock t={t} mcpTokens={props.mcpTokens} mintMcpToken={props.mintMcpToken} revokeMcpToken={props.revokeMcpToken} />
+        <GrantsBlock t={t} grants={props.grants} grant={props.grant} revokeGrant={props.revokeGrant} />
+      </Screen>
+    )
+  }
+}
+
+/** The tools a token may be scoped to, in catalogue order. */
+const MCP_TOOL_NAMES = [
+  'faberloom_overview',
+  'faberloom_routines',
+  'faberloom_executions',
+  'faberloom_teachings',
+  'faberloom_teaching_record',
+  'faberloom_teaching_revoke',
+  'faberloom_routine_run',
+] as const
+
+/** The MCP client tokens: who may drive this workspace from another AI. */
+function McpBlock(props: {
+  readonly t: ScreenProps['t']
+  readonly mcpTokens: ScreenProps['mcpTokens']
+  readonly mintMcpToken: ScreenProps['mintMcpToken']
+  readonly revokeMcpToken: ScreenProps['revokeMcpToken']
+}) {
+  const { t, mcpTokens, mintMcpToken, revokeMcpToken } = props
+  const [rows, setRows] = useState<readonly FaberLoomMcpTokenRow[]>([])
+  const [label, setLabel] = useState('')
+  const [scopes, setScopes] = useState<readonly string[]>([])
+  const [message, setMessage] = useState<string | null>(null)
+
+  const apply = (result: Result<readonly FaberLoomMcpTokenRow[]>): void => {
+    if (result.ok) setRows(result.value)
+    else setMessage(result.error.message)
+  }
+
+  useEffect(() => {
+    let live = true
+    void mcpTokens().then((result) => { if (live) apply(result) }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
+    return () => { live = false }
+  }, [])
+
+  const tableRows = rows.map(row => ({ ...row, id: row.token }))
+  const columns: readonly Column<FaberLoomMcpTokenRow & { readonly id: string }>[] = [
+    { key: 'label', header: t('mcp.label'), cell: row => <span className={styles.cellName}>{row.label}</span> },
+    { key: 'token', header: t('mcp.token'), cell: row => <span className={styles.cellMuted}>{`${row.token.slice(0, 12)}…`}</span> },
+    { key: 'state', header: t('col.status'), cell: row => <Chip>{row.revokedAt === null ? t('grants.active') : t('grants.revoked')}</Chip> },
+    { key: 'scopes', header: t('mcp.scopes'), cell: row => <span className={styles.cellMuted}>{row.scopes === null ? t('mcp.allTools') : row.scopes.join(', ')}</span> },
+  ]
+
+  return (
+    <section className={styles.steps}>
+      <Toolbar title={t('mcp.title')} subtitle={t('mcp.intro')} />
+      <Feedback t={t} message={message} />
+      <div className={styles.grid2}>
+        <input type="text" value={label} placeholder={t('mcp.labelPlaceholder')} onChange={(event) => { setLabel(event.target.value) }} />
+        <button className={styles.primary} type="button" onClick={() => {
+          setMessage(null)
+          void mintMcpToken({ label: label.trim(), scopes }).then((result) => { apply(result); if (result.ok) { setLabel(''); setScopes([]) } })
+            .catch((cause: unknown) => { setMessage(String(cause)) })
+        }}>{t('mcp.mint')}</button>
+      </div>
+      <Field label={t('mcp.scopes')} hint={t('mcp.scopesHint')}>
+        <div className={styles.steps}>
+          {MCP_TOOL_NAMES.map(name => (
+            <label className={styles.stepFlag} key={name}>
+              <input type="checkbox" checked={scopes.includes(name)}
+                onChange={(event) => {
+                  setScopes(event.target.checked ? [...scopes, name] : scopes.filter(entry => entry !== name))
+                }} />
+              {name}
+            </label>
+          ))}
+          <span className={styles.cellMuted}>{scopes.length === 0 ? t('mcp.allTools') : `${String(scopes.length)} ${t('mcp.selected')}`}</span>
+        </div>
+      </Field>
+      <div className={styles.split}>
+        <DataTable columns={columns} rows={tableRows} selectedId={null} onSelect={() => {}}
+          emptyTitle={t('mcp.empty')} emptyText={t('mcp.emptyText')} />
+        <Inspector title={t('mcp.detail')}>
+          <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{t('mcp.endpointValue')}</span></Field>
+          <Field label={t('mcp.how')} hint={t('mcp.howHint')}><span className={styles.cellMuted}>{t('mcp.howText')}</span></Field>
+          <div className={styles.steps}>
+            {rows.filter(row => row.revokedAt === null).map(row => (
+              <button className={styles.danger} type="button" key={row.token}
+                onClick={() => {
+                  setMessage(null)
+                  void revokeMcpToken(row.token).then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
+                }}>{`${t('teachings.revoke')} ${row.label}`}</button>
+            ))}
+          </div>
+        </Inspector>
+      </div>
+    </section>
+  )
+}
+
+/** The autonomy grants: what an agent may do alone, revocable here. */
+function GrantsBlock(props: {
+  readonly t: ScreenProps['t']
+  readonly grants: ScreenProps['grants']
+  readonly grant: ScreenProps['grant']
+  readonly revokeGrant: ScreenProps['revokeGrant']
+}) {
+  const { t, grants, grant, revokeGrant } = props
+  const [rows, setRows] = useState<readonly FaberLoomGrantRow[]>([])
+  const [message, setMessage] = useState<string | null>(null)
+  const [action, setAction] = useState('')
+  const [agentId, setAgentId] = useState('')
+  const [context, setContext] = useState('')
+  const [note, setNote] = useState('')
+  const [expiresAt, setExpiresAt] = useState('')
+
+  const apply = (result: Result<readonly FaberLoomGrantRow[]>): void => {
+    if (result.ok) setRows(result.value)
+    else setMessage(result.error.message)
+  }
+
+  useEffect(() => {
+    let live = true
+    void grants().then((result) => { if (live) apply(result) }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
+    return () => { live = false }
+  }, [])
+
+  const columns: readonly Column<FaberLoomGrantRow>[] = [
+    { key: 'action', header: t('grants.action'), cell: row => <span className={styles.cellName}>{row.action}</span> },
+    { key: 'scope', header: t('field.scope'), cell: row => <span className={styles.cellMuted}>{`${row.agentId ?? t('grants.anyAgent')} · ${row.context ?? t('grants.anyContext')}`}</span> },
+    { key: 'state', header: t('col.status'), cell: row => <Chip>{row.revoked ? t('grants.revoked') : t('grants.active')}</Chip> },
+  ]
+
+  return (
+    <section className={styles.steps}>
+      <Toolbar title={t('grants.title')} subtitle={t('grants.intro')} />
+      <Feedback t={t} message={message} />
+      <div className={styles.grid2}>
+        <input type="text" value={action} placeholder={t('grants.actionPlaceholder')} onChange={(event) => { setAction(event.target.value) }} />
+        <input type="text" value={agentId} placeholder={t('grants.agentPlaceholder')} onChange={(event) => { setAgentId(event.target.value) }} />
+        <input type="text" value={context} placeholder={t('grants.contextPlaceholder')} onChange={(event) => { setContext(event.target.value) }} />
+        <input type="text" value={note} placeholder={t('grants.notePlaceholder')} onChange={(event) => { setNote(event.target.value) }} />
+        <input type="text" value={expiresAt} placeholder={t('grants.expiryPlaceholder')} onChange={(event) => { setExpiresAt(event.target.value) }} />
+        <button className={styles.primary} type="button" disabled={action.trim().length === 0} onClick={() => {
+          setMessage(null)
+          void grant({ action: action.trim(), agentId, context, note, expiresAt })
+            .then((result) => { apply(result); if (result.ok) { setAction(''); setAgentId(''); setContext(''); setNote(''); setExpiresAt('') } })
+            .catch((cause: unknown) => { setMessage(String(cause)) })
+        }}>{t('grants.create')}</button>
+      </div>
+      <div className={styles.split}>
+        <DataTable columns={columns} rows={rows} selectedId={null} onSelect={() => {}}
+          emptyTitle={t('grants.empty')} emptyText={t('grants.emptyText')} />
+        <Inspector title={t('grants.detail')}>
+          <Field label={t('grants.how')} hint={t('grants.howHint')}>
+            <span className={styles.cellMuted}>{t('grants.howText')}</span>
+          </Field>
+          <div className={styles.steps}>
+            {rows.filter(row => !row.revoked).map(row => (
+              <button className={styles.danger} type="button" key={row.id}
+                onClick={() => {
+                  setMessage(null)
+                  void revokeGrant(row.id).then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
+                }}>{`${t('teachings.revoke')} ${row.action}`}</button>
+            ))}
+          </div>
+        </Inspector>
+      </div>
+    </section>
+  )
+}
+
+/** Landing that hands the user to the harness conversation and its composer. */
+function conversarPanel() {
+  return function FaberloomConversar({ t, startConversation }: ScreenProps) {
+    return (
+      <Screen title={t('panel.conversar.title')} subtitle={t('panel.conversar.intro')}>
+        <button type="button" className={styles.primary} onClick={() => { startConversation() }}>
+          {t('panel.conversar.start')}
+        </button>
+        <ul className={styles.infoRows}>
+          <li className={styles.infoRow}>{t('panel.conversar.context')}</li>
+          <li className={styles.infoRow}>{t('panel.conversar.model')}</li>
+          <li className={styles.infoRow}>{t('panel.conversar.note')}</li>
+        </ul>
+      </Screen>
+    )
+  }
+}
+
+/** Sidebar brand name beside the mark. */
+export function FaberloomBrandName({ t }: PropsLocale<'faberloom'>) {
+  return <span className={styles.brandName}>{t('brand.name')}</span>
+}
+
+/** Sidebar row occupant type: a function component over the panellist owner props. */
+export type FaberloomPanelIconType = (props: PropsRuntime<'sidebar.panellist'>) => ReactNode
+
+/** Main-panel occupant type: a function component over the locale, store, and inject seats. */
+export type FaberloomPanelBody = (props: ScreenProps) => ReactNode
+
+/** One FaberLoom global section: sidebar row plus its main panel. */
+export interface FaberloomSection {
+  /** Sidebar list id and matching main-panel key. */
+  id: MainPanelId
+  /** Ascending sidebar row order. */
+  order: number
+  /** Sidebar row label key. */
+  labelKey: FaberloomKey
+  /** Sidebar row occupant. */
+  Icon: FaberloomPanelIconType
+  /** Main-panel occupant. */
+  Page: FaberloomPanelBody
+}
+
+/** The FaberLoom sections in sidebar order. */
+export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
+  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel() },
+  { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', Icon: panelIcon(IconChecklistOutline14), Page: boardScreen() },
+  { id: 'faberloom-executions' as MainPanelId, order: 25, labelKey: 'nav.executions', Icon: panelIcon(IconAlarmClockOutline16), Page: executionsScreen() },
+  { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', Icon: panelIcon(IconFolderOpenOutline16), Page: spacesScreen() },
+  { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agents', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsScreen() },
+  { id: 'faberloom-skills' as MainPanelId, order: 45, labelKey: 'nav.skills', Icon: panelIcon(IconAgentPresetOutline16), Page: skillsScreen() },
+  { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(IconAlarmClockOutline16), Page: routinesScreen() },
+  { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(IconDatabaseOutline16), Page: memoryScreen() },
+  { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', Icon: panelIcon(IconApiOutline14), Page: connectionsScreen() },
+]

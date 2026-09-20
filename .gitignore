@@ -2,6 +2,15 @@ CLAUDE.local.md
 .env
 node_modules/
 lib/
+# In-place compiler residue: build output belongs in lib/, never in src/.
+# Hand-written ambient module shims are re-included explicitly below.
+packages/**/src/**/*.js
+packages/**/src/**/*.js.map
+packages/**/src/**/*.d.ts
+packages/**/src/**/*.d.ts.map
+!packages/client/ui-faberloom/src/client/css-modules.d.ts
+!packages/client/ui-renderer/src/client/use-sync-external-store.d.ts
+!packages/client/ui-sidebar-documentpreview/src/client/pdf/asset-imports.d.ts
 *.tsbuildinfo
 pnpm-debug.log
 .pnpm-store/

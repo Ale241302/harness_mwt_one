@@ -53,6 +53,8 @@ import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
 import * as ToolPty from '@deepseek-ai/dsh-tool-terminal'
 import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
+import * as ToolFaberloom from '@deepseek-ai/dsh-tool-faberloom'
+import { FaberLoomSpaces } from '@deepseek-ai/dsh-faberloom-spaces'
 import * as ToolSchedule from '@deepseek-ai/dsh-schedule'
 import Lsp from '@deepseek-ai/dsh-lsp'
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
@@ -409,6 +411,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-faberloom',
+    dir: 'tool-faberloom',
+    source: 'packages/faberloom/tool-faberloom/src/index.ts',
+    requires: ['ctx.tools', 'ctx.faberloomSpaces'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(FaberLoomSpaces)
+      await ctx.plugin(ToolFaberloom)
+    },
+    note:
+      'Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-goal',

@@ -239,10 +239,40 @@ flowchart LR
   pkg_cordis_host_runner["cordis-host-runner"]
   svc_dynamicCordisRunner["ctx.dynamicCordisRunner<br/>Dynamic Cordis package host runner"]
   svc_cordisInspect["ctx.cordisInspect<br/>Dynamic Cordis inspect registry"]
+  pkg_board["board"]
+  svc_faberloomBoard["ctx.faberloomBoard<br/>Product work table and review"]
+  pkg_spaces["spaces"]
+  svc_faberloomSpaces["ctx.faberloomSpaces<br/>Product spaces and effective context"]
+  pkg_agents["agents"]
+  svc_faberloomAgents["ctx.faberloomAgents<br/>Product agent catalog and model policy"]
+  pkg_routines["routines"]
+  svc_faberloomRoutines["ctx.faberloomRoutines<br/>Declarative versioned routines"]
+  pkg_execution["execution"]
+  svc_faberloomExecutions["ctx.faberloomExecutions<br/>Persistent execution and effects ledger"]
+  pkg_learning["learning"]
+  svc_faberloomMemory["ctx.faberloomMemory<br/>Product memory and contextual performance"]
+  pkg_access["access"]
+  svc_faberloomAccess["ctx.faberloomAccess<br/>Identity bindings and elective autonomy"]
+  pkg_backup["backup"]
+  svc_faberloomBackup["ctx.faberloomBackup<br/>Product knowledge backup and restore"]
+  pkg_view["view"]
+  svc_faberloomView["ctx.faberloomView<br/>Read-only workspace view for the browser"]
+  pkg_connections["connections"]
+  svc_faberloomConnections["ctx.faberloomConnections<br/>Per-user connections and integrations"]
+  pkg_handlers["handlers"]
+  svc_faberloomHandlers["ctx.faberloomHandlers<br/>Routine step handlers"]
+  pkg_defaults["defaults"]
+  svc_faberloomDefaults["ctx.faberloomDefaults<br/>Initial agents and routines"]
+  pkg_mcp_server["mcp-server"]
+  svc_faberloomMcpServer["ctx.faberloomMcpServer<br/>MCP server for other agents"]
+  pkg_inbound["inbound"]
+  svc_faberloomInbound["ctx.faberloomInbound<br/>Mailbox inbound receiver"]
+  pkg_access --> svc_faberloomAccess
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
   pkg_agent_loop --> svc_agentLoop
   pkg_agent_presets --> svc_agentPresets
+  pkg_agents --> svc_faberloomAgents
   pkg_api_gateway --> svc_typertGateway
   pkg_api_session_controller --> svc_sessionController
   pkg_api_session_controller --> svc_sessionFileReferences
@@ -256,8 +286,10 @@ flowchart LR
   pkg_attachment --> svc_attachments
   pkg_attachment_local --> svc_attachments
   pkg_authorization --> svc_authorization
+  pkg_backup --> svc_faberloomBackup
   pkg_bash_local --> svc_shell
   pkg_bash_sandbox --> svc_shell
+  pkg_board --> svc_faberloomBoard
   pkg_browser_use --> svc_browserUse
   pkg_client_file_upload --> svc_fileUploads
   pkg_client_modules --> svc_clientModules
@@ -267,11 +299,14 @@ flowchart LR
   pkg_compaction_basic --> svc_compaction
   pkg_compaction_tool_result_pruner --> svc_toolResultPruner
   pkg_computer_use --> svc_computerUse
+  pkg_connections --> svc_faberloomConnections
   pkg_cordis_host_runner --> svc_cordisInspect
   pkg_cordis_host_runner --> svc_dynamicCordisRunner
   pkg_credentials --> svc_credentials
   pkg_credentials_local --> svc_credentials
   pkg_deepseek_llm_api_extensions --> svc_deepseekLlmApiExtensions
+  pkg_defaults --> svc_faberloomDefaults
+  pkg_execution --> svc_faberloomExecutions
   pkg_experimental_agent_team --> svc_agentTeams
   pkg_experimental_browser_use_chrome_devtools_mcp --> svc_browserUse
   pkg_experimental_browser_use_playwright_mcp --> svc_browserUse
@@ -286,14 +321,17 @@ flowchart LR
   pkg_fs_sandbox --> svc_fs
   pkg_fs_ssh --> svc_fs
   pkg_goal --> svc_goals
+  pkg_handlers --> svc_faberloomHandlers
   pkg_host_directory_picker --> svc_directoryPicker
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
   pkg_host_webserver --> svc_webServer
+  pkg_inbound --> svc_faberloomInbound
   pkg_inspector --> svc_inspector
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
+  pkg_learning --> svc_faberloomMemory
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
   pkg_llm_pi_ai --> svc_llm
@@ -302,6 +340,7 @@ flowchart LR
   pkg_lsp_stdio --> svc_lsp
   pkg_mcp_client --> svc_mcpResources
   pkg_mcp_resources --> svc_mcpResources
+  pkg_mcp_server --> svc_faberloomMcpServer
   pkg_message_feedback --> svc_messageFeedback
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
@@ -309,6 +348,7 @@ flowchart LR
   pkg_ptc_runtime --> svc_ptcRuntime
   pkg_ptc_runtime_node --> svc_ptcRuntime
   pkg_pwsh_local --> svc_shell
+  pkg_routines --> svc_faberloomRoutines
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
@@ -334,6 +374,7 @@ flowchart LR
   pkg_skill --> svc_skills
   pkg_skill_badge --> svc_skills
   pkg_skill_filesystem --> svc_skills
+  pkg_spaces --> svc_faberloomSpaces
   pkg_spill --> svc_spillStore
   pkg_spill_local --> svc_spillStore
   pkg_ssh --> svc_ssh
@@ -360,6 +401,7 @@ flowchart LR
   pkg_typert_registry --> svc_typert
   pkg_user_approval --> svc_approval
   pkg_user_questions --> svc_userQuestions
+  pkg_view --> svc_faberloomView
   pkg_web --> svc_web
   pkg_web_fetch_http --> svc_web
   pkg_web_search_deepseek --> svc_web
@@ -584,5 +626,19 @@ flowchart LR
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | [`lsp-stdio`](../packages/lsp/lsp-stdio) | [`tool-lsp`](../packages/lsp/tool-lsp) | - | Provider registration and selection plus normalized query execution over exactly four operations; the seam offers no protocol escape hatch, so a backend translates into the normalized request and result. |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Owns the in-memory definition registry, the vm sandbox for host halves, and the request-run round trip; browser pages reach the same service over the wire through its remote namespace. |
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport. |
+| `ctx.faberloomBoard` | `core` | `board` | - | - | - | Owns versioned work items: evidence-gated submits, approval bound to the exact revision, revalidation after a change, and effects that require an explicit authorization so approving never sends. |
+| `ctx.faberloomSpaces` | `core` | `spaces` | - | - | - | Owns thematic spaces, sub-spaces, configurable inheritance, explicit exclusions, the isolated personal scope, and opaque work-directory references; durable records use the domain storage form. |
+| `ctx.faberloomAgents` | `core` | `agents` | - | - | - | Owns the versioned agent catalog, the three creation routes, the versioned model policy (primary, exclusivity, alternatives, escalation, budget), the shared resolver, and the cost-per-useful-result recommender. |
+| `ctx.faberloomRoutines` | `core` | `routines` | - | - | - | Owns routine definitions and versions, triggers, step dependencies, and activation validation; execution state belongs to the execution service. |
+| `ctx.faberloomExecutions` | `core` | `execution` | - | - | - | Owns durable execution state, waits, idempotency keys, the effect ledger, and timeout reconciliation so an effect is never repeated after a lost response. |
+| `ctx.faberloomMemory` | `core` | `learning` | - | - | - | Owns versioned teachings with their recorded source, scope, and revocation, plus performance evidence per task and context; it never grants permissions. |
+| `ctx.faberloomAccess` | `core` | `access` | - | - | - | Owns per-user identity bindings, connection references, and action-scoped autonomy grants that are validated before every external effect and revocable at any time. |
+| `ctx.faberloomBackup` | `core` | `backup` | - | - | - | Owns export, restore, integrity manifests, and migrations for the product domains, restoring only what the current permissions still allow. |
+| `ctx.faberloomView` | `core` | `view` | - | - | - | Projects the owner-scoped spaces, agents, board, and routines as plain JSON rows for the FaberLoom panels; it performs no writes and derives its identity from deployment configuration. |
+| `ctx.faberloomConnections` | `core` | `connections` | - | - | - | Owns the IMAP mailbox and knowledge-backup settings the owner enters, kept per identity and checked with a real probe; it never depends on the MWT.ONE MCP. |
+| `ctx.faberloomHandlers` | `core` | `handlers` | - | - | - | Implements the handler name each routine step declares, so the engine can activate a routine; the wait handler parks a run until the event the step declares arrives. |
+| `ctx.faberloomDefaults` | `core` | `defaults` | - | - | - | Seeds the plan-derived agents and routines once per owner, assigning only the skills the owner's role ships; seeded routines stay draft until the owner activates them. |
+| `ctx.faberloomMcpServer` | `core` | `mcp-server` | - | - | - | Serves JSON-RPC over an MCP Streamable HTTP endpoint on a per-owner socket, authenticating each client with a bearer token the owner minted and answering every call through the product services. |
+| `ctx.faberloomInbound` | `core` | `inbound` | - | - | - | Polls the IMAP mailbox the owner configured and turns new messages into routine events, without marking or moving their mail; idempotency is the engine's Message-ID and UID key. |
 
 Maintenance mode: hybrid: services are discovered from Cordis declarations; interface/implementation/consumer roles are classified in `scripts/gen-doc-graphs.ts` with a completeness guard.

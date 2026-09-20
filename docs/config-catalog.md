@@ -814,6 +814,152 @@ export interface Config {
 
 Source: [`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
 
+<a id="deepseek-aidsh-faberloom-defaults"></a>
+
+## `@deepseek-ai/dsh-faberloom-defaults`
+
+Requires: `faberloomAgents` · `faberloomRoutines`
+
+```ts config-catalog
+/** Deployment-supplied identity and skill roots. */
+export interface Config {
+  /** The authenticated owner the defaults belong to; empty skips seeding. */
+  ownerId?: string
+  /** Console role whose shipped skills the seeded agents may use. */
+  role?: string
+  /** Read-only identities never seed. */
+  readOnly?: boolean
+  /** Root of the role skill catalogue, when the deployment mounts one. */
+  skillsCatalogRoot?: string
+}
+```
+
+Source: [`packages/faberloom/defaults/src/index.ts:30`](../packages/faberloom/defaults/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-execution"></a>
+
+## `@deepseek-ai/dsh-faberloom-execution`
+
+Requires: `faberloomRoutines`
+
+```ts config-catalog
+/** Deployment-supplied identity and cadence of the dispatcher. */
+export interface Config {
+  /** The owner whose routines this dispatcher drives; empty disables it. */
+  ownerId?: string
+  /** Whether the timer runs. A deployment can turn it off and call `runOnce` itself. */
+  enabled?: boolean
+  /** Milliseconds between passes. */
+  intervalMs?: number
+}
+```
+
+Source: [`packages/faberloom/execution/src/index.ts:29`](../packages/faberloom/execution/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-inbound"></a>
+
+## `@deepseek-ai/dsh-faberloom-inbound`
+
+Requires: `faberloomRoutines` · `storageDomain`
+
+```ts config-catalog
+/** Deployment-supplied identity and polling policy. */
+export interface Config {
+  /** The owner whose mailbox this receiver reads; empty disables it. */
+  ownerId?: string
+  /** Whether the poller runs. A deployment can turn it off and call `runOnce` itself. */
+  enabled?: boolean
+  /** Milliseconds between polls. Mail arrives on its own schedule, so this is slower than the dispatcher's. */
+  intervalMs?: number
+  /** Mailbox to read. */
+  mailbox?: string
+  /** Most messages one pass reads, oldest first. */
+  maxMessages?: number
+  /** Milliseconds before a mailbox connection is abandoned. */
+  timeoutMs?: number
+}
+```
+
+Source: [`packages/faberloom/inbound/src/index.ts:36`](../packages/faberloom/inbound/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-mcp-server"></a>
+
+## `@deepseek-ai/dsh-faberloom-mcp-server`
+
+Requires: `storageDomain` · `faberloomSpaces` · `faberloomAgents` · `faberloomBoard` · `faberloomRoutines` · `faberloomMemory`
+
+```ts config-catalog
+/** Deployment-supplied identity and transport. */
+export interface Config {
+  /** The owner every authenticated call acts as; empty disables the server. */
+  ownerId?: string
+  /** Whether the endpoint listens. */
+  enabled?: boolean
+  /** Unix socket path to listen on; used when set. */
+  socketPath?: string
+  /** TCP port to listen on when no socket path is configured; 0 picks a free one. */
+  port?: number
+  /** Largest request body accepted, in bytes. */
+  maxBodyBytes?: number
+}
+```
+
+Source: [`packages/faberloom/mcp-server/src/index.ts:45`](../packages/faberloom/mcp-server/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-routines"></a>
+
+## `@deepseek-ai/dsh-faberloom-routines`
+
+Requires: `storageDomain` · `faberloomAccess`
+
+```ts config-catalog
+/** Deployment-supplied execution policy. */
+export interface Config {
+  /**
+   * How long a parked step may wait before a pass moves its execution to
+   * review, in milliseconds. A deployment shortens it to notice a lost reply
+   * sooner; the default is one day.
+   */
+  waitTimeoutMs?: number
+}
+```
+
+Source: [`packages/faberloom/routines/src/index.ts:54`](../packages/faberloom/routines/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-view"></a>
+
+## `@deepseek-ai/dsh-faberloom-view`
+
+Requires: `faberloomSpaces` · `faberloomAgents` · `faberloomBoard` · `faberloomRoutines` · `faberloomMemory` · `faberloomAccess` · `faberloomMcpServer`
+
+```ts config-catalog
+/** Deployment-supplied identity: the authenticated owner and its memory identity. */
+export interface Config {
+  /** The gateway injects the logged-in user's email here, per dsh process. */
+  ownerId?: string
+  /** The console role from the login response. */
+  role?: string
+  /** The user's single company id, when they have exactly one. */
+  companyId?: string
+  /** Whether the console role is read-only. */
+  readOnly?: boolean
+  /** Agent-memory core base URL, when the memory stack is configured. */
+  memoryCoreUrl?: string
+  /** Agent-memory service id (namespace) the owner belongs to. */
+  memoryServiceId?: string
+  /** The owner's agent-memory user id, used to isolate its rows. */
+  memoryUserId?: string
+  /** Bearer key for the agent-memory core. */
+  memoryGatewayKey?: string
+  /** Maximum memory rows one read requests. */
+  memoryLimit?: number
+  /** Root of the role skill catalog mounted in the deployment. */
+  skillsCatalogRoot?: string
+}
+```
+
+Source: [`packages/faberloom/view/src/index.ts:70`](../packages/faberloom/view/src/index.ts)
+
 <a id="deepseek-aidsh-file-reference-local"></a>
 
 ## `@deepseek-ai/dsh-file-reference-local`
@@ -2895,6 +3041,32 @@ export interface Config {
 
 Source: [`packages/shell/tool-bash-persistent/src/index.ts:435`](../packages/shell/tool-bash-persistent/src/index.ts)
 
+<a id="deepseek-aidsh-tool-faberloom"></a>
+
+## `@deepseek-ai/dsh-tool-faberloom`
+
+Requires: `tools`
+
+```ts config-catalog
+/** Deployment-supplied identity: the authenticated user this process acts for. */
+export interface Config {
+  /** The gateway injects the logged-in user's email here, per dsh process. */
+  ownerId?: string
+  /** The console role from the login response. */
+  role?: string
+  /** The user's single company id, when they have exactly one. */
+  companyId?: string
+  /** Whether the console role is read-only. */
+  readOnly?: boolean
+  /** Internal MWT MCP URL, injected by the gateway so tools can validate sources. */
+  mcpUrl?: string
+  /** Shared gateway key for the internal MWT MCP, injected by the gateway. */
+  mcpGatewayKey?: string
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts:35`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 <a id="deepseek-aidsh-tool-fs"></a>
 
 ## `@deepseek-ai/dsh-tool-fs`
@@ -3608,6 +3780,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-deliverables` — requires `systemPrompt` · `connection` · `sessionQuery` · `sessionController` · `workspaceFiles` · `fs` · `sandboxPolicy` ([`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-browse` ([`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-native` ([`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-faberloom` ([`packages/client/ui-faberloom/src/index.ts`](../packages/client/ui-faberloom/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-goal` ([`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-input-trigger` ([`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-jobs` ([`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts))
@@ -3651,6 +3824,14 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-experimental-auto-review` — requires `llm` · `permissionPresets` · `sessions` · `tools` ([`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts))
 - `@deepseek-ai/dsh-experimental-client-ui-agent-team` ([`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts))
 - `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` — requires `computerUse` · `tools` · `systemPrompt` ([`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-access` — requires `storageDomain` ([`packages/faberloom/access/src/index.ts`](../packages/faberloom/access/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-agents` — requires `storageDomain` ([`packages/faberloom/agents/src/index.ts`](../packages/faberloom/agents/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-backup` — requires `storageDomain` ([`packages/faberloom/backup/src/index.ts`](../packages/faberloom/backup/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-board` — requires `storageDomain` ([`packages/faberloom/board/src/index.ts`](../packages/faberloom/board/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-connections` — requires `storageDomain` ([`packages/faberloom/connections/src/index.ts`](../packages/faberloom/connections/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-handlers` — requires `faberloomRoutines` ([`packages/faberloom/handlers/src/index.ts`](../packages/faberloom/handlers/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-learning` — requires `storageDomain` ([`packages/faberloom/learning/src/index.ts`](../packages/faberloom/learning/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-spaces` — requires `storageDomain` ([`packages/faberloom/spaces/src/index.ts`](../packages/faberloom/spaces/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))
 - `@deepseek-ai/dsh-fs-ssh` — requires `ssh` · `sandboxPolicy` ([`packages/ssh/fs-ssh/src/index.ts`](../packages/ssh/fs-ssh/src/index.ts))
 - `@deepseek-ai/dsh-goal-round-driver` — requires `agents` · `goals` · `sessions` ([`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts))
@@ -3726,6 +3907,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-experimental-browser-use-runtime` ([`packages/experimental/browser-use-runtime/src/index.ts`](../packages/experimental/browser-use-runtime/src/index.ts))
 - `@deepseek-ai/dsh-experimental-webworker-packer` ([`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts))
 - `@deepseek-ai/dsh-experimental-webworker-runtime` ([`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-app` ([`packages/bundle/faberloom-app/src/index.ts`](../packages/bundle/faberloom-app/src/index.ts))
 - `@deepseek-ai/dsh-home-paths` ([`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts))
 - `@deepseek-ai/dsh-hook-protocol` ([`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts))
 - `@deepseek-ai/dsh-http-proxy` ([`packages/util/http-proxy/src/index.ts`](../packages/util/http-proxy/src/index.ts))

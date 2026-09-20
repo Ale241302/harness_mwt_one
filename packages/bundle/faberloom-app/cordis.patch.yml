@@ -1,0 +1,73 @@
+# The native product-module bundle patch: mounts the product service rows and
+# their model tools over the Web surface. The `faberloom` profile composes it
+# after `@deepseek-ai/dsh-base` and `@deepseek-ai/dsh-web-app`, so the served
+# harness carries the product modules as first-class rows.
+
+- insert:
+    - id: faberloom-spaces
+      name: '@deepseek-ai/dsh-faberloom-spaces'
+
+    - id: faberloom-agents
+      name: '@deepseek-ai/dsh-faberloom-agents'
+
+    - id: faberloom-board
+      name: '@deepseek-ai/dsh-faberloom-board'
+
+    - id: faberloom-routines
+      name: '@deepseek-ai/dsh-faberloom-routines'
+
+    - id: faberloom-execution
+      name: '@deepseek-ai/dsh-faberloom-execution'
+
+    # Recepcion de correo del buzon del usuario (IMAP configurado en Conexiones).
+    - id: faberloom-inbound
+      name: '@deepseek-ai/dsh-faberloom-inbound'
+
+    # Servidor MCP propio: otra IA lee y gestiona el trabajo del owner.
+    - id: faberloom-mcp-server
+      name: '@deepseek-ai/dsh-faberloom-mcp-server'
+
+    # Los servicios de memoria y autonomía siguen montados (ctx.faberloomMemory /
+    # ctx.faberloomAccess), pero sus tools ya no se registran: la capa de memoria
+    # del agente la aporta TencentDB Agent Memory vía el proxy del modelo.
+    - id: faberloom-learning
+      name: '@deepseek-ai/dsh-faberloom-learning'
+
+    - id: faberloom-access
+      name: '@deepseek-ai/dsh-faberloom-access'
+
+    - id: faberloom-backup
+      name: '@deepseek-ai/dsh-faberloom-backup'
+
+    # Conexiones propias del usuario (IMAP y respaldo), ajenas al MCP.
+    - id: faberloom-connections
+      name: '@deepseek-ai/dsh-faberloom-connections'
+
+    # Implementacion de los handlers de paso que declaran las rutinas.
+    - id: faberloom-handlers
+      name: '@deepseek-ai/dsh-faberloom-handlers'
+
+    # Siembra inicial de agentes y rutinas (una vez por owner).
+    - id: faberloom-defaults
+      name: '@deepseek-ai/dsh-faberloom-defaults'
+
+    # Read-only workspace view the browser panels read.
+    - id: faberloom-view
+      name: '@deepseek-ai/dsh-faberloom-view'
+
+    # The model-facing product tools over the mounted services.
+    - id: tool-faberloom
+      name: '@deepseek-ai/dsh-tool-faberloom'
+
+    # The FaberLoom browser surface: identity tokens plus the global panels.
+    - id: ui-faberloom
+      name: '@deepseek-ai/dsh-client-ui-faberloom'
+
+# Política FaberLoom: toda consulta va por el MCP de MWT.ONE. Se retiran las
+# herramientas de internet para que el modelo no traiga datos de fuera.
+- id: tool-web
+  disabled: true
+- id: web-search-deepseek
+  disabled: true
+- id: web-fetch-http
+  disabled: true

@@ -1,0 +1,60 @@
+{
+  "name": "@deepseek-ai/dsh-faberloom-app",
+  "description": "The native product-module bundle: mounts the FaberLoom service rows and their model tools as a patch layer over the Web surface",
+  "version": "0.1.6-alpha.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/bundle/faberloom-app"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-faberloom-access": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-board": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-defaults": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-handlers": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-inbound": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-mcp-server": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-backup": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-execution": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-learning": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-view": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-faberloom": "workspace:^",
+    "@deepseek-ai/dsh-tool-faberloom": "workspace:^"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^"
+  }
+}

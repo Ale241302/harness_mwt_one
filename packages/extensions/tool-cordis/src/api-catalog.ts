@@ -875,6 +875,1034 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomAccess',
+    summary: 'The product access service: action-scoped, revocable autonomy grants.',
+    description: 'The product access service: action-scoped, revocable autonomy grants.',
+    methods: [
+      {
+        signature: 'async grant(ownerId: string, input: GrantInput): Promise<FaberLoomGrant>',
+        description: 'Issue one grant.',
+        parameters: [{ name: 'ownerId', description: 'the identity granting autonomy.' }, { name: 'input', description: 'action, optional agent/context scopes, note, and expiry.' }],
+        returns: 'the created grant.',
+      },
+      {
+        signature: 'async listGrants(ownerId: string, options: { activeOnly?: boolean } = {}): Promise<FaberLoomGrant[]>',
+        description: 'List one owner\'s grants.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'options', description: '`activeOnly` skips revoked grants.' }],
+        returns: 'the grants.',
+      },
+      {
+        signature: 'async revokeGrant(ownerId: string, id: string): Promise<FaberLoomGrant>',
+        description: 'Revoke one grant; the next check denies it.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'grant id.' }],
+        returns: 'the revoked grant.',
+      },
+      {
+        signature: 'async check(request: GrantCheck): Promise<GrantDecision>',
+        description: 'Check whether an action is authorized before running it.',
+        parameters: [{ name: 'request', description: 'owner, action, optional agent/context, and instant.' }],
+        returns: 'the decision and the grant that decided it.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomAgents',
+    summary: 'The product agents service: model pool, agent catalog, model policy resolver and recommender, selection records, contextual evidence, and delegation.',
+    description: 'The product agents service: model pool, agent catalog, model policy resolver and recommender, selection records, contextual evidence, and delegation.',
+    methods: [
+      {
+        signature: 'async registerModel(input: ModelInput): Promise<FaberLoomModel>',
+        description: 'Register one accessible model in the pool.',
+        parameters: [{ name: 'input', description: 'provider, model, capabilities, limits, and rates.' }],
+        returns: 'the registered model.',
+      },
+      {
+        signature: 'async listModels(): Promise<FaberLoomModel[]>',
+        description: 'List the accessible models.',
+        parameters: [],
+        returns: 'the pool entries.',
+      },
+      {
+        signature: 'async getModel(id: FaberLoomModelId): Promise<FaberLoomModel | undefined>',
+        description: 'Read one model.',
+        parameters: [{ name: 'id', description: 'pool id.' }],
+        returns: 'the model, or undefined.',
+      },
+      {
+        signature: 'async setAvailability(id: FaberLoomModelId, available: boolean): Promise<FaberLoomModel>',
+        description: 'Set a model\'s availability after a checked probe.',
+        parameters: [{ name: 'id', description: 'pool id.' }, { name: 'available', description: 'the new availability.' }],
+        returns: 'the updated model.',
+      },
+      {
+        signature: 'async removeModel(id: FaberLoomModelId): Promise<boolean>',
+        description: 'Remove one model from the pool.',
+        parameters: [{ name: 'id', description: 'pool id.' }],
+        returns: 'true when it existed.',
+      },
+      {
+        signature: 'async syncPool(): Promise<{ checked: number; available: number }>',
+        description: 'Reconcile pool availability with the live harness routes from `ctx.llm`.',
+        parameters: [],
+        returns: 'how many entries were checked and how many are now available.',
+      },
+      {
+        signature: 'registerExecutableTool(name: string, handler: (args: unknown) => unknown | Promise<unknown>): () => void',
+        description: 'Register one executable tool handler in this process.',
+        parameters: [{ name: 'name', description: 'tool name referenced by an agent\'s `tools` list.' }, { name: 'handler', description: 'sync or async handler over the call arguments.' }],
+        returns: 'the disposer removing the handler.',
+      },
+      {
+        signature: 'listExecutableTools(): string[]',
+        description: 'List the executable tools registered in this process.',
+        parameters: [],
+        returns: 'the tool names.',
+      },
+      {
+        signature: 'async executeTool(agentId: FaberLoomAgentId, toolName: string, args: unknown): Promise<{ toolName: string; result: unknown }>',
+        description: 'Execute one registered tool for an agent, enforcing the agent\'s tool allowlist.',
+        parameters: [{ name: 'agentId', description: 'the agent that acts.' }, { name: 'toolName', description: 'the tool to run.' }, { name: 'args', description: 'handler arguments.' }],
+        returns: 'the tool name and its result.',
+      },
+      {
+        signature: 'async runTemporarySubagent(parentAgentId: FaberLoomAgentId, request: RunTemporarySubagentRequest): Promise<TemporarySubagentResult>',
+        description: 'Run a one-shot temporary subagent: it shares the parent budget, may use only tools the parent already allows, executes one tool, and is never added to the catalog.',
+        parameters: [{ name: 'parentAgentId', description: 'the parent agent.' }, { name: 'request', description: 'name, responsibility, model, task, and optional tool call.' }],
+        returns: 'the run outcome and the remaining parent budget.',
+      },
+      {
+        signature: 'async createAgent(input: AgentInput): Promise<FaberLoomAgent>',
+        description: 'Create one agent through any of the three routes.',
+        parameters: [{ name: 'input', description: 'name, responsibility, route, and initial policy.' }],
+        returns: 'the created agent.',
+      },
+      {
+        signature: 'async listAgents(): Promise<FaberLoomAgent[]>',
+        description: 'List the catalog.',
+        parameters: [],
+        returns: 'agents oldest first.',
+      },
+      {
+        signature: 'async getAgent(id: FaberLoomAgentId): Promise<FaberLoomAgent>',
+        description: 'Read one agent.',
+        parameters: [{ name: 'id', description: 'agent id.' }],
+        returns: 'the agent.',
+      },
+      {
+        signature: 'async updateAgent(id: FaberLoomAgentId, patch: AgentPatch): Promise<FaberLoomAgent>',
+        description: 'Apply a patch to one agent, bumping its version.',
+        parameters: [{ name: 'id', description: 'agent id.' }, { name: 'patch', description: 'fields to change.' }],
+        returns: 'the updated agent.',
+      },
+      {
+        signature: 'async duplicateAgent(id: FaberLoomAgentId, input: DuplicateInput): Promise<FaberLoomAgent>',
+        description: 'Duplicate one agent: copies configuration and explicitly selected lessons, never the source\'s evidence (confidence is not transferred).',
+        parameters: [{ name: 'id', description: 'source agent id.' }, { name: 'input', description: 'name, optional space, and selected lessons for the copy.' }],
+        returns: 'the created duplicate.',
+      },
+      {
+        signature: 'async deactivateAgent(id: FaberLoomAgentId): Promise<FaberLoomAgent>',
+        description: 'Deactivate one agent; the record stays in the catalog.',
+        parameters: [{ name: 'id', description: 'agent id.' }],
+        returns: 'the deactivated agent.',
+      },
+      {
+        signature: 'async removeAgent(id: FaberLoomAgentId): Promise<boolean>',
+        description: 'Remove one agent from the catalog.',
+        parameters: [{ name: 'id', description: 'agent id.' }],
+        returns: 'true when it existed.',
+      },
+      {
+        signature: 'async resolveModel(agentId: FaberLoomAgentId, request: ResolveRequest): Promise<ResolveResult>',
+        description: 'Resolve the effective model for one task attempt under the agent policy and shared budget. Fails closed: exclusive providers never substitute, unknown cost under a budget never assumes zero.',
+        parameters: [{ name: 'agentId', description: 'the agent to resolve for.' }, { name: 'request', description: 'task, provider state, met condition, and spent budget.' }],
+        returns: 'the selection or the reason to stop.',
+      },
+      {
+        signature: 'async recommendModel(request: RecommendRequest): Promise<RecommendResult>',
+        description: 'Recommend models for a task by cost per useful result over accessible, capable candidates, exposing uncertainty instead of guessing.',
+        parameters: [{ name: 'request', description: 'required capabilities, context floor, and task label.' }],
+        returns: 'the recommended model, ranked alternatives, and uncertainty.',
+      },
+      {
+        signature: 'async recordSelection(entry: SelectionInput): Promise<Selection>',
+        description: 'Record one model selection for an execution step.',
+        parameters: [{ name: 'entry', description: 'the selection facts (id and instant are assigned).' }],
+        returns: 'the stored selection.',
+      },
+      {
+        signature: 'async listSelections(filter: { agentId?: FaberLoomAgentId; task?: string } = {}): Promise<Selection[]>',
+        description: 'List recorded selections.',
+        parameters: [{ name: 'filter', description: 'optional agent and task filters.' }],
+        returns: 'selections oldest first.',
+      },
+      {
+        signature: 'async recordOutcome(entry: OutcomeInput): Promise<Outcome>',
+        description: 'Record one human outcome for an agent/model/task.',
+        parameters: [{ name: 'entry', description: 'the outcome facts (id and instant are assigned).' }],
+        returns: 'the stored outcome.',
+      },
+      {
+        signature: 'async evidence(filter: { agentId?: FaberLoomAgentId; task?: string; modelId?: FaberLoomModelId } = {}): Promise<EvidenceSummary>',
+        description: 'Aggregate contextual performance for a filter.',
+        parameters: [{ name: 'filter', description: 'optional agent, task, and model filters.' }],
+        returns: 'uses, approvals, corrections, correction rate, and cost per useful result.',
+      },
+      {
+        signature: 'async delegate(parentAgentId: FaberLoomAgentId, request: DelegateRequest): Promise<DelegateResult>',
+        description: 'Delegate one task to a named subagent, resolving its policy inside the parent\'s shared budget and recording the selection.',
+        parameters: [{ name: 'parentAgentId', description: 'the parent agent.' }, { name: 'request', description: 'subagent name, task, spent budget, and met condition.' }],
+        returns: 'the subagent result and the remaining parent budget.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomBackup',
+    summary: 'The product backup service: capture, list, verify, restore, and delete integrity-checked snapshots of the FaberLoom domains.',
+    description: 'The product backup service: capture, list, verify, restore, and delete integrity-checked snapshots of the FaberLoom domains.',
+    methods: [
+      {
+        signature: 'async createBackup(ownerId: string, options: CreateBackupOptions = {}): Promise<FaberLoomBackupManifest>',
+        description: 'Capture the currently open FaberLoom domains into one durable snapshot and return its manifest. Domains that are not mounted in this process are omitted from the manifest rather than reported as empty.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity the snapshot belongs to.' }, { name: 'options', description: 'optional note and domain restriction.' }],
+        returns: 'the manifest of the captured snapshot.',
+      },
+      {
+        signature: 'async listBackups(ownerId: string): Promise<FaberLoomBackupManifest[]>',
+        description: 'List one owner\'s backup manifests, newest first.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the manifests, newest first.',
+      },
+      {
+        signature: 'async getBackup(ownerId: string, id: string): Promise<FaberLoomBackupManifest>',
+        description: 'Read one backup manifest.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'backup id.' }],
+        returns: 'the manifest.',
+      },
+      {
+        signature: 'async verifyBackup(ownerId: string, id: string): Promise<FaberLoomBackupVerifyResult>',
+        description: 'Recompute the stored payload\'s digests and compare them with the manifest.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'backup id.' }],
+        returns: 'the per-table verdicts and the overall verdict.',
+      },
+      {
+        signature: 'async restoreBackup(ownerId: string, id: string, options: RestoreBackupOptions = {}): Promise<FaberLoomRestoreResult>',
+        description: 'Restore one backup into the domains open in this process. Every record is written with `put` (upsert); domains the process does not have open are reported and skipped. A backup whose payload fails its integrity check is refused before any write.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'backup id.' }, { name: 'options', description: '`dryRun` counts the writes without performing them.' }],
+        returns: 'the tables written or counted and the domains skipped.',
+      },
+      {
+        signature: 'async deleteBackup(ownerId: string, id: string): Promise<void>',
+        description: 'Delete one backup record.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'backup id.' }],
+        returns: 'nothing.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomBoard',
+    summary: 'The product board service: versioned items, evidence-gated submits, version-bound approvals, revalidation, and authorization-gated effects.',
+    description: 'The product board service: versioned items, evidence-gated submits, version-bound approvals, revalidation, and authorization-gated effects.',
+    methods: [
+      {
+        signature: 'async create(ownerId: string, input: BoardCreateInput): Promise<FaberLoomBoardItem>',
+        description: 'Create one prepared item awaiting review; evidence is mandatory.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'title, summary, evidence, optional space, document, execution.' }],
+        returns: 'the created item.',
+      },
+      {
+        signature: 'async submitRevision(ownerId: string, id: FaberLoomBoardItemId, input: BoardSubmitInput): Promise<FaberLoomBoardItem>',
+        description: 'Submit a correction as the next revision, awaiting a fresh review.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'summary, evidence, and optional document reference.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async requestData(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        description: 'Record that the item waits for data.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async fail(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        description: 'Mark the item failed.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async reopen(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        description: 'Reopen the item for another attempt.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async complete(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        description: 'Complete an approved item.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async review(ownerId: string, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem>',
+        description: 'Approve or reject the exact revision. A stale item refuses; a revision that is not current refuses with `STALE_REVISION`.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'decision, exact revision, and optional note.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async markStale(ownerId: string, id: FaberLoomBoardItemId, reason: string): Promise<FaberLoomBoardItem>',
+        description: 'Invalidate a current approval: the item must be revalidated before approval or effects.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'reason', description: 'why the item went stale.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async revalidate(ownerId: string, id: FaberLoomBoardItemId, changed: boolean): Promise<FaberLoomBoardItem>',
+        description: 'Clear staleness after checking the changed condition.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'changed', description: 'whether the underlying condition actually changed.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async recordEffect(ownerId: string, id: FaberLoomBoardItemId, input: BoardEffectInput): Promise<FaberLoomBoardItem>',
+        description: 'Record an effect. Approval never sends: an explicit non-empty authorization is required, and a stale or unapproved item refuses.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'external reference, authorization, and optional detail.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async get(id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        description: 'Read one item.',
+        parameters: [{ name: 'id', description: 'item id.' }],
+        returns: 'the item.',
+      },
+      {
+        signature: 'async list(filter: { ownerId?: string; status?: BoardStatus } = {}): Promise<FaberLoomBoardItem[]>',
+        description: 'List items, optionally filtered by owner and status.',
+        parameters: [{ name: 'filter', description: 'optional owner and status filters.' }],
+        returns: 'items oldest first.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomConnections',
+    summary: 'The product connections service: per-user integrations owned by FaberLoom.',
+    description: 'The product connections service: per-user integrations owned by FaberLoom.',
+    methods: [
+      {
+        signature: 'async list(ownerId: string): Promise<FaberLoomConnection[]>',
+        description: 'List one owner\'s connections.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the connections, oldest first.',
+      },
+      {
+        signature: 'async save(ownerId: string, input: ConnectionInput): Promise<FaberLoomConnection>',
+        description: 'Create or replace one connection. An omitted secret keeps the stored one.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'the configuration to store.' }],
+        returns: 'the stored connection.',
+      },
+      {
+        signature: 'async remove(ownerId: string, id: string): Promise<boolean>',
+        description: 'Remove one connection.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'connection id.' }],
+        returns: 'true when it existed.',
+      },
+      {
+        signature: 'async probe(ownerId: string, id: string): Promise<ConnectionProbe>',
+        description: 'Check one connection for real: an IMAP login, or a writable backup destination.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'connection id.' }],
+        returns: 'the probe outcome.',
+      },
+      {
+        signature: 'async imap(ownerId: string, id?: string): Promise<ImapCredentials | undefined>',
+        description: 'Read one of the owner\'s mailbox credentials.\n\nThis is the only accessor that returns a stored secret, and it exists for the inbound receiver, which has to log in to the owner\'s mailbox. The browser never sees it: the panel reads list, which omits the secret.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'a specific connection, or undefined for the first IMAP one.' }],
+        returns: 'the credentials, or undefined when the owner has no usable mailbox.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomDefaults',
+    summary: 'FaberLoom\'s own default agents and routines for one owner.',
+    description: 'FaberLoom\'s own default agents and routines for one owner.',
+    methods: [
+      {
+        signature: 'async seed(): Promise<SeedReport>',
+        description: 'Seed the catalogue once for this owner.\n\nA pass is a no-op when the identity is read-only, when it has no owner, or when the marker exists. Items are matched by name, so a retry after a partial pass never duplicates what already landed.',
+        parameters: [],
+        returns: 'what the pass created.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomExecutions',
+    summary: 'The persistent driver over the routines engine.',
+    description: 'The persistent driver over the routines engine.',
+    methods: [
+      {
+        signature: 'async runOnce(now: Date = new Date()): Promise<DispatchReport>',
+        description: 'Run one pass. Acquires the engine\'s dispatcher lock first, so an overlapping pass — a timer tick during a manual call, or the same owner served twice — reports `another pass is running` instead of starting work twice.',
+        parameters: [{ name: 'now', description: 'the instant this pass considers current.' }],
+        returns: 'what the pass did.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomHandlers',
+    summary: 'Step handler registry owned by the FaberLoom product layer.',
+    description: 'Step handler registry owned by the FaberLoom product layer.',
+    methods: [],
+  },
+  {
+    key: 'faberloomInbound',
+    summary: 'The owner\'s mailbox as a source of routine events.',
+    description: 'The owner\'s mailbox as a source of routine events.',
+    methods: [
+      {
+        signature: 'async runOnce(now: Date = new Date()): Promise<InboundReport>',
+        description: 'Poll the owner\'s mailbox once.',
+        parameters: [{ name: 'now', description: 'the instant this pass considers current.' }],
+        returns: 'what the pass read and started.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomMcpServer',
+    summary: 'FaberLoom\'s server face for other agents.',
+    description: 'FaberLoom\'s server face for other agents.',
+    methods: [
+      {
+        signature: 'async mintToken(label: string, scopes: readonly string[] | null = null): Promise<FaberLoomMcpToken>',
+        description: 'Mint one bearer token for a client the owner names.',
+        parameters: [{ name: 'label', description: 'who the token is for.' }, { name: 'scopes', description: 'tool names the client may call, or null for the full surface.' }],
+        returns: 'the token, which is only shown here.',
+      },
+      {
+        signature: 'async listTokens(): Promise<readonly FaberLoomMcpToken[]>',
+        description: 'List the tokens this owner minted, revoked ones included.',
+        parameters: [],
+        returns: 'the token rows.',
+      },
+      {
+        signature: 'async revokeToken(token: string): Promise<boolean>',
+        description: 'Revoke one token so its client stops working.',
+        parameters: [{ name: 'token', description: 'the token to revoke.' }],
+        returns: 'whether a live token was revoked.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomMemory',
+    summary: 'The product memory service: versioned teachings, contextual performance, late errors, and portable knowledge.',
+    description: 'The product memory service: versioned teachings, contextual performance, late errors, and portable knowledge.',
+    methods: [
+      {
+        signature: 'async createTeaching(ownerId: string, input: TeachingInput): Promise<FaberLoomTeaching>',
+        description: 'Record one teaching. An explicit instruction (`active: true`) is remembered active; an inferred one stays a candidate.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'scope, text, source, and scoping.' }],
+        returns: 'the created teaching.',
+      },
+      {
+        signature: 'async editTeaching(ownerId: string, id: FaberLoomTeachingId, input: TeachingEditInput): Promise<FaberLoomTeaching>',
+        description: 'Edit one teaching, producing a new version and preserving the previous as superseded history.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'teaching id.' }, { name: 'input', description: 'new text, reason, and author.' }],
+        returns: 'the updated teaching.',
+      },
+      {
+        signature: 'async revokeTeaching(ownerId: string, id: FaberLoomTeachingId): Promise<FaberLoomTeaching>',
+        description: 'Revoke one teaching: it disappears from new decisions and its history stays.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'teaching id.' }],
+        returns: 'the revoked teaching.',
+      },
+      {
+        signature: 'async getTeaching(id: FaberLoomTeachingId): Promise<FaberLoomTeaching>',
+        description: 'Read one teaching.',
+        parameters: [{ name: 'id', description: 'teaching id.' }],
+        returns: 'the teaching.',
+      },
+      {
+        signature: 'async listTeachings(ownerId: string, filter: Pick<TeachingFilter, \'scope\' | \'spaceId\' | \'agentId\' | \'skill\' | \'task\'> = {}): Promise<FaberLoomTeaching[]>',
+        description: 'List teachings including history, optionally filtered.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'filter', description: 'optional scope filters.' }],
+        returns: 'the teachings, oldest first.',
+      },
+      {
+        signature: 'async listVersions(ownerId: string, id: FaberLoomTeachingId): Promise<FaberLoomTeaching[]>',
+        description: 'List every stored version of one teaching.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'teaching id.' }],
+        returns: 'superseded versions plus the current one.',
+      },
+      {
+        signature: 'async retrieve(ownerId: string, filter: TeachingFilter = {}): Promise<FaberLoomTeaching[]>',
+        description: 'Recover the active teachings that apply to a context, and record the use when a case reference is supplied.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'filter', description: 'scope filters and optional case reference.' }],
+        returns: 'the recovered teachings, current version only.',
+      },
+      {
+        signature: 'async recordPerformance(ownerId: string, input: PerformanceInput): Promise<void>',
+        description: 'Record one contextual outcome.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'task, outcome, and cause.' }],
+        returns: 'nothing.',
+      },
+      {
+        signature: 'async performance(ownerId: string, filter: { agentId?: string; task?: string; spaceId?: string } = {}): Promise<PerformanceSummary>',
+        description: 'Aggregate contextual performance. Correction causes are separated so a requirement change is never counted as an agent failure.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'filter', description: 'optional agent, task, and space filters.' }],
+        returns: 'the summary.',
+      },
+      {
+        signature: 'async recordLateError(ownerId: string, input: LateErrorInput): Promise<FaberLoomTeaching | undefined>',
+        description: 'Record a late error. When it targets a teaching, the teaching gets a new version carrying the correction; the original history stays.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'case reference, detail, optional teaching, author.' }],
+        returns: 'the updated teaching when one was corrected.',
+      },
+      {
+        signature: 'async exportKnowledge(ownerId: string): Promise<KnowledgeSnapshot>',
+        description: 'Export a portable knowledge snapshot; credentials are never included.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the snapshot of teachings, performance, and late errors.',
+      },
+      {
+        signature: 'async importKnowledge(ownerId: string, snapshot: KnowledgeSnapshot): Promise<{ teachings: number; performance: number; lateErrors: number }>',
+        description: 'Restore a knowledge snapshot for one owner, keeping versions and statuses.',
+        parameters: [{ name: 'ownerId', description: 'the destination identity.' }, { name: 'snapshot', description: 'the snapshot to import.' }],
+        returns: 'how many records were restored.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomRoutines',
+    summary: 'The product routines service: versioned definitions, validated activation, persistent executions, dispatcher, effects ledger, sources, and migration.',
+    description: 'The product routines service: versioned definitions, validated activation, persistent executions, dispatcher, effects ledger, sources, and migration.',
+    methods: [
+      {
+        signature: 'registerHandler(name: string, handler: StepHandler): () => void',
+        description: 'Register one step handler.',
+        parameters: [{ name: 'name', description: 'handler name referenced by steps.' }, { name: 'handler', description: 'the sync or async handler.' }],
+        returns: 'the disposer removing the handler.',
+      },
+      {
+        signature: 'listHandlers(): string[]',
+        description: 'List registered handler names.',
+        parameters: [],
+        returns: 'the names.',
+      },
+      {
+        signature: 'async createRoutine(ownerId: string, input: RoutineInput): Promise<FaberLoomRoutine>',
+        description: 'Create one routine as version 1 in draft.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'name and definition.' }],
+        returns: 'the created routine.',
+      },
+      {
+        signature: 'async getRoutine(id: FaberLoomRoutineId): Promise<FaberLoomRoutine>',
+        description: 'Read one routine.',
+        parameters: [{ name: 'id', description: 'routine id.' }],
+        returns: 'the routine.',
+      },
+      {
+        signature: 'async listRoutines(ownerId: string): Promise<FaberLoomRoutine[]>',
+        description: 'List one owner\'s routines, oldest first.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the routines.',
+      },
+      {
+        signature: 'async updateRoutine(ownerId: string, id: FaberLoomRoutineId, input: RoutineInput): Promise<FaberLoomRoutine>',
+        description: 'Edit a routine, producing a new version. Executions keep their starting version.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'routine id.' }, { name: 'input', description: 'the new name and definition.' }],
+        returns: 'the updated routine.',
+      },
+      {
+        signature: 'async removeRoutine(ownerId: string, id: FaberLoomRoutineId): Promise<boolean>',
+        description: 'Remove one routine and the versions stored for it.\n\nExecutions and the effect ledger are the run\'s history and stay: only the definition leaves, so a case that already ran keeps its record.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'routine id.' }],
+        returns: 'whether a routine was removed.',
+      },
+      {
+        signature: 'async expireWaits(now: Date = new Date()): Promise<FaberLoomExecutionId[]>',
+        description: 'Move every execution whose wait passed its deadline to review.\n\nA wait that nobody answers is not a success and not a crash: the case needs a person, so the waiting step is marked failed with `WAIT_TIMEOUT` and the execution keeps its history for the panel. The dispatcher calls this on each pass; calling it by hand is safe, because an execution already past its deadline is the only thing it touches.',
+        parameters: [{ name: 'now', description: 'the instant this pass considers current.' }],
+        returns: 'the execution ids it moved.',
+      },
+      {
+        signature: 'async getRoutineVersion(id: FaberLoomRoutineId, version: number): Promise<RoutineDefinition>',
+        description: 'Read one stored routine version.',
+        parameters: [{ name: 'id', description: 'routine id.' }, { name: 'version', description: 'version number.' }],
+        returns: 'the definition.',
+      },
+      {
+        signature: 'async countExecutionsAtVersion(id: FaberLoomRoutineId, version: number): Promise<number>',
+        description: 'Count executions that started with a given routine version.',
+        parameters: [{ name: 'id', description: 'routine id.' }, { name: 'version', description: 'routine version.' }],
+        returns: 'the execution count.',
+      },
+      {
+        signature: 'async activateRoutine(ownerId: string, id: FaberLoomRoutineId): Promise<FaberLoomRoutine>',
+        description: 'Validate and activate a routine. Missing handlers, missing dependencies, or cycles refuse activation with the exact problems.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'routine id.' }],
+        returns: 'the activated routine.',
+      },
+      {
+        signature: 'async pauseRoutine(ownerId: string, id: FaberLoomRoutineId): Promise<FaberLoomRoutine>',
+        description: 'Pause a routine; running executions keep going.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'routine id.' }],
+        returns: 'the paused routine.',
+      },
+      {
+        signature: 'async startExecution(request: StartExecutionRequest): Promise<StartExecutionResult>',
+        description: 'Start one execution, deduping by idempotency key: a repeated key appends the new channel\'s evidence to the same case instead of starting another.',
+        parameters: [{ name: 'request', description: 'routine, idempotency key, channel, input, and event.' }],
+        returns: 'the execution and whether it was deduped.',
+      },
+      {
+        signature: 'async tick(request: TickRequest): Promise<TickResult>',
+        description: 'Deliver events to waiting executions.',
+        parameters: [{ name: 'request', description: 'events and the current instant.' }],
+        returns: 'the resumed execution ids.',
+      },
+      {
+        signature: 'async getExecution(id: FaberLoomExecutionId): Promise<Execution>',
+        description: 'Read one execution.',
+        parameters: [{ name: 'id', description: 'execution id.' }],
+        returns: 'the execution.',
+      },
+      {
+        signature: 'async listExecutions(filter: { routineId?: FaberLoomRoutineId; status?: ExecutionStatus } = {}): Promise<Execution[]>',
+        description: 'List executions, optionally filtered by routine and status.',
+        parameters: [{ name: 'filter', description: 'optional routine and status filters.' }],
+        returns: 'executions oldest first.',
+      },
+      {
+        signature: 'async reconcile(id: FaberLoomExecutionId): Promise<Execution>',
+        description: 'Reconcile an execution whose effect stayed pending after a write.',
+        parameters: [{ name: 'id', description: 'execution id.' }],
+        returns: 'the reconciled execution.',
+      },
+      {
+        signature: 'async cancelEffect(id: FaberLoomExecutionId, stepId: string): Promise<boolean>',
+        description: 'Mark one pending effect as cancelled, so an obsolete draft is not applied.',
+        parameters: [{ name: 'id', description: 'execution id.' }, { name: 'stepId', description: 'the step owning the effect.' }],
+        returns: 'true when the effect existed and was pending.',
+      },
+      {
+        signature: 'async previewMigration(id: FaberLoomExecutionId, toVersion: number): Promise<MigrationPlan>',
+        description: 'Plan a migration from the execution\'s version to a target version.',
+        parameters: [{ name: 'id', description: 'execution id.' }, { name: 'toVersion', description: 'target routine version.' }],
+        returns: 'the preserved and added steps.',
+      },
+      {
+        signature: 'async migrate(id: FaberLoomExecutionId, toVersion: number): Promise<Execution>',
+        description: 'Migrate one execution to a target version, preserving completed steps and running the added ones.',
+        parameters: [{ name: 'id', description: 'execution id.' }, { name: 'toVersion', description: 'target routine version.' }],
+        returns: 'the migrated execution.',
+      },
+      {
+        signature: 'async registerSource(ownerId: string, kind: \'email\' | \'webhook\', label: string): Promise<EventSource>',
+        description: 'Register one per-user event source.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'kind', description: 'source kind.' }, { name: 'label', description: 'display label.' }],
+        returns: 'the source with its token.',
+      },
+      {
+        signature: 'async listSources(ownerId: string): Promise<EventSource[]>',
+        description: 'List one owner\'s event sources.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the sources.',
+      },
+      {
+        signature: 'async removeSource(ownerId: string, id: string): Promise<boolean>',
+        description: 'Remove one event source.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'source id.' }],
+        returns: 'true when it existed.',
+      },
+      {
+        signature: 'async ingest(ownerId: string, event: IngestEvent): Promise<StartExecutionResult[]>',
+        description: 'Ingest one event for its owner: every matching active routine starts or dedupes to its case.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity the event belongs to.' }, { name: 'event', description: 'the event.' }],
+        returns: 'the executions started or deduped.',
+      },
+      {
+        signature: 'async ingestForToken(token: string, event: IngestEvent): Promise<StartExecutionResult[]>',
+        description: 'Ingest one event through a source token.',
+        parameters: [{ name: 'token', description: 'the source token.' }, { name: 'event', description: 'the event.' }],
+        returns: 'the executions started or deduped.',
+        throws: ['when the token matches no source.'],
+      },
+      {
+        signature: 'acquireLock(): boolean',
+        description: 'Acquire the dispatcher lock for this process.',
+        parameters: [],
+        returns: 'true when the caller now holds it.',
+      },
+      {
+        signature: 'releaseLock(): void',
+        description: 'Release the dispatcher lock.',
+        parameters: [],
+      },
+    ],
+  },
+  {
+    key: 'faberloomSpaces',
+    summary: 'The product spaces service.',
+    description: 'The product spaces service. It owns the durable space records, the effective context resolution, the personal scope, the opaque work-directory references, and console-role access control; every operation carries the authenticated actor.',
+    methods: [
+      {
+        signature: 'async create(actor: SpaceActor, input: CreateSpaceInput): Promise<FaberLoomSpace>',
+        description: 'Create one space scoped to the actor\'s company, under an optional parent the actor controls.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'input', description: 'title and optional parent.' }],
+        returns: 'the created space.',
+      },
+      {
+        signature: 'async list(actor: SpaceActor): Promise<FaberLoomSpace[]>',
+        description: 'List the spaces the actor may read, oldest first.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }],
+        returns: 'the readable spaces.',
+      },
+      {
+        signature: 'async get(actor: SpaceActor, id: FaberLoomSpaceId): Promise<FaberLoomSpace>',
+        description: 'Read one space the actor may see.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }],
+        returns: 'the space.',
+        throws: ['when the space is absent or not readable.'],
+      },
+      {
+        signature: 'async update(actor: SpaceActor, id: FaberLoomSpaceId, patch: UpdateSpaceInput): Promise<FaberLoomSpace>',
+        description: 'Apply a mutable patch to one space the actor may manage.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }, { name: 'patch', description: 'fields to change.' }],
+        returns: 'the updated space.',
+      },
+      {
+        signature: 'async archive(actor: SpaceActor, id: FaberLoomSpaceId): Promise<FaberLoomSpace>',
+        description: 'Archive one space the actor may manage; the record is kept, out of the active list.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }],
+        returns: 'the archived space.',
+      },
+      {
+        signature: 'personalScope(ownerId: string): PersonalScope',
+        description: 'The isolated personal scope of one identity, used when no space is assigned.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the personal scope descriptor (never a shared space).',
+      },
+      {
+        signature: 'async resolveWorkdir(actor: SpaceActor, id: FaberLoomSpaceId): Promise<WorkdirReference>',
+        description: 'Resolve an opaque working-directory reference for one space; never a path.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }],
+        returns: 'the opaque reference.',
+      },
+      {
+        signature: 'async previewLink(actor: SpaceActor, id: FaberLoomSpaceId): Promise<LinkPreview>',
+        description: 'Preview audience and material before linking private work to one space.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }],
+        returns: 'identities that would gain visibility and the context keys shared.',
+      },
+      {
+        signature: 'async effectiveContext(actor: SpaceActor, id: FaberLoomSpaceId): Promise<EffectiveContext>',
+        description: 'Resolve the effective context of one space: the space\'s own context plus, when it inherits, its ancestors\' context, minus explicit exclusions, with unresolved key conflicts surfaced instead of silently prioritized.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }],
+        returns: 'resolved values, conflicts, contributing sources, and exclusions.',
+      },
+      {
+        signature: 'async attachFile(actor: SpaceActor, spaceId: FaberLoomSpaceId, input: SpaceFileInput): Promise<SpaceFile>',
+        description: 'Attach one file to a space the actor may manage. Bytes are stored inline for this slice, capped at MAX_FILE_BYTES.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the target space.' }, { name: 'input', description: 'file name, media type, and base64 bytes.' }],
+        returns: 'the stored file metadata.',
+      },
+      {
+        signature: 'async listFiles(actor: SpaceActor, spaceId: FaberLoomSpaceId): Promise<SpaceFile[]>',
+        description: 'List the files attached to one space the actor may read.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the target space.' }],
+        returns: 'file metadata, oldest first.',
+      },
+      {
+        signature: 'async readFile(actor: SpaceActor, fileId: string): Promise<SpaceFileContent>',
+        description: 'Read one attached file, bytes included, when the actor may read its space.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'fileId', description: 'the file id.' }],
+        returns: 'the file with its base64 bytes.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomView',
+    summary: 'Workspace view (`ctx.faberloomView`) over the mounted product services and the agent-memory core.',
+    description: 'Workspace view (`ctx.faberloomView`) over the mounted product services and the agent-memory core. Reads and writes both return the fresh overview so the panels refresh from one value instead of recomputing.',
+    methods: [
+      {
+        signature: '@Remote(\'overview\') async overview(): Promise<FaberLoomOverview>',
+        description: 'Read the signed-in owner\'s workspace rows for the global panels.',
+        parameters: [],
+        returns: 'spaces, agents, board items, routines, and memory rows as plain JSON.',
+      },
+      {
+        signature: '@Remote(\'createSpace\') async createSpace(title: string): Promise<FaberLoomOverview>',
+        description: 'Create a root space for the owner.',
+        parameters: [{ name: 'title', description: 'display title.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'renameSpace\') async renameSpace(id: string, title: string): Promise<FaberLoomOverview>',
+        description: 'Rename one of the owner\'s spaces.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'title', description: 'new display title.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'createAgent\') async createAgent(name: string, responsibility: string): Promise<FaberLoomOverview>',
+        description: 'Create an agent in the catalog.',
+        parameters: [{ name: 'name', description: 'display name.' }, { name: 'responsibility', description: 'the agent\'s responsibility statement.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'renameAgent\') async renameAgent(id: string, name: string): Promise<FaberLoomOverview>',
+        description: 'Rename one catalog agent.',
+        parameters: [{ name: 'id', description: 'agent id.' }, { name: 'name', description: 'new display name.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'deleteAgent\') async deleteAgent(id: string): Promise<FaberLoomOverview>',
+        description: 'Deactivate one catalog agent.',
+        parameters: [{ name: 'id', description: 'agent id.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'agentDetail\') async agentDetail(id: string): Promise<FaberLoomAgentDetail | undefined>',
+        description: 'Read one agent with its full editable configuration.',
+        parameters: [{ name: 'id', description: 'agent id.' }],
+        returns: 'the agent detail, or undefined when it no longer exists.',
+      },
+      {
+        signature: '@Remote(\'saveAgent\') async saveAgent(id: string, input: AgentSaveInput): Promise<FaberLoomOverview>',
+        description: 'Save an agent\'s editable configuration.',
+        parameters: [{ name: 'id', description: 'agent id.' }, { name: 'input', description: 'name, responsibility, skills, and the optional model policy.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'purgeAgent\') async purgeAgent(id: string): Promise<FaberLoomOverview>',
+        description: 'Remove one agent from the catalog permanently.',
+        parameters: [{ name: 'id', description: 'agent id.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'skills\') async skills(): Promise<readonly FaberLoomSkillRow[]>',
+        description: 'List the skills available to this owner: the role catalog plus the owner\'s own uploaded skills, each marked with the agents that already use it.',
+        parameters: [],
+        returns: 'the skill rows.',
+      },
+      {
+        signature: '@Remote(\'saveSkill\') async saveSkill(name: string, markdown: string): Promise<readonly FaberLoomSkillRow[]>',
+        description: 'Add or replace one skill from Markdown content the user uploaded.',
+        parameters: [{ name: 'name', description: 'skill name (its directory).' }, { name: 'markdown', description: 'full SKILL.md content.' }],
+        returns: 'the refreshed skill list.',
+      },
+      {
+        signature: '@Remote(\'removeSkill\') async removeSkill(name: string): Promise<readonly FaberLoomSkillRow[]>',
+        description: 'Remove one owner-uploaded skill. Role-catalog skills cannot be removed.',
+        parameters: [{ name: 'name', description: 'skill name.' }],
+        returns: 'the refreshed skill list.',
+      },
+      {
+        signature: '@Remote(\'connections\') async connections(): Promise<readonly FaberLoomConnection[]>',
+        description: 'List the owner\'s own connections (IMAP mailbox, knowledge backup).',
+        parameters: [],
+        returns: 'the stored connections, without the secrets.',
+      },
+      {
+        signature: '@Remote(\'saveConnection\') async saveConnection(input: ConnectionInput): Promise<readonly FaberLoomConnection[]>',
+        description: 'Create or replace one of the owner\'s connections.',
+        parameters: [{ name: 'input', description: 'the configuration to store; an omitted secret keeps the stored one.' }],
+        returns: 'the refreshed connection list.',
+      },
+      {
+        signature: '@Remote(\'removeConnection\') async removeConnection(id: string): Promise<readonly FaberLoomConnection[]>',
+        description: 'Remove one of the owner\'s connections.',
+        parameters: [{ name: 'id', description: 'connection id.' }],
+        returns: 'the refreshed connection list.',
+      },
+      {
+        signature: '@Remote(\'probeConnection\') async probeConnection(id: string): Promise<ConnectionProbe>',
+        description: 'Check one of the owner\'s connections for real (IMAP login or writable destination).',
+        parameters: [{ name: 'id', description: 'connection id.' }],
+        returns: 'the probe outcome.',
+      },
+      {
+        signature: '@Remote(\'spaceDetail\') async spaceDetail(id: string): Promise<FaberLoomSpaceDetail | undefined>',
+        description: 'Read one space with its editable configuration.',
+        parameters: [{ name: 'id', description: 'space id.' }],
+        returns: 'the space detail, or undefined when it is gone.',
+      },
+      {
+        signature: '@Remote(\'saveSpace\') async saveSpace(id: string, input: SpaceSaveInput): Promise<FaberLoomOverview>',
+        description: 'Save one space\'s editable configuration.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'input', description: 'title, inheritance, and members.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'models\') async models(): Promise<readonly FaberLoomModelRow[]>',
+        description: 'List the model pool the panels assign from.',
+        parameters: [],
+        returns: 'one row per registered model.',
+      },
+      {
+        signature: '@Remote(\'recommendModel\') async recommendModel(agentId: string, task?: string): Promise<FaberLoomModelRecommendation | undefined>',
+        description: 'Ask the recommender which model suits one agent\'s work.',
+        parameters: [{ name: 'agentId', description: 'the agent the recommendation is for.' }, { name: 'task', description: 'optional task label used to weight evidence.' }],
+        returns: 'the recommendation, or undefined when the agent is gone.',
+      },
+      {
+        signature: '@Remote(\'teachings\') async teachings(): Promise<readonly FaberLoomTeachingRow[]>',
+        description: 'List the owner\'s versioned teachings, newest first.',
+        parameters: [],
+        returns: 'the teaching rows.',
+      },
+      {
+        signature: '@Remote(\'saveTeaching\') async saveTeaching(input: TeachingSaveInput): Promise<readonly FaberLoomTeachingRow[]>',
+        description: 'Record one teaching: a correction from a case, or a direct instruction.',
+        parameters: [{ name: 'input', description: 'scope, text, source, and the optional scoping.' }],
+        returns: 'the refreshed teaching list.',
+      },
+      {
+        signature: '@Remote(\'editTeaching\') async editTeaching(id: string, text: string, reason: string): Promise<readonly FaberLoomTeachingRow[]>',
+        description: 'Edit one teaching, producing a new version and keeping the previous one.',
+        parameters: [{ name: 'id', description: 'teaching id.' }, { name: 'text', description: 'the new text.' }, { name: 'reason', description: 'why it changed.' }],
+        returns: 'the refreshed teaching list.',
+      },
+      {
+        signature: '@Remote(\'revokeTeaching\') async revokeTeaching(id: string): Promise<readonly FaberLoomTeachingRow[]>',
+        description: 'Revoke one teaching so no later decision recovers it.',
+        parameters: [{ name: 'id', description: 'teaching id.' }],
+        returns: 'the refreshed teaching list.',
+      },
+      {
+        signature: '@Remote(\'mcpTokens\') async mcpTokens(): Promise<readonly FaberLoomMcpTokenRow[]>',
+        description: 'List the MCP client tokens this owner minted.',
+        parameters: [],
+        returns: 'the token rows, revoked ones included.',
+      },
+      {
+        signature: '@Remote(\'mintMcpToken\') async mintMcpToken(input: McpTokenInput): Promise<readonly FaberLoomMcpTokenRow[]>',
+        description: 'Mint one MCP client token for an external agent.',
+        parameters: [{ name: 'input', description: 'who the token is for and the tools it may use.' }],
+        returns: 'the refreshed token list.',
+      },
+      {
+        signature: '@Remote(\'revokeMcpToken\') async revokeMcpToken(token: string): Promise<readonly FaberLoomMcpTokenRow[]>',
+        description: 'Revoke one MCP client token.',
+        parameters: [{ name: 'token', description: 'the token to revoke.' }],
+        returns: 'the refreshed token list.',
+      },
+      {
+        signature: '@Remote(\'performance\') async performance(agentId?: string, task?: string): Promise<FaberLoomPerformanceRow>',
+        description: 'Read the owner\'s contextual performance evidence.',
+        parameters: [{ name: 'agentId', description: 'optional agent filter.' }, { name: 'task', description: 'optional task filter.' }],
+        returns: 'the evidence summary, with an absent sample reported as null.',
+      },
+      {
+        signature: '@Remote(\'grants\') async grants(): Promise<readonly FaberLoomGrantRow[]>',
+        description: 'List the owner\'s autonomy grants, revoked ones included.',
+        parameters: [],
+        returns: 'the grant rows.',
+      },
+      {
+        signature: '@Remote(\'grant\') async grant(input: GrantSaveInput): Promise<readonly FaberLoomGrantRow[]>',
+        description: 'Grant one action, scoped to an agent and context the caller states.',
+        parameters: [{ name: 'input', description: 'the action and its optional scope.' }],
+        returns: 'the refreshed grant list.',
+      },
+      {
+        signature: '@Remote(\'revokeGrant\') async revokeGrant(id: string): Promise<readonly FaberLoomGrantRow[]>',
+        description: 'Revoke one grant, stopping the next effect that depended on it.',
+        parameters: [{ name: 'id', description: 'grant id.' }],
+        returns: 'the refreshed grant list.',
+      },
+      {
+        signature: '@Remote(\'routineDetail\') async routineDetail(id: string): Promise<FaberLoomRoutineDetail | undefined>',
+        description: 'Read one routine with its full editable definition.',
+        parameters: [{ name: 'id', description: 'routine id.' }],
+        returns: 'the routine detail, or undefined when it is gone.',
+      },
+      {
+        signature: '@Remote(\'saveRoutine\') async saveRoutine(id: string, input: RoutineSaveInput): Promise<FaberLoomOverview>',
+        description: 'Save one routine\'s editable definition as a new version.',
+        parameters: [{ name: 'id', description: 'routine id.' }, { name: 'input', description: 'the fields to replace; absent fields keep the current value.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'removeRoutine\') async removeRoutine(id: string): Promise<FaberLoomOverview>',
+        description: 'Remove one routine definition. Its executions stay as the run\'s history.',
+        parameters: [{ name: 'id', description: 'routine id.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'executions\') async executions(routineId?: string): Promise<readonly FaberLoomExecutionRow[]>',
+        description: 'List the owner\'s executions, optionally only one routine\'s.',
+        parameters: [{ name: 'routineId', description: 'routine id, or undefined for every routine.' }],
+        returns: 'execution rows oldest first.',
+      },
+      {
+        signature: '@Remote(\'startRoutine\') async startRoutine(routineId: string): Promise<readonly FaberLoomExecutionRow[]>',
+        description: 'Start a manual run of one active routine.',
+        parameters: [{ name: 'routineId', description: 'routine to run.' }],
+        returns: 'the refreshed executions of that routine.',
+      },
+      {
+        signature: '@Remote(\'tickRoutine\') async tickRoutine(routineId: string): Promise<readonly FaberLoomExecutionRow[]>',
+        description: 'Advance every runnable step of the owner\'s executions.',
+        parameters: [{ name: 'routineId', description: 'routine whose panel is asking; the tick itself is global to the owner.' }],
+        returns: 'the refreshed executions of that routine.',
+      },
+      {
+        signature: '@Remote(\'reconcileExecution\') async reconcileExecution(id: string): Promise<readonly FaberLoomExecutionRow[]>',
+        description: 'Reconcile one execution whose effect stayed pending after a write.',
+        parameters: [{ name: 'id', description: 'execution id.' }],
+        returns: 'the refreshed executions of its routine.',
+      },
+      {
+        signature: '@Remote(\'cancelExecutionEffect\') async cancelExecutionEffect(id: string, stepId: string): Promise<readonly FaberLoomExecutionRow[]>',
+        description: 'Cancel the recorded effect of one step so the run can be retried.',
+        parameters: [{ name: 'id', description: 'execution id.' }, { name: 'stepId', description: 'step whose effect to cancel.' }],
+        returns: 'the refreshed executions of its routine.',
+      },
+      {
+        signature: '@Remote(\'boardDetail\') async boardDetail(id: string): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Read one board item with its review state.',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the board detail, or undefined when it is gone.',
+      },
+      {
+        signature: '@Remote(\'setAgentResponsibility\') async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview>',
+        description: 'Replace one catalog agent\'s responsibility.',
+        parameters: [{ name: 'id', description: 'agent id.' }, { name: 'responsibility', description: 'the new responsibility statement.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'createBoardItem\') async createBoardItem(title: string): Promise<FaberLoomOverview>',
+        description: 'Create one board item awaiting review.',
+        parameters: [{ name: 'title', description: 'display title; it also carries the prepared result summary.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'reviewBoardItem\') async reviewBoardItem(id: string, approve: boolean): Promise<FaberLoomOverview>',
+        description: 'Approve or reject the current revision of one board item.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'approve', description: 'true approves, false rejects.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'reopenBoardItem\') async reopenBoardItem(id: string): Promise<FaberLoomOverview>',
+        description: 'Reopen one reviewed board item so it can be corrected.',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'createRoutine\') async createRoutine(name: string, intent: string): Promise<FaberLoomOverview>',
+        description: 'Create one draft routine the owner can then activate.',
+        parameters: [{ name: 'name', description: 'display name.' }, { name: 'intent', description: 'the procedure the routine performs.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'setRoutineActive\') async setRoutineActive(id: string, active: boolean): Promise<FaberLoomOverview>',
+        description: 'Activate or pause one routine.',
+        parameters: [{ name: 'id', description: 'routine id.' }, { name: 'active', description: 'true activates, false pauses.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'remember\') async remember(text: string): Promise<FaberLoomOverview>',
+        description: 'Record one owner statement on the agent-memory server. The server distils L0 into L1 asynchronously, so the new row may appear after the next read.',
+        parameters: [{ name: 'text', description: 'the statement to remember.' }],
+        returns: 'the refreshed overview.',
+      },
+    ],
+  },
+  {
     key: 'fileReferences',
     summary: 'Host capability for cancellable file-reference discovery.',
     description: 'Host capability for cancellable file-reference discovery.',
@@ -3731,8 +4759,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Agent {\n    readonly id: SessionId;\n}',
   },
   {
+    name: 'AgentBudgetInput',
+    declaration: 'export interface AgentBudgetInput {\n    readonly perExecution: number;\n    readonly currency: string;\n    readonly maxAttempts: number;\n    readonly maxEscalations: number;\n}',
+  },
+  {
     name: 'AgentCancelCause',
     declaration: 'export type AgentCancelCause = {\n    readonly kind: \'user\';\n} | {\n    readonly kind: \'parent\';\n} | {\n    readonly kind: \'hook\';\n    readonly reason: string;\n} | {\n    readonly kind: \'disposed\';\n};',
+  },
+  {
+    name: 'AgentEscalationInput',
+    declaration: 'export interface AgentEscalationInput {\n    readonly authorized: readonly string[];\n    readonly conditions: readonly string[];\n    readonly mode: string;\n}',
   },
   {
     name: 'AgentFactory',
@@ -3743,8 +4779,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentHandle {\n    agent: Agent;\n    dispose(): Promise<void>;\n}',
   },
   {
+    name: 'AgentInput',
+    declaration: 'export interface AgentInput {\n    readonly name: string;\n    readonly responsibility: string;\n    readonly origin?: \'scratch\' | \'pool\' | \'task\';\n    readonly originRef?: string;\n    readonly spaceId?: string;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly policy?: PolicyPatch;\n}',
+  },
+  {
     name: 'AgentOptions',
     declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    reasoningEffort?: ReasoningEffortId;\n    maxTokens?: number;\n}',
+  },
+  {
+    name: 'AgentPatch',
+    declaration: 'export interface AgentPatch {\n    readonly name?: string;\n    readonly responsibility?: string;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly subagents?: readonly {\n        readonly name: string;\n        readonly agentId: FaberLoomAgentId;\n    }[];\n    readonly lessons?: readonly string[];\n    readonly policy?: PolicyPatch;\n}',
   },
   {
     name: 'AgentPreset',
@@ -3777,6 +4821,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentResolver',
     declaration: 'export type AgentResolver = (sessionId: SessionId) => Promise<Agent>;',
+  },
+  {
+    name: 'AgentSaveInput',
+    declaration: 'export interface AgentSaveInput {\n    readonly name?: string;\n    readonly responsibility?: string;\n    readonly skills?: readonly string[];\n    readonly primaryModelId?: string | null;\n    readonly exclusive?: boolean;\n    readonly fallbacks?: readonly string[];\n    readonly escalation?: AgentEscalationInput | null;\n    readonly budget?: AgentBudgetInput | null;\n}',
   },
   {
     name: 'AgentSetup',
@@ -3955,6 +5003,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
   },
   {
+    name: 'BoardCreateInput',
+    declaration: 'export interface BoardCreateInput extends BoardSubmitInput {\n    readonly title: string;\n    readonly spaceId?: string;\n    readonly executionId?: string;\n}',
+  },
+  {
+    name: 'BoardEffect',
+    declaration: 'export interface BoardEffect {\n    readonly ref: string;\n    readonly detail: string | null;\n    readonly authorization: string | null;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'BoardEffectInput',
+    declaration: 'export interface BoardEffectInput {\n    readonly ref: string;\n    readonly authorization?: string;\n    readonly detail?: string;\n}',
+  },
+  {
+    name: 'BoardReview',
+    declaration: 'export interface BoardReview {\n    readonly decision: \'approve\' | \'reject\';\n    readonly version: number;\n    readonly note: string | null;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'BoardReviewInput',
+    declaration: 'export interface BoardReviewInput {\n    readonly decision: \'approve\' | \'reject\';\n    readonly version: number;\n    readonly note?: string;\n}',
+  },
+  {
+    name: 'BoardRevision',
+    declaration: 'export interface BoardRevision {\n    readonly version: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly documentRef: string | null;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'BoardStatus',
+    declaration: 'export type BoardStatus = \'in_progress\' | \'waiting_data\' | \'waiting_approval\' | \'approved\' | \'completed\' | \'failed\' | \'reopened\' | \'needs_review\';',
+  },
+  {
+    name: 'BoardSubmitInput',
+    declaration: 'export interface BoardSubmitInput {\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly documentRef?: string;\n}',
+  },
+  {
     name: 'Branded',
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
   },
@@ -3965,6 +5045,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BrowserUseProviderName',
     declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
+  },
+  {
+    name: 'BudgetPolicy',
+    declaration: 'export interface BudgetPolicy {\n    readonly perExecution: number;\n    readonly currency: string;\n    readonly maxAttempts: number;\n    readonly maxEscalations: number;\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -4045,6 +5129,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConfinedSandboxMode',
     declaration: 'export type ConfinedSandboxMode = Exclude<SandboxMode, \'danger-full-access\'>;',
+  },
+  {
+    name: 'ConnectionInput',
+    declaration: 'export interface ConnectionInput {\n    readonly id?: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host?: string | null;\n    readonly port?: number | null;\n    readonly secure?: boolean | null;\n    readonly username?: string | null;\n    readonly secret?: string | null;\n    readonly destination?: string | null;\n    readonly retentionDays?: number | null;\n}',
+  },
+  {
+    name: 'ConnectionKind',
+    declaration: 'export type ConnectionKind = \'imap\' | \'backup\';',
+  },
+  {
+    name: 'ConnectionProbe',
+    declaration: 'export interface ConnectionProbe {\n    readonly ok: boolean;\n    readonly detail: string;\n}',
   },
   {
     name: 'ContentBlockMap',
@@ -4155,6 +5251,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
   {
+    name: 'CreateBackupOptions',
+    declaration: 'export interface CreateBackupOptions {\n    note?: string;\n    include?: readonly string[];\n}',
+  },
+  {
     name: 'CreateGoalRequest',
     declaration: 'export interface CreateGoalRequest {\n    readonly objective: string;\n    readonly maxGoalRounds?: number;\n}',
   },
@@ -4165,6 +5265,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CreateSessionOptions',
     declaration: 'export interface CreateSessionOptions {\n    readonly seed?: readonly SessionEvent[];\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly createdAt?: number;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n}',
+  },
+  {
+    name: 'CreateSpaceInput',
+    declaration: 'export interface CreateSpaceInput {\n    readonly title: string;\n    readonly parentId?: FaberLoomSpaceId;\n}',
   },
   {
     name: 'CreateTeamTaskRequest',
@@ -4211,6 +5315,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
   },
   {
+    name: 'DelegateRequest',
+    declaration: 'export interface DelegateRequest {\n    readonly subagent: string;\n    readonly task: string;\n    readonly spent?: number;\n    readonly condition?: string;\n}',
+  },
+  {
+    name: 'DelegateResult',
+    declaration: 'export interface DelegateResult {\n    readonly status: ResolveStatus;\n    readonly modelId: FaberLoomModelId | undefined;\n    readonly reason: string;\n    readonly cost: number | undefined;\n    readonly remainingBudget: number | undefined;\n}',
+  },
+  {
     name: 'DiffCallView',
     declaration: 'export interface DiffCallView {\n    card: \'diff\';\n    title: string;\n    diffs: FileDiff[];\n    locations?: FileLocation[];\n}',
   },
@@ -4245,6 +5357,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DirectoryRegistrationHandle',
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
+  },
+  {
+    name: 'DispatchReport',
+    declaration: 'export interface DispatchReport {\n    readonly skipped: string | null;\n    readonly started: readonly string[];\n    readonly advanced: readonly string[];\n    readonly reconciled: readonly string[];\n    readonly expired: readonly string[];\n}',
   },
   {
     name: 'Domain',
@@ -4299,6 +5415,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type DshEnvironmentKey = `${typeof DSH_ENV_PREFIX}${string}`;',
   },
   {
+    name: 'DuplicateInput',
+    declaration: 'export interface DuplicateInput {\n    readonly name: string;\n    readonly spaceId?: string;\n    readonly lessons?: readonly string[];\n}',
+  },
+  {
     name: 'DynamicCordisPackage',
     declaration: 'export interface DynamicCordisPackage {\n    pluginId: CordisDynamicPluginId;\n    packageId: CordisDynamicPackageId;\n    pluginRunId: CordisDynamicPluginRunId;\n    name: string;\n}',
   },
@@ -4319,6 +5439,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EditGoalRequest {\n    readonly objective?: string;\n    readonly maxGoalRounds?: number;\n}',
   },
   {
+    name: 'EffectiveContext',
+    declaration: 'export interface EffectiveContext {\n    readonly resolved: SpaceContext;\n    readonly conflicts: readonly EffectiveContextConflict[];\n    readonly sources: readonly FaberLoomSpaceId[];\n    readonly excluded: readonly FaberLoomSpaceId[];\n    readonly dataSources: readonly SpaceSource[];\n    readonly directives: readonly string[];\n}',
+  },
+  {
+    name: 'EffectiveContextConflict',
+    declaration: 'export interface EffectiveContextConflict {\n    readonly key: string;\n    readonly candidates: readonly {\n        readonly spaceId: FaberLoomSpaceId;\n        readonly value: string;\n    }[];\n}',
+  },
+  {
     name: 'EncodedFileAttachment',
     declaration: 'export interface EncodedFileAttachment {\n    data: string;\n    name?: string;\n}',
   },
@@ -4333,6 +5461,210 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    tools?: ToolSchema[];\n}',
+  },
+  {
+    name: 'EscalationPolicy',
+    declaration: 'export interface EscalationPolicy {\n    readonly authorized: readonly FaberLoomModelId[];\n    readonly conditions: readonly string[];\n    readonly mode: \'auto\' | \'manual\';\n}',
+  },
+  {
+    name: 'EventSource',
+    declaration: 'export interface EventSource {\n    readonly id: string;\n    readonly ownerId: string;\n    readonly kind: \'email\' | \'webhook\';\n    readonly label: string;\n    readonly token: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'EvidenceSummary',
+    declaration: 'export interface EvidenceSummary {\n    readonly uses: number;\n    readonly approved: number;\n    readonly corrected: number;\n    readonly correctionRate: number | undefined;\n    readonly costPerUsefulResult: number | undefined;\n}',
+  },
+  {
+    name: 'Execution',
+    declaration: 'export interface Execution {\n    readonly id: FaberLoomExecutionId;\n    readonly routineId: FaberLoomRoutineId;\n    readonly routineVersion: number;\n    readonly ownerId: string;\n    readonly status: ExecutionStatus;\n    readonly idempotencyKey: string;\n    readonly steps: Record<string, StepState>;\n    readonly evidence: readonly ExecutionEvidence[];\n    readonly event: IngestEvent | null;\n    readonly waitingFor: string | null;\n    readonly deadlineAt: string | null;\n    readonly reason: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'ExecutionEvidence',
+    declaration: 'export interface ExecutionEvidence {\n    readonly channel: string;\n    readonly eventKey: string | null;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'ExecutionStatus',
+    declaration: 'export type ExecutionStatus = \'running\' | \'waiting\' | \'completed\' | \'failed\' | \'needs_review\';',
+  },
+  {
+    name: 'FaberLoomAgent',
+    declaration: 'export interface FaberLoomAgent {\n    readonly id: FaberLoomAgentId;\n    readonly name: string;\n    readonly responsibility: string;\n    readonly spaceId: string | undefined;\n    readonly origin: \'scratch\' | \'pool\' | \'task\';\n    readonly originRef: string | undefined;\n    readonly baseAgentId: FaberLoomAgentId | undefined;\n    readonly skills: readonly string[];\n    readonly tools: readonly string[];\n    readonly subagents: readonly {\n        readonly name: string;\n        readonly agentId: FaberLoomAgentId;\n    }[];\n    readonly policy: ModelPolicy;\n    readonly lessons: readonly string[];\n    readonly active: boolean;\n    readonly version: number;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomAgentDetail',
+    declaration: 'export interface FaberLoomAgentDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly responsibility: string;\n    readonly skills: readonly string[];\n    readonly tools: readonly string[];\n    readonly active: boolean;\n    readonly spaceId: string | null;\n    readonly primaryModelId: string | null;\n    readonly exclusive: boolean;\n    readonly fallbacks: readonly string[];\n    readonly escalation: AgentEscalationInput | null;\n    readonly budget: AgentBudgetInput | null;\n}',
+  },
+  {
+    name: 'FaberLoomAgentId',
+    declaration: 'export type FaberLoomAgentId = Branded<\'FaberLoomAgentId\'>;',
+  },
+  {
+    name: 'FaberLoomAgentRow',
+    declaration: 'export interface FaberLoomAgentRow {\n    readonly id: string;\n    readonly name: string;\n    readonly spaceId: string | null;\n    readonly active: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomBackupDomainDigest',
+    declaration: 'export interface FaberLoomBackupDomainDigest {\n    domain: string;\n    tables: FaberLoomBackupTableDigest[];\n}',
+  },
+  {
+    name: 'FaberLoomBackupManifest',
+    declaration: 'export interface FaberLoomBackupManifest {\n    id: string;\n    ownerId: string;\n    createdAt: string;\n    formatVersion: number;\n    note: string | null;\n    domains: FaberLoomBackupDomainDigest[];\n    digest: string;\n}',
+  },
+  {
+    name: 'FaberLoomBackupTableDigest',
+    declaration: 'export interface FaberLoomBackupTableDigest {\n    domain: string;\n    table: string;\n    recordCount: number;\n    sha256: string;\n}',
+  },
+  {
+    name: 'FaberLoomBackupTableVerdict',
+    declaration: 'export interface FaberLoomBackupTableVerdict {\n    domain: string;\n    table: string;\n    expected: string;\n    actual: string;\n    recordCount: number;\n    ok: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomBackupVerifyResult',
+    declaration: 'export interface FaberLoomBackupVerifyResult {\n    id: string;\n    ok: boolean;\n    expectedDigest: string;\n    actualDigest: string;\n    tables: FaberLoomBackupTableVerdict[];\n}',
+  },
+  {
+    name: 'FaberLoomBoardDetail',
+    declaration: 'export interface FaberLoomBoardDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly version: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly effects: readonly {\n        readonly ref: string;\n        readonly detail: string | null;\n        readonly at: string;\n    }[];\n}',
+  },
+  {
+    name: 'FaberLoomBoardItem',
+    declaration: 'export interface FaberLoomBoardItem {\n    readonly id: FaberLoomBoardItemId;\n    readonly ownerId: string;\n    readonly spaceId: string | null;\n    readonly title: string;\n    readonly status: BoardStatus;\n    readonly version: number;\n    readonly revisions: readonly BoardRevision[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly effects: readonly BoardEffect[];\n    readonly reviews: readonly BoardReview[];\n    readonly executionId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardItemId',
+    declaration: 'export type FaberLoomBoardItemId = Branded<\'FaberLoomBoardItemId\'>;',
+  },
+  {
+    name: 'FaberLoomBoardRow',
+    declaration: 'export interface FaberLoomBoardRow {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n}',
+  },
+  {
+    name: 'FaberLoomConnection',
+    declaration: 'export interface FaberLoomConnection {\n    readonly id: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host: string | null;\n    readonly port: number | null;\n    readonly secure: boolean | null;\n    readonly username: string | null;\n    readonly hasSecret: boolean;\n    readonly destination: string | null;\n    readonly retentionDays: number | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomExecutionId',
+    declaration: 'export type FaberLoomExecutionId = Branded<\'FaberLoomExecutionId\'>;',
+  },
+  {
+    name: 'FaberLoomExecutionRow',
+    declaration: 'export interface FaberLoomExecutionRow {\n    readonly id: string;\n    readonly routineId: string;\n    readonly routineName: string;\n    readonly routineVersion: number;\n    readonly status: string;\n    readonly waitingFor: string | null;\n    readonly deadlineAt: string | null;\n    readonly reason: string | null;\n    readonly doneSteps: number;\n    readonly totalSteps: number;\n    readonly steps: readonly {\n        readonly id: string;\n        readonly status: string;\n        readonly text: string | null;\n        readonly reason: string | null;\n        readonly effect: boolean;\n    }[];\n    readonly evidenceCount: number;\n    readonly event: {\n        readonly key: string;\n        readonly type: string;\n        readonly subject: string | null;\n    } | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomGrant',
+    declaration: 'export interface FaberLoomGrant {\n    readonly id: FaberLoomGrantId;\n    readonly ownerId: string;\n    readonly action: string;\n    readonly agentId: string | null;\n    readonly context: string | null;\n    readonly note: string | null;\n    readonly grantedAt: string;\n    readonly expiresAt: string | null;\n    readonly revoked: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomGrantId',
+    declaration: 'export type FaberLoomGrantId = string;',
+  },
+  {
+    name: 'FaberLoomGrantRow',
+    declaration: 'export interface FaberLoomGrantRow {\n    readonly id: string;\n    readonly action: string;\n    readonly agentId: string | null;\n    readonly context: string | null;\n    readonly note: string | null;\n    readonly expiresAt: string | null;\n    readonly revoked: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomMcpToken',
+    declaration: 'export interface FaberLoomMcpToken {\n    readonly token: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly revokedAt: string | null;\n    readonly scopes: readonly string[] | null;\n}',
+  },
+  {
+    name: 'FaberLoomMcpTokenRow',
+    declaration: 'export interface FaberLoomMcpTokenRow {\n    readonly token: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly revokedAt: string | null;\n    readonly scopes: readonly string[] | null;\n}',
+  },
+  {
+    name: 'FaberLoomMemoryRow',
+    declaration: 'export interface FaberLoomMemoryRow {\n    readonly id: string;\n    readonly kind: string;\n    readonly text: string;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'FaberLoomModel',
+    declaration: 'export interface FaberLoomModel {\n    readonly id: FaberLoomModelId;\n    readonly provider: string;\n    readonly model: string;\n    readonly capabilities: readonly string[];\n    readonly contextWindow: number | undefined;\n    readonly maxOutput: number | undefined;\n    readonly inputPerMillion: number | undefined;\n    readonly outputPerMillion: number | undefined;\n    readonly currency: string | undefined;\n    readonly available: boolean;\n    readonly checkedAt: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomModelCandidate',
+    declaration: 'export interface FaberLoomModelCandidate {\n    readonly modelId: string;\n    readonly estimatedCost: number | null;\n    readonly uses: number;\n    readonly provisional: boolean;\n    readonly reasons: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomModelId',
+    declaration: 'export type FaberLoomModelId = Branded<\'FaberLoomModelId\'>;',
+  },
+  {
+    name: 'FaberLoomModelRecommendation',
+    declaration: 'export interface FaberLoomModelRecommendation {\n    readonly recommended: string | null;\n    readonly alternatives: readonly FaberLoomModelCandidate[];\n    readonly uncertainty: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomModelRow',
+    declaration: 'export interface FaberLoomModelRow {\n    readonly id: string;\n    readonly provider: string;\n    readonly model: string;\n    readonly capabilities: readonly string[];\n    readonly contextWindow: number | null;\n    readonly maxOutput: number | null;\n    readonly inputPerMillion: number | null;\n    readonly outputPerMillion: number | null;\n    readonly currency: string | null;\n    readonly available: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomOverview',
+    declaration: 'export interface FaberLoomOverview {\n    readonly spaces: readonly FaberLoomSpaceRow[];\n    readonly agents: readonly FaberLoomAgentRow[];\n    readonly board: readonly FaberLoomBoardRow[];\n    readonly routines: readonly FaberLoomRoutineRow[];\n    readonly memory: readonly FaberLoomMemoryRow[];\n    readonly canWrite: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomPerformanceRow',
+    declaration: 'export interface FaberLoomPerformanceRow {\n    readonly uses: number;\n    readonly approved: number;\n    readonly corrected: number;\n    readonly agentFailures: number;\n    readonly correctionsByCause: Readonly<Record<string, number>>;\n    readonly correctionRate: number | null;\n}',
+  },
+  {
+    name: 'FaberLoomRestoreResult',
+    declaration: 'export interface FaberLoomRestoreResult {\n    id: string;\n    dryRun: boolean;\n    tables: FaberLoomRestoreTable[];\n    skipped: FaberLoomRestoreSkip[];\n}',
+  },
+  {
+    name: 'FaberLoomRestoreSkip',
+    declaration: 'export interface FaberLoomRestoreSkip {\n    domain: string;\n    reason: string;\n}',
+  },
+  {
+    name: 'FaberLoomRestoreTable',
+    declaration: 'export interface FaberLoomRestoreTable {\n    domain: string;\n    table: string;\n    written: number;\n}',
+  },
+  {
+    name: 'FaberLoomRoutine',
+    declaration: 'export interface FaberLoomRoutine {\n    readonly id: FaberLoomRoutineId;\n    readonly ownerId: string;\n    readonly name: string;\n    readonly status: RoutineStatus;\n    readonly version: number;\n    readonly definition: RoutineDefinition;\n    readonly versions: readonly number[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomRoutineDetail',
+    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n}',
+  },
+  {
+    name: 'FaberLoomRoutineId',
+    declaration: 'export type FaberLoomRoutineId = Branded<\'FaberLoomRoutineId\'>;',
+  },
+  {
+    name: 'FaberLoomRoutineRow',
+    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n}',
+  },
+  {
+    name: 'FaberLoomRoutineStepRow',
+    declaration: 'export interface FaberLoomRoutineStepRow {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomSkillRow',
+    declaration: 'export interface FaberLoomSkillRow {\n    readonly name: string;\n    readonly description: string;\n    readonly module: string | null;\n    readonly action: string | null;\n    readonly origin: \'role\' | \'owner\';\n    readonly assignedTo: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomSpace',
+    declaration: 'export interface FaberLoomSpace {\n    readonly id: FaberLoomSpaceId;\n    readonly ownerId: string;\n    readonly companyId: string | undefined;\n    readonly title: string;\n    readonly parentId: FaberLoomSpaceId | undefined;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly FaberLoomSpaceId[];\n    readonly members: readonly string[];\n    readonly context: SpaceContext;\n    readonly sources: readonly SpaceSource[];\n    readonly archived: boolean;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly version: number;\n}',
+  },
+  {
+    name: 'FaberLoomSpaceDetail',
+    declaration: 'export interface FaberLoomSpaceDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly string[];\n    readonly members: readonly string[];\n    readonly sources: readonly {\n        readonly kind: string;\n        readonly ref: string;\n    }[];\n    readonly contextKeys: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomSpaceId',
+    declaration: 'export type FaberLoomSpaceId = Branded<\'FaberLoomSpaceId\'>;',
+  },
+  {
+    name: 'FaberLoomSpaceRow',
+    declaration: 'export interface FaberLoomSpaceRow {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomTeaching',
+    declaration: 'export interface FaberLoomTeaching {\n    readonly id: FaberLoomTeachingId;\n    readonly ownerId: string;\n    readonly scope: TeachingScope;\n    readonly spaceId: string | null;\n    readonly agentId: string | null;\n    readonly skill: string | null;\n    readonly task: string | null;\n    readonly text: string;\n    readonly source: string;\n    readonly author: string;\n    readonly status: TeachingStatus;\n    readonly version: number;\n    readonly supersedes: number | null;\n    readonly uses: readonly string[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomTeachingId',
+    declaration: 'export type FaberLoomTeachingId = Branded<\'FaberLoomTeachingId\'>;',
+  },
+  {
+    name: 'FaberLoomTeachingRow',
+    declaration: 'export interface FaberLoomTeachingRow {\n    readonly id: string;\n    readonly scope: string;\n    readonly spaceId: string | null;\n    readonly agentId: string | null;\n    readonly skill: string | null;\n    readonly task: string | null;\n    readonly text: string;\n    readonly source: string;\n    readonly author: string;\n    readonly status: string;\n    readonly version: number;\n    readonly uses: readonly string[];\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FeedbackCategory',
@@ -4475,8 +5807,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface GoalView extends GoalSnapshot {\n    readonly roundsStarted: number;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n    readonly activation: GoalActivation;\n}',
   },
   {
-    name: 'GrantRecord',
-    declaration: 'export interface GrantRecord {\n    readonly kind: \'grant\';\n    readonly payload: unknown;\n}',
+    name: 'GrantCheck',
+    declaration: 'export interface GrantCheck {\n    readonly ownerId: string;\n    readonly action: string;\n    readonly agentId?: string;\n    readonly context?: string;\n    readonly now?: string;\n}',
+  },
+  {
+    name: 'GrantDecision',
+    declaration: 'export interface GrantDecision {\n    readonly allowed: boolean;\n    readonly reason: \'GRANTED\' | \'NO_GRANT\' | \'REVOKED\' | \'EXPIRED\';\n    readonly grantId: FaberLoomGrantId | null;\n}',
+  },
+  {
+    name: 'GrantInput',
+    declaration: 'export interface GrantInput {\n    readonly action: string;\n    readonly agentId?: string;\n    readonly context?: string;\n    readonly note?: string;\n    readonly expiresAt?: string;\n}',
+  },
+  {
+    name: 'GrantSaveInput',
+    declaration: 'export interface GrantSaveInput {\n    readonly action: string;\n    readonly agentId?: string;\n    readonly context?: string;\n    readonly note?: string;\n    readonly expiresAt?: string;\n}',
   },
   {
     name: 'ImageAttachmentLimits',
@@ -4503,12 +5847,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ImageVariantId = Branded<\'ImageVariantId\'>;',
   },
   {
+    name: 'ImapCredentials',
+    declaration: 'export interface ImapCredentials {\n    readonly id: string;\n    readonly label: string;\n    readonly host: string;\n    readonly port: number;\n    readonly secure: boolean;\n    readonly username: string;\n    readonly password: string;\n}',
+  },
+  {
+    name: 'InboundReport',
+    declaration: 'export interface InboundReport {\n    readonly skipped: string | null;\n    readonly mailbox: string | null;\n    readonly read: number;\n    readonly started: readonly string[];\n    readonly error: string | null;\n}',
+  },
+  {
     name: 'IndexInjection',
     declaration: 'export type IndexInjection = {\n    kind: \'global\';\n    name: string;\n    value: unknown;\n} | {\n    kind: \'script\';\n    placement: IndexInjectionPlacement;\n    text: string;\n} | {\n    kind: \'script-src\';\n    placement: IndexInjectionPlacement;\n    src: string;\n} | {\n    kind: \'script-preload\';\n    src: string;\n} | {\n    kind: \'style\';\n    text: string;\n} | {\n    kind: \'html\';\n    placement: IndexInjectionPlacement;\n    html: string;\n};',
   },
   {
     name: 'IndexInjectionPlacement',
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
+  },
+  {
+    name: 'IngestEvent',
+    declaration: 'export interface IngestEvent {\n    readonly key: string;\n    readonly type: \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly subject?: string;\n    readonly data?: Record<string, unknown>;\n}',
   },
   {
     name: 'InspectorId',
@@ -4611,6 +5967,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type JsonValue = null | boolean | number | string | JsonValue[] | {\n    [key: string]: JsonValue;\n};',
   },
   {
+    name: 'KnowledgeSnapshot',
+    declaration: 'export interface KnowledgeSnapshot {\n    readonly teachings: readonly unknown[];\n    readonly performance: readonly unknown[];\n    readonly lateErrors: readonly unknown[];\n}',
+  },
+  {
     name: 'KvFacet',
     declaration: 'export interface KvFacet {\n    open(descriptor: KvUnitDescriptor): Promise<KvUnit>;\n}',
   },
@@ -4625,6 +5985,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'KvUnitDescriptor',
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n    readonly layout?: \'single\' | \'per-record\';\n    readonly compatibleVersions?: readonly number[];\n}',
+  },
+  {
+    name: 'LateErrorInput',
+    declaration: 'export interface LateErrorInput {\n    readonly caseRef: string;\n    readonly detail: string;\n    readonly teachingId?: FaberLoomTeachingId;\n    readonly author: string;\n}',
+  },
+  {
+    name: 'LinkPreview',
+    declaration: 'export interface LinkPreview {\n    readonly newlyVisibleTo: readonly string[];\n    readonly sharedContextKeys: readonly string[];\n}',
   },
   {
     name: 'LlmAdapter',
@@ -4747,6 +6115,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type McpResourceRequest = {\n    method: \'resources/list\' | \'resources/templates/list\';\n    cursor?: string;\n} | {\n    method: \'resources/read\';\n    uri: string;\n};',
   },
   {
+    name: 'McpTokenInput',
+    declaration: 'export interface McpTokenInput {\n    readonly label: string;\n    readonly scopes?: readonly string[];\n}',
+  },
+  {
     name: 'Message',
     declaration: 'export interface Message {\n    readonly id: MessageId;\n    readonly role: \'system\' | \'user\' | \'assistant\';\n    readonly content: ContentBlock[];\n    readonly source: MessageSource;\n}',
   },
@@ -4839,6 +6211,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    plugin: {\n        kind: \'plugin\';\n        plugin: string;\n    } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n}',
   },
   {
+    name: 'MigrationPlan',
+    declaration: 'export interface MigrationPlan {\n    readonly executionId: FaberLoomExecutionId;\n    readonly fromVersion: number;\n    readonly toVersion: number;\n    readonly preserved: readonly string[];\n    readonly added: readonly string[];\n}',
+  },
+  {
     name: 'ModelCatalog',
     declaration: 'export interface ModelCatalog {\n    readonly default: ModelSelection;\n    readonly routableProviders: readonly string[];\n    readonly groups: readonly ModelProviderGroup[];\n    readonly failures: readonly ModelCatalogFailure[];\n}',
   },
@@ -4851,6 +6227,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n}',
   },
   {
+    name: 'ModelInput',
+    declaration: 'export interface ModelInput {\n    readonly provider: string;\n    readonly model: string;\n    readonly capabilities?: readonly string[];\n    readonly contextWindow?: number;\n    readonly maxOutput?: number;\n    readonly inputPerMillion?: number;\n    readonly outputPerMillion?: number;\n    readonly currency?: string;\n    readonly available?: boolean;\n}',
+  },
+  {
     name: 'ModelMessageSource',
     declaration: 'export interface ModelMessageSource extends AssistantProviderMetadata {\n    kind: \'model\';\n}',
   },
@@ -4861,6 +6241,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ModelModalityMap',
     declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n}',
+  },
+  {
+    name: 'ModelPolicy',
+    declaration: 'export interface ModelPolicy {\n    readonly primary: FaberLoomModelId | undefined;\n    readonly exclusive: boolean;\n    readonly fallbacks: readonly FaberLoomModelId[];\n    readonly escalation: EscalationPolicy | undefined;\n    readonly budget: BudgetPolicy | undefined;\n}',
   },
   {
     name: 'ModelProviderGroup',
@@ -4887,8 +6271,36 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
   },
   {
+    name: 'Outcome',
+    declaration: 'export interface Outcome {\n    readonly id: string;\n    readonly agentId: FaberLoomAgentId;\n    readonly task: string;\n    readonly modelId: FaberLoomModelId;\n    readonly outcome: \'approved\' | \'corrected\';\n    readonly cost: number | undefined;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'OutcomeInput',
+    declaration: 'export interface OutcomeInput {\n    readonly agentId: FaberLoomAgentId;\n    readonly task: string;\n    readonly modelId: FaberLoomModelId;\n    readonly outcome: \'approved\' | \'corrected\';\n    readonly cost?: number;\n}',
+  },
+  {
+    name: 'PerformanceCause',
+    declaration: 'export type PerformanceCause = \'error\' | \'preference\' | \'requirement-change\';',
+  },
+  {
+    name: 'PerformanceInput',
+    declaration: 'export interface PerformanceInput {\n    readonly agentId?: string;\n    readonly modelId?: string;\n    readonly task: string;\n    readonly spaceId?: string;\n    readonly outcome: \'approved\' | \'corrected\';\n    readonly cause?: PerformanceCause;\n    readonly cost?: number;\n}',
+  },
+  {
+    name: 'PerformanceSummary',
+    declaration: 'export interface PerformanceSummary {\n    readonly uses: number;\n    readonly approved: number;\n    readonly corrected: number;\n    readonly agentFailures: number;\n    readonly correctionsByCause: Readonly<Record<string, number>>;\n    readonly correctionRate: number | undefined;\n}',
+  },
+  {
     name: 'PermissionCatalog',
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n}',
+  },
+  {
+    name: 'PersonalScope',
+    declaration: 'export interface PersonalScope {\n    readonly kind: \'personal\';\n    readonly ownerId: string;\n}',
+  },
+  {
+    name: 'PolicyPatch',
+    declaration: 'export interface PolicyPatch {\n    readonly primary?: FaberLoomModelId | null;\n    readonly exclusive?: boolean;\n    readonly fallbacks?: readonly FaberLoomModelId[];\n    readonly escalation?: EscalationPolicy | null;\n    readonly budget?: BudgetPolicy | null;\n}',
   },
   {
     name: 'PostToolDecision',
@@ -5051,6 +6463,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ReasoningEffortId = Branded<\'ReasoningEffortId\'>;',
   },
   {
+    name: 'RecommendCandidate',
+    declaration: 'export interface RecommendCandidate {\n    readonly modelId: FaberLoomModelId;\n    readonly costPerUsefulResult: number | undefined;\n    readonly uses: number;\n    readonly provisional: boolean;\n    readonly reasons: readonly string[];\n}',
+  },
+  {
+    name: 'RecommendRequest',
+    declaration: 'export interface RecommendRequest {\n    readonly capabilities?: readonly string[];\n    readonly minContextWindow?: number;\n    readonly task?: string;\n}',
+  },
+  {
+    name: 'RecommendResult',
+    declaration: 'export interface RecommendResult {\n    readonly recommended: FaberLoomModelId | undefined;\n    readonly alternatives: readonly RecommendCandidate[];\n    readonly uncertainty: readonly string[];\n}',
+  },
+  {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
   },
@@ -5119,6 +6543,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ResolvedSubagentStartRequest extends SubagentStartRequest {\n    readonly descriptor: SubagentDescriptorData;\n}',
   },
   {
+    name: 'ResolveRequest',
+    declaration: 'export interface ResolveRequest {\n    readonly task: string;\n    readonly providerDown?: boolean;\n    readonly condition?: string;\n    readonly spent?: number;\n    readonly attempted?: number;\n    readonly escalated?: number;\n}',
+  },
+  {
+    name: 'ResolveResult',
+    declaration: 'export interface ResolveResult {\n    readonly status: ResolveStatus;\n    readonly modelId: FaberLoomModelId | undefined;\n    readonly reason: string;\n    readonly policyVersion: number;\n    readonly estimatedCost: number | undefined;\n    readonly fallbackOf: FaberLoomModelId | undefined;\n}',
+  },
+  {
+    name: 'ResolveStatus',
+    declaration: 'export type ResolveStatus = \'selected\' | \'denied\' | \'needs_approval\' | \'needs_decision\';',
+  },
+  {
+    name: 'RestoreBackupOptions',
+    declaration: 'export interface RestoreBackupOptions {\n    dryRun?: boolean;\n}',
+  },
+  {
     name: 'RestoredSessionOptions',
     declaration: 'export interface RestoredSessionOptions {\n    readonly seed: SessionEvent[];\n    readonly meta: SessionHeader;\n    readonly inheritedEventCount: SessionLogOffset;\n    readonly eventState: SessionSeedEventState;\n}',
   },
@@ -5127,8 +6567,48 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
   {
+    name: 'RoutineDefinition',
+    declaration: 'export interface RoutineDefinition {\n    readonly intent: string;\n    readonly triggers: readonly RoutineTrigger[];\n    readonly steps: readonly RoutineStep[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: \'stop\' | \'continue\' | \'review\';\n}',
+  },
+  {
+    name: 'RoutineDefinitionInput',
+    declaration: 'export interface RoutineDefinitionInput {\n    readonly intent: string;\n    readonly triggers: readonly RoutineTriggerInput[];\n    readonly steps: readonly RoutineStepInput[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: \'stop\' | \'continue\' | \'review\';\n}',
+  },
+  {
+    name: 'RoutineInput',
+    declaration: 'export interface RoutineInput {\n    readonly name: string;\n    readonly definition: RoutineDefinitionInput;\n}',
+  },
+  {
+    name: 'RoutineSaveInput',
+    declaration: 'export interface RoutineSaveInput {\n    readonly name?: string;\n    readonly intent?: string;\n    readonly triggerKind?: string;\n    readonly triggerMatch?: string | null;\n    readonly steps?: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult?: string;\n    readonly permissions?: readonly string[];\n    readonly failurePolicy?: string;\n}',
+  },
+  {
+    name: 'RoutineStatus',
+    declaration: 'export type RoutineStatus = \'draft\' | \'active\' | \'paused\';',
+  },
+  {
+    name: 'RoutineStep',
+    declaration: 'export interface RoutineStep {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n    readonly revalidateKey: string | null;\n    readonly revalidateExpect: string | null;\n}',
+  },
+  {
+    name: 'RoutineStepInput',
+    declaration: 'export interface RoutineStepInput {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn?: readonly string[];\n    readonly waitFor?: string;\n    readonly effect?: boolean;\n    readonly revalidateKey?: string;\n    readonly revalidateExpect?: string;\n}',
+  },
+  {
+    name: 'RoutineTrigger',
+    declaration: 'export interface RoutineTrigger {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match: string | null;\n}',
+  },
+  {
+    name: 'RoutineTriggerInput',
+    declaration: 'export interface RoutineTriggerInput {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match?: string;\n}',
+  },
+  {
     name: 'RunnerFailureRule',
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
+  },
+  {
+    name: 'RunTemporarySubagentRequest',
+    declaration: 'export interface RunTemporarySubagentRequest {\n    readonly name: string;\n    readonly responsibility: string;\n    readonly primary: FaberLoomModelId;\n    readonly tools?: readonly string[];\n    readonly task: string;\n    readonly tool?: string;\n    readonly args?: unknown;\n    readonly spent?: number;\n}',
   },
   {
     name: 'SandboxEnforcement',
@@ -5201,6 +6681,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SearchResultView',
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
+  },
+  {
+    name: 'SeedReport',
+    declaration: 'export interface SeedReport {\n    readonly seeded: boolean;\n    readonly skipped: string | null;\n    readonly agents: readonly string[];\n    readonly routines: readonly string[];\n}',
+  },
+  {
+    name: 'Selection',
+    declaration: 'export interface Selection {\n    readonly id: string;\n    readonly agentId: FaberLoomAgentId;\n    readonly task: string;\n    readonly requestedModel: FaberLoomModelId | undefined;\n    readonly effectiveModel: FaberLoomModelId | undefined;\n    readonly reason: string;\n    readonly cost: number | undefined;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'SelectionInput',
+    declaration: 'export interface SelectionInput {\n    readonly agentId: FaberLoomAgentId;\n    readonly task: string;\n    readonly requestedModel?: FaberLoomModelId;\n    readonly effectiveModel?: FaberLoomModelId;\n    readonly reason: string;\n    readonly cost?: number;\n}',
   },
   {
     name: 'SendTeamMessageRequest',
@@ -5851,6 +7343,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
   },
   {
+    name: 'SpaceActor',
+    declaration: 'export interface SpaceActor {\n    readonly id: string;\n    readonly role: string;\n    readonly companyId: string | undefined;\n    readonly readOnly: boolean;\n}',
+  },
+  {
+    name: 'SpaceContext',
+    declaration: 'export type SpaceContext = Record<string, string>;',
+  },
+  {
+    name: 'SpaceFile',
+    declaration: 'export interface SpaceFile {\n    readonly id: string;\n    readonly spaceId: FaberLoomSpaceId;\n    readonly name: string;\n    readonly mediaType: string;\n    readonly size: number;\n    readonly sha256: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'SpaceFileContent',
+    declaration: 'export interface SpaceFileContent extends SpaceFile {\n    readonly contentBase64: string;\n}',
+  },
+  {
+    name: 'SpaceFileInput',
+    declaration: 'export interface SpaceFileInput {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly contentBase64: string;\n}',
+  },
+  {
+    name: 'SpaceSaveInput',
+    declaration: 'export interface SpaceSaveInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly members?: readonly string[];\n}',
+  },
+  {
+    name: 'SpaceSource',
+    declaration: 'export type SpaceSource = {\n    readonly kind: \'mwt-company\';\n    readonly id: string;\n} | {\n    readonly kind: \'mwt-client\';\n    readonly id: string;\n} | {\n    readonly kind: \'mwt-product\';\n    readonly id: string;\n};',
+  },
+  {
     name: 'SpawnTeammateRequest',
     declaration: 'export interface SpawnTeammateRequest {\n    readonly name: string;\n    readonly description: string;\n    readonly prompt: ContentBlock[];\n    readonly context: \'fresh\' | \'fork\';\n    readonly provider: string;\n    readonly signal: AbortSignal;\n}',
   },
@@ -5877,6 +7397,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SshStreamEndpoint',
     declaration: 'export type SshStreamEndpoint = z.infer<typeof streamEndpointSchema>;',
+  },
+  {
+    name: 'StartExecutionRequest',
+    declaration: 'export interface StartExecutionRequest {\n    readonly routineId: FaberLoomRoutineId;\n    readonly idempotencyKey: string;\n    readonly channel: string;\n    readonly input?: unknown;\n    readonly event?: IngestEvent;\n}',
+  },
+  {
+    name: 'StartExecutionResult',
+    declaration: 'export interface StartExecutionResult {\n    readonly execution: Execution;\n    readonly deduped: boolean;\n}',
+  },
+  {
+    name: 'StepContext',
+    declaration: 'export interface StepContext {\n    readonly executionId: string;\n    readonly routineId: FaberLoomRoutineId;\n    readonly stepId: string;\n    readonly input: unknown;\n    readonly event: IngestEvent | undefined;\n}',
+  },
+  {
+    name: 'StepHandler',
+    declaration: 'export type StepHandler = (context: StepContext) => unknown | Promise<unknown>;',
+  },
+  {
+    name: 'StepState',
+    declaration: 'export interface StepState {\n    readonly status: \'pending\' | \'running\' | \'waiting\' | \'completed\' | \'failed\';\n    readonly result: unknown;\n    readonly reason: string | null;\n}',
   },
   {
     name: 'StorageBackend',
@@ -6075,6 +7615,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TableValueOf<S extends DomainSpec, N extends keyof S[\'tables\']> = S[\'tables\'][N] extends DomainTableSpec<string, infer V> ? V : never;',
   },
   {
+    name: 'TeachingEditInput',
+    declaration: 'export interface TeachingEditInput {\n    readonly text: string;\n    readonly reason: string;\n    readonly author: string;\n}',
+  },
+  {
+    name: 'TeachingFilter',
+    declaration: 'export interface TeachingFilter {\n    readonly scope?: TeachingScope;\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly skill?: string;\n    readonly task?: string;\n    readonly includeCandidates?: boolean;\n    readonly caseRef?: string;\n}',
+  },
+  {
+    name: 'TeachingInput',
+    declaration: 'export interface TeachingInput {\n    readonly scope: TeachingScope;\n    readonly text: string;\n    readonly source: string;\n    readonly author: string;\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly skill?: string;\n    readonly task?: string;\n    readonly active?: boolean;\n    readonly caseRef?: string;\n}',
+  },
+  {
+    name: 'TeachingSaveInput',
+    declaration: 'export interface TeachingSaveInput {\n    readonly scope: string;\n    readonly text: string;\n    readonly source: string;\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly skill?: string;\n    readonly task?: string;\n    readonly active?: boolean;\n}',
+  },
+  {
+    name: 'TeachingScope',
+    declaration: 'export type TeachingScope = \'case\' | \'space\' | \'agent\' | \'skill\' | \'global\';',
+  },
+  {
+    name: 'TeachingStatus',
+    declaration: 'export type TeachingStatus = \'candidate\' | \'active\' | \'superseded\' | \'revoked\';',
+  },
+  {
     name: 'TeamId',
     declaration: 'export type TeamId = Branded<\'TeamId\'>;',
   },
@@ -6117,6 +7681,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TeamWaitResult',
     declaration: 'export interface TeamWaitResult {\n    readonly timedOut: boolean;\n}',
+  },
+  {
+    name: 'TemporarySubagentResult',
+    declaration: 'export interface TemporarySubagentResult {\n    readonly status: ResolveStatus;\n    readonly modelId: FaberLoomModelId | undefined;\n    readonly reason: string;\n    readonly cost: number | undefined;\n    readonly remainingBudget: number | undefined;\n    readonly result?: unknown;\n}',
   },
   {
     name: 'TerminalAttachmentId',
@@ -6219,6 +7787,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TerminalWaitReason = \'stdin_read\' | \'inferred_idle\' | \'timeout\' | \'session_exit\';',
   },
   {
+    name: 'TickRequest',
+    declaration: 'export interface TickRequest {\n    readonly events: readonly IngestEvent[];\n    readonly now?: string;\n}',
+  },
+  {
+    name: 'TickResult',
+    declaration: 'export interface TickResult {\n    readonly resumed: readonly FaberLoomExecutionId[];\n}',
+  },
+  {
     name: 'TokenMeasurement',
     declaration: 'export interface TokenMeasurement {\n    readonly logRevision: SessionLogOffset;\n    readonly baseline: TokenMeasurementBaseline;\n    readonly surfaceDeltaTokens: number;\n    readonly totalTokens: number;\n    readonly surfaceTokens: number;\n    readonly nodes: readonly TokenSurfaceNode[];\n}',
   },
@@ -6309,10 +7885,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ToolRestriction',
     declaration: 'export interface ToolRestriction {\n    readonly allow?: readonly string[];\n    readonly deny?: readonly string[];\n}',
-  },
-  {
-    name: 'ToolResult',
-    declaration: 'export interface ToolResult {\n    content: ContentBlock[];\n    isError: boolean;\n    meta?: JsonValue;\n}',
   },
   {
     name: 'ToolResultBlock',
@@ -6459,6 +8031,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
   },
   {
+    name: 'UpdateSpaceInput',
+    declaration: 'export interface UpdateSpaceInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly excluded?: readonly FaberLoomSpaceId[];\n    readonly members?: readonly string[];\n    readonly context?: SpaceContext;\n    readonly sources?: readonly SpaceSource[];\n}',
+  },
+  {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
   },
@@ -6585,6 +8161,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WebUpgradeRoute',
     declaration: 'export interface WebUpgradeRoute {\n    path: string;\n    handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>;\n}',
+  },
+  {
+    name: 'WorkdirReference',
+    declaration: 'export interface WorkdirReference {\n    readonly kind: \'opaque\';\n    readonly ref: string;\n}',
   },
   {
     name: 'WorkflowAgentEndInfo',
