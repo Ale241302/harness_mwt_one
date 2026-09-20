@@ -18,23 +18,42 @@ import httpProxy from 'http-proxy'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// Lee un secreto desde `<NAME>_FILE` (Docker secret / archivo montado) y, si no
+// existe, desde `<NAME>` en el entorno. Los secretos nunca se escriben en los
+// archivos de parche por usuario: allí se referencian como `!!js process.env.*`.
+function readSecret(name) {
+  const file = process.env[`${name}_FILE`]
+  if (file) {
+    try {
+      return fs.readFileSync(file, 'utf8').trim()
+    } catch (err) {
+      console.error(`[gateway] FATAL: no se pudo leer ${name}_FILE (${file}): ${err.message}`)
+      process.exit(1)
+    }
+  }
+  return process.env[name] || ''
+}
+
 const cfg = {
   port: Number(process.env.PORT || 8080),
   consolaApi: (process.env.CONSOLA_API_BASE || 'https://consola.mwt.one/api').replace(/\/+$/, ''),
   publicHost: process.env.PUBLIC_HOST || 'harness.mwt.one',
-  deepseekKey: process.env.DEEPSEEK_API_KEY || '',
+  deepseekKey: readSecret('DEEPSEEK_API_KEY'),
   dataDir: process.env.DATA_DIR || '/data/users',
   dshBasePort: Number(process.env.DSH_BASE_PORT || 3100),
   dshBin: process.env.DSH_BIN || 'dsh',
+  // The harness profile to launch per user. `faberloom` is this build's own
+  // profile (base + web-app + the native product-module bundle).
+  dshProfile: process.env.DSH_PROFILE || 'faberloom',
   mcpUrl: process.env.MWT_MCP_URL || 'http://consola-mwt-one-mcp:8765/mcp',
-  mcpGatewayKey: process.env.MWT_MCP_GATEWAY_KEY || '',
+  mcpGatewayKey: readSecret('MWT_MCP_GATEWAY_KEY'),
   mcpClientId: process.env.MWT_MCP_CLIENT_ID || '',
   // E2 · fijar X-MWT-Client-ID con la única empresa del usuario si tiene una sola.
   mcpClientIdFromUser: process.env.MWT_MCP_CLIENT_ID_FROM_USER !== '0',
   // FaberLoom · MCP propio (espacios) por usuario.
   faberloomUrl: process.env.FABERLOOM_MCP_URL || '',
-  faberloomGatewayKey: process.env.FABERLOOM_GATEWAY_KEY || '',
-  sessionSecret: process.env.SESSION_SECRET || '',
+  faberloomGatewayKey: readSecret('FABERLOOM_GATEWAY_KEY'),
+  sessionSecret: readSecret('SESSION_SECRET'),
   // Sesión del gateway (la del harness dura 30 días por defecto).
   cookieName: 'hgate',
   cookieTtlMs: Number(process.env.SESSION_TTL_MS || 12 * 60 * 60 * 1000),
@@ -47,7 +66,40 @@ const cfg = {
   maxOldSpaceMb: Number(process.env.DSH_MAX_OLD_SPACE_MB || 1024),
   nofileLimit: Number(process.env.DSH_NOFILE_LIMIT || 8192),
   cpuLimitS: Number(process.env.DSH_CPU_LIMIT_S || 0),
+  // Memoria de agente (TencentDB Agent Memory). Cuando está activa, cada dsh
+  // enruta su modelo por el proxy del stack de memoria con la identidad del
+  // usuario; el proxy inyecta L2/L3 y guarda L0.
+  memoryEnabled: process.env.MEMORY_ENABLED === '1',
+  memoryCoreUrl: (process.env.MEMORY_CORE_URL || 'http://memory-core:8420').replace(/\/+$/, ''),
+  memoryProxyUrl: (process.env.MEMORY_PROXY_URL || 'http://proxy:8096').replace(/\/+$/, ''),
+  memoryAdminKey: readSecret('MEMORY_ADMIN_KEY'),
+  memoryServiceId: process.env.MEMORY_SERVICE_ID || 'default',
+  memoryAgentName: process.env.MEMORY_AGENT_NAME || 'Asistente MWT',
+  memoryGatewayKey: process.env.MEMORY_GATEWAY_KEY || 'local',
+  memoryLimit: Number(process.env.MEMORY_LIMIT || 50),
+  memoryTimeoutMs: Number(process.env.MEMORY_TIMEOUT_MS || 10000),
+  // context-mode: servidor MCP de contexto (sandbox de ejecución + base FTS5).
+  // Se arranca por usuario con su DSH_HOME como proyecto y almacenamiento.
+  contextModeEnabled: process.env.CONTEXT_MODE_ENABLED !== '0',
+  contextModeEntry: process.env.CONTEXT_MODE_ENTRY || '/usr/local/lib/node_modules/context-mode/start.mjs',
+  contextModeTimeoutMs: Number(process.env.CONTEXT_MODE_TIMEOUT_MS || 120000),
+  // Catálogo de skills del MCP: un directorio por rol con <skill>/SKILL.md.
+  skillsCatalogRoot: process.env.SKILLS_CATALOG_ROOT || '/opt/skills-catalog',
+  // Cadencia del despachador persistente de rutinas (una pasada cada N ms).
+  dispatcherIntervalMs: Number(process.env.DISPATCHER_INTERVAL_MS || 60000),
+  // Receptor de correo: sondeo del IMAP del usuario (desactivado por defecto
+  // hasta que el usuario configure una conexion valida en Conexiones).
+  inboundEnabled: process.env.INBOUND_ENABLED === '1',
+  inboundIntervalMs: Number(process.env.INBOUND_INTERVAL_MS || 300000),
+  inboundMailbox: process.env.INBOUND_MAILBOX || 'INBOX',
+  // Plazo de una espera de rutina antes de pasar a revision (24 h por defecto).
+  waitTimeoutMs: Number(process.env.WAIT_TIMEOUT_MS || 86400000),
 }
+
+// Estado durable del aprovisionamiento de memoria (identidad por usuario).
+// Vive junto a los DSH_HOME para sobrevivir recreates del contenedor.
+const DATA_DIR = cfg.dataDir
+cfg.memoryStateFile = process.env.MEMORY_STATE_FILE || path.join(path.dirname(DATA_DIR), 'memory-users.json')
 
 if (!cfg.sessionSecret) {
   console.error('[gateway] FATAL: SESSION_SECRET no está definido')
@@ -94,26 +146,71 @@ function readCookie(req, name) {
 function getSession(req) {
   return verifySession(readCookie(req, cfg.cookieName))
 }
-function setSessionCookie(res, payload) {
+// `Secure` va activo por defecto (el gateway siempre sirve por HTTPS tras
+// mwt-nginx); `COOKIE_SECURE=0` lo desactiva solo para pruebas locales por HTTP.
+function cookieSecureFlag() {
+  return process.env.COOKIE_SECURE === '0' ? '' : '; Secure'
+}
+function sessionCookieValue(payload) {
   const maxAge = Math.max(0, Math.floor((payload.exp - Date.now()) / 1000))
-  const secure = process.env.COOKIE_SECURE === '1' ? '; Secure' : ''
-  res.setHeader(
-    'Set-Cookie',
-    `${cfg.cookieName}=${encodeURIComponent(signSession(payload))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`,
-  )
+  return `${cfg.cookieName}=${encodeURIComponent(signSession(payload))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${cookieSecureFlag()}`
+}
+function setSessionCookie(res, payload) {
+  res.setHeader('Set-Cookie', sessionCookieValue(payload))
+}
+// Canjea el token de proceso de dsh por su cookie firmada del lado servidor,
+// para que el token no viaje en la URL del navegador (logs, historial, Referer).
+// `host` debe ser el host público: la cookie queda ligada a esa autoridad.
+function exchangeDshToken(port, token) {
+  return new Promise((resolve) => {
+    const req = http.request({
+      host: '127.0.0.1',
+      port,
+      method: 'GET',
+      path: `/?token=${encodeURIComponent(token)}`,
+      headers: { host: cfg.publicHost },
+    }, (res) => {
+      const cookies = res.headers['set-cookie'] ?? []
+      res.resume()
+      resolve({ cookies })
+    })
+    req.on('error', () => resolve({ cookies: [] }))
+    req.setTimeout(5000, () => { req.destroy(); resolve({ cookies: [] }) })
+    req.end()
+  })
 }
 function clearSessionCookie(res) {
-  res.setHeader('Set-Cookie', `${cfg.cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
+  res.setHeader('Set-Cookie', `${cfg.cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${cookieSecureFlag()}`)
 }
 
 // ── Render del overlay de dsh (MCP por usuario) ───────────────────────
 function yamlScalar(value) {
   return `'${String(value).replaceAll("'", "''")}'`
 }
+// Valor resuelto por el loader desde el entorno del proceso dsh al montar la
+// fila. El secreto nunca queda escrito en el archivo de parche del usuario.
+function yamlEnv(name) {
+  return { js: `process.env.${name} ?? ''` }
+}
+function isEnvValue(value) {
+  return typeof value === 'object' && value !== null && typeof value.js === 'string'
+}
 // E2 · Resuelve la empresa del usuario para X-MWT-Client-ID.
 // Solo se fija si el usuario tiene UNA sola empresa: el MCP valida que el valor
 // esté entre sus legal_entity_ids (verify_tenant) y con varias no hay una única
 // empresa correcta. MWT_MCP_CLIENT_ID fuerza un valor global para todos.
+// La consola no envía un booleano `read_only`: se deriva de las acciones del
+// login. Un usuario sin ninguna acción mutadora (solo .view/.download_doc) es
+// de solo lectura para los módulos de producto.
+const MUTATING_ACTION = /\.(create|edit|update|delete|manage|write|activate|close|send|approve)/
+function deriveReadOnly(user) {
+  if (user.permissions?.read_only === true) return true
+  const actions = user.permissions?.actions
+  if (Array.isArray(actions) && actions.length > 0) {
+    return !actions.some(action => typeof action === 'string' && MUTATING_ACTION.test(action))
+  }
+  return user.role === 'viewer' || user.role === 'client_b2b'
+}
 function resolveClientId(user) {
   if (cfg.mcpClientId) return cfg.mcpClientId
   if (!cfg.mcpClientIdFromUser) return ''
@@ -122,7 +219,7 @@ function resolveClientId(user) {
 }
 function renderEntry({ id, serverName, url, headers, toolTimeoutMs }) {
   const headerLines = Object.entries(headers)
-    .map(([k, v]) => `          ${k}: ${yamlScalar(v)}`)
+    .map(([k, v]) => `          ${k}: ${isEnvValue(v) ? `!!js ${v.js}` : yamlScalar(v)}`)
     .join('\n')
   return [
     `    - id: ${id}`,
@@ -141,7 +238,187 @@ function renderEntry({ id, serverName, url, headers, toolTimeoutMs }) {
   ].join('\n')
 }
 
-function renderPatch(user) {
+// Entrada MCP por proceso hijo (stdio). El servidor se arranca dentro del
+// contenedor con el DSH_HOME del usuario como directorio de trabajo, de modo
+// que su estado (SQLite/FTS5) queda por usuario y no se comparte.
+function renderStdioEntry({ id, serverName, command, args, env, cwd, toolTimeoutMs }) {
+  const argLines = args.map(a => `          - ${yamlScalar(a)}`).join('\n')
+  const envLines = Object.entries(env)
+    .map(([k, v]) => `          ${k}: ${yamlScalar(v)}`)
+    .join('\n')
+  return [
+    `    - id: ${id}`,
+    "      name: '@deepseek-ai/dsh-mcp-client'",
+    '      config:',
+    `        serverName: ${serverName}`,
+    '        transport: stdio',
+    `        command: ${yamlScalar(command)}`,
+    '        args:',
+    argLines,
+    '        env:',
+    envLines,
+    `        cwd: ${yamlScalar(cwd)}`,
+    '        failOnStartupError: false',
+    '        reconnect:',
+    '          enabled: true',
+    '          maxAttempts: 10',
+    `        toolCallTimeoutMs: ${toolTimeoutMs}`,
+  ].join('\n')
+}
+
+// ── Memoria por usuario (TencentDB Agent Memory) ──────────────────────
+// La consola de memoria gestiona usuarios, equipos y agentes por HTTP. El
+// gateway aprovisiona una identidad por usuario del harness la primera vez y
+// la persiste; el `user_key` resultante es lo único que viaja al dsh.
+function memoryUsername(email) {
+  const base = String(email).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  return (base || 'usuario').slice(0, 56)
+}
+
+function readMemoryState() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cfg.memoryStateFile, 'utf8'))
+    if (parsed && typeof parsed === 'object' && parsed.users && typeof parsed.users === 'object') return parsed
+  } catch { /* ausente o ilegible: se reconstruye */ }
+  return { users: {} }
+}
+
+function writeMemoryState(state) {
+  fs.mkdirSync(path.dirname(cfg.memoryStateFile), { recursive: true })
+  const tmp = `${cfg.memoryStateFile}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8')
+  fs.chmodSync(tmp, 0o600)
+  fs.renameSync(tmp, cfg.memoryStateFile)
+}
+
+// Identidad mínima de cada usuario que ha entrado, para poder arrancar su dsh
+// cuando una petición MCP llega sin sesión de navegador abierta.
+cfg.userStateFile = process.env.USER_STATE_FILE || path.join(path.dirname(DATA_DIR), 'gateway-users.json')
+
+function rememberUser(user) {
+  let state = { users: {} }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cfg.userStateFile, 'utf8'))
+    if (parsed && typeof parsed === 'object' && parsed.users) state = parsed
+  } catch { /* ausente o ilegible: se reconstruye */ }
+  state.users[user.email] = { email: user.email, id: user.id, role: user.role, readOnly: user.readOnly === true, legalEntityIds: Array.isArray(user.legalEntityIds) ? user.legalEntityIds : [] }
+  const tmp = `${cfg.userStateFile}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8')
+  fs.chmodSync(tmp, 0o600)
+  fs.renameSync(tmp, cfg.userStateFile)
+  return state.users[user.email]
+}
+
+function readUserState(email) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cfg.userStateFile, 'utf8'))
+    const stored = parsed?.users?.[email]
+    if (stored && stored.id && stored.email) return { ...stored, legalEntityIds: Array.isArray(stored.legalEntityIds) ? stored.legalEntityIds : [] }
+  } catch { /* ausente o ilegible */ }
+  return undefined
+}
+
+// Resuelve el token MCP de un cliente a la identidad de su propietario leyendo
+// el almacén del producto: el gateway no guarda tokens, sólo los localiza.
+function findOwnerByMcpToken(token) {
+  let dirs = []
+  try {
+    dirs = fs.readdirSync(cfg.dataDir)
+  } catch { return undefined }
+  for (const id of dirs) {
+    const file = path.join(cfg.dataDir, id, 'storages', 'faberloom_mcp.json')
+    let parsed
+    try {
+      parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+    } catch { continue }
+    const record = parsed?.tables?.tokens?.[token]
+    if (!record || record.revokedAt !== null) continue
+    return { email: record.ownerId, home: path.join(cfg.dataDir, id) }
+  }
+  return undefined
+}
+
+async function memCall(step, key, body) {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), cfg.memoryTimeoutMs)
+  try {
+    const resp = await fetch(`${cfg.memoryCoreUrl}/v3/meta/${step}`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'x-tdai-user-key': key,
+        'x-tdai-service-id': cfg.memoryServiceId,
+      },
+      body: JSON.stringify(body),
+      signal: ac.signal,
+    })
+    const text = await resp.text()
+    let data
+    try {
+      data = text ? JSON.parse(text) : {}
+    } catch {
+      throw new Error(`${step}: respuesta no JSON`)
+    }
+    if (!resp.ok || (typeof data.code === 'number' && data.code !== 0)) {
+      throw new Error(`${step}: ${data.message || `HTTP ${resp.status}`}`)
+    }
+    return data.data ?? {}
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Crea usuario + equipo + agente del espacio de memoria y devuelve su user_key. */
+async function provisionMemory(email) {
+  const username = memoryUsername(email)
+  const user = await memCall('user/create', cfg.memoryAdminKey, { username })
+  if (!user.user_id || !user.default_user_key) throw new Error('user/create sin user_id/default_user_key')
+  const team = await memCall('team/create', user.default_user_key, {
+    name: `${username} · MWT`,
+    owner_user_id: user.user_id,
+  })
+  if (!team.team_id) throw new Error('team/create sin team_id')
+  let agentId = ''
+  try {
+    const agent = await memCall('agent/create', user.default_user_key, {
+      team_id: team.team_id,
+      owner_user_id: user.user_id,
+      name: cfg.memoryAgentName,
+      description: 'Asistente general del espacio de trabajo',
+    })
+    agentId = agent.agent_id || ''
+  } catch (err) {
+    // El espacio sigue siendo utilizable sin agente; el picker de la sesión
+    // mostrará la lista vacía en vez de fallar el arranque.
+    console.error(`[gateway] memoria: agente no creado para ${email}: ${err.message}`)
+  }
+  return { userId: user.user_id, userKey: user.default_user_key, teamId: team.team_id, agentId, createdAt: new Date().toISOString() }
+}
+
+/**
+ * Devuelve la identidad de memoria del usuario, aprovisionándola si hace falta.
+ * Cualquier fallo del stack de memoria degrada a DeepSeek directo: la memoria
+ * es una mejora, nunca un bloqueo del inicio de sesión.
+ */
+async function ensureMemoryIdentity(user) {
+  if (!cfg.memoryEnabled || !cfg.memoryAdminKey) return undefined
+  const state = readMemoryState()
+  const cached = state.users[user.email]
+  if (cached && cached.userKey) return cached
+  try {
+    const identity = await provisionMemory(user.email)
+    state.users[user.email] = identity
+    writeMemoryState(state)
+    console.log(`[gateway] memoria lista para ${user.email} (team ${identity.teamId}, agent ${identity.agentId || 'sin agente'})`)
+    return identity
+  } catch (err) {
+    console.error(`[gateway] memoria no disponible para ${user.email}: ${err.message}; se usa DeepSeek directo`)
+    return undefined
+  }
+}
+
+function renderPatch(home, user, memory) {
   const clientId = resolveClientId(user)
   const entries = []
 
@@ -149,7 +426,9 @@ function renderPatch(user) {
   {
     const headers = {
       'X-Forwarded-User-Email': user.email,
-      'X-MWT-Gateway-Key': cfg.mcpGatewayKey,
+      // Secreto resuelto por el loader desde el entorno del dsh; no se escribe
+      // en el archivo de parche.
+      'X-MWT-Gateway-Key': yamlEnv('MWT_MCP_GATEWAY_KEY'),
       // Salta el challenge OAuth del MCP (MWT_MCP_OAUTH=1). No es un JWT.
       Authorization: 'Bearer dsh-gateway',
     }
@@ -157,17 +436,144 @@ function renderPatch(user) {
     entries.push(renderEntry({ id: 'mcp-mwt', serverName: 'mwt', url: cfg.mcpUrl, headers, toolTimeoutMs: 120000 }))
   }
 
+  // context-mode (MCP stdio): mantiene los datos crudos fuera del contexto del
+  // modelo y guarda su índice FTS5 por usuario bajo su DSH_HOME.
+  if (cfg.contextModeEnabled) {
+    entries.push(renderStdioEntry({
+      id: 'mcp-context-mode',
+      serverName: 'context-mode',
+      command: process.execPath,
+      args: [cfg.contextModeEntry],
+      env: {
+        CONTEXT_MODE_DIR: path.join(home, 'context-mode'),
+        CONTEXT_MODE_PROJECT_DIR: home,
+      },
+      cwd: home,
+      toolTimeoutMs: cfg.contextModeTimeoutMs,
+    }))
+  }
+
+  // Skills del rol: el catálogo del MCP (<rol>/<skill>/SKILL.md) se expone como
+  // skills nativas del harness, sin raíces por defecto para no duplicar el
+  // catálogo que ya aporta cada preset.
+  const role = String(user.role || '').toLowerCase()
+  const roleDir = path.join(cfg.skillsCatalogRoot, role)
+  if (role.length > 0 && fs.existsSync(roleDir)) {
+    entries.push([
+      '    - id: faberloom-skills',
+      "      name: '@deepseek-ai/dsh-skill-filesystem'",
+      '      config:',
+      '        providerName: faberloom-role',
+      '        includeDefaultRoots: false',
+      '        watch: false',
+      '        customSkillDirs:',
+      `          - ${yamlScalar(roleDir)}`,
+    ].join('\n'))
+  }
+
   // MCP de FaberLoom (espacios), con la identidad y la empresa del usuario.
   if (cfg.faberloomUrl && cfg.faberloomGatewayKey) {
     const headers = {
       'X-Faberloom-User-Id': user.email,
-      'X-Faberloom-Gateway-Key': cfg.faberloomGatewayKey,
+      'X-Faberloom-Gateway-Key': yamlEnv('FABERLOOM_GATEWAY_KEY'),
     }
     if (clientId) headers['X-MWT-Client-ID'] = clientId
     entries.push(renderEntry({ id: 'mcp-faberloom', serverName: 'faberloom', url: cfg.faberloomUrl, headers, toolTimeoutMs: 120000 }))
   }
 
-  return ['- insert:', ...entries, ''].join('\n')
+  // Identidad por usuario para los módulos nativos: el bundle monta
+  // `tool-faberloom`; aquí se le inyecta el email autenticado como ownerId, de
+  // modo que las tools de producto actúan con la identidad de este usuario.
+  const lines = [
+    '- insert:',
+    ...entries,
+    '',
+    '- id: tool-faberloom',
+    '  config:',
+    `    ownerId: ${yamlScalar(user.email)}`,
+    `    role: ${yamlScalar(user.role || 'client_b2b')}`,
+    ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
+    `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
+    `    mcpUrl: ${yamlScalar(cfg.mcpUrl)}`,
+    '    mcpGatewayKey: !!js process.env.MWT_MCP_GATEWAY_KEY ?? \'\'',
+    '',
+    // La vista de FaberLoom para el navegador recibe la misma identidad que las
+    // tools; el actor se resuelve en el host y nunca viaja desde el cliente.
+    '- id: faberloom-view',
+    '  config:',
+    `    ownerId: ${yamlScalar(user.email)}`,
+    `    role: ${yamlScalar(user.role || 'client_b2b')}`,
+    ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
+    `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
+    // Catálogo de skills del rol, para el panel Skills.
+    `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,
+    ...(memory && memory.userId
+      ? [
+          `    memoryCoreUrl: ${yamlScalar(cfg.memoryCoreUrl)}`,
+          `    memoryServiceId: ${yamlScalar(cfg.memoryServiceId)}`,
+          `    memoryUserId: ${yamlScalar(memory.userId)}`,
+          `    memoryGatewayKey: ${yamlScalar(cfg.memoryGatewayKey)}`,
+          `    memoryLimit: ${cfg.memoryLimit}`,
+        ]
+      : []),
+    '',
+    // La siembra inicial usa la misma identidad y la misma raíz de skills: crea
+    // una vez los agentes y la rutina del plan, con las skills del rol.
+    '- id: faberloom-defaults',
+    '  config:',
+    `    ownerId: ${yamlScalar(user.email)}`,
+    `    role: ${yamlScalar(user.role || 'client_b2b')}`,
+    `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
+    `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,
+    '',
+    // El despachador persistente: sin el nadie inicia las rutinas con
+    // disparador de fecha o recurrencia cuando el usuario no tiene el panel abierto.
+    '- id: faberloom-execution',
+    '  config:',
+    `    ownerId: ${yamlScalar(user.email)}`,
+    '    enabled: true',
+    `    intervalMs: ${cfg.dispatcherIntervalMs}`,
+    '',
+    // Receptor de correo: sondea el IMAP que el propio usuario configuro en
+    // Conexiones y convierte los mensajes nuevos en eventos de rutina.
+    '- id: faberloom-inbound',
+    '  config:',
+    `    ownerId: ${yamlScalar(user.email)}`,
+    `    enabled: ${cfg.inboundEnabled ? 'true' : 'false'}`,
+    `    intervalMs: ${cfg.inboundIntervalMs}`,
+    `    mailbox: ${yamlScalar(cfg.inboundMailbox)}`,
+    '',
+    // Plazo de las esperas: una espera sin respuesta pasa a revision en el
+    // despachador en vez de quedarse parada para siempre.
+    '- id: faberloom-routines',
+    '  config:',
+    `    waitTimeoutMs: ${cfg.waitTimeoutMs}`,
+    '',
+    // Servidor MCP propio: escucha en un socket del home del usuario y el
+    // gateway lo publica en /mcp autenticando con el token de cada cliente.
+    '- id: faberloom-mcp-server',
+    '  config:',
+    `    ownerId: ${yamlScalar(user.email)}`,
+    '    enabled: true',
+    `    socketPath: ${yamlScalar(path.join(home, 'faberloom-mcp.sock'))}`,
+  ]
+
+  // Memoria: el modelo deja de ir directo a DeepSeek y pasa por el proxy de
+  // TencentDB Agent Memory, que resuelve la identidad con el `PROXY_USER_KEY`
+  // del proceso y añade la inyección/registro de memoria.
+  if (memory && memory.userKey) {
+    lines.push(
+      '',
+      '- id: llm-deepseek',
+      '  config:',
+      '    protocol: chat-completions',
+      `    baseURL: ${yamlScalar(`${cfg.memoryProxyUrl}/dsh/${cfg.memoryServiceId}`)}`,
+      '    apiKeyEnv: PROXY_USER_KEY',
+      '    reasoningEffort: high',
+    )
+  }
+
+  return `${lines.join('\n')}\n`
 }
 
 // ── Supervisión de instancias dsh por usuario ─────────────────────────
@@ -185,9 +591,40 @@ function allocatePort() {
   throw new Error('sin puertos libres para dsh')
 }
 
-function writeUserPatch(home, user) {
+function writeUserPatch(home, user, memory) {
   const file = path.join(home, 'harness.patch.yml')
-  fs.writeFileSync(file, renderPatch(user), 'utf8')
+  fs.writeFileSync(file, renderPatch(home, user, memory), 'utf8')
+  return file
+}
+
+// Instrucciones permanentes del espacio de trabajo. `agent-instructions` lee el
+// AGENTS.md del directorio de trabajo, así que este archivo es la forma nativa
+// de fijar la política de FaberLoom para cada usuario.
+const FABERLOOM_INSTRUCTIONS = `# FaberLoom · reglas del espacio de trabajo
+
+## Fuente de verdad: el MCP de MWT.ONE
+
+- Toda la información de negocio (pedidos, expedientes, clientes, productos, precios, marcas,
+  tallas, inventario, pagos, cartera, documentos, analytics) llega **exclusivamente** por las
+  herramientas del MCP \`mwt\`.
+- **No navegues por internet.** No uses búsquedas ni descargas web para responder. Si te piden
+  algo que no está en el MCP (por ejemplo el clima), dilo y ofrece lo que sí está.
+- Si el MCP no tiene el dato, **no lo inventes**: pídelo al usuario o propone la tool que falte.
+
+## Cómo trabajar
+
+- Antes de operar sobre un módulo, usa la **skill** del módulo y la acción (por ejemplo
+  \`mwt-compras-expedientes-leer\`). Respeta el rol y los permisos: usa solo las tools
+  permitidas; otra tool devuelve 403.
+- Lee con \`*_listar\`/\`*_obtener\` antes de escribir, y comprueba el resultado después.
+- Documentos y reportes (proformas, listados, informes) se construyen con datos del MCP;
+  si piden formato, colores o plantilla, aplícalos sobre esos datos.
+- Responde en español, con el resultado y las tools usadas.
+`
+
+function writeUserInstructions(home) {
+  const file = path.join(home, 'AGENTS.md')
+  fs.writeFileSync(file, FABERLOOM_INSTRUCTIONS, 'utf8')
   return file
 }
 
@@ -225,12 +662,19 @@ function waitForToken(child, timeoutMs, onLog) {
   })
 }
 
-function startInstance(user) {
+function startInstance(user, memory) {
   const home = path.join(cfg.dataDir, user.id)
   fs.mkdirSync(home, { recursive: true })
-  const patchFile = writeUserPatch(home, user)
+  const patchFile = writeUserPatch(home, user, memory)
+  writeUserInstructions(home)
+  // El perfil materializa enlaces de módulos en `<home>/profiles`; si ese
+  // almacén se creó antes que un paquete nuevo (una fila añadida después), la
+  // fila falla al importarse. Se retira para que el launcher lo reconstruya.
+  for (const stale of [path.join(home, 'profiles', 'node_modules'), path.join(home, 'profiles', cfg.dshProfile, '.dsh-module-fallback')]) {
+    try { fs.rmSync(stale, { recursive: true, force: true }) } catch { /* el launcher lo recrea igualmente */ }
+  }
   const port = allocatePort()
-  const dshArgs = ['--profile', 'web', '--patch', patchFile, '--no-open', '--port', String(port), '--trusted-host', cfg.publicHost]
+  const dshArgs = ['--profile', cfg.dshProfile, '--patch', patchFile, '--no-open', '--port', String(port), '--trusted-host', cfg.publicHost]
   // E1 · límites por proceso. --nofile y --cpu son por proceso (seguros);
   // no se usa --as (V8 reserva mucha memoria virtual y rompería Node) ni
   // --nproc (RLIMIT_NPROC es por UID y afectaría a todas las instancias).
@@ -250,6 +694,13 @@ function startInstance(user) {
         ...process.env,
         DSH_HOME: home,
         DEEPSEEK_API_KEY: cfg.deepseekKey,
+        // El parche referencia estos secretos como `!!js process.env.*`, así que
+        // el proceso hijo debe recibir el valor resuelto (env o *_FILE).
+        ...(cfg.mcpGatewayKey ? { MWT_MCP_GATEWAY_KEY: cfg.mcpGatewayKey } : {}),
+        ...(cfg.faberloomGatewayKey ? { FABERLOOM_GATEWAY_KEY: cfg.faberloomGatewayKey } : {}),
+        // Con memoria activa el proveedor lee este credencial-ref; el dsh sigue
+        // teniendo DEEPSEEK_API_KEY como respaldo del arranque.
+        ...(memory && memory.userKey ? { PROXY_USER_KEY: memory.userKey } : {}),
         DSH_WEB_URL: `https://${cfg.publicHost}/`,
         NODE_OPTIONS: nodeOptions,
       },
@@ -299,7 +750,8 @@ async function ensureInstance(user) {
     if (existing.alive) return existing.ready
     instances.delete(user.id)
   }
-  return startInstance(user).ready
+  const memory = await ensureMemoryIdentity(user)
+  return startInstance(user, memory).ready
 }
 
 // ── Proxy ─────────────────────────────────────────────────────────────
@@ -325,6 +777,9 @@ app.get('/healthz', (_req, res) => {
     consolaApi: cfg.consolaApi,
     mcpConfigured: Boolean(cfg.mcpGatewayKey),
     faberloomConfigured: Boolean(cfg.faberloomUrl && cfg.faberloomGatewayKey),
+    memoryEnabled: cfg.memoryEnabled,
+    memoryConfigured: cfg.memoryEnabled && Boolean(cfg.memoryAdminKey),
+    contextModeEnabled: cfg.contextModeEnabled,
     instances: instances.size,
   })
 })
@@ -363,18 +818,69 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
   if (!user || !user.id || !user.email) return res.redirect(303, '/login?e=auth')
 
   const legalEntityIds = Array.isArray(user.legal_entity_ids) ? user.legal_entity_ids : []
-  const sessionUser = { id: user.id, email: user.email, legalEntityIds }
+  const sessionUser = {
+    id: user.id,
+    email: user.email,
+    legalEntityIds,
+    role: typeof user.role === 'string' ? user.role : '',
+    readOnly: deriveReadOnly(user),
+  }
 
   let inst
   try {
+    rememberUser(sessionUser)
     inst = await ensureInstance(sessionUser)
   } catch (err) {
     console.error('[gateway] no se pudo arrancar dsh:', err.message)
     return res.redirect(303, '/login?e=harness')
   }
-  setSessionCookie(res, { uid: user.id, email: user.email, name: user.full_name || '', ents: legalEntityIds, exp: Date.now() + cfg.cookieTtlMs })
-  // Redirige una sola vez con el token de proceso para que dsh fije su cookie.
-  res.redirect(303, `/?token=${encodeURIComponent(inst.token)}`)
+  const payload = { uid: user.id, email: user.email, name: user.full_name || '', ents: legalEntityIds, exp: Date.now() + cfg.cookieTtlMs }
+  const exchange = await exchangeDshToken(inst.port, inst.token)
+  res.setHeader('Set-Cookie', [sessionCookieValue(payload), ...exchange.cookies])
+  if (exchange.cookies.length > 0) {
+    res.redirect(303, '/')
+  } else {
+    // Respaldo: si el canje interno falla, conserva el comportamiento anterior.
+    console.error('[gateway] canje de cookie de dsh vacio; se usa el token en la URL')
+    res.redirect(303, `/?token=${encodeURIComponent(inst.token)}`)
+  }
+})
+
+// Servidor MCP de FaberLoom: el cliente se autentica con el token que el
+// propietario le dio, y el gateway enruta al dsh de ese propietario por el
+// socket de su home. El gateway no guarda tokens: los localiza en el almacén
+// del producto y sólo reenvía.
+app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) => {
+  const header = req.get('authorization') || ''
+  const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : ''
+  const refuse = (status, message) => res.status(status).json({ jsonrpc: '2.0', id: null, error: { code: -32000, message } })
+  if (!token) return refuse(401, 'falta el token Bearer')
+  const owner = findOwnerByMcpToken(token)
+  if (!owner) return refuse(401, 'token desconocido o revocado')
+  const stored = readUserState(owner.email)
+  if (!stored) return refuse(503, 'el propietario debe entrar una vez en FaberLoom')
+  try {
+    await ensureInstance({ ...stored, legalEntityIds: stored.legalEntityIds || [] })
+  } catch (error) {
+    console.error('[gateway] no se pudo arrancar dsh para MCP:', error.message)
+    return refuse(503, 'no se pudo arrancar el harness del propietario')
+  }
+  const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {}))
+  const upstream = http.request({
+    socketPath: path.join(owner.home, 'faberloom-mcp.sock'),
+    path: '/mcp',
+    method: 'POST',
+    headers: { authorization: header, 'content-type': 'application/json', 'content-length': body.length, accept: req.get('accept') || 'application/json' },
+  }, (reply) => {
+    res.status(reply.statusCode || 502)
+    for (const [name, value] of Object.entries(reply.headers)) {
+      if (name.toLowerCase() === 'transfer-encoding') continue
+      if (value !== undefined) res.setHeader(name, value)
+    }
+    reply.pipe(res)
+  })
+  upstream.on('error', () => refuse(502, 'el servidor MCP del propietario no responde'))
+  upstream.end(body)
 })
 
 app.get('/logout', (req, res) => {
@@ -431,6 +937,10 @@ server.listen(cfg.port, '0.0.0.0', () => {
   console.log(`[gateway] escuchando en :${cfg.port} · host=${cfg.publicHost} · consola=${cfg.consolaApi}`)
   if (!cfg.mcpGatewayKey) console.warn('[gateway] MWT_MCP_GATEWAY_KEY vacío: el MCP no confiará la identidad')
   if (!cfg.deepseekKey) console.warn('[gateway] DEEPSEEK_API_KEY vacío: el harness no tendrá modelo')
+  if (cfg.memoryEnabled) {
+    if (!cfg.memoryAdminKey) console.warn('[gateway] memoria activada sin MEMORY_ADMIN_KEY: se usa DeepSeek directo')
+    else console.log(`[gateway] memoria activa · core=${cfg.memoryCoreUrl} · proxy=${cfg.memoryProxyUrl} · serviceId=${cfg.memoryServiceId}`)
+  }
 })
 
 // ── Página de login ───────────────────────────────────────────────────

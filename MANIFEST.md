@@ -1,7 +1,7 @@
-# Manifiesto de compatibilidad · harness-mwt-one
+# Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-09-14`
-**Verificado en el VPS:** 14 de septiembre de 2026.
+**Tag de despliegue:** `deploy-2026-09-15` (incluye E7-bis memoria Tencent + E8 respaldo)
+**Verificado en el VPS:** 15 de septiembre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
@@ -10,14 +10,17 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 
 | Componente | Versión / referencia | Notas |
 |---|---|---|
-| DeepSeek Harness (`dsh`) | `0.1.5-rc.2` | Fijado en el `Dockerfile`; developer preview |
-| Commit fuente de `dsh` según README | `c291e79` | Registrado por el proyecto |
+| DeepSeek Harness (`dsh`) | `0.1.6-alpha.1` (**nuestro fork**) | Construido en la etapa 1 del `Dockerfile` desde `vendor/deepseek-harness-src.tgz` |
+| Fuente del harness | `git archive` del tree del push (rama `feat/faberloom-native`) | Incluye `packages/faberloom/*` y el perfil `faberloom` |
+| Perfil arrancado por usuario | `faberloom` | `DSH_PROFILE`; = `dsh-base` + `dsh-web-app` + `dsh-faberloom-app` |
 | Node.js (imagen) | `node:22-bookworm-slim`; `v22.23.2` en el contenedor | |
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `harness-mwt/gateway:latest` | Creada `2026-09-14T16:19:34Z` |
-| Contenedor | `harness-gateway` | `Up`, sano; `healthz` OK |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:c6d02e743c40…`; `:prev` = `sha256:5b8e0ab6777e…` |
+| Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` `:latest` | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack` |
+| Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
+| Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
 
 ## Redes
 
@@ -25,18 +28,53 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 |---|---|---|
 | `harness-net` | 172.24.0.0/16 | Gateway ↔ `mwt-nginx` |
 | `consola-mwt-one-net` | 172.21.0.0/16 | Gateway ↔ MCP de la consola |
+| `tdai-memory-stack` | — (external) | Gateway ↔ `memory-core`/`memory-hub`/`proxy` |
 | `mcp-gateway-net` | 172.25.0.0/16 | Authentik + ContextForge |
 | `mwt_default` | 172.20.0.0/16 | nginx principal |
+
+## Memoria de agente (E7-bis)
+
+Cada `dsh` enruta su modelo por `http://proxy:8096/dsh/default` (protocolo
+`chat-completions`) y recibe su `PROXY_USER_KEY`. El gateway aprovisiona
+usuario + equipo + agente de memoria por email y persiste la identidad en
+`/data/memory-users.json` (volumen `harness-users`). Los tools nativos
+`faberloom_memory_*`/`faberloom_access_*` ya no se registran; los servicios
+`ctx.faberloomMemory`/`ctx.faberloomAccess` siguen montados pero dormidos.
+
+Puertos del stack de memoria publicados solo en `127.0.0.1` (panel 8125 por
+túnel SSH, no en Internet).
+
+## Respaldo y actualización (E8)
+
+| Pieza | Ruta / comando |
+|---|---|
+| Respaldo cifrado y verificado | `scripts/backup-harness.sh` (diario 04:30, cron `# harness_backup`) |
+| Restauración verificada | `scripts/restore-harness.sh` (prueba semanal dom 05:10; entorno aislado por defecto) |
+| Actualización + rollback | `scripts/update-harness.sh` (`:prev`, health check, `--rollback`) |
+| Cifrado | gpg simétrico AES256; passphrase en `/opt/mwt-one-harness/.backup-passphrase` (chmod 600) |
+| Destino externo | MinIO vía rclone `mlocal:harness-backups` (retención 30 días) |
+| **Copia off-host** | `scripts/pull-backup.ps1` → `%OneDrive%\MWT-Backups\harness` (tareas `MWT-HarnessBackupPull` 09:30 y `MWT-HarnessBackupPullEvening` 21:30; sha256 verificado) |
+| **Passphrase off-host** | `%OneDrive%\MWT-Backups\harness\RESTORE-PASSPHRASE.txt` (independiente del respaldo) |
+| Copia local | `/opt/backups/harness-mwt-one/` |
+| Registro de releases | `RELEASES.tsv` (utc, estado, versión, imagen, prev, nota) |
+
+Alcance del respaldo: `harness-users`, `tdai-memory-core-data`, `tdai-panel-data`
+y la configuración (`.env`, compose, nginx, manifiesto, `.admin-key` y config del
+proxy de memoria). Los contenedores se pausan unos segundos para que SQLite y los
+`DSH_HOME` queden consistentes.
 
 ## Límites conocidos de esta base
 
 - Un proceso `dsh` por usuario **dentro** del mismo contenedor gateway: sin
-  límites de recursos ni aislamiento por contenedor (pendiente E1).
-- Una sola `DEEPSEEK_API_KEY` compartida; sin costo por usuario (pendiente E1/E4).
+  límites de CPU/RAM ni aislamiento por contenedor (riesgo residual aceptado en E1).
+- Una sola `DEEPSEEK_API_KEY` compartida; sin costo por usuario (pendiente E4/R2).
 - Sesiones del gateway en memoria: un redeploy obliga a re-login (los `DSH_HOME`
   persisten en el volumen `harness-users`).
+- `mlocal` es MinIO en el mismo host: es off-volume, pero no off-host. La copia
+  **off-host** real la aporta `scripts/pull-backup.ps1` en el equipo del
+  responsable (OneDrive), que además guarda la passphrase de restauración.
 - `dsh` es developer preview: pueden aparecer cambios incompatibles (revisar al
-  actualizar).
+  actualizar; usar `:prev` para revertir).
 
 ## Límites por instancia (E1)
 
@@ -49,8 +87,9 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 ## Cómo verificar el despliegue
 
 ```bash
-docker inspect harness-gateway --format '{{.Config.Image}} {{.Created}}'
-docker exec harness-gateway dsh --version
-docker exec harness-gateway node --version
-docker exec harness-gateway curl -sS http://127.0.0.1:8080/healthz
+docker inspect mwt-one-harness-gateway --format '{{.Config.Image}} {{.Created}}'
+docker exec mwt-one-harness-gateway /opt/dsh/bin-dsh --version
+docker exec mwt-one-harness-gateway node --version
+curl -fsS https://harness.mwt.one/healthz
+tail -3 /opt/mwt-one-harness/RELEASES.tsv
 ```

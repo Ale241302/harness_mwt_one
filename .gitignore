@@ -2,4 +2,5 @@
 node_modules/
 *.log
 *.tgz
+vendor/
 .DS_Store

@@ -1,12 +1,12 @@
-name: harness-mwt-one
+name: mwt-one-harness
 
 services:
   gateway:
     build:
       context: .
       dockerfile: Dockerfile
-    image: harness-mwt/gateway:latest
-    container_name: harness-gateway
+    image: mwt-one-harness/gateway:latest
+    container_name: mwt-one-harness-gateway
     restart: unless-stopped
     env_file:
       - .env
@@ -19,8 +19,12 @@ services:
     networks:
       - harness-net
       - consola-mwt-one-net
+      # Red del stack de memoria de agente (TencentDB Agent Memory):
+      # memory-core, memory-hub y proxy. Es external: la crea el stack de
+      # memoria en /opt/tdai; si no existe, deploy-vps.sh la crea vacía.
+      - tdai-memory-stack
     # No publicamos puerto al host: mwt-nginx lo alcanza por la red
-    # harness-net como http://harness-gateway:8080.
+    # harness-net como http://mwt-one-harness-gateway:8080.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
       interval: 30s
@@ -29,13 +33,21 @@ services:
       start_period: 20s
 
 volumes:
+  # Volumen persistente del harness (DSH_HOME por usuario). Es el mismo que
+  # usaba el stack anterior, así que las sesiones/datos no se pierden.
   harness_users:
     name: harness-users
+    external: true
 
 networks:
+  # Red compartida con mwt-nginx.
   harness-net:
     name: harness-net
-    driver: bridge
+    external: true
   # Red del stack consola-mwt-one (MCP en consola-mwt-one-mcp:8765).
   consola-mwt-one-net:
+    external: true
+  # Red del stack de memoria de agente (memory-core / memory-hub / proxy).
+  tdai-memory-stack:
+    name: tdai-memory-stack
     external: true

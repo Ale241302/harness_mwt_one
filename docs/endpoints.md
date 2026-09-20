@@ -1,4 +1,4 @@
-# Endpoints y topología · harness-mwt-one
+# Endpoints y topología · mwt-one-harness
 
 Verificado en el VPS el 14 de septiembre de 2026.
 
@@ -19,7 +19,7 @@ como sustituto de la identidad.
 ```
 Navegador
   └─ https://harness.mwt.one  (Cloudflare → mwt-nginx:443)
-        └─ harness-gateway:8080
+        └─ mwt-one-harness-gateway:8080
               ├─ POST /login → consola /api/auth/login/  (identidad + rol)
               ├─ un proceso dsh por usuario (DSH_HOME propio)
               └─ MCP con la identidad del usuario

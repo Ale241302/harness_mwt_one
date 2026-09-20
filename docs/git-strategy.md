@@ -13,7 +13,7 @@ Rama principal: `main`. Tag de la línea base desplegada: `deploy-2026-09-14`.
 
 ## Por qué no se fusiona `upstream` aquí
 
-`harness-mwt-one` es la **capa de integración** (gateway de login + supervisión de
+`mwt-one-harness` es la **capa de integración** (gateway de login + supervisión de
 `dsh` por usuario + futuros módulos de FaberLoom), no un fork del código de
 DeepSeek Harness. El harness se consume como **versión fijada** (`dsh 0.1.5-rc.2`)
 mediante npm en el `Dockerfile`.
