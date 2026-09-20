@@ -1,217 +1,75 @@
-# MWT.ONE Harness — DeepSeek Harness en harness.mwt.one
+# DeepSeek Harness
 
-Stack que monta [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
-(`dsh`) detrás de un gateway de login que valida contra los usuarios de
-`consola-mwt-one`, con **un `dsh` aislado por usuario** y el MCP de la consola
-con **identidad por usuario**.
+English | [中文](README.zh.md)
 
-> Estado: desplegado y verificado en el VPS. El contenedor **construye y ejecuta
-> nuestro fork** de DeepSeek Harness (`0.1.6-alpha.1`, rama `feat/faberloom-native`)
-> y arranca `dsh --profile faberloom` por usuario.
-> (commit fuente `c291e79`).
+DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
 
-## Por qué hace falta este gateway
+It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
 
-`dsh` en developer preview **no trae login ni multiusuario**: su auth es un token
-aleatorio por proceso + cookie firmada, pensada para loopback
-(`packages/client/connection/src/browser-auth.ts`). La carpeta `identity` de
-`dsh` es solo un id anónimo de telemetría. Por eso:
+Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
 
-- El login real lo pone este gateway (`POST {CONSOLA_API_BASE}/auth/login/`).
-- Se ejecuta **un `dsh` por usuario** (su propio `DSH_HOME` y su propia sesión).
-- El MCP de la consola se consume con la identidad del usuario vía
-  `X-Forwarded-User-Email` + `X-MWT-Gateway-Key`; el MCP mintea el token del
-  usuario contra `/api/auth/mcp-token/`. `dsh` nunca guarda el JWT.
+## Developer preview
 
-## Arquitectura (desplegada)
+DeepSeek Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
 
-```
-Navegador
-  └─ https://harness.mwt.one  (Cloudflare proxied → mwt-nginx TLS)
-        └─ mwt-nginx (/etc/nginx/conf.d/harness.conf)  →  mwt-one-harness-gateway:8080
-              ┌──────────────────────────────────────────────┐
-              │ mwt-one-harness-gateway (Node, contenedor)   │
-              │  GET  /login  → formulario                   │
-              │  POST /login  → consola /api/auth/login/     │
-              │                 → arranca/garantiza dsh(uid) │
-              │  /*           → proxy 127.0.0.1:<puerto>     │
-              └──────────────────────────────────────────────┘
-                     │ harness-net            │ consola-mwt-one-net
-              procesos dsh(uid)         consola-mwt-one-mcp:8765/mcp
-              DSH_HOME=/data/users/<uid>
+Review the [safety notice](SAFETY.md) before running the project.
+
+## Run
+
+### Run from `npm`
+
+Install `Node.js`, then run:
+
+```sh
+npx @deepseek-ai/dsh web
 ```
 
-## Estado verificado en el VPS
+The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it in the default browser for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser. See [Web UI guide](docs/user/guide/index.md).
 
-- `mwt-one-harness-gateway` sano, en `harness-net` + `consola-mwt-one-net`.
-- `dsh 0.1.6-alpha.1` (fork propio) dentro del contenedor; perfil `faberloom` con los servicios `ctx.faberloom*` y las tools `faberloom_*` montados.
-- MCP alcanzable (`consola-mwt-one-mcp:8765`); con un usuario staff real el MCP
-  devolvió **175 tools** filtradas por su rol (identidad por header OK).
-- `https://harness.mwt.one/healthz` responde; `/` redirige a `/login`; un login
-  inválido llega a la consola y vuelve con `?e=auth`.
-- `mwt-nginx` con mount persistente de `nginx/harness.conf` y red `harness-net`
-  añadidos a `/opt/mwt/docker-compose.yml`.
+### Run from source
 
-## Actualizar (local → VPS)
+To run from a repository checkout:
 
-Desde esta carpeta, en Windows:
-
-```powershell
-# solo sube (revisas antes)
-powershell -ExecutionPolicy Bypass -File scripts/push-to-vps.ps1
-
-# sube y despliega (build + up + reload nginx)
-powershell -ExecutionPolicy Bypass -File scripts/push-to-vps.ps1 -Deploy
+```sh
+git clone https://github.com/deepseek-ai/deepseek-harness.git
+cd deepseek-harness
+pnpm install
+pnpm run build
+pnpm dsh web
 ```
 
-No sube `.env` ni `node_modules`; el `.env` del VPS se conserva.
+`pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding.
 
-## Puesta en marcha desde cero
+## Community and support
 
-```bash
-# en el VPS
-cd /opt/mwt-one-harness
-# .env ya existe; si no: copiar .env.example y rellenar
-bash scripts/deploy-vps.sh
+- Submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
+- Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
+- Join <a href="https://discord.gg/Ycq5dCaS4">DeepSeek Harness Discord community</a>.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Development
+
+Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
+
+For agents, follow [AGENTS.md](AGENTS.md).
+
+## Citation
+
+```bibtex
+@misc{deepseek-harness2026,
+  title={DeepSeek Harness: Everything is a Plugin},
+  author={DeepSeek-AI},
+  year={2026},
+  publisher={GitHub},
+  howpublished={\url{https://github.com/deepseek-ai/deepseek-harness}},
+}
 ```
 
-## Operación: respaldo, restauración y actualización (E8)
+## License
 
-```bash
-# respaldo cifrado y verificado (local + externo MinIO), retención 30 días
-bash scripts/backup-harness.sh
+[MIT](LICENSE)
 
-# prueba de restauración en un volumen AISLADO (no toca producción)
-bash scripts/restore-harness.sh
-bash scripts/restore-harness.sh --from mlocal:harness-backups   # desde el externo
-bash scripts/restore-harness.sh --inspect <artifact>            # solo verificar/listar
-
-# actualización controlada: respaldo previo + :prev + health check + rollback
-bash scripts/update-harness.sh
-bash scripts/update-harness.sh --rollback
-```
-
-- Cifrado **gpg simétrico AES256**; passphrase en `.backup-passphrase` (chmod 600).
-- Cron ya instalado: respaldo diario **04:30** y prueba de restauración semanal
-  (**domingo 05:10**). Registro de releases en `RELEASES.tsv`.
-- El respaldo incluye `harness-users`, la memoria de agente
-  (`tdai-memory-core-data`, `tdai-panel-data`) y la configuración (`.env`,
-  compose, nginx, `.admin-key`). Los contenedores se pausan unos segundos para
-  que SQLite y los `DSH_HOME` queden consistentes.
-- El destino externo es `mlocal:harness-backups` (MinIO en el mismo host:
-  off-volume, no off-host). Para desastre físico, añadir un remoto rclone a un S3
-  externo; el script lo usa igual (`BACKUP_REMOTE=...`).
-
-### Copia off-host (equipo del responsable)
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/pull-backup.ps1
-```
-
-Trae el último `.tar.zst.gpg` al equipo (carpeta OneDrive), **verifica el sha256**
-y poda a 30 días. Tareas programadas ya creadas: `MWT-HarnessBackupPull` (09:30) y
-`MWT-HarnessBackupPullEvening` (21:30). La **passphrase de restauración** está en
-`%OneDrive%\MWT-Backups\harness\RESTORE-PASSPHRASE.txt`, separada del respaldo.
-
-## Memoria de agente (E7-bis)
-
-El stack **TencentDB Agent Memory** (`tdai-memory-core`, `tdai-memory-hub`,
-`tdai-proxy`) vive en `/opt/tdai` y comparte la red `tdai-memory-stack` con el
-gateway. Cada `dsh` enruta su modelo por `http://proxy:8096/dsh/default`, y el
-gateway aprovisiona por email un usuario + equipo + agente de memoria. Si el
-stack falla, el usuario sigue contra DeepSeek directo. El panel se consulta por
-túnel SSH (`ssh -p 2222 -L 8125:127.0.0.1:8125 root@…`).
-
-## context-mode (MCP de contexto)
-
-La imagen instala **`context-mode@1.0.169`** (npm global, licencia Elastic-2.0) y cada `dsh`
-lo arranca como **MCP por stdio**, con su `DSH_HOME` como proyecto y almacenamiento propio
-(`CONTEXT_MODE_DIR=<DSH_HOME>/context-mode`). Aporta 11 herramientas `ctx_*`: `ctx_execute`,
-`ctx_execute_file`, `ctx_batch_execute` (código en sandbox; solo la salida entra al contexto),
-`ctx_index`, `ctx_search`, `ctx_fetch_and_index` (base FTS5 con BM25) y las meta
-`ctx_stats`, `ctx_doctor`, `ctx_upgrade`, `ctx_purge`, `ctx_insight`.
-
-- Se desactiva por usuario o globalmente con `CONTEXT_MODE_ENABLED=0`.
-- `failOnStartupError: false`: si el servidor no arranca, el dsh sigue funcionando.
-- Nota de licencia: Elastic-2.0 (source-available); uso interno permitido, no se puede
-  revender como servicio gestionado.
-
-## MCP
-
-Cada `dsh` arranca con un `--patch` generado por usuario:
-
-```yaml
-- insert:
-    - id: mcp-mwt
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: mwt
-        transport: streamable-http
-        url: http://consola-mwt-one-mcp:8765/mcp
-        headers:
-          X-Forwarded-User-Email: usuario@dominio
-          X-MWT-Gateway-Key: '<secreto compartido>'
-          Authorization: 'Bearer dsh-gateway'   # salta el challenge OAuth
-```
-
-El `Authorization: Bearer` no es un JWT válido: solo evita que el MCP
-(`MWT_MCP_OAUTH=1`) devuelva el challenge OAuth; la identidad real la aporta el
-header `X-Forwarded-User-Email` validado por el Gateway Key (diseño Ola 2).
-
-### MCP de FaberLoom (espacios)
-
-Si `FABERLOOM_MCP_URL` y `FABERLOOM_GATEWAY_KEY` están definidos, cada `dsh`
-arranca además con el MCP `faberloom` (espacios y futuros módulos). El gateway
-inyecta la identidad por usuario (`X-Faberloom-User-Id`) y la empresa
-(`X-MWT-Client-ID` cuando el usuario tiene una sola). El stack de FaberLoom vive
-en `/opt/faberloom` (`faberloom-mcp:8090`, red `harness-net`, volumen
-`faberloom-data`). `healthz` reporta `faberloomConfigured`.
-
-## Límites por instancia (E1)
-
-- Cap de heap Node `--max-old-space-size=1024` y `--nofile=8192` por `dsh`
-  (aplicado con `prlimit`), configurables con `DSH_MAX_OLD_SPACE_MB`,
-  `DSH_NOFILE_LIMIT` y `DSH_CPU_LIMIT_S`.
-- No se usa `--as` (V8 reserva mucha memoria virtual y rompería Node) ni
-  `--nproc` (es por UID y afectaría a todas las instancias).
-
-## Pendientes / límites
-
-- **Un proceso `dsh` por usuario**, no un contenedor por usuario (fase 2:
-  aislamiento real de CPU/RAM/disco con cgroups).
-- **Tenant MCP** (`X-MWT-Client-ID`): el gateway lo fija con la empresa del
-  usuario cuando tiene **una sola** (`legal_entity_ids` del login); con varias no
-  lo envía (E2 hecho). El MCP valida pertenencia y deniega con `TENANT_MISMATCH`.
-- **Modelo**: una sola `DEEPSEEK_API_KEY` compartida; sin costo por usuario.
-- **Persistencia de sesiones del gateway**: en memoria; un redeploy obliga a
-  re-login (los `DSH_HOME` sí persisten en el volumen `harness-users`).
-- **Token de `dsh`**: el gateway ya canjea el token por la cookie de `dsh` del
-  lado servidor, así que no viaja en la URL del navegador; el modo token-en-URL
-  queda solo como respaldo si ese canje falla (Queda registrado en logs).
-- **Mount de nginx de archivo**: `harness.conf`/`consola.conf` son bind-mount de
-  archivo; editarlos desde el host con reemplazo de inodo (`sed -i`, `docker cp`)
-  no se refleja en el contenedor. Aplicar desde dentro del contenedor o recrear
-  `mwt-nginx`.
-- El backend aún no está endurecido para imágenes/adjuntos grandes vía
-  Cloudflare (límite 100 MB del plan).
-
-## Seguridad (estado tras E1)
-
-- `SESSION_SECRET` y `MWT_MCP_GATEWAY_KEY` **rotados**; sin valores en logs
-  (verificado).
-- `MWT_MCP_GATEWAY_KEY` ya **no se escribe** en los `harness.patch.yml` por
-  usuario: el parche lo referencia como `!!js process.env.MWT_MCP_GATEWAY_KEY`,
-  igual que `FABERLOOM_GATEWAY_KEY`. Sigue **en claro** en
-  `/opt/mwt/nginx/consola.conf` (lo necesita nginx como header); para sacarlo de
-  `.env` usa los secretos `*_FILE` (ver `.env.example`).
-- **Cookie del gateway con `Secure` por defecto** (`COOKIE_SECURE=0` solo para
-  pruebas locales por HTTP); HSTS activo; rate limit de `/login`
-  (12 r/m por IP real de cliente vía `CF-Connecting-IP`).
-- **Rotación de la gateway key** (tras moverla a secreto): generar el valor
-  nuevo, actualizarlo en el secreto y en `consola.conf`, recrear `gateway` y
-  `mwt-nginx`, y reintentar `tools/list` del MCP. Los `DSH_HOME` no cambian.
-- `/opt/mwt-one-harness` en `700`, `.env` en `600`.
-- `DEEPSEEK_API_KEY` rotada (15 sep 2026) y validada; password root **no** se rotó
-  por decisión del responsable.
-- `SESSION_SECRET` y la API key viven solo en `/opt/mwt-one-harness/.env` y
-  nunca se suben al repositorio.
+Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -1,0 +1,1129 @@
+/**
+ * FaberLoom workspace view: the Remote namespace the browser panels read and
+ * write. Identity arrives as deployment configuration (the gateway injects the
+ * authenticated owner and that owner's agent-memory identity), never as a client
+ * argument, so a panel cannot ask for another owner's rows.
+ */
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+// Type-only: the mounted product services, read through ctx like their tools do.
+import type { FaberLoomAgentId, FaberLoomModelId, AgentInput, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
+import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
+import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution } from '@deepseek-ai/dsh-faberloom-routines'
+import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
+import type {} from '@deepseek-ai/dsh-faberloom-learning'
+import type {} from '@deepseek-ai/dsh-faberloom-access'
+import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
+import type { SpaceActor, FaberLoomSpaceId } from '@deepseek-ai/dsh-faberloom-spaces'
+import type {} from '@deepseek-ai/dsh-faberloom-spaces'
+import type {} from '@deepseek-ai/dsh-faberloom-agents'
+import type {} from '@deepseek-ai/dsh-faberloom-board'
+import type {} from '@deepseek-ai/dsh-faberloom-routines'
+import type { FaberLoomConnections } from '@deepseek-ai/dsh-faberloom-connections'
+import type {} from '@deepseek-ai/dsh-faberloom-connections'
+import type {
+  ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomOverview,
+  FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
+  FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
+  FaberLoomModelRow, FaberLoomModelRecommendation,
+  FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomGrantRow, TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
+} from './types.ts'
+
+export type * from './types.ts'
+
+/** Reads one skill root into rows, ignoring anything without a frontmatter name. */
+function readSkillDirectories(root: string, origin: 'role' | 'owner' = 'role'): FaberLoomSkillRow[] {
+  if (!existsSync(root)) return []
+  const rows: FaberLoomSkillRow[] = []
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const file = join(root, entry.name, 'SKILL.md')
+    if (!existsSync(file)) continue
+    let text = ''
+    try {
+      text = readFileSync(file, 'utf8')
+    } catch {
+      continue
+    }
+    const front = text.match(/^---\s*\n([\s\S]*?)\n---/)
+    const field = (key: string): string | null => {
+      const line = (front?.[1] ?? '').split('\n').find(l => l.trimStart().startsWith(`${key}:`))
+      if (line === undefined) return null
+      return line.slice(line.indexOf(':') + 1).trim().replace(/^["']|["']$/g, '') || null
+    }
+    rows.push({
+      name: field('name') ?? entry.name,
+      description: field('description') ?? '',
+      module: field('module'),
+      action: field('action'),
+      origin,
+      assignedTo: [],
+    })
+  }
+  return rows.sort((left, right) => left.name.localeCompare(right.name))
+}
+
+/** Deployment-supplied identity: the authenticated owner and its memory identity. */
+export interface Config {
+  /** The gateway injects the logged-in user's email here, per dsh process. */
+  ownerId?: string
+  /** The console role from the login response. */
+  role?: string
+  /** The user's single company id, when they have exactly one. */
+  companyId?: string
+  /** Whether the console role is read-only. */
+  readOnly?: boolean
+  /** Agent-memory core base URL, when the memory stack is configured. */
+  memoryCoreUrl?: string
+  /** Agent-memory service id (namespace) the owner belongs to. */
+  memoryServiceId?: string
+  /** The owner's agent-memory user id, used to isolate its rows. */
+  memoryUserId?: string
+  /** Bearer key for the agent-memory core. */
+  memoryGatewayKey?: string
+  /** Maximum memory rows one read requests. */
+  memoryLimit?: number
+  /** Root of the role skill catalog mounted in the deployment. */
+  skillsCatalogRoot?: string
+}
+
+/** Schemastery configuration for the workspace view. */
+export const Config: z<Config> = z.object({
+  ownerId: z.string(),
+  role: z.string(),
+  companyId: z.string(),
+  readOnly: z.boolean(),
+  memoryCoreUrl: z.string(),
+  memoryServiceId: z.string(),
+  memoryUserId: z.string(),
+  memoryGatewayKey: z.string(),
+  memoryLimit: z.number(),
+  skillsCatalogRoot: z.string(),
+})
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The workspace view the browser panels read and write. */
+    faberloomView: FaberLoomViewService
+  }
+}
+
+/** One memory-server atomic row as the core returns it. */
+interface AtomicItem {
+  readonly id?: unknown
+  readonly type?: unknown
+  readonly content?: unknown
+  readonly updated_at?: unknown
+  readonly created_at?: unknown
+}
+
+/** Assistant text one execution step recorded, when its result carries any. */
+function stepText(result: unknown): string | null {
+  if (result === null || typeof result !== 'object') return null
+  const text = (result as { readonly text?: unknown }).text
+  return typeof text === 'string' && text.length > 0 ? text : null
+}
+
+/** Project one teaching onto the fields the panel renders. */
+function teachingRow(teaching: FaberLoomTeaching): FaberLoomTeachingRow {
+  return {
+    id: String(teaching.id),
+    scope: teaching.scope,
+    spaceId: teaching.spaceId,
+    agentId: teaching.agentId,
+    skill: teaching.skill,
+    task: teaching.task,
+    text: teaching.text,
+    source: teaching.source,
+    author: teaching.author,
+    status: teaching.status,
+    version: teaching.version,
+    uses: [...teaching.uses],
+    updatedAt: teaching.updatedAt,
+  }
+}
+
+/**
+ * Workspace view (`ctx.faberloomView`) over the mounted product services and the
+ * agent-memory core. Reads and writes both return the fresh overview so the
+ * panels refresh from one value instead of recomputing.
+ */
+export class FaberLoomViewService extends TypertRemoteService {
+  static inject = ['faberloomSpaces', 'faberloomAgents', 'faberloomBoard', 'faberloomRoutines', 'faberloomMemory', 'faberloomAccess', 'faberloomMcpServer']
+
+  /**
+   * The connections service, resolved lazily so a deployment that does not
+   * mount it keeps every other panel working.
+   * @returns the mounted connections service.
+   * @throws when the deployment did not mount it.
+   */
+  private connectionsService(): FaberLoomConnections {
+    const service = this.ctx.get('faberloomConnections')
+    if (service === undefined) throw new Error('faberloom: the connections service is not mounted')
+    return service
+  }
+
+  /**
+   * @param ctx - host context.
+   * @param config - the gateway-injected identity, or an empty configuration
+   *   when no gateway mounted the row (reads then report no rows).
+   */
+  constructor(ctx: Context, private readonly config: Config = {}) {
+    super(ctx, 'faberloomView')
+  }
+
+  /**
+   * Read the signed-in owner's workspace rows for the global panels.
+   * @returns spaces, agents, board items, routines, and memory rows as plain JSON.
+   */
+  @Remote('overview')
+  async overview(): Promise<FaberLoomOverview> {
+    const actor = this.actor()
+    const [spaces, agents, board, routines, memory] = await Promise.all([
+      this.ctx.faberloomSpaces.list(actor),
+      this.ctx.faberloomAgents.listAgents(),
+      this.ctx.faberloomBoard.list({ ownerId: actor.id }),
+      this.ctx.faberloomRoutines.listRoutines(actor.id),
+      this.readMemory(),
+    ])
+    return {
+      spaces: spaces.map(space => ({ id: space.id, title: space.title, parentId: space.parentId ?? null })),
+      agents: agents.map(agent => ({ id: agent.id, name: agent.name, spaceId: agent.spaceId ?? null, active: agent.active })),
+      board: board.map(item => ({ id: item.id, title: item.title, status: item.status })),
+      routines: routines.map(routine => ({ id: routine.id, name: routine.name, status: routine.status })),
+      memory,
+      canWrite: !actor.readOnly,
+    }
+  }
+
+  /**
+   * Create a root space for the owner.
+   * @param title - display title.
+   * @returns the refreshed overview.
+   */
+  @Remote('createSpace')
+  async createSpace(title: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomSpaces.create(this.actor(), { title })
+    return await this.overview()
+  }
+
+  /**
+   * Rename one of the owner's spaces.
+   * @param id - space id.
+   * @param title - new display title.
+   * @returns the refreshed overview.
+   */
+  @Remote('renameSpace')
+  async renameSpace(id: string, title: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomSpaces.update(this.actor(), id as FaberLoomSpaceId, { title })
+    return await this.overview()
+  }
+
+  /**
+   * Create an agent in the catalog.
+   * @param name - display name.
+   * @param responsibility - the agent's responsibility statement.
+   * @returns the refreshed overview.
+   */
+  @Remote('createAgent')
+  async createAgent(name: string, responsibility: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomAgents.createAgent({ name, responsibility } satisfies AgentInput)
+    return await this.overview()
+  }
+
+  /**
+   * Rename one catalog agent.
+   * @param id - agent id.
+   * @param name - new display name.
+   * @returns the refreshed overview.
+   */
+  @Remote('renameAgent')
+  async renameAgent(id: string, name: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomAgents.updateAgent(id as FaberLoomAgentId, { name })
+    return await this.overview()
+  }
+
+  /**
+   * Deactivate one catalog agent.
+   * @param id - agent id.
+   * @returns the refreshed overview.
+   */
+  @Remote('deleteAgent')
+  async deleteAgent(id: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomAgents.deactivateAgent(id as FaberLoomAgentId)
+    return await this.overview()
+  }
+
+  /**
+   * Read one agent with its full editable configuration.
+   * @param id - agent id.
+   * @returns the agent detail, or undefined when it no longer exists.
+   */
+  @Remote('agentDetail')
+  async agentDetail(id: string): Promise<FaberLoomAgentDetail | undefined> {
+    const agents = await this.ctx.faberloomAgents.listAgents()
+    const agent = agents.find(candidate => candidate.id === id)
+    if (agent === undefined) return undefined
+    return {
+      id: agent.id,
+      name: agent.name,
+      responsibility: agent.responsibility,
+      skills: [...agent.skills],
+      tools: [...agent.tools],
+      active: agent.active,
+      spaceId: agent.spaceId ?? null,
+      primaryModelId: agent.policy.primary === undefined ? null : String(agent.policy.primary),
+      exclusive: agent.policy.exclusive,
+      fallbacks: agent.policy.fallbacks.map(String),
+      escalation: agent.policy.escalation === undefined
+        ? null
+        : {
+          authorized: agent.policy.escalation.authorized.map(String),
+          conditions: [...agent.policy.escalation.conditions],
+          mode: agent.policy.escalation.mode,
+        },
+      budget: agent.policy.budget === undefined
+        ? null
+        : {
+          perExecution: agent.policy.budget.perExecution,
+          currency: agent.policy.budget.currency,
+          maxAttempts: agent.policy.budget.maxAttempts,
+          maxEscalations: agent.policy.budget.maxEscalations,
+        },
+    }
+  }
+
+  /**
+   * Save an agent's editable configuration.
+   * @param id - agent id.
+   * @param input - name, responsibility, skills, and the optional model policy.
+   * @returns the refreshed overview.
+   */
+  @Remote('saveAgent')
+  async saveAgent(id: string, input: AgentSaveInput): Promise<FaberLoomOverview> {
+    const patch: { name?: string; responsibility?: string; skills?: readonly string[]; policy?: PolicyPatch } = {}
+    if (input.name !== undefined) patch.name = input.name
+    if (input.responsibility !== undefined) patch.responsibility = input.responsibility
+    if (input.skills !== undefined) patch.skills = [...input.skills]
+    if (input.primaryModelId !== undefined || input.exclusive !== undefined || input.fallbacks !== undefined
+      || input.escalation !== undefined || input.budget !== undefined) {
+      patch.policy = {
+        ...input.primaryModelId === undefined
+          ? {}
+          : { primary: input.primaryModelId === null ? null : input.primaryModelId as FaberLoomModelId },
+        ...input.exclusive === undefined ? {} : { exclusive: input.exclusive },
+        ...input.fallbacks === undefined ? {} : { fallbacks: input.fallbacks.map(fallback => fallback as FaberLoomModelId) },
+        ...input.escalation === undefined
+          ? {}
+          : {
+            escalation: input.escalation === null
+              ? null
+              : {
+                authorized: input.escalation.authorized.map(model => model as FaberLoomModelId),
+                conditions: [...input.escalation.conditions],
+                mode: input.escalation.mode === 'auto' ? 'auto' as const : 'manual' as const,
+              },
+          },
+        ...input.budget === undefined ? {} : { budget: input.budget === null ? null : { ...input.budget } },
+      }
+    }
+    await this.ctx.faberloomAgents.updateAgent(id as FaberLoomAgentId, patch)
+    return await this.overview()
+  }
+
+  /**
+   * Remove one agent from the catalog permanently.
+   * @param id - agent id.
+   * @returns the refreshed overview.
+   */
+  @Remote('purgeAgent')
+  async purgeAgent(id: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomAgents.removeAgent(id as FaberLoomAgentId)
+    return await this.overview()
+  }
+
+  /**
+   * List the skills available to this owner: the role catalog plus the owner's
+   * own uploaded skills, each marked with the agents that already use it.
+   * @returns the skill rows.
+   */
+  @Remote('skills')
+  async skills(): Promise<readonly FaberLoomSkillRow[]> {
+    const rows = new Map<string, FaberLoomSkillRow>()
+    const roleDir = this.roleSkillsDir()
+    for (const entry of roleDir === undefined ? [] : readSkillDirectories(roleDir, 'role')) {
+      rows.set(entry.name, entry)
+    }
+    for (const entry of readSkillDirectories(join(this.dshHome(), 'skills'), 'owner')) {
+      rows.set(entry.name, entry)
+    }
+    const agents = await this.ctx.faberloomAgents.listAgents()
+    return [...rows.values()].map(row => ({
+      ...row,
+      assignedTo: agents.filter(agent => agent.skills.includes(row.name)).map(agent => agent.id),
+    }))
+  }
+
+  /**
+   * Add or replace one skill from Markdown content the user uploaded.
+   * @param name - skill name (its directory).
+   * @param markdown - full SKILL.md content.
+   * @returns the refreshed skill list.
+   */
+  @Remote('saveSkill')
+  async saveSkill(name: string, markdown: string): Promise<readonly FaberLoomSkillRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot add skills')
+    const clean = name.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
+    if (clean.length === 0) throw new Error('faberloom: the skill needs a name')
+    if (!/^---[\s\S]*?name:\s*\S/.test(markdown)) throw new Error('faberloom: the skill needs YAML frontmatter with a name')
+    const dir = join(this.dshHome(), 'skills', clean)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'SKILL.md'), markdown, 'utf8')
+    return await this.skills()
+  }
+
+  /**
+   * Remove one owner-uploaded skill. Role-catalog skills cannot be removed.
+   * @param name - skill name.
+   * @returns the refreshed skill list.
+   */
+  @Remote('removeSkill')
+  async removeSkill(name: string): Promise<readonly FaberLoomSkillRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove skills')
+    const clean = name.trim().replace(/[^a-zA-Z0-9-]+/g, '')
+    const dir = join(this.dshHome(), 'skills', clean)
+    if (!existsSync(dir)) throw new Error('faberloom: only uploaded skills can be removed')
+    rmSync(dir, { recursive: true, force: true })
+    return await this.skills()
+  }
+
+  /**
+   * List the owner's own connections (IMAP mailbox, knowledge backup).
+   * @returns the stored connections, without the secrets.
+   */
+  @Remote('connections')
+  async connections(): Promise<readonly FaberLoomConnection[]> {
+    return await this.connectionsService().list(this.actor().id)
+  }
+
+  /**
+   * Create or replace one of the owner's connections.
+   * @param input - the configuration to store; an omitted secret keeps the stored one.
+   * @returns the refreshed connection list.
+   */
+  @Remote('saveConnection')
+  async saveConnection(input: ConnectionInput): Promise<readonly FaberLoomConnection[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot change connections')
+    await this.connectionsService().save(this.actor().id, input)
+    return await this.connectionsService().list(this.actor().id)
+  }
+
+  /**
+   * Remove one of the owner's connections.
+   * @param id - connection id.
+   * @returns the refreshed connection list.
+   */
+  @Remote('removeConnection')
+  async removeConnection(id: string): Promise<readonly FaberLoomConnection[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot change connections')
+    await this.connectionsService().remove(this.actor().id, id)
+    return await this.connectionsService().list(this.actor().id)
+  }
+
+  /**
+   * Check one of the owner's connections for real (IMAP login or writable destination).
+   * @param id - connection id.
+   * @returns the probe outcome.
+   */
+  @Remote('probeConnection')
+  async probeConnection(id: string): Promise<ConnectionProbe> {
+    return await this.connectionsService().probe(this.actor().id, id)
+  }
+
+  /**
+   * Read one space with its editable configuration.
+   * @param id - space id.
+   * @returns the space detail, or undefined when it is gone.
+   */
+  @Remote('spaceDetail')
+  async spaceDetail(id: string): Promise<FaberLoomSpaceDetail | undefined> {
+    const actor = this.actor()
+    const spaces = await this.ctx.faberloomSpaces.list(actor)
+    if (!spaces.some(space => space.id === id)) return undefined
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    return {
+      id: space.id,
+      title: space.title,
+      parentId: space.parentId ?? null,
+      inheritContext: space.inheritContext,
+      excluded: [...space.excluded],
+      members: [...space.members],
+      sources: space.sources.map(source => ({ kind: String(source.kind), ref: source.id })),
+      contextKeys: Object.keys(space.context),
+    }
+  }
+
+  /**
+   * Save one space's editable configuration.
+   * @param id - space id.
+   * @param input - title, inheritance, and members.
+   * @returns the refreshed overview.
+   */
+  @Remote('saveSpace')
+  async saveSpace(id: string, input: SpaceSaveInput): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot change spaces')
+    await this.ctx.faberloomSpaces.update(this.actor(), id as FaberLoomSpaceId, {
+      ...input.title === undefined ? {} : { title: input.title },
+      ...input.inheritContext === undefined ? {} : { inheritContext: input.inheritContext },
+      ...input.members === undefined ? {} : { members: [...input.members] },
+    })
+    return await this.overview()
+  }
+
+  /**
+   * List the model pool the panels assign from.
+   * @returns one row per registered model.
+   */
+  @Remote('models')
+  async models(): Promise<readonly FaberLoomModelRow[]> {
+    return (await this.ctx.faberloomAgents.listModels()).map(model => ({
+      id: String(model.id),
+      provider: model.provider,
+      model: model.model,
+      capabilities: [...model.capabilities],
+      contextWindow: model.contextWindow ?? null,
+      maxOutput: model.maxOutput ?? null,
+      inputPerMillion: model.inputPerMillion ?? null,
+      outputPerMillion: model.outputPerMillion ?? null,
+      currency: model.currency ?? null,
+      available: model.available,
+    }))
+  }
+
+  /**
+   * Ask the recommender which model suits one agent's work.
+   * @param agentId - the agent the recommendation is for.
+   * @param task - optional task label used to weight evidence.
+   * @returns the recommendation, or undefined when the agent is gone.
+   */
+  @Remote('recommendModel')
+  async recommendModel(agentId: string, task?: string): Promise<FaberLoomModelRecommendation | undefined> {
+    const agent = (await this.ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === agentId)
+    if (agent === undefined) return undefined
+    const result = await this.ctx.faberloomAgents.recommendModel({
+      ...task === undefined || task.length === 0 ? {} : { task },
+      capabilities: [...agent.tools],
+    })
+    return {
+      recommended: result.recommended === undefined ? null : String(result.recommended),
+      alternatives: result.alternatives.map(candidate => ({
+        modelId: String(candidate.modelId),
+        estimatedCost: candidate.costPerUsefulResult ?? null,
+        uses: candidate.uses,
+        provisional: candidate.provisional,
+        reasons: [...candidate.reasons],
+      })),
+      uncertainty: [...result.uncertainty],
+    }
+  }
+
+  /**
+   * List the owner's versioned teachings, newest first.
+   * @returns the teaching rows.
+   */
+  @Remote('teachings')
+  async teachings(): Promise<readonly FaberLoomTeachingRow[]> {
+    const rows = await this.ctx.faberloomMemory.listTeachings(this.actor().id)
+    return rows.map(teaching => teachingRow(teaching))
+  }
+
+  /**
+   * Record one teaching: a correction from a case, or a direct instruction.
+   * @param input - scope, text, source, and the optional scoping.
+   * @returns the refreshed teaching list.
+   */
+  @Remote('saveTeaching')
+  async saveTeaching(input: TeachingSaveInput): Promise<readonly FaberLoomTeachingRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot record teachings')
+    await this.ctx.faberloomMemory.createTeaching(this.actor().id, {
+      scope: input.scope as TeachingScope,
+      text: input.text,
+      source: input.source,
+      author: this.actor().id,
+      ...input.spaceId === undefined || input.spaceId.length === 0 ? {} : { spaceId: input.spaceId },
+      ...input.agentId === undefined || input.agentId.length === 0 ? {} : { agentId: input.agentId },
+      ...input.skill === undefined || input.skill.length === 0 ? {} : { skill: input.skill },
+      ...input.task === undefined || input.task.length === 0 ? {} : { task: input.task },
+      ...input.active === undefined ? {} : { active: input.active },
+    })
+    return await this.teachings()
+  }
+
+  /**
+   * Edit one teaching, producing a new version and keeping the previous one.
+   * @param id - teaching id.
+   * @param text - the new text.
+   * @param reason - why it changed.
+   * @returns the refreshed teaching list.
+   */
+  @Remote('editTeaching')
+  async editTeaching(id: string, text: string, reason: string): Promise<readonly FaberLoomTeachingRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot edit teachings')
+    await this.ctx.faberloomMemory.editTeaching(this.actor().id, id as FaberLoomTeachingId, { text, reason, author: this.actor().id })
+    return await this.teachings()
+  }
+
+  /**
+   * Revoke one teaching so no later decision recovers it.
+   * @param id - teaching id.
+   * @returns the refreshed teaching list.
+   */
+  @Remote('revokeTeaching')
+  async revokeTeaching(id: string): Promise<readonly FaberLoomTeachingRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revoke teachings')
+    await this.ctx.faberloomMemory.revokeTeaching(this.actor().id, id as FaberLoomTeachingId)
+    return await this.teachings()
+  }
+
+  /**
+   * List the MCP client tokens this owner minted.
+   * @returns the token rows, revoked ones included.
+   */
+  @Remote('mcpTokens')
+  async mcpTokens(): Promise<readonly FaberLoomMcpTokenRow[]> {
+    return (await this.ctx.faberloomMcpServer.listTokens()).map(token => ({
+      token: token.token,
+      label: token.label,
+      createdAt: token.createdAt,
+      revokedAt: token.revokedAt,
+      scopes: token.scopes,
+    }))
+  }
+
+  /**
+   * Mint one MCP client token for an external agent.
+   * @param input - who the token is for and the tools it may use.
+   * @returns the refreshed token list.
+   */
+  @Remote('mintMcpToken')
+  async mintMcpToken(input: McpTokenInput): Promise<readonly FaberLoomMcpTokenRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot mint MCP tokens')
+    const scopes = input.scopes
+    await this.ctx.faberloomMcpServer.mintToken(input.label.trim().length === 0 ? 'cliente' : input.label.trim(), scopes === undefined || scopes.length === 0 ? null : [...scopes])
+    return await this.mcpTokens()
+  }
+
+  /**
+   * Revoke one MCP client token.
+   * @param token - the token to revoke.
+   * @returns the refreshed token list.
+   */
+  @Remote('revokeMcpToken')
+  async revokeMcpToken(token: string): Promise<readonly FaberLoomMcpTokenRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revoke MCP tokens')
+    await this.ctx.faberloomMcpServer.revokeToken(token)
+    return await this.mcpTokens()
+  }
+
+  /**
+   * Read the owner's contextual performance evidence.
+   * @param agentId - optional agent filter.
+   * @param task - optional task filter.
+   * @returns the evidence summary, with an absent sample reported as null.
+   */
+  @Remote('performance')
+  async performance(agentId?: string, task?: string): Promise<FaberLoomPerformanceRow> {
+    const summary = await this.ctx.faberloomMemory.performance(this.actor().id, {
+      ...agentId === undefined || agentId.length === 0 ? {} : { agentId },
+      ...task === undefined || task.length === 0 ? {} : { task },
+    })
+    return {
+      uses: summary.uses,
+      approved: summary.approved,
+      corrected: summary.corrected,
+      agentFailures: summary.agentFailures,
+      correctionsByCause: { ...summary.correctionsByCause },
+      correctionRate: summary.correctionRate ?? null,
+    }
+  }
+
+  /**
+   * List the owner's autonomy grants, revoked ones included.
+   * @returns the grant rows.
+   */
+  @Remote('grants')
+  async grants(): Promise<readonly FaberLoomGrantRow[]> {
+    const rows = await this.ctx.faberloomAccess.listGrants(this.actor().id)
+    return rows.map(grant => ({
+      id: grant.id,
+      action: grant.action,
+      agentId: grant.agentId,
+      context: grant.context,
+      note: grant.note,
+      expiresAt: grant.expiresAt,
+      revoked: grant.revoked,
+    }))
+  }
+
+  /**
+   * Grant one action, scoped to an agent and context the caller states.
+   * @param input - the action and its optional scope.
+   * @returns the refreshed grant list.
+   */
+  @Remote('grant')
+  async grant(input: GrantSaveInput): Promise<readonly FaberLoomGrantRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot grant autonomy')
+    await this.ctx.faberloomAccess.grant(this.actor().id, {
+      action: input.action,
+      ...input.agentId === undefined || input.agentId.length === 0 ? {} : { agentId: input.agentId },
+      ...input.context === undefined || input.context.length === 0 ? {} : { context: input.context },
+      ...input.note === undefined || input.note.length === 0 ? {} : { note: input.note },
+      ...input.expiresAt === undefined || input.expiresAt.length === 0 ? {} : { expiresAt: input.expiresAt },
+    })
+    return await this.grants()
+  }
+
+  /**
+   * Revoke one grant, stopping the next effect that depended on it.
+   * @param id - grant id.
+   * @returns the refreshed grant list.
+   */
+  @Remote('revokeGrant')
+  async revokeGrant(id: string): Promise<readonly FaberLoomGrantRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revoke autonomy')
+    await this.ctx.faberloomAccess.revokeGrant(this.actor().id, id)
+    return await this.grants()
+  }
+
+  /**
+   * Read one routine with its full editable definition.
+   * @param id - routine id.
+   * @returns the routine detail, or undefined when it is gone.
+   */
+  @Remote('routineDetail')
+  async routineDetail(id: string): Promise<FaberLoomRoutineDetail | undefined> {
+    const routine = (await this.ctx.faberloomRoutines.listRoutines(this.actor().id)).find(entry => entry.id === id)
+    if (routine === undefined) return undefined
+    const trigger = routine.definition.triggers[0]
+    return {
+      id: routine.id,
+      name: routine.name,
+      status: routine.status,
+      version: routine.version,
+      versions: [...routine.versions],
+      intent: routine.definition.intent,
+      triggerKind: trigger?.kind ?? 'manual',
+      triggerMatch: trigger?.match ?? null,
+      steps: routine.definition.steps.map(step => ({
+        id: step.id,
+        instruction: step.instruction,
+        handler: step.handler,
+        dependsOn: [...step.dependsOn],
+        waitFor: step.waitFor ?? null,
+        effect: step.effect,
+      })),
+      expectedResult: routine.definition.expectedResult,
+      permissions: [...routine.definition.permissions],
+      failurePolicy: routine.definition.failurePolicy,
+    }
+  }
+
+  /**
+   * Save one routine's editable definition as a new version.
+   * @param id - routine id.
+   * @param input - the fields to replace; absent fields keep the current value.
+   * @returns the refreshed overview.
+   */
+  @Remote('saveRoutine')
+  async saveRoutine(id: string, input: RoutineSaveInput): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is readonly and cannot change routines')
+    const ownerId = this.actor().id
+    const routine = (await this.ctx.faberloomRoutines.listRoutines(ownerId)).find(entry => entry.id === id)
+    if (routine === undefined) throw new Error('faberloom: routine not found')
+    const current = routine.definition
+    await this.ctx.faberloomRoutines.updateRoutine(ownerId, id as FaberLoomRoutineId, {
+      name: input.name ?? routine.name,
+      definition: {
+        intent: input.intent ?? current.intent,
+        triggers: input.triggerKind === undefined && input.triggerMatch === undefined
+          ? current.triggers.map(trigger => ({
+            kind: trigger.kind,
+            ...trigger.match === null || trigger.match.length === 0 ? {} : { match: trigger.match },
+          }))
+          : [{
+            kind: (input.triggerKind ?? current.triggers[0]?.kind ?? 'manual') as 'manual' | 'event' | 'email' | 'date' | 'recurrence',
+            ...(input.triggerMatch === undefined || input.triggerMatch === null || input.triggerMatch.length === 0
+              ? {}
+              : { match: input.triggerMatch }),
+          }],
+        steps: input.steps === undefined
+          ? current.steps.map(step => ({
+            id: step.id,
+            instruction: step.instruction,
+            handler: step.handler,
+            dependsOn: [...step.dependsOn],
+            ...step.waitFor === null || step.waitFor.length === 0 ? {} : { waitFor: step.waitFor },
+            effect: step.effect,
+          }))
+          : input.steps.map(step => ({
+            id: step.id,
+            instruction: step.instruction,
+            handler: step.handler,
+            dependsOn: [...step.dependsOn],
+            ...step.waitFor === null || step.waitFor.length === 0 ? {} : { waitFor: step.waitFor },
+            effect: step.effect,
+          })),
+        expectedResult: input.expectedResult ?? current.expectedResult,
+        permissions: input.permissions === undefined ? [...current.permissions] : [...input.permissions],
+        failurePolicy: (input.failurePolicy ?? current.failurePolicy) as 'stop' | 'continue' | 'review',
+      },
+    })
+    return await this.overview()
+  }
+
+  /**
+   * Remove one routine definition. Its executions stay as the run's history.
+   * @param id - routine id.
+   * @returns the refreshed overview.
+   */
+  @Remote('removeRoutine')
+  async removeRoutine(id: string): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove routines')
+    await this.ctx.faberloomRoutines.removeRoutine(this.actor().id, id as FaberLoomRoutineId)
+    return await this.overview()
+  }
+
+  /**
+   * List the owner's executions, optionally only one routine's.
+   * @param routineId - routine id, or undefined for every routine.
+   * @returns execution rows oldest first.
+   */
+  @Remote('executions')
+  async executions(routineId?: string): Promise<readonly FaberLoomExecutionRow[]> {
+    const rows = await this.ctx.faberloomRoutines.listExecutions(
+      routineId === undefined || routineId.length === 0 ? {} : { routineId: routineId as FaberLoomRoutineId },
+    )
+    const routines = await this.ctx.faberloomRoutines.listRoutines(this.actor().id)
+    const names = new Map(routines.map(routine => [String(routine.id), routine.name]))
+    const effects = new Map(routines.map(routine => [
+      String(routine.id),
+      new Set(routine.definition.steps.filter(step => step.effect).map(step => step.id)),
+    ]))
+    return rows.map(row => this.executionRow(row, names, effects))
+  }
+
+  /**
+   * Start a manual run of one active routine.
+   * @param routineId - routine to run.
+   * @returns the refreshed executions of that routine.
+   */
+  @Remote('startRoutine')
+  async startRoutine(routineId: string): Promise<readonly FaberLoomExecutionRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot start routines')
+    await this.ctx.faberloomRoutines.startExecution({
+      routineId: routineId as FaberLoomRoutineId,
+      idempotencyKey: `ui:${routineId}:${new Date().toISOString()}`,
+      channel: 'ui',
+    })
+    return await this.executions(routineId)
+  }
+
+  /**
+   * Advance every runnable step of the owner's executions.
+   * @param routineId - routine whose panel is asking; the tick itself is global to the owner.
+   * @returns the refreshed executions of that routine.
+   */
+  @Remote('tickRoutine')
+  async tickRoutine(routineId: string): Promise<readonly FaberLoomExecutionRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot advance routines')
+    await this.ctx.faberloomRoutines.tick({ events: [] })
+    return await this.executions(routineId)
+  }
+
+  /**
+   * Reconcile one execution whose effect stayed pending after a write.
+   * @param id - execution id.
+   * @returns the refreshed executions of its routine.
+   */
+  @Remote('reconcileExecution')
+  async reconcileExecution(id: string): Promise<readonly FaberLoomExecutionRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot reconcile routines')
+    const execution = await this.ctx.faberloomRoutines.reconcile(id as FaberLoomExecutionId)
+    return await this.executions(String(execution.routineId))
+  }
+
+  /**
+   * Cancel the recorded effect of one step so the run can be retried.
+   * @param id - execution id.
+   * @param stepId - step whose effect to cancel.
+   * @returns the refreshed executions of its routine.
+   */
+  @Remote('cancelExecutionEffect')
+  async cancelExecutionEffect(id: string, stepId: string): Promise<readonly FaberLoomExecutionRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot change routines')
+    const execution = await this.ctx.faberloomRoutines.getExecution(id as FaberLoomExecutionId)
+    await this.ctx.faberloomRoutines.cancelEffect(id as FaberLoomExecutionId, stepId)
+    return await this.executions(String(execution.routineId))
+  }
+
+  /**
+   * Project one execution onto the fields the panel renders.
+   * @param execution - stored execution.
+   * @returns the render row.
+   */
+  private executionRow(
+    execution: Execution,
+    names: ReadonlyMap<string, string>,
+    effects: ReadonlyMap<string, ReadonlySet<string>>,
+  ): FaberLoomExecutionRow {
+    const steps = Object.values(execution.steps)
+    const recorded = effects.get(String(execution.routineId))
+    return {
+      id: String(execution.id),
+      routineId: String(execution.routineId),
+      routineName: names.get(String(execution.routineId)) ?? String(execution.routineId),
+      routineVersion: execution.routineVersion,
+      status: execution.status,
+      waitingFor: execution.waitingFor,
+      deadlineAt: execution.deadlineAt ?? null,
+      reason: execution.reason,
+      doneSteps: steps.filter(step => step.status === 'completed').length,
+      totalSteps: steps.length,
+      steps: Object.entries(execution.steps).map(([id, state]) => ({
+        id,
+        status: state.status,
+        text: stepText(state.result),
+        reason: state.reason,
+        effect: recorded?.has(id) ?? false,
+      })),
+      evidenceCount: execution.evidence.length,
+      event: execution.event === null
+        ? null
+        : { key: execution.event.key, type: execution.event.type, subject: execution.event.subject ?? null },
+      createdAt: execution.createdAt,
+      updatedAt: execution.updatedAt,
+    }
+  }
+
+  /**
+   * Read one board item with its review state.
+   * @param id - board item id.
+   * @returns the board detail, or undefined when it is gone.
+   */
+  @Remote('boardDetail')
+  async boardDetail(id: string): Promise<FaberLoomBoardDetail | undefined> {
+    const item = (await this.ctx.faberloomBoard.list({ ownerId: this.actor().id })).find(entry => entry.id === id)
+    if (item === undefined) return undefined
+    const revision = item.revisions[item.revisions.length - 1]
+    return {
+      id: item.id,
+      title: item.title,
+      status: item.status,
+      version: item.version,
+      summary: revision?.summary ?? '',
+      evidence: revision === undefined ? [] : [...revision.evidence],
+      approvedRevision: item.approvedRevision,
+      stale: item.stale,
+      staleReason: item.staleReason,
+      effects: item.effects.map(effect => ({ ref: effect.ref, detail: effect.detail, at: effect.at })),
+    }
+  }
+
+  /** The owner's DSH home, where uploaded skills live. */
+  private dshHome(): string {
+    const home = process.env.DSH_HOME
+    return home === undefined || home.length === 0 ? join(homedir(), '.dsh') : home
+  }
+
+  /** The role's skill catalog directory, when the deployment mounted one. */
+  private roleSkillsDir(): string | undefined {
+    const root = this.config.skillsCatalogRoot
+    const role = (this.config.role ?? '').toLowerCase()
+    if (root === undefined || root.length === 0 || role.length === 0) return undefined
+    return join(root, role)
+  }
+
+  /**
+   * Replace one catalog agent's responsibility.
+   * @param id - agent id.
+   * @param responsibility - the new responsibility statement.
+   * @returns the refreshed overview.
+   */
+  @Remote('setAgentResponsibility')
+  async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomAgents.updateAgent(id as FaberLoomAgentId, { responsibility })
+    return await this.overview()
+  }
+
+  /**
+   * Create one board item awaiting review.
+   * @param title - display title; it also carries the prepared result summary.
+   * @returns the refreshed overview.
+   */
+  @Remote('createBoardItem')
+  async createBoardItem(title: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomBoard.create(this.actor().id, { title, summary: title, evidence: [title] })
+    return await this.overview()
+  }
+
+  /**
+   * Approve or reject the current revision of one board item.
+   * @param id - board item id.
+   * @param approve - true approves, false rejects.
+   * @returns the refreshed overview.
+   */
+  @Remote('reviewBoardItem')
+  async reviewBoardItem(id: string, approve: boolean): Promise<FaberLoomOverview> {
+    const item = await this.ctx.faberloomBoard.get(id as FaberLoomBoardItemId)
+    await this.ctx.faberloomBoard.review(this.actor().id, item.id, {
+      decision: approve ? 'approve' : 'reject',
+      version: item.version,
+    })
+    return await this.overview()
+  }
+
+  /**
+   * Reopen one reviewed board item so it can be corrected.
+   * @param id - board item id.
+   * @returns the refreshed overview.
+   */
+  @Remote('reopenBoardItem')
+  async reopenBoardItem(id: string): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot reopen board items')
+    await this.ctx.faberloomBoard.reopen(this.actor().id, id as FaberLoomBoardItemId)
+    return await this.overview()
+  }
+
+  /**
+   * Create one draft routine the owner can then activate.
+   * @param name - display name.
+   * @param intent - the procedure the routine performs.
+   * @returns the refreshed overview.
+   */
+  @Remote('createRoutine')
+  async createRoutine(name: string, intent: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
+      name,
+      definition: {
+        intent,
+        triggers: [{ kind: 'manual' }],
+        steps: [{ id: 'step-1', instruction: intent, handler: 'agent' }],
+        expectedResult: intent,
+        permissions: [],
+        failurePolicy: 'review',
+      },
+    })
+    return await this.overview()
+  }
+
+  /**
+   * Activate or pause one routine.
+   * @param id - routine id.
+   * @param active - true activates, false pauses.
+   * @returns the refreshed overview.
+   */
+  @Remote('setRoutineActive')
+  async setRoutineActive(id: string, active: boolean): Promise<FaberLoomOverview> {
+    const routineId = id as FaberLoomRoutineId
+    if (active) await this.ctx.faberloomRoutines.activateRoutine(this.actor().id, routineId)
+    else await this.ctx.faberloomRoutines.pauseRoutine(this.actor().id, routineId)
+    return await this.overview()
+  }
+
+  /**
+   * Record one owner statement on the agent-memory server. The server distils
+   * L0 into L1 asynchronously, so the new row may appear after the next read.
+   * @param text - the statement to remember.
+   * @returns the refreshed overview.
+   */
+  @Remote('remember')
+  async remember(text: string): Promise<FaberLoomOverview> {
+    await this.writeMemory(text)
+    return await this.overview()
+  }
+
+  /** The deployment-supplied identity, or a read-only anonymous actor. */
+  private actor(): SpaceActor {
+    const ownerId = this.config.ownerId
+    return {
+      id: ownerId === undefined || ownerId.length === 0 ? 'anonymous' : ownerId,
+      role: this.config.role ?? 'client_b2b',
+      companyId: this.config.companyId === undefined || this.config.companyId.length === 0 ? undefined : this.config.companyId,
+      readOnly: this.config.readOnly ?? true,
+    }
+  }
+
+  /**
+   * Append one owner statement to the memory pipeline's conversation inlet.
+   * @param text - the statement to remember.
+   * @returns nothing; the server accepts L0 and distils it asynchronously.
+   */
+  private async writeMemory(text: string): Promise<void> {
+    const base = this.memoryBase()
+    if (base === undefined) throw new Error('faberloom: the agent-memory server is not configured')
+    const response = await fetch(`${base}/v3/conversation/add`, {
+      method: 'POST',
+      headers: this.memoryHeaders(),
+      body: JSON.stringify({
+        session_id: `faberloom-ui-${new Date().toISOString()}`,
+        messages: [{ role: 'user', content: text }],
+      }),
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!response.ok) throw new Error(`faberloom: the agent-memory server rejected the statement (HTTP ${response.status})`)
+  }
+
+  /** The memory core base URL when the deployment configured the stack. */
+  private memoryBase(): string | undefined {
+    const base = this.config.memoryCoreUrl
+    const userId = this.config.memoryUserId
+    if (base === undefined || base.length === 0 || userId === undefined || userId.length === 0) return undefined
+    return base.replace(/\/+$/, '')
+  }
+
+  /** The headers every memory call carries: deployment identity, never a client argument. */
+  private memoryHeaders(): Record<string, string> {
+    return {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      authorization: `Bearer ${this.config.memoryGatewayKey ?? ''}`,
+      'x-tdai-service-id': this.config.memoryServiceId ?? 'default',
+      'x-tdai-user-id': this.config.memoryUserId ?? '',
+    }
+  }
+
+  /**
+   * Read the owner's rows from the agent-memory core.
+   * @returns the rows, or an empty list when the memory stack is not configured
+   *   or does not answer; memory is an addition, never a read failure.
+   */
+  private async readMemory(): Promise<readonly FaberLoomMemoryRow[]> {
+    const base = this.memoryBase()
+    if (base === undefined) return []
+    try {
+      const response = await fetch(`${base}/v3/atomic/query`, {
+        method: 'POST',
+        headers: this.memoryHeaders(),
+        body: JSON.stringify({ limit: this.config.memoryLimit ?? 50, offset: 0 }),
+        signal: AbortSignal.timeout(4000),
+      })
+      if (!response.ok) return []
+      const body = await response.json() as { data?: { items?: readonly AtomicItem[] } }
+      const items = body.data?.items ?? []
+      return items.map(item => ({
+        id: String(item.id ?? ''),
+        kind: String(item.type ?? ''),
+        text: String(item.content ?? ''),
+        at: String(item.updated_at ?? item.created_at ?? ''),
+      }))
+    } catch {
+      return []
+    }
+  }
+}
+
+export default FaberLoomViewService
