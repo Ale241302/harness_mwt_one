@@ -17,6 +17,8 @@ import type {} from '@deepseek-ai/dsh-llm'
 import type {
   AgentInput,
   AgentPatch,
+  CostBucket,
+  CostSummary,
   DelegateRequest,
   DelegateResult,
   DuplicateInput,
@@ -136,6 +138,33 @@ function estimateAttemptCost(model: FaberLoomModel): number | undefined {
   const input = (model.inputPerMillion ?? 0) * half / 1_000_000
   const output = (model.outputPerMillion ?? 0) * half / 1_000_000
   return input + output
+}
+
+/** Fallback model key when a selection names no effective model. */
+const UNKNOWN_MODEL_KEY = 'unknown'
+
+/** Running total of one cost-grouping bucket. */
+interface CostAccumulator {
+  cost: number
+  records: number
+  partial: boolean
+}
+
+/** Fold one selection into a grouping accumulator. */
+function foldCost(buckets: Map<string, CostAccumulator>, key: string, cost: number | undefined): void {
+  const current = buckets.get(key) ?? { cost: 0, records: 0, partial: false }
+  buckets.set(key, {
+    cost: current.cost + (cost ?? 0),
+    records: current.records + 1,
+    partial: current.partial || cost === undefined,
+  })
+}
+
+/** Project one accumulator map to cost buckets, priciest first. */
+function toCostBuckets(by: CostBucket['by'], buckets: Map<string, CostAccumulator>): CostBucket[] {
+  return [...buckets.entries()]
+    .map(([key, value]) => ({ key, by, cost: value.cost, records: value.records, partial: value.partial }))
+    .sort((left, right) => right.cost - left.cost || left.key.localeCompare(right.key))
 }
 
 /**
@@ -779,8 +808,56 @@ export class FaberLoomAgents extends Service {
     }
   }
 
-  // ── Delegation ──────────────────────────────────────────────────────
+  /**
+   * Aggregate the user's recorded spend, grouped by effective model, agent, and
+   * task. A selection recorded without a cost makes the summary partial rather
+   * than contributing zero; the currency is reported only when the models behind
+   * the selections agree on one.
+   * @param filter - optional agent, task, and inclusive lower time bound.
+   * @returns totals, shared currency, and the three groupings.
+   */
+  async costs(filter: { agentId?: FaberLoomAgentId; task?: string; since?: string } = {}): Promise<CostSummary> {
+    const currencyOf = new Map<string, string | undefined>()
+    for (const model of await this.listModels()) currencyOf.set(model.id, model.currency)
+    const byModel = new Map<string, CostAccumulator>()
+    const byAgent = new Map<string, CostAccumulator>()
+    const byTask = new Map<string, CostAccumulator>()
+    const currencies = new Set<string>()
+    let total = 0
+    let records = 0
+    let partial = false
+    let since: string | undefined
+    const selections = await this.listSelections(filter.agentId === undefined ? {} : { agentId: filter.agentId })
+    for (const selection of selections) {
+      if (filter.task !== undefined && selection.task !== filter.task) continue
+      if (filter.since !== undefined && selection.at < filter.since) continue
+      records += 1
+      if (since === undefined || selection.at < since) since = selection.at
+      const known = selection.cost
+      if (known === undefined) partial = true
+      else total += known
+      if (selection.effectiveModel !== undefined) {
+        const currency = currencyOf.get(selection.effectiveModel)
+        if (currency !== undefined) currencies.add(currency)
+      }
+      foldCost(byModel, selection.effectiveModel === undefined ? UNKNOWN_MODEL_KEY : String(selection.effectiveModel), known)
+      foldCost(byAgent, String(selection.agentId), known)
+      foldCost(byTask, selection.task, known)
+    }
+    return {
+      currency: currencies.size === 1 ? [...currencies][0] : undefined,
+      total,
+      records,
+      partial,
+      since,
+      at: new Date().toISOString(),
+      byModel: toCostBuckets('model', byModel),
+      byAgent: toCostBuckets('agent', byAgent),
+      byTask: toCostBuckets('task', byTask),
+    }
+  }
 
+  // ── Delegation ──────────────────────────────────────────────────────
   /**
    * Delegate one task to a named subagent, resolving its policy inside the
    * parent's shared budget and recording the selection.

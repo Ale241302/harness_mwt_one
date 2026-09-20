@@ -11,7 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: the mounted product services, read through ctx like their tools do.
-import type { FaberLoomAgentId, FaberLoomModelId, AgentInput, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
+import type { FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
@@ -31,7 +31,8 @@ import type {
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
   FaberLoomModelRow, FaberLoomModelRecommendation,
-  FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomGrantRow, TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
+  FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
+  TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
   FaberLoomWorkProposal, FaberLoomLinkPreview,
 } from './types.ts'
@@ -827,6 +828,33 @@ export class FaberLoomViewService extends TypertRemoteService {
       agentFailures: summary.agentFailures,
       correctionsByCause: { ...summary.correctionsByCause },
       correctionRate: summary.correctionRate ?? null,
+    }
+  }
+
+  /**
+   * Read the owner's recorded spend, grouped by effective model, agent, and task.
+   * @param agentId - optional agent filter.
+   * @param task - optional task filter.
+   * @returns the spend summary the cost panel renders.
+   */
+  @Remote('costs')
+  async costs(agentId?: string, task?: string): Promise<FaberLoomCostSummary> {
+    const summary = await this.ctx.faberloomAgents.costs({
+      ...agentId === undefined || agentId.length === 0 ? {} : { agentId: agentId as FaberLoomAgentId },
+      ...task === undefined || task.length === 0 ? {} : { task },
+    })
+    const rows = (buckets: readonly CostBucket[]): FaberLoomCostRow[] =>
+      buckets.map(bucket => ({ key: bucket.key, cost: bucket.cost, records: bucket.records, partial: bucket.partial }))
+    return {
+      currency: summary.currency ?? null,
+      total: summary.total,
+      records: summary.records,
+      partial: summary.partial,
+      since: summary.since ?? null,
+      at: summary.at,
+      byModel: rows(summary.byModel),
+      byAgent: rows(summary.byAgent),
+      byTask: rows(summary.byTask),
     }
   }
 

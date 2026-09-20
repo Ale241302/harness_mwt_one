@@ -11,6 +11,13 @@ services:
     image: mwt-one-harness/gateway:latest
     container_name: mwt-one-harness-gateway
     restart: unless-stopped
+    # M2 · límites del contenedor. El gateway alberga un proceso dsh por usuario
+    # activo (heap por proceso = DSH_MAX_OLD_SPACE_MB, por defecto 1024 MB), así
+    # que el techo debe cubrir varios usuarios concurrentes. Ajustables por .env.
+    mem_limit: ${GATEWAY_MEM_LIMIT:-6g}
+    memswap_limit: ${GATEWAY_MEMSWAP_LIMIT:-6g}
+    cpus: ${GATEWAY_CPUS:-2.0}
+    pids_limit: ${GATEWAY_PIDS_LIMIT:-2048}
     env_file:
       - .env
     environment:

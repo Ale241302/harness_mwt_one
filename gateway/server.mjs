@@ -94,16 +94,120 @@ const cfg = {
   inboundMailbox: process.env.INBOUND_MAILBOX || 'INBOX',
   // Plazo de una espera de rutina antes de pasar a revision (24 h por defecto).
   waitTimeoutMs: Number(process.env.WAIT_TIMEOUT_MS || 86400000),
+  // M1 · rate limit de /mcp (peticiones por minuto por IP cliente).
+  mcpRateLimitPerMin: Number(process.env.MCP_RATE_LIMIT_PER_MIN || 120),
+  // M6 · rate limit de login por cuenta (además del de nginx por IP).
+  loginRateLimitPerMin: Number(process.env.LOGIN_RATE_LIMIT_PER_MIN || 12),
+  // M4 · cadencia del refresco del índice de tokens (ms).
+  tokenIndexRefreshMs: Number(process.env.MCP_TOKEN_INDEX_REFRESH_MS || 300000),
 }
 
 // Estado durable del aprovisionamiento de memoria (identidad por usuario).
 // Vive junto a los DSH_HOME para sobrevivir recreates del contenedor.
 const DATA_DIR = cfg.dataDir
 cfg.memoryStateFile = process.env.MEMORY_STATE_FILE || path.join(path.dirname(DATA_DIR), 'memory-users.json')
+// M1 · índice token→owner y fuentes del healthcheck ampliado (M9).
+cfg.mcpTokenIndexFile = process.env.MCP_TOKEN_INDEX_FILE || path.join(path.dirname(DATA_DIR), 'mcp-token-index.json')
+cfg.forkShaFile = process.env.DSH_FORK_SHA_FILE || '/opt/dsh/.fork-sha'
+cfg.backupStatusFile = process.env.BACKUP_STATUS_FILE || '/opt/mwt/harness_backup_status.txt'
+cfg.manifestFile = process.env.MANIFEST_FILE || path.join(__dirname, '..', 'MANIFEST.md')
 
 if (!cfg.sessionSecret) {
   console.error('[gateway] FATAL: SESSION_SECRET no está definido')
   process.exit(1)
+}
+
+// ── M4 · observabilidad: log estructurado y métricas ──────────────────
+// Una línea JSON por evento relevante (quién, qué, resultado, duración) y
+// contadores Prometheus en /metrics. No registra secretos ni cuerpos.
+const metrics = {
+  logins: { ok: 0, auth: 0, upstream: 0, limited: 0 },
+  dshSpawns: 0,
+  dshExits: 0,
+  mcpRequests: { ok: 0, denied: 0, limited: 0, error: 0 },
+  rateLimited: { login: 0, mcp: 0 },
+}
+function logEvent(fields) {
+  try {
+    console.log(JSON.stringify({ ts: new Date().toISOString(), svc: 'harness-gateway', ...fields }))
+  } catch { /* logging never throws */ }
+}
+function prometheus(extra) {
+  const lines = [
+    '# HELP gateway_logins_total Login attempts by result.',
+    '# TYPE gateway_logins_total counter',
+    `gateway_logins_total{result="ok"} ${metrics.logins.ok}`,
+    `gateway_logins_total{result="auth"} ${metrics.logins.auth}`,
+    `gateway_logins_total{result="upstream"} ${metrics.logins.upstream}`,
+    `gateway_logins_total{result="limited"} ${metrics.logins.limited}`,
+    '# HELP gateway_dsh_spawns_total dsh instances started.',
+    '# TYPE gateway_dsh_spawns_total counter',
+    `gateway_dsh_spawns_total ${metrics.dshSpawns}`,
+    '# HELP gateway_dsh_exits_total dsh instances that exited.',
+    '# TYPE gateway_dsh_exits_total counter',
+    `gateway_dsh_exits_total ${metrics.dshExits}`,
+    '# HELP gateway_mcp_requests_total /mcp requests by result.',
+    '# TYPE gateway_mcp_requests_total counter',
+    `gateway_mcp_requests_total{result="ok"} ${metrics.mcpRequests.ok}`,
+    `gateway_mcp_requests_total{result="denied"} ${metrics.mcpRequests.denied}`,
+    `gateway_mcp_requests_total{result="limited"} ${metrics.mcpRequests.limited}`,
+    `gateway_mcp_requests_total{result="error"} ${metrics.mcpRequests.error}`,
+    '# HELP gateway_rate_limited_total Requests rejected by a rate limit.',
+    '# TYPE gateway_rate_limited_total counter',
+    `gateway_rate_limited_total{kind="login"} ${metrics.rateLimited.login}`,
+    `gateway_rate_limited_total{kind="mcp"} ${metrics.rateLimited.mcp}`,
+    '# HELP gateway_instances Live per-user dsh instances.',
+    '# TYPE gateway_instances gauge',
+    `gateway_instances ${extra.instances}`,
+  ]
+  return `${lines.join('\n')}\n`
+}
+
+// ── M1/M6 · rate limiter en memoria (ventana deslizante de 60 s) ──────
+function makeLimiter(perMin) {
+  const hits = new Map()
+  const check = (key) => {
+    const now = Date.now()
+    const recent = (hits.get(key) ?? []).filter(at => at > now - 60000)
+    recent.push(now)
+    hits.set(key, recent)
+    return recent.length <= perMin
+  }
+  check.hits = hits
+  return check
+}
+const mcpLimiter = makeLimiter(cfg.mcpRateLimitPerMin)
+const loginAccountLimiter = makeLimiter(cfg.loginRateLimitPerMin)
+const loginIpLimiter = makeLimiter(Math.max(cfg.loginRateLimitPerMin * 4, 40))
+// Poda periódica para que los mapas no crezcan sin límite.
+setInterval(() => {
+  const cutoff = Date.now() - 60000
+  for (const limiter of [mcpLimiter, loginAccountLimiter, loginIpLimiter]) {
+    for (const [key, times] of limiter.hits) {
+      const kept = times.filter(at => at > cutoff)
+      if (kept.length === 0) limiter.hits.delete(key)
+      else limiter.hits.set(key, kept)
+    }
+  }
+}, 60000).unref()
+
+// ── M7 · CSRF de doble envío para el formulario de login ──────────────
+// GET /login fija una cookie aleatoria y la incrusta como campo oculto; POST
+// exige que ambos coincidan. Un tercero no puede leer la cookie ni el formulario.
+const CSRF_COOKIE = 'hcsrf'
+function newCsrfToken() {
+  return crypto.randomBytes(24).toString('hex')
+}
+function csrfCookieValue(value) {
+  return `${CSRF_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax${cookieSecureFlag()}`
+}
+function verifyCsrf(req) {
+  const cookie = readCookie(req, CSRF_COOKIE)
+  const field = String(req.body?._csrf || '')
+  if (!cookie || !field) return false
+  const a = Buffer.from(cookie)
+  const b = Buffer.from(field)
+  return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
 // ── Firmas de cookie (HMAC-SHA256) ────────────────────────────────────
@@ -328,24 +432,72 @@ function readUserState(email) {
   return undefined
 }
 
-// Resuelve el token MCP de un cliente a la identidad de su propietario leyendo
-// el almacén del producto: el gateway no guarda tokens, sólo los localiza.
-function findOwnerByMcpToken(token) {
-  let dirs = []
+// ── M1 · índice token→owner ───────────────────────────────────────────
+// El gateway no guarda tokens: los localiza. Antes cada petición /mcp escaneaba
+// el almacén de todos los usuarios; ahora un índice en /data (tmp+rename)
+// resuelve el owner en O(1). El índice es solo enrutamiento: la revocación real
+// la impone el servidor MCP del propietario (que revisa su propio almacén).
+let tokenIndex
+let tokenIndexBuiltAt = 0
+
+function loadTokenIndex() {
+  if (tokenIndex !== undefined) return tokenIndex
+  tokenIndex = new Map()
   try {
-    dirs = fs.readdirSync(cfg.dataDir)
-  } catch { return undefined }
+    const parsed = JSON.parse(fs.readFileSync(cfg.mcpTokenIndexFile, 'utf8'))
+    if (parsed && typeof parsed === 'object' && parsed.tokens) {
+      for (const [token, hit] of Object.entries(parsed.tokens)) {
+        if (hit && typeof hit.email === 'string' && typeof hit.dir === 'string') tokenIndex.set(token, hit)
+      }
+    }
+  } catch { /* ausente o ilegible: se reconstruye */ }
+  return tokenIndex
+}
+
+function persistTokenIndex() {
+  const tokens = {}
+  for (const [token, hit] of tokenIndex) tokens[token] = hit
+  const tmp = `${cfg.mcpTokenIndexFile}.tmp`
+  try {
+    fs.writeFileSync(tmp, JSON.stringify({ updatedAt: new Date().toISOString(), tokens }), 'utf8')
+    fs.chmodSync(tmp, 0o600)
+    fs.renameSync(tmp, cfg.mcpTokenIndexFile)
+  } catch (err) {
+    console.error(`[gateway] no se pudo escribir el índice de tokens: ${err.message}`)
+  }
+}
+
+function buildTokenIndex() {
+  const next = new Map()
+  let dirs = []
+  try { dirs = fs.readdirSync(cfg.dataDir) } catch { /* sin homes todavía */ }
   for (const id of dirs) {
     const file = path.join(cfg.dataDir, id, 'storages', 'faberloom_mcp.json')
     let parsed
-    try {
-      parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
-    } catch { continue }
-    const record = parsed?.tables?.tokens?.[token]
-    if (!record || record.revokedAt !== null) continue
-    return { email: record.ownerId, home: path.join(cfg.dataDir, id) }
+    try { parsed = JSON.parse(fs.readFileSync(file, 'utf8')) } catch { continue }
+    const records = parsed?.tables?.tokens
+    if (!records || typeof records !== 'object') continue
+    for (const [token, record] of Object.entries(records)) {
+      if (!record || record.revokedAt !== null) continue
+      next.set(token, { email: record.ownerId, dir: id })
+    }
   }
-  return undefined
+  tokenIndex = next
+  tokenIndexBuiltAt = Date.now()
+  persistTokenIndex()
+  logEvent({ ev: 'mcp_token_index', tokens: next.size, homes: dirs.length })
+  return next
+}
+
+function findOwnerByMcpToken(token) {
+  loadTokenIndex()
+  if (Date.now() - tokenIndexBuiltAt > cfg.tokenIndexRefreshMs) buildTokenIndex()
+  const hit = tokenIndex.get(token)
+  if (hit) return { email: hit.email, home: path.join(cfg.dataDir, hit.dir) }
+  // Un token recién emitido puede no estar en el índice cargado: reescanea una vez.
+  buildTokenIndex()
+  const again = tokenIndex.get(token)
+  return again ? { email: again.email, home: path.join(cfg.dataDir, again.dir) } : undefined
 }
 
 async function memCall(step, key, body) {
@@ -673,6 +825,7 @@ function waitForToken(child, timeoutMs, onLog) {
 }
 
 function startInstance(user, memory) {
+  const startedAt = Date.now()
   const home = path.join(cfg.dataDir, user.id)
   fs.mkdirSync(home, { recursive: true })
   const patchFile = writeUserPatch(home, user, memory)
@@ -718,9 +871,13 @@ function startInstance(user, memory) {
     },
   )
   const inst = { uid: user.id, email: user.email, port, child, alive: true, token: null }
+  metrics.dshSpawns += 1
+  logEvent({ ev: 'dsh_spawn', account: user.email, port, memory: Boolean(memory && memory.userKey) })
   child.on('exit', (code) => {
     inst.alive = false
     usedPorts.delete(port)
+    metrics.dshExits += 1
+    logEvent({ ev: 'dsh_exit', account: user.email, port, code, uptimeMs: Date.now() - startedAt })
     console.error(`[gateway] dsh de ${user.email} terminó (code ${code})`)
   })
   inst.ready = waitForToken(child, cfg.dshReadyTimeoutMs, (t) => process.stdout.write(`[dsh:${user.id.slice(0, 8)}] ${t}`))
@@ -780,6 +937,27 @@ const app = express()
 app.disable('x-powered-by')
 app.set('trust proxy', true)
 
+// ── M9 · fuentes del healthcheck ampliado ─────────────────────────────
+function readFileSafe(file, max = 4096) {
+  try { return fs.readFileSync(file, 'utf8').slice(0, max) } catch { return null }
+}
+function backupStatus() {
+  try {
+    const stat = fs.statSync(cfg.backupStatusFile)
+    return { file: cfg.backupStatusFile, at: stat.mtime.toISOString(), text: (readFileSafe(cfg.backupStatusFile, 300) || '').trim() }
+  } catch {
+    return { file: cfg.backupStatusFile, at: null, text: null }
+  }
+}
+function buildIdentity() {
+  const forkSha = (readFileSafe(cfg.forkShaFile, 64) || '').trim() || null
+  const manifest = readFileSafe(cfg.manifestFile, 8000)
+  // "Drift": el manifiesto debe citar el SHA construido; si no, la imagen y lo
+  // declarado divergen. Null cuando falta el SHA o el manifiesto (no hay señal).
+  const manifestDrift = forkSha === null || manifest === null ? null : !manifest.includes(forkSha)
+  return { forkSha, manifest: cfg.manifestFile, manifestPresent: manifest !== null, manifestDrift }
+}
+
 app.get('/healthz', (_req, res) => {
   res.json({
     ok: true,
@@ -790,8 +968,22 @@ app.get('/healthz', (_req, res) => {
     memoryEnabled: cfg.memoryEnabled,
     memoryConfigured: cfg.memoryEnabled && Boolean(cfg.memoryAdminKey),
     contextModeEnabled: cfg.contextModeEnabled,
+    dispatcher: {
+      intervalMs: cfg.dispatcherIntervalMs,
+      inboundEnabled: cfg.inboundEnabled,
+      inboundIntervalMs: cfg.inboundEnabled ? cfg.inboundIntervalMs : null,
+      waitTimeoutMs: cfg.waitTimeoutMs,
+    },
+    lastBackup: backupStatus(),
+    build: buildIdentity(),
+    rateLimits: { loginPerMin: cfg.loginRateLimitPerMin, mcpPerMin: cfg.mcpRateLimitPerMin },
     instances: instances.size,
   })
+})
+
+// M4 · métricas Prometheus para observabilidad por instancia.
+app.get('/metrics', (_req, res) => {
+  res.type('text/plain; version=0.0.4').send(prometheus({ instances: instances.size }))
 })
 
 app.get('/login', (req, res) => {
@@ -802,13 +994,29 @@ app.get('/login', (req, res) => {
     if (ents.length > 1 && (typeof sess.ent !== 'string' || sess.ent.length === 0)) return res.redirect(303, '/entity')
     return res.redirect(303, '/')
   }
-  res.type('html').send(loginPage(req.query.e))
+  // M7 · token CSRF de doble envío incrustado en el formulario.
+  const csrf = newCsrfToken()
+  res.setHeader('Set-Cookie', csrfCookieValue(csrf))
+  res.type('html').send(loginPage(req.query.e, csrf))
 })
 
 app.post('/login', express.urlencoded({ extended: false }), async (req, res) => {
   const usuario = String(req.body.usuario || '').trim()
   const password = String(req.body.password || '')
   if (!usuario || !password) return res.redirect(303, '/login?e=missing')
+  // M6 · rate limit por cuenta además del de nginx por IP (protección tras NAT).
+  if (!loginAccountLimiter(usuario.toLowerCase()) || !loginIpLimiter(req.ip || 'unknown')) {
+    metrics.logins.limited += 1
+    metrics.rateLimited.login += 1
+    logEvent({ ev: 'login', result: 'limited', account: usuario })
+    return res.redirect(303, '/login?e=limited')
+  }
+  // M7 · CSRF: el campo oculto debe coincidir con la cookie fijada en GET /login.
+  if (!verifyCsrf(req)) {
+    metrics.logins.auth += 1
+    logEvent({ ev: 'login', result: 'csrf', account: usuario })
+    return res.redirect(303, '/login?e=csrf')
+  }
   let resp
   try {
     resp = await fetch(`${cfg.consolaApi}/auth/login/`, {
@@ -818,19 +1026,26 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
     })
   } catch (err) {
     console.error('[gateway] consola login inalcanzable:', err.message)
+    metrics.logins.upstream += 1
     return res.redirect(303, '/login?e=upstream')
   }
   if (!resp.ok) {
+    metrics.logins.auth += 1
+    logEvent({ ev: 'login', result: 'auth', account: usuario })
     return res.redirect(303, `/login?e=auth`)
   }
   let data
   try {
     data = await resp.json()
   } catch {
+    metrics.logins.auth += 1
     return res.redirect(303, '/login?e=auth')
   }
   const user = data.user
-  if (!user || !user.id || !user.email) return res.redirect(303, '/login?e=auth')
+  if (!user || !user.id || !user.email) {
+    metrics.logins.auth += 1
+    return res.redirect(303, '/login?e=auth')
+  }
 
   const legalEntityIds = Array.isArray(user.legal_entity_ids) ? user.legal_entity_ids : []
   // G7 · si el usuario tiene varias empresas, no hay un tenant único: se arranca
@@ -864,6 +1079,8 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
   }
   const exchange = await exchangeDshToken(inst.port, inst.token)
   res.setHeader('Set-Cookie', [sessionCookieValue(payload), ...exchange.cookies])
+  metrics.logins.ok += 1
+  logEvent({ ev: 'login', result: 'ok', account: user.email, role: sessionUser.role, entity: entityId ?? null })
   // G7 · con varias empresas y ninguna elegida, el paso siguiente es el selector.
   const home = legalEntityIds.length > 1 && entityId === undefined ? '/entity' : '/'
   if (exchange.cookies.length > 0) {
@@ -925,9 +1142,21 @@ app.post('/entity', express.urlencoded({ extended: false }), async (req, res) =>
 // socket de su home. El gateway no guarda tokens: los localiza en el almacén
 // del producto y sólo reenvía.
 app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) => {
+  const started = Date.now()
+  // M1 · rate limit por IP cliente antes de tocar el almacén o arrancar un dsh.
+  if (!mcpLimiter(req.ip || 'unknown')) {
+    metrics.mcpRequests.limited += 1
+    metrics.rateLimited.mcp += 1
+    logEvent({ ev: 'mcp', result: 'limited', ip: req.ip })
+    return res.status(429).json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'demasiadas peticiones' } })
+  }
   const header = req.get('authorization') || ''
   const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : ''
-  const refuse = (status, message) => res.status(status).json({ jsonrpc: '2.0', id: null, error: { code: -32000, message } })
+  const refuse = (status, message) => {
+    metrics.mcpRequests.denied += 1
+    logEvent({ ev: 'mcp', result: 'denied', status, ip: req.ip })
+    return res.status(status).json({ jsonrpc: '2.0', id: null, error: { code: -32000, message } })
+  }
   if (!token) return refuse(401, 'falta el token Bearer')
   const owner = findOwnerByMcpToken(token)
   if (!owner) return refuse(401, 'token desconocido o revocado')
@@ -946,6 +1175,8 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     method: 'POST',
     headers: { authorization: header, 'content-type': 'application/json', 'content-length': body.length, accept: req.get('accept') || 'application/json' },
   }, (reply) => {
+    metrics.mcpRequests.ok += 1
+    logEvent({ ev: 'mcp', result: 'ok', status: reply.statusCode || 502, owner: owner.email, ms: Date.now() - started })
     res.status(reply.statusCode || 502)
     for (const [name, value] of Object.entries(reply.headers)) {
       if (name.toLowerCase() === 'transfer-encoding') continue
@@ -971,14 +1202,32 @@ app.get('/logout', (req, res) => {
   res.redirect(303, '/login?e=bye')
 })
 
-// Catch-all: exige sesión y proxya al dsh del usuario.
-app.use((req, res) => {
+// Catch-all: exige sesión y proxya al dsh del usuario. M3 · si la sesión firmada
+// sigue viva pero el proceso dsh se perdió (p. ej. tras un redeploy), se vuelve a
+// arrancar en el momento desde gateway-users.json, sin obligar a re-login.
+app.use(async (req, res) => {
   const sess = getSession(req)
   if (!sess) return res.redirect(303, '/login')
-  const inst = instances.get(sess.uid)
+  let inst = instances.get(sess.uid)
   if (!inst || !inst.alive || !inst.token) {
-    clearSessionCookie(res)
-    return res.redirect(303, '/login?e=expired')
+    const stored = readUserState(sess.email)
+    if (stored) {
+      try {
+        await ensureInstance({
+          ...stored,
+          legalEntityIds: stored.legalEntityIds || [],
+          ...(typeof sess.ent === 'string' && sess.ent.length > 0 ? { entityId: sess.ent } : {}),
+        })
+        logEvent({ ev: 'session_respawn', account: sess.email })
+      } catch (err) {
+        console.error('[gateway] no se pudo reanudar el dsh de la sesión:', err.message)
+      }
+    }
+    inst = instances.get(sess.uid) ?? inst
+    if (!inst || !inst.alive || !inst.token) {
+      clearSessionCookie(res)
+      return res.redirect(303, '/login?e=expired')
+    }
   }
   proxy.web(req, res, { target: `http://127.0.0.1:${inst.port}` })
 })
@@ -1063,7 +1312,7 @@ function entityPage(sess, errCode) {
 </body></html>`
 }
 
-function loginPage(errCode) {
+function loginPage(errCode, csrf = '') {
   const messages = {
     missing: 'Escribe usuario y contraseña.',
     auth: 'Usuario o contraseña incorrectos.',
@@ -1071,6 +1320,8 @@ function loginPage(errCode) {
     harness: 'No se pudo iniciar tu espacio de trabajo. Reintenta.',
     expired: 'Tu sesión expiró. Inicia de nuevo.',
     bye: 'Sesión cerrada.',
+    limited: 'Demasiados intentos. Espera un momento e inténtalo de nuevo.',
+    csrf: 'La sesión del formulario expiró. Recarga la página e inténtalo de nuevo.',
   }
   const msg = messages[errCode] || ''
   return `<!DOCTYPE html>
@@ -1099,6 +1350,7 @@ function loginPage(errCode) {
   <form class="card" method="post" action="/login">
     <h1>Harness MWT.ONE</h1>
     <p class="sub">Entra con tu usuario de la consola</p>
+    <input type="hidden" name="_csrf" value="${csrf}">
     <label for="usuario">Usuario o correo</label>
     <input id="usuario" name="usuario" autocomplete="username" autofocus required>
     <label for="password">Contraseña</label>

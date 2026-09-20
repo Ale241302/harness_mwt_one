@@ -232,6 +232,16 @@ async recordOutcome(entry: OutcomeInput): Promise<Outcome>
 async evidence(filter: { agentId?: FaberLoomAgentId; task?: string; modelId?: FaberLoomModelId } = {}): Promise<EvidenceSummary>
 
 /**
+ * Aggregate the user's recorded spend, grouped by effective model, agent, and
+ * task. A selection recorded without a cost makes the summary partial rather
+ * than contributing zero; the currency is reported only when the models behind
+ * the selections agree on one.
+ * @param filter - optional agent, task, and inclusive lower time bound.
+ * @returns totals, shared currency, and the three groupings.
+ */
+async costs(filter: { agentId?: FaberLoomAgentId; task?: string; since?: string } = {}): Promise<CostSummary>
+
+/**
  * Delegate one task to a named subagent, resolving its policy inside the
  * parent's shared budget and recording the selection.
  * @param parentAgentId - the parent agent.
@@ -1318,6 +1328,14 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns the evidence summary, with an absent sample reported as null.
  */
 @Remote('performance') async performance(agentId?: string, task?: string): Promise<FaberLoomPerformanceRow>
+
+/**
+ * Read the owner's recorded spend, grouped by effective model, agent, and task.
+ * @param agentId - optional agent filter.
+ * @param task - optional task filter.
+ * @returns the spend summary the cost panel renders.
+ */
+@Remote('costs') async costs(agentId?: string, task?: string): Promise<FaberLoomCostSummary>
 
 /**
  * List the owner's autonomy grants, revoked ones included.

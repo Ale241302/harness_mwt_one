@@ -118,6 +118,7 @@ export function apply(ctx: ClientContext): void {
       editTeaching: (id, text, reason) => ctx.remote.faberloomView.editTeaching(id, text, reason),
       revokeTeaching: id => ctx.remote.faberloomView.revokeTeaching(id),
       performance: (agentId, task) => ctx.remote.faberloomView.performance(agentId, task),
+      costs: (agentId, task) => ctx.remote.faberloomView.costs(agentId, task),
       grants: () => ctx.remote.faberloomView.grants(),
       grant: input => ctx.remote.faberloomView.grant(input),
       revokeGrant: id => ctx.remote.faberloomView.revokeGrant(id),

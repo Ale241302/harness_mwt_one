@@ -23,6 +23,7 @@ import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomConnection, FaberLoomExecutionRow,
   FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomOverview,
   FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
+  FaberLoomCostSummary,
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, TeachingSaveInput,
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview,
@@ -81,6 +82,8 @@ export interface FaberloomPanelInjected {
   revokeTeaching: (id: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
   /** Read the owner's contextual performance evidence. */
   performance: (agentId?: string, task?: string) => Promise<Result<FaberLoomPerformanceRow>>
+  /** Read the owner's recorded spend, grouped by model, agent, and task. */
+  costs: (agentId?: string, task?: string) => Promise<Result<FaberLoomCostSummary>>
   /** List the owner's autonomy grants. */
   grants: () => Promise<Result<readonly FaberLoomGrantRow[]>>
   /** Grant one action. */
@@ -308,7 +311,7 @@ function spacesScreen() {
 /** Agentes: table plus the full editor. */
 function agentsScreen() {
   return function FaberloomAgents(props: ScreenProps) {
-    const { t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, recommendModel } = props
+    const { t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, recommendModel, costs } = props
     const { overview, error } = useOverview(props)
     const [selected, setSelected] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -329,6 +332,7 @@ function agentsScreen() {
     const [budgetAttempts, setBudgetAttempts] = useState('')
     const [budgetEscalations, setBudgetEscalations] = useState('')
     const [recommendation, setRecommendation] = useState<FaberLoomModelRecommendation | null>(null)
+    const [spend, setSpend] = useState<FaberLoomCostSummary | null>(null)
 
     const agents = useMemo(
       () => (overview?.agents ?? []).filter(agent => agent.name.toLowerCase().includes(query.trim().toLowerCase())),
@@ -358,6 +362,7 @@ function agentsScreen() {
       setBudgetAttempts(detail.value.budget === null ? '' : String(detail.value.budget.maxAttempts))
       setBudgetEscalations(detail.value.budget === null ? '' : String(detail.value.budget.maxEscalations))
       setRecommendation(null)
+      setSpend(null)
       setMessage(null)
     }, [detail])
 
@@ -545,6 +550,32 @@ function agentsScreen() {
                                 </span>
                               ))}
                               {recommendation.uncertainty.length === 0 ? null : <span className={styles.cellMuted}>{recommendation.uncertainty.join(' · ')}</span>}
+                            </>
+                          )}
+                        </div>
+                      </Field>
+                      <Field label={t('field.costs')} hint={t('agents.costsHint')}>
+                        <div className={styles.steps}>
+                          <button className={styles.secondary} type="button" onClick={() => {
+                            setMessage(null)
+                            void costs().then((result) => {
+                              if (!result.ok) { setMessage(result.error.message); return }
+                              setSpend(result.value)
+                            }).catch((cause: unknown) => { setMessage(String(cause)) })
+                          }}>{t('agents.costsLoad')}</button>
+                          {spend === null ? null : spend.records === 0 ? (
+                            <span className={styles.cellMuted}>{t('agents.costsEmpty')}</span>
+                          ) : (
+                            <>
+                              <span className={styles.cellMuted}>
+                                {`${t('agents.costsTotal')}: ${spend.currency === null ? '' : `${spend.currency} `}${String(spend.total)} · ${String(spend.records)} ${t('agents.costsRecords')}${spend.partial ? ` · ${t('agents.costsPartial')}` : ''}`}
+                              </span>
+                              <span className={styles.cellMuted}>{t('agents.costsTopModels')}</span>
+                              {spend.byModel.slice(0, 3).map(bucket => (
+                                <span className={styles.cellMuted} key={bucket.key} title={bucket.partial ? t('agents.costsPartial') : undefined}>
+                                  {`${modelLabel(bucket.key, pool.kind === 'ready' ? pool.value : null)} · ${String(bucket.cost)}`}
+                                </span>
+                              ))}
                             </>
                           )}
                         </div>

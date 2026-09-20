@@ -1049,6 +1049,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'uses, approvals, corrections, correction rate, and cost per useful result.',
       },
       {
+        signature: 'async costs(filter: { agentId?: FaberLoomAgentId; task?: string; since?: string } = {}): Promise<CostSummary>',
+        description: 'Aggregate the user\'s recorded spend, grouped by effective model, agent, and task. A selection recorded without a cost makes the summary partial rather than contributing zero; the currency is reported only when the models behind the selections agree on one.',
+        parameters: [{ name: 'filter', description: 'optional agent, task, and inclusive lower time bound.' }],
+        returns: 'totals, shared currency, and the three groupings.',
+      },
+      {
         signature: 'async delegate(parentAgentId: FaberLoomAgentId, request: DelegateRequest): Promise<DelegateResult>',
         description: 'Delegate one task to a named subagent, resolving its policy inside the parent\'s shared budget and recording the selection.',
         parameters: [{ name: 'parentAgentId', description: 'the parent agent.' }, { name: 'request', description: 'subagent name, task, spent budget, and met condition.' }],
@@ -1857,6 +1863,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read the owner\'s contextual performance evidence.',
         parameters: [{ name: 'agentId', description: 'optional agent filter.' }, { name: 'task', description: 'optional task filter.' }],
         returns: 'the evidence summary, with an absent sample reported as null.',
+      },
+      {
+        signature: '@Remote(\'costs\') async costs(agentId?: string, task?: string): Promise<FaberLoomCostSummary>',
+        description: 'Read the owner\'s recorded spend, grouped by effective model, agent, and task.',
+        parameters: [{ name: 'agentId', description: 'optional agent filter.' }, { name: 'task', description: 'optional task filter.' }],
+        returns: 'the spend summary the cost panel renders.',
       },
       {
         signature: '@Remote(\'grants\') async grants(): Promise<readonly FaberLoomGrantRow[]>',
@@ -5319,6 +5331,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CordisRuntimeTreeReader {\n    getTree(): Promise<CordisRuntimeTree>;\n}',
   },
   {
+    name: 'CostBucket',
+    declaration: 'export interface CostBucket {\n    readonly key: string;\n    readonly by: \'model\' | \'agent\' | \'task\';\n    readonly cost: number;\n    readonly records: number;\n    readonly partial: boolean;\n}',
+  },
+  {
+    name: 'CostSummary',
+    declaration: 'export interface CostSummary {\n    readonly currency: string | undefined;\n    readonly total: number;\n    readonly records: number;\n    readonly partial: boolean;\n    readonly since: string | undefined;\n    readonly at: string;\n    readonly byModel: readonly CostBucket[];\n    readonly byAgent: readonly CostBucket[];\n    readonly byTask: readonly CostBucket[];\n}',
+  },
+  {
     name: 'CreateAgentOptions',
     declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
@@ -5625,6 +5645,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomConnection',
     declaration: 'export interface FaberLoomConnection {\n    readonly id: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host: string | null;\n    readonly port: number | null;\n    readonly secure: boolean | null;\n    readonly username: string | null;\n    readonly hasSecret: boolean;\n    readonly destination: string | null;\n    readonly retentionDays: number | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomCostRow',
+    declaration: 'export interface FaberLoomCostRow {\n    readonly key: string;\n    readonly cost: number;\n    readonly records: number;\n    readonly partial: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomCostSummary',
+    declaration: 'export interface FaberLoomCostSummary {\n    readonly currency: string | null;\n    readonly total: number;\n    readonly records: number;\n    readonly partial: boolean;\n    readonly since: string | null;\n    readonly at: string;\n    readonly byModel: readonly FaberLoomCostRow[];\n    readonly byAgent: readonly FaberLoomCostRow[];\n    readonly byTask: readonly FaberLoomCostRow[];\n}',
   },
   {
     name: 'FaberLoomDataMigration',

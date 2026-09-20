@@ -175,6 +175,53 @@ en `/opt/faberloom` (`faberloom-mcp:8090`, red `harness-net`, volumen
 - No se usa `--as` (V8 reserva mucha memoria virtual y rompería Node) ni
   `--nproc` (es por UID y afectaría a todas las instancias).
 
+## Endurecimiento y observabilidad (M1–M9)
+
+- **M1 · índice de tokens MCP**: el gateway resuelve `token → propietario` con un
+  índice en `/data/mcp-token-index.json` (escrito con `tmp`+`rename`, permisos
+  `0600`) en vez de escanear el almacén de cada usuario en cada `/mcp`; se
+  reconstruye desde los `DSH_HOME` al caducar (`MCP_TOKEN_INDEX_REFRESH_MS`, 5 min
+  por defecto). Además hay rate limit por IP en `/mcp`
+  (`MCP_RATE_LIMIT_PER_MIN`, 120 r/min) que responde `429` antes de tocar disco o
+  arrancar un `dsh`.
+- **M2 · límites del contenedor**: `docker-compose.yml` fija `mem_limit`,
+  `memswap_limit`, `cpus` y `pids_limit` (`GATEWAY_MEM_LIMIT`, …), ajustables por
+  `.env`; el techo debe cubrir varios `dsh` concurrentes (heap por proceso =
+  `DSH_MAX_OLD_SPACE_MB`).
+- **M3 · respawn transparente**: si la cookie firmada sigue viva pero el proceso
+  `dsh` se perdió (p. ej. tras un redeploy), el catch-all lo vuelve a arrancar en
+  el momento desde `gateway-users.json` sin obligar a re-login.
+- **M4 · observabilidad**: una línea JSON por evento (`login`, `mcp`,
+  `dsh_spawn`, `dsh_exit`, `session_respawn`, `mcp_token_index`) y `/metrics`
+  (texto Prometheus) con contadores de login, arranques/paradas de `dsh`,
+  peticiones MCP y límites aplicados.
+- **M5 · costo por usuario**: `ctx.faberloomAgents.costs()` agrega el gasto
+  registrado por modelo, agente y tarea (una selección sin costo marca el resumen
+  como parcial; la moneda solo se informa si los modelos coinciden); se expone por
+  el remote `costs` y por la tool MCP `faberloom_costs`, y el panel de Agentes lo
+  muestra con "Ver gasto registrado".
+- **M6 · intentos de login**: además del límite de nginx por IP, el gateway aplica
+  un límite por cuenta (`LOGIN_RATE_LIMIT_PER_MIN`, 12 r/min) y otro por IP más
+  holgado (×4), para cubrir usuarios tras NAT.
+- **M7 · CSRF de login**: `GET /login` fija una cookie `hcsrf` y la incrusta como
+  campo oculto; `POST /login` exige que ambos coincidan (`timingSafeEqual`). No
+  requiere configuración.
+- **M9 · healthcheck ampliado**: `/healthz` publica el estado del despachador, el
+  último backup (`BACKUP_STATUS_FILE`), la identidad de build
+  (`DSH_FORK_SHA_FILE`) y `manifestDrift` (el manifiesto no cita el SHA
+  construido), más el tamaño del pool de instancias.
+
+### M8 · TLS de extremo a extremo (pendiente operativo)
+
+El tramo Cloudflare→origen es hoy **Flexible**: viaja en HTTP. Para **Full
+(strict)** hay que (1) emitir un certificado de origen válido para
+`harness.mwt.one` (Cloudflare Origin CA o Let's Encrypt), (2) montarlo en
+`mwt-nginx` y escuchar `443 ssl` con `ssl_certificate`/`ssl_certificate_key`,
+(3) subir el modo TLS del registro a Full (strict) y (4) comprobar
+`https://harness.mwt.one/healthz` y el login antes de darlo por hecho; si el
+handshake falla, revertir a Flexible (downtime total). No se completa desde el
+repositorio: requiere el certificado y el cambio en Cloudflare/nginx.
+
 ## Pendientes / límites
 
 - **Un proceso `dsh` por usuario**, no un contenedor por usuario (fase 2:
@@ -206,8 +253,9 @@ en `/opt/faberloom` (`faberloom-mcp:8090`, red `harness-net`, volumen
   `/opt/mwt/nginx/consola.conf` (lo necesita nginx como header); para sacarlo de
   `.env` usa los secretos `*_FILE` (ver `.env.example`).
 - **Cookie del gateway con `Secure` por defecto** (`COOKIE_SECURE=0` solo para
-  pruebas locales por HTTP); HSTS activo; rate limit de `/login`
-  (12 r/m por IP real de cliente vía `CF-Connecting-IP`).
+  pruebas locales por HTTP); HSTS activo; rate limit de `/login` (12 r/m por IP
+  real de cliente vía `CF-Connecting-IP`, más el límite por cuenta y el CSRF de
+  doble envío del gateway, M6/M7).
 - **Rotación de la gateway key** (tras moverla a secreto): generar el valor
   nuevo, actualizarlo en el secreto y en `consola.conf`, recrear `gateway` y
   `mwt-nginx`, y reintentar `tools/list` del MCP. Los `DSH_HOME` no cambian.

@@ -85,6 +85,28 @@ proxy de memoria). Los contenedores se pausan unos segundos para que SQLite y lo
 | `DSH_NOFILE_LIMIT` | `8192` | `prlimit --nofile` por proceso |
 | `DSH_CPU_LIMIT_S` | `0` | `prlimit --cpu` (0 = sin límite) |
 
+## Endurecimiento y observabilidad (M1–M9)
+
+| Variable | Valor por defecto | Efecto |
+|---|---|---|
+| `MCP_TOKEN_INDEX_FILE` | `<DATA_DIR>/../mcp-token-index.json` | Índice `token → propietario` para `/mcp` (tmp+rename, `0600`) |
+| `MCP_TOKEN_INDEX_REFRESH_MS` | `300000` | Edad máxima del índice antes de reconstruirlo |
+| `MCP_RATE_LIMIT_PER_MIN` | `120` | Peticiones `/mcp` por IP y minuto (`429`) |
+| `LOGIN_RATE_LIMIT_PER_MIN` | `12` | Intentos de login por cuenta y minuto (por IP: ×4) |
+| `DSH_FORK_SHA_FILE` | `/opt/dsh/.fork-sha` | SHA del fork construido, publicado por `/healthz` |
+| `BACKUP_STATUS_FILE` | `/opt/mwt/harness_backup_status.txt` | mtime+texto del último backup, publicados por `/healthz` |
+| `MANIFEST_FILE` | `/app/MANIFEST.md` | Manifiesto comparado para `manifestDrift` |
+| `GATEWAY_MEM_LIMIT` / `GATEWAY_MEMSWAP_LIMIT` | `6g` / `6g` | `mem_limit`/`memswap_limit` del contenedor gateway |
+| `GATEWAY_CPUS` | `2.0` | `cpus` del contenedor gateway |
+| `GATEWAY_PIDS_LIMIT` | `2048` | `pids_limit` del contenedor gateway |
+
+`/metrics` expone contadores Prometheus (login, `/mcp`, arranques/paradas de
+`dsh`, límites aplicados). El gasto por usuario (M5) se agrega en memoria del
+producto y por la tool MCP `faberloom_costs`; **la facturación sigue siendo una
+sola `DEEPSEEK_API_KEY` compartida**. El tramo Cloudflare→origen sigue en TLS
+**Flexible** (M8 pendiente: certificado de origen + Full strict; ver
+`README.mwt-one.md`).
+
 ## Cómo verificar el despliegue
 
 ```bash

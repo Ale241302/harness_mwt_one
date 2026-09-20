@@ -72,6 +72,9 @@ RUN printf '#!/bin/sh\nexec node /opt/dsh/apps/cli/lib/bin.js "$@"\n' > /opt/dsh
 COPY gateway/package.json ./gateway/package.json
 RUN cd gateway && npm install --omit=dev
 
+# Manifiesto del despliegue: /healthz (M9) avisa si no cita el SHA construido.
+COPY MANIFEST.md /app/MANIFEST.md
+
 COPY gateway/ ./gateway/
 
 EXPOSE 8080

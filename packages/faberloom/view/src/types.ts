@@ -282,6 +282,40 @@ export interface FaberLoomPerformanceRow {
   readonly correctionRate: number | null
 }
 
+/** One spend group of the cost panel. */
+export interface FaberLoomCostRow {
+  /** Display key: model id, agent id, or task label. */
+  readonly key: string
+  /** Known spend accumulated in the group. */
+  readonly cost: number
+  /** Selection records in the group. */
+  readonly records: number
+  /** True when some record in the group carried no cost. */
+  readonly partial: boolean
+}
+
+/** Per-user spend summary the cost panel shows. */
+export interface FaberLoomCostSummary {
+  /** Shared currency, or null when mixed or unknown. */
+  readonly currency: string | null
+  /** Known spend over every considered selection. */
+  readonly total: number
+  /** Selection records considered. */
+  readonly records: number
+  /** True when some considered record carried no cost. */
+  readonly partial: boolean
+  /** ISO-8601 instant of the oldest considered selection. */
+  readonly since: string | null
+  /** ISO-8601 instant the summary was computed. */
+  readonly at: string
+  /** Spend grouped by effective model. */
+  readonly byModel: readonly FaberLoomCostRow[]
+  /** Spend grouped by agent. */
+  readonly byAgent: readonly FaberLoomCostRow[]
+  /** Spend grouped by task. */
+  readonly byTask: readonly FaberLoomCostRow[]
+}
+
 /** One autonomy grant as the panels read it. */
 export interface FaberLoomGrantRow {
   /** Stable grant id. */

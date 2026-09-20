@@ -658,6 +658,42 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       return { id: outcome.id, outcome: outcome.outcome }
     },
   },
+  {
+    definition: {
+      name: 'faberloom_costs',
+      description: 'Resume el gasto registrado del propietario, agrupado por modelo, agente y tarea.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          agentId: { type: 'string', description: 'Limita el resumen a un agente.' },
+          task: { type: 'string', description: 'Limita el resumen a una tarea.' },
+          since: { type: 'string', description: 'Instante ISO-8601 mínimo, inclusive.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const agentId = optional(args, 'agentId')
+      const task = optional(args, 'task')
+      const since = optional(args, 'since')
+      const summary = await context.faberloomAgents.costs({
+        ...agentId === undefined ? {} : { agentId: agentId as FaberLoomAgentId },
+        ...task === undefined ? {} : { task },
+        ...since === undefined ? {} : { since },
+      })
+      return {
+        currency: summary.currency ?? null,
+        total: summary.total,
+        records: summary.records,
+        partial: summary.partial,
+        since: summary.since ?? null,
+        at: summary.at,
+        byModel: summary.byModel,
+        byAgent: summary.byAgent,
+        byTask: summary.byTask,
+      }
+    },
+  },
   // ── Board (mesa de trabajo) ────────────────────────────────────────
   {
     definition: {

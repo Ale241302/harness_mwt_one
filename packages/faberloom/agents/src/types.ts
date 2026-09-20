@@ -351,6 +351,42 @@ export interface EvidenceSummary {
   readonly costPerUsefulResult: number | undefined
 }
 
+/** One grouped spend bucket of the per-user cost summary. */
+export interface CostBucket {
+  /** Group key: model id, agent id, or task label per the grouping dimension. */
+  readonly key: string
+  /** Grouping dimension of this bucket. */
+  readonly by: 'model' | 'agent' | 'task'
+  /** Known spend accumulated in this bucket. */
+  readonly cost: number
+  /** Selection records that contributed to this bucket. */
+  readonly records: number
+  /** True when some contributing record carried no cost. */
+  readonly partial: boolean
+}
+
+/** Per-user spend summary derived from recorded selections. */
+export interface CostSummary {
+  /** Shared currency of the amounts, or undefined when mixed or unknown. */
+  readonly currency: string | undefined
+  /** Known spend over every selection considered. */
+  readonly total: number
+  /** Selection records considered. */
+  readonly records: number
+  /** True when at least one considered record carried no cost. */
+  readonly partial: boolean
+  /** ISO-8601 instant of the oldest considered selection. */
+  readonly since: string | undefined
+  /** ISO-8601 instant the summary was computed. */
+  readonly at: string
+  /** Spend grouped by effective model. */
+  readonly byModel: readonly CostBucket[]
+  /** Spend grouped by agent. */
+  readonly byAgent: readonly CostBucket[]
+  /** Spend grouped by task. */
+  readonly byTask: readonly CostBucket[]
+}
+
 /** One-shot temporary subagent request; nothing is persisted in the catalog. */
 export interface RunTemporarySubagentRequest {
   /** Subagent name used only for this run. */
