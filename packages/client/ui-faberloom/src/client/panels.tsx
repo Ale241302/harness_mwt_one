@@ -1591,7 +1591,7 @@ function McpBlock(props: {
   const tableRows = rows.map(row => ({ ...row, id: row.token }))
   const columns: readonly Column<FaberLoomMcpTokenRow & { readonly id: string }>[] = [
     { key: 'label', header: t('mcp.label'), cell: row => <span className={styles.cellName}>{row.label}</span> },
-    { key: 'token', header: t('mcp.token'), cell: row => <span className={styles.cellMuted}>{`${row.token.slice(0, 12)}…`}</span> },
+    { key: 'token', header: t('mcp.token'), cell: row => <input type="text" readOnly value={row.token} onFocus={(event) => { event.currentTarget.select() }} /> },
     { key: 'state', header: t('col.status'), cell: row => <Chip>{row.revokedAt === null ? t('grants.active') : t('grants.revoked')}</Chip> },
     { key: 'scopes', header: t('mcp.scopes'), cell: row => <span className={styles.cellMuted}>{row.scopes === null ? t('mcp.allTools') : row.scopes.join(', ')}</span> },
   ]
@@ -1789,15 +1789,21 @@ function conversarPanel() {
               </Field>
               <span className={styles.tools}>
                 <button className={styles.primary} type="button" onClick={() => {
-                  void createTaskFromWork(text, spaceId === '' ? null : spaceId).then(() => { setMessage(t('propose.taskCreated')) }).catch(fail)
+                  void createTaskFromWork(text, spaceId === '' ? null : spaceId)
+                    .then((result) => { if (result.ok) setMessage(t('propose.taskCreated')); else fail(result.error.message) })
+                    .catch(fail)
                 }}>{t('propose.createTask')}</button>
                 <button className={styles.secondary} type="button" onClick={() => {
                   const name = agentName.trim().length === 0 ? proposal.suggestedAgents[0]?.name ?? proposal.title : agentName.trim()
-                  void createAgentFromWork(text, name, spaceId === '' ? null : spaceId).then(() => { setMessage(t('propose.agentCreated')) }).catch(fail)
+                  void createAgentFromWork(text, name, spaceId === '' ? null : spaceId)
+                    .then((result) => { if (result.ok) setMessage(t('propose.agentCreated')); else fail(result.error.message) })
+                    .catch(fail)
                 }}>{t('propose.createAgent')}</button>
                 <button className={styles.secondary} type="button" onClick={() => {
                   const name = routineName.trim().length === 0 ? proposal.title : routineName.trim()
-                  void createRoutineFromWork(text, name).then(() => { setMessage(t('propose.routineCreated')) }).catch(fail)
+                  void createRoutineFromWork(text, name)
+                    .then((result) => { if (result.ok) setMessage(t('propose.routineCreated')); else fail(result.error.message) })
+                    .catch(fail)
                 }}>{t('propose.createRoutine')}</button>
               </span>
             </>
