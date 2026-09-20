@@ -489,3 +489,69 @@ export interface AgentSaveInput {
   /** Whether this identity may run the panel writes; read-only identities cannot. */
   readonly canWrite: boolean
 }
+
+/** One product backup row as the panel reads it. */
+export interface FaberLoomBackupRow {
+  /** Stable backup id. */
+  readonly id: string
+  /** Capture instant, ISO-8601. */
+  readonly createdAt: string
+  /** Optional operator note. */
+  readonly note: string | null
+  /** Number of product domains captured. */
+  readonly domains: number
+  /** Total records across every captured table. */
+  readonly records: number
+  /** Integrity digest of the captured payload. */
+  readonly digest: string
+}
+
+/** Integrity verdict the panel shows for one backup. */
+export interface FaberLoomBackupVerify {
+  /** Whether every table and the overall digest matched. */
+  readonly ok: boolean
+  /** Number of tables checked. */
+  readonly tables: number
+  /** Number of tables that did not match. */
+  readonly badTables: number
+}
+
+/** Restore result the panel shows for one backup. */
+export interface FaberLoomBackupRestore {
+  /** True when nothing was written. */
+  readonly dryRun: boolean
+  /** Number of tables written or counted. */
+  readonly tables: number
+  /** Total records written or counted. */
+  readonly written: number
+  /** Number of domains the process did not have open. */
+  readonly skipped: number
+}
+
+/** One suggested agent in a work proposal. */
+export interface FaberLoomProposalAgent {
+  /** Agent id. */
+  readonly id: string
+  /** Agent display name. */
+  readonly name: string
+}
+
+/** An editable proposal built from a fresh conversation. */
+export interface FaberLoomWorkProposal {
+  /** Title derived from the first line of the request. */
+  readonly title: string
+  /** Space the work would belong to, or null for the personal scope. */
+  readonly spaceId: string | null
+  /** Catalog agents that could take the work. */
+  readonly suggestedAgents: readonly FaberLoomProposalAgent[]
+  /** Suggested step outline the user may accept or change. */
+  readonly suggestedSteps: readonly string[]
+}
+
+/** Audience and material preview before linking private work to a space (F41). */
+export interface FaberLoomLinkPreview {
+  /** Identities that would gain visibility of the linked material. */
+  readonly newlyVisibleTo: readonly string[]
+  /** Context keys the space would contribute to the linked material. */
+  readonly sharedContextKeys: readonly string[]
+}

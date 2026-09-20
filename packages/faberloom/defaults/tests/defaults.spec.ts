@@ -8,6 +8,7 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomAgents from '../../agents/src/index.ts'
 import FaberLoomAccess from '../../access/src/index.ts'
+import FaberLoomBackup from '../../backup/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
 import FaberLoomHandlers from '../../handlers/src/index.ts'
 import FaberLoomDefaults, { type Config } from '../src/index.ts'
@@ -45,6 +46,7 @@ async function services(home: string, skills: readonly string[], pool = new Memo
   await ctx.plugin(FaberLoomAgents)
   await ctx.plugin(FaberLoomAccess)
   await ctx.plugin(FaberLoomRoutines)
+  await ctx.plugin(FaberLoomBackup)
   await ctx.plugin(FaberLoomHandlers)
   return { ctx, catalog: roleCatalog(skills), pool }
 }
@@ -83,7 +85,7 @@ describe('FaberLoomDefaults', () => {
     expect(agents.find(agent => agent.name === 'Proformas')?.skills).toEqual(['mwt-compras-clientes-leer', 'mwt-compras-inventario-leer'])
 
     const routines = await ctx.faberloomRoutines.listRoutines(OWNER)
-    expect(routines).toHaveLength(1)
+    expect(routines).toHaveLength(SEED_ROUTINES.length)
     const [routine] = routines
     expect(routine?.status).toBe('draft')
     expect(routine?.definition.steps.map(step => step.handler)).toEqual(['agent', 'mcp', 'agent', 'wait'])
@@ -108,7 +110,7 @@ describe('FaberLoomDefaults', () => {
     const names = (await second.ctx.faberloomAgents.listAgents()).map(agent => agent.name)
     expect(names).not.toContain(removed.name)
     expect(names).toHaveLength(SEED_AGENTS.length - 1)
-    expect(await second.ctx.faberloomRoutines.listRoutines(OWNER)).toHaveLength(1)
+    expect(await second.ctx.faberloomRoutines.listRoutines(OWNER)).toHaveLength(SEED_ROUTINES.length)
   })
 
   it('F16 — two processes starting at once seed once between them', async () => {
@@ -124,7 +126,7 @@ describe('FaberLoomDefaults', () => {
     const seeded = reports.filter(report => report.seeded)
     expect(seeded).toHaveLength(1)
     expect(reports.filter(report => report.skipped === 'another pass is seeding')).toHaveLength(1)
-    expect(await second.ctx.faberloomRoutines.listRoutines(OWNER)).toHaveLength(1)
+    expect(await second.ctx.faberloomRoutines.listRoutines(OWNER)).toHaveLength(SEED_ROUTINES.length)
     expect(await first.ctx.faberloomAgents.listAgents()).toHaveLength(SEED_AGENTS.length)
   })
 

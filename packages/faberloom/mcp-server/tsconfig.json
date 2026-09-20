@@ -18,7 +18,16 @@
       "path": "../agents"
     },
     {
+      "path": "../access"
+    },
+    {
+      "path": "../backup"
+    },
+    {
       "path": "../board"
+    },
+    {
+      "path": "../connections"
     },
     {
       "path": "../learning"

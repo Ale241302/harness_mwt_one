@@ -31,8 +31,11 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-access": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-backup": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
     "@deepseek-ai/dsh-faberloom-learning": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
@@ -41,8 +44,11 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-access": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-backup": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
     "@deepseek-ai/dsh-faberloom-learning": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",

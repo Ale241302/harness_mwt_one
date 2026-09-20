@@ -12,6 +12,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { FaberLoomExecutionId, StepContext, StepHandler } from '@deepseek-ai/dsh-faberloom-routines'
+import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import { RoutineStepSessions, type RoutineStepToolCall } from './step-agent.ts'
 
 export type * from './step-agent.ts'
@@ -47,7 +48,19 @@ export interface AgentStepOutcome {
 }
 
 /** Outcome one step handler returns; the engine stores it as the step result. */
-export type StepOutcome = WaitStepOutcome | AgentStepOutcome
+export type StepOutcome = WaitStepOutcome | AgentStepOutcome | BackupStepOutcome
+
+/** Outcome of the `backup` handler. */
+export interface BackupStepOutcome {
+  /** Handler that produced the outcome. */
+  readonly handler: 'backup'
+  /** Manifest id of the captured snapshot; a reader follows it to the backup. */
+  readonly backupId: string
+  /** Number of product domains captured. */
+  readonly domains: number
+  /** Integrity digest of the captured payload. */
+  readonly digest: string
+}
 
 /**
  * Complete a step that was parked until a matching event arrived.
@@ -125,11 +138,25 @@ export function stepPrompt(handler: 'agent' | 'mcp', context: StepContext, instr
 }
 
 /** The handler names this package registers, in registration order. */
-export const HANDLER_NAMES = ['wait', 'agent', 'mcp'] as const
+export const HANDLER_NAMES = ['wait', 'agent', 'mcp', 'backup'] as const
+
+/**
+ * Capture a product backup for the execution's owner. The dispatcher runs a
+ * routine with a recurrence trigger, so a scheduled step gives the product the
+ * periodic snapshot its plan asks for (E8 / F20) without a separate scheduler.
+ * @param ctx - context carrying the routines and backup services.
+ * @param context - the step being executed.
+ * @returns the settled outcome, carrying the captured manifest.
+ */
+async function backupHandler(ctx: Context, context: StepContext): Promise<StepOutcome> {
+  const execution = await ctx.faberloomRoutines.getExecution(context.executionId as FaberLoomExecutionId)
+  const manifest = await ctx.faberloomBackup.createBackup(execution.ownerId, { note: `rutina:${String(context.routineId)}` })
+  return { handler: 'backup', backupId: manifest.id, domains: manifest.domains.length, digest: manifest.digest }
+}
 
 /** Step handler registry owned by the FaberLoom product layer. */
 export class FaberLoomHandlers extends Service {
-  static inject = ['faberloomRoutines']
+  static inject = ['faberloomRoutines', 'faberloomBackup']
 
   /**
    * @param ctx - Cordis context owning the service fiber.
@@ -141,6 +168,7 @@ export class FaberLoomHandlers extends Service {
       wait: waitHandler,
       agent: context => runAgentStep(ctx, sessions, context, 'agent'),
       mcp: context => runAgentStep(ctx, sessions, context, 'mcp'),
+      backup: context => backupHandler(ctx, context),
     }
     for (const [name, handler] of Object.entries(handlers)) {
       this.ctx.effect(() => ctx.faberloomRoutines.registerHandler(name, handler), `faberloom.handlers.${name}`)

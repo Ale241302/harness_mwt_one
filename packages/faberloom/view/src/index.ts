@@ -25,12 +25,15 @@ import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomConnections } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
+import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomOverview,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
   FaberLoomModelRow, FaberLoomModelRecommendation,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomGrantRow, TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
+  FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
+  FaberLoomWorkProposal, FaberLoomLinkPreview,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -153,7 +156,7 @@ function teachingRow(teaching: FaberLoomTeaching): FaberLoomTeachingRow {
  * panels refresh from one value instead of recomputing.
  */
 export class FaberLoomViewService extends TypertRemoteService {
-  static inject = ['faberloomSpaces', 'faberloomAgents', 'faberloomBoard', 'faberloomRoutines', 'faberloomMemory', 'faberloomAccess', 'faberloomMcpServer']
+  static inject = ['faberloomSpaces', 'faberloomAgents', 'faberloomBoard', 'faberloomRoutines', 'faberloomMemory', 'faberloomAccess', 'faberloomMcpServer', 'faberloomBackup']
 
   /**
    * The connections service, resolved lazily so a deployment that does not
@@ -445,6 +448,175 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * List the owner's knowledge backups, newest first.
+   * @returns one row per captured snapshot.
+   */
+  @Remote('backups')
+  async backups(): Promise<readonly FaberLoomBackupRow[]> {
+    const manifests = await this.ctx.faberloomBackup.listBackups(this.actor().id)
+    return manifests.map(manifest => ({
+      id: manifest.id,
+      createdAt: manifest.createdAt,
+      note: manifest.note,
+      domains: manifest.domains.length,
+      records: manifest.domains.reduce((total, domain) => total + domain.tables.reduce((sum, table) => sum + table.recordCount, 0), 0),
+      digest: manifest.digest,
+    }))
+  }
+
+  /**
+   * Capture a new knowledge backup and return the refreshed list.
+   * @param note - optional operator note stored with the snapshot.
+   * @returns the refreshed backup list.
+   */
+  @Remote('createBackup')
+  async createBackup(note?: string): Promise<readonly FaberLoomBackupRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create backups')
+    await this.ctx.faberloomBackup.createBackup(this.actor().id, note === undefined ? {} : { note })
+    return await this.backups()
+  }
+
+  /**
+   * Verify one backup's integrity.
+   * @param id - backup id.
+   * @returns the verdict the panel shows.
+   */
+  @Remote('verifyBackup')
+  async verifyBackup(id: string): Promise<FaberLoomBackupVerify> {
+    const result = await this.ctx.faberloomBackup.verifyBackup(this.actor().id, id)
+    return { ok: result.ok, tables: result.tables.length, badTables: result.tables.filter(table => !table.ok).length }
+  }
+
+  /**
+   * Restore one backup into the open domains; a dry run counts without writing.
+   * @param id - backup id.
+   * @param dryRun - true to preview, false to write.
+   * @returns the restore result the panel shows.
+   */
+  @Remote('restoreBackup')
+  async restoreBackup(id: string, dryRun: boolean): Promise<FaberLoomBackupRestore> {
+    if (!dryRun && this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot restore backups')
+    const result = await this.ctx.faberloomBackup.restoreBackup(this.actor().id, id, { dryRun })
+    return {
+      dryRun: result.dryRun,
+      tables: result.tables.length,
+      written: result.tables.reduce((total, table) => total + table.written, 0),
+      skipped: result.skipped.length,
+    }
+  }
+
+  /**
+   * Delete one backup record.
+   * @param id - backup id.
+   * @returns the refreshed backup list.
+   */
+  @Remote('deleteBackup')
+  async deleteBackup(id: string): Promise<readonly FaberLoomBackupRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot delete backups')
+    await this.ctx.faberloomBackup.deleteBackup(this.actor().id, id)
+    return await this.backups()
+  }
+
+  /**
+   * Build an editable proposal from a fresh request (pantallas §2). It keeps the
+   * origin text, suggests catalog agents, and never creates anything by itself.
+   * @param text - what the user wants to resolve.
+   * @returns the proposal the panel renders.
+   */
+  @Remote('proposeWork')
+  async proposeWork(text: string): Promise<FaberLoomWorkProposal> {
+    const trimmed = text.trim()
+    if (trimmed.length === 0) throw new Error('faberloom: describe the work first')
+    const title = (trimmed.split('\n')[0] ?? trimmed).slice(0, 120)
+    const agents = await this.ctx.faberloomAgents.listAgents()
+    return {
+      title,
+      spaceId: null,
+      suggestedAgents: agents.filter(agent => agent.active).slice(0, 5).map(agent => ({ id: agent.id, name: agent.name })),
+      suggestedSteps: ['Identificar el caso', 'Consultar datos en MWT.ONE', 'Preparar el resultado', 'Pedir revisión'],
+    }
+  }
+
+  /**
+   * Create a board item from a proposal, preserving the conversation as evidence.
+   * @param text - the request that originated the task.
+   * @param spaceId - space the work belongs to, or null for the personal scope.
+   * @returns the refreshed overview.
+   */
+  @Remote('createTaskFromWork')
+  async createTaskFromWork(text: string, spaceId: string | null): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create tasks')
+    const trimmed = text.trim()
+    const title = (trimmed.split('\n')[0] ?? trimmed).slice(0, 120)
+    await this.ctx.faberloomBoard.create(this.actor().id, {
+      title,
+      summary: trimmed,
+      evidence: [`conversacion:${title}`],
+      ...(spaceId === null ? {} : { spaceId }),
+    })
+    return await this.overview()
+  }
+
+  /**
+   * Create a specialist from a proposal, preserving the conversation as its
+   * origin and never copying another client's context (plan §6.5, F33–F35).
+   * @param text - the responsibility the conversation described.
+   * @param name - display name for the specialist.
+   * @param spaceId - space it belongs to, or null for the personal scope.
+   * @returns the refreshed overview.
+   */
+  @Remote('createAgentFromWork')
+  async createAgentFromWork(text: string, name: string, spaceId: string | null): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create agents')
+    const trimmed = text.trim()
+    const origin = `conversacion:${(trimmed.split('\n')[0] ?? trimmed).slice(0, 120)}`
+    await this.ctx.faberloomAgents.createAgent({
+      name: name.trim(),
+      responsibility: trimmed,
+      origin: 'task',
+      originRef: origin,
+      ...(spaceId === null ? {} : { spaceId }),
+    })
+    return await this.overview()
+  }
+
+  /**
+   * Create a routine draft from a proposal; it starts inactive until activated.
+   * @param text - the procedure the conversation described.
+   * @param name - display name for the routine.
+   * @returns the refreshed overview.
+   */
+  @Remote('createRoutineFromWork')
+  async createRoutineFromWork(text: string, name: string): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create routines')
+    const intent = text.trim()
+    await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
+      name: name.trim(),
+      definition: {
+        intent,
+        triggers: [{ kind: 'manual' }],
+        steps: [{ id: 'paso-1', instruction: intent, handler: 'agent', dependsOn: [] }],
+        expectedResult: 'Resultado preparado y listo para revisión.',
+        permissions: [],
+        failurePolicy: 'review',
+      },
+    })
+    return await this.overview()
+  }
+
+  /**
+   * Preview the audience and material that would change before linking work to a
+   * space (F41); the user confirms before anything becomes visible.
+   * @param spaceId - the candidate space.
+   * @returns the preview the panel shows.
+   */
+  @Remote('linkPreview')
+  async linkPreview(spaceId: string): Promise<FaberLoomLinkPreview> {
+    const preview = await this.ctx.faberloomSpaces.previewLink(this.actor(), spaceId as FaberLoomSpaceId)
+    return { newlyVisibleTo: preview.newlyVisibleTo, sharedContextKeys: preview.sharedContextKeys }
+  }
+
+  /**
    * Read one space with its editable configuration.
    * @param id - space id.
    * @returns the space detail, or undefined when it is gone.
@@ -532,12 +704,19 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * List the owner's versioned teachings, newest first.
-   * @returns the teaching rows.
+   * List the owner's versioned teachings, optionally filtered.
+   * @param spaceId - filter by owning space id.
+   * @param agentId - filter by owning agent id.
+   * @param task - filter by task label.
+   * @returns one row per teaching.
    */
   @Remote('teachings')
-  async teachings(): Promise<readonly FaberLoomTeachingRow[]> {
-    const rows = await this.ctx.faberloomMemory.listTeachings(this.actor().id)
+  async teachings(spaceId?: string, agentId?: string, task?: string): Promise<readonly FaberLoomTeachingRow[]> {
+    const rows = await this.ctx.faberloomMemory.listTeachings(this.actor().id, {
+      ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
+      ...agentId === undefined || agentId.length === 0 ? {} : { agentId },
+      ...task === undefined || task.length === 0 ? {} : { task },
+    })
     return rows.map(teaching => teachingRow(teaching))
   }
 

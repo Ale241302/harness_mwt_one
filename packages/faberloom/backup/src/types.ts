@@ -107,3 +107,43 @@ export interface FaberLoomRestoreResult {
   /** Domains the process did not have open. */
   skipped: FaberLoomRestoreSkip[]
 }
+
+/**
+ * One declarative data migration over a product domain: it transforms each
+ * record of one table, or returns `null` to drop it. The runner applies it once
+ * per owner and records that fact, so re-running is always safe.
+ */
+export interface FaberLoomDataMigration {
+  /** Stable migration id. */
+  readonly id: string
+  /** Declared storage-domain name it rewrites. */
+  readonly domain: string
+  /** Declared table name inside the domain. */
+  readonly table: string
+  /** One-line description shown to the owner. */
+  readonly describe: string
+  /** Transform one record, or return `null` to drop it. */
+  readonly apply: (record: Record<string, unknown>) => Record<string, unknown> | null
+}
+
+/** One migration and whether this owner already applied it. */
+export interface FaberLoomMigrationInfo {
+  /** Stable migration id. */
+  readonly id: string
+  /** Declared storage-domain name. */
+  readonly domain: string
+  /** One-line description. */
+  readonly describe: string
+  /** Whether the owner already applied it. */
+  readonly applied: boolean
+  /** ISO-8601 instant it was applied, when it was. */
+  readonly appliedAt: string | null
+}
+
+/** Result of one migration pass. */
+export interface FaberLoomMigrationReport {
+  /** Ids applied during this pass, in registry order. */
+  readonly applied: string[]
+  /** Domains named by pending migrations that were not open in this process. */
+  readonly skipped: string[]
+}

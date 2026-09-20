@@ -11,6 +11,7 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomAccess from '../../access/src/index.ts'
+import FaberLoomBackup from '../../backup/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
 import type { RoutineDefinitionInput, RoutineStepInput } from '../../routines/src/index.ts'
 import FaberLoomHandlers from '../src/index.ts'
@@ -85,6 +86,7 @@ async function harness(adapter: LlmAdapter) {
   ctx.provide('storageDomain', facility)
   await ctx.plugin(FaberLoomAccess)
   await ctx.plugin(FaberLoomRoutines)
+  await ctx.plugin(FaberLoomBackup)
   await ctx.plugin(FaberLoomHandlers)
   ctx.llm.registerAdapter(['routine-mock'], adapter)
   ctx.tools.register(defineContentToolFixture({

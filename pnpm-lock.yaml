@@ -6790,6 +6790,9 @@ importers:
       '@deepseek-ai/dsh-agent-default-model':
         specifier: workspace:^
         version: link:../../core/agent-default-model
+      '@deepseek-ai/dsh-faberloom-backup':
+        specifier: workspace:^
+        version: link:../backup
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines
@@ -6853,12 +6856,21 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-access':
+        specifier: workspace:^
+        version: link:../access
       '@deepseek-ai/dsh-faberloom-agents':
         specifier: workspace:^
         version: link:../agents
+      '@deepseek-ai/dsh-faberloom-backup':
+        specifier: workspace:^
+        version: link:../backup
       '@deepseek-ai/dsh-faberloom-board':
         specifier: workspace:^
         version: link:../board
+      '@deepseek-ai/dsh-faberloom-connections':
+        specifier: workspace:^
+        version: link:../connections
       '@deepseek-ai/dsh-faberloom-learning':
         specifier: workspace:^
         version: link:../learning
@@ -6947,6 +6959,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-agents':
         specifier: workspace:^
         version: link:../agents
+      '@deepseek-ai/dsh-faberloom-backup':
+        specifier: workspace:^
+        version: link:../backup
       '@deepseek-ai/dsh-faberloom-board':
         specifier: workspace:^
         version: link:../board

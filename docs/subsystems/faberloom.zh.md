@@ -296,6 +296,26 @@ async verifyBackup(ownerId: string, id: string): Promise<FaberLoomBackupVerifyRe
 async restoreBackup(ownerId: string, id: string, options: RestoreBackupOptions = {}): Promise<FaberLoomRestoreResult>
 
 /**
+ * List the migration registry and whether this owner already applied each
+ * entry.
+ * @param ownerId - the owning identity.
+ * @param registry - the migrations to report; defaults to the product registry.
+ * @returns one info row per migration, in registry order.
+ */
+async listMigrations( ownerId: string, registry: readonly FaberLoomDataMigration[] = FABERLOOM_DATA_MIGRATIONS, ): Promise<FaberLoomMigrationInfo[]>
+
+/**
+ * Apply every registry migration this owner has not applied yet. Each rewrite
+ * runs through the same domain handles the services use, and the applied id is
+ * recorded only after a successful rewrite, so an interrupted pass re-runs
+ * safely and a domain that is not open is reported rather than skipped.
+ * @param ownerId - the owning identity.
+ * @param registry - the migrations to apply; defaults to the product registry.
+ * @returns the ids applied in this pass and the domains that were not open.
+ */
+async runMigrations( ownerId: string, registry: readonly FaberLoomDataMigration[] = FABERLOOM_DATA_MIGRATIONS, ): Promise<FaberLoomMigrationReport>
+
+/**
  * Delete one backup record.
  * @param ownerId - the owning identity.
  * @param id - backup id.
@@ -671,7 +691,7 @@ async exportKnowledge(ownerId: string): Promise<KnowledgeSnapshot>
  * @param snapshot - the snapshot to import.
  * @returns how many records were restored.
  */
-async importKnowledge(ownerId: string, snapshot: KnowledgeSnapshot): Promise<{ teachings: number; performance: number; lateErrors: number }>
+async importKnowledge( ownerId: string, snapshot: KnowledgeSnapshot, ): Promise<{ teachings: number; performance: number; lateErrors: number }>
 ```
 
 Source: [`packages/faberloom/learning/src/index.ts`](../../packages/faberloom/learning/src/index.ts)
@@ -1134,6 +1154,83 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('probeConnection') async probeConnection(id: string): Promise<ConnectionProbe>
 
 /**
+ * List the owner's knowledge backups, newest first.
+ * @returns one row per captured snapshot.
+ */
+@Remote('backups') async backups(): Promise<readonly FaberLoomBackupRow[]>
+
+/**
+ * Capture a new knowledge backup and return the refreshed list.
+ * @param note - optional operator note stored with the snapshot.
+ * @returns the refreshed backup list.
+ */
+@Remote('createBackup') async createBackup(note?: string): Promise<readonly FaberLoomBackupRow[]>
+
+/**
+ * Verify one backup's integrity.
+ * @param id - backup id.
+ * @returns the verdict the panel shows.
+ */
+@Remote('verifyBackup') async verifyBackup(id: string): Promise<FaberLoomBackupVerify>
+
+/**
+ * Restore one backup into the open domains; a dry run counts without writing.
+ * @param id - backup id.
+ * @param dryRun - true to preview, false to write.
+ * @returns the restore result the panel shows.
+ */
+@Remote('restoreBackup') async restoreBackup(id: string, dryRun: boolean): Promise<FaberLoomBackupRestore>
+
+/**
+ * Delete one backup record.
+ * @param id - backup id.
+ * @returns the refreshed backup list.
+ */
+@Remote('deleteBackup') async deleteBackup(id: string): Promise<readonly FaberLoomBackupRow[]>
+
+/**
+ * Build an editable proposal from a fresh request (pantallas §2). It keeps the
+ * origin text, suggests catalog agents, and never creates anything by itself.
+ * @param text - what the user wants to resolve.
+ * @returns the proposal the panel renders.
+ */
+@Remote('proposeWork') async proposeWork(text: string): Promise<FaberLoomWorkProposal>
+
+/**
+ * Create a board item from a proposal, preserving the conversation as evidence.
+ * @param text - the request that originated the task.
+ * @param spaceId - space the work belongs to, or null for the personal scope.
+ * @returns the refreshed overview.
+ */
+@Remote('createTaskFromWork') async createTaskFromWork(text: string, spaceId: string | null): Promise<FaberLoomOverview>
+
+/**
+ * Create a specialist from a proposal, preserving the conversation as its
+ * origin and never copying another client's context (plan §6.5, F33–F35).
+ * @param text - the responsibility the conversation described.
+ * @param name - display name for the specialist.
+ * @param spaceId - space it belongs to, or null for the personal scope.
+ * @returns the refreshed overview.
+ */
+@Remote('createAgentFromWork') async createAgentFromWork(text: string, name: string, spaceId: string | null): Promise<FaberLoomOverview>
+
+/**
+ * Create a routine draft from a proposal; it starts inactive until activated.
+ * @param text - the procedure the conversation described.
+ * @param name - display name for the routine.
+ * @returns the refreshed overview.
+ */
+@Remote('createRoutineFromWork') async createRoutineFromWork(text: string, name: string): Promise<FaberLoomOverview>
+
+/**
+ * Preview the audience and material that would change before linking work to a
+ * space (F41); the user confirms before anything becomes visible.
+ * @param spaceId - the candidate space.
+ * @returns the preview the panel shows.
+ */
+@Remote('linkPreview') async linkPreview(spaceId: string): Promise<FaberLoomLinkPreview>
+
+/**
  * Read one space with its editable configuration.
  * @param id - space id.
  * @returns the space detail, or undefined when it is gone.
@@ -1163,10 +1260,13 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('recommendModel') async recommendModel(agentId: string, task?: string): Promise<FaberLoomModelRecommendation | undefined>
 
 /**
- * List the owner's versioned teachings, newest first.
- * @returns the teaching rows.
+ * List the owner's versioned teachings, optionally filtered.
+ * @param spaceId - filter by owning space id.
+ * @param agentId - filter by owning agent id.
+ * @param task - filter by task label.
+ * @returns one row per teaching.
  */
-@Remote('teachings') async teachings(): Promise<readonly FaberLoomTeachingRow[]>
+@Remote('teachings') async teachings(spaceId?: string, agentId?: string, task?: string): Promise<readonly FaberLoomTeachingRow[]>
 
 /**
  * Record one teaching: a correction from a case, or a direct instruction.

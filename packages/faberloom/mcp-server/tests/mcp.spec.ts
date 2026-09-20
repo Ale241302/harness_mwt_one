@@ -9,11 +9,13 @@ import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomAccess from '../../access/src/index.ts'
+import FaberLoomAgents from '../../agents/src/index.ts'
+import FaberLoomBackup from '../../backup/src/index.ts'
 import FaberLoomBoard from '../../board/src/index.ts'
+import FaberLoomConnections from '../../connections/src/index.ts'
 import FaberLoomLearning from '../../learning/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
 import FaberLoomSpaces from '../../spaces/src/index.ts'
-import FaberLoomAgents from '../../agents/src/index.ts'
 import FaberLoomMcpServer from '../src/index.ts'
 import { dispatch, PROTOCOL_VERSION } from '../src/protocol.ts'
 
@@ -42,6 +44,8 @@ async function harness() {
   await ctx.plugin(FaberLoomAccess)
   await ctx.plugin(FaberLoomLearning)
   await ctx.plugin(FaberLoomRoutines)
+  await ctx.plugin(FaberLoomBackup)
+  await ctx.plugin(FaberLoomConnections)
   const port = await freePort()
   await ctx.plugin(FaberLoomMcpServer, { ownerId: OWNER, enabled: true, socketPath: '', port })
   return { ctx, server: ctx.faberloomMcpServer, endpoint: { port }, routines: ctx.faberloomRoutines, memory: ctx.faberloomMemory }
@@ -114,6 +118,13 @@ describe('FaberLoomMcpServer', () => {
     const tools = (JSON.parse(list.text) as { result: { tools: { name: string }[] } }).result.tools.map(tool => tool.name)
     expect(tools).toContain('faberloom_overview')
     expect(tools).toContain('faberloom_routine_run')
+    // G3 · the same operations the panels use are reachable over MCP.
+    expect(tools).toContain('faberloom_space_create')
+    expect(tools).toContain('faberloom_agent_policy')
+    expect(tools).toContain('faberloom_board_review')
+    expect(tools).toContain('faberloom_grant')
+    expect(tools).toContain('faberloom_backup_create')
+    expect(tools).toContain('faberloom_migrations_run')
 
     // A notification is accepted without a body.
     const notification = await post(endpoint.port, { jsonrpc: '2.0', method: 'notifications/initialized' }, token)
@@ -194,14 +205,17 @@ describe('FaberLoomMcpServer', () => {
     expect((JSON.parse(all.text) as { result: { tools: unknown[] } }).result.tools.length).toBeGreaterThan(1)
   })
 
-  it('F04 — a client asking for events receives one SSE frame', async () => {
+  it('F04 — a client asking for events receives SSE frames it can parse', async () => {
     const { server, endpoint } = await harness()
     await waitForServer(endpoint.port)
     const token = (await server.mintToken('SSE')).token
     const frame = await post(endpoint.port, { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }, token, 'text/event-stream')
     expect(frame.status).toBe(200)
-    expect(frame.text.startsWith('event: message\ndata: ')).toBe(true)
-    expect(JSON.parse(frame.text.slice('event: message\ndata: '.length).trim())).toMatchObject({ result: { serverInfo: { name: 'faberloom' } } })
+    // The stream is bracketed by comments and carries at least one message frame.
+    expect(frame.text).toContain(': faberloom stream open')
+    expect(frame.text).toContain('event: message\ndata: ')
+    const payload = frame.text.split('event: message\ndata: ')[1]?.split('\n\n')[0] ?? ''
+    expect(JSON.parse(payload)).toMatchObject({ result: { serverInfo: { name: 'faberloom' } } })
   })
 
   it('F04 — protocol errors are answered, not hidden', async () => {

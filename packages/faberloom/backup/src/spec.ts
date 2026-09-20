@@ -43,9 +43,28 @@ export const backupRecord = z.object({
 /** One stored backup, inferred from {@link backupRecord}. */
 export type BackupRecord = z.infer<typeof backupRecord>
 
-/** The backup domain spec: one `backups` table keyed by backup id. */
+/**
+ * Durable record of one applied data migration: the id and the instant it ran,
+ * so the runner applies each migration exactly once per owner.
+ */
+export const appliedMigrationRecord = z.object({
+  /** Owning identity the migration ran for. */
+  ownerId: z.string(),
+  /** Stable migration id from the registry. */
+  id: z.string(),
+  /** ISO-8601 instant it was applied. */
+  appliedAt: z.string(),
+})
+
+/** One applied migration, inferred from {@link appliedMigrationRecord}. */
+export type AppliedMigrationRecord = z.infer<typeof appliedMigrationRecord>
+
+/** The backup domain spec: one `backups` table and one `migrations` table. */
 export const backupDomainSpec = defineDomain({
   name: 'faberloom_backup',
   version: 1,
-  tables: { backups: domainTable<string, BackupRecord>(backupRecord) },
+  tables: {
+    backups: domainTable<string, BackupRecord>(backupRecord),
+    migrations: domainTable<string, AppliedMigrationRecord>(appliedMigrationRecord),
+  },
 })

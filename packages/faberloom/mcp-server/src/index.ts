@@ -16,7 +16,7 @@
  * @module @deepseek-ai/dsh-faberloom-mcp-server
  */
 
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, rmSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
@@ -24,7 +24,10 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
+import type {} from '@deepseek-ai/dsh-faberloom-access'
+import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
+import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
@@ -86,7 +89,10 @@ export interface FaberLoomMcpToken {
 
 /** FaberLoom's server face for other agents. */
 export class FaberLoomMcpServer extends Service {
-  static inject = ['storageDomain', 'faberloomSpaces', 'faberloomAgents', 'faberloomBoard', 'faberloomRoutines', 'faberloomMemory']
+  static inject = [
+    'storageDomain', 'faberloomSpaces', 'faberloomAgents', 'faberloomBoard', 'faberloomRoutines',
+    'faberloomMemory', 'faberloomAccess', 'faberloomBackup', 'faberloomConnections',
+  ]
 
   private domainPromise: Promise<Domain<typeof mcpServerDomainSpec>> | undefined
   private server: Server | undefined
@@ -172,17 +178,45 @@ export class FaberLoomMcpServer extends Service {
       return
     }
     const host = new FaberLoomToolHost(this.ctx, caller.ownerId, caller.scopes)
+    const sse = (request.headers.accept ?? '').includes('text/event-stream')
+    // A JSON-RPC batch answers one message per element; a single request answers
+    // one. Over SSE each response is its own frame, bracketed by comments that
+    // keep the stream visible to a client reading it incrementally.
+    const messages: unknown[] = Array.isArray(parsed) ? parsed : [parsed]
+    if (sse) {
+      response.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache, no-transform',
+        connection: 'keep-alive',
+        'mcp-session-id': caller.sessionId,
+      })
+      response.write(': faberloom stream open\n\n')
+      for (const message of messages) {
+        const outcome = await dispatch(host, message)
+        if (outcome.body === null) continue
+        response.write(`event: message\ndata: ${JSON.stringify(outcome.body)}\n\n`)
+      }
+      response.write(': faberloom stream closed\n\n')
+      response.end()
+      return
+    }
+    if (Array.isArray(parsed)) {
+      if (parsed.length === 0) {
+        this.respond(response, 200, { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'empty batch' } })
+        return
+      }
+      const bodies: unknown[] = []
+      for (const message of messages) {
+        const outcome = await dispatch(host, message)
+        if (outcome.body !== null) bodies.push(outcome.body)
+      }
+      if (bodies.length === 0) { response.writeHead(202).end(); return }
+      this.respond(response, 200, bodies)
+      return
+    }
     const outcome = await dispatch(host, parsed)
     if (outcome.body === null) {
       response.writeHead(202).end()
-      return
-    }
-    // A client that asked for events receives the same single response as one
-    // SSE frame; the transport streams nothing else yet.
-    if ((request.headers.accept ?? '').includes('text/event-stream')) {
-      const frame = `event: message\ndata: ${JSON.stringify(outcome.body)}\n\n`
-      response.writeHead(outcome.status, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' })
-      response.end(frame)
       return
     }
     this.respond(response, outcome.status, outcome.body)
@@ -203,7 +237,9 @@ export class FaberLoomMcpServer extends Service {
   }
 
   /** Resolve the owner and scopes a bearer token carries, or undefined when it may not act. */
-  private async authenticate(request: IncomingMessage): Promise<{ ownerId: string; scopes: readonly string[] | null } | undefined> {
+  private async authenticate(
+    request: IncomingMessage,
+  ): Promise<{ ownerId: string; scopes: readonly string[] | null; sessionId: string } | undefined> {
     const header = request.headers.authorization
     if (typeof header !== 'string' || !header.toLowerCase().startsWith('bearer ')) return undefined
     const token = header.slice(7).trim()
@@ -213,7 +249,9 @@ export class FaberLoomMcpServer extends Service {
     // Defence in depth: a token of another owner is refused by this process too.
     const owner = this.config.ownerId ?? ''
     if (owner.length > 0 && record.ownerId !== owner) return undefined
-    return { ownerId: record.ownerId, scopes: record.scopes ?? null }
+    // Opaque, stable session id: never the token itself, but constant per token.
+    const sessionId = `fbl-${createHash('sha256').update(token).digest('hex').slice(0, 16)}`
+    return { ownerId: record.ownerId, scopes: record.scopes ?? null, sessionId }
   }
 
   /** Write one JSON response. */

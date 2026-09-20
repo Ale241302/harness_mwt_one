@@ -85,4 +85,20 @@ export const SEED_ROUTINES: readonly SeedRoutine[] = [
     permissions: ['mwt'],
     failurePolicy: 'review',
   },
+  {
+    name: 'Respaldo diario',
+    intent: 'Capturar un respaldo íntegro del conocimiento y los procesos del propietario.',
+    trigger: { kind: 'recurrence', match: 'every:1d' },
+    steps: [
+      {
+        id: 'respaldo-capturar',
+        instruction: 'Captura un respaldo íntegro de los dominios de producto del propietario y verifica su digest.',
+        handler: 'backup',
+        dependsOn: [],
+      },
+    ],
+    expectedResult: 'Un respaldo diario verificado del conocimiento del propietario.',
+    permissions: [],
+    failurePolicy: 'continue',
+  },
 ]

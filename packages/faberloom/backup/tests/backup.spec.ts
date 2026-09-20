@@ -83,4 +83,25 @@ describe('FaberLoomBackup', () => {
     await backup.deleteBackup(OWNER, manifest.id)
     expect(await backup.listBackups(OWNER)).toEqual([])
   })
+
+  it('G8 — applies a data migration once, records it, and rewrites the records', async () => {
+    const { access, backup, facility } = await harness()
+    const grant = await access.grant(OWNER, { action: 'mail.send' })
+    const migration = {
+      id: 'normalize-grants',
+      domain: 'faberloom_grants',
+      table: 'grants',
+      describe: 'normaliza el campo note',
+      apply: (record: Record<string, unknown>) => ({ ...record, note: record['note'] ?? 'migrado' }),
+    }
+    const first = await backup.runMigrations(OWNER, [migration])
+    expect(first).toEqual({ applied: ['normalize-grants'], skipped: [] })
+    const grants = facility.get('faberloom_grants')?.table('grants')
+    expect(grants?.get(grant.id)).toMatchObject({ note: 'migrado' })
+    const info = await backup.listMigrations(OWNER, [migration, { ...migration, id: 'pendiente' }])
+    expect(info.map(row => [row.id, row.applied])).toEqual([['normalize-grants', true], ['pendiente', false]])
+    // A second pass skips the applied one and only runs the pending entry.
+    const second = await backup.runMigrations(OWNER, [migration, { ...migration, id: 'pendiente', apply: record => record }])
+    expect(second.applied).toEqual(['pendiente'])
+  })
 })

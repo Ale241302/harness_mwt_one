@@ -4,6 +4,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomAccess from '../../access/src/index.ts'
+import FaberLoomBackup from '../../backup/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
 import type { RoutineDefinitionInput, RoutineStepInput } from '../../routines/src/index.ts'
 import FaberLoomHandlers from '../src/index.ts'
@@ -18,6 +19,7 @@ async function harness(pool = new MemoryMediaPool()) {
   ctx.provide('storageDomain', facility)
   await ctx.plugin(FaberLoomAccess)
   await ctx.plugin(FaberLoomRoutines)
+  await ctx.plugin(FaberLoomBackup)
   return { ctx, routines: ctx.faberloomRoutines, pool }
 }
 

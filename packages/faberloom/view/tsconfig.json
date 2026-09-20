@@ -36,6 +36,9 @@
       "path": "../access"
     },
     {
+      "path": "../backup"
+    },
+    {
       "path": "../mcp-server"
     }
   ]

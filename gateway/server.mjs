@@ -214,6 +214,9 @@ function deriveReadOnly(user) {
 function resolveClientId(user) {
   if (cfg.mcpClientId) return cfg.mcpClientId
   if (!cfg.mcpClientIdFromUser) return ''
+  // E2 · entidad elegida por el usuario cuando tiene varias (G7): el selector de
+  // /entity la persiste y el parche del dsh la usa como X-MWT-Client-ID.
+  if (user && typeof user.entityId === 'string' && user.entityId.length > 0) return user.entityId.toLowerCase()
   const ents = (user && (user.legalEntityIds || user.legal_entity_ids)) || []
   return ents.length === 1 ? String(ents[0]).toLowerCase() : ''
 }
@@ -301,7 +304,14 @@ function rememberUser(user) {
     const parsed = JSON.parse(fs.readFileSync(cfg.userStateFile, 'utf8'))
     if (parsed && typeof parsed === 'object' && parsed.users) state = parsed
   } catch { /* ausente o ilegible: se reconstruye */ }
-  state.users[user.email] = { email: user.email, id: user.id, role: user.role, readOnly: user.readOnly === true, legalEntityIds: Array.isArray(user.legalEntityIds) ? user.legalEntityIds : [] }
+  state.users[user.email] = {
+    email: user.email,
+    id: user.id,
+    role: user.role,
+    readOnly: user.readOnly === true,
+    legalEntityIds: Array.isArray(user.legalEntityIds) ? user.legalEntityIds : [],
+    ...(typeof user.entityId === 'string' && user.entityId.length > 0 ? { entityId: user.entityId } : {}),
+  }
   const tmp = `${cfg.userStateFile}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8')
   fs.chmodSync(tmp, 0o600)
@@ -786,7 +796,12 @@ app.get('/healthz', (_req, res) => {
 
 app.get('/login', (req, res) => {
   const sess = getSession(req)
-  if (sess) return res.redirect(303, '/')
+  if (sess) {
+    const ents = Array.isArray(sess.ents) ? sess.ents : []
+    // G7 · una sesión con varias empresas y sin entidad elegida va al selector.
+    if (ents.length > 1 && (typeof sess.ent !== 'string' || sess.ent.length === 0)) return res.redirect(303, '/entity')
+    return res.redirect(303, '/')
+  }
   res.type('html').send(loginPage(req.query.e))
 })
 
@@ -818,10 +833,15 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
   if (!user || !user.id || !user.email) return res.redirect(303, '/login?e=auth')
 
   const legalEntityIds = Array.isArray(user.legal_entity_ids) ? user.legal_entity_ids : []
+  // G7 · si el usuario tiene varias empresas, no hay un tenant único: se arranca
+  // su dsh sin X-MWT-Client-ID y se le pide elegir una entidad en /entity.
+  const priorEntity = readUserState(user.email)?.entityId
+  const entityId = typeof priorEntity === 'string' && legalEntityIds.map(String).includes(priorEntity) ? priorEntity : undefined
   const sessionUser = {
     id: user.id,
     email: user.email,
     legalEntityIds,
+    ...(entityId === undefined ? {} : { entityId }),
     role: typeof user.role === 'string' ? user.role : '',
     readOnly: deriveReadOnly(user),
   }
@@ -834,16 +854,70 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
     console.error('[gateway] no se pudo arrancar dsh:', err.message)
     return res.redirect(303, '/login?e=harness')
   }
-  const payload = { uid: user.id, email: user.email, name: user.full_name || '', ents: legalEntityIds, exp: Date.now() + cfg.cookieTtlMs }
+  const payload = {
+    uid: user.id,
+    email: user.email,
+    name: user.full_name || '',
+    ents: legalEntityIds,
+    ...(entityId === undefined ? {} : { ent: entityId }),
+    exp: Date.now() + cfg.cookieTtlMs,
+  }
   const exchange = await exchangeDshToken(inst.port, inst.token)
   res.setHeader('Set-Cookie', [sessionCookieValue(payload), ...exchange.cookies])
+  // G7 · con varias empresas y ninguna elegida, el paso siguiente es el selector.
+  const home = legalEntityIds.length > 1 && entityId === undefined ? '/entity' : '/'
   if (exchange.cookies.length > 0) {
-    res.redirect(303, '/')
+    res.redirect(303, home)
   } else {
     // Respaldo: si el canje interno falla, conserva el comportamiento anterior.
     console.error('[gateway] canje de cookie de dsh vacio; se usa el token en la URL')
-    res.redirect(303, `/?token=${encodeURIComponent(inst.token)}`)
+    res.redirect(303, `${home}?token=${encodeURIComponent(inst.token)}`)
   }
+})
+
+// G7 · Selector de entidad: con varias empresas no hay tenant único. El usuario
+// elige una, el gateway reinicia su dsh con el parche que fija X-MWT-Client-ID.
+app.get('/entity', (req, res) => {
+  const sess = getSession(req)
+  if (!sess) return res.redirect(303, '/login')
+  const ents = Array.isArray(sess.ents) ? sess.ents.map(String) : []
+  if (ents.length <= 1) return res.redirect(303, '/')
+  res.type('html').send(entityPage(sess, req.query.e))
+})
+
+app.post('/entity', express.urlencoded({ extended: false }), async (req, res) => {
+  const sess = getSession(req)
+  if (!sess) return res.redirect(303, '/login')
+  const ents = Array.isArray(sess.ents) ? sess.ents.map(String) : []
+  const chosen = String(req.body.entidad || '').trim()
+  if (chosen !== '' && !ents.includes(chosen)) return res.redirect(303, '/entity?e=invalid')
+  const entityId = chosen === '' ? undefined : chosen
+  const inst = instances.get(sess.uid)
+  if (inst) {
+    try { inst.child.kill('SIGTERM') } catch { /* noop */ }
+    instances.delete(sess.uid)
+    usedPorts.delete(inst.port)
+  }
+  const stored = readUserState(sess.email) || { id: sess.uid, email: sess.email, role: 'client_b2b', readOnly: false }
+  let exchange = { cookies: [] }
+  try {
+    const restarted = await ensureInstance({ ...stored, legalEntityIds: ents, ...(entityId === undefined ? {} : { entityId }) })
+    exchange = await exchangeDshToken(restarted.port, restarted.token)
+  } catch (err) {
+    console.error('[gateway] no se pudo reiniciar dsh al elegir entidad:', err.message)
+    return res.redirect(303, '/entity?e=harness')
+  }
+  rememberUser({ ...stored, legalEntityIds: ents, ...(entityId === undefined ? {} : { entityId }) })
+  const payload = {
+    uid: sess.uid,
+    email: sess.email,
+    name: sess.name || '',
+    ents,
+    ...(entityId === undefined ? {} : { ent: entityId }),
+    exp: Date.now() + cfg.cookieTtlMs,
+  }
+  res.setHeader('Set-Cookie', [sessionCookieValue(payload), ...exchange.cookies])
+  res.redirect(303, '/')
 })
 
 // Servidor MCP de FaberLoom: el cliente se autentica con el token que el
@@ -944,6 +1018,51 @@ server.listen(cfg.port, '0.0.0.0', () => {
 })
 
 // ── Página de login ───────────────────────────────────────────────────
+// G7 · Página del selector de entidad (tenant). Las etiquetas son los ids de
+// empresa del login; el usuario también puede no fijar ninguna.
+function entityPage(sess, errCode) {
+  const ents = Array.isArray(sess.ents) ? sess.ents.map(String) : []
+  const current = typeof sess.ent === 'string' ? sess.ent : ''
+  const messages = {
+    invalid: 'Esa entidad no pertenece a tu cuenta.',
+    harness: 'No se pudo reiniciar tu espacio de trabajo con la entidad elegida. Reintenta.',
+  }
+  const msg = messages[errCode] || ''
+  const options = ents.map(id => `
+      <label class="opt"><input type="radio" name="entidad" value="${id}"${id === current ? ' checked' : ''}> ${id}</label>`).join('')
+  return `<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegir entidad · Harness MWT.ONE</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0B1E3A;color:#E8EDF3}
+  .card{width:420px;max-width:92vw;background:#102846;border:1px solid #1d3a5f;border-radius:14px;
+        padding:28px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+  h1{font-size:18px;margin:0 0 4px}
+  p.sub{margin:0 0 16px;font-size:13px;color:#94A7B8}
+  .opt{display:flex;gap:10px;align-items:center;padding:11px 12px;border:1px solid #274a72;border-radius:9px;
+       margin-top:8px;background:#0B1E3A;font-size:14px}
+  button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:9px;background:#13B98A;color:#04231a;
+         font-weight:700;font-size:14px;cursor:pointer}
+  button:hover{background:#17c997}
+  .err{margin-top:16px;padding:10px 12px;border-radius:8px;background:#3a1720;border:1px solid #7a2b3a;
+       color:#ffb4c0;font-size:13px}
+</style></head>
+<body>
+  <form class="card" method="post" action="/entity">
+    <h1>Elegir entidad</h1>
+    <p class="sub">Tu cuenta tiene varias empresas. Elige con cuál trabajará FaberLoom; el tenant viaja al MCP en cada llamada.</p>
+    ${options}
+    <label class="opt"><input type="radio" name="entidad" value=""${current === '' ? ' checked' : ''}> Sin entidad (no fijar tenant)</label>
+    <button type="submit">Usar esta entidad</button>
+    ${msg ? `<div class="err">${msg}</div>` : ''}
+  </form>
+</body></html>`
+}
+
 function loginPage(errCode) {
   const messages = {
     missing: 'Escribe usuario y contraseña.',

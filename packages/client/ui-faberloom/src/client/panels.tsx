@@ -24,6 +24,8 @@ import type {
   FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomOverview,
   FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, TeachingSaveInput,
+  FaberLoomBackupRow,
+  FaberLoomWorkProposal, FaberLoomLinkPreview,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, Toolbar, type Column } from './components.tsx'
@@ -69,8 +71,8 @@ export interface FaberloomPanelInjected {
   models: () => Promise<Result<readonly FaberLoomModelRow[]>>
   /** Ask the recommender which model suits one agent. */
   recommendModel: (agentId: string) => Promise<Result<FaberLoomModelRecommendation | undefined>>
-  /** List the owner's versioned teachings. */
-  teachings: () => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** List the owner's versioned teachings, optionally filtered by space, agent, or task. */
+  teachings: (spaceId?: string, agentId?: string, task?: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
   /** Record one teaching from a correction or a direct instruction. */
   saveTeaching: (input: TeachingSaveInput) => Promise<Result<readonly FaberLoomTeachingRow[]>>
   /** Edit one teaching, producing a new version. */
@@ -107,6 +109,26 @@ export interface FaberloomPanelInjected {
   removeConnection: (id: string) => Promise<Result<readonly FaberLoomConnection[]>>
   /** Check one connection for real. */
   probeConnection: (id: string) => Promise<Result<{ ok: boolean; detail: string }>>
+  /** List the owner's knowledge backups, newest first. */
+  backups: () => Promise<Result<readonly FaberLoomBackupRow[]>>
+  /** Capture a new knowledge backup. */
+  createBackup: (note?: string) => Promise<Result<readonly FaberLoomBackupRow[]>>
+  /** Verify one backup's integrity. */
+  verifyBackup: (id: string) => Promise<Result<{ ok: boolean; tables: number; badTables: number }>>
+  /** Restore one backup; `dryRun` previews without writing. */
+  restoreBackup: (id: string, dryRun: boolean) => Promise<Result<{ dryRun: boolean; tables: number; written: number; skipped: number }>>
+  /** Delete one backup record. */
+  deleteBackup: (id: string) => Promise<Result<readonly FaberLoomBackupRow[]>>
+  /** Build an editable proposal from a fresh request. */
+  proposeWork: (text: string) => Promise<Result<FaberLoomWorkProposal>>
+  /** Create a board task from a proposal, preserving the conversation. */
+  createTaskFromWork: (text: string, spaceId: string | null) => Promise<Result<FaberLoomOverview>>
+  /** Create a specialist from a proposal, preserving its origin. */
+  createAgentFromWork: (text: string, name: string, spaceId: string | null) => Promise<Result<FaberLoomOverview>>
+  /** Create a routine draft from a proposal. */
+  createRoutineFromWork: (text: string, name: string) => Promise<Result<FaberLoomOverview>>
+  /** Preview the audience and material before linking work to a space. */
+  linkPreview: (spaceId: string) => Promise<Result<FaberLoomLinkPreview>>
   /** Read one space's editable configuration. */
   spaceDetail: (id: string) => Promise<Result<FaberLoomSpaceDetail | undefined>>
   /** Save one space's editable configuration. */
@@ -1157,10 +1179,20 @@ function TeachingsBlock(props: {
   const [editText, setEditText] = useState('')
   const [editReason, setEditReason] = useState('')
   const [evidence, setEvidence] = useState<string | null>(null)
+  const [fSpace, setFSpace] = useState('')
+  const [fAgent, setFAgent] = useState('')
+  const [fTask, setFTask] = useState('')
 
   const apply = (result: Result<readonly FaberLoomTeachingRow[]>): void => {
     if (result.ok) setRows(result.value)
     else setMessage(result.error.message)
+  }
+
+  // G5 · la vista Memoria filtra por espacio, agente y tarea; las enseñanzas de
+  // FaberLoom son la fuente canónica y la memoria externa se muestra aparte.
+  const load = (): void => {
+    setMessage(null)
+    void teachings(fSpace, fAgent, fTask).then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
   }
 
   useEffect(() => {
@@ -1194,6 +1226,14 @@ function TeachingsBlock(props: {
     <section className={styles.steps}>
       <Toolbar title={t('teachings.title')} subtitle={t('teachings.intro')} />
       <Feedback t={t} message={message} />
+      <div className={styles.grid2}>
+        <input type="text" value={fSpace} placeholder={t('teachings.filterSpace')} onChange={(event) => { setFSpace(event.target.value) }} />
+        <div className={styles.grid2}>
+          <input type="text" value={fAgent} placeholder={t('teachings.filterAgent')} onChange={(event) => { setFAgent(event.target.value) }} />
+          <input type="text" value={fTask} placeholder={t('teachings.filterTask')} onChange={(event) => { setFTask(event.target.value) }} />
+        </div>
+        <button className={styles.secondary} type="button" onClick={load}>{t('teachings.filter')}</button>
+      </div>
       <div className={styles.grid2}>
         <input type="text" value={draftText} placeholder={t('teachings.newText')} onChange={(event) => { setDraftText(event.target.value) }} />
         <div className={styles.grid2}>
@@ -1394,20 +1434,134 @@ function connectionsScreen() {
         </div>
         <McpBlock t={t} mcpTokens={props.mcpTokens} mintMcpToken={props.mintMcpToken} revokeMcpToken={props.revokeMcpToken} />
         <GrantsBlock t={t} grants={props.grants} grant={props.grant} revokeGrant={props.revokeGrant} />
+        <BackupsBlock
+          t={t}
+          backups={props.backups}
+          createBackup={props.createBackup}
+          verifyBackup={props.verifyBackup}
+          restoreBackup={props.restoreBackup}
+          deleteBackup={props.deleteBackup}
+        />
       </Screen>
     )
   }
 }
 
+/** The knowledge backups: capture, verify, preview, restore, and delete. */
+function BackupsBlock(props: {
+  readonly t: ScreenProps['t']
+  readonly backups: ScreenProps['backups']
+  readonly createBackup: ScreenProps['createBackup']
+  readonly verifyBackup: ScreenProps['verifyBackup']
+  readonly restoreBackup: ScreenProps['restoreBackup']
+  readonly deleteBackup: ScreenProps['deleteBackup']
+}) {
+  const { t, backups, createBackup, verifyBackup, restoreBackup, deleteBackup } = props
+  const [rows, setRows] = useState<readonly FaberLoomBackupRow[]>([])
+  const [note, setNote] = useState('')
+  const [message, setMessage] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    void backups().then((result) => { if (live && result.ok) setRows(result.value) })
+    return () => { live = false }
+  }, [])
+  const apply = (result: Result<readonly FaberLoomBackupRow[]>): void => {
+    if (result.ok) setRows(result.value)
+    else setMessage(result.error.message)
+  }
+  return (
+    <Inspector title={t('backup.title')}>
+      <Field label={t('backup.intro')}>
+        <span className={styles.tools}>
+          <input type="text" value={note} placeholder={t('backup.notePlaceholder')} onChange={(event) => { setNote(event.target.value) }} />
+          <button className={styles.primary} type="button" onClick={() => {
+            void createBackup(note.trim().length === 0 ? undefined : note.trim()).then(apply)
+            setNote('')
+          }}>{t('backup.create')}</button>
+        </span>
+      </Field>
+      {message === null ? null : <StateBlock kind="error" title={message} />}
+      {rows.length === 0
+        ? <StateBlock kind="empty" title={t('backup.emptyTitle')} text={t('backup.emptyText')} />
+        : rows.map(row => (
+          <Field key={row.id} label={`${row.createdAt} · ${row.domains} ${t('backup.domains')} · ${row.records} ${t('backup.records')}`}>
+            <span className={styles.tools}>
+              <button className={styles.secondary} type="button" onClick={() => {
+                void verifyBackup(row.id).then((result) => {
+                  setMessage(result.ok
+                    ? (result.value.ok ? t('backup.verifyOk') : `${t('backup.verifyBad')}: ${String(result.value.badTables)}`)
+                    : result.error.message)
+                })
+              }}>{t('backup.verify')}</button>
+              <button className={styles.secondary} type="button" onClick={() => {
+                void restoreBackup(row.id, true).then((result) => {
+                  setMessage(result.ok ? `${t('backup.preview')}: ${String(result.value.written)}` : result.error.message)
+                })
+              }}>{t('backup.preview')}</button>
+              <button className={styles.primary} type="button" onClick={() => {
+                void restoreBackup(row.id, false).then((result) => {
+                  setMessage(result.ok ? `${t('backup.restored')}: ${String(result.value.written)}` : result.error.message)
+                })
+              }}>{t('backup.restore')}</button>
+              <button className={styles.danger} type="button" onClick={() => { void deleteBackup(row.id).then(apply) }}>{t('action.delete')}</button>
+            </span>
+          </Field>
+        ))}
+    </Inspector>
+  )
+}
+
 /** The tools a token may be scoped to, in catalogue order. */
 const MCP_TOOL_NAMES = [
   'faberloom_overview',
+  'faberloom_spaces',
+  'faberloom_space_get',
+  'faberloom_space_create',
+  'faberloom_space_update',
+  'faberloom_space_archive',
+  'faberloom_space_context',
+  'faberloom_space_preview_link',
+  'faberloom_agents',
+  'faberloom_agent_get',
+  'faberloom_agent_create',
+  'faberloom_agent_update',
+  'faberloom_agent_policy',
+  'faberloom_agent_duplicate',
+  'faberloom_agent_deactivate',
+  'faberloom_models',
+  'faberloom_model_register',
+  'faberloom_agent_resolve_model',
+  'faberloom_agent_recommend_model',
+  'faberloom_agent_record_outcome',
+  'faberloom_board',
+  'faberloom_board_get',
+  'faberloom_board_create',
+  'faberloom_board_submit',
+  'faberloom_board_review',
+  'faberloom_board_reopen',
+  'faberloom_board_effect',
+  'faberloom_board_mark_stale',
+  'faberloom_board_revalidate',
+  'faberloom_grants',
+  'faberloom_grant',
+  'faberloom_grant_revoke',
+  'faberloom_backup_create',
+  'faberloom_backup_list',
+  'faberloom_backup_verify',
+  'faberloom_backup_restore',
+  'faberloom_migrations_list',
+  'faberloom_migrations_run',
+  'faberloom_connections',
+  'faberloom_connection_save',
+  'faberloom_connection_remove',
+  'faberloom_connection_probe',
   'faberloom_routines',
   'faberloom_executions',
+  'faberloom_routine_run',
   'faberloom_teachings',
   'faberloom_teaching_record',
+  'faberloom_teaching_edit',
   'faberloom_teaching_revoke',
-  'faberloom_routine_run',
 ] as const
 
 /** The MCP client tokens: who may drive this workspace from another AI. */
@@ -1563,7 +1717,20 @@ function GrantsBlock(props: {
 
 /** Landing that hands the user to the harness conversation and its composer. */
 function conversarPanel() {
-  return function FaberloomConversar({ t, startConversation }: ScreenProps) {
+  return function FaberloomConversar(props: ScreenProps) {
+    const {
+      t, startConversation, proposeWork, createTaskFromWork, createAgentFromWork, createRoutineFromWork, linkPreview,
+    } = props
+    const { overview } = useOverview(props)
+    const [text, setText] = useState('')
+    const [agentName, setAgentName] = useState('')
+    const [routineName, setRoutineName] = useState('')
+    const [proposal, setProposal] = useState<FaberLoomWorkProposal | null>(null)
+    const [spaceId, setSpaceId] = useState('')
+    const [preview, setPreview] = useState<FaberLoomLinkPreview | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
+    const spaces = overview?.spaces ?? []
+    const fail = (cause: unknown): void => { setMessage(String(cause)) }
     return (
       <Screen title={t('panel.conversar.title')} subtitle={t('panel.conversar.intro')}>
         <button type="button" className={styles.primary} onClick={() => { startConversation() }}>
@@ -1574,6 +1741,68 @@ function conversarPanel() {
           <li className={styles.infoRow}>{t('panel.conversar.model')}</li>
           <li className={styles.infoRow}>{t('panel.conversar.note')}</li>
         </ul>
+        <Inspector title={t('propose.title')}>
+          <Field label={t('propose.prompt')}>
+            <textarea value={text} placeholder={t('propose.placeholder')} onChange={(event) => { setText(event.target.value) }} />
+          </Field>
+          <Field label={t('propose.space')}>
+            <span className={styles.tools}>
+              <select value={spaceId} onChange={(event) => { setSpaceId(event.target.value); setPreview(null) }}>
+                <option value="">{t('propose.personal')}</option>
+                {spaces.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+              </select>
+              {spaceId === '' ? null : (
+                <button className={styles.secondary} type="button" onClick={() => {
+                  void linkPreview(spaceId).then((result) => {
+                    if (result.ok) setPreview(result.value)
+                    else fail(result.error.message)
+                  }).catch(fail)
+                }}>
+                  {t('propose.preview')}
+                </button>
+              )}
+              <button className={styles.primary} type="button" onClick={() => {
+                void proposeWork(text).then((result) => {
+                  if (result.ok) setProposal(result.value)
+                  else fail(result.error.message)
+                }).catch(fail)
+              }}>
+                {t('propose.build')}
+              </button>
+            </span>
+          </Field>
+          {preview === null ? null : (
+            <StateBlock kind="empty" title={`${t('propose.audience')}: ${String(preview.newlyVisibleTo.length)}`} text={preview.sharedContextKeys.join(', ')} />
+          )}
+          {message === null ? null : <StateBlock kind="error" title={message} />}
+          {proposal === null ? null : (
+            <>
+              <Field label={t('propose.result')}><span className={styles.cellMuted}>{proposal.title}</span></Field>
+              <ul className={styles.infoRows}>
+                {proposal.suggestedSteps.map((step, index) => <li key={`${String(index)}-${step}`} className={styles.infoRow}>{step}</li>)}
+              </ul>
+              <Field label={t('propose.agentName')}>
+                <input type="text" value={agentName} placeholder={proposal.suggestedAgents[0]?.name ?? ''} onChange={(event) => { setAgentName(event.target.value) }} />
+              </Field>
+              <Field label={t('propose.routineName')}>
+                <input type="text" value={routineName} onChange={(event) => { setRoutineName(event.target.value) }} />
+              </Field>
+              <span className={styles.tools}>
+                <button className={styles.primary} type="button" onClick={() => {
+                  void createTaskFromWork(text, spaceId === '' ? null : spaceId).then(() => { setMessage(t('propose.taskCreated')) }).catch(fail)
+                }}>{t('propose.createTask')}</button>
+                <button className={styles.secondary} type="button" onClick={() => {
+                  const name = agentName.trim().length === 0 ? proposal.suggestedAgents[0]?.name ?? proposal.title : agentName.trim()
+                  void createAgentFromWork(text, name, spaceId === '' ? null : spaceId).then(() => { setMessage(t('propose.agentCreated')) }).catch(fail)
+                }}>{t('propose.createAgent')}</button>
+                <button className={styles.secondary} type="button" onClick={() => {
+                  const name = routineName.trim().length === 0 ? proposal.title : routineName.trim()
+                  void createRoutineFromWork(text, name).then(() => { setMessage(t('propose.routineCreated')) }).catch(fail)
+                }}>{t('propose.createRoutine')}</button>
+              </span>
+            </>
+          )}
+        </Inspector>
       </Screen>
     )
   }

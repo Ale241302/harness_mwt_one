@@ -12,7 +12,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
-import { backupDomainSpec, FABERLOOM_BACKUP_DOMAINS, type BackupRecord } from './spec.ts'
+import { backupDomainSpec, FABERLOOM_BACKUP_DOMAINS, type AppliedMigrationRecord, type BackupRecord } from './spec.ts'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import type {
   FaberLoomBackupDomainDigest,
@@ -20,6 +20,9 @@ import type {
   FaberLoomBackupTableDigest,
   FaberLoomBackupTableVerdict,
   FaberLoomBackupVerifyResult,
+  FaberLoomDataMigration,
+  FaberLoomMigrationInfo,
+  FaberLoomMigrationReport,
   FaberLoomRestoreResult,
   FaberLoomRestoreSkip,
   FaberLoomRestoreTable,
@@ -35,6 +38,14 @@ declare module '@deepseek-ai/cordis' {
 
 /** Snapshot format version; bump only on an incompatible manifest change. */
 export const FABERLOOM_BACKUP_FORMAT_VERSION = 1
+
+/**
+ * The product's declarative data-migration registry. It stays empty while the
+ * pilot has no shipped schema to move on from; each future incompatible record
+ * change adds one idempotent entry here instead of an ad-hoc script, and the
+ * runner applies it exactly once per owner and records that fact.
+ */
+export const FABERLOOM_DATA_MIGRATIONS: readonly FaberLoomDataMigration[] = []
 
 /** Canonical payload shape: domain name to table name to record key to value. */
 type BackupPayload = Record<string, Record<string, Record<string, unknown>>>
@@ -103,6 +114,10 @@ export class FaberLoomBackup extends Service {
   }
 
   private async backups(): Promise<KvTable<string, BackupRecord>> { return (await this.domain()).table('backups') }
+
+  private async migrationsTable(): Promise<KvTable<string, AppliedMigrationRecord>> {
+    return (await this.domain()).table('migrations')
+  }
 
   private liveDomain(name: string): LiveDomain | undefined {
     return this.ctx.storageDomain.get(name) as unknown as LiveDomain | undefined
@@ -267,6 +282,72 @@ export class FaberLoomBackup extends Service {
       }
     }
     return { id, dryRun: options.dryRun === true, tables, skipped }
+  }
+
+  /**
+   * List the migration registry and whether this owner already applied each
+   * entry.
+   * @param ownerId - the owning identity.
+   * @param registry - the migrations to report; defaults to the product registry.
+   * @returns one info row per migration, in registry order.
+   */
+  async listMigrations(
+    ownerId: string,
+    registry: readonly FaberLoomDataMigration[] = FABERLOOM_DATA_MIGRATIONS,
+  ): Promise<FaberLoomMigrationInfo[]> {
+    const table = await this.migrationsTable()
+    return registry.map((migration) => {
+      const record = table.get(`${ownerId}:${migration.id}`)
+      return {
+        id: migration.id,
+        domain: migration.domain,
+        describe: migration.describe,
+        applied: record !== undefined,
+        appliedAt: record === undefined ? null : record.appliedAt,
+      }
+    })
+  }
+
+  /**
+   * Apply every registry migration this owner has not applied yet. Each rewrite
+   * runs through the same domain handles the services use, and the applied id is
+   * recorded only after a successful rewrite, so an interrupted pass re-runs
+   * safely and a domain that is not open is reported rather than skipped.
+   * @param ownerId - the owning identity.
+   * @param registry - the migrations to apply; defaults to the product registry.
+   * @returns the ids applied in this pass and the domains that were not open.
+   */
+  async runMigrations(
+    ownerId: string,
+    registry: readonly FaberLoomDataMigration[] = FABERLOOM_DATA_MIGRATIONS,
+  ): Promise<FaberLoomMigrationReport> {
+    const table = await this.migrationsTable()
+    const applied: string[] = []
+    const skipped: string[] = []
+    for (const migration of registry) {
+      const key = `${ownerId}:${migration.id}`
+      if (table.get(key) !== undefined) continue
+      const live = this.liveDomain(migration.domain)
+      if (live === undefined) {
+        if (!skipped.includes(migration.domain)) skipped.push(migration.domain)
+        continue
+      }
+      let target: KvTable<string, unknown>
+      try {
+        target = live.table(migration.table)
+      } catch {
+        if (!skipped.includes(migration.domain)) skipped.push(migration.domain)
+        continue
+      }
+      for (const [recordKey, record] of target.entries()) {
+        const next = migration.apply(record as Record<string, unknown>)
+        if (next === null) await target.delete(recordKey)
+        else await target.put(recordKey, next)
+      }
+      await table.put(key, { ownerId, id: migration.id, appliedAt: new Date().toISOString() })
+      applied.push(migration.id)
+    }
+    return { applied, skipped }
   }
 
   /**

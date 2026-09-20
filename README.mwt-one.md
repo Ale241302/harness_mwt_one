@@ -215,3 +215,15 @@ en `/opt/faberloom` (`faberloom-mcp:8090`, red `harness-net`, volumen
   por decisión del responsable.
 - `SESSION_SECRET` y la API key viven solo en `/opt/mwt-one-harness/.env` y
   nunca se suben al repositorio.
+
+## Distribución y escritorio (E9)
+
+Decisión vigente: **el navegador es el acceso principal del piloto**. La aplicación
+de escritorio del harness upstream ejecuta un runtime local; convertirla en cliente
+del servidor permanente exige empaquetado propio, identidad de aplicación, firma y
+canal de actualización, y no aporta al piloto ninguna capacidad que el navegador no
+tenga. Se pospone hasta que exista un requisito operativo concreto (trabajo sin
+conexión, integración con el sistema de archivos del usuario o notificaciones
+nativas). Mientras tanto la experiencia FaberLoom viaja en la superficie web con sus
+tokens y paneles, y el "instalador" es la URL de `harness.mwt.one` con el login de la
+consola.
