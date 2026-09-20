@@ -24,8 +24,19 @@ services:
       PORT: "8080"
       # El harness necesita escribir su estado bajo /data.
       DSH_HOME: /data
+      # M9 · manifiesto vivo del despliegue: deploy-vps.sh copia MANIFEST.md a este
+      # directorio antes de arrancar, así /healthz compara el SHA construido con el
+      # manifiesto realmente desplegado y no con el que quedó cocido en la imagen.
+      MANIFEST_FILE: /opt/mwt/harness-manifest/MANIFEST.md
     volumes:
       - harness_users:/data
+      # M9 · estado del último backup, escrito por scripts/backup-harness.sh en el
+      # host. Se monta el archivo (no el directorio) en solo lectura; el script lo
+      # trunca en el mismo inodo, así que el bind-mount sigue viendo los cambios.
+      - /opt/mwt/harness_backup_status.txt:/opt/mwt/harness_backup_status.txt:ro
+      # M9 · manifiesto que /healthz compara. Se monta el directorio (no el file)
+      # porque cada push reemplaza el archivo y cambiaría el inodo del mount.
+      - /opt/mwt/harness-manifest:/opt/mwt/harness-manifest:ro
     networks:
       - harness-net
       - consola-mwt-one-net

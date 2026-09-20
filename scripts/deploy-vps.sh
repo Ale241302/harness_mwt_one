@@ -18,6 +18,11 @@ if [[ ! -f .env ]]; then
 fi
 
 echo "==> 1/4  Levantando el stack"
+# M9 · manifiesto que /healthz compara: se copia al directorio montado en solo
+# lectura. `cp` trunca el archivo existente (mismo inodo), así que el bind-mount
+# del contenedor ve el contenido nuevo sin recrearlo.
+mkdir -p /opt/mwt/harness-manifest
+cp -f "$ROOT/MANIFEST.md" /opt/mwt/harness-manifest/MANIFEST.md
 # La red del stack de memoria es external; si aún no existe (primer despliegue
 # antes de levantar /opt/tdai) se crea vacía para no romper el `compose up`.
 docker network create tdai-memory-stack >/dev/null 2>&1 || true

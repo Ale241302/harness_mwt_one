@@ -46,19 +46,36 @@ if (-not $SkipHarnessPackage) {
   Write-Host ("    {0:N1} MB (tree {1}, HEAD {2})" -f ((Get-Item $forkTar).Length / 1MB), $tree, $script:ForkSha)
 }
 
-$tar = Join-Path $env:TEMP "mwt-one-harness.tgz"
-if (Test-Path $tar) { Remove-Item $tar }
+# El fork se construye dentro de la imagen desde el tarball del paso 1; el resto
+# del directorio de despliegue se sube por rutas explícitas. No se empaqueta el
+# árbol completo: bsdtar en Windows aborta con los symlinks del fork (CLAUDE.md,
+# packages/*/CLAUDE.md) y deja un .tgz truncado que se extrae a medias, con lo que
+# el VPS conserva archivos viejos sin que el script lo note.
+$deployDirs = @('gateway', 'scripts', 'skills-catalog')
+$deployFiles = @('docker-compose.yml', 'Dockerfile', '.dockerignore', 'MANIFEST.md', 'README.mwt-one.md', '.env.example')
+# `nginx/` se omite a propósito: harness.conf es un bind-mount de archivo y
+# reemplazarlo desde el host cambia el inodo que ve el contenedor
+# (ver README.mwt-one.md, "Mount de nginx de archivo").
 
-Write-Host "==> Empaquetando $root"
-tar -czf $tar --exclude=node_modules --exclude=.env --exclude=.git -C $root .
-Write-Host ("    {0:N0} KB" -f ((Get-Item $tar).Length / 1KB))
+Write-Host "==> Asegurando $RemoteDir"
+ssh -p $Port -o LogLevel=ERROR "${User}@${SshHost}" "mkdir -p $RemoteDir/vendor"
 
-Write-Host "==> Subiendo a ${User}@${SshHost}:/tmp/"
-scp -P $Port $tar "${User}@${SshHost}:/tmp/mwt-one-harness.tgz"
+if (-not [string]::IsNullOrEmpty($forkTar) -and (Test-Path -LiteralPath $forkTar)) {
+  Write-Host "==> Subiendo el fork a $RemoteDir/vendor/"
+  scp -P $Port -o LogLevel=ERROR $forkTar "${User}@${SshHost}:$RemoteDir/vendor/deepseek-harness-src.tgz"
+}
 
-Write-Host "==> Extrayendo en $RemoteDir"
-$remote = "mkdir -p $RemoteDir && tar -xzf /tmp/mwt-one-harness.tgz -C $RemoteDir && rm -f /tmp/mwt-one-harness.tgz && echo 'contenido:' && ls -1 $RemoteDir"
-ssh -p $Port "${User}@${SshHost}" $remote
+Write-Host "==> Subiendo el directorio de despliegue a $RemoteDir/"
+foreach ($dir in $deployDirs) {
+  $src = Join-Path $root $dir
+  if (-not (Test-Path -LiteralPath $src)) { throw "Falta $src" }
+  scp -P $Port -o LogLevel=ERROR -r $src "${User}@${SshHost}:$RemoteDir/"
+}
+foreach ($file in $deployFiles) {
+  $src = Join-Path $root $file
+  if (-not (Test-Path -LiteralPath $src)) { throw "Falta $src" }
+  scp -P $Port -o LogLevel=ERROR $src "${User}@${SshHost}:$RemoteDir/"
+}
 
 if ($Deploy) {
   $shaArg = if ([string]::IsNullOrEmpty($script:ForkSha)) { '' } else { "DSH_FORK_SHA=$($script:ForkSha) " }

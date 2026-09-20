@@ -208,8 +208,12 @@ en `/opt/faberloom` (`faberloom-mcp:8090`, red `harness-net`, volumen
   requiere configuración.
 - **M9 · healthcheck ampliado**: `/healthz` publica el estado del despachador, el
   último backup (`BACKUP_STATUS_FILE`), la identidad de build
-  (`DSH_FORK_SHA_FILE`) y `manifestDrift` (el manifiesto no cita el SHA
-  construido), más el tamaño del pool de instancias.
+  (`DSH_FORK_SHA_FILE`) y `manifestDrift` (el manifiesto desplegado no cita el SHA
+  construido), más el tamaño del pool de instancias. Dos mounts de solo lectura lo
+  alimentan: `/opt/mwt/harness_backup_status.txt` (lo escribe
+  `scripts/backup-harness.sh`) y `/opt/mwt/harness-manifest/` (lo rellena
+  `deploy-vps.sh`); sin ellos `lastBackup` sale nulo y el drift compara contra el
+  manifiesto cocido en la imagen.
 
 ### M8 · TLS de extremo a extremo (pendiente operativo)
 
