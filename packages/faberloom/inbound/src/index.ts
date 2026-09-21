@@ -141,6 +141,7 @@ export class FaberLoomInbound extends Service {
         host: credentials.host,
         port: credentials.port,
         secure: credentials.secure,
+        starttls: credentials.starttls,
         user: credentials.username,
         password: credentials.password,
         mailbox: this.config.mailbox ?? 'INBOX',

@@ -17,6 +17,10 @@ export interface FaberLoomConnection {
   readonly port: number | null
   /** Whether IMAP uses implicit TLS. */
   readonly secure: boolean | null
+  /** Whether IMAP upgrades a plaintext connection with STARTTLS. */
+  readonly starttls: boolean
+  /** Whether this is the mailbox the inbound receiver reads. */
+  readonly primary: boolean
   /** IMAP username. */
   readonly username: string | null
   /** Whether a password is stored for this connection. */
@@ -45,6 +49,10 @@ export interface ConnectionInput {
   readonly port?: number | null
   /** Whether IMAP uses implicit TLS. */
   readonly secure?: boolean | null
+  /** Whether IMAP upgrades a plaintext connection with STARTTLS. */
+  readonly starttls?: boolean | null
+  /** Make this the mailbox the inbound receiver reads. */
+  readonly primary?: boolean
   /** IMAP username. */
   readonly username?: string | null
   /** IMAP password; omit to keep the stored one. */
@@ -75,6 +83,8 @@ export interface ImapCredentials {
   readonly port: number
   /** Whether the connection starts TLS immediately. */
   readonly secure: boolean
+  /** Whether the connection upgrades with STARTTLS after the greeting. */
+  readonly starttls: boolean
   /** Account name. */
   readonly username: string
   /** Account password. */

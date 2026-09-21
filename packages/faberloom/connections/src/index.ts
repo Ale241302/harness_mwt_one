@@ -34,6 +34,8 @@ function toConnection(id: string, record: ConnectionRecord): FaberLoomConnection
     host: record.host,
     port: record.port,
     secure: record.secure,
+    starttls: record.starttls === true,
+    primary: record.primary === true,
     username: record.username,
     hasSecret: record.secret !== null && record.secret.length > 0,
     destination: record.destination,
@@ -43,16 +45,24 @@ function toConnection(id: string, record: ConnectionRecord): FaberLoomConnection
   }
 }
 
-/** Logs in over IMAP and reports whether the server accepted the credentials. */
-async function probeImap(host: string, port: number, secure: boolean, user: string, password: string): Promise<ConnectionProbe> {
+/** How one IMAP probe reaches the server. */
+interface ImapTarget {
+  readonly host: string
+  readonly port: number
+  /** Implicit TLS from the first byte (993). */
+  readonly secure: boolean
+  /** Upgrade a plaintext connection with STARTTLS after the greeting (143). */
+  readonly starttls: boolean
+  readonly user: string
+  readonly password: string
+}
+
+/** Logs in over IMAP (implicit TLS, STARTTLS, or plaintext) and reports the outcome. */
+async function probeImap(target: ImapTarget): Promise<ConnectionProbe> {
+  const { host, port, secure, starttls, user, password } = target
+  const insecure = !secure && !starttls
   return await new Promise<ConnectionProbe>((resolve) => {
     let settled = false
-    const finish = (result: ConnectionProbe): void => {
-      if (settled) return
-      settled = true
-      try { socket.destroy() } catch { /* the socket may already be gone */ }
-      resolve(result)
-    }
     let socket: Socket
     try {
       socket = secure
@@ -62,24 +72,53 @@ async function probeImap(host: string, port: number, secure: boolean, user: stri
       resolve({ ok: false, detail: String(error) })
       return
     }
-    let stage: 'greeting' | 'login' = 'greeting'
+    const finish = (result: ConnectionProbe): void => {
+      if (settled) return
+      settled = true
+      try { socket.destroy() } catch { /* the socket may already be gone */ }
+      resolve(result)
+    }
+    let stage: 'greeting' | 'starttls' | 'login' = 'greeting'
     let buffer = ''
-    socket.setTimeout(8000, () => { finish({ ok: false, detail: 'tiempo de espera agotado' }) })
-    socket.on('error', (error: Error) => { finish({ ok: false, detail: error.message }) })
-    socket.on('data', (chunk: Buffer) => {
+    const onData = (chunk: Buffer): void => {
       buffer += chunk.toString('utf8')
       if (stage === 'greeting' && /^\* OK/m.test(buffer)) {
-        stage = 'login'
         buffer = ''
+        if (starttls) {
+          stage = 'starttls'
+          socket.write('a0 STARTTLS\r\n')
+          return
+        }
+        stage = 'login'
+        socket.write(`a1 LOGIN "${user}" "${password}"\r\n`)
+        return
+      }
+      if (stage === 'starttls' && /^a0 (OK|NO|BAD)/m.test(buffer)) {
+        if (!/^a0 OK/m.test(buffer)) {
+          finish({ ok: false, detail: 'el servidor no aceptó STARTTLS' })
+          return
+        }
+        buffer = ''
+        // Stop reading the plaintext stream before handing the socket to TLS.
+        socket.off('data', onData)
+        const encrypted = connectTls({ socket, servername: host })
+        encrypted.setTimeout(8000, () => { finish({ ok: false, detail: 'tiempo de espera agotado' }) })
+        encrypted.on('error', (error: Error) => { finish({ ok: false, detail: error.message }) })
+        encrypted.on('data', onData)
+        socket = encrypted
+        stage = 'login'
         socket.write(`a1 LOGIN "${user}" "${password}"\r\n`)
         return
       }
       if (stage === 'login' && /^a1 (OK|NO|BAD)/m.test(buffer)) {
         finish(/^a1 OK/m.test(buffer)
-          ? { ok: true, detail: 'inicio de sesión IMAP correcto' }
+          ? { ok: true, detail: insecure ? 'inicio de sesión IMAP correcto (sin cifrado)' : 'inicio de sesión IMAP correcto' }
           : { ok: false, detail: 'el servidor rechazó las credenciales' })
       }
-    })
+    }
+    socket.setTimeout(8000, () => { finish({ ok: false, detail: 'tiempo de espera agotado' }) })
+    socket.on('error', (error: Error) => { finish({ ok: false, detail: error.message }) })
+    socket.on('data', onData)
   })
 }
 
@@ -158,6 +197,8 @@ export class FaberLoomConnections extends Service {
       host: input.host === undefined ? existing?.host ?? null : input.host,
       port: input.port === undefined ? existing?.port ?? null : input.port,
       secure: input.secure === undefined ? existing?.secure ?? null : input.secure,
+      starttls: input.starttls === undefined ? existing?.starttls ?? false : input.starttls === true,
+      primary: input.primary === undefined ? existing?.primary ?? false : input.primary === true,
       username: input.username === undefined ? existing?.username ?? null : input.username,
       secret: input.secret === undefined || input.secret === null || input.secret.length === 0
         ? existing?.secret ?? null
@@ -168,6 +209,14 @@ export class FaberLoomConnections extends Service {
       updatedAt: now,
     }
     await table.put(id, record)
+    // Only one mailbox feeds the inbound receiver: making this one primary
+    // clears the flag on the owner's other rows.
+    if (record.primary === true) {
+      for (const [otherId, other] of table.entries()) {
+        if (otherId === id || other.ownerId !== ownerId || other.primary !== true) continue
+        await table.update(otherId, current => ({ ...current, primary: false, updatedAt: now }))
+      }
+    }
     return toConnection(id, record)
   }
 
@@ -197,7 +246,14 @@ export class FaberLoomConnections extends Service {
       if (record.host === null || record.port === null || record.username === null || record.secret === null) {
         return { ok: false, detail: 'faltan host, puerto, usuario o contraseña' }
       }
-      return await probeImap(record.host, record.port, record.secure === true, record.username, record.secret)
+      return await probeImap({
+        host: record.host,
+        port: record.port,
+        secure: record.secure === true,
+        starttls: record.starttls === true,
+        user: record.username,
+        password: record.secret,
+      })
     }
     if (record.destination === null) return { ok: false, detail: 'falta el destino del respaldo' }
     return await probeBackup(record.destination)
@@ -209,25 +265,32 @@ export class FaberLoomConnections extends Service {
    * the inbound receiver, which has to log in to the owner's mailbox. The
    * browser never sees it: the panel reads {@link list}, which omits the secret.
    * @param ownerId - the owning identity.
-   * @param id - a specific connection, or undefined for the first IMAP one.
+   * @param id - a specific connection, or undefined for the primary mailbox
+   *   (the owner's flagged one, otherwise the first complete row).
    * @returns the credentials, or undefined when the owner has no usable mailbox.
    */
   async imap(ownerId: string, id?: string): Promise<ImapCredentials | undefined> {
+    const rows: { readonly credentials: ImapCredentials; readonly primary: boolean }[] = []
     for (const [key, record] of (await this.table()).entries()) {
       if (record.ownerId !== ownerId || record.kind !== 'imap') continue
       if (id !== undefined && key !== id) continue
       if (record.host === null || record.port === null || record.username === null || record.secret === null) continue
-      return {
-        id: key,
-        label: record.label,
-        host: record.host,
-        port: record.port,
-        secure: record.secure === true,
-        username: record.username,
-        password: record.secret,
-      }
+      rows.push({
+        credentials: {
+          id: key,
+          label: record.label,
+          host: record.host,
+          port: record.port,
+          secure: record.secure === true,
+          starttls: record.starttls === true,
+          username: record.username,
+          password: record.secret,
+        },
+        primary: record.primary === true,
+      })
     }
-    return undefined
+    const chosen = rows.find(row => row.primary) ?? rows.at(0)
+    return chosen?.credentials
   }
 }
 

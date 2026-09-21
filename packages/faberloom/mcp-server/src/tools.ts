@@ -1050,6 +1050,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
           host: { type: 'string' },
           port: { type: 'number' },
           secure: { type: 'boolean' },
+          starttls: { type: 'boolean', description: 'Sube a TLS tras el saludo (puerto 143).' },
+          primary: { type: 'boolean', description: 'Marca este buzón como el que lee el receptor de correo.' },
           username: { type: 'string' },
           secret: { type: 'string' },
           destination: { type: 'string' },
@@ -1063,6 +1065,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       const host = optional(args, 'host')
       const port = num(args, 'port')
       const secure = boolean(args, 'secure')
+      const starttls = boolean(args, 'starttls')
+      const primary = boolean(args, 'primary')
       const username = optional(args, 'username')
       const secret = optional(args, 'secret')
       const destination = optional(args, 'destination')
@@ -1074,6 +1078,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         ...host === undefined ? {} : { host },
         ...port === undefined ? {} : { port },
         ...secure === undefined ? {} : { secure },
+        ...starttls === undefined ? {} : { starttls },
+        ...primary === undefined ? {} : { primary },
         ...username === undefined ? {} : { username },
         ...secret === undefined ? {} : { secret },
         ...destination === undefined ? {} : { destination },

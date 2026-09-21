@@ -15,6 +15,11 @@ export const connectionRecord = z.object({
   host: z.string().nullable(),
   port: z.number().nullable(),
   secure: z.boolean().nullable(),
+  // Optional so rows written before the field existed still validate; every
+  // write fills it in.
+  starttls: z.boolean().optional(),
+  // The mailbox the inbound receiver reads when the owner has several.
+  primary: z.boolean().optional(),
   username: z.string().nullable(),
   secret: z.string().nullable(),
   destination: z.string().nullable(),

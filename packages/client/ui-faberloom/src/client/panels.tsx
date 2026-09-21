@@ -107,7 +107,7 @@ export interface FaberloomPanelInjected {
   /** List the owner's own connections (IMAP, backup). */
   connections: () => Promise<Result<readonly FaberLoomConnection[]>>
   /** Create or replace one connection. */
-  saveConnection: (input: { id?: string; kind: 'imap' | 'backup'; label: string; host?: string; port?: number; secure?: boolean; username?: string; secret?: string; destination?: string; retentionDays?: number }) => Promise<Result<readonly FaberLoomConnection[]>>
+  saveConnection: (input: { id?: string; kind: 'imap' | 'backup'; label: string; host?: string; port?: number; secure?: boolean; starttls?: boolean; primary?: boolean; username?: string; secret?: string; destination?: string; retentionDays?: number }) => Promise<Result<readonly FaberLoomConnection[]>>
   /** Remove one connection. */
   removeConnection: (id: string) => Promise<Result<readonly FaberLoomConnection[]>>
   /** Check one connection for real. */
@@ -1337,6 +1337,7 @@ function connectionsScreen() {
     const [host, setHost] = useState('')
     const [port, setPort] = useState('993')
     const [secure, setSecure] = useState(true)
+    const [starttls, setStarttls] = useState(false)
     const [username, setUsername] = useState('')
     const [secret, setSecret] = useState('')
     const [destination, setDestination] = useState('')
@@ -1361,6 +1362,7 @@ function connectionsScreen() {
       setHost(chosen.host ?? '')
       setPort(chosen.port === null ? '993' : String(chosen.port))
       setSecure(chosen.secure !== false)
+      setStarttls(chosen.starttls === true)
       setUsername(chosen.username ?? '')
       setSecret('')
       setDestination(chosen.destination ?? '')
@@ -1395,7 +1397,7 @@ function connectionsScreen() {
         kind,
         label: effectiveLabel,
         ...kind === 'imap'
-          ? { host, port: Number(port), secure, username, ...secret.length === 0 ? {} : { secret } }
+          ? { host, port: Number(port), secure, starttls, username, ...secret.length === 0 ? {} : { secret } }
           : { destination, retentionDays: Number(retention) },
       })
         .then((result) => {
@@ -1409,8 +1411,9 @@ function connectionsScreen() {
     }
 
     const columns: readonly Column<FaberLoomConnection>[] = [
-      { key: 'label', header: t('col.name'), cell: row => <span className={styles.cellName}>{row.label}</span> },
+      { key: 'label', header: t('col.name'), cell: row => <span className={styles.cellName}>{row.label}{row.kind === 'imap' && row.primary ? <span className={styles.chips}> <Chip tone="accent">{t('connections.primary')}</Chip></span> : null}</span> },
       { key: 'kind', header: t('col.kind'), cell: row => <Chip tone={row.kind === 'imap' ? 'accent' : 'muted'}>{row.kind === 'imap' ? t('connections.imap') : t('connections.backup')}</Chip> },
+      { key: 'security', header: t('col.security'), cell: row => row.kind !== 'imap' ? <span className={styles.cellMuted}>{t('connections.notApplicable')}</span> : <Chip tone={row.secure || row.starttls ? 'accent' : 'muted'}>{row.secure ? t('connections.modeTls') : row.starttls ? t('connections.modeStarttls') : t('connections.modeNone')}</Chip> },
       { key: 'target', header: t('col.target'), cell: row => <span className={styles.cellMuted}>{row.kind === 'imap' ? [row.username, row.host].filter(part => part !== null && part.length > 0).join(' · ') : row.destination ?? ''}</span> },
     ]
 
@@ -1430,6 +1433,14 @@ function connectionsScreen() {
                   {chosen === null ? null : <button className={styles.danger} type="button" onClick={() => { void removeConnection(chosen.id).then(apply); setSelected(null) }}>{t('action.delete')}</button>}
                   {chosen === null ? null : (
                     <button className={styles.secondary} type="button" onClick={() => { runProbe(chosen.id) }}>{t('connections.probe')}</button>
+                  )}
+                  {chosen === null || chosen.kind !== 'imap' || chosen.primary ? null : (
+                    <button className={styles.secondary} type="button" onClick={() => {
+                      setMessage(null)
+                      void saveConnection({ id: chosen.id, kind: 'imap', label: chosen.label, primary: true })
+                        .then(apply)
+                        .catch((cause: unknown) => { setMessage(String(cause)) })
+                    }}>{t('connections.makePrimary')}</button>
                   )}
                 </span>
                 <button className={styles.primary} type="button" onClick={save}>{t('action.save')}</button>
@@ -1457,10 +1468,17 @@ function connectionsScreen() {
                       <input type="password" value={secret} onChange={(event) => { setSecret(event.target.value) }} />
                     </Field>
                   </div>
-                  <Field label={t('field.tls')}>
-                    <select value={secure ? 'yes' : 'no'} onChange={(event) => { setSecure(event.target.value === 'yes') }}>
-                      <option value="yes">{t('connections.tlsYes')}</option>
-                      <option value="no">{t('connections.tlsNo')}</option>
+                  <Field label={t('field.tls')} hint={t('connections.securityHint')}>
+                    <select value={secure ? 'tls' : starttls ? 'starttls' : 'none'} onChange={(event) => {
+                      const mode = event.target.value
+                      setSecure(mode === 'tls')
+                      setStarttls(mode === 'starttls')
+                      // Follow the protocol's usual port unless a custom one is set.
+                      if (port === '993' || port === '143') setPort(mode === 'tls' ? '993' : '143')
+                    }}>
+                      <option value="tls">{t('connections.tlsImplicit')}</option>
+                      <option value="starttls">{t('connections.tlsStarttls')}</option>
+                      <option value="none">{t('connections.tlsNone')}</option>
                     </select>
                   </Field>
                 </>

@@ -36,6 +36,8 @@ export interface ImapOptions {
   readonly port: number
   /** Whether the connection starts TLS immediately (implicit TLS). */
   readonly secure: boolean
+  /** Whether the connection upgrades with STARTTLS after the greeting. */
+  readonly starttls?: boolean
   /** Account name. */
   readonly user: string
   /** Account password; never logged. */
@@ -71,29 +73,74 @@ class ImapSession {
   private tag = 0
   private pending: { tag: string; resolve: (exchange: Exchange) => void; reject: (error: Error) => void } | undefined
   private closed = false
+  private onData: (chunk: Buffer) => void = () => { /* replaced once a socket is wired */ }
 
-  private constructor(private readonly socket: Socket) {}
+  private constructor(private socket: Socket) {}
 
   /**
-   * Open a session and send the greeting.
+   * Open a session, read the greeting, and upgrade it with STARTTLS when asked.
    * @param options - connection settings.
    * @returns the connected session.
    */
   static async open(options: ImapOptions): Promise<ImapSession> {
-    const socket = options.secure
+    const first = options.secure
       ? connectTls({ host: options.host, port: options.port, servername: options.host })
       : connectTcp({ host: options.host, port: options.port })
-    const session = new ImapSession(socket)
-    socket.setTimeout(options.timeoutMs, () => { session.fail(new ImapError('tiempo de espera agotado')) })
-    await new Promise<void>((resolve, reject) => {
-      socket.once('error', reject)
-      socket.once('connect', () => { socket.off('error', reject); resolve() })
-    })
-    socket.on('error', (error: Error) => { session.fail(error) })
-    socket.on('close', () => { session.closed = true; session.fail(new ImapError('conexión cerrada')) })
-    socket.on('data', (chunk: Buffer) => { session.consume(chunk.toString('utf8')) })
+    const session = new ImapSession(first)
+    await session.waitConnected(first, options.timeoutMs)
     await session.readGreeting()
+    if (options.starttls === true) await session.startTls(options.host, options.timeoutMs)
     return session
+  }
+
+  /**
+   * Attach this session to one socket and wait for the TCP connection.
+   * @param socket - the socket to read from.
+   * @param timeoutMs - milliseconds before the connection is abandoned.
+   */
+  private waitConnected(socket: Socket, timeoutMs: number): Promise<void> {
+    this.socket = socket
+    const onData = (chunk: Buffer): void => { this.consume(chunk.toString('utf8')) }
+    this.onData = onData
+    socket.setTimeout(timeoutMs, () => { this.fail(new ImapError('tiempo de espera agotado')) })
+    return new Promise<void>((resolve, reject) => {
+      socket.once('error', reject)
+      socket.once('connect', () => {
+        socket.off('error', reject)
+        socket.on('error', (error: Error) => { this.fail(error) })
+        socket.on('close', () => { this.closed = true; this.fail(new ImapError('conexión cerrada')) })
+        socket.on('data', onData)
+        resolve()
+      })
+    })
+  }
+
+  /**
+   * Upgrade the plaintext connection with `STARTTLS` and keep using the
+   * encrypted socket. Servers commonly offer this on port 143.
+   * @param host - server name used to validate the certificate.
+   * @param timeoutMs - milliseconds before the handshake is abandoned.
+   */
+  private async startTls(host: string, timeoutMs: number): Promise<void> {
+    await this.command('STARTTLS')
+    const plain = this.socket
+    plain.off('data', this.onData)
+    plain.setTimeout(0)
+    const encrypted = connectTls({ socket: plain, servername: host })
+    this.socket = encrypted
+    const onData = (chunk: Buffer): void => { this.consume(chunk.toString('utf8')) }
+    this.onData = onData
+    encrypted.setTimeout(timeoutMs, () => { this.fail(new ImapError('tiempo de espera agotado')) })
+    await new Promise<void>((resolve, reject) => {
+      encrypted.once('secureConnect', () => {
+        encrypted.off('error', reject)
+        encrypted.on('error', (error: Error) => { this.fail(error) })
+        encrypted.on('close', () => { this.closed = true; this.fail(new ImapError('conexión cerrada')) })
+        encrypted.on('data', onData)
+        resolve()
+      })
+      encrypted.once('error', reject)
+    })
   }
 
   /** Wait for the server's `* OK` greeting. */

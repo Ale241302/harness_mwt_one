@@ -1228,7 +1228,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'async imap(ownerId: string, id?: string): Promise<ImapCredentials | undefined>',
         description: 'Read one of the owner\'s mailbox credentials.\n\nThis is the only accessor that returns a stored secret, and it exists for the inbound receiver, which has to log in to the owner\'s mailbox. The browser never sees it: the panel reads list, which omits the secret.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'a specific connection, or undefined for the first IMAP one.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'a specific connection, or undefined for the primary mailbox (the owner\'s flagged one, otherwise the first complete row).' }],
         returns: 'the credentials, or undefined when the owner has no usable mailbox.',
       },
     ],
@@ -5216,7 +5216,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectionInput',
-    declaration: 'export interface ConnectionInput {\n    readonly id?: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host?: string | null;\n    readonly port?: number | null;\n    readonly secure?: boolean | null;\n    readonly username?: string | null;\n    readonly secret?: string | null;\n    readonly destination?: string | null;\n    readonly retentionDays?: number | null;\n}',
+    declaration: 'export interface ConnectionInput {\n    readonly id?: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host?: string | null;\n    readonly port?: number | null;\n    readonly secure?: boolean | null;\n    readonly starttls?: boolean | null;\n    readonly primary?: boolean;\n    readonly username?: string | null;\n    readonly secret?: string | null;\n    readonly destination?: string | null;\n    readonly retentionDays?: number | null;\n}',
   },
   {
     name: 'ConnectionKind',
@@ -5644,7 +5644,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomConnection',
-    declaration: 'export interface FaberLoomConnection {\n    readonly id: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host: string | null;\n    readonly port: number | null;\n    readonly secure: boolean | null;\n    readonly username: string | null;\n    readonly hasSecret: boolean;\n    readonly destination: string | null;\n    readonly retentionDays: number | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface FaberLoomConnection {\n    readonly id: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host: string | null;\n    readonly port: number | null;\n    readonly secure: boolean | null;\n    readonly starttls: boolean;\n    readonly primary: boolean;\n    readonly username: string | null;\n    readonly hasSecret: boolean;\n    readonly destination: string | null;\n    readonly retentionDays: number | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomCostRow',
@@ -5984,7 +5984,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImapCredentials',
-    declaration: 'export interface ImapCredentials {\n    readonly id: string;\n    readonly label: string;\n    readonly host: string;\n    readonly port: number;\n    readonly secure: boolean;\n    readonly username: string;\n    readonly password: string;\n}',
+    declaration: 'export interface ImapCredentials {\n    readonly id: string;\n    readonly label: string;\n    readonly host: string;\n    readonly port: number;\n    readonly secure: boolean;\n    readonly starttls: boolean;\n    readonly username: string;\n    readonly password: string;\n}',
   },
   {
     name: 'InboundReport',

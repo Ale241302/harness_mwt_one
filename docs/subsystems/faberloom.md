@@ -493,7 +493,8 @@ async probe(ownerId: string, id: string): Promise<ConnectionProbe>
  * the inbound receiver, which has to log in to the owner's mailbox. The
  * browser never sees it: the panel reads {@link list}, which omits the secret.
  * @param ownerId - the owning identity.
- * @param id - a specific connection, or undefined for the first IMAP one.
+ * @param id - a specific connection, or undefined for the primary mailbox
+ *   (the owner's flagged one, otherwise the first complete row).
  * @returns the credentials, or undefined when the owner has no usable mailbox.
  */
 async imap(ownerId: string, id?: string): Promise<ImapCredentials | undefined>
