@@ -1331,7 +1331,7 @@ function connectionsScreen() {
     const [list, setList] = useState<readonly FaberLoomConnection[] | null>(null)
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
-    const [probe, setProbe] = useState<string | null>(null)
+    const [probe, setProbe] = useState<{ state: 'probing' | 'ok' | 'fail'; text: string } | null>(null)
     const [kind, setKind] = useState<'imap' | 'backup'>('imap')
     const [label, setLabel] = useState('')
     const [host, setHost] = useState('')
@@ -1351,7 +1351,9 @@ function connectionsScreen() {
       return () => { live = false }
     }, [])
 
-    // Load the selected connection into the form.
+    // Load the selected connection into the form and verify it right away: an
+    // IMAP login is the only way to know the stored credentials still work, and
+    // the user should not have to ask for the test.
     useEffect(() => {
       if (chosen === null) return
       setKind(chosen.kind)
@@ -1363,9 +1365,22 @@ function connectionsScreen() {
       setSecret('')
       setDestination(chosen.destination ?? '')
       setRetention(chosen.retentionDays === null ? '30' : String(chosen.retentionDays))
-      setProbe(null)
       setMessage(null)
+      if (chosen.kind === 'imap') runProbe(chosen.id)
+      else setProbe(null)
     }, [chosen])
+
+    /** Run the real connection test and keep its outcome in the panel. */
+    const runProbe = (id: string): void => {
+      setProbe({ state: 'probing', text: t('connections.probing') })
+      void probeConnection(id).then((result) => {
+        // `result.ok` is the Remote call; `result.value.ok` is the probe itself.
+        if (!result.ok) { setProbe({ state: 'fail', text: `${t('connections.probeFail')}: ${result.error.message}` }); return }
+        setProbe(result.value.ok
+          ? { state: 'ok', text: `${t('connections.probeOk')}: ${result.value.detail}` }
+          : { state: 'fail', text: `${t('connections.probeFail')}: ${result.value.detail}` })
+      }).catch((cause: unknown) => { setProbe({ state: 'fail', text: String(cause) }) })
+    }
 
     const apply = (result: Result<readonly FaberLoomConnection[]>): void => {
       if (result.ok) setList(result.value)
@@ -1374,22 +1389,29 @@ function connectionsScreen() {
 
     const save = (): void => {
       setMessage(null)
+      const effectiveLabel = label.trim().length === 0 ? (kind === 'imap' ? t('connections.mailLabel') : t('connections.backupLabel')) : label.trim()
       void saveConnection({
         ...selected === null ? {} : { id: selected },
         kind,
-        label: label.trim().length === 0 ? (kind === 'imap' ? t('connections.mailLabel') : t('connections.backupLabel')) : label.trim(),
+        label: effectiveLabel,
         ...kind === 'imap'
           ? { host, port: Number(port), secure, username, ...secret.length === 0 ? {} : { secret } }
           : { destination, retentionDays: Number(retention) },
       })
-        .then((result) => { apply(result) })
+        .then((result) => {
+          apply(result)
+          if (!result.ok || kind !== 'imap') return
+          // Select what was just saved so the automatic test runs against it.
+          const saved = result.value.find(row => row.kind === 'imap' && row.label === effectiveLabel)
+          if (saved !== undefined) setSelected(saved.id)
+        })
         .catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
     const columns: readonly Column<FaberLoomConnection>[] = [
       { key: 'label', header: t('col.name'), cell: row => <span className={styles.cellName}>{row.label}</span> },
       { key: 'kind', header: t('col.kind'), cell: row => <Chip tone={row.kind === 'imap' ? 'accent' : 'muted'}>{row.kind === 'imap' ? t('connections.imap') : t('connections.backup')}</Chip> },
-      { key: 'target', header: t('col.target'), cell: row => <span className={styles.cellMuted}>{row.kind === 'imap' ? `${row.username ?? ''}@${row.host ?? ''}` : row.destination ?? ''}</span> },
+      { key: 'target', header: t('col.target'), cell: row => <span className={styles.cellMuted}>{row.kind === 'imap' ? [row.username, row.host].filter(part => part !== null && part.length > 0).join(' · ') : row.destination ?? ''}</span> },
     ]
 
     return (
@@ -1407,16 +1429,7 @@ function connectionsScreen() {
                 <span className={styles.tools}>
                   {chosen === null ? null : <button className={styles.danger} type="button" onClick={() => { void removeConnection(chosen.id).then(apply); setSelected(null) }}>{t('action.delete')}</button>}
                   {chosen === null ? null : (
-                    <button className={styles.secondary} type="button" onClick={() => {
-                      setProbe(null)
-                      void probeConnection(chosen.id).then((result) => {
-                        // `result.ok` is the Remote call; `result.value.ok` is the probe itself.
-                        if (!result.ok) { setProbe(`${t('connections.probeFail')}: ${result.error.message}`); return }
-                        setProbe(result.value.ok
-                          ? `${t('connections.probeOk')}: ${result.value.detail}`
-                          : `${t('connections.probeFail')}: ${result.value.detail}`)
-                      }).catch((cause: unknown) => { setProbe(String(cause)) })
-                    }}>{t('connections.probe')}</button>
+                    <button className={styles.secondary} type="button" onClick={() => { runProbe(chosen.id) }}>{t('connections.probe')}</button>
                   )}
                 </span>
                 <button className={styles.primary} type="button" onClick={save}>{t('action.save')}</button>
@@ -1460,7 +1473,12 @@ function connectionsScreen() {
                   <Field label={t('field.retention')}><input type="text" value={retention} onChange={(event) => { setRetention(event.target.value) }} /></Field>
                 </div>
               )}
-            {probe === null ? null : <StateBlock kind={probe.startsWith(t('connections.probeOk')) ? 'empty' : 'error'} title={probe} />}
+            {probe === null ? null : (
+              <StateBlock
+                kind={probe.state === 'ok' ? 'empty' : probe.state === 'fail' ? 'error' : 'loading'}
+                title={probe.text}
+              />
+            )}
           </Inspector>
         </div>
         <McpBlock t={t} mcpTokens={props.mcpTokens} mintMcpToken={props.mintMcpToken} revokeMcpToken={props.revokeMcpToken} />
