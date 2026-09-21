@@ -29,7 +29,7 @@ import type {
   FaberLoomWorkProposal, FaberLoomLinkPreview,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow,
 } from '@deepseek-ai/dsh-faberloom-view/types'
-import { Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, Toolbar, type Column } from './components.tsx'
+import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -263,7 +263,7 @@ function spacesScreen() {
         <div className={styles.split}>
           {overview === null && status === 'loading'
             ? <StateBlock kind="loading" title={t('state.loading')} />
-            : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} />}
+            : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />}
           <Inspector title={detail.kind === 'ready' && detail.value !== undefined ? detail.value.title : t('spaces.detail')}
             footer={selected === null ? undefined : (
               <button className={styles.primary} type="button" onClick={() => {
@@ -416,7 +416,7 @@ function agentsScreen() {
         <Feedback t={t} message={error ?? message} />
         <div className={styles.split}>
           <DataTable columns={columns} rows={agents} selectedId={selected} onSelect={setSelected}
-            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} />
+            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
           <Inspector
             title={editTitle}
             status={detail.kind === 'ready' && detail.value !== undefined
@@ -675,7 +675,7 @@ function skillsScreen() {
           {list === null
             ? <StateBlock kind="loading" title={t('state.loading')} />
             : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
-              emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} />}
+              emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />}
           <Inspector title={chosen?.name ?? t('skills.detail')}
             footer={chosen === null || chosen.origin !== 'owner' ? undefined : (
               <button className={styles.danger} type="button" onClick={() => {
@@ -733,7 +733,7 @@ function boardScreen() {
         <Feedback t={t} message={error} />
         <div className={styles.split}>
           <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
-            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} />
+            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
           <Inspector title={chosen?.title ?? t('board.detail')}
             status={detail.kind === 'ready' && detail.value !== undefined ? <Chip>{detail.value.status}</Chip> : undefined}
             footer={chosen === null ? undefined : (
@@ -860,7 +860,7 @@ function routinesScreen() {
         <Feedback t={t} message={error ?? message} />
         <div className={styles.split}>
           <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
-            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} />
+            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
           <Inspector title={detail.kind === 'ready' && detail.value !== undefined ? detail.value.name : t('routines.detail')}
             status={chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
             footer={selected === null ? undefined : (
@@ -1060,7 +1060,7 @@ function executionsScreen() {
         <Feedback t={t} message={message} />
         <div className={styles.split}>
           <DataTable columns={columns} rows={runs} selectedId={selected} onSelect={setSelected}
-            emptyTitle={t('state.empty.title')} emptyText={t('panel.executions.empty')} />
+            emptyTitle={t('state.empty.title')} emptyText={t('panel.executions.empty')} labels={tableLabels(t)} />
           <Inspector title={chosen === null ? t('executions.detail') : chosen.routineName}
             status={chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
             footer={chosen === null ? undefined : (
@@ -1165,7 +1165,7 @@ function memoryScreen() {
           {overview === null && status === 'loading'
             ? <StateBlock kind="loading" title={t('state.loading')} />
             : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
-              emptyTitle={t('state.empty.title')} emptyText={t('state.empty.memory')} />}
+              emptyTitle={t('state.empty.title')} emptyText={t('state.empty.memory')} labels={tableLabels(t)} />}
           <Inspector title={chosen === null ? t('memory.detail') : chosen.kind}>
             {chosen === null
               ? <StateBlock kind="empty" title={t('memory.selectTitle')} text={t('memory.selectText')} />
@@ -1285,7 +1285,7 @@ function TeachingsBlock(props: {
       </div>
       <div className={styles.split}>
         <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
-          emptyTitle={t('teachings.empty')} emptyText={t('teachings.emptyText')} />
+          emptyTitle={t('teachings.empty')} emptyText={t('teachings.emptyText')} labels={tableLabels(t)} />
         <Inspector title={chosen === null ? t('teachings.detail') : chosen.task ?? chosen.scope}
           status={chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
           footer={chosen === null ? undefined : (
@@ -1400,7 +1400,7 @@ function connectionsScreen() {
           {list === null
             ? <StateBlock kind="loading" title={t('state.loading')} />
             : <DataTable columns={columns} rows={list.map(row => ({ ...row }))} selectedId={selected} onSelect={setSelected}
-              emptyTitle={t('connections.emptyTitle')} emptyText={t('connections.emptyText')} />}
+              emptyTitle={t('connections.emptyTitle')} emptyText={t('connections.emptyText')} labels={tableLabels(t)} />}
           <Inspector title={chosen?.label ?? t('connections.newTitle')}
             footer={(
               <>
@@ -1628,8 +1628,7 @@ function McpBlock(props: {
   ]
 
   return (
-    <section className={styles.steps}>
-      <Toolbar title={t('mcp.title')} subtitle={t('mcp.intro')} />
+    <Block title={t('mcp.title')} subtitle={t('mcp.intro')}>
       <Feedback t={t} message={message} />
       <div className={styles.grid2}>
         <input type="text" value={label} placeholder={t('mcp.labelPlaceholder')} onChange={(event) => { setLabel(event.target.value) }} />
@@ -1640,7 +1639,7 @@ function McpBlock(props: {
         }}>{t('mcp.mint')}</button>
       </div>
       <Field label={t('mcp.scopes')} hint={t('mcp.scopesHint')}>
-        <div className={styles.steps}>
+        <div className={styles.toolList}>
           {MCP_TOOL_NAMES.map(name => (
             <label className={styles.stepFlag} key={name}>
               <input type="checkbox" checked={scopes.includes(name)}
@@ -1655,7 +1654,7 @@ function McpBlock(props: {
       </Field>
       <div className={styles.split}>
         <DataTable columns={columns} rows={tableRows} selectedId={null} onSelect={() => {}}
-          emptyTitle={t('mcp.empty')} emptyText={t('mcp.emptyText')} />
+          emptyTitle={t('mcp.empty')} emptyText={t('mcp.emptyText')} labels={tableLabels(t)} />
         <Inspector title={t('mcp.detail')}>
           <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{`${typeof window === 'undefined' ? '' : window.location.origin}/mcp`}</span></Field>
           <Field label={t('mcp.how')} hint={t('mcp.howHint')}><span className={styles.cellMuted}>{t('mcp.howText')}</span></Field>
@@ -1670,7 +1669,7 @@ function McpBlock(props: {
           </div>
         </Inspector>
       </div>
-    </section>
+    </Block>
   )
 }
 
@@ -1708,8 +1707,7 @@ function GrantsBlock(props: {
   ]
 
   return (
-    <section className={styles.steps}>
-      <Toolbar title={t('grants.title')} subtitle={t('grants.intro')} />
+    <Block title={t('grants.title')} subtitle={t('grants.intro')}>
       <Feedback t={t} message={message} />
       <div className={styles.grid2}>
         <input type="text" value={action} placeholder={t('grants.actionPlaceholder')} onChange={(event) => { setAction(event.target.value) }} />
@@ -1726,7 +1724,7 @@ function GrantsBlock(props: {
       </div>
       <div className={styles.split}>
         <DataTable columns={columns} rows={rows} selectedId={null} onSelect={() => {}}
-          emptyTitle={t('grants.empty')} emptyText={t('grants.emptyText')} />
+          emptyTitle={t('grants.empty')} emptyText={t('grants.emptyText')} labels={tableLabels(t)} />
         <Inspector title={t('grants.detail')}>
           <Field label={t('grants.how')} hint={t('grants.howHint')}>
             <span className={styles.cellMuted}>{t('grants.howText')}</span>
@@ -1742,7 +1740,7 @@ function GrantsBlock(props: {
           </div>
         </Inspector>
       </div>
-    </section>
+    </Block>
   )
 }
 

@@ -5,7 +5,7 @@
  * pure components: every fact and callback arrives as a prop, and all copy
  * arrives through the locale seat.
  */
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -22,6 +22,40 @@ export interface Column<T> {
   width?: number
 }
 
+/** Page size the tables open with. */
+const DEFAULT_PAGE_SIZE = 20
+
+/** Page-size choices the table footer offers; `0` means every row. */
+export const PAGE_SIZES: readonly number[] = [DEFAULT_PAGE_SIZE, 50, 100, 0]
+
+/** Copy the paginated table needs, resolved by the owning screen. */
+export interface TableLabels {
+  /** Label of the page-size selector. */
+  readonly rows: string
+  /** Page-size option that disables paging. */
+  readonly all: string
+  /** Joins the shown range with the total ("3-22 of 132"). */
+  readonly of: string
+  /** Previous-page button. */
+  readonly prev: string
+  /** Next-page button. */
+  readonly next: string
+  /** Page counter label. */
+  readonly page: string
+}
+
+/** Resolve the standard table labels from the locale seat. */
+export function tableLabels(t: PropsLocale<'faberloom'>['t']): TableLabels {
+  return {
+    rows: t('table.rows'),
+    all: t('table.all'),
+    of: t('table.of'),
+    prev: t('table.prev'),
+    next: t('table.next'),
+    page: t('table.page'),
+  }
+}
+
 /** Screen-level toolbar: title, counters, search, filters, and the primary action. */
 export function Toolbar({ title, subtitle, trailing }: {
   title: string
@@ -30,12 +64,27 @@ export function Toolbar({ title, subtitle, trailing }: {
 }) {
   return (
     <div className={styles.toolbar}>
-      <div>
+      <div className={styles.toolbarTitle}>
         <h1 className={styles.h1}>{title}</h1>
         {subtitle === undefined ? null : <p className={styles.sub}>{subtitle}</p>}
       </div>
-      <div className={styles.tools}>{trailing}</div>
+      {trailing === undefined ? null : <div className={styles.tools}>{trailing}</div>}
     </div>
+  )
+}
+
+/** Page section with its own heading, used when one screen holds several areas. */
+export function Block({ title, subtitle, trailing, children }: {
+  title: string
+  subtitle?: string | undefined
+  trailing?: ReactNode | undefined
+  children: ReactNode
+}) {
+  return (
+    <section className={styles.block}>
+      <Toolbar title={title} subtitle={subtitle} trailing={trailing} />
+      {children}
+    </section>
   )
 }
 
@@ -60,18 +109,30 @@ export function SearchBox({ value, onChange, placeholder, label }: {
   )
 }
 
-/** Dense selectable table with the empty state.
- * @param props - columns, rows, the selected id, the row handler, and the empty copy.
- * @returns the table or the empty state.
+/** Dense selectable table with paging and the empty state.
+ * @param props - columns, rows, the selected id, the row handler, the empty copy, and the pager labels.
+ * @returns the table with its pager, or the empty state.
  */
-export function DataTable<T extends { id: string }>({ columns, rows, selectedId, onSelect, emptyTitle, emptyText }: {
+export function DataTable<T extends { id: string }>({ columns, rows, selectedId, onSelect, emptyTitle, emptyText, labels }: {
   columns: readonly Column<T>[]
   rows: readonly T[]
   selectedId: string | null
   onSelect: (id: string) => void
   emptyTitle: string
   emptyText: string
+  labels: TableLabels
 }) {
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [page, setPage] = useState(1)
+  const total = rows.length
+  const pageCount = pageSize === 0 ? 1 : Math.max(1, Math.ceil(total / pageSize))
+  // A shorter list (or a new page size) must not leave the user on a page that
+  // no longer exists: paging always restarts from the first page.
+  useEffect(() => { setPage(1) }, [total, pageSize])
+  const current = Math.min(page, pageCount)
+  const start = pageSize === 0 ? 0 : (current - 1) * pageSize
+  const visible = pageSize === 0 ? rows : rows.slice(start, start + pageSize)
+
   if (rows.length === 0) return <StateBlock kind="empty" title={emptyTitle} text={emptyText} />
   return (
     <div className={styles.tableCard}>
@@ -84,7 +145,7 @@ export function DataTable<T extends { id: string }>({ columns, rows, selectedId,
           </tr>
         </thead>
         <tbody>
-          {rows.map(row => (
+          {visible.map(row => (
             <tr
               key={row.id}
               className={row.id === selectedId ? styles.rowSelected : undefined}
@@ -95,6 +156,32 @@ export function DataTable<T extends { id: string }>({ columns, rows, selectedId,
           ))}
         </tbody>
       </table>
+      {total <= DEFAULT_PAGE_SIZE && pageSize !== 0 ? null : (
+        <div className={styles.pager}>
+          <label className={styles.pagerSize}>
+            <span>{labels.rows}</span>
+            <select
+              value={String(pageSize)}
+              aria-label={labels.rows}
+              onChange={(event) => { setPageSize(Number(event.target.value)) }}
+            >
+              {PAGE_SIZES.map(size => (
+                <option key={size} value={String(size)}>{size === 0 ? labels.all : String(size)}</option>
+              ))}
+            </select>
+          </label>
+          <span className={styles.pagerInfo}>
+            {`${String(start + 1)}–${String(start + visible.length)} ${labels.of} ${String(total)}`}
+          </span>
+          <span className={styles.pagerNav}>
+            <button className={styles.pagerButton} type="button" disabled={current <= 1}
+              onClick={() => { setPage(current - 1) }}>{labels.prev}</button>
+            <span className={styles.pagerInfo}>{`${labels.page} ${String(current)}/${String(pageCount)}`}</span>
+            <button className={styles.pagerButton} type="button" disabled={current >= pageCount}
+              onClick={() => { setPage(current + 1) }}>{labels.next}</button>
+          </span>
+        </div>
+      )}
     </div>
   )
 }
