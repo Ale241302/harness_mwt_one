@@ -1,8 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
 **Tag de despliegue:** `deploy-2026-09-15` (commit `e2a61d4`, incluye E7-bis memoria Tencent + E8 respaldo)
-**Imagen desplegada actual:** build de `main` @ `5a1c6eaa1f18b4d19dd5fafac22b6caccf94c4e4` (M1–M9 + diccionarios en/zh reales; CSRF de login estable).
-**Verificado en el VPS:** 21 de septiembre de 2026 (02:12 UTC).
+**Imagen desplegada actual:** build de `main` @ `06b2a101749837c2dac4eb4118a9e64dea1ef574` (M1–M9, diccionarios en/zh reales, CSRF estable y selector de entidad con nombre).
+**Verificado en el VPS:** 21 de septiembre de 2026 (02:53 UTC).
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:56508fab6a47…` (`main` @ `5a1c6eaa1f`, build del 21 sep 02:12 UTC) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:98f0e6100495…` (`main` @ `06b2a10174`, build del 21 sep 02:53 UTC) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
