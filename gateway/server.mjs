@@ -426,6 +426,7 @@ function rememberUser(user) {
     readOnly: user.readOnly === true,
     legalEntityIds: Array.isArray(user.legalEntityIds) ? user.legalEntityIds : [],
     ...(typeof user.entityId === 'string' && user.entityId.length > 0 ? { entityId: user.entityId } : {}),
+    ...(user.entNames !== null && typeof user.entNames === 'object' ? { entNames: user.entNames } : {}),
   }
   const tmp = `${cfg.userStateFile}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8')
@@ -438,7 +439,13 @@ function readUserState(email) {
   try {
     const parsed = JSON.parse(fs.readFileSync(cfg.userStateFile, 'utf8'))
     const stored = parsed?.users?.[email]
-    if (stored && stored.id && stored.email) return { ...stored, legalEntityIds: Array.isArray(stored.legalEntityIds) ? stored.legalEntityIds : [] }
+    if (stored && stored.id && stored.email) {
+      return {
+        ...stored,
+        legalEntityIds: Array.isArray(stored.legalEntityIds) ? stored.legalEntityIds : [],
+        ...(stored.entNames !== null && typeof stored.entNames === 'object' ? { entNames: stored.entNames } : {}),
+      }
+    }
   } catch { /* ausente o ilegible */ }
   return undefined
 }
@@ -1063,15 +1070,23 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
   }
 
   const legalEntityIds = Array.isArray(user.legal_entity_ids) ? user.legal_entity_ids : []
-  // G7 · si el usuario tiene varias empresas, no hay un tenant único: se arranca
-  // su dsh sin X-MWT-Client-ID y se le pide elegir una entidad en /entity.
+  // G7 · tenant automático: se conserva la empresa elegida antes y, si no hay, se
+  // usa la principal de la cuenta (`legal_entity_id` de la ficha del usuario). Solo
+  // se ofrece el selector cuando ninguna de las dos existe.
+  const allowed = legalEntityIds.map(String)
   const priorEntity = readUserState(user.email)?.entityId
-  const entityId = typeof priorEntity === 'string' && legalEntityIds.map(String).includes(priorEntity) ? priorEntity : undefined
+  const defaultEntity = await resolveDefaultEntity(data.access, String(user.id))
+  const entityId = [priorEntity, defaultEntity]
+    .find(candidate => typeof candidate === 'string' && allowed.includes(candidate))
+  // G7 · nombres de empresa para el selector manual y para el parche del dsh.
+  // Best-effort: si la consola no responde, se muestra el id y nada más.
+  const entNames = await resolveEntityNames(data.access, allowed)
   const sessionUser = {
     id: user.id,
     email: user.email,
     legalEntityIds,
     ...(entityId === undefined ? {} : { entityId }),
+    ...(Object.keys(entNames).length === 0 ? {} : { entNames }),
     role: typeof user.role === 'string' ? user.role : '',
     readOnly: deriveReadOnly(user),
   }
@@ -1084,11 +1099,6 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
     console.error('[gateway] no se pudo arrancar dsh:', err.message)
     return res.redirect(303, '/login?e=harness')
   }
-  // G7 · nombre de cada empresa para el selector: la consola expone /api/clientes/
-  // y los `legal_entity_ids` del login son `clientes.cliente.id`. Es best-effort:
-  // si la llamada falla o tarda, el selector muestra el id y el login no se
-  // bloquea.
-  const entNames = await resolveEntityNames(data.access, legalEntityIds.map(String))
   const payload = {
     uid: user.id,
     email: user.email,
@@ -1102,8 +1112,9 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
   res.setHeader('Set-Cookie', [sessionCookieValue(payload), ...exchange.cookies])
   metrics.logins.ok += 1
   logEvent({ ev: 'login', result: 'ok', account: user.email, role: sessionUser.role, entity: entityId ?? null })
-  // G7 · con varias empresas y ninguna elegida, el paso siguiente es el selector.
-  const home = legalEntityIds.length > 1 && entityId === undefined ? '/entity' : '/'
+  // G7 · el tenant se resolvió solo; el selector (/entity) queda como cambio
+  // manual, no como paso obligatorio.
+  const home = '/'
   if (exchange.cookies.length > 0) {
     res.redirect(303, home)
   } else {
@@ -1113,14 +1124,37 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
   }
 })
 
+// G7 · Empresa por defecto del usuario según la consola (`legal_entity_id` de su
+// ficha). Es best-effort: sin ella se conserva la elegida antes o no se fija
+// tenant. Evita obligar a elegir cuando la cuenta ya tiene una empresa principal.
+async function resolveDefaultEntity(accessToken, userId) {
+  if (typeof accessToken !== 'string' || accessToken.length === 0 || typeof userId !== 'string') return undefined
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 4000)
+  try {
+    const response = await fetch(`${cfg.consolaApi}/users/${encodeURIComponent(userId)}/`, {
+      headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+      signal: controller.signal,
+    })
+    if (!response.ok) return undefined
+    const record = await response.json()
+    return typeof record?.legal_entity_id === 'string' && record.legal_entity_id.length > 0 ? record.legal_entity_id : undefined
+  } catch {
+    return undefined
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // G7 · Resuelve id de empresa → nombre comercial para etiquetar el selector.
-// Devuelve un mapa (posiblemente vacío); nunca lanza.
+// Devuelve un mapa (posiblemente vacío); nunca lanza. `is_parent=all` incluye las
+// subsidiarias, que también pueden ser el `legal_entity_id` de un usuario.
 async function resolveEntityNames(accessToken, ids) {
   if (typeof accessToken !== 'string' || accessToken.length === 0 || ids.length === 0) return {}
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 4000)
   try {
-    const response = await fetch(`${cfg.consolaApi}/clientes/`, {
+    const response = await fetch(`${cfg.consolaApi}/clientes/?is_parent=all`, {
       headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
       signal: controller.signal,
     })
@@ -1152,7 +1186,10 @@ app.get('/entity', (req, res) => {
   if (!sess) return res.redirect(303, '/login')
   const ents = Array.isArray(sess.ents) ? sess.ents.map(String) : []
   if (ents.length <= 1) return res.redirect(303, '/')
-  res.type('html').send(entityPage(sess, req.query.e))
+  // Los nombres también quedan en el estado del gateway, así una cookie emitida
+  // antes de resolverlos no obliga a reiniciar sesión para verlos.
+  const names = sess.entNames !== undefined ? sess.entNames : readUserState(sess.email)?.entNames
+  res.type('html').send(entityPage({ ...sess, entNames: names }, req.query.e))
 })
 
 app.post('/entity', express.urlencoded({ extended: false }), async (req, res) => {
@@ -1355,7 +1392,7 @@ function entityPage(sess, errCode) {
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Elegir entidad · Harness MWT.ONE</title>
+<title>Cambiar de empresa · Harness MWT.ONE</title>
 <style>
   :root{color-scheme:dark}
   *{box-sizing:border-box}
@@ -1377,8 +1414,8 @@ function entityPage(sess, errCode) {
 </style></head>
 <body>
   <form class="card" method="post" action="/entity">
-    <h1>Elegir entidad</h1>
-    <p class="sub">Tu cuenta tiene varias empresas. Elige con cuál trabajará FaberLoom; el tenant viaja al MCP en cada llamada.</p>
+    <h1>Cambiar de empresa</h1>
+    <p class="sub">Tu cuenta tiene varias empresas y FaberLoom ya trabaja con tu empresa principal. Cámbiala solo si necesitas operar como otra: el tenant viaja al MCP en cada llamada.</p>
     ${options}
     <label class="opt"><input type="radio" name="entidad" value=""${current === '' ? ' checked' : ''}> Sin entidad (no fijar tenant)</label>
     <button type="submit">Usar esta entidad</button>
