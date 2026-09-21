@@ -1084,11 +1084,17 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
     console.error('[gateway] no se pudo arrancar dsh:', err.message)
     return res.redirect(303, '/login?e=harness')
   }
+  // G7 · nombre de cada empresa para el selector: la consola expone /api/clientes/
+  // y los `legal_entity_ids` del login son `clientes.cliente.id`. Es best-effort:
+  // si la llamada falla o tarda, el selector muestra el id y el login no se
+  // bloquea.
+  const entNames = await resolveEntityNames(data.access, legalEntityIds.map(String))
   const payload = {
     uid: user.id,
     email: user.email,
     name: user.full_name || '',
     ents: legalEntityIds,
+    ...(Object.keys(entNames).length === 0 ? {} : { entNames }),
     ...(entityId === undefined ? {} : { ent: entityId }),
     exp: Date.now() + cfg.cookieTtlMs,
   }
@@ -1106,6 +1112,38 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
     res.redirect(303, `${home}?token=${encodeURIComponent(inst.token)}`)
   }
 })
+
+// G7 · Resuelve id de empresa → nombre comercial para etiquetar el selector.
+// Devuelve un mapa (posiblemente vacío); nunca lanza.
+async function resolveEntityNames(accessToken, ids) {
+  if (typeof accessToken !== 'string' || accessToken.length === 0 || ids.length === 0) return {}
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 4000)
+  try {
+    const response = await fetch(`${cfg.consolaApi}/clientes/`, {
+      headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+      signal: controller.signal,
+    })
+    if (!response.ok) return {}
+    const rows = await response.json()
+    if (!Array.isArray(rows)) return {}
+    const wanted = new Set(ids.map(String))
+    const names = {}
+    for (const row of rows) {
+      if (row === null || typeof row !== 'object') continue
+      const id = row.id === undefined || row.id === null ? '' : String(row.id)
+      if (!wanted.has(id)) continue
+      const label = [row.nombre_comercial, row.razon_social]
+        .find(value => typeof value === 'string' && value.trim().length > 0)
+      if (typeof label === 'string') names[id] = label.trim()
+    }
+    return names
+  } catch {
+    return {}
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 // G7 · Selector de entidad: con varias empresas no hay tenant único. El usuario
 // elige una, el gateway reinicia su dsh con el parche que fija X-MWT-Client-ID.
@@ -1145,6 +1183,7 @@ app.post('/entity', express.urlencoded({ extended: false }), async (req, res) =>
     email: sess.email,
     name: sess.name || '',
     ents,
+    ...(sess.entNames === undefined ? {} : { entNames: sess.entNames }),
     ...(entityId === undefined ? {} : { ent: entityId }),
     exp: Date.now() + cfg.cookieTtlMs,
   }
@@ -1282,18 +1321,37 @@ server.listen(cfg.port, '0.0.0.0', () => {
 })
 
 // ── Página de login ───────────────────────────────────────────────────
-// G7 · Página del selector de entidad (tenant). Las etiquetas son los ids de
-// empresa del login; el usuario también puede no fijar ninguna.
+/** Escape text interpolated into HTML (names and ids come from the console). */
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+// G7 · Página del selector de entidad (tenant). La etiqueta es el nombre de la
+// empresa cuando el gateway pudo resolverlo (`entNames`), con el id debajo para
+// soporte; el usuario también puede no fijar ninguna.
 function entityPage(sess, errCode) {
   const ents = Array.isArray(sess.ents) ? sess.ents.map(String) : []
+  const names = sess.entNames !== null && typeof sess.entNames === 'object' ? sess.entNames : {}
   const current = typeof sess.ent === 'string' ? sess.ent : ''
   const messages = {
     invalid: 'Esa entidad no pertenece a tu cuenta.',
     harness: 'No se pudo reiniciar tu espacio de trabajo con la entidad elegida. Reintenta.',
   }
   const msg = messages[errCode] || ''
-  const options = ents.map(id => `
-      <label class="opt"><input type="radio" name="entidad" value="${id}"${id === current ? ' checked' : ''}> ${id}</label>`).join('')
+  const option = (id) => {
+    const name = names[id]
+    const label = typeof name === 'string' && name.length > 0
+      ? `<span class="name">${escapeHtml(name)}</span><span class="id">${escapeHtml(id)}</span>`
+      : `<span class="name">${escapeHtml(id)}</span><span class="id">sin nombre en la consola</span>`
+    return `
+      <label class="opt"><input type="radio" name="entidad" value="${escapeHtml(id)}"${id === current ? ' checked' : ''}> ${label}</label>`
+  }
+  const options = ents.map(option).join('')
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1309,6 +1367,8 @@ function entityPage(sess, errCode) {
   p.sub{margin:0 0 16px;font-size:13px;color:#94A7B8}
   .opt{display:flex;gap:10px;align-items:center;padding:11px 12px;border:1px solid #274a72;border-radius:9px;
        margin-top:8px;background:#0B1E3A;font-size:14px}
+  .name{font-weight:600}
+  .id{display:block;font-size:11px;color:#94A7B8;margin-top:2px;font-family:ui-monospace,Consolas,monospace}
   button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:9px;background:#13B98A;color:#04231a;
          font-weight:700;font-size:14px;cursor:pointer}
   button:hover{background:#17c997}
