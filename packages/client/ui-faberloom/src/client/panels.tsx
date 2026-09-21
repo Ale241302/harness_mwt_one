@@ -1639,6 +1639,7 @@ function McpBlock(props: {
         }}>{t('mcp.mint')}</button>
       </div>
       <Field label={t('mcp.scopes')} hint={t('mcp.scopesHint')}>
+        <span className={styles.hint}>{scopes.length === 0 ? t('mcp.allTools') : `${String(scopes.length)} ${t('mcp.selected')}`}</span>
         <div className={styles.toolList}>
           {MCP_TOOL_NAMES.map(name => (
             <label className={styles.stepFlag} key={name}>
@@ -1649,7 +1650,6 @@ function McpBlock(props: {
               {name}
             </label>
           ))}
-          <span className={styles.cellMuted}>{scopes.length === 0 ? t('mcp.allTools') : `${String(scopes.length)} ${t('mcp.selected')}`}</span>
         </div>
       </Field>
       <div className={styles.split}>

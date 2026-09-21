@@ -156,32 +156,30 @@ export function DataTable<T extends { id: string }>({ columns, rows, selectedId,
           ))}
         </tbody>
       </table>
-      {total <= DEFAULT_PAGE_SIZE && pageSize !== 0 ? null : (
-        <div className={styles.pager}>
-          <label className={styles.pagerSize}>
-            <span>{labels.rows}</span>
-            <select
-              value={String(pageSize)}
-              aria-label={labels.rows}
-              onChange={(event) => { setPageSize(Number(event.target.value)) }}
-            >
-              {PAGE_SIZES.map(size => (
-                <option key={size} value={String(size)}>{size === 0 ? labels.all : String(size)}</option>
-              ))}
-            </select>
-          </label>
-          <span className={styles.pagerInfo}>
-            {`${String(start + 1)}–${String(start + visible.length)} ${labels.of} ${String(total)}`}
-          </span>
-          <span className={styles.pagerNav}>
-            <button className={styles.pagerButton} type="button" disabled={current <= 1}
-              onClick={() => { setPage(current - 1) }}>{labels.prev}</button>
-            <span className={styles.pagerInfo}>{`${labels.page} ${String(current)}/${String(pageCount)}`}</span>
-            <button className={styles.pagerButton} type="button" disabled={current >= pageCount}
-              onClick={() => { setPage(current + 1) }}>{labels.next}</button>
-          </span>
-        </div>
-      )}
+      <div className={styles.pager}>
+        <label className={styles.pagerSize}>
+          <span>{labels.rows}</span>
+          <select
+            value={String(pageSize)}
+            aria-label={labels.rows}
+            onChange={(event) => { setPageSize(Number(event.target.value)) }}
+          >
+            {PAGE_SIZES.map(size => (
+              <option key={size} value={String(size)}>{size === 0 ? labels.all : String(size)}</option>
+            ))}
+          </select>
+        </label>
+        <span className={styles.pagerInfo}>
+          {`${String(start + 1)}–${String(start + visible.length)} ${labels.of} ${String(total)}`}
+        </span>
+        <span className={styles.pagerNav}>
+          <button className={styles.pagerButton} type="button" disabled={current <= 1}
+            onClick={() => { setPage(current - 1) }}>{labels.prev}</button>
+          <span className={styles.pagerInfo}>{`${labels.page} ${String(current)}/${String(pageCount)}`}</span>
+          <button className={styles.pagerButton} type="button" disabled={current >= pageCount}
+            onClick={() => { setPage(current + 1) }}>{labels.next}</button>
+        </span>
+      </div>
     </div>
   )
 }
