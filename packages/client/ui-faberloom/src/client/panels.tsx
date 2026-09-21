@@ -256,7 +256,12 @@ function spacesScreen() {
           <>
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.spaces.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
-            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => { createSpace(draft.trim()); setDraft('') }}>{t('action.create')}</button>
+            <button className={styles.primary} type="button" onClick={() => {
+              if (draft.trim().length === 0) { setMessage(t('state.needsText')); return }
+              setMessage(null)
+              createSpace(draft.trim())
+              setDraft('')
+            }}>{t('action.create')}</button>
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
@@ -410,7 +415,12 @@ function agentsScreen() {
           <>
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <input className={styles.paneSearch} style={{ width: 200, padding: '8px 10px' }} value={draftName} placeholder={t('panel.agents.newPlaceholder')} onChange={(event) => { setDraftName(event.target.value) }} />
-            <button className={styles.primary} type="button" disabled={draftName.trim().length === 0} onClick={() => { createAgent(draftName.trim()); setDraftName('') }}>{t('action.create')}</button>
+            <button className={styles.primary} type="button" onClick={() => {
+              if (draftName.trim().length === 0) { setMessage(t('state.needsText')); return }
+              setMessage(null)
+              createAgent(draftName.trim())
+              setDraftName('')
+            }}>{t('action.create')}</button>
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
@@ -710,6 +720,7 @@ function boardScreen() {
     const { overview, error } = useOverview(props)
     const [draft, setDraft] = useState('')
     const [selected, setSelected] = useState<string | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
     const rows = overview?.board ?? []
     const chosen = rows.find(row => row.id === selected) ?? null
     const detail = useLazy<FaberLoomBoardDetail | undefined>(
@@ -727,10 +738,15 @@ function boardScreen() {
         trailing={(
           <>
             <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.board.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
-            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => { createBoardItem(draft.trim()); setDraft('') }}>{t('action.create')}</button>
+            <button className={styles.primary} type="button" onClick={() => {
+              if (draft.trim().length === 0) { setMessage(t('state.needsText')); return }
+              setMessage(null)
+              createBoardItem(draft.trim())
+              setDraft('')
+            }}>{t('action.create')}</button>
           </>
         )}>
-        <Feedback t={t} message={error} />
+        <Feedback t={t} message={error ?? message} />
         <div className={styles.split}>
           <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
             emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
@@ -854,7 +870,12 @@ function routinesScreen() {
         trailing={(
           <>
             <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.routines.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
-            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => { createRoutine(draft.trim()); setDraft('') }}>{t('action.create')}</button>
+            <button className={styles.primary} type="button" onClick={() => {
+              if (draft.trim().length === 0) { setMessage(t('state.needsText')); return }
+              setMessage(null)
+              createRoutine(draft.trim())
+              setDraft('')
+            }}>{t('action.create')}</button>
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
@@ -1064,7 +1085,10 @@ function executionsScreen() {
           <Inspector title={chosen === null ? t('executions.detail') : chosen.routineName}
             status={chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
             footer={chosen === null ? undefined : (
-              <button className={styles.primary} type="button" disabled={teachingText.trim().length === 0} onClick={propose}>{t('executions.applyCorrection')}</button>
+              <button className={styles.primary} type="button" onClick={() => {
+                if (teachingText.trim().length === 0) { setMessage(t('state.needsText')); return }
+                propose()
+              }}>{t('executions.applyCorrection')}</button>
             )}>
             {chosen === null
               ? <StateBlock kind="empty" title={t('executions.selectTitle')} text={t('executions.selectText')} />
@@ -1142,6 +1166,7 @@ function memoryScreen() {
     const { overview, status, error } = useOverview(props)
     const [draft, setDraft] = useState('')
     const [selected, setSelected] = useState<string | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
     const rows = overview?.memory ?? []
     const chosen = rows.find(row => row.id === selected) ?? null
 
@@ -1156,10 +1181,15 @@ function memoryScreen() {
         trailing={(
           <>
             <input className={styles.paneSearch} style={{ width: 260, padding: '8px 10px' }} value={draft} placeholder={t('panel.memory.rememberPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
-            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => { remember(draft.trim()); setDraft('') }}>{t('action.remember')}</button>
+            <button className={styles.primary} type="button" onClick={() => {
+              if (draft.trim().length === 0) { setMessage(t('state.needsText')); return }
+              setMessage(null)
+              remember(draft.trim())
+              setDraft('')
+            }}>{t('action.remember')}</button>
           </>
         )}>
-        <Feedback t={t} message={error} />
+        <Feedback t={t} message={error ?? message} />
         <p className={styles.hint}>{t('state.memoryPending')}</p>
         <div className={styles.split}>
           {overview === null && status === 'loading'
