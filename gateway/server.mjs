@@ -201,13 +201,24 @@ function newCsrfToken() {
 function csrfCookieValue(value) {
   return `${CSRF_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax${cookieSecureFlag()}`
 }
-function verifyCsrf(req) {
-  const cookie = readCookie(req, CSRF_COOKIE)
-  const field = String(req.body?._csrf || '')
-  if (!cookie || !field) return false
-  const a = Buffer.from(cookie)
-  const b = Buffer.from(field)
+/** Every `hcsrf` value the request carries (stale duplicates included). */
+function csrfCookies(req) {
+  const header = req.get('cookie') || ''
+  return header.split(';')
+    .map(part => part.trim())
+    .filter(part => part.startsWith(`${CSRF_COOKIE}=`))
+    .map(part => part.slice(CSRF_COOKIE.length + 1))
+}
+/** Constant-time equality over two tokens. */
+function equalToken(left, right) {
+  const a = Buffer.from(left)
+  const b = Buffer.from(right)
   return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
+function verifyCsrf(req) {
+  const field = String(req.body?._csrf || '')
+  if (!field) return false
+  return csrfCookies(req).some(cookie => equalToken(cookie, field))
 }
 
 // ── Firmas de cookie (HMAC-SHA256) ────────────────────────────────────
@@ -994,9 +1005,13 @@ app.get('/login', (req, res) => {
     if (ents.length > 1 && (typeof sess.ent !== 'string' || sess.ent.length === 0)) return res.redirect(303, '/entity')
     return res.redirect(303, '/')
   }
-  // M7 · token CSRF de doble envío incrustado en el formulario.
-  const csrf = newCsrfToken()
-  res.setHeader('Set-Cookie', csrfCookieValue(csrf))
+  // M7 · el token se reutiliza si ya existe. Rotarlo en cada GET invalidaba el
+  // formulario de otra pestaña o el de una petición posterior del navegador a
+  // /login (favicon/extensión), que es lo que producía "sesión del formulario
+  // expiró" con un token que el usuario acababa de recibir.
+  const carried = csrfCookies(req)
+  const csrf = carried[0] ?? newCsrfToken()
+  if (carried.length === 0) res.setHeader('Set-Cookie', csrfCookieValue(csrf))
   res.type('html').send(loginPage(req.query.e, csrf))
 })
 
