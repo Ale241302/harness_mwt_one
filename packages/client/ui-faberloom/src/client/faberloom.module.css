@@ -1,6 +1,16 @@
 /* FaberLoom surface styling. Semantic tokens only: every color, radius, and
    space resolves through the active theme, so light and dark stay consistent. */
 
+/* Fields in this surface are `width: 100%`; the theme only resets `select` to
+   border-box, so an input painted itself past its card by its own padding
+   (10px + 10px + border). Scoped here so every control of the panel obeys. */
+.screen input,
+.screen select,
+.screen textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
 .visuallyHidden {
   position: absolute;
   width: 1px;
