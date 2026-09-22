@@ -71,8 +71,8 @@ docker run --rm \
 
 step "4/6  Empaquetando el árbol construido"
 rm -f vendor/deepseek-harness-built.tgz
-tar -czf vendor/deepseek-harness-built.tgz --use-compress-program='gzip -1' \
-  --exclude='./.git' -C "$TREE" .
+# gzip -1 por pipe: --use-compress-program no existe en el bsdtar del VPS.
+tar --exclude='./.git' -C "$TREE" -cf - . | gzip -1 > vendor/deepseek-harness-built.tgz
 echo "   $(du -h vendor/deepseek-harness-built.tgz | cut -f1) (sha del fork: $FORK_SHA)"
 
 step "5/6  Levantando el stack"
