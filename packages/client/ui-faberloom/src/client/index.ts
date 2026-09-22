@@ -122,6 +122,7 @@ export function apply(ctx: ClientContext): void {
       grants: () => ctx.remote.faberloomView.grants(),
       grant: input => ctx.remote.faberloomView.grant(input),
       revokeGrant: id => ctx.remote.faberloomView.revokeGrant(id),
+      mwtStatus: () => ctx.remote.faberloomView.mwtStatus(),
       mcpTokens: () => ctx.remote.faberloomView.mcpTokens(),
       mintMcpToken: input => ctx.remote.faberloomView.mintMcpToken(input),
       revokeMcpToken: token => ctx.remote.faberloomView.revokeMcpToken(token),

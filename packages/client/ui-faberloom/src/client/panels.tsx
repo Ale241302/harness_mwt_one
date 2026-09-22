@@ -27,7 +27,7 @@ import type {
   FaberLoomCostSummary,
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, TeachingSaveInput,
   FaberLoomBackupRow,
-  FaberLoomWorkProposal, FaberLoomLinkPreview,
+  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
@@ -91,6 +91,8 @@ export interface FaberloomPanelInjected {
   grant: (input: GrantSaveInput) => Promise<Result<readonly FaberLoomGrantRow[]>>
   /** Revoke one grant. */
   revokeGrant: (id: string) => Promise<Result<readonly FaberLoomGrantRow[]>>
+  /** Read the owner's MWT.ONE access: identity, company, and connected MCP servers. */
+  mwtStatus: () => Promise<Result<FaberLoomMwtStatus>>
   /** List the MCP client tokens. */
   mcpTokens: () => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
   /** Mint one MCP client token. */
@@ -105,10 +107,10 @@ export interface FaberloomPanelInjected {
   saveSkill: (name: string, markdown: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** Remove one uploaded skill. */
   removeSkill: (name: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
-  /** List the owner's own connections (IMAP, backup). */
+  /** List the owner's own connections (IMAP, SMTP, backup). */
   connections: () => Promise<Result<readonly FaberLoomConnection[]>>
   /** Create or replace one connection. */
-  saveConnection: (input: { id?: string; kind: 'imap' | 'backup'; label: string; host?: string; port?: number; secure?: boolean; starttls?: boolean; primary?: boolean; username?: string; secret?: string; destination?: string; retentionDays?: number }) => Promise<Result<readonly FaberLoomConnection[]>>
+  saveConnection: (input: { id?: string; kind: 'imap' | 'smtp' | 'backup'; label: string; host?: string; port?: number; secure?: boolean; starttls?: boolean; primary?: boolean; username?: string; secret?: string; destination?: string; retentionDays?: number }) => Promise<Result<readonly FaberLoomConnection[]>>
   /** Remove one connection. */
   removeConnection: (id: string) => Promise<Result<readonly FaberLoomConnection[]>>
   /** Check one connection for real. */
@@ -257,8 +259,7 @@ function spacesScreen() {
           <>
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.spaces.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
-            <button className={styles.primary} type="button" onClick={() => {
-              if (draft.trim().length === 0) { setMessage(t('state.needsText')); return }
+            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => {
               setMessage(null)
               createSpace(draft.trim())
               setDraft('')
@@ -1363,7 +1364,7 @@ function connectionsScreen() {
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [probe, setProbe] = useState<{ state: 'probing' | 'ok' | 'fail'; text: string } | null>(null)
-    const [kind, setKind] = useState<'imap' | 'backup'>('imap')
+    const [kind, setKind] = useState<'imap' | 'smtp' | 'backup'>('imap')
     const [label, setLabel] = useState('')
     const [host, setHost] = useState('')
     const [port, setPort] = useState('993')
@@ -1383,15 +1384,15 @@ function connectionsScreen() {
       return () => { live = false }
     }, [])
 
-    // Load the selected connection into the form and verify it right away: an
-    // IMAP login is the only way to know the stored credentials still work, and
+    // Load the selected connection into the form and verify it right away: a
+    // real login is the only way to know the stored credentials still work, and
     // the user should not have to ask for the test.
     useEffect(() => {
       if (chosen === null) return
       setKind(chosen.kind)
       setLabel(chosen.label)
       setHost(chosen.host ?? '')
-      setPort(chosen.port === null ? '993' : String(chosen.port))
+      setPort(chosen.port === null ? (chosen.kind === 'smtp' ? '465' : '993') : String(chosen.port))
       setSecure(chosen.secure !== false)
       setStarttls(chosen.starttls)
       setUsername(chosen.username ?? '')
@@ -1399,7 +1400,7 @@ function connectionsScreen() {
       setDestination(chosen.destination ?? '')
       setRetention(chosen.retentionDays === null ? '30' : String(chosen.retentionDays))
       setMessage(null)
-      if (chosen.kind === 'imap') runProbe(chosen.id)
+      if (chosen.kind === 'imap' || chosen.kind === 'smtp') runProbe(chosen.id)
       else setProbe(null)
     }, [chosen])
 
@@ -1422,30 +1423,31 @@ function connectionsScreen() {
 
     const save = (): void => {
       setMessage(null)
-      const effectiveLabel = label.trim().length === 0 ? (kind === 'imap' ? t('connections.mailLabel') : t('connections.backupLabel')) : label.trim()
+      const defaultLabel = kind === 'imap' ? t('connections.mailLabel') : kind === 'smtp' ? t('connections.smtpLabel') : t('connections.backupLabel')
+      const effectiveLabel = label.trim().length === 0 ? defaultLabel : label.trim()
       void saveConnection({
         ...selected === null ? {} : { id: selected },
         kind,
         label: effectiveLabel,
-        ...kind === 'imap'
+        ...kind === 'imap' || kind === 'smtp'
           ? { host, port: Number(port), secure, starttls, username, ...secret.length === 0 ? {} : { secret } }
           : { destination, retentionDays: Number(retention) },
       })
         .then((result) => {
           apply(result)
-          if (!result.ok || kind !== 'imap') return
+          if (!result.ok || kind === 'backup') return
           // Select what was just saved so the automatic test runs against it.
-          const saved = result.value.find(row => row.kind === 'imap' && row.label === effectiveLabel)
+          const saved = result.value.find(row => row.kind === kind && row.label === effectiveLabel)
           if (saved !== undefined) setSelected(saved.id)
         })
         .catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
     const columns: readonly Column<FaberLoomConnection>[] = [
-      { key: 'label', header: t('col.name'), cell: row => <span className={styles.cellName}>{row.label}{row.kind === 'imap' && row.primary ? <span className={styles.chips}> <Chip tone="accent">{t('connections.primary')}</Chip></span> : null}</span> },
-      { key: 'kind', header: t('col.kind'), cell: row => <Chip tone={row.kind === 'imap' ? 'accent' : 'muted'}>{row.kind === 'imap' ? t('connections.imap') : t('connections.backup')}</Chip> },
-      { key: 'security', header: t('col.security'), cell: row => row.kind !== 'imap' ? <span className={styles.cellMuted}>{t('connections.notApplicable')}</span> : <Chip tone={row.secure || row.starttls ? 'accent' : 'muted'}>{row.secure ? t('connections.modeTls') : row.starttls ? t('connections.modeStarttls') : t('connections.modeNone')}</Chip> },
-      { key: 'target', header: t('col.target'), cell: row => <span className={styles.cellMuted}>{row.kind === 'imap' ? [row.username, row.host].filter(part => part !== null && part.length > 0).join(' · ') : row.destination ?? ''}</span> },
+      { key: 'label', header: t('col.name'), cell: row => <span className={styles.cellName}>{row.label}{row.kind !== 'backup' && row.primary ? <span className={styles.chips}> <Chip tone="accent">{t('connections.primary')}</Chip></span> : null}</span> },
+      { key: 'kind', header: t('col.kind'), cell: row => <Chip tone={row.kind === 'backup' ? 'muted' : 'accent'}>{row.kind === 'imap' ? t('connections.imap') : row.kind === 'smtp' ? t('connections.smtp') : t('connections.backup')}</Chip> },
+      { key: 'security', header: t('col.security'), cell: row => row.kind === 'backup' ? <span className={styles.cellMuted}>{t('connections.notApplicable')}</span> : <Chip tone={row.secure || row.starttls ? 'accent' : 'muted'}>{row.secure ? t('connections.modeTls') : row.starttls ? t('connections.modeStarttls') : t('connections.modeNone')}</Chip> },
+      { key: 'target', header: t('col.target'), cell: row => <span className={styles.cellMuted}>{row.kind === 'imap' || row.kind === 'smtp' ? [row.username, row.host].filter(part => part !== null && part.length > 0).join(' · ') : row.destination ?? ''}</span> },
     ]
 
     return (
@@ -1465,32 +1467,39 @@ function connectionsScreen() {
                   {chosen === null ? null : (
                     <button className={styles.secondary} type="button" onClick={() => { runProbe(chosen.id) }}>{t('connections.probe')}</button>
                   )}
-                  {chosen === null || chosen.kind !== 'imap' || chosen.primary ? null : (
+                  {chosen === null || chosen.kind === 'backup' || chosen.primary ? null : (
                     <button className={styles.secondary} type="button" onClick={() => {
                       setMessage(null)
-                      void saveConnection({ id: chosen.id, kind: 'imap', label: chosen.label, primary: true })
+                      void saveConnection({ id: chosen.id, kind: chosen.kind, label: chosen.label, primary: true })
                         .then(apply)
                         .catch((cause: unknown) => { setMessage(String(cause)) })
-                    }}>{t('connections.makePrimary')}</button>
+                    }}>{t(chosen.kind === 'smtp' ? 'connections.makePrimarySmtp' : 'connections.makePrimary')}</button>
                   )}
                 </span>
                 <button className={styles.primary} type="button" onClick={save}>{t('action.save')}</button>
               </>
             )}>
             <Field label={t('field.kind')}>
-              <select value={kind} onChange={(event) => { setKind(event.target.value === 'backup' ? 'backup' : 'imap') }}>
+              <select value={kind} onChange={(event) => {
+                const next = event.target.value === 'smtp' ? 'smtp' as const : event.target.value === 'backup' ? 'backup' as const : 'imap' as const
+                setKind(next)
+                // Follow each protocol's usual default port on a kind switch.
+                if (next === 'smtp' && (port === '993' || port === '143')) { setPort('465'); setSecure(true); setStarttls(false) }
+                if (next === 'imap' && (port === '465' || port === '587' || port === '25')) { setPort('993'); setSecure(true); setStarttls(false) }
+              }}>
                 <option value="imap">{t('connections.imap')}</option>
+                <option value="smtp">{t('connections.smtp')}</option>
                 <option value="backup">{t('connections.backup')}</option>
               </select>
             </Field>
             <Field label={t('field.name')}>
               <input type="text" value={label} onChange={(event) => { setLabel(event.target.value) }} />
             </Field>
-            {kind === 'imap'
+            {kind === 'imap' || kind === 'smtp'
               ? (
                 <>
                   <div className={styles.grid2}>
-                    <Field label={t('field.host')}><input type="text" value={host} placeholder="imap.dominio.com" onChange={(event) => { setHost(event.target.value) }} /></Field>
+                    <Field label={t('field.host')}><input type="text" value={host} placeholder={kind === 'smtp' ? 'smtp.dominio.com' : 'imap.dominio.com'} onChange={(event) => { setHost(event.target.value) }} /></Field>
                     <Field label={t('field.port')}><input type="text" value={port} onChange={(event) => { setPort(event.target.value) }} /></Field>
                   </div>
                   <div className={styles.grid2}>
@@ -1505,11 +1514,12 @@ function connectionsScreen() {
                       setSecure(mode === 'tls')
                       setStarttls(mode === 'starttls')
                       // Follow the protocol's usual port unless a custom one is set.
-                      if (port === '993' || port === '143') setPort(mode === 'tls' ? '993' : '143')
+                      if (kind === 'imap' && (port === '993' || port === '143')) setPort(mode === 'tls' ? '993' : '143')
+                      if (kind === 'smtp' && (port === '465' || port === '587' || port === '25')) setPort(mode === 'tls' ? '465' : mode === 'starttls' ? '587' : '25')
                     }}>
-                      <option value="tls">{t('connections.tlsImplicit')}</option>
-                      <option value="starttls">{t('connections.tlsStarttls')}</option>
-                      <option value="none">{t('connections.tlsNone')}</option>
+                      <option value="tls">{t(kind === 'smtp' ? 'connections.smtpTls' : 'connections.tlsImplicit')}</option>
+                      <option value="starttls">{t(kind === 'smtp' ? 'connections.smtpStarttls' : 'connections.tlsStarttls')}</option>
+                      <option value="none">{t(kind === 'smtp' ? 'connections.smtpNone' : 'connections.tlsNone')}</option>
                     </select>
                   </Field>
                 </>
@@ -1530,6 +1540,7 @@ function connectionsScreen() {
             )}
           </Inspector>
         </div>
+        <MwtBlock t={t} mwtStatus={props.mwtStatus} />
         <McpBlock t={t} mcpTokens={props.mcpTokens} mintMcpToken={props.mintMcpToken} revokeMcpToken={props.revokeMcpToken} />
         <GrantsBlock t={t} grants={props.grants} grant={props.grant} revokeGrant={props.revokeGrant} />
         <BackupsBlock
@@ -1606,6 +1617,52 @@ function BackupsBlock(props: {
           </Field>
         ))}
     </Inspector>
+  )
+}
+
+/** The owner's MWT.ONE access: identity, active company, and the MCP servers the assistant can call. */
+function MwtBlock(props: {
+  readonly t: ScreenProps['t']
+  readonly mwtStatus: ScreenProps['mwtStatus']
+}) {
+  const { t, mwtStatus } = props
+  const status = useLazy<FaberLoomMwtStatus | undefined>(
+    () => mwtStatus().then(result => result.ok ? { ok: true as const, value: result.value } : { ok: false as const, error: result.error }),
+    [],
+  )
+  return (
+    <Block title={t('mwt.title')} subtitle={t('mwt.intro')}>
+      {status.kind === 'loading'
+        ? <StateBlock kind="loading" title={t('state.loading')} />
+        : status.kind === 'error'
+          ? <StateBlock kind="error" title={t('state.error')} text={status.message} />
+          : status.value === undefined
+            ? <StateBlock kind="empty" title={t('mwt.noServers')} text={t('mwt.noServersText')} />
+            : (
+              <>
+                <div className={styles.grid2}>
+                  <Field label={t('mwt.identity')}><span className={styles.cellMuted}>{`${status.value.ownerId} · ${status.value.role}`}</span></Field>
+                  <Field label={t('mwt.company')}><span className={styles.cellMuted}>{status.value.companyId ?? t('mwt.companyUnset')}</span></Field>
+                </div>
+                <Field label={t('mwt.servers')}>
+                  {status.value.servers.length === 0
+                    ? <StateBlock kind="empty" title={t('mwt.noServers')} text={t('mwt.noServersText')} />
+                    : (
+                      <div className={styles.steps}>
+                        {status.value.servers.map(server => (
+                          <details key={server.name}>
+                            <summary>{`${server.name} · ${String(server.tools.length)} ${t('mwt.tools')}`}</summary>
+                            <div className={styles.toolList}>
+                              {server.tools.map(tool => <span className={styles.cellMuted} key={tool}>{tool}</span>)}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    )}
+                </Field>
+              </>
+            )}
+    </Block>
   )
 }
 
