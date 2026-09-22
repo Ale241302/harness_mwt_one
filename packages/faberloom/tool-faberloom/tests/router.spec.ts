@@ -59,10 +59,11 @@ afterEach(() => {
 interface CapturedTool {
   readonly name: string
   readonly execute: (args: never) => Promise<never>
+  readonly output: { render: (args: never, value: never) => readonly { type: string; text?: string }[] }
 }
 
 /** Boot the product tools over a stub tool registry and capture the definitions. */
-function harness(config: Config): Map<string, CapturedTool> {
+function harness(config: Config, services: Record<string, unknown> = {}): Map<string, CapturedTool> {
   const registered = new Map<string, CapturedTool>()
   const ctx = {
     tools: {
@@ -71,7 +72,7 @@ function harness(config: Config): Map<string, CapturedTool> {
         return () => {}
       },
     },
-    get: () => undefined,
+    get: (name: string) => services[name],
   }
   apply(ctx as never, config)
   return registered
@@ -148,5 +149,39 @@ describe('faberloom multi-company router', () => {
     const find = tools.get('faberloom_mwt_find')
     const result = await find!.execute({ tool: 'otra_tool' } as never) as unknown as { foundIn: string }
     expect(result.foundIn).toBe('')
+  })
+
+  it('renders the routed payload, not a summary that hides it', async () => {
+    const calls: MwtCall[] = []
+    const fake = await fakeMwt(calls)
+    servers.push(fake.server)
+    const tools = harness({ ...CONFIG, mcpUrl: fake.url })
+
+    const call = tools.get('faberloom_mwt_call')!
+    const callResult = await call.execute({ company: 'ent2', tool: 'expediente_buscar' } as never)
+    const callText = call.output.render({} as never, callResult)[0]?.text ?? ''
+    expect(callText).toContain('EXP-1')
+
+    const find = tools.get('faberloom_mwt_find')!
+    const findResult = await find.execute({ tool: 'expediente_buscar' } as never)
+    const findText = find.output.render({} as never, findResult)[0]?.text ?? ''
+    expect(findText).toContain('ent2')
+    expect(findText).toContain('EXP-1')
+  })
+
+  it('renders the mailbox envelopes with date, from, and subject', async () => {
+    const inbound = {
+      searchMailbox: async () => [
+        { uid: 12, messageId: '<a@b>', from: 'cliente@eguisa.example', subject: 'Orden de compra 4711', date: 'Tue, 18 Sep 2026 10:00:00 +0000' },
+      ],
+    }
+    const tools = harness({ ...CONFIG, mcpUrl: 'http://127.0.0.1:1/mcp' }, { faberloomInbound: inbound })
+    const search = tools.get('faberloom_mail_search')
+    expect(search).toBeDefined()
+    const result = await search!.execute({ query: 'compra' } as never)
+    const text = search!.output.render({} as never, result)[0]?.text ?? ''
+    expect(text).toContain('cliente@eguisa.example')
+    expect(text).toContain('Orden de compra 4711')
+    expect(text).toContain('18 Sep 2026')
   })
 })

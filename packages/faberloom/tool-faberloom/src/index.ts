@@ -302,6 +302,19 @@ function hasData(data: unknown): boolean {
   return true
 }
 
+/**
+ * Render one result payload as model-visible text, truncated: the render is
+ * what the model actually reads, so a data tool whose render hides the payload
+ * makes the model conclude the tool returned nothing.
+ * @param value - the payload to render.
+ * @param max - most characters kept before the ellipsis.
+ * @returns the JSON text, truncated.
+ */
+function renderJson(value: unknown, max: number): string {
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  return text.length <= max ? text : `${text.slice(0, max)}… (${String(text.length - max)} caracteres más)`
+}
+
 /** Validate one commercial source against MWT.ONE, as the acting identity. */
 async function validateSource(facts: McpFacts, source: SpaceSource): Promise<{ valid: boolean; detail: string }> {
   if (source.kind === 'mwt-company') {
@@ -1806,7 +1819,12 @@ export function apply(ctx: Context, config: Config): void {
           },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: `Board items: ${String(value.items.length)}.` }],
+      render: (_args, value) => [{
+        type: 'text',
+        text: value.items.length === 0
+          ? 'Sin tareas en la mesa.'
+          : value.items.map(item => `${item.id} · ${item.status} · ${item.title}`).join('\n'),
+      }],
     },
     execute: async (args) => {
       const items = await board(ctx).list({
@@ -1844,7 +1862,12 @@ export function apply(ctx: Context, config: Config): void {
           },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: `Mailbox matches: ${String(value.messages.length)}.` }],
+      render: (_args, value) => [{
+        type: 'text',
+        text: value.messages.length === 0
+          ? 'Sin coincidencias en el buzón.'
+          : value.messages.map(message => `${message.date} · ${message.from} · ${message.subject}`).join('\n'),
+      }],
     },
     execute: async (args) => {
       const messages = await inbound(ctx).searchMailbox(
@@ -1951,7 +1974,7 @@ export function apply(ctx: Context, config: Config): void {
           result: { type: 'json', required: true },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: `MWT.ONE [${value.company}] answered.` }],
+      render: (_args, value) => [{ type: 'text', text: `MWT.ONE [${value.company}]:\n${renderJson(value.result, 4000)}` }],
     },
     execute: async (args) => {
       const facts = mcpFacts(config, actor(config))
@@ -1988,7 +2011,13 @@ export function apply(ctx: Context, config: Config): void {
           },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: value.foundIn.length === 0 ? 'No company returned data.' : `Data found in: ${value.foundIn}.` }],
+      render: (_args, value) => [{
+        type: 'text',
+        text: [
+          value.foundIn.length === 0 ? 'Ninguna empresa devolvió datos.' : `Datos encontrados en: ${value.foundIn}.`,
+          ...value.results.map(result => `${result.company}: ${result.found ? renderJson(result.data, 1500) : 'sin datos'}`),
+        ].join('\n'),
+      }],
     },
     execute: async (args) => {
       const facts = mcpFacts(config, actor(config))
