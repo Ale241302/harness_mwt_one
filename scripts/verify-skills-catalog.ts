@@ -55,7 +55,7 @@ export function checkSkillsCatalog(catalog: string): CatalogViolation[] {
       }
       let data: unknown
       try {
-        data = load(match[2])
+        data = load(match[2] ?? '')
       } catch (error) {
         fail(file, `frontmatter YAML inválido: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`)
         continue
