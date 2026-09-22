@@ -66,6 +66,14 @@ powershell -ExecutionPolicy Bypass -File scripts/push-to-vps.ps1 -Deploy
 
 No sube `.env` ni `node_modules`; el `.env` del VPS se conserva.
 
+El build del fork NO se hace dentro de la imagen: `deploy-vps.sh` sincroniza el
+árbol persistente `/opt/harness-build/tree` (rsync con exclusiones), lo construye
+dentro del builder `mwt-one-harness/builder` (imagen toolchain que se crea una
+vez) y la imagen final solo empaqueta `vendor/deepseek-harness-built.tgz`. Así
+`pnpm install` solo toca dependencias nuevas, `tsc -b` emite incremental con el
+tsbuildinfo del árbol, y un despliegue caliente tarda minutos en vez de la media
+hora del build frío. Para forzar un build total: `rm -rf /opt/harness-build/tree`.
+
 ## Puesta en marcha desde cero
 
 ```bash
