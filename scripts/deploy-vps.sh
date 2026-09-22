@@ -10,6 +10,10 @@
 # =====================================================================
 set -euo pipefail
 
+# BuildKit: activa los cache mounts del Dockerfile (store de pnpm y espejo de
+# tsbuildinfo), que son lo que hace rápido el rebuild entre despliegues.
+export DOCKER_BUILDKIT=1
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 

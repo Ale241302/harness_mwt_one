@@ -37,8 +37,16 @@ RUN git init -q \
  && git -c user.email=build@local -c user.name=build commit -qm "faberloom fork ${DSH_FORK_SHA}" \
  && printf '%s' "$DSH_FORK_SHA" > /src/deepseek-harness/.fork-sha \
  && git rev-parse HEAD
-RUN pnpm install --frozen-lockfile
-RUN pnpm run build
+# BuildKit cache mounts (persist across deploys on the VPS): the pnpm store
+# keeps the ~1.5k package downloads, and the tsbuildinfo mirror lets `tsc -b`
+# emit incrementally instead of recompiling the monorepo from zero each push.
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/src/tsbuild-cache \
+    cp -rn /src/tsbuild-cache/. /src/deepseek-harness/ 2>/dev/null || true; \
+    pnpm run build; \
+    find /src/deepseek-harness -name '*.tsbuildinfo' -type f \
+      -exec sh -c 'for f; do d="/src/tsbuild-cache/${f#/src/deepseek-harness/}"; mkdir -p "$(dirname "$d")"; cp "$f" "$d"; done' _ {} +
 
 # ── Stage 2: gateway runtime ─────────────────────────────────────────
 FROM node:22.23.2-bookworm-slim

@@ -112,10 +112,12 @@ log "== 6/6  Registrando la release en RELEASES.tsv"
 record OK "$new_dsh" "$newid" "$current" "update"
 tail -3 "$RELEASES"
 
-# Cada actualización deja capas y la imagen anterior: se limpian las cachés de
-# más de un día y las imágenes colgantes (nunca :latest, :prev ni la versionada).
+# Cada actualización deja capas y la imagen anterior: se limpian las capas
+# colgantes. La caché de build NO se vacía (-a): los cache mounts del Dockerfile
+# (store de pnpm, espejo de tsbuildinfo) son lo que hace rápido el rebuild, y un
+# prune total los destruía en cada actualización.
 log "== Limpieza de residuos de build =="
-docker builder prune -af --filter until=24h >/dev/null 2>&1 || true
+docker builder prune -f >/dev/null 2>&1 || true
 docker image prune -f >/dev/null 2>&1 || true
 df -h / | awk 'NR==2{print "   disco: " $4 " libres (" $5 " usado)"}'
 log "OK: actualización controlada completada"

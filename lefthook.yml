@@ -51,5 +51,8 @@ pre-merge-commit:
 
 pre-push:
   jobs:
+    # Incremental project build (warm tsbuildinfo): the same type check as
+    # `pnpm run typecheck` without the tsdown bundling passes, which only
+    # produce artifacts CI rebuilds anyway.
     - name: typecheck
-      run: pnpm run typecheck
+      run: node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc -b tsconfig.host.json tsconfig.client.json
