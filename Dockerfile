@@ -38,15 +38,20 @@ RUN git init -q \
  && printf '%s' "$DSH_FORK_SHA" > /src/deepseek-harness/.fork-sha \
  && git rev-parse HEAD
 # BuildKit cache mounts (persist across deploys on the VPS): the pnpm store
-# keeps the ~1.5k package downloads, and the tsbuildinfo mirror lets `tsc -b`
-# emit incrementally instead of recompiling the monorepo from zero each push.
+# keeps the ~1.5k package downloads, and the build-output mirror (lib/ +
+# tsbuildinfo, siempre juntos) lets `tsc -b` emit incrementally instead of
+# recompiling the monorepo from zero each push. Mirroring tsbuildinfo WITHOUT
+# the emitted lib/ would make tsc -b skip emit entirely and break the build.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
-RUN --mount=type=cache,target=/src/tsbuild-cache \
-    cp -rn /src/tsbuild-cache/. /src/deepseek-harness/ 2>/dev/null || true; \
+RUN --mount=type=cache,target=/src/build-cache \
+    cp -rn /src/build-cache/. /src/deepseek-harness/ 2>/dev/null || true; \
     pnpm run build; \
-    find /src/deepseek-harness -name '*.tsbuildinfo' -type f \
-      -exec sh -c 'for f; do d="/src/tsbuild-cache/${f#/src/deepseek-harness/}"; mkdir -p "$(dirname "$d")"; cp "$f" "$d"; done' _ {} +
+    cd /src/deepseek-harness \
+      && find . \( -name '*.tsbuildinfo' -o -path '*/lib/*' \) -type f \
+        -not -path '*/node_modules/*' \
+      -exec sh -c 'for f; do d="/src/build-cache/$f"; mkdir -p "$(dirname "$d")"; cp "$f" "$d"; done' _ {} +; \
+    test -f /src/deepseek-harness/apps/cli/lib/bin.js
 
 # ── Stage 2: gateway runtime ─────────────────────────────────────────
 FROM node:22.23.2-bookworm-slim
