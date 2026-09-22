@@ -49,6 +49,8 @@ kind: "package-reference"
 
 接收器从不写入邮箱。它不标记已读、不移动、也不删除邮件：owner 自己的邮件客户端保持其原有状态。
 
+`searchMailbox(ownerId, query, limit?, connectionId?)` 以最新在前的方式，在同一个邮箱上回答来自聊天的查询。它优先使用服务器的 `UID SEARCH`，当服务器拒绝 UTF-8 字符集时，回退为在最近信封中匹配 `From`/`Subject`。它与轮询器同样只读，且从不推进接收器的游标，因此搜索不会让触发器漏掉任何邮件。模型通过 `faberloom_mail_search` 工具触达它。
+
 -----
 
 <a id="model-experience"></a>

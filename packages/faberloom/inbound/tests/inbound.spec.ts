@@ -169,4 +169,34 @@ describe('FaberLoomInbound', () => {
     expect(headerValue('Subject: uno\nSubject: dos', 'subject')).toBe('uno')
     expect(headerValue('X: y', 'subject')).toBeNull()
   })
+
+  it('searches the owner mailbox from the chat, newest first, without touching the cursor', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 10, messageId: 'oc-1@eguisa.example', from: 'cliente@eguisa.example', subject: 'Orden de compra 4711' },
+      { uid: 11, messageId: 'oc-2@eguisa.example', from: 'otro@eguisa.example', subject: 'Orden de compra 4712' },
+      { uid: 12, messageId: 'aviso@example', from: 'avisos@mwt.one', subject: 'Aviso de sistema' },
+    ], log)
+    servers.push(fake.server)
+
+    const { connections, inbound } = await harness()
+    await connections.save(OWNER, { kind: 'imap', label: 'Correo', host: '127.0.0.1', port: fake.port, secure: false, username: 'u', secret: 's' })
+
+    const found = await inbound.searchMailbox(OWNER, 'compra', 10)
+    expect(found.map(message => message.uid)).toEqual([12, 11, 10])
+    expect(log.some(command => /^UID SEARCH CHARSET UTF-8 TEXT "compra"$/.test(command))).toBe(true)
+
+    // An empty query lists the newest envelopes, limited.
+    const newest = await inbound.searchMailbox(OWNER, '', 2)
+    expect(newest.map(message => message.uid)).toEqual([12, 11])
+    expect(log.some(command => /^UID SEARCH ALL$/.test(command))).toBe(true)
+
+    // Searching never advances the receiver's cursor: the poller still reads them.
+    expect((await inbound.runOnce()).read).toBe(3)
+  })
+
+  it('fails loud when the chat search has no mailbox configured', async () => {
+    const { inbound } = await harness()
+    await expect(inbound.searchMailbox(OWNER, 'compra')).rejects.toThrow('no hay un buzón IMAP configurado')
+  })
 })

@@ -1030,7 +1030,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_connections',
-      description: 'Lista las conexiones configuradas (IMAP y respaldo); nunca devuelve secretos.',
+      description: 'Lista las conexiones configuradas (IMAP, SMTP y respaldo); nunca devuelve secretos.',
       inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     },
     run: async (context, ownerId) => context.faberloomConnections.list(ownerId),
@@ -1038,20 +1038,20 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_connection_save',
-      description: 'Crea o actualiza una conexión IMAP o de respaldo.',
+      description: 'Crea o actualiza una conexión IMAP, SMTP o de respaldo.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
         required: ['kind', 'label'],
         properties: {
           id: { type: 'string' },
-          kind: { type: 'string', description: 'imap o backup.' },
+          kind: { type: 'string', description: 'imap, smtp o backup.' },
           label: { type: 'string' },
           host: { type: 'string' },
           port: { type: 'number' },
           secure: { type: 'boolean' },
-          starttls: { type: 'boolean', description: 'Sube a TLS tras el saludo (puerto 143).' },
-          primary: { type: 'boolean', description: 'Marca este buzón como el que lee el receptor de correo.' },
+          starttls: { type: 'boolean', description: 'Sube a TLS tras el saludo (puerto 143 IMAP, 587 SMTP).' },
+          primary: { type: 'boolean', description: 'Marca esta fila como la predeterminada de su tipo (buzón que lee el receptor, o servidor que envía).' },
           username: { type: 'string' },
           secret: { type: 'string' },
           destination: { type: 'string' },

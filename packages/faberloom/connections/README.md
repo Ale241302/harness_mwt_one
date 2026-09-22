@@ -1,5 +1,5 @@
 ---
-description: "Native product connections (ctx.faberloomConnections): the per-user IMAP and knowledge-backup settings the owner enters, independent of the MWT.ONE MCP; for users and maintainers of the FaberLoom Conexiones module."
+description: "Native product connections (ctx.faberloomConnections): the per-user IMAP, SMTP, and knowledge-backup settings the owner enters, independent of the MWT.ONE MCP; for users and maintainers of the FaberLoom Conexiones module."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The connections service owns the integrations the owner configures for themselves: an IMAP mailbox and a knowledge-backup destination. They are FaberLoom's own data, stored per identity through `ctx.storageDomain`, and never an MWT.ONE MCP operation. The password is stored but never returned; `probe` checks the configuration for real, logging in over IMAP or writing to the backup destination.
+The connections service owns the integrations the owner configures for themselves: an IMAP mailbox, an SMTP outgoing server, and a knowledge-backup destination. They are FaberLoom's own data, stored per identity through `ctx.storageDomain`, and never an MWT.ONE MCP operation. The password is stored but never returned; `probe` checks the configuration for real, logging in over IMAP or SMTP or writing to the backup destination. `sendMail` delivers a plain-text message through the owner's SMTP row, and one row per kind is the default: the `primary` flag of an SMTP row never clears the primary IMAP mailbox.
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ Independent of live requests: the service never touches a request prefix.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **The password is stored in the product domain.** There is no field-level encryption yet; at-rest protection relies on the host volume and on the encrypted backups. A managed secret store is deferred.
-- **Only IMAP and backup destinations.** Mailbox synchronisation, calendar, and other providers are out until their modules land.
+- **Plain-text mail only.** `sendMail` sends a UTF-8 text body with no attachments and no HTML; multipart messages are deferred until a composing module needs them. `AUTH LOGIN` is the only authentication mechanism; OAuth providers are out.
 - **Remote backup destinations are not probed here.** `probe` reports that an rclone destination is checked by the backup flow instead.
 
 <a id="dev-note"></a>
@@ -59,6 +59,8 @@ Independent of live requests: the service never touches a request prefix.
 <summary>Working context for maintainers — click to expand</summary>
 
 The IMAP probe speaks the protocol directly over `node:tls`/`node:net` because the host has no IMAP client; it reads the greeting, sends `LOGIN`, and settles on the tagged reply, always destroying the socket.
+
+The SMTP side (`src/smtp.ts`) follows the same no-dependency policy: `EHLO`, optional `STARTTLS`, `AUTH LOGIN`, then `MAIL FROM`/`RCPT TO`/`DATA` for a send, with dot-stuffing and a generated `Message-ID`. Non-ASCII headers are RFC 2047 base64-encoded and the body is sent base64 so any relay preserves UTF-8.
 
 </details>
 

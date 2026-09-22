@@ -1,5 +1,5 @@
 ---
-description: "原生产品连接（ctx.faberloomConnections）：由 owner 输入的每用户 IMAP 与知识备份设置，独立于 MWT.ONE MCP；面向 FaberLoom Conexiones 模块的用户与维护者。"
+description: "原生产品连接（ctx.faberloomConnections）：由 owner 输入的每用户 IMAP、SMTP 与知识备份设置，独立于 MWT.ONE MCP；面向 FaberLoom Conexiones 模块的用户与维护者。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-连接服务拥有 owner 为自己配置的集成：一个 IMAP 邮箱与一个知识备份目标。它们是 FaberLoom 自己的数据，通过 `ctx.storageDomain` 按身份存储，从不是 MWT.ONE MCP 操作。密码会被保存但绝不返回；`probe` 会真正检查配置——登录 IMAP 或写入备份目标。
+连接服务拥有 owner 为自己配置的集成：一个 IMAP 邮箱、一个 SMTP 发件服务器与一个知识备份目标。它们是 FaberLoom 自己的数据，通过 `ctx.storageDomain` 按身份存储，从不是 MWT.ONE MCP 操作。密码会被保存但绝不返回；`probe` 会真正检查配置——登录 IMAP 或 SMTP，或写入备份目标。`sendMail` 通过 owner 的 SMTP 行投递纯文本邮件，且每种类型各有一个默认行：SMTP 行的 `primary` 标志从不清除主要 IMAP 邮箱。
 
 ## 目录
 
@@ -48,7 +48,7 @@ kind: "package-reference"
 ## 已知限制与延期工作
 
 - **密码存储在产品域中。** 目前没有字段级加密；静态保护依赖宿主卷与加密备份。托管密钥库延期。
-- **仅限 IMAP 与备份目标。** 邮箱同步、日历与其他提供方在其模块落地前不在此列。
+- **仅纯文本邮件。** `sendMail` 发送 UTF-8 纯文本正文，无附件、无 HTML；multipart 邮件在合成模块需要时再实现。`AUTH LOGIN` 是唯一的认证机制；OAuth 提供方不在此列。
 - **远程备份目标不在此处探测。** `probe` 会说明 rclone 目标由备份流程检查。
 
 <a id="dev-note"></a>
@@ -58,6 +58,8 @@ kind: "package-reference"
 <summary>维护者工作上下文 — 点击展开</summary>
 
 IMAP 探测直接通过 `node:tls`/`node:net` 说协议，因为宿主没有 IMAP 客户端；它读取问候语、发送 `LOGIN`，在带标记的回复上结束，并始终销毁套接字。
+
+SMTP 一侧（`src/smtp.ts`）遵循同样的零依赖策略：`EHLO`、可选 `STARTTLS`、`AUTH LOGIN`，随后是发送时的 `MAIL FROM`/`RCPT TO`/`DATA`，带 dot-stuffing 与生成的 `Message-ID`。非 ASCII 头部按 RFC 2047 base64 编码，正文以 base64 发送，确保任何中继保留 UTF-8。
 
 </details>
 

@@ -49,6 +49,8 @@ Idempotency belongs to the engine, not the poller: the event key is the message'
 
 The receiver never writes to the mailbox. It does not mark messages read, move them, or delete them: the owner's own mail client keeps whatever state it had.
 
+`searchMailbox(ownerId, query, limit?, connectionId?)` answers a chat query against the same mailbox, newest first. It prefers the server's `UID SEARCH` and falls back to matching `From`/`Subject` over the most recent envelopes when the server refuses a UTF-8 charset. It is as read-only as the poller and never advances the receiver's cursor, so searching never hides mail from the triggers. The model reaches it through the `faberloom_mail_search` tool.
+
 -----
 
 <a id="model-experience"></a>

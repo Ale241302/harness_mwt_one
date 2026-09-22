@@ -52,6 +52,7 @@
     "@deepseek-ai/dsh-faberloom-backup": "workspace:^",
     "@deepseek-ai/dsh-faberloom-learning": "workspace:^",
     "@deepseek-ai/dsh-faberloom-mcp-server": "workspace:^",
+    "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^"
   },
   "devDependencies": {
@@ -65,6 +66,7 @@
     "@deepseek-ai/dsh-faberloom-mcp-server": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
+    "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "zod": "^4.4.3"
   }

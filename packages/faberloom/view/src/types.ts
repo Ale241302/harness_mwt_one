@@ -236,6 +236,26 @@ export interface FaberLoomMcpTokenRow {
   readonly scopes: readonly string[] | null
 }
 
+/** One external MCP server the harness is connected to as a client. */
+export interface FaberLoomMcpClientStatus {
+  /** Server name from the deployment (e.g. `mwt`). */
+  readonly name: string
+  /** Tool names this server published, sorted. */
+  readonly tools: readonly string[]
+}
+
+/** The owner's MWT.ONE access as the Connections panel presents it. */
+export interface FaberLoomMwtStatus {
+  /** The authenticated identity. */
+  readonly ownerId: string
+  /** The console role. */
+  readonly role: string
+  /** The active company id, or null when the user has none or several. */
+  readonly companyId: string | null
+  /** External MCP servers connected for this identity, with their tools. */
+  readonly servers: readonly FaberLoomMcpClientStatus[]
+}
+
 /** One versioned teaching as the panels read it. */
 export interface FaberLoomTeachingRow {
   /** Stable teaching id shared by every version. */

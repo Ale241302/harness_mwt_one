@@ -33,6 +33,8 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-inbound": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^"
@@ -41,6 +43,8 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-inbound": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^"

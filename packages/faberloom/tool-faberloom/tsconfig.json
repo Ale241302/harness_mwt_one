@@ -27,6 +27,12 @@
       "path": "../board"
     },
     {
+      "path": "../connections"
+    },
+    {
+      "path": "../inbound"
+    },
+    {
       "path": "../routines"
     }
   ]

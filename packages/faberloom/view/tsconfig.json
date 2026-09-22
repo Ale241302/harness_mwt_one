@@ -15,6 +15,9 @@
       "path": "../../typert/protocol"
     },
     {
+      "path": "../../core/tools"
+    },
+    {
       "path": "../spaces"
     },
     {

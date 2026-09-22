@@ -10,7 +10,7 @@ import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 /** Durable connection record: one integration the owner configured. */
 export const connectionRecord = z.object({
   ownerId: z.string(),
-  kind: z.enum(['imap', 'backup']),
+  kind: z.enum(['imap', 'smtp', 'backup']),
   label: z.string(),
   host: z.string().nullable(),
   port: z.number().nullable(),

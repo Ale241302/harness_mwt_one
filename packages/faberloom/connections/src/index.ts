@@ -1,9 +1,10 @@
 /**
- * Native product connections (`ctx.faberloomConnections`): the per-user IMAP and
- * knowledge-backup settings the owner enters. They are FaberLoom's own data and
- * never an MWT.ONE MCP operation: each identity keeps its own rows, the password
- * is stored but never returned, and `probe` checks the configuration for real
- * (an IMAP login, or a writable backup destination).
+ * Native product connections (`ctx.faberloomConnections`): the per-user IMAP,
+ * SMTP, and knowledge-backup settings the owner enters. They are FaberLoom's
+ * own data and never an MWT.ONE MCP operation: each identity keeps its own
+ * rows, the password is stored but never returned, and `probe` checks the
+ * configuration for real (an IMAP or SMTP login, or a writable backup
+ * destination). `sendMail` delivers a message through the owner's SMTP row.
  * @module @deepseek-ai/dsh-faberloom-connections
  */
 
@@ -15,7 +16,8 @@ import { connect as connectTls } from 'node:tls'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { connectionsDomainSpec, type ConnectionRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
-import type { ConnectionInput, ConnectionProbe, FaberLoomConnection, ImapCredentials } from './types.ts'
+import { probeSmtp, sendSmtp } from './smtp.ts'
+import type { ConnectionInput, ConnectionProbe, FaberLoomConnection, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
 
@@ -209,11 +211,12 @@ export class FaberLoomConnections extends Service {
       updatedAt: now,
     }
     await table.put(id, record)
-    // Only one mailbox feeds the inbound receiver: making this one primary
-    // clears the flag on the owner's other rows.
+    // Only one row per kind is the default: one mailbox feeds the inbound
+    // receiver and one SMTP server carries outbound mail, so making this row
+    // primary clears the flag only on the owner's rows of the same kind.
     if (record.primary === true) {
       for (const [otherId, other] of table.entries()) {
-        if (otherId === id || other.ownerId !== ownerId || other.primary !== true) continue
+        if (otherId === id || other.ownerId !== ownerId || other.kind !== record.kind || other.primary !== true) continue
         await table.update(otherId, current => ({ ...current, primary: false, updatedAt: now }))
       }
     }
@@ -234,7 +237,7 @@ export class FaberLoomConnections extends Service {
   }
 
   /**
-   * Check one connection for real: an IMAP login, or a writable backup destination.
+   * Check one connection for real: an IMAP or SMTP login, or a writable backup destination.
    * @param ownerId - the owning identity.
    * @param id - connection id.
    * @returns the probe outcome.
@@ -255,8 +258,63 @@ export class FaberLoomConnections extends Service {
         password: record.secret,
       })
     }
+    if (record.kind === 'smtp') {
+      const credentials = await this.smtp(ownerId, id)
+      if (credentials === undefined) return { ok: false, detail: 'faltan host, puerto, usuario o contraseña' }
+      return await probeSmtp(credentials)
+    }
     if (record.destination === null) return { ok: false, detail: 'falta el destino del respaldo' }
     return await probeBackup(record.destination)
+  }
+
+  /**
+   * Read one of the owner's outgoing-server credentials.
+   *
+   * Like {@link imap}, this accessor returns a stored secret and exists for
+   * host-side consumers that send mail as the owner; the browser never sees it.
+   * @param ownerId - the owning identity.
+   * @param id - a specific connection, or undefined for the primary SMTP row
+   *   (the owner's flagged one, otherwise the first complete row).
+   * @returns the credentials, or undefined when the owner has no usable server.
+   */
+  async smtp(ownerId: string, id?: string): Promise<SmtpCredentials | undefined> {
+    const rows: { readonly credentials: SmtpCredentials; readonly primary: boolean }[] = []
+    for (const [key, record] of (await this.table()).entries()) {
+      if (record.ownerId !== ownerId || record.kind !== 'smtp') continue
+      if (id !== undefined && key !== id) continue
+      if (record.host === null || record.port === null || record.username === null || record.secret === null) continue
+      rows.push({
+        credentials: {
+          id: key,
+          label: record.label,
+          host: record.host,
+          port: record.port,
+          secure: record.secure === true,
+          starttls: record.starttls === true,
+          username: record.username,
+          password: record.secret,
+        },
+        primary: record.primary === true,
+      })
+    }
+    const chosen = rows.find(row => row.primary) ?? rows.at(0)
+    return chosen?.credentials
+  }
+
+  /**
+   * Deliver one message through the owner's outgoing server.
+   * @param ownerId - the owning identity.
+   * @param mail - the message to send.
+   * @param connectionId - a specific SMTP connection, or undefined for the
+   *   primary (or first complete) one.
+   * @returns the generated `Message-ID` and the accepted recipients.
+   */
+  async sendMail(ownerId: string, mail: OutgoingMail, connectionId?: string): Promise<SentMail> {
+    if (mail.to.length === 0) throw new Error('faberloom: el mensaje no tiene destinatarios')
+    const credentials = await this.smtp(ownerId, connectionId)
+    if (credentials === undefined) throw new Error('faberloom: no hay un servidor SMTP configurado; añádelo en Conexiones')
+    const sent = await sendSmtp(credentials, mail)
+    return { messageId: sent.messageId, accepted: sent.accepted, via: credentials.label }
   }
   /**
    * Read one of the owner's mailbox credentials.

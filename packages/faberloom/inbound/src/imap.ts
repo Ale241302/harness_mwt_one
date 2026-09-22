@@ -232,6 +232,76 @@ function quote(value: string): string {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 }
 
+/** How to search one mailbox from the chat. */
+export interface ImapSearchOptions {
+  /** Server host. */
+  readonly host: string
+  /** Server port. */
+  readonly port: number
+  /** Whether the connection starts TLS immediately (implicit TLS). */
+  readonly secure: boolean
+  /** Whether the connection upgrades with STARTTLS after the greeting. */
+  readonly starttls?: boolean
+  /** Account name. */
+  readonly user: string
+  /** Account password; never logged. */
+  readonly password: string
+  /** Mailbox to read. */
+  readonly mailbox: string
+  /** Text to look for in the whole message; empty returns the newest envelopes. */
+  readonly query: string
+  /** Most envelopes one search returns, newest first. */
+  readonly maxMessages: number
+  /** How many recent messages the client-side fallback scans. */
+  readonly scanMessages: number
+  /** Milliseconds before the connection is abandoned. */
+  readonly timeoutMs: number
+}
+
+/**
+ * Search one mailbox's envelopes, newest first, without mutating anything.
+ *
+ * The primary path is the server's own `UID SEARCH`; servers that refuse a
+ * UTF-8 charset fall back to scanning the most recent envelopes and matching
+ * `From`/`Subject` here, which is what a chat query needs. Like
+ * {@link fetchMessages}, this never marks, moves, or deletes mail.
+ * @param options - connection settings and the query.
+ * @returns the matching envelopes, newest first, at most `maxMessages`.
+ */
+export async function searchMessages(options: ImapSearchOptions): Promise<ImapMessage[]> {
+  const session = await ImapSession.open({ ...options, since: null })
+  try {
+    await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
+    await session.command(`SELECT ${quote(options.mailbox)}`)
+    let uids: number[]
+    let filterLocally = false
+    if (options.query.length === 0) {
+      uids = uidsOf((await session.command('UID SEARCH ALL')).lines)
+    } else {
+      try {
+        uids = uidsOf((await session.command(`UID SEARCH CHARSET UTF-8 TEXT ${quote(options.query)}`)).lines)
+      } catch {
+        uids = uidsOf((await session.command('UID SEARCH ALL')).lines)
+        filterLocally = true
+      }
+    }
+    const budget = filterLocally ? options.scanMessages : options.maxMessages
+    const chosen = uids.slice(-budget)
+    if (chosen.length === 0) return []
+    const fetch = await session.command(`UID FETCH ${chosen.join(',')} (UID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
+    let messages = messagesOf(fetch.lines)
+    if (filterLocally) {
+      const needle = options.query.toLowerCase()
+      messages = messages.filter(message =>
+        (message.subject ?? '').toLowerCase().includes(needle) || (message.from ?? '').toLowerCase().includes(needle))
+    }
+    return messages.sort((left, right) => right.uid - left.uid).slice(0, options.maxMessages)
+  } finally {
+    try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
+    session.close()
+  }
+}
+
 /**
  * Read the UID list out of a `SEARCH` response.
  * @param lines - the server's response lines.
@@ -278,7 +348,7 @@ function headerBlock(chunk: string): string {
   const literal = /\{(\d+)\}\r?\n/.exec(chunk)
   if (literal !== null) {
     const size = Number(literal[1])
-    const start = (literal.index ?? 0) + literal[0].length
+    const start = literal.index + literal[0].length
     return chunk.slice(start, start + size)
   }
   const inline = /"([\s\S]*)"/.exec(chunk)

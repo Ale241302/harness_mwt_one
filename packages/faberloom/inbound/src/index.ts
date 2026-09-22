@@ -20,7 +20,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
-import { fetchMessages, type ImapMessage } from './imap.ts'
+import { fetchMessages, searchMessages, type ImapMessage } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
 export type { ImapMessage } from './imap.ts'
@@ -178,6 +178,38 @@ export class FaberLoomInbound extends Service {
       await table.put(credentials.id, { ownerId, connectionId: credentials.id, lastUid: highest, updatedAt: now.toISOString() })
     }
     return { skipped: null, mailbox: credentials.label, read: messages.length, started, error: null }
+  }
+
+  /**
+   * Search the owner's mailbox envelopes from the chat, newest first.
+   *
+   * Read-only like the poller: it neither advances the receiver's cursor nor
+   * touches the mailbox flags, so searching never hides mail from the triggers.
+   * @param ownerId - the owning identity.
+   * @param query - text to look for; empty returns the newest envelopes.
+   * @param limit - most envelopes returned.
+   * @param connectionId - a specific IMAP connection, or undefined for the
+   *   primary mailbox.
+   * @returns the matching envelopes.
+   */
+  async searchMailbox(ownerId: string, query: string, limit = 10, connectionId?: string): Promise<readonly ImapMessage[]> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
+    const credentials = await connections.imap(ownerId, connectionId)
+    if (credentials === undefined) throw new Error('faberloom: no hay un buzón IMAP configurado; añádelo en Conexiones')
+    return await searchMessages({
+      host: credentials.host,
+      port: credentials.port,
+      secure: credentials.secure,
+      starttls: credentials.starttls,
+      user: credentials.username,
+      password: credentials.password,
+      mailbox: this.config.mailbox ?? 'INBOX',
+      query,
+      maxMessages: Math.max(1, Math.min(limit, 50)),
+      scanMessages: 200,
+      timeoutMs: this.config.timeoutMs ?? 15_000,
+    })
   }
 
   private domain(): Promise<Domain<typeof inboundDomainSpec>> {

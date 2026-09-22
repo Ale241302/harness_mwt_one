@@ -15,6 +15,9 @@ import type { FaberLoomAgentId, FaberLoomAgents, FaberLoomModelId, PolicyPatch }
 // Type-only: the board service and its vocabulary, read through ctx.get.
 import type { BoardStatus, FaberLoomBoard, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
+// Type-only: the mail services (outgoing through connections, incoming search through inbound).
+import type { FaberLoomConnections } from '@deepseek-ai/dsh-faberloom-connections'
+import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
 // Type-only: the routines service and its vocabulary, also read through ctx.get.
 import type {
   ExecutionStatus,
@@ -75,6 +78,20 @@ function routines(ctx: Context): FaberLoomRoutines {
 function agents(ctx: Context): FaberLoomAgents {
   const service = ctx.get('faberloomAgents')
   if (service === undefined) throw new Error('faberloom: the agents service is not mounted')
+  return service
+}
+
+/** Resolve the mounted connections service at call time, or fail loud. */
+function connections(ctx: Context): FaberLoomConnections {
+  const service = ctx.get('faberloomConnections')
+  if (service === undefined) throw new Error('faberloom: the connections service is not mounted')
+  return service
+}
+
+/** Resolve the mounted inbound receiver at call time, or fail loud. */
+function inbound(ctx: Context): FaberLoomInbound {
+  const service = ctx.get('faberloomInbound')
+  if (service === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
   return service
 }
 
@@ -1754,5 +1771,90 @@ export function apply(ctx: Context, config: Config): void {
       return { items: items.map(item => ({ id: item.id, title: item.title, status: item.status })) }
     },
     presentCall: args => ({ card: 'generic', title: 'List board items', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_mail_search',
+    description: 'Search the owner mailbox (the IMAP connection configured in Conexiones) and return matching message envelopes: from, subject, and date. Read-only: it never marks, moves, or deletes mail. Use it when the user asks to review or find mail.',
+    parameters: {
+      query: { type: 'string', required: true, description: 'Text to look for in the messages; empty lists the newest mail.' },
+      limit: { type: 'integer', description: 'Most envelopes returned (default 10, maximum 50).' },
+      connectionId: { type: 'string', description: 'A specific IMAP connection id; the primary mailbox otherwise.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          messages: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                uid: { type: 'integer', required: true },
+                from: { type: 'string', required: true },
+                subject: { type: 'string', required: true },
+                date: { type: 'string', required: true },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Mailbox matches: ${String(value.messages.length)}.` }],
+    },
+    execute: async (args) => {
+      const messages = await inbound(ctx).searchMailbox(
+        actor(config).id,
+        args.query,
+        typeof args.limit === 'number' ? args.limit : 10,
+        args.connectionId,
+      )
+      return {
+        messages: messages.map(message => ({
+          uid: message.uid,
+          from: message.from ?? '',
+          subject: message.subject ?? '',
+          date: message.date ?? '',
+        })),
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Search mailbox', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_mail_send',
+    description: 'Send a plain-text email through the owner SMTP connection (configured in Conexiones), as the owner. This is an external effect: it requires the mail.send grant, and the message leaves the system once accepted.',
+    parameters: {
+      to: { type: 'array', required: true, description: 'Recipient addresses, at least one.', items: { type: 'string' } },
+      subject: { type: 'string', required: true, description: 'Subject line.' },
+      text: { type: 'string', required: true, description: 'Plain-text body.' },
+      from: { type: 'string', description: 'Sender address; the connection account otherwise.' },
+      connectionId: { type: 'string', description: 'A specific SMTP connection id; the primary one otherwise.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          messageId: { type: 'string', required: true },
+          accepted: { type: 'array', required: true, items: { type: 'string' } },
+          via: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Sent ${value.messageId} to ${value.accepted.join(', ')} via ${value.via}.` }],
+    },
+    execute: async (args) => {
+      await authorize(ctx, config, 'mail.send')
+      const sent = await connections(ctx).sendMail(
+        actor(config).id,
+        {
+          to: args.to,
+          subject: args.subject,
+          text: args.text,
+          ...args.from === undefined ? {} : { from: args.from },
+        },
+        args.connectionId,
+      )
+      return { messageId: sent.messageId, accepted: [...sent.accepted], via: sent.via }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Send mail', kind: 'other', rawInput: args }),
   }))
 }

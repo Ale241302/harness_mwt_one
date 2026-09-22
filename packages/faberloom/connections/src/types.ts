@@ -1,7 +1,7 @@
 /** Consumer-facing types of the product connections service. */
 
 /** Which integration a connection configures. */
-export type ConnectionKind = 'imap' | 'backup'
+export type ConnectionKind = 'imap' | 'smtp' | 'backup'
 
 /** One connection as consumers read it; the secret is never returned. */
 export interface FaberLoomConnection {
@@ -11,17 +11,17 @@ export interface FaberLoomConnection {
   readonly kind: ConnectionKind
   /** Display label. */
   readonly label: string
-  /** IMAP host. */
+  /** Server host (IMAP or SMTP). */
   readonly host: string | null
-  /** IMAP port. */
+  /** Server port. */
   readonly port: number | null
-  /** Whether IMAP uses implicit TLS. */
+  /** Whether the connection uses implicit TLS. */
   readonly secure: boolean | null
-  /** Whether IMAP upgrades a plaintext connection with STARTTLS. */
+  /** Whether the connection upgrades a plaintext connection with STARTTLS. */
   readonly starttls: boolean
-  /** Whether this is the mailbox the inbound receiver reads. */
+  /** Whether this is the default row of its kind (the mailbox the inbound receiver reads, or the server outbound mail uses). */
   readonly primary: boolean
-  /** IMAP username. */
+  /** Account name. */
   readonly username: string | null
   /** Whether a password is stored for this connection. */
   readonly hasSecret: boolean
@@ -43,19 +43,19 @@ export interface ConnectionInput {
   readonly kind: ConnectionKind
   /** Display label. */
   readonly label: string
-  /** IMAP host. */
+  /** Server host (IMAP or SMTP). */
   readonly host?: string | null
-  /** IMAP port. */
+  /** Server port. */
   readonly port?: number | null
-  /** Whether IMAP uses implicit TLS. */
+  /** Whether the connection uses implicit TLS. */
   readonly secure?: boolean | null
-  /** Whether IMAP upgrades a plaintext connection with STARTTLS. */
+  /** Whether the connection upgrades a plaintext connection with STARTTLS. */
   readonly starttls?: boolean | null
-  /** Make this the mailbox the inbound receiver reads. */
+  /** Make this the default row of its kind. */
   readonly primary?: boolean
-  /** IMAP username. */
+  /** Account name. */
   readonly username?: string | null
-  /** IMAP password; omit to keep the stored one. */
+  /** Account password; omit to keep the stored one. */
   readonly secret?: string | null
   /** Backup destination. */
   readonly destination?: string | null
@@ -77,9 +77,9 @@ export interface ImapCredentials {
   readonly id: string
   /** Display label the owner gave the connection. */
   readonly label: string
-  /** IMAP host. */
+  /** Server host (IMAP or SMTP). */
   readonly host: string
-  /** IMAP port. */
+  /** Server port. */
   readonly port: number
   /** Whether the connection starts TLS immediately. */
   readonly secure: boolean
@@ -89,4 +89,46 @@ export interface ImapCredentials {
   readonly username: string
   /** Account password. */
   readonly password: string
+}
+
+/** One connection's outgoing-server credentials, for a host-side consumer that sends. */
+export interface SmtpCredentials {
+  /** Connection id the credentials belong to. */
+  readonly id: string
+  /** Display label the owner gave the connection. */
+  readonly label: string
+  /** SMTP host. */
+  readonly host: string
+  /** SMTP port. */
+  readonly port: number
+  /** Whether the connection starts TLS immediately (465). */
+  readonly secure: boolean
+  /** Whether the connection upgrades with STARTTLS after the greeting (587). */
+  readonly starttls: boolean
+  /** Account name; also the default envelope sender. */
+  readonly username: string
+  /** Account password. */
+  readonly password: string
+}
+
+/** One outgoing message the owner asked to send. */
+export interface OutgoingMail {
+  /** Envelope and `From` sender; defaults to the connection's username. */
+  readonly from?: string
+  /** Recipients, at least one. */
+  readonly to: readonly string[]
+  /** `Subject` header; UTF-8 is encoded per RFC 2047. */
+  readonly subject: string
+  /** Plain-text body; sent as base64 so UTF-8 survives any relay. */
+  readonly text: string
+}
+
+/** What a successful send reports. */
+export interface SentMail {
+  /** `Message-ID` the send generated. */
+  readonly messageId: string
+  /** Recipients the server accepted. */
+  readonly accepted: readonly string[]
+  /** Connection label that carried the message. */
+  readonly via: string
 }

@@ -10,6 +10,8 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+// Type-only: pulls the ctx.tools merge so `ctx.get('tools')` is typed.
+import type {} from '@deepseek-ai/dsh-tools'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
@@ -34,7 +36,7 @@ import type {
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
-  FaberLoomWorkProposal, FaberLoomLinkPreview,
+  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -767,6 +769,38 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revoke teachings')
     await this.ctx.faberloomMemory.revokeTeaching(this.actor().id, id as FaberLoomTeachingId)
     return await this.teachings()
+  }
+
+  /**
+   * Report the owner's MWT.ONE access: identity, active company, and the
+   * external MCP servers the harness is connected to as a client, with the
+   * tool names each one published (grouped from the `mcp__<server>__<tool>`
+   * registrations). An empty server list means the deployment mounted no MCP
+   * client for this identity.
+   * @returns the status the Connections panel renders.
+   */
+  @Remote('mwtStatus')
+  mwtStatus(): FaberLoomMwtStatus {
+    const actor = this.actor()
+    const tools = this.ctx.get('tools')
+    const byServer = new Map<string, string[]>()
+    if (tools !== undefined) {
+      for (const schema of tools.schemas()) {
+        const match = /^mcp__([A-Za-z0-9_-]{1,32})__(.+)$/.exec(schema.name)
+        if (match === null || match[1] === undefined || match[2] === undefined) continue
+        const names = byServer.get(match[1]) ?? []
+        names.push(match[2])
+        byServer.set(match[1], names)
+      }
+    }
+    return {
+      ownerId: actor.id,
+      role: actor.role,
+      companyId: actor.companyId ?? null,
+      servers: [...byServer.entries()]
+        .map(([name, names]) => ({ name, tools: names.sort() }))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    }
   }
 
   /**
