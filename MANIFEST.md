@@ -1,8 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
 **Tag de despliegue:** `deploy-2026-09-15` (commit `e2a61d4`, incluye E7-bis memoria Tencent + E8 respaldo)
-**Imagen desplegada actual:** build de `main` @ `6a52ad124eed12911f99827a8d46156ac8fdcc10` (chat: `@`→agentes y `/routine`; catálogo de skills reparado y visible en `/`; build con caché BuildKit y push incremental).
-**Verificado en el VPS:** 22 de septiembre de 2026 (11:49 UTC).
+**Imagen desplegada actual:** build de `main` @ `1966e51929430e21de5c2c4d0360ad0bee6f3c9b` (multi-empresa: companyIds propagadas y enrutador de tenant `faberloom_companies`/`mwt_call`/`mwt_find`; build-output espejado con tsbuildinfo en la caché del VPS).
+**Verificado en el VPS:** 22 de septiembre de 2026 (13:15 UTC).
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:fa1966c67abf…` (`main` @ `6a52ad124e`, build del 22 sep 11:49 UTC) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:1c5f18eab2af…` (`main` @ `1966e51929`, build del 22 sep 13:15 UTC) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
