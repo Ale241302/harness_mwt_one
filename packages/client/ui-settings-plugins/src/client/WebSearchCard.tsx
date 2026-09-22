@@ -46,6 +46,8 @@ export function WebSearchCard(props: WebSearchCardProps) {
         text={state.apiKey.text}
         configured={state.apiKeyConfigured}
         stateLabel={state.apiKeyConfigured ? t('webSearchApiKeySet') : t('webSearchApiKeyUnset')}
+        showLabel={t('showSecret')}
+        hideLabel={t('hideSecret')}
         onEdit={(text) => { props.edit('apiKey', text) }}
       />
       <ValueField

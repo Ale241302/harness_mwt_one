@@ -22,6 +22,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReactNode } from 'react'
 import type {
   CredentialInfo, SettingsNamespaceView, SettingsPathOpView,
@@ -361,9 +362,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       <>
         <div className={styles['field']}>
           <span className={styles['fieldLabel']}>{t('keyInput')}</span>
-          <input
-            className={styles['input']}
-            type="password"
+          <SecretInput
+            inputClassName={styles['input']}
             autoComplete="off"
             value={keyDraft}
             placeholder={keyPlaceholder}
@@ -372,6 +372,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             required={props.credentialRequired === true}
             autoFocus={props.autoFocusCredential === true}
             disabled={disabled || keyLocked}
+            showLabel={t('showSecret')}
+            hideLabel={t('hideSecret')}
             onChange={(event) => { setKeyDraft(event.target.value) }}
           />
           {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}

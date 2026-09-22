@@ -88,7 +88,30 @@ describe('SecretField', () => {
     label: 'API key',
     hint: 'Stored outside the settings file.',
     disabled: false,
+    showLabel: 'Show the value',
+    hideLabel: 'Hide the value',
   }
+
+  it('reveals and hides the staged value from the toggle', () => {
+    render(
+      <SecretField
+        {...secret}
+        text="ds-secret"
+        configured={true}
+        stateLabel="A key is configured."
+        onEdit={() => {}}
+      />,
+    )
+    const input = screen.getByLabelText('API key')
+    const toggle = screen.getByRole('button', { name: 'Show the value' })
+
+    fireEvent.click(toggle)
+
+    expect(input).toHaveProperty('type', 'text')
+    const hide = screen.getByRole('button', { name: 'Hide the value' })
+    fireEvent.click(hide)
+    expect(input).toHaveProperty('type', 'password')
+  })
 
   it('stages the draft and never renders it', () => {
     const onEdit = vi.fn()

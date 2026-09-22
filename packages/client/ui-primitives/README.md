@@ -39,6 +39,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `Button` | Clickable action; `variant` selects `primary`, `ghost`, `outline`, or `toolbar`. |
 | `Switch` | Two-state toggle, 36×20. `label` is required, so the control cannot ship unnamed. |
 | `Input` | Single-line text entry for search boxes and inline forms. |
+| `SecretInput` | Password or key entry with the reveal/hide toggle; `showLabel` and `hideLabel` names the toggle in both states. |
 | `Menu` | Dropdown of items, separators, and group labels, with nested submenus. |
 | `Pill` | Selectable capsule button for view switchers and filters; takes `active` and `onClick`. |
 | `Tag` | Read-only capsule badge; `tone` selects one of eight palettes. |

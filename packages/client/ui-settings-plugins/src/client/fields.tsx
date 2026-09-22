@@ -6,7 +6,7 @@
  * card's save is the single point where a draft becomes a document mutation.
  */
 
-import { Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { SecretInput, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './fields.module.css'
 
 /** What every field control needs regardless of its value type. */
@@ -100,6 +100,10 @@ export function SecretField(props: Pick<FieldProps, 'id' | 'label' | 'hint' | 't
   configured: boolean
   /** Copy describing the configured state. */
   stateLabel: string
+  /** Accessible name of the reveal toggle while the value is masked. */
+  showLabel: string
+  /** Accessible name of the reveal toggle while the value is visible. */
+  hideLabel: string
 }) {
   return (
     <div className={css.field}>
@@ -109,13 +113,14 @@ export function SecretField(props: Pick<FieldProps, 'id' | 'label' | 'hint' | 't
           <Tag tone={props.configured ? 'neutral' : 'quiet'}>{props.stateLabel}</Tag>
         </span>
       </div>
-      <input
+      <SecretInput
         id={props.id}
-        className={css.input}
-        type="password"
+        inputClassName={css.input}
         autoComplete="off"
         value={props.text}
         disabled={props.disabled}
+        showLabel={props.showLabel}
+        hideLabel={props.hideLabel}
         onChange={(event) => { props.onEdit(event.target.value) }}
       />
       <p className={css.hint}>{props.hint}</p>

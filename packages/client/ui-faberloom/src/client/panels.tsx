@@ -19,6 +19,7 @@ import {
   IconFolderOpenOutline16,
   IconNewChatOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomConnection, FaberLoomExecutionRow,
   FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomOverview,
@@ -1392,7 +1393,7 @@ function connectionsScreen() {
       setHost(chosen.host ?? '')
       setPort(chosen.port === null ? '993' : String(chosen.port))
       setSecure(chosen.secure !== false)
-      setStarttls(chosen.starttls === true)
+      setStarttls(chosen.starttls)
       setUsername(chosen.username ?? '')
       setSecret('')
       setDestination(chosen.destination ?? '')
@@ -1495,7 +1496,7 @@ function connectionsScreen() {
                   <div className={styles.grid2}>
                     <Field label={t('field.username')}><input type="text" value={username} onChange={(event) => { setUsername(event.target.value) }} /></Field>
                     <Field label={t('field.password')} hint={chosen?.hasSecret === true ? t('connections.secretKept') : undefined}>
-                      <input type="password" value={secret} onChange={(event) => { setSecret(event.target.value) }} />
+                      <SecretInput value={secret} showLabel={t('field.showSecret')} hideLabel={t('field.hideSecret')} onChange={(event) => { setSecret(event.target.value) }} />
                     </Field>
                   </div>
                   <Field label={t('field.tls')} hint={t('connections.securityHint')}>

@@ -22,6 +22,7 @@
  */
 
 import { useState } from 'react'
+import { SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReactNode } from 'react'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { apiKeyFailure } from './apiKey.ts'
@@ -258,14 +259,15 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       </div>
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('keyInput')}</span>
-        <input
-          className={styles['input']}
-          type="password"
+        <SecretInput
+          inputClassName={styles['input']}
           autoComplete="off"
           value={keyDraft}
           placeholder={t('keyPlaceholder')}
           aria-label={t('keyInput')}
           disabled={disabled}
+          showLabel={t('showSecret')}
+          hideLabel={t('hideSecret')}
           onChange={(event) => { setKeyDraft(event.target.value) }}
         />
         {/* A create card has no stored key to keep, so the blank case says

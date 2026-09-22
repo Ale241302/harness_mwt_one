@@ -1452,6 +1452,13 @@ function loginPage(errCode, csrf = '') {
   label{display:block;font-size:12px;color:#94A7B8;margin:14px 0 6px}
   input{width:100%;padding:11px 12px;border-radius:9px;border:1px solid #274a72;background:#0B1E3A;color:#E8EDF3;font-size:14px}
   input:focus{outline:none;border-color:#13B98A}
+  .secret{position:relative;display:block}
+  .secret input{padding-right:40px}
+  /* The card's rule styles every button; the toggle is an icon, not the submit. */
+  #secret-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:28px;height:28px;padding:0;margin:0;
+                 border:0;border-radius:8px;background:transparent;color:#94A7B8;cursor:pointer;
+                 display:inline-flex;align-items:center;justify-content:center}
+  #secret-toggle:hover{background:#16304f;color:#E8EDF3}
   button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:9px;background:#13B98A;color:#04231a;
          font-weight:700;font-size:14px;cursor:pointer}
   button:hover{background:#17c997}
@@ -1466,9 +1473,38 @@ function loginPage(errCode, csrf = '') {
     <label for="usuario">Usuario o correo</label>
     <input id="usuario" name="usuario" autocomplete="username" autofocus required>
     <label for="password">Contraseña</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <span class="secret">
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="button" id="secret-toggle" aria-label="Mostrar la contraseña" aria-pressed="false" title="Mostrar la contraseña"></button>
+    </span>
     <button type="submit">Entrar</button>
     ${msg ? `<div class="err">${msg}</div>` : ''}
   </form>
+  <script>
+    // Reveal/hide the password without leaving the form.
+    (function () {
+      var toggle = document.getElementById('secret-toggle')
+      var field = document.getElementById('password')
+      if (toggle === null || field === null) return
+      var eye = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">'
+        + '<path fill="none" stroke="currentColor" stroke-width="1.3" d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4-6.5-4-6.5-4Z"/>'
+        + '<circle cx="8" cy="8" r="1.9" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>'
+      var eyeOff = eye.replace('</svg>', '<path fill="none" stroke="currentColor" stroke-width="1.3" d="M3 13 13 3"/></svg>')
+      var setState = function (visible) {
+        var label = visible ? 'Ocultar la contraseña' : 'Mostrar la contraseña'
+        toggle.innerHTML = visible ? eyeOff : eye
+        toggle.setAttribute('aria-label', label)
+        toggle.setAttribute('title', label)
+        toggle.setAttribute('aria-pressed', visible ? 'true' : 'false')
+      }
+      setState(false)
+      toggle.addEventListener('click', function () {
+        var visible = field.type === 'password'
+        field.type = visible ? 'text' : 'password'
+        setState(visible)
+        field.focus()
+      })
+    })()
+  </script>
 </body></html>`
 }
