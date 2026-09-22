@@ -1630,26 +1630,37 @@ function MwtBlock(props: {
     () => mwtStatus().then(result => result.ok ? { ok: true as const, value: result.value } : { ok: false as const, error: result.error }),
     [],
   )
+  const value = status.kind === 'ready' ? status.value : undefined
   return (
     <Block title={t('mwt.title')} subtitle={t('mwt.intro')}>
       {status.kind === 'loading'
         ? <StateBlock kind="loading" title={t('state.loading')} />
         : status.kind === 'error'
           ? <StateBlock kind="error" title={t('state.error')} text={status.message} />
-          : status.value === undefined
+          : value === undefined
             ? <StateBlock kind="empty" title={t('mwt.noServers')} text={t('mwt.noServersText')} />
             : (
               <>
                 <div className={styles.grid2}>
-                  <Field label={t('mwt.identity')}><span className={styles.cellMuted}>{`${status.value.ownerId} · ${status.value.role}`}</span></Field>
-                  <Field label={t('mwt.company')}><span className={styles.cellMuted}>{status.value.companyId ?? t('mwt.companyUnset')}</span></Field>
+                  <Field label={t('mwt.identity')}><span className={styles.cellMuted}>{`${value.ownerId} · ${value.role}`}</span></Field>
+                  <Field label={t('mwt.company')} hint={value.companyIds.length > 1 ? t('mwt.companiesHint') : undefined}>
+                    {value.companyIds.length === 0
+                      ? <span className={styles.cellMuted}>{value.companyId ?? t('mwt.companyUnset')}</span>
+                      : (
+                        <span className={styles.chips}>
+                          {value.companyIds.map(id => (
+                            <Chip key={id} tone={value.companyId !== null && id.toLowerCase() === value.companyId.toLowerCase() ? 'accent' : 'muted'}>{id}</Chip>
+                          ))}
+                        </span>
+                      )}
+                  </Field>
                 </div>
                 <Field label={t('mwt.servers')}>
-                  {status.value.servers.length === 0
+                  {value.servers.length === 0
                     ? <StateBlock kind="empty" title={t('mwt.noServers')} text={t('mwt.noServersText')} />
                     : (
                       <div className={styles.steps}>
-                        {status.value.servers.map(server => (
+                        {value.servers.map(server => (
                           <details key={server.name}>
                             <summary>{`${server.name} · ${String(server.tools.length)} ${t('mwt.tools')}`}</summary>
                             <div className={styles.toolList}>

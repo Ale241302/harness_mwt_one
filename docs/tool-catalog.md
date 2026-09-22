@@ -30,7 +30,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-fs` | `edit`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (image-tool registration)`, `ctx.llm + an image-capable route (image-tool execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | `ctx.tools`, `ctx.subprocess`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments. |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
-| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source` | `ctx.tools`, `ctx.faberloomSpaces` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
+| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source` | `ctx.tools`, `ctx.faberloomSpaces` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
@@ -2238,6 +2238,19 @@ Submit a correction as the next revision, awaiting a fresh review.
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_companies`
+
+List the companies (legal entities) the current user belongs to, marking the active one. Query MWT.ONE with the active company first (the mcp__mwt__* tools); when data may live in another company, use faberloom_mwt_find or faberloom_mwt_call with one of these ids.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_events_ingest`
 
 Ingest one event for the current user: matching active routines start or dedupe.
@@ -2428,6 +2441,77 @@ Deliver events to waiting executions (persistent dispatcher tick).
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_mail_search`
+
+Search the owner mailbox (the IMAP connection configured in Conexiones) and return matching message envelopes: from, subject, and date. Read-only: it never marks, moves, or deletes mail. Use it when the user asks to review or find mail.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Text to look for in the messages; empty lists the newest mail."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Most envelopes returned (default 10, maximum 50)."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "A specific IMAP connection id; the primary mailbox otherwise."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_send`
+
+Send a plain-text email through the owner SMTP connection (configured in Conexiones), as the owner. This is an external effect: it requires the mail.send grant, and the message leaves the system once accepted.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "to": {
+      "type": "array",
+      "description": "Recipient addresses, at least one.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "subject": {
+      "type": "string",
+      "description": "Subject line."
+    },
+    "text": {
+      "type": "string",
+      "description": "Plain-text body."
+    },
+    "from": {
+      "type": "string",
+      "description": "Sender address; the connection account otherwise."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "A specific SMTP connection id; the primary one otherwise."
+    }
+  },
+  "required": [
+    "to",
+    "subject",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_models_list`
 
 List the models in the product pool.
@@ -2502,6 +2586,66 @@ Reconcile pool availability with the live harness provider routes.
 {
   "type": "object",
   "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mwt_call`
+
+Call one MWT.ONE MCP tool against a specific company of the user, when the active company is not the right tenant. The company must be one of faberloom_companies; the MWT console still enforces the user role and permissions on every call.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "company": {
+      "type": "string",
+      "description": "Company id from faberloom_companies."
+    },
+    "tool": {
+      "type": "string",
+      "description": "MWT.ONE tool name, e.g. expediente_buscar or producto_precio_cliente."
+    },
+    "arguments": {
+      "description": "Tool arguments as a JSON object; empty when the tool takes none."
+    }
+  },
+  "required": [
+    "company",
+    "tool"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mwt_find`
+
+Ask EVERY company of the user the same MWT.ONE query and report which ones returned data — the way to find which tenant holds an expediente, a product, or a client. Read-only fan-out; then use the company that answered with faberloom_mwt_call or the mcp__mwt__* tools.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "tool": {
+      "type": "string",
+      "description": "MWT.ONE read tool name, e.g. expediente_buscar."
+    },
+    "arguments": {
+      "description": "Tool arguments as a JSON object; empty when the tool takes none."
+    },
+    "companies": {
+      "type": "array",
+      "description": "Subset of company ids to query; all of the user companies otherwise.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "tool"
+  ]
 }
 ```
 

@@ -1,5 +1,5 @@
 ---
-description: "本 DeepSeek Harness 构建中，面向模型的原生产品工具（faberloom_spaces_create、faberloom_spaces_list）。"
+description: "本 DeepSeek Harness 构建中，面向模型的原生产品工具（faberloom_*），包括多公司 MWT.ONE 租户路由器。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包注册读写原生产品服务的、面向模型的工具。本切片通过 `ctx.faberloomSpaces` 暴露空间工具；工具集随领域切片增长。
+此包注册读写原生产品服务的、面向模型的工具：空间、agent、模型、例程、执行、工作台、来源、邮件（IMAP 搜索与 SMTP 发送），以及 MWT.ONE 租户路由器。路由器——`faberloom_companies`、`faberloom_mwt_call`、`faberloom_mwt_find`——通过把同一条读查询扇出到用户 `legal_entity_ids` 中的每个租户（绝不越界）来回答"这份数据在用户的哪家公司"；每次按公司调用都经过同一个 JSON-RPC 客户端，在 `X-MWT-Client-ID` 中携带该租户，且控制台对每次调用仍强制执行角色与权限。
 
 ## 目录
 
@@ -34,11 +34,11 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-模型看到生成的 [`faberloom_spaces_create` 与 `faberloom_spaces_list` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-faberloom)。
+模型看到生成的 [`faberloom_*` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-faberloom)。
 
 #### Token 影响
 
-挂载期间，两个工具 schema 随每次请求发送；其结果只是普通文本块。
+挂载期间，每个工具 schema 随每次请求发送；其结果只是普通文本块。
 
 #### KV 缓存影响
 
@@ -48,7 +48,8 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **空间切片** — 工具覆盖 `ctx.faberloomSpaces` 上的空间服务；其他产品领域在后续切片加入。
+- **租户路由器把副作用交给控制台裁决。** `faberloom_mwt_call` 与 `faberloom_mwt_find` 只约束租户（绝不超出用户的公司）；一个工具是读还是写由 MWT.ONE 控制台的 RBAC 决定，而不是 FaberLoom 侧的允许名单。
+- **公司名即 id。** 控制台返回的 `legal_entity_ids` 是不透明 id；显示名映射推迟到控制台提供为止。
 
 <a id="dev-note"></a>
 ### 开发备注

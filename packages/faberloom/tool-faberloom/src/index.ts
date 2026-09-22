@@ -42,6 +42,8 @@ export interface Config {
   role?: string
   /** The user's single company id, when they have exactly one. */
   companyId?: string
+  /** Every company the user belongs to (console `legal_entity_ids`); the tenant router queries them. */
+  companyIds?: string[]
   /** Whether the console role is read-only. */
   readOnly?: boolean
   /** Internal MWT MCP URL, injected by the gateway so tools can validate sources. */
@@ -55,6 +57,7 @@ export const Config: z<Config> = z.object({
   ownerId: z.string(),
   role: z.string(),
   companyId: z.string(),
+  companyIds: z.array(z.string()).default([]),
   readOnly: z.boolean(),
   mcpUrl: z.string(),
   mcpGatewayKey: z.string(),
@@ -207,6 +210,8 @@ interface McpFacts {
   readonly email: string
   readonly role: string
   readonly companyId: string | undefined
+  /** Every company the identity belongs to; the tenant router may address each one. */
+  readonly companyIds: readonly string[]
 }
 
 /** Build the MCP connection facts, or fail loud when the gateway did not inject them. */
@@ -216,7 +221,7 @@ function mcpFacts(config: Config, identity: SpaceActor): McpFacts {
   if (url === undefined || url.length === 0 || gatewayKey === undefined || gatewayKey.length === 0) {
     throw new Error('faberloom: MWT connection facts are not injected; cannot validate commercial sources')
   }
-  return { url, gatewayKey, email: identity.id, role: identity.role, companyId: identity.companyId }
+  return { url, gatewayKey, email: identity.id, role: identity.role, companyId: identity.companyId, companyIds: config.companyIds ?? [] }
 }
 
 /** One JSON-RPC tools/call against the MWT MCP as the acting identity. */
@@ -266,6 +271,33 @@ async function mcpCall(facts: McpFacts, name: string, args: Record<string, unkno
   } catch {
     return textPart.text
   }
+}
+
+/**
+ * Resolve the tenant one call should address. An omitted company keeps the
+ * session's active one; an explicit one must belong to the identity — the
+ * router never lets a call leave the user's own `legal_entity_ids`.
+ * @param facts - the identity's MCP connection facts.
+ * @param company - the requested company id, or undefined for the active one.
+ * @returns the tenant to send as `X-MWT-Client-ID`, or undefined for tenantless.
+ */
+function tenant(facts: McpFacts, company: string | undefined): string | undefined {
+  if (company === undefined || company.trim().length === 0) return facts.companyId
+  const wanted = company.trim().toLowerCase()
+  const match = facts.companyIds.find(id => id.toLowerCase() === wanted)
+  if (match === undefined) {
+    throw new Error(`faberloom: ${company} no es una empresa de este usuario; las suyas: ${facts.companyIds.join(', ') || '(ninguna)'}`)
+  }
+  return match.toLowerCase()
+}
+
+/** Whether one MWT result carries data, for the fan-out "which company has it" answer. */
+function hasData(data: unknown): boolean {
+  if (data === null || data === undefined) return false
+  if (Array.isArray(data)) return data.length > 0
+  if (typeof data === 'object') return Object.keys(data).length > 0
+  if (typeof data === 'string') return data.trim().length > 0
+  return true
 }
 
 /** Validate one commercial source against MWT.ONE, as the acting identity. */
@@ -1856,5 +1888,113 @@ export function apply(ctx: Context, config: Config): void {
       return { messageId: sent.messageId, accepted: [...sent.accepted], via: sent.via }
     },
     presentCall: args => ({ card: 'generic', title: 'Send mail', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_companies',
+    description: 'List the companies (legal entities) the current user belongs to, marking the active one. Query MWT.ONE with the active company first (the mcp__mwt__* tools); when data may live in another company, use faberloom_mwt_find or faberloom_mwt_call with one of these ids.',
+    parameters: {},
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          companies: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                id: { type: 'string', required: true },
+                active: { type: 'boolean', required: true },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Companies: ${value.companies.map(company => company.active === true ? `${company.id} (active)` : company.id).join(', ') || 'none'}.` }],
+    },
+    execute: async () => {
+      const identity = actor(config)
+      const active = identity.companyId?.toLowerCase()
+      const ids = [...(config.companyIds ?? [])]
+      if (identity.companyId !== undefined && !ids.some(id => id.toLowerCase() === active)) ids.push(identity.companyId)
+      return { companies: ids.map(id => ({ id, active: active !== undefined && id.toLowerCase() === active })) }
+    },
+    presentCall: () => ({ card: 'generic', title: 'List companies', kind: 'other', rawInput: {} }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_mwt_call',
+    description: 'Call one MWT.ONE MCP tool against a specific company of the user, when the active company is not the right tenant. The company must be one of faberloom_companies; the MWT console still enforces the user role and permissions on every call.',
+    parameters: {
+      company: { type: 'string', required: true, description: 'Company id from faberloom_companies.' },
+      tool: { type: 'string', required: true, description: 'MWT.ONE tool name, e.g. expediente_buscar or producto_precio_cliente.' },
+      arguments: { type: 'json', description: 'Tool arguments as a JSON object; empty when the tool takes none.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          company: { type: 'string', required: true },
+          result: { type: 'json', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `MWT.ONE [${value.company}] answered.` }],
+    },
+    execute: async (args) => {
+      const facts = mcpFacts(config, actor(config))
+      const target = tenant(facts, args.company)
+      const result = await mcpCall({ ...facts, companyId: target }, args.tool, (args.arguments ?? {}) as Record<string, unknown>)
+      return { company: target ?? '', result: result as never }
+    },
+    presentCall: args => ({ card: 'generic', title: 'MWT.ONE call by company', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_mwt_find',
+    description: 'Ask EVERY company of the user the same MWT.ONE query and report which ones returned data — the way to find which tenant holds an expediente, a product, or a client. Read-only fan-out; then use the company that answered with faberloom_mwt_call or the mcp__mwt__* tools.',
+    parameters: {
+      tool: { type: 'string', required: true, description: 'MWT.ONE read tool name, e.g. expediente_buscar.' },
+      arguments: { type: 'json', description: 'Tool arguments as a JSON object; empty when the tool takes none.' },
+      companies: { type: 'array', description: 'Subset of company ids to query; all of the user companies otherwise.', items: { type: 'string' } },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          foundIn: { type: 'string', required: true },
+          results: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                company: { type: 'string', required: true },
+                found: { type: 'boolean', required: true },
+                data: { type: 'json', required: true },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.foundIn.length === 0 ? 'No company returned data.' : `Data found in: ${value.foundIn}.` }],
+    },
+    execute: async (args) => {
+      const facts = mcpFacts(config, actor(config))
+      const wanted = args.companies === undefined || args.companies.length === 0
+        ? facts.companyIds.map(id => id.toLowerCase())
+        : args.companies.map(id => tenant(facts, id) ?? '')
+      if (wanted.length === 0) throw new Error('faberloom: este usuario no tiene empresas asignadas')
+      const toolArgs = (args.arguments ?? {}) as Record<string, unknown>
+      const results = await Promise.all(wanted.map(async (company) => {
+        try {
+          const data = await mcpCall({ ...facts, companyId: company }, args.tool, toolArgs)
+          return { company, found: hasData(data), data: data as never }
+        } catch (error) {
+          return { company, found: false, data: (error instanceof Error ? error.message : String(error)) as never }
+        }
+      }))
+      const firstHit = results.find(result => result.found)
+      return { foundIn: firstHit?.company ?? '', results }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Find across companies', kind: 'other', rawInput: args }),
   }))
 }

@@ -600,6 +600,13 @@ async function ensureMemoryIdentity(user) {
 
 function renderPatch(home, user, memory) {
   const clientId = resolveClientId(user)
+  // Multi-empresa: todas las legal_entity_ids del usuario viajan a las tools y
+  // a la vista, para que el enrutador de tenant (faberloom_mwt_find/_call)
+  // pueda consultar cualquiera de sus empresas sin salirse de su alcance.
+  const allClientIds = (Array.isArray(user.legalEntityIds) ? user.legalEntityIds : []).map(String)
+  const companyIdsYaml = allClientIds.length === 0
+    ? []
+    : ['    companyIds:', ...allClientIds.map(id => `      - ${yamlScalar(id)}`)]
   const entries = []
 
   // MCP de MWT.ONE (identidad por cabecera).
@@ -673,6 +680,7 @@ function renderPatch(home, user, memory) {
     `    ownerId: ${yamlScalar(user.email)}`,
     `    role: ${yamlScalar(user.role || 'client_b2b')}`,
     ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
+    ...companyIdsYaml,
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     `    mcpUrl: ${yamlScalar(cfg.mcpUrl)}`,
     '    mcpGatewayKey: !!js process.env.MWT_MCP_GATEWAY_KEY ?? \'\'',
@@ -684,6 +692,7 @@ function renderPatch(home, user, memory) {
     `    ownerId: ${yamlScalar(user.email)}`,
     `    role: ${yamlScalar(user.role || 'client_b2b')}`,
     ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
+    ...companyIdsYaml,
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     // Catálogo de skills del rol, para el panel Skills.
     `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,

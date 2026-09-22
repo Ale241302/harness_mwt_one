@@ -252,6 +252,8 @@ export interface FaberLoomMwtStatus {
   readonly role: string
   /** The active company id, or null when the user has none or several. */
   readonly companyId: string | null
+  /** Every company the user belongs to; the chat can query any of them. */
+  readonly companyIds: readonly string[]
   /** External MCP servers connected for this identity, with their tools. */
   readonly servers: readonly FaberLoomMcpClientStatus[]
 }
