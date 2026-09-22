@@ -37,6 +37,7 @@
     "@deepseek-ai/dsh-faberloom-inbound": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
+    "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^"
   },
   "devDependencies": {
@@ -47,6 +48,7 @@
     "@deepseek-ai/dsh-faberloom-inbound": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
+    "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^"
   }
 }

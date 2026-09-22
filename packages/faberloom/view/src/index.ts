@@ -22,6 +22,8 @@ import type {} from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
 import type { SpaceActor, FaberLoomSpaceId } from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
+// Type-only: the workspace registry, read through ctx.get like the product services.
+import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
@@ -36,7 +38,7 @@ import type {
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
-  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus,
+  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, BoardRevisionInput,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -646,6 +648,53 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Read a space's conversation area: the workspace registered for its
+   * workdir, if any, with its live session count. Read-only: it never creates
+   * the directory nor registers the workspace.
+   * @param id - space id.
+   * @returns the workspace projection.
+   */
+  @Remote('spaceWorkspace')
+  async spaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace> {
+    const actor = this.actor()
+    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, id as FaberLoomSpaceId)
+    const dir = join(this.dshHome(), 'spaces', ref.ref)
+    const registry = this.workspaceRegistry()
+    const existing = registry.list().find(workspace => workspace.path === dir)
+    return {
+      registered: existing !== undefined,
+      workspaceId: existing === undefined ? null : String(existing.id),
+      title: existing?.title ?? null,
+      sessions: existing === undefined ? 0 : existing.sessionIds.length,
+    }
+  }
+
+  /**
+   * Open a space's conversation area: create the workdir when needed, register
+   * it as a workspace titled after the space, and return its id so the browser
+   * can start a session in it.
+   * @param id - space id.
+   * @returns the registered workspace projection.
+   */
+  @Remote('openSpaceWorkspace')
+  async openSpaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, id as FaberLoomSpaceId)
+    const dir = join(this.dshHome(), 'spaces', ref.ref)
+    mkdirSync(dir, { recursive: true })
+    const workspace = await this.workspaceRegistry().create(dir, space.title)
+    return { registered: true, workspaceId: String(workspace.id), title: workspace.title, sessions: workspace.sessionIds.length }
+  }
+
+  /** The workspace registry, resolved lazily like the connections service. */
+  private workspaceRegistry(): WorkspaceRegistry {
+    const service = this.ctx.get('workspaceRegistry')
+    if (service === undefined) throw new Error('faberloom: the workspace registry is not mounted')
+    return service
+  }
+
+  /**
    * Save one space's editable configuration.
    * @param id - space id.
    * @param input - title, inheritance, and members.
@@ -1222,11 +1271,13 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @returns the refreshed overview.
    */
   @Remote('reviewBoardItem')
-  async reviewBoardItem(id: string, approve: boolean): Promise<FaberLoomOverview> {
+  async reviewBoardItem(id: string, approve: boolean, note?: string): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot review board items')
     const item = await this.ctx.faberloomBoard.get(id as FaberLoomBoardItemId)
     await this.ctx.faberloomBoard.review(this.actor().id, item.id, {
       decision: approve ? 'approve' : 'reject',
       version: item.version,
+      ...note === undefined || note.trim().length === 0 ? {} : { note: note.trim() },
     })
     return await this.overview()
   }
@@ -1240,6 +1291,40 @@ export class FaberLoomViewService extends TypertRemoteService {
   async reopenBoardItem(id: string): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot reopen board items')
     await this.ctx.faberloomBoard.reopen(this.actor().id, id as FaberLoomBoardItemId)
+    return await this.overview()
+  }
+
+  /**
+   * Submit a prepared result as a new revision awaiting review.
+   * @param id - board item id.
+   * @param input - summary and evidence of the prepared result.
+   * @returns the refreshed overview.
+   */
+  @Remote('submitBoardRevision')
+  async submitBoardRevision(id: string, input: BoardRevisionInput): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot submit revisions')
+    await this.ctx.faberloomBoard.submitRevision(this.actor().id, id as FaberLoomBoardItemId, {
+      summary: input.summary,
+      evidence: [...input.evidence],
+    })
+    return await this.overview()
+  }
+
+  /**
+   * Move a board item into an exception state: request_data, fail, or complete.
+   * @param id - board item id.
+   * @param action - the exception action.
+   * @returns the refreshed overview.
+   */
+  @Remote('boardException')
+  async boardException(id: string, action: 'request_data' | 'fail' | 'complete'): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot move board items')
+    const service = this.ctx.faberloomBoard
+    const owner = this.actor().id
+    const itemId = id as FaberLoomBoardItemId
+    if (action === 'request_data') await service.requestData(owner, itemId)
+    else if (action === 'fail') await service.fail(owner, itemId)
+    else await service.complete(owner, itemId)
     return await this.overview()
   }
 

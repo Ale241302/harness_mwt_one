@@ -6958,6 +6958,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-spaces':
         specifier: workspace:^
         version: link:../spaces
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
@@ -7004,6 +7007,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../../typert/protocol
+      '@deepseek-ai/dsh-workspace':
+        specifier: workspace:^
+        version: link:../../workspace/workspace
       zod:
         specifier: ^4.4.3
         version: 4.4.3

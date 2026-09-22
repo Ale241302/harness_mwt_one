@@ -18,6 +18,8 @@ import type {} from '@deepseek-ai/dsh-faberloom-access'
 // Type-only: the mail services (outgoing through connections, incoming search through inbound).
 import type { FaberLoomConnections } from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
+// Type-only: the system prompt registry, read through ctx.get like the product services.
+import type { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 // Type-only: the routines service and its vocabulary, also read through ctx.get.
 import type {
   ExecutionStatus,
@@ -362,6 +364,17 @@ const ID_PARAM = { type: 'string', required: true, description: 'Target space id
  * @param config - deployment config; `ownerId` is the acting identity.
  */
 export function apply(ctx: Context, config: Config): void {
+  // The mention rules the assistant follows when a message opens with @agent
+  // or /skill; additive section, never a persona replacement.
+  const prompt = ctx.get('systemPrompt') as SystemPrompt | undefined
+  if (prompt !== undefined) {
+    ctx.effect(() => prompt.section({
+      name: 'faberloom:mentions',
+      order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 1,
+      text: 'Un mensaje que empieza con @Nombre se dirige al agente de ese nombre del catálogo: actúa como ese especialista (su responsabilidad, contexto y política de modelo) usando las tools faberloom_agents_*, en vez de responder como generalista. Un mensaje que empieza con /nombre invoca la skill de ese nombre. Si el nombre no existe, dilo y ofrece los disponibles con faberloom_agents_list.',
+    }), 'tool-faberloom: mention prompt')
+  }
+
   ctx.tools.register(defineTool({
     name: 'faberloom_spaces_create',
     description: 'Create a product space: a topic that groups related work, documents, and agents.',

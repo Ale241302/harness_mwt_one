@@ -27,7 +27,7 @@ import type {
   FaberLoomCostSummary,
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, TeachingSaveInput,
   FaberLoomBackupRow,
-  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus,
+  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
@@ -57,10 +57,14 @@ export interface FaberloomPanelInjected {
   purgeAgent: (id: string) => void
   /** Create a board item awaiting review. */
   createBoardItem: (title: string) => void
-  /** Approve or reject the current board revision. */
-  reviewBoardItem: (id: string, approve: boolean) => void
+  /** Approve or reject the current board revision, with an optional review note. */
+  reviewBoardItem: (id: string, approve: boolean, note?: string) => Promise<Result<FaberLoomOverview>>
   /** Reopen one reviewed board item for correction. */
-  reopenBoardItem: (id: string) => void
+  reopenBoardItem: (id: string) => Promise<Result<FaberLoomOverview>>
+  /** Submit a prepared result as a new revision awaiting review. */
+  submitBoardRevision: (id: string, input: { summary: string; evidence: readonly string[] }) => Promise<Result<FaberLoomOverview>>
+  /** Move a board item into an exception state: request_data, fail, or complete. */
+  boardException: (id: string, action: 'request_data' | 'fail' | 'complete') => Promise<Result<FaberLoomOverview>>
   /** Create a draft routine. */
   createRoutine: (name: string) => void
   /** Activate or pause one routine. */
@@ -139,6 +143,10 @@ export interface FaberloomPanelInjected {
   spaceDetail: (id: string) => Promise<Result<FaberLoomSpaceDetail | undefined>>
   /** Save one space's editable configuration. */
   saveSpace: (id: string, input: SpaceSaveInput) => Promise<Result<FaberLoomOverview>>
+  /** Read a space's conversation area (its workspace, when registered). */
+  spaceWorkspace: (id: string) => Promise<Result<FaberLoomSpaceWorkspace>>
+  /** Start a new conversation in a space's own area. */
+  startSpaceSession: (spaceId: string) => void
   /** Read one routine's editable definition. */
   routineDetail: (id: string) => Promise<Result<FaberLoomRoutineDetail | undefined>>
   /** Save one routine's editable definition. */
@@ -222,7 +230,7 @@ function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null 
 /** Espacios: list, create, and rename. */
 function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
-    const { t, createSpace, spaceDetail, saveSpace } = props
+    const { t, createSpace, spaceDetail, saveSpace, spaceWorkspace, startSpaceSession } = props
     const { overview, status, error } = useOverview(props)
     const [draft, setDraft] = useState('')
     const [query, setQuery] = useState('')
@@ -239,6 +247,11 @@ function spacesScreen() {
       () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : spaceDetail(selected),
       [selected],
     )
+    const workspace = useLazy<FaberLoomSpaceWorkspace | undefined>(
+      () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : spaceWorkspace(selected),
+      [selected],
+    )
+    const detailValue = detail.kind === 'ready' ? detail.value : undefined
 
     useEffect(() => {
       if (detail.kind !== 'ready' || detail.value === undefined) return
@@ -298,13 +311,15 @@ function spacesScreen() {
                             <option value="no">{t('spaces.inheritNo')}</option>
                           </select>
                         </Field>
-                        <Field label={t('field.members')} hint={t('spaces.membersHint')}>
-                          <input type="text" value={members} onChange={(event) => { setMembers(event.target.value) }} />
-                        </Field>
-                        <Field label={t('field.sources')}>
-                          {detail.value.sources.length === 0
-                            ? <span className={styles.cellMuted}>{t('spaces.noSources')}</span>
-                            : <span className={styles.chips}>{detail.value.sources.map(source => <Chip key={`${source.kind}:${source.ref}`}>{source.kind}: {source.ref.slice(0, 8)}</Chip>)}</span>}
+                        <Field label={t('spaces.conversations')} hint={t('spaces.workspaceHint')}>
+                          {workspace.kind === 'loading'
+                            ? <span className={styles.cellMuted}>{t('state.loading')}</span>
+                            : workspace.kind !== 'ready' || workspace.value === undefined || !workspace.value.registered
+                              ? <span className={styles.cellMuted}>{t('spaces.noWorkspace')}</span>
+                              : <span className={styles.cellMuted}>{`${workspace.value.title ?? ''} · ${String(workspace.value.sessions)}`}</span>}
+                          <span className={styles.tools}>
+                            <button className={styles.secondary} type="button" disabled={detailValue === undefined} onClick={() => { if (detailValue !== undefined) startSpaceSession(detailValue.id) }}>{t('spaces.newInSpace')}</button>
+                          </span>
                         </Field>
                       </>
                     )}
@@ -718,30 +733,42 @@ function skillsScreen() {
 /** Mesa de trabajo: board items with approve/reject. */
 function boardScreen() {
   return function FaberloomBoard(props: ScreenProps) {
-    const { t, createBoardItem, reviewBoardItem, reopenBoardItem, boardDetail } = props
+    const { t, createBoardItem, reviewBoardItem, reopenBoardItem, submitBoardRevision, boardException, boardDetail } = props
     const { overview, error } = useOverview(props)
     const [draft, setDraft] = useState('')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
+    const [tick, setTick] = useState(0)
+    const [summary, setSummary] = useState('')
+    const [evidence, setEvidence] = useState('')
+    const [note, setNote] = useState('')
     const rows = overview?.board ?? []
     const chosen = rows.find(row => row.id === selected) ?? null
     const detail = useLazy<FaberLoomBoardDetail | undefined>(
       () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : boardDetail(selected),
-      [selected],
+      [selected, tick],
     )
+
+    /** Report one write's failure or refresh the detail on success. */
+    const apply = (result: Result<unknown>): void => {
+      if (result.ok) setTick(tick + 1)
+      else setMessage(result.error.message)
+    }
 
     const columns: readonly Column<FaberLoomOverview['board'][number]>[] = [
       { key: 'title', header: t('col.title'), cell: item => <span className={styles.cellName}>{item.title}</span> },
       { key: 'status', header: t('col.status'), cell: item => <Chip>{item.status}</Chip> },
     ]
 
+    const value = detail.kind === 'ready' ? detail.value : undefined
+    const reviewable = value !== undefined && value.status !== 'completed' && value.status !== 'failed'
+
     return (
       <Screen title={t('panel.board.title')} subtitle={t('panel.board.intro')}
         trailing={(
           <>
             <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.board.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
-            <button className={styles.primary} type="button" onClick={() => {
-              if (draft.trim().length === 0) { setMessage(t('state.needsText')); return }
+            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => {
               setMessage(null)
               createBoardItem(draft.trim())
               setDraft('')
@@ -750,15 +777,17 @@ function boardScreen() {
         )}>
         <Feedback t={t} message={error ?? message} />
         <div className={styles.split}>
-          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => { setSelected(id); setNote('') }}
             emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
           <Inspector title={chosen?.title ?? t('board.detail')}
-            status={detail.kind === 'ready' && detail.value !== undefined ? <Chip>{detail.value.status}</Chip> : undefined}
-            footer={chosen === null ? undefined : (
+            status={value !== undefined ? <Chip>{value.status}</Chip> : undefined}
+            footer={chosen === null || !reviewable ? undefined : (
               <span className={styles.tools}>
-                <button className={styles.primary} type="button" onClick={() => { reviewBoardItem(chosen.id, true) }}>{t('action.approve')}</button>
-                <button className={styles.secondary} type="button" onClick={() => { reviewBoardItem(chosen.id, false) }}>{t('action.reject')}</button>
-                <button className={styles.ghost} type="button" onClick={() => { reopenBoardItem(chosen.id) }}>{t('action.reopen')}</button>
+                <button className={styles.primary} type="button" onClick={() => { void reviewBoardItem(chosen.id, true, note).then(apply) }}>{t('action.approve')}</button>
+                <button className={styles.secondary} type="button" onClick={() => { void reviewBoardItem(chosen.id, false, note).then(apply) }}>{t('action.reject')}</button>
+                <button className={styles.ghost} type="button" onClick={() => { void reopenBoardItem(chosen.id).then(() => { setTick(tick + 1) }) }}>{t('action.reopen')}</button>
+                <button className={styles.ghost} type="button" onClick={() => { void boardException(chosen.id, 'request_data').then(apply) }}>{t('board.requestData')}</button>
+                <button className={styles.danger} type="button" onClick={() => { void boardException(chosen.id, 'fail').then(apply) }}>{t('board.fail')}</button>
               </span>
             )}>
             {chosen === null
@@ -767,31 +796,67 @@ function boardScreen() {
                 ? <StateBlock kind="loading" title={t('state.loading')} />
                 : detail.kind === 'error'
                   ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
-                  : detail.value === undefined
+                  : value === undefined
                     ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
                     : (
                       <>
                         <Field label={t('field.revision')}>
-                          <span className={styles.cellMuted}>{String(detail.value.version)}{detail.value.approvedRevision === null ? '' : ` · ${t('board.approved')} ${String(detail.value.approvedRevision)}`}</span>
+                          <span className={styles.cellMuted}>{String(value.version)}{value.approvedRevision === null ? '' : ` · ${t('board.approved')} ${String(value.approvedRevision)}`}</span>
                         </Field>
-                        <Field label={t('field.summary')}><span className={styles.cellMuted}>{detail.value.summary.length === 0 ? '—' : detail.value.summary}</span></Field>
+                        <Field label={t('field.summary')}><span className={styles.cellMuted}>{value.summary.length === 0 ? '—' : value.summary}</span></Field>
                         <Field label={t('field.evidence')}>
-                          {detail.value.evidence.length === 0
+                          {value.evidence.length === 0
                             ? <span className={styles.cellMuted}>{t('board.noEvidence')}</span>
-                            : <span className={styles.chips}>{detail.value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry.slice(0, 24)}</Chip>)}</span>}
+                            : <span className={styles.chips}>{value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry}</Chip>)}</span>}
                         </Field>
                         <Field label={t('field.stale')}>
-                          <StatusDot on={!detail.value.stale} label={detail.value.stale ? (detail.value.staleReason ?? t('board.stale')) : t('board.fresh')} />
+                          <StatusDot on={!value.stale} label={value.stale ? (value.staleReason ?? t('board.stale')) : t('board.fresh')} />
                         </Field>
                         <Field label={t('field.effects')}>
-                          {detail.value.effects.length === 0
+                          {value.effects.length === 0
                             ? <span className={styles.cellMuted}>{t('board.noEffects')}</span>
                             : (
-                              <span className={styles.chips}>
-                                {detail.value.effects.map(effect => <Chip key={effect.ref}>{effect.ref.slice(0, 16)}</Chip>)}
-                              </span>
+                              <div className={styles.steps}>
+                                {value.effects.map(effect => (
+                                  <span className={styles.cellMuted} key={`${effect.ref}-${effect.at}`}>{`${effect.ref}${effect.detail === null ? '' : ` · ${effect.detail}`} · ${effect.at}`}</span>
+                                ))}
+                              </div>
                             )}
                         </Field>
+                        {value.status === 'approved'
+                          ? (
+                            <Field label={t('board.completeHint')}>
+                              <button className={styles.primary} type="button" onClick={() => { void boardException(chosen.id, 'complete').then(apply) }}>{t('board.complete')}</button>
+                            </Field>
+                          )
+                          : null}
+                        {reviewable
+                          ? (
+                            <>
+                              <Field label={t('board.submitRevision')} hint={t('board.revisionHint')}>
+                                <textarea value={summary} placeholder={t('board.summaryPlaceholder')} onChange={(event) => { setSummary(event.target.value) }} />
+                                <input type="text" value={evidence} placeholder={t('board.evidencePlaceholder')} onChange={(event) => { setEvidence(event.target.value) }} />
+                                <span className={styles.tools}>
+                                  <button className={styles.secondary} type="button"
+                                    disabled={summary.trim().length === 0 || evidence.trim().length === 0}
+                                    onClick={() => {
+                                      setMessage(null)
+                                      void submitBoardRevision(chosen.id, {
+                                        summary: summary.trim(),
+                                        evidence: evidence.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
+                                      }).then((result) => {
+                                        apply(result)
+                                        if (result.ok) { setSummary(''); setEvidence('') }
+                                      })
+                                    }}>{t('board.submitRevision')}</button>
+                                </span>
+                              </Field>
+                              <Field label={t('board.reviewNote')}>
+                                <input type="text" value={note} placeholder={t('board.notePlaceholder')} onChange={(event) => { setNote(event.target.value) }} />
+                              </Field>
+                            </>
+                          )
+                          : null}
                       </>
                     )}
           </Inspector>

@@ -244,6 +244,26 @@ export interface FaberLoomMcpClientStatus {
   readonly tools: readonly string[]
 }
 
+/** A space's conversation area as the Spaces panel reads it. */
+export interface FaberLoomSpaceWorkspace {
+  /** Whether a workspace is already registered for the space's workdir. */
+  readonly registered: boolean
+  /** Workspace id, when registered (used to start sessions in it). */
+  readonly workspaceId: string | null
+  /** Workspace display title, when registered. */
+  readonly title: string | null
+  /** Live sessions currently grouped under the workspace. */
+  readonly sessions: number
+}
+
+/** Input for one new board revision prepared for review. */
+export interface BoardRevisionInput {
+  /** What was prepared, in one paragraph. */
+  readonly summary: string
+  /** Evidence references backing the summary (at least one). */
+  readonly evidence: readonly string[]
+}
+
 /** The owner's MWT.ONE access as the Connections panel presents it. */
 export interface FaberLoomMwtStatus {
   /** The authenticated identity. */

@@ -112,8 +112,18 @@ export function apply(ctx: ClientContext): void {
       deactivateAgent: (id) => { write(() => ctx.remote.faberloomView.deleteAgent(id)) },
       purgeAgent: (id) => { write(() => ctx.remote.faberloomView.purgeAgent(id)) },
       createBoardItem: (title) => { write(() => ctx.remote.faberloomView.createBoardItem(title)) },
-      reviewBoardItem: (id, approve) => { write(() => ctx.remote.faberloomView.reviewBoardItem(id, approve)) },
-      reopenBoardItem: (id) => { write(() => ctx.remote.faberloomView.reopenBoardItem(id)) },
+      reviewBoardItem: (id, approve, note) => {
+        const run = ctx.remote.faberloomView.reviewBoardItem(id, approve, note)
+        write(() => run)
+        return run
+      },
+      reopenBoardItem: (id) => { const run = ctx.remote.faberloomView.reopenBoardItem(id); write(() => run); return run },
+      submitBoardRevision: (id, input) => {
+        const run = ctx.remote.faberloomView.submitBoardRevision(id, input)
+        write(() => run)
+        return run
+      },
+      boardException: (id, action) => { const run = ctx.remote.faberloomView.boardException(id, action); write(() => run); return run },
       createRoutine: (name) => { write(() => ctx.remote.faberloomView.createRoutine(name, name)) },
       setRoutineActive: (id, active) => { write(() => ctx.remote.faberloomView.setRoutineActive(id, active)) },
       remember: (text) => { write(() => ctx.remote.faberloomView.remember(text)) },
@@ -153,6 +163,14 @@ export function apply(ctx: ClientContext): void {
       linkPreview: spaceId => ctx.remote.faberloomView.linkPreview(spaceId),
       spaceDetail: id => ctx.remote.faberloomView.spaceDetail(id),
       saveSpace: (id, input) => ctx.remote.faberloomView.saveSpace(id, input),
+      spaceWorkspace: id => ctx.remote.faberloomView.spaceWorkspace(id),
+      startSpaceSession: (spaceId) => {
+        void ctx.remote.faberloomView.openSpaceWorkspace(spaceId).then((result) => {
+          if (!result.ok || result.value.workspaceId === null) return
+          void ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
+            .then(() => { ctx.layout.selectPanel(null) })
+        })
+      },
       routineDetail: id => ctx.remote.faberloomView.routineDetail(id),
       saveRoutine: (id, input) => ctx.remote.faberloomView.saveRoutine(id, input),
       removeRoutine: id => ctx.remote.faberloomView.removeRoutine(id),

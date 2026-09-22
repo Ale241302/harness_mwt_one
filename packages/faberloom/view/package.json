@@ -53,7 +53,8 @@
     "@deepseek-ai/dsh-faberloom-learning": "workspace:^",
     "@deepseek-ai/dsh-faberloom-mcp-server": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
+    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "@deepseek-ai/dsh-workspace": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -68,6 +69,7 @@
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "@deepseek-ai/dsh-workspace": "workspace:^",
     "zod": "^4.4.3"
   }
 }
