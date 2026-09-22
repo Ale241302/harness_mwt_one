@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-usuarios-crear
-description: "Rol Super Admin · módulo Usuarios (usuarios) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
+description: "Rol Super Admin · módulo Usuarios (usuarios) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en usuarios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: superadmin
 module: usuarios
 action: create

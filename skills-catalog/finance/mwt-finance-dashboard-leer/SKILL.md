@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-dashboard-leer
-description: "Rol Finance · módulo Dashboard (dashboard) · permiso leer (consultar/listar). Herramientas MCP: generar_grafico, render_tabla, generar_reporte, comparar, exportar_xlsx, exportar_csv. Lee el contrato en _contratos/dashboard.md antes de actuar."
+description: "Rol Finance · módulo Dashboard (dashboard) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar dashboard (por ejemplo 'muéstrame dashboard' o 'busca en dashboard'). Herramientas MCP: generar_grafico, render_tabla, generar_reporte, comparar, exportar_xlsx, exportar_csv. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: finance
 module: dashboard
 action: view

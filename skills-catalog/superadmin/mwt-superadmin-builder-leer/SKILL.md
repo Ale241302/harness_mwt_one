@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-builder-leer
-description: "Rol Super Admin · módulo MWT Builder (builder) · permiso leer (consultar/listar). Herramientas MCP: builder_structure_construir, builder_artefacto_listar, builder_artefacto_obtener. Lee el contrato en _contratos/builder.md antes de actuar."
+description: "Rol Super Admin · módulo MWT Builder (builder) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar builder (por ejemplo 'muéstrame builder' o 'busca en builder'). Herramientas MCP: builder_structure_construir, builder_artefacto_listar, builder_artefacto_obtener. Lee el contrato en _contratos/builder.md antes de actuar."
 role: superadmin
 module: builder
 action: view

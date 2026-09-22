@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-notificaciones-eliminar
-description: "Rol Admin (CEO) · módulo Notificaciones (notificaciones) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Notificaciones (notificaciones) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de notificaciones. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: admin
 module: notificaciones
 action: delete

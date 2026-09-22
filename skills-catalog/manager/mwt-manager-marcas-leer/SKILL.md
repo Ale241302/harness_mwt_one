@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-marcas-leer
-description: "Rol Manager · módulo Marcas (marcas) · permiso leer (consultar/listar). Herramientas MCP: marca_listar. Lee el contrato en _contratos/marcas.md antes de actuar."
+description: "Rol Manager · módulo Marcas (marcas) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar marcas (por ejemplo 'muéstrame marcas' o 'busca en marcas'). Herramientas MCP: marca_listar. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: manager
 module: marcas
 action: view

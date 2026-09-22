@@ -1,6 +1,6 @@
 ---
 name: mwt-client-b2b-expedientes-descargar-documento
-description: "Rol Cliente B2B · módulo Expedientes (expedientes) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: documento_descargar. Lee el contrato en _contratos/expedientes.md antes de actuar."
+description: "Rol Cliente B2B · módulo Expedientes (expedientes) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de expedientes. Herramientas MCP: documento_descargar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: client_b2b
 module: expedientes
 action: download_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-transferencias-subir-documento
-description: "Rol Super Admin · módulo Transferencias (transferencias) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
+description: "Rol Super Admin · módulo Transferencias (transferencias) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a transferencias. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: superadmin
 module: transferencias
 action: upload_doc

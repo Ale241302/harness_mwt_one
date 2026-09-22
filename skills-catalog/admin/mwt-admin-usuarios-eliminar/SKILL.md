@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-usuarios-eliminar
-description: "Rol Admin (CEO) · módulo Usuarios (usuarios) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Usuarios (usuarios) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de usuarios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: admin
 module: usuarios
 action: delete

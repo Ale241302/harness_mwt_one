@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-transferencias-eliminar
-description: "Rol Manager · módulo Transferencias (transferencias) · permiso eliminar (eliminar/borrar). Herramientas MCP: transfer_costo_eliminar. Lee el contrato en _contratos/transferencias.md antes de actuar."
+description: "Rol Manager · módulo Transferencias (transferencias) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de transferencias. Herramientas MCP: transfer_costo_eliminar. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: manager
 module: transferencias
 action: delete

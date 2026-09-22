@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-sizing-leer
-description: "Rol Admin (CEO) · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar sizing (por ejemplo 'muéstrame sizing' o 'busca en sizing'). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: admin
 module: sizing
 action: view

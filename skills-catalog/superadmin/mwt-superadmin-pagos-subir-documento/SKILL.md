@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-pagos-subir-documento
-description: "Rol Super Admin · módulo Pagos (pagos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
+description: "Rol Super Admin · módulo Pagos (pagos) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a pagos. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: superadmin
 module: pagos
 action: upload_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-dashboard-descargar-documento
-description: "Rol Finance · módulo Dashboard (dashboard) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
+description: "Rol Finance · módulo Dashboard (dashboard) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de dashboard. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: finance
 module: dashboard
 action: download_doc

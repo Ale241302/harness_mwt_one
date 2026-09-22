@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-inventario-ver-documento
-description: "Rol Viewer (solo lectura) · módulo Inventario (inventario) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
+description: "Rol Viewer (solo lectura) · módulo Inventario (inventario) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de inventario. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: viewer
 module: inventario
 action: view_doc

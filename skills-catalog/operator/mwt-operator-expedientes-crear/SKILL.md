@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-expedientes-crear
-description: "Rol Operador · módulo Expedientes (expedientes) · permiso crear (crear). Herramientas MCP: proforma_generar, expediente_resolve_oc_preview, expediente_crear, expedientes_crear_lote, sap_upsert. Lee el contrato en _contratos/expedientes.md antes de actuar."
+description: "Rol Operador · módulo Expedientes (expedientes) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en expedientes. Herramientas MCP: proforma_generar, expediente_resolve_oc_preview, expediente_crear, expedientes_crear_lote, sap_upsert. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: operator
 module: expedientes
 action: create

@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-tickets-editar
-description: "Rol Manager · módulo Tickets (tickets) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
+description: "Rol Manager · módulo Tickets (tickets) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en tickets. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: manager
 module: tickets
 action: update

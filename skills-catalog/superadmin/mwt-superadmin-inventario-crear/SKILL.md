@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-inventario-crear
-description: "Rol Super Admin · módulo Inventario (inventario) · permiso crear (crear). Herramientas MCP: recepcion_crear. Lee el contrato en _contratos/inventario.md antes de actuar."
+description: "Rol Super Admin · módulo Inventario (inventario) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en inventario. Herramientas MCP: recepcion_crear. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: superadmin
 module: inventario
 action: create

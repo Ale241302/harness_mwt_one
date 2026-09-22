@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-transferencias-editar
-description: "Rol Operador · módulo Transferencias (transferencias) · permiso editar (actualizar/modificar). Herramientas MCP: transferencia_avanzar, transferencia_aprobar, transferencia_despachar, transferencia_editar, transferencia_recibir, transferencia_conciliar, transferencia_cerrar, transferencia_cancelar, transfer_costo_editar, transfer_liquidar. Lee el contrato en _contratos/transferencias.md antes de actuar."
+description: "Rol Operador · módulo Transferencias (transferencias) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en transferencias. Herramientas MCP: transferencia_avanzar, transferencia_aprobar, transferencia_despachar, transferencia_editar, transferencia_recibir, transferencia_conciliar, transferencia_cerrar, transferencia_cancelar, transfer_costo_editar, transfer_liquidar. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: operator
 module: transferencias
 action: update

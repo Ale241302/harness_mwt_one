@@ -1,6 +1,6 @@
 ---
 name: mwt-client-b2b-inventario-leer
-description: "Rol Cliente B2B · módulo Inventario (inventario) · permiso leer (consultar/listar). Herramientas MCP: stock_listar, inventario_saldos_por_expediente, inventario_expedientes_con_pendiente, inventario_lineas_en_nodo, inventario_artefactos_expediente. Lee el contrato en _contratos/inventario.md antes de actuar."
+description: "Rol Cliente B2B · módulo Inventario (inventario) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar inventario (por ejemplo 'muéstrame inventario' o 'busca en inventario'). Herramientas MCP: stock_listar, inventario_saldos_por_expediente, inventario_expedientes_con_pendiente, inventario_lineas_en_nodo, inventario_artefactos_expediente. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: client_b2b
 module: inventario
 action: view

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-pagos-leer
-description: "Rol Admin (CEO) · módulo Pagos (pagos) · permiso leer (consultar/listar). Herramientas MCP: pago_applicables, pago_listar, pago_obtener. Lee el contrato en _contratos/pagos.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Pagos (pagos) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar pagos (por ejemplo 'muéstrame pagos' o 'busca en pagos'). Herramientas MCP: pago_applicables, pago_listar, pago_obtener. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: admin
 module: pagos
 action: view

@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-tickets-descargar-documento
-description: "Rol Compras · módulo Tickets (tickets) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
+description: "Rol Compras · módulo Tickets (tickets) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de tickets. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: compras
 module: tickets
 action: download_doc

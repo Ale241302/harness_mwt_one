@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-inventario-subir-documento
-description: "Rol Super Admin · módulo Inventario (inventario) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
+description: "Rol Super Admin · módulo Inventario (inventario) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a inventario. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: superadmin
 module: inventario
 action: upload_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-sizing-ver-documento
-description: "Rol Admin (CEO) · módulo Motor de Tallas (sizing) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Motor de Tallas (sizing) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de sizing. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: admin
 module: sizing
 action: view_doc

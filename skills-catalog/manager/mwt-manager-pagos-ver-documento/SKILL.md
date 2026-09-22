@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-pagos-ver-documento
-description: "Rol Manager · módulo Pagos (pagos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
+description: "Rol Manager · módulo Pagos (pagos) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de pagos. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: manager
 module: pagos
 action: view_doc

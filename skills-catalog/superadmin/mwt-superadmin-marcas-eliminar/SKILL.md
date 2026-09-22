@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-marcas-eliminar
-description: "Rol Super Admin · módulo Marcas (marcas) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
+description: "Rol Super Admin · módulo Marcas (marcas) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de marcas. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: superadmin
 module: marcas
 action: delete

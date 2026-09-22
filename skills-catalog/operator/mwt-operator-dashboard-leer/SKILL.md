@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-dashboard-leer
-description: "Rol Operador · módulo Dashboard (dashboard) · permiso leer (consultar/listar). Herramientas MCP: generar_grafico, render_tabla, generar_reporte, comparar, exportar_xlsx, exportar_csv. Lee el contrato en _contratos/dashboard.md antes de actuar."
+description: "Rol Operador · módulo Dashboard (dashboard) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar dashboard (por ejemplo 'muéstrame dashboard' o 'busca en dashboard'). Herramientas MCP: generar_grafico, render_tabla, generar_reporte, comparar, exportar_xlsx, exportar_csv. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: operator
 module: dashboard
 action: view

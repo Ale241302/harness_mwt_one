@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-tickets-eliminar
-description: "Rol Super Admin · módulo Tickets (tickets) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
+description: "Rol Super Admin · módulo Tickets (tickets) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de tickets. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: superadmin
 module: tickets
 action: delete

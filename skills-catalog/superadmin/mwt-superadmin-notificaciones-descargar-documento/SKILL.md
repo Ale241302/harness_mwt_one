@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-notificaciones-descargar-documento
-description: "Rol Super Admin · módulo Notificaciones (notificaciones) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
+description: "Rol Super Admin · módulo Notificaciones (notificaciones) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de notificaciones. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: superadmin
 module: notificaciones
 action: download_doc

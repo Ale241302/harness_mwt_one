@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-historial-precios-leer
-description: "Rol Super Admin · módulo Historial de precios (historial-precios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
+description: "Rol Super Admin · módulo Historial de precios (historial-precios) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar historial-precios (por ejemplo 'muéstrame historial-precios' o 'busca en historial-precios'). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
 role: superadmin
 module: historial-precios
 action: view

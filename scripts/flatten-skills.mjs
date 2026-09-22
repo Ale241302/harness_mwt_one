@@ -41,10 +41,30 @@ function frontmatterName(text) {
 const kebab = (value) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 const yamlQuote = (value) => `"${value.trim().replace(/^["']|["']$/g, '').replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 
+// Trigger de enrutado por acción (mismo texto que scripts/rewrite-skill-triggers.mjs):
+// la description ES la política de enrutado que lee el modelo del harness.
+const TRIGGERS = {
+  view: module => `Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar ${module} (por ejemplo 'muéstrame ${module}' o 'busca en ${module}').`,
+  create: module => `Úsala cuando el usuario quiera crear, registrar o dar de alta algo en ${module}.`,
+  update: module => `Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en ${module}.`,
+  delete: module => `Úsala cuando el usuario quiera eliminar o borrar algo de ${module}.`,
+  download_doc: module => `Úsala cuando el usuario quiera descargar un documento o archivo de ${module}.`,
+  view_doc: module => `Úsala cuando el usuario quiera ver o listar los documentos de ${module}.`,
+  upload_doc: module => `Úsala cuando el usuario quiera subir o adjuntar un documento a ${module}.`,
+}
+
+const field = (front, key) => {
+  const line = front.split('\n').find(l => l.trimStart().startsWith(`${key}:`))
+  return line === undefined ? undefined : line.slice(line.indexOf(':') + 1).trim().replace(/^["']|["']$/g, '')
+}
+
 function repairFrontmatter(text) {
   const match = text.match(/^(---\s*\n)([\s\S]*?)(\n---)/)
   if (!match) return { text, name: undefined }
   let name
+  const module = field(match[2], 'module')
+  const action = field(match[2], 'action')
+  const trigger = module !== undefined && TRIGGERS[action] !== undefined ? TRIGGERS[action](module) : undefined
   const lines = match[2].split('\n').map((line) => {
     const trimmed = line.trimStart()
     if (trimmed.startsWith('name:')) {
@@ -52,7 +72,12 @@ function repairFrontmatter(text) {
       return `${line.slice(0, line.indexOf(':') + 1)} ${name}`
     }
     if (trimmed.startsWith('description:')) {
-      return `${line.slice(0, line.indexOf(':') + 1)} ${yamlQuote(line.slice(line.indexOf(':') + 1))}`
+      let value = line.slice(line.indexOf(':') + 1).trim().replace(/^["']|["']$/g, '')
+      if (trigger !== undefined && !value.includes('Úsala cuando')) {
+        const marker = ' Herramientas MCP:'
+        value = value.includes(marker) ? value.replace(marker, ` ${trigger}${marker}`) : `${value} ${trigger}`
+      }
+      return `${line.slice(0, line.indexOf(':') + 1)} ${yamlQuote(value)}`
     }
     return line
   })

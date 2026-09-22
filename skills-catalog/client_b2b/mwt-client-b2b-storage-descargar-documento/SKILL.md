@@ -1,6 +1,6 @@
 ---
 name: mwt-client-b2b-storage-descargar-documento
-description: "Rol Cliente B2B · módulo Storage (storage) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: artefacto_archivo_descargar. Lee el contrato en _contratos/storage.md antes de actuar."
+description: "Rol Cliente B2B · módulo Storage (storage) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de storage. Herramientas MCP: artefacto_archivo_descargar. Lee el contrato en _contratos/storage.md antes de actuar."
 role: client_b2b
 module: storage
 action: download_doc

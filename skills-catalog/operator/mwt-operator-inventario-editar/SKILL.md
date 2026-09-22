@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-inventario-editar
-description: "Rol Operador · módulo Inventario (inventario) · permiso editar (actualizar/modificar). Herramientas MCP: inventario_transferir_asignaciones. Lee el contrato en _contratos/inventario.md antes de actuar."
+description: "Rol Operador · módulo Inventario (inventario) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en inventario. Herramientas MCP: inventario_transferir_asignaciones. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: operator
 module: inventario
 action: update

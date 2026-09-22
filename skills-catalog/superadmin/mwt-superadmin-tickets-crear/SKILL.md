@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-tickets-crear
-description: "Rol Super Admin · módulo Tickets (tickets) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
+description: "Rol Super Admin · módulo Tickets (tickets) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en tickets. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: superadmin
 module: tickets
 action: create

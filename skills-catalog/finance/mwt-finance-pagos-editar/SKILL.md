@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-pagos-editar
-description: "Rol Finance · módulo Pagos (pagos) · permiso editar (actualizar/modificar). Herramientas MCP: pago_conciliar, pago_liberar_credito, pago_rechazar. Lee el contrato en _contratos/pagos.md antes de actuar."
+description: "Rol Finance · módulo Pagos (pagos) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en pagos. Herramientas MCP: pago_conciliar, pago_liberar_credito, pago_rechazar. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: finance
 module: pagos
 action: update

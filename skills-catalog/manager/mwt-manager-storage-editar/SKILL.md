@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-storage-editar
-description: "Rol Manager · módulo Storage (storage) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
+description: "Rol Manager · módulo Storage (storage) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en storage. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: manager
 module: storage
 action: update

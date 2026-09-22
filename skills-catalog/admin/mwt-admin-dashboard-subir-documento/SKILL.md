@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-dashboard-subir-documento
-description: "Rol Admin (CEO) · módulo Dashboard (dashboard) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Dashboard (dashboard) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a dashboard. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: admin
 module: dashboard
 action: upload_doc

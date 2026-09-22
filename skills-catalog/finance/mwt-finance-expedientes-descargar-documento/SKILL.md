@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-expedientes-descargar-documento
-description: "Rol Finance · módulo Expedientes (expedientes) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: documento_descargar. Lee el contrato en _contratos/expedientes.md antes de actuar."
+description: "Rol Finance · módulo Expedientes (expedientes) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de expedientes. Herramientas MCP: documento_descargar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: finance
 module: expedientes
 action: download_doc

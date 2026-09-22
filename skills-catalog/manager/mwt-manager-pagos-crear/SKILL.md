@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-pagos-crear
-description: "Rol Manager · módulo Pagos (pagos) · permiso crear (crear). Herramientas MCP: pago_dry_run, pago_registrar. Lee el contrato en _contratos/pagos.md antes de actuar."
+description: "Rol Manager · módulo Pagos (pagos) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en pagos. Herramientas MCP: pago_dry_run, pago_registrar. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: manager
 module: pagos
 action: create

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-roles-subir-documento
-description: "Rol Admin (CEO) · módulo Roles y Permisos (roles) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Roles y Permisos (roles) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a roles. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: admin
 module: roles
 action: upload_doc

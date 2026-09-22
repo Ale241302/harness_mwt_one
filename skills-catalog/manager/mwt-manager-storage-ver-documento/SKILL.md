@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-storage-ver-documento
-description: "Rol Manager · módulo Storage (storage) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
+description: "Rol Manager · módulo Storage (storage) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de storage. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: manager
 module: storage
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-notificaciones-ver-documento
-description: "Rol Admin (CEO) · módulo Notificaciones (notificaciones) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Notificaciones (notificaciones) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de notificaciones. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: admin
 module: notificaciones
 action: view_doc

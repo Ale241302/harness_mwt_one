@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-clientes-descargar-documento
-description: "Rol Compras · módulo Clientes (clientes) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar."
+description: "Rol Compras · módulo Clientes (clientes) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de clientes. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: compras
 module: clientes
 action: download_doc

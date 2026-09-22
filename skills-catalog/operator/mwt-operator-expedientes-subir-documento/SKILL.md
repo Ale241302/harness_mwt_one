@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-expedientes-subir-documento
-description: "Rol Operador · módulo Expedientes (expedientes) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: documento_subir, match_subir. Lee el contrato en _contratos/expedientes.md antes de actuar."
+description: "Rol Operador · módulo Expedientes (expedientes) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a expedientes. Herramientas MCP: documento_subir, match_subir. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: operator
 module: expedientes
 action: upload_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-pagos-eliminar
-description: "Rol Admin (CEO) · módulo Pagos (pagos) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Pagos (pagos) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de pagos. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: admin
 module: pagos
 action: delete

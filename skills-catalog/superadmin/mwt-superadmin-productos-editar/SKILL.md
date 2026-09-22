@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-productos-editar
-description: "Rol Super Admin · módulo Productos (productos) · permiso editar (actualizar/modificar). Herramientas MCP: producto_editar. Lee el contrato en _contratos/productos.md antes de actuar."
+description: "Rol Super Admin · módulo Productos (productos) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en productos. Herramientas MCP: producto_editar. Lee el contrato en _contratos/productos.md antes de actuar."
 role: superadmin
 module: productos
 action: update

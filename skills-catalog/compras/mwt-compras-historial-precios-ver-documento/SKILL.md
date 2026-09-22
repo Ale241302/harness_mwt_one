@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-historial-precios-ver-documento
-description: "Rol Compras · módulo Historial de precios (historial-precios) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
+description: "Rol Compras · módulo Historial de precios (historial-precios) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de historial-precios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
 role: compras
 module: historial-precios
 action: view_doc

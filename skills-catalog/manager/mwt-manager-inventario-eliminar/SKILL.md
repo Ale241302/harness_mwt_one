@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-inventario-eliminar
-description: "Rol Manager · módulo Inventario (inventario) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
+description: "Rol Manager · módulo Inventario (inventario) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de inventario. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: manager
 module: inventario
 action: delete

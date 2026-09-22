@@ -1,6 +1,6 @@
 ---
 name: mwt-client-b2b-dashboard-ver-documento
-description: "Rol Cliente B2B · módulo Dashboard (dashboard) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
+description: "Rol Cliente B2B · módulo Dashboard (dashboard) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de dashboard. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: client_b2b
 module: dashboard
 action: view_doc

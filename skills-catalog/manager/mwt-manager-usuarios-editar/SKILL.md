@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-usuarios-editar
-description: "Rol Manager · módulo Usuarios (usuarios) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
+description: "Rol Manager · módulo Usuarios (usuarios) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en usuarios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: manager
 module: usuarios
 action: update

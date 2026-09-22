@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-nodos-descargar-documento
-description: "Rol Compras · módulo Nodos (nodos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
+description: "Rol Compras · módulo Nodos (nodos) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de nodos. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: compras
 module: nodos
 action: download_doc

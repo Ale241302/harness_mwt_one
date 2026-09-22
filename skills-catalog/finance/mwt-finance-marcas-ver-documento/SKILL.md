@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-marcas-ver-documento
-description: "Rol Finance · módulo Marcas (marcas) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
+description: "Rol Finance · módulo Marcas (marcas) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de marcas. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: finance
 module: marcas
 action: view_doc

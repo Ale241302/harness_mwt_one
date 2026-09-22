@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-usuarios-editar
-description: "Rol Super Admin · módulo Usuarios (usuarios) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
+description: "Rol Super Admin · módulo Usuarios (usuarios) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en usuarios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: superadmin
 module: usuarios
 action: update

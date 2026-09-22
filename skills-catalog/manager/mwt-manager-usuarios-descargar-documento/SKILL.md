@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-usuarios-descargar-documento
-description: "Rol Manager · módulo Usuarios (usuarios) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
+description: "Rol Manager · módulo Usuarios (usuarios) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de usuarios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: manager
 module: usuarios
 action: download_doc

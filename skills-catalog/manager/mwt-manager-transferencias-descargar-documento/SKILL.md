@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-transferencias-descargar-documento
-description: "Rol Manager · módulo Transferencias (transferencias) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
+description: "Rol Manager · módulo Transferencias (transferencias) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de transferencias. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: manager
 module: transferencias
 action: download_doc

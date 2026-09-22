@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-historial-precios-crear
-description: "Rol Compras · módulo Historial de precios (historial-precios) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
+description: "Rol Compras · módulo Historial de precios (historial-precios) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en historial-precios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
 role: compras
 module: historial-precios
 action: create

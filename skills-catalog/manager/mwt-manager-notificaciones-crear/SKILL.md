@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-notificaciones-crear
-description: "Rol Manager · módulo Notificaciones (notificaciones) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
+description: "Rol Manager · módulo Notificaciones (notificaciones) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en notificaciones. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: manager
 module: notificaciones
 action: create

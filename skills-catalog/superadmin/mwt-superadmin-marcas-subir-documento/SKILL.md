@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-marcas-subir-documento
-description: "Rol Super Admin · módulo Marcas (marcas) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
+description: "Rol Super Admin · módulo Marcas (marcas) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a marcas. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: superadmin
 module: marcas
 action: upload_doc

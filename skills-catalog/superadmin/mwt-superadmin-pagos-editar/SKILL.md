@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-pagos-editar
-description: "Rol Super Admin · módulo Pagos (pagos) · permiso editar (actualizar/modificar). Herramientas MCP: pago_conciliar, pago_liberar_credito, pago_rechazar. Lee el contrato en _contratos/pagos.md antes de actuar."
+description: "Rol Super Admin · módulo Pagos (pagos) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en pagos. Herramientas MCP: pago_conciliar, pago_liberar_credito, pago_rechazar. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: superadmin
 module: pagos
 action: update

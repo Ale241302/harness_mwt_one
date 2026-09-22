@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-portal-editar
-description: "Rol Manager · módulo Portal (portal) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
+description: "Rol Manager · módulo Portal (portal) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en portal. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: manager
 module: portal
 action: update

@@ -138,6 +138,7 @@
     "verify-client-ui-i18n": "tsx scripts/verify-client-ui-i18n.ts",
     "verify-no-bare-dispatcher": "tsx scripts/verify-no-bare-dispatcher.ts",
     "verify-cordis-config": "tsx scripts/verify-cordis-config.ts",
+    "verify-skills-catalog": "tsx scripts/verify-skills-catalog.ts",
     "rescope-vendor": "tsx scripts/rescope-vendor.ts",
     "rescope-vendor:check": "tsx scripts/rescope-vendor.ts --check",
     "verify-client-domain-graph": "tsx scripts/verify-client-domain-graph.ts",

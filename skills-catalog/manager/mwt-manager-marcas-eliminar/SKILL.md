@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-marcas-eliminar
-description: "Rol Manager · módulo Marcas (marcas) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
+description: "Rol Manager · módulo Marcas (marcas) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de marcas. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: manager
 module: marcas
 action: delete

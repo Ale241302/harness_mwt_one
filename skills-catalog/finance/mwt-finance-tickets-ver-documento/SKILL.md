@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-tickets-ver-documento
-description: "Rol Finance · módulo Tickets (tickets) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
+description: "Rol Finance · módulo Tickets (tickets) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de tickets. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: finance
 module: tickets
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-inventario-descargar-documento
-description: "Rol Finance · módulo Inventario (inventario) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
+description: "Rol Finance · módulo Inventario (inventario) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de inventario. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: finance
 module: inventario
 action: download_doc

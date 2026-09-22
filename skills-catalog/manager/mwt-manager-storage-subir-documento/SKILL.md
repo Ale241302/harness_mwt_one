@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-storage-subir-documento
-description: "Rol Manager · módulo Storage (storage) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
+description: "Rol Manager · módulo Storage (storage) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a storage. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: manager
 module: storage
 action: upload_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-nodos-subir-documento
-description: "Rol Operador · módulo Nodos (nodos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
+description: "Rol Operador · módulo Nodos (nodos) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a nodos. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: operator
 module: nodos
 action: upload_doc

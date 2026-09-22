@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-nodos-ver-documento
-description: "Rol Finance · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
+description: "Rol Finance · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de nodos. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: finance
 module: nodos
 action: view_doc

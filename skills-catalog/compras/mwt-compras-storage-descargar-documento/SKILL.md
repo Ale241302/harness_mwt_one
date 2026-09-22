@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-storage-descargar-documento
-description: "Rol Compras · módulo Storage (storage) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: artefacto_archivo_descargar. Lee el contrato en _contratos/storage.md antes de actuar."
+description: "Rol Compras · módulo Storage (storage) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de storage. Herramientas MCP: artefacto_archivo_descargar. Lee el contrato en _contratos/storage.md antes de actuar."
 role: compras
 module: storage
 action: download_doc

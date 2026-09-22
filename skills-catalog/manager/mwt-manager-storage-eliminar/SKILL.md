@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-storage-eliminar
-description: "Rol Manager · módulo Storage (storage) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
+description: "Rol Manager · módulo Storage (storage) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de storage. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: manager
 module: storage
 action: delete

@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-nodos-leer
-description: "Rol Finance · módulo Nodos (nodos) · permiso leer (consultar/listar). Herramientas MCP: nodo_listar, nodo_obtener, nodo_artefactos_listar, builder_templates_listar, builder_template_obtener. Lee el contrato en _contratos/nodos.md antes de actuar."
+description: "Rol Finance · módulo Nodos (nodos) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar nodos (por ejemplo 'muéstrame nodos' o 'busca en nodos'). Herramientas MCP: nodo_listar, nodo_obtener, nodo_artefactos_listar, builder_templates_listar, builder_template_obtener. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: finance
 module: nodos
 action: view

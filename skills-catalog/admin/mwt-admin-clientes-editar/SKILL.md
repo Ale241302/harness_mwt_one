@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-clientes-editar
-description: "Rol Admin (CEO) · módulo Clientes (clientes) · permiso editar (actualizar/modificar). Herramientas MCP: cliente_editar. Lee el contrato en _contratos/clientes.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Clientes (clientes) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en clientes. Herramientas MCP: cliente_editar. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: admin
 module: clientes
 action: update

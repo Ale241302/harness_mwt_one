@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-notificaciones-ver-documento
-description: "Rol Compras · módulo Notificaciones (notificaciones) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
+description: "Rol Compras · módulo Notificaciones (notificaciones) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de notificaciones. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: compras
 module: notificaciones
 action: view_doc

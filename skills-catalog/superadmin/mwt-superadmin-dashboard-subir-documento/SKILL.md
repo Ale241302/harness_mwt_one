@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-dashboard-subir-documento
-description: "Rol Super Admin · módulo Dashboard (dashboard) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
+description: "Rol Super Admin · módulo Dashboard (dashboard) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a dashboard. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: superadmin
 module: dashboard
 action: upload_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-roles-leer
-description: "Rol Manager · módulo Roles y Permisos (roles) · permiso leer (consultar/listar). Herramientas MCP: mwt_diag_scope. Lee el contrato en _contratos/roles.md antes de actuar."
+description: "Rol Manager · módulo Roles y Permisos (roles) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar roles (por ejemplo 'muéstrame roles' o 'busca en roles'). Herramientas MCP: mwt_diag_scope. Lee el contrato en _contratos/roles.md antes de actuar."
 role: manager
 module: roles
 action: view

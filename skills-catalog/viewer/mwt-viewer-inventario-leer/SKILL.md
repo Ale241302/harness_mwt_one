@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-inventario-leer
-description: "Rol Viewer (solo lectura) · módulo Inventario (inventario) · permiso leer (consultar/listar). Herramientas MCP: stock_listar, inventario_saldos_por_expediente, inventario_expedientes_con_pendiente, inventario_lineas_en_nodo, inventario_artefactos_expediente. Lee el contrato en _contratos/inventario.md antes de actuar."
+description: "Rol Viewer (solo lectura) · módulo Inventario (inventario) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar inventario (por ejemplo 'muéstrame inventario' o 'busca en inventario'). Herramientas MCP: stock_listar, inventario_saldos_por_expediente, inventario_expedientes_con_pendiente, inventario_lineas_en_nodo, inventario_artefactos_expediente. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: viewer
 module: inventario
 action: view

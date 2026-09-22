@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-productos-leer
-description: "Rol Finance · módulo Productos (productos) · permiso leer (consultar/listar). Herramientas MCP: producto_listar, producto_obtener, producto_buscar, producto_precio_cliente, producto_ficha_tecnica, ncm_listar. Lee el contrato en _contratos/productos.md antes de actuar."
+description: "Rol Finance · módulo Productos (productos) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar productos (por ejemplo 'muéstrame productos' o 'busca en productos'). Herramientas MCP: producto_listar, producto_obtener, producto_buscar, producto_precio_cliente, producto_ficha_tecnica, ncm_listar. Lee el contrato en _contratos/productos.md antes de actuar."
 role: finance
 module: productos
 action: view

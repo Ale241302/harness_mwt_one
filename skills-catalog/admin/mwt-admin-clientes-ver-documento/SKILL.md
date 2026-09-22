@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-clientes-ver-documento
-description: "Rol Admin (CEO) · módulo Clientes (clientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Clientes (clientes) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de clientes. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: admin
 module: clientes
 action: view_doc

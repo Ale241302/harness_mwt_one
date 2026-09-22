@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-nodos-crear
-description: "Rol Manager · módulo Nodos (nodos) · permiso crear (crear). Herramientas MCP: nodo_crear, nodo_artefacto_crear. Lee el contrato en _contratos/nodos.md antes de actuar."
+description: "Rol Manager · módulo Nodos (nodos) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en nodos. Herramientas MCP: nodo_crear, nodo_artefacto_crear. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: manager
 module: nodos
 action: create

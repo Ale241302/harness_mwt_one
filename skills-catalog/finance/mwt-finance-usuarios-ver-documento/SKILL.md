@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-usuarios-ver-documento
-description: "Rol Finance · módulo Usuarios (usuarios) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
+description: "Rol Finance · módulo Usuarios (usuarios) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de usuarios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: finance
 module: usuarios
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-builder-editar
-description: "Rol Admin (CEO) · módulo MWT Builder (builder) · permiso editar (actualizar/modificar). Herramientas MCP: builder_artefacto_editar. Lee el contrato en _contratos/builder.md antes de actuar."
+description: "Rol Admin (CEO) · módulo MWT Builder (builder) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en builder. Herramientas MCP: builder_artefacto_editar. Lee el contrato en _contratos/builder.md antes de actuar."
 role: admin
 module: builder
 action: update

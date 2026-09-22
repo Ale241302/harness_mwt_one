@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-dashboard-crear
-description: "Rol Super Admin · módulo Dashboard (dashboard) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
+description: "Rol Super Admin · módulo Dashboard (dashboard) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en dashboard. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: superadmin
 module: dashboard
 action: create

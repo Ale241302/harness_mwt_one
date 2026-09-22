@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-tickets-subir-documento
-description: "Rol Super Admin · módulo Tickets (tickets) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
+description: "Rol Super Admin · módulo Tickets (tickets) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a tickets. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: superadmin
 module: tickets
 action: upload_doc

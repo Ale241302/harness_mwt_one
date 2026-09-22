@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-expedientes-descargar-documento
-description: "Rol Manager · módulo Expedientes (expedientes) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: documento_descargar. Lee el contrato en _contratos/expedientes.md antes de actuar."
+description: "Rol Manager · módulo Expedientes (expedientes) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de expedientes. Herramientas MCP: documento_descargar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: manager
 module: expedientes
 action: download_doc

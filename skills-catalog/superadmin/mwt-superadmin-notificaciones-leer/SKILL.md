@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-notificaciones-leer
-description: "Rol Super Admin · módulo Notificaciones (notificaciones) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
+description: "Rol Super Admin · módulo Notificaciones (notificaciones) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar notificaciones (por ejemplo 'muéstrame notificaciones' o 'busca en notificaciones'). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: superadmin
 module: notificaciones
 action: view

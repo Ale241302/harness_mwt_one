@@ -1,6 +1,6 @@
 ---
 name: mwt-client-b2b-portal-ver-documento
-description: "Rol Cliente B2B · módulo Portal (portal) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
+description: "Rol Cliente B2B · módulo Portal (portal) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de portal. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: client_b2b
 module: portal
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-builder-crear
-description: "Rol Super Admin · módulo MWT Builder (builder) · permiso crear (crear). Herramientas MCP: builder_artefacto_crear. Lee el contrato en _contratos/builder.md antes de actuar."
+description: "Rol Super Admin · módulo MWT Builder (builder) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en builder. Herramientas MCP: builder_artefacto_crear. Lee el contrato en _contratos/builder.md antes de actuar."
 role: superadmin
 module: builder
 action: create

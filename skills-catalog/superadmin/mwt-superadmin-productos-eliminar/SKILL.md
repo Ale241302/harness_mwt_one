@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-productos-eliminar
-description: "Rol Super Admin · módulo Productos (productos) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar."
+description: "Rol Super Admin · módulo Productos (productos) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de productos. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar."
 role: superadmin
 module: productos
 action: delete

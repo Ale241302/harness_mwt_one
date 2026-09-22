@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-usuarios-crear
-description: "Rol Manager · módulo Usuarios (usuarios) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
+description: "Rol Manager · módulo Usuarios (usuarios) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en usuarios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: manager
 module: usuarios
 action: create

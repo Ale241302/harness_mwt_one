@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-productos-crear
-description: "Rol Compras · módulo Productos (productos) · permiso crear (crear). Herramientas MCP: producto_crear, producto_alias_crear. Lee el contrato en _contratos/productos.md antes de actuar."
+description: "Rol Compras · módulo Productos (productos) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en productos. Herramientas MCP: producto_crear, producto_alias_crear. Lee el contrato en _contratos/productos.md antes de actuar."
 role: compras
 module: productos
 action: create

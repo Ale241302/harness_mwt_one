@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-sizing-leer
-description: "Rol Compras · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar."
+description: "Rol Compras · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar sizing (por ejemplo 'muéstrame sizing' o 'busca en sizing'). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: compras
 module: sizing
 action: view

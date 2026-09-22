@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-tickets-ver-documento
-description: "Rol Viewer (solo lectura) · módulo Tickets (tickets) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
+description: "Rol Viewer (solo lectura) · módulo Tickets (tickets) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de tickets. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: viewer
 module: tickets
 action: view_doc

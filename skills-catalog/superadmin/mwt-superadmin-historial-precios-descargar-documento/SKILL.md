@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-historial-precios-descargar-documento
-description: "Rol Super Admin · módulo Historial de precios (historial-precios) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
+description: "Rol Super Admin · módulo Historial de precios (historial-precios) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de historial-precios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
 role: superadmin
 module: historial-precios
 action: download_doc

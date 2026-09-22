@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-sizing-crear
-description: "Rol Compras · módulo Motor de Tallas (sizing) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
+description: "Rol Compras · módulo Motor de Tallas (sizing) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en sizing. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: compras
 module: sizing
 action: create

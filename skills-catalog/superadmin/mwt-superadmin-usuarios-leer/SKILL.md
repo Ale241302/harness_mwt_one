@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-usuarios-leer
-description: "Rol Super Admin · módulo Usuarios (usuarios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
+description: "Rol Super Admin · módulo Usuarios (usuarios) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar usuarios (por ejemplo 'muéstrame usuarios' o 'busca en usuarios'). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: superadmin
 module: usuarios
 action: view

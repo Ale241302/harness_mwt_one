@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-clientes-subir-documento
-description: "Rol Compras · módulo Clientes (clientes) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar."
+description: "Rol Compras · módulo Clientes (clientes) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a clientes. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: compras
 module: clientes
 action: upload_doc

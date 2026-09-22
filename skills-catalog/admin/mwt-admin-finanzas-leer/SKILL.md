@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-finanzas-leer
-description: "Rol Admin (CEO) · módulo Finanzas (finanzas) · permiso leer (consultar/listar). Herramientas MCP: finanzas_overview, finanzas_comisiones, finanzas_commission_by_month, finanzas_margin_scatter, finanzas_cliente. Lee el contrato en _contratos/finanzas.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Finanzas (finanzas) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar finanzas (por ejemplo 'muéstrame finanzas' o 'busca en finanzas'). Herramientas MCP: finanzas_overview, finanzas_comisiones, finanzas_commission_by_month, finanzas_margin_scatter, finanzas_cliente. Lee el contrato en _contratos/finanzas.md antes de actuar."
 role: admin
 module: finanzas
 action: view

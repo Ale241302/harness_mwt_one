@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-dashboard-ver-documento
-description: "Rol Super Admin · módulo Dashboard (dashboard) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
+description: "Rol Super Admin · módulo Dashboard (dashboard) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de dashboard. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: superadmin
 module: dashboard
 action: view_doc

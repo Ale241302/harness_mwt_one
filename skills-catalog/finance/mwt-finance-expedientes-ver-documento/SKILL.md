@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-expedientes-ver-documento
-description: "Rol Finance · módulo Expedientes (expedientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: documento_listar. Lee el contrato en _contratos/expedientes.md antes de actuar."
+description: "Rol Finance · módulo Expedientes (expedientes) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de expedientes. Herramientas MCP: documento_listar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: finance
 module: expedientes
 action: view_doc

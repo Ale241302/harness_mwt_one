@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-portal-eliminar
-description: "Rol Super Admin · módulo Portal (portal) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
+description: "Rol Super Admin · módulo Portal (portal) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de portal. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: superadmin
 module: portal
 action: delete

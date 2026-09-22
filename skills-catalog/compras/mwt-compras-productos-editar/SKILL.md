@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-productos-editar
-description: "Rol Compras · módulo Productos (productos) · permiso editar (actualizar/modificar). Herramientas MCP: producto_editar. Lee el contrato en _contratos/productos.md antes de actuar."
+description: "Rol Compras · módulo Productos (productos) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en productos. Herramientas MCP: producto_editar. Lee el contrato en _contratos/productos.md antes de actuar."
 role: compras
 module: productos
 action: update

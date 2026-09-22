@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-clientes-crear
-description: "Rol Super Admin · módulo Clientes (clientes) · permiso crear (crear). Herramientas MCP: cliente_crear. Lee el contrato en _contratos/clientes.md antes de actuar."
+description: "Rol Super Admin · módulo Clientes (clientes) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en clientes. Herramientas MCP: cliente_crear. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: superadmin
 module: clientes
 action: create

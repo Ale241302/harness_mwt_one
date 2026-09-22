@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-portal-leer
-description: "Rol Manager · módulo Portal (portal) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
+description: "Rol Manager · módulo Portal (portal) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar portal (por ejemplo 'muéstrame portal' o 'busca en portal'). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: manager
 module: portal
 action: view

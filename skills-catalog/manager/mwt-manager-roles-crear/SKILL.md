@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-roles-crear
-description: "Rol Manager · módulo Roles y Permisos (roles) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
+description: "Rol Manager · módulo Roles y Permisos (roles) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en roles. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: manager
 module: roles
 action: create

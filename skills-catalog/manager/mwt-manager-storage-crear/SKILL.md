@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-storage-crear
-description: "Rol Manager · módulo Storage (storage) · permiso crear (crear). Herramientas MCP: storage_subir_archivo. Lee el contrato en _contratos/storage.md antes de actuar."
+description: "Rol Manager · módulo Storage (storage) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en storage. Herramientas MCP: storage_subir_archivo. Lee el contrato en _contratos/storage.md antes de actuar."
 role: manager
 module: storage
 action: create

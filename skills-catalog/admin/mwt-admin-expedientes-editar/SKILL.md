@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-expedientes-editar
-description: "Rol Admin (CEO) · módulo Expedientes (expedientes) · permiso editar (actualizar/modificar). Herramientas MCP: oc_editar, lineas_actualizar_precios, expediente_apply_pronto_pago, expediente_editar, expediente_edit_full_patch, expediente_avanzar_estado, expediente_envio_backfill, expediente_phase_durations_set, expediente_fusionar, expediente_fusion_label, expediente_desfusionar, documento_editar, sap_confirmar, sap_editar, sap_sincronizar_discrepancias, match_resolver. Lee el contrato en _contratos/expedientes.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Expedientes (expedientes) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en expedientes. Herramientas MCP: oc_editar, lineas_actualizar_precios, expediente_apply_pronto_pago, expediente_editar, expediente_edit_full_patch, expediente_avanzar_estado, expediente_envio_backfill, expediente_phase_durations_set, expediente_fusionar, expediente_fusion_label, expediente_desfusionar, documento_editar, sap_confirmar, sap_editar, sap_sincronizar_discrepancias, match_resolver. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: admin
 module: expedientes
 action: update

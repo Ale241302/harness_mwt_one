@@ -1,6 +1,6 @@
 ---
 name: mwt-client-b2b-portal-descargar-documento
-description: "Rol Cliente B2B · módulo Portal (portal) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
+description: "Rol Cliente B2B · módulo Portal (portal) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de portal. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: client_b2b
 module: portal
 action: download_doc

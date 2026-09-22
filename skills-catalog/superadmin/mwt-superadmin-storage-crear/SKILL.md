@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-storage-crear
-description: "Rol Super Admin · módulo Storage (storage) · permiso crear (crear). Herramientas MCP: storage_subir_archivo. Lee el contrato en _contratos/storage.md antes de actuar."
+description: "Rol Super Admin · módulo Storage (storage) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en storage. Herramientas MCP: storage_subir_archivo. Lee el contrato en _contratos/storage.md antes de actuar."
 role: superadmin
 module: storage
 action: create

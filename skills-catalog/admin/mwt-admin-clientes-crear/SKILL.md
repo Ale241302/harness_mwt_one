@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-clientes-crear
-description: "Rol Admin (CEO) · módulo Clientes (clientes) · permiso crear (crear). Herramientas MCP: cliente_crear. Lee el contrato en _contratos/clientes.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Clientes (clientes) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en clientes. Herramientas MCP: cliente_crear. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: admin
 module: clientes
 action: create

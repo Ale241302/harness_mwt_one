@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-usuarios-ver-documento
-description: "Rol Operador · módulo Usuarios (usuarios) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
+description: "Rol Operador · módulo Usuarios (usuarios) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de usuarios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: operator
 module: usuarios
 action: view_doc

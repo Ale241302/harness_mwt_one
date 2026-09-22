@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-pagos-editar
-description: "Rol Admin (CEO) · módulo Pagos (pagos) · permiso editar (actualizar/modificar). Herramientas MCP: pago_conciliar, pago_liberar_credito, pago_rechazar. Lee el contrato en _contratos/pagos.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Pagos (pagos) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en pagos. Herramientas MCP: pago_conciliar, pago_liberar_credito, pago_rechazar. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: admin
 module: pagos
 action: update

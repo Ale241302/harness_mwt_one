@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-tickets-editar
-description: "Rol Admin (CEO) · módulo Tickets (tickets) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Tickets (tickets) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en tickets. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: admin
 module: tickets
 action: update

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-expedientes-ver-documento
-description: "Rol Super Admin · módulo Expedientes (expedientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: documento_listar. Lee el contrato en _contratos/expedientes.md antes de actuar."
+description: "Rol Super Admin · módulo Expedientes (expedientes) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de expedientes. Herramientas MCP: documento_listar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: superadmin
 module: expedientes
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-analytics-leer
-description: "Rol Super Admin · módulo Analytics (analytics) · permiso leer (consultar/listar). Herramientas MCP: cashflow_chart, margen_marcas_chart, aging_chart, exposicion_chart, reporte_cobranza, reporte_expedientes, dashboard_resumen. Lee el contrato en _contratos/analytics.md antes de actuar."
+description: "Rol Super Admin · módulo Analytics (analytics) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar analytics (por ejemplo 'muéstrame analytics' o 'busca en analytics'). Herramientas MCP: cashflow_chart, margen_marcas_chart, aging_chart, exposicion_chart, reporte_cobranza, reporte_expedientes, dashboard_resumen. Lee el contrato en _contratos/analytics.md antes de actuar."
 role: superadmin
 module: analytics
 action: view

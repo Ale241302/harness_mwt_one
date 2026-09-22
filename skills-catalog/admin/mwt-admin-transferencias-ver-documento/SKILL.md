@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-transferencias-ver-documento
-description: "Rol Admin (CEO) · módulo Transferencias (transferencias) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Transferencias (transferencias) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de transferencias. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: admin
 module: transferencias
 action: view_doc

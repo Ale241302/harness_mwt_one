@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-marcas-crear
-description: "Rol Compras · módulo Marcas (marcas) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
+description: "Rol Compras · módulo Marcas (marcas) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en marcas. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: compras
 module: marcas
 action: create

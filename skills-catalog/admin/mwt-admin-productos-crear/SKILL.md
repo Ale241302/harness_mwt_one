@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-productos-crear
-description: "Rol Admin (CEO) · módulo Productos (productos) · permiso crear (crear). Herramientas MCP: producto_crear, producto_alias_crear. Lee el contrato en _contratos/productos.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Productos (productos) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en productos. Herramientas MCP: producto_crear, producto_alias_crear. Lee el contrato en _contratos/productos.md antes de actuar."
 role: admin
 module: productos
 action: create

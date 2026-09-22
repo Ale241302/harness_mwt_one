@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-transferencias-eliminar
-description: "Rol Admin (CEO) · módulo Transferencias (transferencias) · permiso eliminar (eliminar/borrar). Herramientas MCP: transfer_costo_eliminar. Lee el contrato en _contratos/transferencias.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Transferencias (transferencias) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de transferencias. Herramientas MCP: transfer_costo_eliminar. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: admin
 module: transferencias
 action: delete

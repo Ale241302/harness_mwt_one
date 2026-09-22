@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-pagos-crear
-description: "Rol Admin (CEO) · módulo Pagos (pagos) · permiso crear (crear). Herramientas MCP: pago_dry_run, pago_registrar. Lee el contrato en _contratos/pagos.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Pagos (pagos) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en pagos. Herramientas MCP: pago_dry_run, pago_registrar. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: admin
 module: pagos
 action: create

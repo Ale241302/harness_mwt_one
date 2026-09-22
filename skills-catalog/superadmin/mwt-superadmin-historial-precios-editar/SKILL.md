@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-historial-precios-editar
-description: "Rol Super Admin · módulo Historial de precios (historial-precios) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
+description: "Rol Super Admin · módulo Historial de precios (historial-precios) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en historial-precios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
 role: superadmin
 module: historial-precios
 action: update

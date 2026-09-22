@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-expedientes-leer
-description: "Rol Finance · módulo Expedientes (expedientes) · permiso leer (consultar/listar). Herramientas MCP: oc_listar, oc_obtener, proforma_html, proforma_documento, factura_payload, expediente_listar, expediente_obtener, expediente_buscar, expediente_lineas, expediente_documentos_completos, expediente_buscar_por_producto, expediente_edit_full_get, expediente_phase_durations_get, expediente_tiempos, expediente_eventos, sap_analizar, sap_obtener. Lee el contrato en _contratos/expedientes.md antes de actuar."
+description: "Rol Finance · módulo Expedientes (expedientes) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar expedientes (por ejemplo 'muéstrame expedientes' o 'busca en expedientes'). Herramientas MCP: oc_listar, oc_obtener, proforma_html, proforma_documento, factura_payload, expediente_listar, expediente_obtener, expediente_buscar, expediente_lineas, expediente_documentos_completos, expediente_buscar_por_producto, expediente_edit_full_get, expediente_phase_durations_get, expediente_tiempos, expediente_eventos, sap_analizar, sap_obtener. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: finance
 module: expedientes
 action: view

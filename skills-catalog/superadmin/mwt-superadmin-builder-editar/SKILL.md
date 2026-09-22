@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-builder-editar
-description: "Rol Super Admin · módulo MWT Builder (builder) · permiso editar (actualizar/modificar). Herramientas MCP: builder_artefacto_editar. Lee el contrato en _contratos/builder.md antes de actuar."
+description: "Rol Super Admin · módulo MWT Builder (builder) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en builder. Herramientas MCP: builder_artefacto_editar. Lee el contrato en _contratos/builder.md antes de actuar."
 role: superadmin
 module: builder
 action: update

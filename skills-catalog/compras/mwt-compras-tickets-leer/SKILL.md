@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-tickets-leer
-description: "Rol Compras · módulo Tickets (tickets) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
+description: "Rol Compras · módulo Tickets (tickets) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar tickets (por ejemplo 'muéstrame tickets' o 'busca en tickets'). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: compras
 module: tickets
 action: view

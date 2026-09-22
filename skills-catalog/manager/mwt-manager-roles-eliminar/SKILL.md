@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-roles-eliminar
-description: "Rol Manager · módulo Roles y Permisos (roles) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
+description: "Rol Manager · módulo Roles y Permisos (roles) · permiso eliminar (eliminar/borrar). Úsala cuando el usuario quiera eliminar o borrar algo de roles. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: manager
 module: roles
 action: delete

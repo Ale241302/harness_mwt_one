@@ -1,6 +1,6 @@
 ---
 name: mwt-client-b2b-cartera-descargar-documento
-description: "Rol Cliente B2B · módulo Cartera (cartera) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
+description: "Rol Cliente B2B · módulo Cartera (cartera) · permiso descargar-documento (descargar un archivo/documento). Úsala cuando el usuario quiera descargar un documento o archivo de cartera. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
 role: client_b2b
 module: cartera
 action: download_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-storage-subir-documento
-description: "Rol Admin (CEO) · módulo Storage (storage) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Storage (storage) · permiso subir-documento (subir un archivo/documento). Úsala cuando el usuario quiera subir o adjuntar un documento a storage. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: admin
 module: storage
 action: upload_doc

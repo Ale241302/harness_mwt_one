@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-nodos-editar
-description: "Rol Super Admin · módulo Nodos (nodos) · permiso editar (actualizar/modificar). Herramientas MCP: nodo_editar, artefacto_editar, artefacto_publicar. Lee el contrato en _contratos/nodos.md antes de actuar."
+description: "Rol Super Admin · módulo Nodos (nodos) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en nodos. Herramientas MCP: nodo_editar, artefacto_editar, artefacto_publicar. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: superadmin
 module: nodos
 action: update

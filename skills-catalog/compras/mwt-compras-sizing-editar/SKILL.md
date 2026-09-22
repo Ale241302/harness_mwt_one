@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-sizing-editar
-description: "Rol Compras · módulo Motor de Tallas (sizing) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
+description: "Rol Compras · módulo Motor de Tallas (sizing) · permiso editar (actualizar/modificar). Úsala cuando el usuario quiera editar, actualizar, corregir o cambiar algo en sizing. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: compras
 module: sizing
 action: update

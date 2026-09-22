@@ -1,6 +1,6 @@
 ---
 name: mwt-client-b2b-expedientes-ver-documento
-description: "Rol Cliente B2B · módulo Expedientes (expedientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: documento_listar. Lee el contrato en _contratos/expedientes.md antes de actuar."
+description: "Rol Cliente B2B · módulo Expedientes (expedientes) · permiso ver-documento (ver/listar documentos). Úsala cuando el usuario quiera ver o listar los documentos de expedientes. Herramientas MCP: documento_listar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: client_b2b
 module: expedientes
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-notificaciones-leer
-description: "Rol Finance · módulo Notificaciones (notificaciones) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
+description: "Rol Finance · módulo Notificaciones (notificaciones) · permiso leer (consultar/listar). Úsala cuando el usuario quiera consultar, listar, ver, buscar o revisar notificaciones (por ejemplo 'muéstrame notificaciones' o 'busca en notificaciones'). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: finance
 module: notificaciones
 action: view

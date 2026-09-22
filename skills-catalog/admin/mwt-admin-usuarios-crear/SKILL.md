@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-usuarios-crear
-description: "Rol Admin (CEO) · módulo Usuarios (usuarios) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
+description: "Rol Admin (CEO) · módulo Usuarios (usuarios) · permiso crear (crear). Úsala cuando el usuario quiera crear, registrar o dar de alta algo en usuarios. Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: admin
 module: usuarios
 action: create
