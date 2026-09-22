@@ -12,6 +12,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
       "path": "../../faberloom/view"
     },
     {
@@ -25,6 +28,15 @@
     },
     {
       "path": "../ui-primitives"
+    },
+    {
+      "path": "../ui-commands"
+    },
+    {
+      "path": "../ui-input-trigger"
+    },
+    {
+      "path": "../ui-session"
     },
     {
       "path": "../ui-renderer"

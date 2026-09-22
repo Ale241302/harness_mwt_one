@@ -20,8 +20,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: pulls the generated Remote client and the ctx.remote merge.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+// Type-only: pulls ctx.inputTriggers, ctx.commandUi, and ctx.sessions for the chat gestures.
+import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { FaberloomBrandName, FABERLOOM_SECTIONS, type FaberloomPanelInjected } from './panels.tsx'
+import { registerChatGestures } from './triggers.ts'
 import { createWorkspaceStore } from './store.ts'
 import { en, zh, type FaberloomKey } from './locales.ts'
 import { FABERLOOM_THEME_SOURCE, faberloomTokens } from './theme.ts'
@@ -41,8 +46,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'faberloom'
 
-/** Required services: slots, dictionaries, identity tokens, navigation, and the workspace Remote. */
-export const inject = ['slots', 'locale', 'theme', 'layout', 'remote', 'remote.faberloomView']
+/** Required services: slots, dictionaries, identity tokens, navigation, the workspace Remote, and the chat gesture seats. */
+export const inject = ['slots', 'locale', 'theme', 'layout', 'remote', 'remote.faberloomView', 'inputTriggers', 'commandUi', 'sessions']
 
 /** The store's bound write surface, as the registration's inject factory receives it. */
 type WorkspaceActions = BoundActions<ReturnType<typeof createWorkspaceStore>>
@@ -64,6 +69,8 @@ export function apply(ctx: ClientContext): void {
     () => ctx.theme.overrideTokens(FABERLOOM_THEME_SOURCE, faberloomTokens),
     'ui-faberloom: identity tokens',
   )
+
+  registerChatGestures(ctx, t)
 
   const workspace = createWorkspaceStore()
   // The renderer binds actions per registration; the first binding is enough for

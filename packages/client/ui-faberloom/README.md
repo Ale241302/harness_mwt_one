@@ -27,7 +27,8 @@ Mount this plugin where `ctx.slots`, `ctx.locale`, and `ctx.theme` are present. 
 
 - an accent layer through `ctx.theme.overrideTokens`, which follows light and dark;
 - the `sidebar.brand.name` occupant;
-- seven `sidebar.panellist` rows and their matching `main` panels, addressed by the shared `MainPanelId`.
+- seven `sidebar.panellist` rows and their matching `main` panels, addressed by the shared `MainPanelId`;
+- the chat gestures: an `@` trigger source that lists the owner's active agents (a pick inserts `@name`) and a `/routine` command contribution with a popup that starts the picked routine, both fed by the workspace overview through `ctx.remote.faberloomView`.
 
 All registrations are effects on the calling plugin's fiber and disappear with it.
 
@@ -40,7 +41,7 @@ All registrations are effects on the calling plugin's fiber and disappear with i
 
 #### What the model sees
 
-Nothing. The plugin's `apply` only calls `ctx.locale.register`, `ctx.theme.overrideTokens`, and `ctx.slots.register`; it contributes no tools, injects no prompt text, and writes no session events.
+Nothing directly. The plugin contributes no tools, injects no prompt text, and writes no session events. The `@` gesture only places plain text in the draft, so what the model receives is the agent's name in the user's message; delegating to that agent is the host's `faberloom_agents_delegate` tool, and starting a routine from `/routine` is the host's execution service.
 
 #### Token effect
 

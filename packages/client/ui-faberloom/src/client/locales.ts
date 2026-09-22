@@ -245,6 +245,10 @@ const es = {
   'memory.selectText': 'Elige una fila para ver su texto, su tipo y su fecha.',
 
   'connections.pendingTitle': 'Conexiones por usuario',
+  'trigger.agents': 'Agentes',
+  'trigger.personalSpace': 'personal',
+  'command.routine': 'Rutina',
+  'command.routineDesc': 'Ejecutar una rutina ahora',
   'backup.title': 'Respaldos del conocimiento',
   'backup.intro': 'Captura, verifica y restaura el conocimiento y los procesos del propietario. Restaurar no repite efectos externos.',
   'backup.notePlaceholder': 'Nota del respaldo (opcional)',
@@ -660,6 +664,10 @@ export const en: Record<FaberloomKey, string> = {
   'memory.selectText': 'Pick a row to see its text, type, and date.',
 
   'connections.pendingTitle': 'Per-user connections',
+  'trigger.agents': 'Agents',
+  'trigger.personalSpace': 'personal',
+  'command.routine': 'Routine',
+  'command.routineDesc': 'Run a routine now',
   'backup.title': 'Knowledge backups',
   'backup.intro': 'Capture, verify, and restore the owner knowledge and processes. Restoring does not repeat external effects.',
   'backup.notePlaceholder': 'Backup note (optional)',
@@ -1068,6 +1076,10 @@ export const zh: Record<FaberloomKey, string> = {
   'memory.selectText': '选择一行以查看其文本、类型与日期。',
 
   'connections.pendingTitle': '按用户的连接',
+  'trigger.agents': '智能体',
+  'trigger.personalSpace': '个人',
+  'command.routine': '例程',
+  'command.routineDesc': '立即运行一个例程',
   'backup.title': '知识备份',
   'backup.intro': '捕获、校验并恢复拥有者的知识与流程。恢复不会重复外部效果。',
   'backup.notePlaceholder': '备份备注（可选）',

@@ -76,6 +76,10 @@ async function bench(overviewResult: unknown = { ok: true, value: OVERVIEW }) {
       ctx.provide('locale', locale)
       ctx.provide('remote', { faberloomView, $on: vi.fn(() => () => {}) } as never)
       ctx.provide('remote.faberloomView', faberloomView as never)
+      // The chat gestures register into these seats; the panel specs stub them
+      // (`sessions` is already provided by the slot test runtime).
+      ctx.provide('inputTriggers', { registerSource: vi.fn(() => () => {}), sessionOf: vi.fn() } as never)
+      ctx.provide('commandUi', { register: vi.fn(() => () => {}), decorate: vi.fn(() => () => {}), dismiss: vi.fn(), popupFor: vi.fn() } as never)
       ctx.effect(() => locale.register('common', { zh: commonZh, en: commonEn }), 'test: common locale')
       ctx.slots.installLocale(locale)
     },
