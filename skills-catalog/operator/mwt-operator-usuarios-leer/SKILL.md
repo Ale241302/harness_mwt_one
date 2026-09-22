@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-usuarios-leer
-description: Rol Operador · módulo Usuarios (usuarios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Operador · módulo Usuarios (usuarios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: operator
 module: usuarios
 action: view

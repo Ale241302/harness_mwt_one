@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-storage-subir-documento
-description: Rol Super Admin · módulo Storage (storage) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar.
+description: "Rol Super Admin · módulo Storage (storage) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: superadmin
 module: storage
 action: upload_doc

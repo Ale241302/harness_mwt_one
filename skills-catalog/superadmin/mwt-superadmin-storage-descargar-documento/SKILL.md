@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-storage-descargar-documento
-description: Rol Super Admin · módulo Storage (storage) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: artefacto_archivo_descargar. Lee el contrato en _contratos/storage.md antes de actuar.
+description: "Rol Super Admin · módulo Storage (storage) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: artefacto_archivo_descargar. Lee el contrato en _contratos/storage.md antes de actuar."
 role: superadmin
 module: storage
 action: download_doc

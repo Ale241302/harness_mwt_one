@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-pagos-descargar-documento
-description: Rol Viewer (solo lectura) · módulo Pagos (pagos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Pagos (pagos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: viewer
 module: pagos
 action: download_doc

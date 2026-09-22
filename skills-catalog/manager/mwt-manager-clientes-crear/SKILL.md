@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-clientes-crear
-description: Rol Manager · módulo Clientes (clientes) · permiso crear (crear). Herramientas MCP: cliente_crear. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Manager · módulo Clientes (clientes) · permiso crear (crear). Herramientas MCP: cliente_crear. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: manager
 module: clientes
 action: create

@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-inventario-descargar-documento
-description: Rol Compras · módulo Inventario (inventario) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Compras · módulo Inventario (inventario) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: compras
 module: inventario
 action: download_doc

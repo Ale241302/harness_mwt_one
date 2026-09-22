@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-marcas-ver-documento
-description: Rol Viewer (solo lectura) · módulo Marcas (marcas) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Marcas (marcas) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: viewer
 module: marcas
 action: view_doc

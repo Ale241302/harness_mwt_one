@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-marcas-editar
-description: Rol Compras · módulo Marcas (marcas) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Compras · módulo Marcas (marcas) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: compras
 module: marcas
 action: update

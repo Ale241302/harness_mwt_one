@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-historial-precios-leer
-description: Rol Admin (CEO) · módulo Historial de precios (historial-precios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Historial de precios (historial-precios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
 role: admin
 module: historial-precios
 action: view

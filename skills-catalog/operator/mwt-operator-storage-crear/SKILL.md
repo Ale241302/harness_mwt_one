@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-storage-crear
-description: Rol Operador · módulo Storage (storage) · permiso crear (crear). Herramientas MCP: storage_subir_archivo. Lee el contrato en _contratos/storage.md antes de actuar.
+description: "Rol Operador · módulo Storage (storage) · permiso crear (crear). Herramientas MCP: storage_subir_archivo. Lee el contrato en _contratos/storage.md antes de actuar."
 role: operator
 module: storage
 action: create

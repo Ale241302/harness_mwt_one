@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-storage-crear
-description: Rol Admin (CEO) · módulo Storage (storage) · permiso crear (crear). Herramientas MCP: storage_subir_archivo. Lee el contrato en _contratos/storage.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Storage (storage) · permiso crear (crear). Herramientas MCP: storage_subir_archivo. Lee el contrato en _contratos/storage.md antes de actuar."
 role: admin
 module: storage
 action: create

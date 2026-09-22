@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-usuarios-descargar-documento
-description: Rol Operador · módulo Usuarios (usuarios) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Operador · módulo Usuarios (usuarios) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: operator
 module: usuarios
 action: download_doc

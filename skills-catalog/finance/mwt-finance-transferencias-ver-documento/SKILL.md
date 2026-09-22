@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-transferencias-ver-documento
-description: Rol Finance · módulo Transferencias (transferencias) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Finance · módulo Transferencias (transferencias) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: finance
 module: transferencias
 action: view_doc

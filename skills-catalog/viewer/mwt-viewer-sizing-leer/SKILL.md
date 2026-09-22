@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-sizing-leer
-description: Rol Viewer (solo lectura) · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: viewer
 module: sizing
 action: view

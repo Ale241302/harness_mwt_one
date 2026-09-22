@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-sizing-leer
-description: Rol Finance · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Finance · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: finance
 module: sizing
 action: view

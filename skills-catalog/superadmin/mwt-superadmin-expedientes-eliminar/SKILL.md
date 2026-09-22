@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-expedientes-eliminar
-description: Rol Super Admin · módulo Expedientes (expedientes) · permiso eliminar (eliminar/borrar). Herramientas MCP: expediente_eliminar, documento_eliminar. Lee el contrato en _contratos/expedientes.md antes de actuar.
+description: "Rol Super Admin · módulo Expedientes (expedientes) · permiso eliminar (eliminar/borrar). Herramientas MCP: expediente_eliminar, documento_eliminar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: superadmin
 module: expedientes
 action: delete

@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-roles-ver-documento
-description: Rol Viewer (solo lectura) · módulo Roles y Permisos (roles) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Roles y Permisos (roles) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: viewer
 module: roles
 action: view_doc

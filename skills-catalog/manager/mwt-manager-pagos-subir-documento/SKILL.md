@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-pagos-subir-documento
-description: Rol Manager · módulo Pagos (pagos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Manager · módulo Pagos (pagos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: manager
 module: pagos
 action: upload_doc

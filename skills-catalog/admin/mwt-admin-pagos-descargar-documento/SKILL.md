@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-pagos-descargar-documento
-description: Rol Admin (CEO) · módulo Pagos (pagos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Pagos (pagos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: admin
 module: pagos
 action: download_doc

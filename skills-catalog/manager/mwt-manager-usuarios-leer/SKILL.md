@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-usuarios-leer
-description: Rol Manager · módulo Usuarios (usuarios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Manager · módulo Usuarios (usuarios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: manager
 module: usuarios
 action: view

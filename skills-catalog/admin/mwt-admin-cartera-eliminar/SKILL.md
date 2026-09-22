@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-cartera-eliminar
-description: Rol Admin (CEO) · módulo Cartera (cartera) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Cartera (cartera) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
 role: admin
 module: cartera
 action: delete

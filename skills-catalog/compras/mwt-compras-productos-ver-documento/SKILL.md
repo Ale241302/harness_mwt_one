@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-productos-ver-documento
-description: Rol Compras · módulo Productos (productos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Compras · módulo Productos (productos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar."
 role: compras
 module: productos
 action: view_doc

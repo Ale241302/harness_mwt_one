@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-pagos-leer
-description: Rol Finance · módulo Pagos (pagos) · permiso leer (consultar/listar). Herramientas MCP: pago_applicables, pago_listar, pago_obtener. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Finance · módulo Pagos (pagos) · permiso leer (consultar/listar). Herramientas MCP: pago_applicables, pago_listar, pago_obtener. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: finance
 module: pagos
 action: view

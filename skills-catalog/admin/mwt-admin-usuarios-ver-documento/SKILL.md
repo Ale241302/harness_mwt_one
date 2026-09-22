@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-usuarios-ver-documento
-description: Rol Admin (CEO) · módulo Usuarios (usuarios) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Usuarios (usuarios) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: admin
 module: usuarios
 action: view_doc

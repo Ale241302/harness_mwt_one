@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-roles-subir-documento
-description: Rol Super Admin · módulo Roles y Permisos (roles) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Super Admin · módulo Roles y Permisos (roles) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: superadmin
 module: roles
 action: upload_doc

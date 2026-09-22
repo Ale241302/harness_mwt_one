@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-nodos-editar
-description: Rol Operador · módulo Nodos (nodos) · permiso editar (actualizar/modificar). Herramientas MCP: nodo_editar, artefacto_editar, artefacto_publicar. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Operador · módulo Nodos (nodos) · permiso editar (actualizar/modificar). Herramientas MCP: nodo_editar, artefacto_editar, artefacto_publicar. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: operator
 module: nodos
 action: update

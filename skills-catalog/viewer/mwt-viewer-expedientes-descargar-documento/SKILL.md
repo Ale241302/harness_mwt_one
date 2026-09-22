@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-expedientes-descargar-documento
-description: Rol Viewer (solo lectura) · módulo Expedientes (expedientes) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: documento_descargar. Lee el contrato en _contratos/expedientes.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Expedientes (expedientes) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: documento_descargar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: viewer
 module: expedientes
 action: download_doc

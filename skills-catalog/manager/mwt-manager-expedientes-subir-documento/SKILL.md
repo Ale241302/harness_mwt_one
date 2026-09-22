@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-expedientes-subir-documento
-description: Rol Manager · módulo Expedientes (expedientes) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: documento_subir, match_subir. Lee el contrato en _contratos/expedientes.md antes de actuar.
+description: "Rol Manager · módulo Expedientes (expedientes) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: documento_subir, match_subir. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: manager
 module: expedientes
 action: upload_doc

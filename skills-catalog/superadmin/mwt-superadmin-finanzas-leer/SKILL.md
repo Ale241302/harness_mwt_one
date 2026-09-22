@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-finanzas-leer
-description: Rol Super Admin · módulo Finanzas (finanzas) · permiso leer (consultar/listar). Herramientas MCP: finanzas_overview, finanzas_comisiones, finanzas_commission_by_month, finanzas_margin_scatter, finanzas_cliente. Lee el contrato en _contratos/finanzas.md antes de actuar.
+description: "Rol Super Admin · módulo Finanzas (finanzas) · permiso leer (consultar/listar). Herramientas MCP: finanzas_overview, finanzas_comisiones, finanzas_commission_by_month, finanzas_margin_scatter, finanzas_cliente. Lee el contrato en _contratos/finanzas.md antes de actuar."
 role: superadmin
 module: finanzas
 action: view

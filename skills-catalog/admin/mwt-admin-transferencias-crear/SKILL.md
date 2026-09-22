@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-transferencias-crear
-description: Rol Admin (CEO) · módulo Transferencias (transferencias) · permiso crear (crear). Herramientas MCP: transferencia_crear, transfer_artefacto_crear, transfer_nota_crear, transfer_costo_agregar. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Transferencias (transferencias) · permiso crear (crear). Herramientas MCP: transferencia_crear, transfer_artefacto_crear, transfer_nota_crear, transfer_costo_agregar. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: admin
 module: transferencias
 action: create

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-expedientes-subir-documento
-description: Rol Admin (CEO) · módulo Expedientes (expedientes) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: documento_subir, match_subir. Lee el contrato en _contratos/expedientes.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Expedientes (expedientes) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: documento_subir, match_subir. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: admin
 module: expedientes
 action: upload_doc

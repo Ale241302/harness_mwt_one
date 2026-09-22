@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-cartera-leer
-description: Rol Admin (CEO) · módulo Cartera (cartera) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Cartera (cartera) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
 role: admin
 module: cartera
 action: view

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-clientes-ver-documento
-description: Rol Super Admin · módulo Clientes (clientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Super Admin · módulo Clientes (clientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: superadmin
 module: clientes
 action: view_doc

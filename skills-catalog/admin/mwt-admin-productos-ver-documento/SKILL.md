@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-productos-ver-documento
-description: Rol Admin (CEO) · módulo Productos (productos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Productos (productos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar."
 role: admin
 module: productos
 action: view_doc

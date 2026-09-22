@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-transferencias-crear
-description: Rol Operador · módulo Transferencias (transferencias) · permiso crear (crear). Herramientas MCP: transferencia_crear, transfer_artefacto_crear, transfer_nota_crear, transfer_costo_agregar. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Operador · módulo Transferencias (transferencias) · permiso crear (crear). Herramientas MCP: transferencia_crear, transfer_artefacto_crear, transfer_nota_crear, transfer_costo_agregar. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: operator
 module: transferencias
 action: create

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-pagos-ver-documento
-description: Rol Super Admin · módulo Pagos (pagos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Super Admin · módulo Pagos (pagos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: superadmin
 module: pagos
 action: view_doc

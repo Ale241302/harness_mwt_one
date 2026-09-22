@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-usuarios-leer
-description: Rol Viewer (solo lectura) · módulo Usuarios (usuarios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Usuarios (usuarios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: viewer
 module: usuarios
 action: view

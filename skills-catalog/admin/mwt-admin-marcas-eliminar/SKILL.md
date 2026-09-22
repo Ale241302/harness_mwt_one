@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-marcas-eliminar
-description: Rol Admin (CEO) · módulo Marcas (marcas) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Marcas (marcas) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: admin
 module: marcas
 action: delete

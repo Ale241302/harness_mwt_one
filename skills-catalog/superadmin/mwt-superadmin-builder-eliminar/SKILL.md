@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-builder-eliminar
-description: Rol Super Admin · módulo MWT Builder (builder) · permiso eliminar (eliminar/borrar). Herramientas MCP: builder_artefacto_eliminar. Lee el contrato en _contratos/builder.md antes de actuar.
+description: "Rol Super Admin · módulo MWT Builder (builder) · permiso eliminar (eliminar/borrar). Herramientas MCP: builder_artefacto_eliminar. Lee el contrato en _contratos/builder.md antes de actuar."
 role: superadmin
 module: builder
 action: delete

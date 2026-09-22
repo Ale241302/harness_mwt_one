@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-transferencias-eliminar
-description: Rol Super Admin · módulo Transferencias (transferencias) · permiso eliminar (eliminar/borrar). Herramientas MCP: transfer_costo_eliminar. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Super Admin · módulo Transferencias (transferencias) · permiso eliminar (eliminar/borrar). Herramientas MCP: transfer_costo_eliminar. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: superadmin
 module: transferencias
 action: delete

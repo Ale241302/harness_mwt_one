@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-clientes-descargar-documento
-description: Rol Super Admin · módulo Clientes (clientes) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Super Admin · módulo Clientes (clientes) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: superadmin
 module: clientes
 action: download_doc

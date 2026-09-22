@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-productos-editar
-description: Rol Manager · módulo Productos (productos) · permiso editar (actualizar/modificar). Herramientas MCP: producto_editar. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Manager · módulo Productos (productos) · permiso editar (actualizar/modificar). Herramientas MCP: producto_editar. Lee el contrato en _contratos/productos.md antes de actuar."
 role: manager
 module: productos
 action: update

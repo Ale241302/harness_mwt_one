@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-sizing-leer
-description: Rol Super Admin · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Super Admin · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: superadmin
 module: sizing
 action: view

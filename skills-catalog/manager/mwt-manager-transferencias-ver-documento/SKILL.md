@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-transferencias-ver-documento
-description: Rol Manager · módulo Transferencias (transferencias) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Manager · módulo Transferencias (transferencias) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: manager
 module: transferencias
 action: view_doc

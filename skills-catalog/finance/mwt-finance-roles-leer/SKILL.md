@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-roles-leer
-description: Rol Finance · módulo Roles y Permisos (roles) · permiso leer (consultar/listar). Herramientas MCP: mwt_diag_scope. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Finance · módulo Roles y Permisos (roles) · permiso leer (consultar/listar). Herramientas MCP: mwt_diag_scope. Lee el contrato en _contratos/roles.md antes de actuar."
 role: finance
 module: roles
 action: view

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-portal-editar
-description: Rol Admin (CEO) · módulo Portal (portal) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Portal (portal) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: admin
 module: portal
 action: update

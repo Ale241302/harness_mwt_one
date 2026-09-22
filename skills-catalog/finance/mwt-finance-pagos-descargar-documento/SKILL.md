@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-pagos-descargar-documento
-description: Rol Finance · módulo Pagos (pagos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Finance · módulo Pagos (pagos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: finance
 module: pagos
 action: download_doc

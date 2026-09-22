@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-dashboard-crear
-description: Rol Admin (CEO) · módulo Dashboard (dashboard) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Dashboard (dashboard) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: admin
 module: dashboard
 action: create

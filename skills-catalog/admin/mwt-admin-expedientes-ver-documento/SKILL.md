@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-expedientes-ver-documento
-description: Rol Admin (CEO) · módulo Expedientes (expedientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: documento_listar. Lee el contrato en _contratos/expedientes.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Expedientes (expedientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: documento_listar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: admin
 module: expedientes
 action: view_doc

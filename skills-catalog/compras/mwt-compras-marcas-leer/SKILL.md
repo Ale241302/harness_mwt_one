@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-marcas-leer
-description: Rol Compras · módulo Marcas (marcas) · permiso leer (consultar/listar). Herramientas MCP: marca_listar. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Compras · módulo Marcas (marcas) · permiso leer (consultar/listar). Herramientas MCP: marca_listar. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: compras
 module: marcas
 action: view

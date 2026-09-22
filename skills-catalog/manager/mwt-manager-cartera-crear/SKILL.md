@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-cartera-crear
-description: Rol Manager · módulo Cartera (cartera) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar.
+description: "Rol Manager · módulo Cartera (cartera) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
 role: manager
 module: cartera
 action: create

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-historial-precios-subir-documento
-description: Rol Admin (CEO) · módulo Historial de precios (historial-precios) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Historial de precios (historial-precios) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
 role: admin
 module: historial-precios
 action: upload_doc

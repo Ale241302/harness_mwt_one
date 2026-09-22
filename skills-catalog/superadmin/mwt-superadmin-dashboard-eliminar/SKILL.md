@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-dashboard-eliminar
-description: Rol Super Admin · módulo Dashboard (dashboard) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar.
+description: "Rol Super Admin · módulo Dashboard (dashboard) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: superadmin
 module: dashboard
 action: delete

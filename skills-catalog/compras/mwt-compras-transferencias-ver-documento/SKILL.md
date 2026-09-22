@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-transferencias-ver-documento
-description: Rol Compras · módulo Transferencias (transferencias) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Compras · módulo Transferencias (transferencias) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: compras
 module: transferencias
 action: view_doc

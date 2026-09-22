@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-dashboard-descargar-documento
-description: Rol Super Admin · módulo Dashboard (dashboard) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar.
+description: "Rol Super Admin · módulo Dashboard (dashboard) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: superadmin
 module: dashboard
 action: download_doc

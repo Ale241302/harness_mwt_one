@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-builder-crear
-description: Rol Admin (CEO) · módulo MWT Builder (builder) · permiso crear (crear). Herramientas MCP: builder_artefacto_crear. Lee el contrato en _contratos/builder.md antes de actuar.
+description: "Rol Admin (CEO) · módulo MWT Builder (builder) · permiso crear (crear). Herramientas MCP: builder_artefacto_crear. Lee el contrato en _contratos/builder.md antes de actuar."
 role: admin
 module: builder
 action: create

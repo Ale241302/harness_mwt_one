@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-nodos-crear
-description: Rol Super Admin · módulo Nodos (nodos) · permiso crear (crear). Herramientas MCP: nodo_crear, nodo_artefacto_crear. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Super Admin · módulo Nodos (nodos) · permiso crear (crear). Herramientas MCP: nodo_crear, nodo_artefacto_crear. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: superadmin
 module: nodos
 action: create

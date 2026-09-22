@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-productos-leer
-description: Rol Viewer (solo lectura) · módulo Productos (productos) · permiso leer (consultar/listar). Herramientas MCP: producto_listar, producto_obtener, producto_buscar, producto_precio_cliente, producto_ficha_tecnica, ncm_listar. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Productos (productos) · permiso leer (consultar/listar). Herramientas MCP: producto_listar, producto_obtener, producto_buscar, producto_precio_cliente, producto_ficha_tecnica, ncm_listar. Lee el contrato en _contratos/productos.md antes de actuar."
 role: viewer
 module: productos
 action: view

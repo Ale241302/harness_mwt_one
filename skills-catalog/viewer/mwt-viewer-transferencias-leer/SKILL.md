@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-transferencias-leer
-description: Rol Viewer (solo lectura) · módulo Transferencias (transferencias) · permiso leer (consultar/listar). Herramientas MCP: transferencia_listar, transferencia_obtener, transfer_notas_listar, transfer_costos_listar, transfer_liquidacion_preview, transfer_factura_payload. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Transferencias (transferencias) · permiso leer (consultar/listar). Herramientas MCP: transferencia_listar, transferencia_obtener, transfer_notas_listar, transfer_costos_listar, transfer_liquidacion_preview, transfer_factura_payload. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: viewer
 module: transferencias
 action: view

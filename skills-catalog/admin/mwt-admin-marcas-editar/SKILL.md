@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-marcas-editar
-description: Rol Admin (CEO) · módulo Marcas (marcas) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Marcas (marcas) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: admin
 module: marcas
 action: update

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-portal-subir-documento
-description: Rol Super Admin · módulo Portal (portal) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar.
+description: "Rol Super Admin · módulo Portal (portal) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: superadmin
 module: portal
 action: upload_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-marcas-leer
-description: Rol Operador · módulo Marcas (marcas) · permiso leer (consultar/listar). Herramientas MCP: marca_listar. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Operador · módulo Marcas (marcas) · permiso leer (consultar/listar). Herramientas MCP: marca_listar. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: operator
 module: marcas
 action: view

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-productos-ver-documento
-description: Rol Super Admin · módulo Productos (productos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Super Admin · módulo Productos (productos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar."
 role: superadmin
 module: productos
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-sizing-eliminar
-description: Rol Super Admin · módulo Motor de Tallas (sizing) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Super Admin · módulo Motor de Tallas (sizing) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: superadmin
 module: sizing
 action: delete

@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-clientes-leer
-description: Rol Compras · módulo Clientes (clientes) · permiso leer (consultar/listar). Herramientas MCP: cliente_listar, cliente_obtener, cliente_subsidiarias, cliente_kpis_pool. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Compras · módulo Clientes (clientes) · permiso leer (consultar/listar). Herramientas MCP: cliente_listar, cliente_obtener, cliente_subsidiarias, cliente_kpis_pool. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: compras
 module: clientes
 action: view

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-expedientes-eliminar
-description: Rol Admin (CEO) · módulo Expedientes (expedientes) · permiso eliminar (eliminar/borrar). Herramientas MCP: expediente_eliminar, documento_eliminar. Lee el contrato en _contratos/expedientes.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Expedientes (expedientes) · permiso eliminar (eliminar/borrar). Herramientas MCP: expediente_eliminar, documento_eliminar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: admin
 module: expedientes
 action: delete

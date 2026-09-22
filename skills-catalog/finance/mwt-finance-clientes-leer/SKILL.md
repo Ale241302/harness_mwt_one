@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-clientes-leer
-description: Rol Finance · módulo Clientes (clientes) · permiso leer (consultar/listar). Herramientas MCP: cliente_listar, cliente_obtener, cliente_subsidiarias, cliente_kpis_pool. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Finance · módulo Clientes (clientes) · permiso leer (consultar/listar). Herramientas MCP: cliente_listar, cliente_obtener, cliente_subsidiarias, cliente_kpis_pool. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: finance
 module: clientes
 action: view

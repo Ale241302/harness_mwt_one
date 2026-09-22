@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-transferencias-descargar-documento
-description: Rol Admin (CEO) · módulo Transferencias (transferencias) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Transferencias (transferencias) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: admin
 module: transferencias
 action: download_doc

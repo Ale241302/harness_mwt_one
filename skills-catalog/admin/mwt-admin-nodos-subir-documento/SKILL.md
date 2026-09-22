@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-nodos-subir-documento
-description: Rol Admin (CEO) · módulo Nodos (nodos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Nodos (nodos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: admin
 module: nodos
 action: upload_doc

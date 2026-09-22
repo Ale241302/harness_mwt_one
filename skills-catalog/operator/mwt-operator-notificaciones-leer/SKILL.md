@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-notificaciones-leer
-description: Rol Operador · módulo Notificaciones (notificaciones) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar.
+description: "Rol Operador · módulo Notificaciones (notificaciones) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: operator
 module: notificaciones
 action: view

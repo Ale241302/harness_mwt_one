@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-inventario-crear
-description: Rol Admin (CEO) · módulo Inventario (inventario) · permiso crear (crear). Herramientas MCP: recepcion_crear. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Inventario (inventario) · permiso crear (crear). Herramientas MCP: recepcion_crear. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: admin
 module: inventario
 action: create

@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-nodos-leer
-description: Rol Operador · módulo Nodos (nodos) · permiso leer (consultar/listar). Herramientas MCP: nodo_listar, nodo_obtener, nodo_artefactos_listar, builder_templates_listar, builder_template_obtener. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Operador · módulo Nodos (nodos) · permiso leer (consultar/listar). Herramientas MCP: nodo_listar, nodo_obtener, nodo_artefactos_listar, builder_templates_listar, builder_template_obtener. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: operator
 module: nodos
 action: view

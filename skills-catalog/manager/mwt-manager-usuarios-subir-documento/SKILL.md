@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-usuarios-subir-documento
-description: Rol Manager · módulo Usuarios (usuarios) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Manager · módulo Usuarios (usuarios) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: manager
 module: usuarios
 action: upload_doc

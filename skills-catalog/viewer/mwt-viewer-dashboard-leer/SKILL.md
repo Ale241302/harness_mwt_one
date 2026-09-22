@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-dashboard-leer
-description: Rol Viewer (solo lectura) · módulo Dashboard (dashboard) · permiso leer (consultar/listar). Herramientas MCP: generar_grafico, render_tabla, generar_reporte, comparar, exportar_xlsx, exportar_csv. Lee el contrato en _contratos/dashboard.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Dashboard (dashboard) · permiso leer (consultar/listar). Herramientas MCP: generar_grafico, render_tabla, generar_reporte, comparar, exportar_xlsx, exportar_csv. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: viewer
 module: dashboard
 action: view

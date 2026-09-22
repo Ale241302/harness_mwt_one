@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-pagos-descargar-documento
-description: Rol Manager · módulo Pagos (pagos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Manager · módulo Pagos (pagos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: manager
 module: pagos
 action: download_doc

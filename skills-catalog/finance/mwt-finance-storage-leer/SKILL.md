@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-storage-leer
-description: Rol Finance · módulo Storage (storage) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar.
+description: "Rol Finance · módulo Storage (storage) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: finance
 module: storage
 action: view

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-portal-crear
-description: Rol Super Admin · módulo Portal (portal) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar.
+description: "Rol Super Admin · módulo Portal (portal) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: superadmin
 module: portal
 action: create

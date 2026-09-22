@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-sizing-crear
-description: Rol Super Admin · módulo Motor de Tallas (sizing) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Super Admin · módulo Motor de Tallas (sizing) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: superadmin
 module: sizing
 action: create

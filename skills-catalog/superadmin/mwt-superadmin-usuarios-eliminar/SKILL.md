@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-usuarios-eliminar
-description: Rol Super Admin · módulo Usuarios (usuarios) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Super Admin · módulo Usuarios (usuarios) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: superadmin
 module: usuarios
 action: delete

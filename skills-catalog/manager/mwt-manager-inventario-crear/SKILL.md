@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-inventario-crear
-description: Rol Manager · módulo Inventario (inventario) · permiso crear (crear). Herramientas MCP: recepcion_crear. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Manager · módulo Inventario (inventario) · permiso crear (crear). Herramientas MCP: recepcion_crear. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: manager
 module: inventario
 action: create

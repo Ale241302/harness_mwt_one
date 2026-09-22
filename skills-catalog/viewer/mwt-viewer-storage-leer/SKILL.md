@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-storage-leer
-description: Rol Viewer (solo lectura) · módulo Storage (storage) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Storage (storage) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: viewer
 module: storage
 action: view

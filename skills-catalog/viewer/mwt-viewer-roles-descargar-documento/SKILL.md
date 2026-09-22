@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-roles-descargar-documento
-description: Rol Viewer (solo lectura) · módulo Roles y Permisos (roles) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Roles y Permisos (roles) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: viewer
 module: roles
 action: download_doc

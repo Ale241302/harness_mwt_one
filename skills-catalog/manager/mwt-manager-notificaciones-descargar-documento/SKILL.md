@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-notificaciones-descargar-documento
-description: Rol Manager · módulo Notificaciones (notificaciones) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar.
+description: "Rol Manager · módulo Notificaciones (notificaciones) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: manager
 module: notificaciones
 action: download_doc

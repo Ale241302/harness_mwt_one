@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-nodos-ver-documento
-description: Rol Viewer (solo lectura) · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: viewer
 module: nodos
 action: view_doc

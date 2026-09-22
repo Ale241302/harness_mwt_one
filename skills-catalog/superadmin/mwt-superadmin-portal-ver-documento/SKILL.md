@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-portal-ver-documento
-description: Rol Super Admin · módulo Portal (portal) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar.
+description: "Rol Super Admin · módulo Portal (portal) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: superadmin
 module: portal
 action: view_doc

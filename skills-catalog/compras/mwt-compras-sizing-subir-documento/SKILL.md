@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-sizing-subir-documento
-description: Rol Compras · módulo Motor de Tallas (sizing) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Compras · módulo Motor de Tallas (sizing) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: compras
 module: sizing
 action: upload_doc

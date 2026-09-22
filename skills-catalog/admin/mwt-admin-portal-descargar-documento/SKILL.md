@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-portal-descargar-documento
-description: Rol Admin (CEO) · módulo Portal (portal) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Portal (portal) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: admin
 module: portal
 action: download_doc

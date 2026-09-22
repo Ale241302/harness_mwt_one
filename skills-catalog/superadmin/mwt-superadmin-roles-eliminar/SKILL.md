@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-roles-eliminar
-description: Rol Super Admin · módulo Roles y Permisos (roles) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Super Admin · módulo Roles y Permisos (roles) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: superadmin
 module: roles
 action: delete

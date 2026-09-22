@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-nodos-ver-documento
-description: Rol Compras · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Compras · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: compras
 module: nodos
 action: view_doc

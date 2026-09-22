@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-transferencias-subir-documento
-description: Rol Manager · módulo Transferencias (transferencias) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Manager · módulo Transferencias (transferencias) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: manager
 module: transferencias
 action: upload_doc

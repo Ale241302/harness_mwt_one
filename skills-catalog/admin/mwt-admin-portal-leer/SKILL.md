@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-portal-leer
-description: Rol Admin (CEO) · módulo Portal (portal) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Portal (portal) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: admin
 module: portal
 action: view

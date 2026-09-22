@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-pagos-subir-documento
-description: Rol Admin (CEO) · módulo Pagos (pagos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Pagos (pagos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: admin
 module: pagos
 action: upload_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-productos-crear
-description: Rol Super Admin · módulo Productos (productos) · permiso crear (crear). Herramientas MCP: producto_crear, producto_alias_crear. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Super Admin · módulo Productos (productos) · permiso crear (crear). Herramientas MCP: producto_crear, producto_alias_crear. Lee el contrato en _contratos/productos.md antes de actuar."
 role: superadmin
 module: productos
 action: create

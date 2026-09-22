@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-tickets-ver-documento
-description: Rol Operador · módulo Tickets (tickets) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar.
+description: "Rol Operador · módulo Tickets (tickets) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: operator
 module: tickets
 action: view_doc

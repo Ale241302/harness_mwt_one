@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-pagos-leer
-description: Rol Viewer (solo lectura) · módulo Pagos (pagos) · permiso leer (consultar/listar). Herramientas MCP: pago_applicables, pago_listar, pago_obtener. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Pagos (pagos) · permiso leer (consultar/listar). Herramientas MCP: pago_applicables, pago_listar, pago_obtener. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: viewer
 module: pagos
 action: view

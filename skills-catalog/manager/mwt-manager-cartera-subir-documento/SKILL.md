@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-cartera-subir-documento
-description: Rol Manager · módulo Cartera (cartera) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar.
+description: "Rol Manager · módulo Cartera (cartera) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
 role: manager
 module: cartera
 action: upload_doc

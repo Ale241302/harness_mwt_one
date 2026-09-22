@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-clientes-eliminar
-description: Rol Admin (CEO) · módulo Clientes (clientes) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Clientes (clientes) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: admin
 module: clientes
 action: delete

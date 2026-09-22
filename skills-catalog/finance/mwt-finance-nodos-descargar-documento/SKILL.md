@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-nodos-descargar-documento
-description: Rol Finance · módulo Nodos (nodos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Finance · módulo Nodos (nodos) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: finance
 module: nodos
 action: download_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-cartera-crear
-description: Rol Super Admin · módulo Cartera (cartera) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar.
+description: "Rol Super Admin · módulo Cartera (cartera) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
 role: superadmin
 module: cartera
 action: create

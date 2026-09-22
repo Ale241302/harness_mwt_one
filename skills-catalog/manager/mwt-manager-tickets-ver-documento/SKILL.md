@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-tickets-ver-documento
-description: Rol Manager · módulo Tickets (tickets) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar.
+description: "Rol Manager · módulo Tickets (tickets) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: manager
 module: tickets
 action: view_doc

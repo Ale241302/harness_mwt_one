@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-inventario-descargar-documento
-description: Rol Super Admin · módulo Inventario (inventario) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Super Admin · módulo Inventario (inventario) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: superadmin
 module: inventario
 action: download_doc

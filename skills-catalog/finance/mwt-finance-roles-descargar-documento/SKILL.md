@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-roles-descargar-documento
-description: Rol Finance · módulo Roles y Permisos (roles) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Finance · módulo Roles y Permisos (roles) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: finance
 module: roles
 action: download_doc

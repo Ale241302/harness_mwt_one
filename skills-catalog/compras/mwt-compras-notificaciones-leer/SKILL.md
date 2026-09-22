@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-notificaciones-leer
-description: Rol Compras · módulo Notificaciones (notificaciones) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar.
+description: "Rol Compras · módulo Notificaciones (notificaciones) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: compras
 module: notificaciones
 action: view

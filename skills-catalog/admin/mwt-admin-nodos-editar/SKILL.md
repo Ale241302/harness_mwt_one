@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-nodos-editar
-description: Rol Admin (CEO) · módulo Nodos (nodos) · permiso editar (actualizar/modificar). Herramientas MCP: nodo_editar, artefacto_editar, artefacto_publicar. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Nodos (nodos) · permiso editar (actualizar/modificar). Herramientas MCP: nodo_editar, artefacto_editar, artefacto_publicar. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: admin
 module: nodos
 action: update

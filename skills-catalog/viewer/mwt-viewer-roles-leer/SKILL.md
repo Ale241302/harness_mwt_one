@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-roles-leer
-description: Rol Viewer (solo lectura) · módulo Roles y Permisos (roles) · permiso leer (consultar/listar). Herramientas MCP: mwt_diag_scope. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Roles y Permisos (roles) · permiso leer (consultar/listar). Herramientas MCP: mwt_diag_scope. Lee el contrato en _contratos/roles.md antes de actuar."
 role: viewer
 module: roles
 action: view

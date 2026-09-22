@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-roles-editar
-description: Rol Manager · módulo Roles y Permisos (roles) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Manager · módulo Roles y Permisos (roles) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: manager
 module: roles
 action: update

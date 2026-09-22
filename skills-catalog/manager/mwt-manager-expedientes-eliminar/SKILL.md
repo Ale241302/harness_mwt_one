@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-expedientes-eliminar
-description: Rol Manager · módulo Expedientes (expedientes) · permiso eliminar (eliminar/borrar). Herramientas MCP: expediente_eliminar, documento_eliminar. Lee el contrato en _contratos/expedientes.md antes de actuar.
+description: "Rol Manager · módulo Expedientes (expedientes) · permiso eliminar (eliminar/borrar). Herramientas MCP: expediente_eliminar, documento_eliminar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: manager
 module: expedientes
 action: delete

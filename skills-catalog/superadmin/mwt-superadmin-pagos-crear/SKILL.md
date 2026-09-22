@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-pagos-crear
-description: Rol Super Admin · módulo Pagos (pagos) · permiso crear (crear). Herramientas MCP: pago_dry_run, pago_registrar. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Super Admin · módulo Pagos (pagos) · permiso crear (crear). Herramientas MCP: pago_dry_run, pago_registrar. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: superadmin
 module: pagos
 action: create

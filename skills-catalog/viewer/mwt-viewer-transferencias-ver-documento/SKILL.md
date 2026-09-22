@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-transferencias-ver-documento
-description: Rol Viewer (solo lectura) · módulo Transferencias (transferencias) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Transferencias (transferencias) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: viewer
 module: transferencias
 action: view_doc

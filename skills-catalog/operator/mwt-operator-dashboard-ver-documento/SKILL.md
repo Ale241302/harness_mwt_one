@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-dashboard-ver-documento
-description: Rol Operador · módulo Dashboard (dashboard) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar.
+description: "Rol Operador · módulo Dashboard (dashboard) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: operator
 module: dashboard
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-marcas-ver-documento
-description: Rol Manager · módulo Marcas (marcas) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Manager · módulo Marcas (marcas) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: manager
 module: marcas
 action: view_doc

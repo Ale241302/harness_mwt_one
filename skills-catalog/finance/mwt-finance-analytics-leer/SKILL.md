@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-analytics-leer
-description: Rol Finance · módulo Analytics (analytics) · permiso leer (consultar/listar). Herramientas MCP: cashflow_chart, margen_marcas_chart, aging_chart, exposicion_chart, reporte_cobranza, reporte_expedientes, dashboard_resumen. Lee el contrato en _contratos/analytics.md antes de actuar.
+description: "Rol Finance · módulo Analytics (analytics) · permiso leer (consultar/listar). Herramientas MCP: cashflow_chart, margen_marcas_chart, aging_chart, exposicion_chart, reporte_cobranza, reporte_expedientes, dashboard_resumen. Lee el contrato en _contratos/analytics.md antes de actuar."
 role: finance
 module: analytics
 action: view

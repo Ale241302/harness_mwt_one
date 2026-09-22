@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-sizing-crear
-description: Rol Manager · módulo Motor de Tallas (sizing) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Manager · módulo Motor de Tallas (sizing) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: manager
 module: sizing
 action: create

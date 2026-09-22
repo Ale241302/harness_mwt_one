@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-inventario-editar
-description: Rol Super Admin · módulo Inventario (inventario) · permiso editar (actualizar/modificar). Herramientas MCP: inventario_transferir_asignaciones. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Super Admin · módulo Inventario (inventario) · permiso editar (actualizar/modificar). Herramientas MCP: inventario_transferir_asignaciones. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: superadmin
 module: inventario
 action: update

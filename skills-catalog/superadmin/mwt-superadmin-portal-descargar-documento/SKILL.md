@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-portal-descargar-documento
-description: Rol Super Admin · módulo Portal (portal) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar.
+description: "Rol Super Admin · módulo Portal (portal) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: superadmin
 module: portal
 action: download_doc

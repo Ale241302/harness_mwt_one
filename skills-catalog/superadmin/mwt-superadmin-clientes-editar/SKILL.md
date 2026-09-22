@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-clientes-editar
-description: Rol Super Admin · módulo Clientes (clientes) · permiso editar (actualizar/modificar). Herramientas MCP: cliente_editar. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Super Admin · módulo Clientes (clientes) · permiso editar (actualizar/modificar). Herramientas MCP: cliente_editar. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: superadmin
 module: clientes
 action: update

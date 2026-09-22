@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-inventario-subir-documento
-description: Rol Operador · módulo Inventario (inventario) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Operador · módulo Inventario (inventario) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: operator
 module: inventario
 action: upload_doc

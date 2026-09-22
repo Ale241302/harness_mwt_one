@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-clientes-crear
-description: Rol Compras · módulo Clientes (clientes) · permiso crear (crear). Herramientas MCP: cliente_crear. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Compras · módulo Clientes (clientes) · permiso crear (crear). Herramientas MCP: cliente_crear. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: compras
 module: clientes
 action: create

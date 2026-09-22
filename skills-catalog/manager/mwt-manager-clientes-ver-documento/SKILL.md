@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-clientes-ver-documento
-description: Rol Manager · módulo Clientes (clientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Manager · módulo Clientes (clientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: manager
 module: clientes
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-notificaciones-editar
-description: Rol Admin (CEO) · módulo Notificaciones (notificaciones) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Notificaciones (notificaciones) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: admin
 module: notificaciones
 action: update

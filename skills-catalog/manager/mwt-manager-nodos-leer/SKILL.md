@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-nodos-leer
-description: Rol Manager · módulo Nodos (nodos) · permiso leer (consultar/listar). Herramientas MCP: nodo_listar, nodo_obtener, nodo_artefactos_listar, builder_templates_listar, builder_template_obtener. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Manager · módulo Nodos (nodos) · permiso leer (consultar/listar). Herramientas MCP: nodo_listar, nodo_obtener, nodo_artefactos_listar, builder_templates_listar, builder_template_obtener. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: manager
 module: nodos
 action: view

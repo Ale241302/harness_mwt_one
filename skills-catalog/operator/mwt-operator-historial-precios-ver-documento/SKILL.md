@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-historial-precios-ver-documento
-description: Rol Operador · módulo Historial de precios (historial-precios) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar.
+description: "Rol Operador · módulo Historial de precios (historial-precios) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
 role: operator
 module: historial-precios
 action: view_doc

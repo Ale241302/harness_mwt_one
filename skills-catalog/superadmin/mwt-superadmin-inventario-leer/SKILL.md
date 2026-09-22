@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-inventario-leer
-description: Rol Super Admin · módulo Inventario (inventario) · permiso leer (consultar/listar). Herramientas MCP: stock_listar, inventario_saldos_por_expediente, inventario_expedientes_con_pendiente, inventario_lineas_en_nodo, inventario_artefactos_expediente. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Super Admin · módulo Inventario (inventario) · permiso leer (consultar/listar). Herramientas MCP: stock_listar, inventario_saldos_por_expediente, inventario_expedientes_con_pendiente, inventario_lineas_en_nodo, inventario_artefactos_expediente. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: superadmin
 module: inventario
 action: view

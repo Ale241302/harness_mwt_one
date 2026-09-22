@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-roles-crear
-description: Rol Admin (CEO) · módulo Roles y Permisos (roles) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Roles y Permisos (roles) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: admin
 module: roles
 action: create

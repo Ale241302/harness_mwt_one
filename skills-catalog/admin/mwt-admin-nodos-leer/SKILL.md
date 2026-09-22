@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-nodos-leer
-description: Rol Admin (CEO) · módulo Nodos (nodos) · permiso leer (consultar/listar). Herramientas MCP: nodo_listar, nodo_obtener, nodo_artefactos_listar, builder_templates_listar, builder_template_obtener. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Nodos (nodos) · permiso leer (consultar/listar). Herramientas MCP: nodo_listar, nodo_obtener, nodo_artefactos_listar, builder_templates_listar, builder_template_obtener. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: admin
 module: nodos
 action: view

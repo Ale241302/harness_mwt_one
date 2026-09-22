@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-usuarios-leer
-description: Rol Finance · módulo Usuarios (usuarios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Finance · módulo Usuarios (usuarios) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: finance
 module: usuarios
 action: view

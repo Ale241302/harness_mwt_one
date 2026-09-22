@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-cartera-leer
-description: Rol Compras · módulo Cartera (cartera) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar.
+description: "Rol Compras · módulo Cartera (cartera) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
 role: compras
 module: cartera
 action: view

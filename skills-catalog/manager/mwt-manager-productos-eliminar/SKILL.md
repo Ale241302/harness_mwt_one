@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-productos-eliminar
-description: Rol Manager · módulo Productos (productos) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Manager · módulo Productos (productos) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar."
 role: manager
 module: productos
 action: delete

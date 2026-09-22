@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-sizing-subir-documento
-description: Rol Manager · módulo Motor de Tallas (sizing) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Manager · módulo Motor de Tallas (sizing) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: manager
 module: sizing
 action: upload_doc

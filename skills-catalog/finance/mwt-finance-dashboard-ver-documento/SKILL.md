@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-dashboard-ver-documento
-description: Rol Finance · módulo Dashboard (dashboard) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar.
+description: "Rol Finance · módulo Dashboard (dashboard) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: finance
 module: dashboard
 action: view_doc

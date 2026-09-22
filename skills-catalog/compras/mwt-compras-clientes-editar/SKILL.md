@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-clientes-editar
-description: Rol Compras · módulo Clientes (clientes) · permiso editar (actualizar/modificar). Herramientas MCP: cliente_editar. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Compras · módulo Clientes (clientes) · permiso editar (actualizar/modificar). Herramientas MCP: cliente_editar. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: compras
 module: clientes
 action: update

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-sizing-eliminar
-description: Rol Admin (CEO) · módulo Motor de Tallas (sizing) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Motor de Tallas (sizing) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: admin
 module: sizing
 action: delete

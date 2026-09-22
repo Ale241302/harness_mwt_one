@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-nodos-ver-documento
-description: Rol Manager · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Manager · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: manager
 module: nodos
 action: view_doc

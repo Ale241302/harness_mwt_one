@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-transferencias-editar
-description: Rol Manager · módulo Transferencias (transferencias) · permiso editar (actualizar/modificar). Herramientas MCP: transferencia_avanzar, transferencia_aprobar, transferencia_despachar, transferencia_editar, transferencia_recibir, transferencia_conciliar, transferencia_cerrar, transferencia_cancelar, transfer_costo_editar, transfer_liquidar. Lee el contrato en _contratos/transferencias.md antes de actuar.
+description: "Rol Manager · módulo Transferencias (transferencias) · permiso editar (actualizar/modificar). Herramientas MCP: transferencia_avanzar, transferencia_aprobar, transferencia_despachar, transferencia_editar, transferencia_recibir, transferencia_conciliar, transferencia_cerrar, transferencia_cancelar, transfer_costo_editar, transfer_liquidar. Lee el contrato en _contratos/transferencias.md antes de actuar."
 role: manager
 module: transferencias
 action: update

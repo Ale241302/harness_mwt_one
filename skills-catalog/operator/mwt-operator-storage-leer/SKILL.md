@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-storage-leer
-description: Rol Operador · módulo Storage (storage) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar.
+description: "Rol Operador · módulo Storage (storage) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: operator
 module: storage
 action: view

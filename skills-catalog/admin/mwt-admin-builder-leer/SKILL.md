@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-builder-leer
-description: Rol Admin (CEO) · módulo MWT Builder (builder) · permiso leer (consultar/listar). Herramientas MCP: builder_structure_construir, builder_artefacto_listar, builder_artefacto_obtener. Lee el contrato en _contratos/builder.md antes de actuar.
+description: "Rol Admin (CEO) · módulo MWT Builder (builder) · permiso leer (consultar/listar). Herramientas MCP: builder_structure_construir, builder_artefacto_listar, builder_artefacto_obtener. Lee el contrato en _contratos/builder.md antes de actuar."
 role: admin
 module: builder
 action: view

@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-roles-ver-documento
-description: Rol Compras · módulo Roles y Permisos (roles) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Compras · módulo Roles y Permisos (roles) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: compras
 module: roles
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-sizing-subir-documento
-description: Rol Admin (CEO) · módulo Motor de Tallas (sizing) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Motor de Tallas (sizing) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: admin
 module: sizing
 action: upload_doc

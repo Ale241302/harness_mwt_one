@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-portal-subir-documento
-description: Rol Manager · módulo Portal (portal) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar.
+description: "Rol Manager · módulo Portal (portal) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: manager
 module: portal
 action: upload_doc

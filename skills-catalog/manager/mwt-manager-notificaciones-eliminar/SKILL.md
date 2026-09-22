@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-notificaciones-eliminar
-description: Rol Manager · módulo Notificaciones (notificaciones) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar.
+description: "Rol Manager · módulo Notificaciones (notificaciones) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: manager
 module: notificaciones
 action: delete

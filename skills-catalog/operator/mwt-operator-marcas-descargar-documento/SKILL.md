@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-marcas-descargar-documento
-description: Rol Operador · módulo Marcas (marcas) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Operador · módulo Marcas (marcas) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: operator
 module: marcas
 action: download_doc

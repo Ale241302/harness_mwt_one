@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-pagos-leer
-description: Rol Compras · módulo Pagos (pagos) · permiso leer (consultar/listar). Herramientas MCP: pago_applicables, pago_listar, pago_obtener. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Compras · módulo Pagos (pagos) · permiso leer (consultar/listar). Herramientas MCP: pago_applicables, pago_listar, pago_obtener. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: compras
 module: pagos
 action: view

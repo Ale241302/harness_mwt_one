@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-inventario-crear
-description: Rol Operador · módulo Inventario (inventario) · permiso crear (crear). Herramientas MCP: recepcion_crear. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Operador · módulo Inventario (inventario) · permiso crear (crear). Herramientas MCP: recepcion_crear. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: operator
 module: inventario
 action: create

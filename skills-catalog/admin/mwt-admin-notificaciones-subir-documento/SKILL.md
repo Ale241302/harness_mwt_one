@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-notificaciones-subir-documento
-description: Rol Admin (CEO) · módulo Notificaciones (notificaciones) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Notificaciones (notificaciones) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: admin
 module: notificaciones
 action: upload_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-nodos-leer
-description: Rol Viewer (solo lectura) · módulo Nodos (nodos) · permiso leer (consultar/listar). Herramientas MCP: nodo_listar, nodo_obtener, nodo_artefactos_listar, builder_templates_listar, builder_template_obtener. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Nodos (nodos) · permiso leer (consultar/listar). Herramientas MCP: nodo_listar, nodo_obtener, nodo_artefactos_listar, builder_templates_listar, builder_template_obtener. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: viewer
 module: nodos
 action: view

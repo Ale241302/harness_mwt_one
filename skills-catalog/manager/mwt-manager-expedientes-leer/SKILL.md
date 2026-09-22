@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-expedientes-leer
-description: Rol Manager · módulo Expedientes (expedientes) · permiso leer (consultar/listar). Herramientas MCP: oc_listar, oc_obtener, proforma_html, proforma_documento, factura_payload, expediente_listar, expediente_obtener, expediente_buscar, expediente_lineas, expediente_documentos_completos, expediente_buscar_por_producto, expediente_edit_full_get, expediente_phase_durations_get, expediente_tiempos, expediente_eventos, sap_analizar, sap_obtener. Lee el contrato en _contratos/expedientes.md antes de actuar.
+description: "Rol Manager · módulo Expedientes (expedientes) · permiso leer (consultar/listar). Herramientas MCP: oc_listar, oc_obtener, proforma_html, proforma_documento, factura_payload, expediente_listar, expediente_obtener, expediente_buscar, expediente_lineas, expediente_documentos_completos, expediente_buscar_por_producto, expediente_edit_full_get, expediente_phase_durations_get, expediente_tiempos, expediente_eventos, sap_analizar, sap_obtener. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: manager
 module: expedientes
 action: view

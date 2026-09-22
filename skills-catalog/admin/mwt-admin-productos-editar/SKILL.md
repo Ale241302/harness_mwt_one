@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-productos-editar
-description: Rol Admin (CEO) · módulo Productos (productos) · permiso editar (actualizar/modificar). Herramientas MCP: producto_editar. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Productos (productos) · permiso editar (actualizar/modificar). Herramientas MCP: producto_editar. Lee el contrato en _contratos/productos.md antes de actuar."
 role: admin
 module: productos
 action: update

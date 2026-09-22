@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-inventario-eliminar
-description: Rol Admin (CEO) · módulo Inventario (inventario) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Inventario (inventario) · permiso eliminar (eliminar/borrar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: admin
 module: inventario
 action: delete

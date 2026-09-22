@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-storage-ver-documento
-description: Rol Super Admin · módulo Storage (storage) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar.
+description: "Rol Super Admin · módulo Storage (storage) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: superadmin
 module: storage
 action: view_doc

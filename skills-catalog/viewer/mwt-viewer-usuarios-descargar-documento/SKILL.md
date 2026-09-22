@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-usuarios-descargar-documento
-description: Rol Viewer (solo lectura) · módulo Usuarios (usuarios) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Usuarios (usuarios) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: viewer
 module: usuarios
 action: download_doc

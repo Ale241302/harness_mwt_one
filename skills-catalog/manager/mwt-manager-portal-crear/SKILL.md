@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-portal-crear
-description: Rol Manager · módulo Portal (portal) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar.
+description: "Rol Manager · módulo Portal (portal) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/portal.md antes de actuar."
 role: manager
 module: portal
 action: create

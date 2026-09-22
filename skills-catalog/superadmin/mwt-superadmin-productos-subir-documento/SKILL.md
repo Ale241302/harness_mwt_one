@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-productos-subir-documento
-description: Rol Super Admin · módulo Productos (productos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Super Admin · módulo Productos (productos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar."
 role: superadmin
 module: productos
 action: upload_doc

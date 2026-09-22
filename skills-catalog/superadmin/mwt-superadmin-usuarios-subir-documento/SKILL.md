@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-usuarios-subir-documento
-description: Rol Super Admin · módulo Usuarios (usuarios) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Super Admin · módulo Usuarios (usuarios) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: superadmin
 module: usuarios
 action: upload_doc

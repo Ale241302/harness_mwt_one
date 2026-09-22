@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-cartera-descargar-documento
-description: Rol Compras · módulo Cartera (cartera) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar.
+description: "Rol Compras · módulo Cartera (cartera) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
 role: compras
 module: cartera
 action: download_doc

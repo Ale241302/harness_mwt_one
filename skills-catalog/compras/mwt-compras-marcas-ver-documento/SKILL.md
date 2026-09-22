@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-marcas-ver-documento
-description: Rol Compras · módulo Marcas (marcas) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Compras · módulo Marcas (marcas) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: compras
 module: marcas
 action: view_doc

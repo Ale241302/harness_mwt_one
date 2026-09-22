@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-inventario-editar
-description: Rol Manager · módulo Inventario (inventario) · permiso editar (actualizar/modificar). Herramientas MCP: inventario_transferir_asignaciones. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Manager · módulo Inventario (inventario) · permiso editar (actualizar/modificar). Herramientas MCP: inventario_transferir_asignaciones. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: manager
 module: inventario
 action: update

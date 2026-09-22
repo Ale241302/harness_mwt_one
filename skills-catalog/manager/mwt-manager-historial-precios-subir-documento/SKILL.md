@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-historial-precios-subir-documento
-description: Rol Manager · módulo Historial de precios (historial-precios) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar.
+description: "Rol Manager · módulo Historial de precios (historial-precios) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/historial-precios.md antes de actuar."
 role: manager
 module: historial-precios
 action: upload_doc

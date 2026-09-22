@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-nodos-ver-documento
-description: Rol Operador · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Operador · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: operator
 module: nodos
 action: view_doc

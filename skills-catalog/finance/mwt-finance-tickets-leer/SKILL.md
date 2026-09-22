@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-tickets-leer
-description: Rol Finance · módulo Tickets (tickets) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar.
+description: "Rol Finance · módulo Tickets (tickets) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: finance
 module: tickets
 action: view

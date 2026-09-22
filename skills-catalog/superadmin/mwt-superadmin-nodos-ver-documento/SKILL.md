@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-nodos-ver-documento
-description: Rol Super Admin · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar.
+description: "Rol Super Admin · módulo Nodos (nodos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/nodos.md antes de actuar."
 role: superadmin
 module: nodos
 action: view_doc

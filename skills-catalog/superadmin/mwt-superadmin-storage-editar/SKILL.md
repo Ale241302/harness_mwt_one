@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-storage-editar
-description: Rol Super Admin · módulo Storage (storage) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar.
+description: "Rol Super Admin · módulo Storage (storage) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/storage.md antes de actuar."
 role: superadmin
 module: storage
 action: update

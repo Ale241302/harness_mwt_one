@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-sizing-descargar-documento
-description: Rol Finance · módulo Motor de Tallas (sizing) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Finance · módulo Motor de Tallas (sizing) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: finance
 module: sizing
 action: download_doc

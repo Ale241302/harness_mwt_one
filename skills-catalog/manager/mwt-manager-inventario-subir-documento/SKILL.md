@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-inventario-subir-documento
-description: Rol Manager · módulo Inventario (inventario) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Manager · módulo Inventario (inventario) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: manager
 module: inventario
 action: upload_doc

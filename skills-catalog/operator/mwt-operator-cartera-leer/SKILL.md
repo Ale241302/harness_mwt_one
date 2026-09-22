@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-cartera-leer
-description: Rol Operador · módulo Cartera (cartera) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar.
+description: "Rol Operador · módulo Cartera (cartera) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
 role: operator
 module: cartera
 action: view

@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-marcas-leer
-description: Rol Super Admin · módulo Marcas (marcas) · permiso leer (consultar/listar). Herramientas MCP: marca_listar. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Super Admin · módulo Marcas (marcas) · permiso leer (consultar/listar). Herramientas MCP: marca_listar. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: superadmin
 module: marcas
 action: view

@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-sizing-descargar-documento
-description: Rol Admin (CEO) · módulo Motor de Tallas (sizing) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Motor de Tallas (sizing) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: admin
 module: sizing
 action: download_doc

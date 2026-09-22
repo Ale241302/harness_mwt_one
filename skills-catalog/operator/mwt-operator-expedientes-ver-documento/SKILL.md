@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-expedientes-ver-documento
-description: Rol Operador · módulo Expedientes (expedientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: documento_listar. Lee el contrato en _contratos/expedientes.md antes de actuar.
+description: "Rol Operador · módulo Expedientes (expedientes) · permiso ver-documento (ver/listar documentos). Herramientas MCP: documento_listar. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: operator
 module: expedientes
 action: view_doc

@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-clientes-leer
-description: Rol Operador · módulo Clientes (clientes) · permiso leer (consultar/listar). Herramientas MCP: cliente_listar, cliente_obtener, cliente_subsidiarias, cliente_kpis_pool. Lee el contrato en _contratos/clientes.md antes de actuar.
+description: "Rol Operador · módulo Clientes (clientes) · permiso leer (consultar/listar). Herramientas MCP: cliente_listar, cliente_obtener, cliente_subsidiarias, cliente_kpis_pool. Lee el contrato en _contratos/clientes.md antes de actuar."
 role: operator
 module: clientes
 action: view

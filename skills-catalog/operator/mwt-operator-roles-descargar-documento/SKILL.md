@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-roles-descargar-documento
-description: Rol Operador · módulo Roles y Permisos (roles) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Operador · módulo Roles y Permisos (roles) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/roles.md antes de actuar."
 role: operator
 module: roles
 action: download_doc

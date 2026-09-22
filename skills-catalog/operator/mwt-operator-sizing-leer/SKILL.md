@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-sizing-leer
-description: Rol Operador · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar.
+description: "Rol Operador · módulo Motor de Tallas (sizing) · permiso leer (consultar/listar). Herramientas MCP: tallas_listar. Lee el contrato en _contratos/sizing.md antes de actuar."
 role: operator
 module: sizing
 action: view

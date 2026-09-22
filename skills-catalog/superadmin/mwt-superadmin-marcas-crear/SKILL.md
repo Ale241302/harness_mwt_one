@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-marcas-crear
-description: Rol Super Admin · módulo Marcas (marcas) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Super Admin · módulo Marcas (marcas) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: superadmin
 module: marcas
 action: create

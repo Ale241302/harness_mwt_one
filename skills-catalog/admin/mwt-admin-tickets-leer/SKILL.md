@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-tickets-leer
-description: Rol Admin (CEO) · módulo Tickets (tickets) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Tickets (tickets) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: admin
 module: tickets
 action: view

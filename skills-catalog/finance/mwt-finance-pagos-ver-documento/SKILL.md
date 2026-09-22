@@ -1,6 +1,6 @@
 ---
 name: mwt-finance-pagos-ver-documento
-description: Rol Finance · módulo Pagos (pagos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar.
+description: "Rol Finance · módulo Pagos (pagos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/pagos.md antes de actuar."
 role: finance
 module: pagos
 action: view_doc

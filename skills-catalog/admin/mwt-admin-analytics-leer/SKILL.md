@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-analytics-leer
-description: Rol Admin (CEO) · módulo Analytics (analytics) · permiso leer (consultar/listar). Herramientas MCP: cashflow_chart, margen_marcas_chart, aging_chart, exposicion_chart, reporte_cobranza, reporte_expedientes, dashboard_resumen. Lee el contrato en _contratos/analytics.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Analytics (analytics) · permiso leer (consultar/listar). Herramientas MCP: cashflow_chart, margen_marcas_chart, aging_chart, exposicion_chart, reporte_cobranza, reporte_expedientes, dashboard_resumen. Lee el contrato en _contratos/analytics.md antes de actuar."
 role: admin
 module: analytics
 action: view

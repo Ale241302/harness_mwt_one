@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-productos-subir-documento
-description: Rol Manager · módulo Productos (productos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Manager · módulo Productos (productos) · permiso subir-documento (subir un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar."
 role: manager
 module: productos
 action: upload_doc

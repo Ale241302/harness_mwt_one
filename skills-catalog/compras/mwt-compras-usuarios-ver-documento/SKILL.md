@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-usuarios-ver-documento
-description: Rol Compras · módulo Usuarios (usuarios) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar.
+description: "Rol Compras · módulo Usuarios (usuarios) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/usuarios.md antes de actuar."
 role: compras
 module: usuarios
 action: view_doc

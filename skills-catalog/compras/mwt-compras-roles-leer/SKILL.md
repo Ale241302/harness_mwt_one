@@ -1,6 +1,6 @@
 ---
 name: mwt-compras-roles-leer
-description: Rol Compras · módulo Roles y Permisos (roles) · permiso leer (consultar/listar). Herramientas MCP: mwt_diag_scope. Lee el contrato en _contratos/roles.md antes de actuar.
+description: "Rol Compras · módulo Roles y Permisos (roles) · permiso leer (consultar/listar). Herramientas MCP: mwt_diag_scope. Lee el contrato en _contratos/roles.md antes de actuar."
 role: compras
 module: roles
 action: view

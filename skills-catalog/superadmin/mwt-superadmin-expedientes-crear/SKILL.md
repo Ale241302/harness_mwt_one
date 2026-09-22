@@ -1,6 +1,6 @@
 ---
 name: mwt-superadmin-expedientes-crear
-description: Rol Super Admin · módulo Expedientes (expedientes) · permiso crear (crear). Herramientas MCP: proforma_generar, expediente_resolve_oc_preview, expediente_crear, expedientes_crear_lote, sap_upsert. Lee el contrato en _contratos/expedientes.md antes de actuar.
+description: "Rol Super Admin · módulo Expedientes (expedientes) · permiso crear (crear). Herramientas MCP: proforma_generar, expediente_resolve_oc_preview, expediente_crear, expedientes_crear_lote, sap_upsert. Lee el contrato en _contratos/expedientes.md antes de actuar."
 role: superadmin
 module: expedientes
 action: create

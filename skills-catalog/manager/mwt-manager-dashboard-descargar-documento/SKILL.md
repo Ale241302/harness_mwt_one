@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-dashboard-descargar-documento
-description: Rol Manager · módulo Dashboard (dashboard) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar.
+description: "Rol Manager · módulo Dashboard (dashboard) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/dashboard.md antes de actuar."
 role: manager
 module: dashboard
 action: download_doc

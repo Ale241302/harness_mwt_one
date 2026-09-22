@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-notificaciones-editar
-description: Rol Operador · módulo Notificaciones (notificaciones) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar.
+description: "Rol Operador · módulo Notificaciones (notificaciones) · permiso editar (actualizar/modificar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/notificaciones.md antes de actuar."
 role: operator
 module: notificaciones
 action: update

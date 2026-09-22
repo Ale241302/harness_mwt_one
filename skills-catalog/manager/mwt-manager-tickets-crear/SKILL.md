@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-tickets-crear
-description: Rol Manager · módulo Tickets (tickets) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar.
+description: "Rol Manager · módulo Tickets (tickets) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: manager
 module: tickets
 action: create

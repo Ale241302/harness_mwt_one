@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-cartera-leer
-description: Rol Viewer (solo lectura) · módulo Cartera (cartera) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Cartera (cartera) · permiso leer (consultar/listar). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/cartera.md antes de actuar."
 role: viewer
 module: cartera
 action: view

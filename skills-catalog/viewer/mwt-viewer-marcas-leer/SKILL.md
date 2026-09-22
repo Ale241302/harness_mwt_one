@@ -1,6 +1,6 @@
 ---
 name: mwt-viewer-marcas-leer
-description: Rol Viewer (solo lectura) · módulo Marcas (marcas) · permiso leer (consultar/listar). Herramientas MCP: marca_listar. Lee el contrato en _contratos/marcas.md antes de actuar.
+description: "Rol Viewer (solo lectura) · módulo Marcas (marcas) · permiso leer (consultar/listar). Herramientas MCP: marca_listar. Lee el contrato en _contratos/marcas.md antes de actuar."
 role: viewer
 module: marcas
 action: view

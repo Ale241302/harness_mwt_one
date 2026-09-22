@@ -1,6 +1,6 @@
 ---
 name: mwt-admin-tickets-crear
-description: Rol Admin (CEO) · módulo Tickets (tickets) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar.
+description: "Rol Admin (CEO) · módulo Tickets (tickets) · permiso crear (crear). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/tickets.md antes de actuar."
 role: admin
 module: tickets
 action: create

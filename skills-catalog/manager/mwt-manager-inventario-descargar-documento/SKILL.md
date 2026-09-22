@@ -1,6 +1,6 @@
 ---
 name: mwt-manager-inventario-descargar-documento
-description: Rol Manager · módulo Inventario (inventario) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar.
+description: "Rol Manager · módulo Inventario (inventario) · permiso descargar-documento (descargar un archivo/documento). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/inventario.md antes de actuar."
 role: manager
 module: inventario
 action: download_doc

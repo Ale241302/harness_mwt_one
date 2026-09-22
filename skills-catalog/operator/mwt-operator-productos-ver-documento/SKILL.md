@@ -1,6 +1,6 @@
 ---
 name: mwt-operator-productos-ver-documento
-description: Rol Operador · módulo Productos (productos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar.
+description: "Rol Operador · módulo Productos (productos) · permiso ver-documento (ver/listar documentos). Herramientas MCP: ninguna tool directa en esta acción. Lee el contrato en _contratos/productos.md antes de actuar."
 role: operator
 module: productos
 action: view_doc
