@@ -1,8 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
 **Tag de despliegue:** `deploy-2026-09-15` (commit `e2a61d4`, incluye E7-bis memoria Tencent + E8 respaldo)
-**Imagen desplegada actual:** build de `main` @ `4150f79f466cfcb5d7c5d9c4802f22ef5cc8ca64` (fix: las tools de datos renderizan su contenido — la búsqueda IMAP muestra los sobres reales en el chat; Spaces↔Workspace; Work bench con revisiones y excepciones; multi-empresa; deploy caliente ~6 min).
-**Verificado en el VPS:** 22 de septiembre de 2026 (17:24 UTC).
+**Imagen desplegada actual:** build de `main` @ `ced3bde28634634d6af00ecc5d245c35248b2878` (catálogo de skills como artefacto verificado: gate `verify-skills-catalog` en la suite + triggers de enrutado "Úsala cuando" en las 652 descripciones; tools de datos renderizan su contenido; Spaces↔Workspace; multi-empresa; deploy caliente ~6 min).
+**Verificado en el VPS:** 22 de septiembre de 2026 (18:18 UTC).
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:93374e5848be…` (`main` @ `4150f79f46`, build del 22 sep 17:24 UTC) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:8e84786ca32a…` (`main` @ `ced3bde286`, build del 22 sep 18:18 UTC) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
