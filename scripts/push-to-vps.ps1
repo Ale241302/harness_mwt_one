@@ -112,22 +112,25 @@ foreach ($path in $deployPaths) {
   Copy-Normalized -Source (Join-Path $root $path) -Destination (Join-Path $stage $path)
 }
 
-Write-Host "==> Asegurando $RemoteDir"
-Invoke-Native { ssh -p $Port -o LogLevel=ERROR "${User}@${SshHost}" "mkdir -p $RemoteDir/vendor" } 'ssh mkdir'
-
+# Un solo archivo, una sola conexión: cada scp por ruta abría una conexión y
+# el sshd del VPS cortaba la secuencia a mitad de subida.
+$payload = Join-Path $env:TEMP 'mwt-deploy-payload.tgz'
+if (Test-Path -LiteralPath $payload) { Remove-Item -LiteralPath $payload -Force }
+Write-Host "==> Empaquetando el despliegue en un solo archivo"
+New-Item -ItemType Directory -Force -Path (Join-Path $stage 'vendor') | Out-Null
 if (-not [string]::IsNullOrEmpty($forkTar) -and (Test-Path -LiteralPath $forkTar)) {
-  Write-Host "==> Subiendo el fork a $RemoteDir/vendor/"
-  Invoke-Native { scp -P $Port -o LogLevel=ERROR $forkTar "${User}@${SshHost}:$RemoteDir/vendor/deepseek-harness-src.tgz" } 'scp del fork'
+  Copy-Item -LiteralPath $forkTar -Destination (Join-Path $stage 'vendor/deepseek-harness-src.tgz') -Force
 }
+Invoke-Native { tar -czf $payload -C $stage . } 'tar del payload'
+Write-Host ("    {0:N1} MB" -f ((Get-Item $payload).Length / 1MB))
 
-Write-Host "==> Subiendo el directorio de despliegue a $RemoteDir/"
-foreach ($path in $deployPaths) {
-  $src = Join-Path $stage $path
-  $scpArgs = @('-P', "$Port", '-o', 'LogLevel=ERROR')
-  if ((Get-Item -LiteralPath $src).PSIsContainer) { $scpArgs += '-r' }
-  $scpArgs += @($src, "${User}@${SshHost}:$RemoteDir/")
-  Invoke-Native { & scp @scpArgs } "scp de $path"
-}
+Write-Host "==> Asegurando $RemoteDir"
+Invoke-Native { ssh -p $Port -o LogLevel=ERROR "${User}@${SshHost}" "mkdir -p $RemoteDir" } 'ssh mkdir'
+
+Write-Host "==> Subiendo y extrayendo en $RemoteDir"
+Invoke-Native { scp -P $Port -o LogLevel=ERROR $payload "${User}@${SshHost}:/tmp/mwt-deploy-payload.tgz" } 'scp del payload'
+Invoke-Native { ssh -p $Port -o LogLevel=ERROR "${User}@${SshHost}" "tar -xzf /tmp/mwt-deploy-payload.tgz -C $RemoteDir && rm -f /tmp/mwt-deploy-payload.tgz" } 'extract en el VPS'
+Remove-Item -LiteralPath $payload -Force -ErrorAction SilentlyContinue
 
 if ($Deploy) {
   $shaArg = if ([string]::IsNullOrEmpty($script:ForkSha)) { '' } else { "DSH_FORK_SHA=$($script:ForkSha) " }
