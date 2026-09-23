@@ -89,6 +89,7 @@ function toAgent(id: FaberLoomAgentId, record: AgentRecord): FaberLoomAgent {
     provider: record.provider ?? undefined,
     model: record.model ?? undefined,
     webAccess: record.webAccess,
+    mwtMcp: record.mwtMcp,
     hasApiKey: record.apiKey !== null,
     mailConnectionIds: record.mailConnectionIds,
     policy: {
@@ -463,6 +464,7 @@ export class FaberLoomAgents extends Service {
       model: input.model ?? null,
       apiKey: input.apiKey ?? null,
       webAccess: input.webAccess ?? false,
+      mwtMcp: input.mwtMcp ?? true,
       mailConnectionIds: input.mailConnectionIds !== undefined ? [...input.mailConnectionIds] : [],
       policy: policyToRecord(policy),
       lessons: [],
@@ -522,6 +524,7 @@ export class FaberLoomAgents extends Service {
         ? record.apiKey
         : patch.apiKey === null || patch.apiKey.length === 0 ? null : patch.apiKey,
       webAccess: patch.webAccess ?? record.webAccess,
+      mwtMcp: patch.mwtMcp ?? record.mwtMcp,
       mailConnectionIds: patch.mailConnectionIds !== undefined ? [...patch.mailConnectionIds] : record.mailConnectionIds,
       lessons: patch.lessons !== undefined ? [...patch.lessons] : record.lessons,
       policy: policyToRecord(policy),

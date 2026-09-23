@@ -120,7 +120,12 @@ export function apply(ctx: ClientContext): void {
         })
       },
       renameSpace: (id, title) => { write(() => ctx.remote.faberloomView.renameSpace(id, title)) },
-      createAgent: (name) => { write(() => ctx.remote.faberloomView.createAgent(name, name)) },
+      createAgent: (input) => {
+        write(() => ctx.remote.faberloomView.createAgent(
+          input.name, input.responsibility, input.provider ?? undefined, input.model ?? undefined,
+          input.apiKey.length === 0 ? undefined : input.apiKey, input.webAccess, input.mwtMcp,
+        ))
+      },
       deactivateAgent: (id) => { write(() => ctx.remote.faberloomView.deleteAgent(id)) },
       purgeAgent: (id) => { write(() => ctx.remote.faberloomView.purgeAgent(id)) },
       createBoardItem: (title) => { write(() => ctx.remote.faberloomView.createBoardItem(title)) },

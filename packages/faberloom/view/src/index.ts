@@ -296,8 +296,24 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @returns the refreshed overview.
    */
   @Remote('createAgent')
-  async createAgent(name: string, responsibility: string): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomAgents.createAgent({ name, responsibility } satisfies AgentInput)
+  async createAgent(
+    name: string,
+    responsibility: string,
+    provider?: string,
+    model?: string,
+    apiKey?: string,
+    webAccess?: boolean,
+    mwtMcp?: boolean,
+  ): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomAgents.createAgent({
+      name,
+      responsibility,
+      ...provider === undefined || provider.length === 0 ? {} : { provider },
+      ...model === undefined || model.length === 0 ? {} : { model },
+      ...apiKey === undefined || apiKey.length === 0 ? {} : { apiKey },
+      ...webAccess === undefined ? {} : { webAccess },
+      ...mwtMcp === undefined ? {} : { mwtMcp },
+    } satisfies AgentInput)
     return await this.overview()
   }
 
@@ -364,6 +380,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       model: agent.model ?? null,
       hasApiKey: agent.hasApiKey,
       webAccess: agent.webAccess,
+      mwtMcp: agent.mwtMcp,
       mailConnectionIds: [...agent.mailConnectionIds],
       subagentIds: agent.subagents.map(entry => String(entry.agentId)),
     }
@@ -385,6 +402,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       model?: string | null
       apiKey?: string | null
       webAccess?: boolean
+      mwtMcp?: boolean
       mailConnectionIds?: readonly string[]
       subagents?: readonly { name: string; agentId: FaberLoomAgentId }[]
       policy?: PolicyPatch
@@ -396,6 +414,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (input.model !== undefined) patch.model = input.model
     if (input.apiKey !== undefined) patch.apiKey = input.apiKey.length === 0 ? null : input.apiKey
     if (input.webAccess !== undefined) patch.webAccess = input.webAccess
+    if (input.mwtMcp !== undefined) patch.mwtMcp = input.mwtMcp
     if (input.mailConnectionIds !== undefined) patch.mailConnectionIds = [...input.mailConnectionIds]
     if (input.subagentIds !== undefined) {
       const catalog = await this.ctx.faberloomAgents.listAgents()

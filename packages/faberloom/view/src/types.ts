@@ -489,6 +489,8 @@ export interface FaberLoomAgentDetail {
   readonly hasApiKey: boolean
   /** Whether the agent may browse the open web; otherwise only MWT.ONE MCP. */
   readonly webAccess: boolean
+  /** Whether the agent may query the MWT.ONE MCP server. */
+  readonly mwtMcp: boolean
   /** Mail connection ids the agent may use. */
   readonly mailConnectionIds: readonly string[]
   /** Agent ids this agent may communicate with. */
@@ -591,6 +593,8 @@ export interface AgentSaveInput {
   readonly apiKey?: string
   /** New web-access switch. */
   readonly webAccess?: boolean
+  /** New MWT.ONE MCP access switch. */
+  readonly mwtMcp?: boolean
   /** Replacement mail-connection id list. */
   readonly mailConnectionIds?: readonly string[]
   /** Replacement communicating-agent id list. */

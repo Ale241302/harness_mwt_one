@@ -74,6 +74,7 @@ export const agentRecord = z.object({
   model: z.string().nullable().default(null),
   apiKey: z.string().nullable().default(null),
   webAccess: z.boolean().default(false),
+  mwtMcp: z.boolean().default(true),
   mailConnectionIds: z.array(z.string()).default([]),
   policy: policyRecord,
   lessons: z.array(z.string()),

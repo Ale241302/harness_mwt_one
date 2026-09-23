@@ -56,8 +56,16 @@ export interface FaberloomPanelInjected {
   goToWorkspace: (spaceId: string) => void
   /** Rename one space and refresh. */
   renameSpace: (id: string, title: string) => void
-  /** Create an agent and refresh. */
-  createAgent: (name: string) => void
+  /** Create an agent with its initial configuration, and refresh. */
+  createAgent: (input: {
+    readonly name: string
+    readonly responsibility: string
+    readonly provider: string | null
+    readonly model: string | null
+    readonly apiKey: string
+    readonly webAccess: boolean
+    readonly mwtMcp: boolean
+  }) => void
   /** Deactivate one agent and refresh. */
   deactivateAgent: (id: string) => void
   /** Remove one agent from the catalog permanently. */
@@ -432,9 +440,16 @@ function agentsScreen() {
     const { overview, error } = useOverview(props)
     const [selected, setSelected] = useState<string | null>(null)
     const [query, setQuery] = useState('')
-    const [draftName, setDraftName] = useState('')
     const [message, setMessage] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
+    const [creating, setCreating] = useState(false)
+    const [newName, setNewName] = useState('')
+    const [newPrompt, setNewPrompt] = useState('')
+    const [newProvider, setNewProvider] = useState('')
+    const [newModel, setNewModel] = useState('')
+    const [newKey, setNewKey] = useState('')
+    const [newWeb, setNewWeb] = useState(false)
+    const [newMcp, setNewMcp] = useState(true)
     const [name, setName] = useState('')
     const [responsibility, setResponsibility] = useState('')
     const [assigned, setAssigned] = useState<readonly string[]>([])
@@ -443,6 +458,7 @@ function agentsScreen() {
     const [apiKey, setApiKey] = useState('')
     const [hasApiKey, setHasApiKey] = useState(false)
     const [webAccess, setWebAccess] = useState(false)
+    const [mwtMcp, setMwtMcp] = useState(true)
     const [mailIds, setMailIds] = useState<readonly string[]>([])
     const [subagentIds, setSubagentIds] = useState<readonly string[]>([])
 
@@ -468,6 +484,7 @@ function agentsScreen() {
       setApiKey('')
       setHasApiKey(detail.value.hasApiKey)
       setWebAccess(detail.value.webAccess)
+      setMwtMcp(detail.value.mwtMcp)
       setMailIds(detail.value.mailConnectionIds)
       setSubagentIds(detail.value.subagentIds)
       setMessage(null)
@@ -490,6 +507,7 @@ function agentsScreen() {
         provider: provider.length === 0 ? null : provider,
         model: modelId.length === 0 ? null : modelId,
         webAccess,
+        mwtMcp,
         mailConnectionIds: mailIds,
         subagentIds,
         ...apiKey.length === 0 ? {} : { apiKey },
@@ -503,17 +521,36 @@ function agentsScreen() {
       ? detail.value.name
       : t('agents.editor')
 
+    const createNewAgent = (): void => {
+      setMessage(null)
+      createAgent({
+        name: newName.trim().length === 0 ? t('agents.untitled') : newName.trim(),
+        responsibility: newPrompt,
+        provider: newProvider.length === 0 ? null : newProvider,
+        model: newModel.length === 0 ? null : newModel,
+        apiKey: newKey,
+        webAccess: newWeb,
+        mwtMcp: newMcp,
+      })
+      setCreating(false)
+    }
+
     return (
       <Screen title={t('panel.agents.title')} subtitle={t('panel.agents.intro')}
         trailing={(
           <>
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
-            <input className={styles.paneSearch} style={{ width: 200, padding: '8px 10px' }} value={draftName} placeholder={t('panel.agents.newPlaceholder')} onChange={(event) => { setDraftName(event.target.value) }} />
             <button className={styles.primary} type="button" onClick={() => {
               setMessage(null)
-              createAgent(draftName.trim().length === 0 ? t('agents.untitled') : draftName.trim())
-              setDraftName('')
-            }}>{t('action.create')}</button>
+              setNewName('')
+              setNewPrompt('')
+              setNewProvider('')
+              setNewModel('')
+              setNewKey('')
+              setNewWeb(false)
+              setNewMcp(true)
+              setCreating(true)
+            }}>{t('agents.createTitle')}</button>
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
@@ -549,7 +586,7 @@ function agentsScreen() {
                   : (
                     <>
                       <Field label={t('field.name')}>
-                        <input type="text" value={name} onChange={(event) => { setName(event.target.value) }} />
+                        <input type="text" autoComplete="off" value={name} onChange={(event) => { setName(event.target.value) }} />
                       </Field>
                       <Field label={t('field.responsibility')} hint={t('agents.promptHint')}>
                         <textarea value={responsibility} onChange={(event) => { setResponsibility(event.target.value) }} />
@@ -576,7 +613,7 @@ function agentsScreen() {
                         </select>
                       </Field>
                       <Field label={t('field.modelId')} hint={t('agents.modelIdHint')}>
-                        <input type="text" value={modelId} placeholder={t('agents.modelIdPlaceholder')} onChange={(event) => { setModelId(event.target.value) }} />
+                        <input type="text" autoComplete="off" value={modelId} placeholder={t('agents.modelIdPlaceholder')} onChange={(event) => { setModelId(event.target.value) }} />
                       </Field>
                       <Field label={t('field.apiKey')} hint={t('agents.apiKeyHint')}>
                         <div className={styles.grid2}>
@@ -585,6 +622,7 @@ function agentsScreen() {
                             hideLabel={t('agents.apiKeyHide')}
                             value={apiKey}
                             placeholder={t('agents.apiKeyPlaceholder')}
+                            autoComplete="new-password"
                             onChange={(event) => { setApiKey(event.target.value) }}
                           />
                           {hasApiKey ? (
@@ -601,6 +639,12 @@ function agentsScreen() {
                         <label className={styles.stepFlag}>
                           <input type="checkbox" checked={webAccess} onChange={(event) => { setWebAccess(event.target.checked) }} />
                           {t('agents.webAccessAllow')}
+                        </label>
+                      </Field>
+                      <Field label={t('field.mwtMcp')} hint={t('agents.mwtMcpHint')}>
+                        <label className={styles.stepFlag}>
+                          <input type="checkbox" checked={mwtMcp} onChange={(event) => { setMwtMcp(event.target.checked) }} />
+                          {t('agents.mwtMcpAllow')}
                         </label>
                       </Field>
                       <Field label={t('field.mail')} hint={t('agents.mailHint')}>
@@ -635,6 +679,45 @@ function agentsScreen() {
                   )}
           </Inspector>
         </div>
+        <Modal open={creating} onClose={() => { setCreating(false) }} title={t('agents.createTitle')} closeLabel={t('action.close')}
+          footer={(
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setCreating(false) }}>{t('action.cancel')}</button>
+              <button className={styles.primary} type="button" onClick={createNewAgent}>{t('action.create')}</button>
+            </>
+          )}>
+          <Field label={t('field.name')}>
+            <input type="text" autoComplete="off" value={newName} placeholder={t('panel.agents.newPlaceholder')} onChange={(event) => { setNewName(event.target.value) }} />
+          </Field>
+          <Field label={t('field.responsibility')} hint={t('agents.promptHint')}>
+            <textarea value={newPrompt} onChange={(event) => { setNewPrompt(event.target.value) }} />
+          </Field>
+          <Field label={t('field.provider')}>
+            <select value={newProvider} onChange={(event) => { setNewProvider(event.target.value) }}>
+              <option value="">{t('agents.providerUnset')}</option>
+              {MODEL_PROVIDERS.map(item => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </Field>
+          <Field label={t('field.modelId')} hint={t('agents.modelIdHint')}>
+            <input type="text" autoComplete="off" value={newModel} placeholder={t('agents.modelIdPlaceholder')} onChange={(event) => { setNewModel(event.target.value) }} />
+          </Field>
+          <Field label={t('field.apiKey')} hint={t('agents.apiKeyHint')}>
+            <SecretInput showLabel={t('agents.apiKeyShow')} hideLabel={t('agents.apiKeyHide')} value={newKey}
+              placeholder={t('agents.apiKeyPlaceholder')} autoComplete="new-password" onChange={(event) => { setNewKey(event.target.value) }} />
+          </Field>
+          <Field label={t('field.webAccess')} hint={t('agents.webAccessHint')}>
+            <label className={styles.stepFlag}>
+              <input type="checkbox" checked={newWeb} onChange={(event) => { setNewWeb(event.target.checked) }} />
+              {t('agents.webAccessAllow')}
+            </label>
+          </Field>
+          <Field label={t('field.mwtMcp')} hint={t('agents.mwtMcpHint')}>
+            <label className={styles.stepFlag}>
+              <input type="checkbox" checked={newMcp} onChange={(event) => { setNewMcp(event.target.checked) }} />
+              {t('agents.mwtMcpAllow')}
+            </label>
+          </Field>
+        </Modal>
       </Screen>
     )
   }
