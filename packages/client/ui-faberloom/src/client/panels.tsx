@@ -525,9 +525,8 @@ function agentsScreen() {
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <input className={styles.paneSearch} style={{ width: 200, padding: '8px 10px' }} value={draftName} placeholder={t('panel.agents.newPlaceholder')} onChange={(event) => { setDraftName(event.target.value) }} />
             <button className={styles.primary} type="button" onClick={() => {
-              if (draftName.trim().length === 0) { setMessage(t('state.needsText')); return }
               setMessage(null)
-              createAgent(draftName.trim())
+              createAgent(draftName.trim().length === 0 ? t('agents.untitled') : draftName.trim())
               setDraftName('')
             }}>{t('action.create')}</button>
           </>
@@ -860,9 +859,9 @@ function boardScreen() {
         trailing={(
           <>
             <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.board.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
-            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => {
+            <button className={styles.primary} type="button" onClick={() => {
               setMessage(null)
-              createBoardItem(draft.trim())
+              createBoardItem(draft.trim().length === 0 ? t('board.untitled') : draft.trim())
               setDraft('')
             }}>{t('action.create')}</button>
           </>
@@ -1030,9 +1029,8 @@ function routinesScreen() {
           <>
             <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.routines.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
             <button className={styles.primary} type="button" onClick={() => {
-              if (draft.trim().length === 0) { setMessage(t('state.needsText')); return }
               setMessage(null)
-              createRoutine(draft.trim())
+              createRoutine(draft.trim().length === 0 ? t('routines.untitled') : draft.trim())
               setDraft('')
             }}>{t('action.create')}</button>
           </>
