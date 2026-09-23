@@ -258,6 +258,27 @@ describe('FaberLoomViewService space lifecycle', () => {
     expect(spaces.remember).toHaveBeenLastCalledWith(expect.anything(), 'global', [])
   })
 
+  it('saves provider, model, web access, mail, subagents, and a write-only key', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, agents } = harness()
+    agents.listAgents.mockResolvedValue([{ id: 'a2', name: 'Otro', spaceId: undefined, active: true }])
+
+    await view.saveAgent('a1', {
+      provider: 'openai', model: 'gpt-4o', webAccess: true, mailConnectionIds: ['c1'],
+      subagentIds: ['a2'], apiKey: 'sk-secret',
+    })
+    expect(agents.updateAgent).toHaveBeenCalledWith('a1', expect.objectContaining({
+      provider: 'openai', model: 'gpt-4o', webAccess: true, mailConnectionIds: ['c1'],
+      subagents: [{ name: 'Otro', agentId: 'a2' }], apiKey: 'sk-secret',
+    }))
+
+    // An empty key clears the stored secret.
+    await view.saveAgent('a1', { apiKey: '' })
+    expect(agents.updateAgent).toHaveBeenLastCalledWith('a1', expect.objectContaining({ apiKey: null }))
+  })
+
   it('omits the workspace in the overview when no registry is mounted', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-space-'))
     homes.push(home)

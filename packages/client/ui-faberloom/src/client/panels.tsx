@@ -39,6 +39,9 @@ import styles from './faberloom.module.css'
 type Result<T> = { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
+/** Model providers an agent may use, each with its own API key. */
+const MODEL_PROVIDERS = ['anthropic', 'openai', 'kimi', 'deepseek'] as const
+
 /** The business face every panel shares: reads, writes, and the lazy detail reads. */
 export interface FaberloomPanelInjected {
   /** Re-read the workspace overview. */
@@ -425,7 +428,7 @@ function spacesScreen() {
 /** Agentes: table plus the full editor. */
 function agentsScreen() {
   return function FaberloomAgents(props: ScreenProps) {
-    const { t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, recommendModel, costs } = props
+    const { t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, connections } = props
     const { overview, error } = useOverview(props)
     const [selected, setSelected] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -435,18 +438,13 @@ function agentsScreen() {
     const [name, setName] = useState('')
     const [responsibility, setResponsibility] = useState('')
     const [assigned, setAssigned] = useState<readonly string[]>([])
-    const [exclusive, setExclusive] = useState(false)
-    const [primary, setPrimary] = useState('')
-    const [fallbacks, setFallbacks] = useState<readonly string[]>([])
-    const [escalation, setEscalation] = useState<readonly string[]>([])
-    const [escalationMode, setEscalationMode] = useState('manual')
-    const [escalationConditions, setEscalationConditions] = useState('')
-    const [budgetPerExecution, setBudgetPerExecution] = useState('')
-    const [budgetCurrency, setBudgetCurrency] = useState('')
-    const [budgetAttempts, setBudgetAttempts] = useState('')
-    const [budgetEscalations, setBudgetEscalations] = useState('')
-    const [recommendation, setRecommendation] = useState<FaberLoomModelRecommendation | null>(null)
-    const [spend, setSpend] = useState<FaberLoomCostSummary | null>(null)
+    const [provider, setProvider] = useState('')
+    const [modelId, setModelId] = useState('')
+    const [apiKey, setApiKey] = useState('')
+    const [hasApiKey, setHasApiKey] = useState(false)
+    const [webAccess, setWebAccess] = useState(false)
+    const [mailIds, setMailIds] = useState<readonly string[]>([])
+    const [subagentIds, setSubagentIds] = useState<readonly string[]>([])
 
     const agents = useMemo(
       () => (overview?.agents ?? []).filter(agent => agent.name.toLowerCase().includes(query.trim().toLowerCase())),
@@ -457,7 +455,7 @@ function agentsScreen() {
       [selected],
     )
     const catalog = useLazy<readonly FaberLoomSkillRow[]>(() => props.skills(), [])
-    const pool = useLazy<readonly FaberLoomModelRow[]>(() => props.models(), [])
+    const connectionsList = useLazy<readonly FaberLoomConnection[]>(() => connections(), [])
 
     // Load the selected agent's configuration into the editable fields.
     useEffect(() => {
@@ -465,18 +463,13 @@ function agentsScreen() {
       setName(detail.value.name)
       setResponsibility(detail.value.responsibility)
       setAssigned(detail.value.skills)
-      setExclusive(detail.value.exclusive)
-      setPrimary(detail.value.primaryModelId ?? '')
-      setFallbacks(detail.value.fallbacks)
-      setEscalation(detail.value.escalation?.authorized ?? [])
-      setEscalationMode(detail.value.escalation?.mode ?? 'manual')
-      setEscalationConditions((detail.value.escalation?.conditions ?? []).join(', '))
-      setBudgetPerExecution(detail.value.budget === null ? '' : String(detail.value.budget.perExecution))
-      setBudgetCurrency(detail.value.budget?.currency ?? '')
-      setBudgetAttempts(detail.value.budget === null ? '' : String(detail.value.budget.maxAttempts))
-      setBudgetEscalations(detail.value.budget === null ? '' : String(detail.value.budget.maxEscalations))
-      setRecommendation(null)
-      setSpend(null)
+      setProvider(detail.value.provider ?? '')
+      setModelId(detail.value.model ?? '')
+      setApiKey('')
+      setHasApiKey(detail.value.hasApiKey)
+      setWebAccess(detail.value.webAccess)
+      setMailIds(detail.value.mailConnectionIds)
+      setSubagentIds(detail.value.subagentIds)
       setMessage(null)
     }, [detail])
 
@@ -494,20 +487,12 @@ function agentsScreen() {
         name,
         responsibility,
         skills: assigned,
-        exclusive,
-        primaryModelId: primary.length === 0 ? null : primary,
-        fallbacks,
-        escalation: escalation.length === 0 && escalationConditions.trim().length === 0
-          ? null
-          : { authorized: escalation, conditions: escalationConditions.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0), mode: escalationMode },
-        budget: budgetPerExecution.trim().length === 0
-          ? null
-          : {
-            perExecution: Number(budgetPerExecution),
-            currency: budgetCurrency.trim().length === 0 ? 'EUR' : budgetCurrency.trim(),
-            maxAttempts: budgetAttempts.trim().length === 0 ? 1 : Number(budgetAttempts),
-            maxEscalations: budgetEscalations.trim().length === 0 ? 0 : Number(budgetEscalations),
-          },
+        provider: provider.length === 0 ? null : provider,
+        model: modelId.length === 0 ? null : modelId,
+        webAccess,
+        mailConnectionIds: mailIds,
+        subagentIds,
+        ...apiKey.length === 0 ? {} : { apiKey },
       })
         .then((result) => { if (!result.ok) setMessage(result.error.message) })
         .catch((cause: unknown) => { setMessage(String(cause)) })
@@ -584,118 +569,66 @@ function agentsScreen() {
                               />
                             )}
                       </Field>
-                      <Field label={t('field.modelPolicy')} hint={t('agents.modelHint')}>
-                        <div className={styles.grid2}>
-                          <select value={exclusive ? 'exclusive' : 'fallback'} onChange={(event) => { setExclusive(event.target.value === 'exclusive') }}>
-                            <option value="fallback">{t('agents.allowAlternatives')}</option>
-                            <option value="exclusive">{t('agents.onlyThisModel')}</option>
-                          </select>
-                          <span className={styles.hint}>{pool.kind === 'ready' ? `${String(pool.value.length)} ${t('agents.poolCount')}` : t('state.loading')}</span>
-                        </div>
-                      </Field>
-                      <Field label={t('field.primaryModel')} hint={t('agents.primaryHint')}>
-                        <select value={primary} onChange={(event) => { setPrimary(event.target.value); setRecommendation(null) }}>
-                          <option value="">{t('agents.modelUnset')}</option>
-                          {(pool.kind === 'ready' ? pool.value : []).map(model => (
-                            <option key={model.id} value={model.id}>{`${model.provider}/${model.model}${model.available ? '' : ` · ${t('agents.unavailable')}`}`}</option>
-                          ))}
+                      <Field label={t('field.provider')}>
+                        <select value={provider} onChange={(event) => { setProvider(event.target.value) }}>
+                          <option value="">{t('agents.providerUnset')}</option>
+                          {MODEL_PROVIDERS.map(item => <option key={item} value={item}>{item}</option>)}
                         </select>
                       </Field>
-                      <Field label={t('field.fallbacks')} hint={t('agents.fallbacksHint')}>
-                        <div className={styles.steps}>
-                          {(pool.kind === 'ready' ? pool.value : []).map(model => (
-                            <label className={styles.stepFlag} key={model.id}>
-                              <input type="checkbox" checked={fallbacks.includes(model.id)}
-                                onChange={(event) => {
-                                  setFallbacks(event.target.checked ? [...fallbacks, model.id] : fallbacks.filter(id => id !== model.id))
-                                }} />
-                              {`${model.provider}/${model.model}`}
-                            </label>
-                          ))}
-                        </div>
+                      <Field label={t('field.modelId')} hint={t('agents.modelIdHint')}>
+                        <input type="text" value={modelId} placeholder={t('agents.modelIdPlaceholder')} onChange={(event) => { setModelId(event.target.value) }} />
                       </Field>
-                      <Field label={t('field.escalation')} hint={t('agents.escalationHint')}>
-                        <div className={styles.steps}>
-                          <div className={styles.grid2}>
-                            <select value={escalationMode} onChange={(event) => { setEscalationMode(event.target.value) }}>
-                              <option value="manual">{t('agents.escalationManual')}</option>
-                              <option value="auto">{t('agents.escalationAuto')}</option>
-                            </select>
-                            <input type="text" value={escalationConditions} placeholder={t('agents.conditionsPlaceholder')} onChange={(event) => { setEscalationConditions(event.target.value) }} />
-                          </div>
-                          {(pool.kind === 'ready' ? pool.value : []).map(model => (
-                            <label className={styles.stepFlag} key={model.id}>
-                              <input type="checkbox" checked={escalation.includes(model.id)}
-                                onChange={(event) => {
-                                  setEscalation(event.target.checked ? [...escalation, model.id] : escalation.filter(id => id !== model.id))
-                                }} />
-                              {`${model.provider}/${model.model}`}
-                            </label>
-                          ))}
-                        </div>
-                      </Field>
-                      <Field label={t('field.budget')} hint={t('agents.budgetHint')}>
+                      <Field label={t('field.apiKey')} hint={t('agents.apiKeyHint')}>
                         <div className={styles.grid2}>
-                          <input type="text" value={budgetPerExecution} placeholder={t('agents.budgetAmount')} onChange={(event) => { setBudgetPerExecution(event.target.value) }} />
-                          <input type="text" value={budgetCurrency} placeholder={t('agents.budgetCurrency')} onChange={(event) => { setBudgetCurrency(event.target.value) }} />
-                          <input type="text" value={budgetAttempts} placeholder={t('agents.budgetAttempts')} onChange={(event) => { setBudgetAttempts(event.target.value) }} />
-                          <input type="text" value={budgetEscalations} placeholder={t('agents.budgetEscalations')} onChange={(event) => { setBudgetEscalations(event.target.value) }} />
+                          <SecretInput
+                            showLabel={t('agents.apiKeyShow')}
+                            hideLabel={t('agents.apiKeyHide')}
+                            value={apiKey}
+                            placeholder={t('agents.apiKeyPlaceholder')}
+                            onChange={(event) => { setApiKey(event.target.value) }}
+                          />
+                          {hasApiKey ? (
+                            <button className={styles.ghost} type="button" onClick={() => {
+                              setMessage(null)
+                              void saveAgent(selected ?? '', { apiKey: '' })
+                                .then((result) => { if (!result.ok) setMessage(result.error.message); else setHasApiKey(false) })
+                                .catch((cause: unknown) => { setMessage(String(cause)) })
+                            }}>{t('agents.apiKeyClear')}</button>
+                          ) : null}
                         </div>
                       </Field>
-                      <Field label={t('field.recommendation')} hint={t('agents.recommendHint')}>
+                      <Field label={t('field.webAccess')} hint={t('agents.webAccessHint')}>
+                        <label className={styles.stepFlag}>
+                          <input type="checkbox" checked={webAccess} onChange={(event) => { setWebAccess(event.target.checked) }} />
+                          {t('agents.webAccessAllow')}
+                        </label>
+                      </Field>
+                      <Field label={t('field.mail')} hint={t('agents.mailHint')}>
                         <div className={styles.steps}>
-                          <button className={styles.secondary} type="button" onClick={() => {
-                            setMessage(null)
-                            void recommendModel(selected ?? '').then((result) => {
-                              if (!result.ok) { setMessage(result.error.message); return }
-                              if (result.value === undefined) { setMessage(t('state.error')); return }
-                              setRecommendation(result.value)
-                            }).catch((cause: unknown) => { setMessage(String(cause)) })
-                          }}>{t('agents.suggestModel')}</button>
-                          {(pool.kind === 'ready' ? pool.value : []).length === 0
-                            ? <span className={styles.cellMuted}>{t('agents.poolEmpty')}</span>
-                            : null}
-                          {recommendation === null ? null : (
-                            <>
-                              <span className={styles.cellMuted}>
-                                {`${t('agents.recommended')}: ${recommendedLabel(recommendation.recommended, pool.kind === 'ready' ? pool.value : null, t('agents.noneAdmissible'))}`}
-                              </span>
-                              <button className={styles.rowAction} type="button" disabled={recommendation.recommended === null}
-                                onClick={() => { if (recommendation.recommended !== null) setPrimary(recommendation.recommended) }}>{t('action.apply')}</button>
-                              {recommendation.alternatives.map(candidate => (
-                                <span className={styles.cellMuted} key={candidate.modelId} title={candidate.reasons.join(' · ')}>
-                                  {`${modelLabel(candidate.modelId, pool.kind === 'ready' ? pool.value : null)} · ${candidate.estimatedCost === null ? t('agents.costUnknown') : String(candidate.estimatedCost)}${candidate.provisional ? ` · ${t('agents.provisional')}` : ''}`}
-                                </span>
-                              ))}
-                              {recommendation.uncertainty.length === 0 ? null : <span className={styles.cellMuted}>{recommendation.uncertainty.join(' · ')}</span>}
-                            </>
-                          )}
+                          {(connectionsList.kind === 'ready' ? connectionsList.value : []).filter(conn => conn.kind === 'imap' || conn.kind === 'smtp').map(conn => (
+                            <label className={styles.stepFlag} key={conn.id}>
+                              <input type="checkbox" checked={mailIds.includes(conn.id)}
+                                onChange={(event) => {
+                                  setMailIds(event.target.checked ? [...mailIds, conn.id] : mailIds.filter(id => id !== conn.id))
+                                }} />
+                              {`${conn.kind}: ${conn.label}`}
+                            </label>
+                          ))}
                         </div>
                       </Field>
-                      <Field label={t('field.costs')} hint={t('agents.costsHint')}>
+                      <Field label={t('field.subagents')} hint={t('agents.subagentsHint')}>
                         <div className={styles.steps}>
-                          <button className={styles.secondary} type="button" onClick={() => {
-                            setMessage(null)
-                            void costs().then((result) => {
-                              if (!result.ok) { setMessage(result.error.message); return }
-                              setSpend(result.value)
-                            }).catch((cause: unknown) => { setMessage(String(cause)) })
-                          }}>{t('agents.costsLoad')}</button>
-                          {spend === null ? null : spend.records === 0 ? (
-                            <span className={styles.cellMuted}>{t('agents.costsEmpty')}</span>
-                          ) : (
-                            <>
-                              <span className={styles.cellMuted}>
-                                {`${t('agents.costsTotal')}: ${spend.currency === null ? '' : `${spend.currency} `}${String(spend.total)} · ${String(spend.records)} ${t('agents.costsRecords')}${spend.partial ? ` · ${t('agents.costsPartial')}` : ''}`}
-                              </span>
-                              <span className={styles.cellMuted}>{t('agents.costsTopModels')}</span>
-                              {spend.byModel.slice(0, 3).map(bucket => (
-                                <span className={styles.cellMuted} key={bucket.key} title={bucket.partial ? t('agents.costsPartial') : undefined}>
-                                  {`${modelLabel(bucket.key, pool.kind === 'ready' ? pool.value : null)} · ${String(bucket.cost)}`}
-                                </span>
-                              ))}
-                            </>
-                          )}
+                          {(overview?.agents ?? []).filter(agent => agent.id !== selected).map(agent => (
+                            <label className={styles.stepFlag} key={agent.id}>
+                              <input type="checkbox" checked={subagentIds.includes(agent.id)}
+                                onChange={(event) => {
+                                  setSubagentIds(event.target.checked
+                                    ? [...subagentIds, agent.id]
+                                    : subagentIds.filter(id => id !== agent.id))
+                                }} />
+                              {agent.name}
+                            </label>
+                          ))}
                         </div>
                       </Field>
                     </>
@@ -705,17 +638,6 @@ function agentsScreen() {
       </Screen>
     )
   }
-}
-
-/** Readable label for one pool model, falling back to its id. */
-function modelLabel(id: string, models: readonly FaberLoomModelRow[] | null): string {
-  const model = models?.find(candidate => candidate.id === id)
-  return model === undefined ? id : `${model.provider}/${model.model}`
-}
-
-/** Label for a recommendation, naming the empty case. */
-function recommendedLabel(id: string | null, models: readonly FaberLoomModelRow[] | null, noneLabel: string): string {
-  return id === null ? noneLabel : modelLabel(id, models)
 }
 
 /** Skills: the role catalog plus the owner's uploads. */

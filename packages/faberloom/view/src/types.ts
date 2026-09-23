@@ -481,6 +481,18 @@ export interface FaberLoomAgentDetail {
   readonly escalation: AgentEscalationInput | null
   /** Shared execution budget, or null when none is configured. */
   readonly budget: AgentBudgetInput | null
+  /** Model provider id, or null when unset. */
+  readonly provider: string | null
+  /** Model id within the provider, or null when unset. */
+  readonly model: string | null
+  /** Whether a provider API key is stored; the key itself is never returned. */
+  readonly hasApiKey: boolean
+  /** Whether the agent may browse the open web; otherwise only MWT.ONE MCP. */
+  readonly webAccess: boolean
+  /** Mail connection ids the agent may use. */
+  readonly mailConnectionIds: readonly string[]
+  /** Agent ids this agent may communicate with. */
+  readonly subagentIds: readonly string[]
 }
 
 /** One model of the agent model pool, as the panel reads it. */
@@ -571,6 +583,18 @@ export interface AgentSaveInput {
   readonly escalation?: AgentEscalationInput | null
   /** Replacement budget policy, or null to clear it. */
   readonly budget?: AgentBudgetInput | null
+  /** New provider, or null to clear it. */
+  readonly provider?: string | null
+  /** New model id, or null to clear it. */
+  readonly model?: string | null
+  /** New provider API key; an empty string clears it. */
+  readonly apiKey?: string
+  /** New web-access switch. */
+  readonly webAccess?: boolean
+  /** Replacement mail-connection id list. */
+  readonly mailConnectionIds?: readonly string[]
+  /** Replacement communicating-agent id list. */
+  readonly subagentIds?: readonly string[]
 }
 
 /** One read of the signed-in owner's workspace. */export interface FaberLoomOverview {

@@ -138,6 +138,16 @@ export interface FaberLoomAgent {
   readonly tools: readonly string[]
   /** Named persistent subagents available to this agent. */
   readonly subagents: readonly { readonly name: string; readonly agentId: FaberLoomAgentId }[]
+  /** Model provider id (anthropic, openai, kimi, deepseek), or undefined. */
+  readonly provider: string | undefined
+  /** Model id within the provider, or undefined. */
+  readonly model: string | undefined
+  /** Whether the agent may browse the open web; otherwise only MWT.ONE MCP. */
+  readonly webAccess: boolean
+  /** Whether a provider API key is stored; the key itself is never exposed. */
+  readonly hasApiKey: boolean
+  /** User mail connections the agent may use. */
+  readonly mailConnectionIds: readonly string[]
   /** Versioned model policy. */
   readonly policy: ModelPolicy
   /** Portable teachings selected when copying; never confidence. */
@@ -168,6 +178,16 @@ export interface AgentInput {
   readonly skills?: readonly string[]
   /** Tool names the agent may execute. */
   readonly tools?: readonly string[]
+  /** Model provider id. */
+  readonly provider?: string
+  /** Model id within the provider. */
+  readonly model?: string
+  /** Provider API key; stored, never returned by reads. */
+  readonly apiKey?: string
+  /** Whether the agent may browse the open web. */
+  readonly webAccess?: boolean
+  /** User mail connections the agent may use. */
+  readonly mailConnectionIds?: readonly string[]
   /** Initial model policy. */
   readonly policy?: PolicyPatch
 }
@@ -186,6 +206,16 @@ export interface AgentPatch {
   readonly tools?: readonly string[]
   /** New named subagents. */
   readonly subagents?: readonly { readonly name: string; readonly agentId: FaberLoomAgentId }[]
+  /** New provider, or `null` to clear it. */
+  readonly provider?: string | null
+  /** New model id, or `null` to clear it. */
+  readonly model?: string | null
+  /** New provider API key; `null` or an empty string clears it. */
+  readonly apiKey?: string | null
+  /** New web-access switch. */
+  readonly webAccess?: boolean
+  /** New mail-connection list, replaced wholesale. */
+  readonly mailConnectionIds?: readonly string[]
   /** New portable teachings. */
   readonly lessons?: readonly string[]
   /** Policy patch. */

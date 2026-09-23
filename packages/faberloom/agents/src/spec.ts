@@ -67,6 +67,14 @@ export const agentRecord = z.object({
   skills: z.array(z.string()),
   tools: z.array(z.string()),
   subagents: z.array(z.object({ name: z.string(), agentId })),
+  // Provider/model/key, whether the agent may browse the open web, and the user
+  // mail connections it may use. Defaulted so records written before these
+  // fields keep loading under the same domain version.
+  provider: z.string().nullable().default(null),
+  model: z.string().nullable().default(null),
+  apiKey: z.string().nullable().default(null),
+  webAccess: z.boolean().default(false),
+  mailConnectionIds: z.array(z.string()).default([]),
   policy: policyRecord,
   lessons: z.array(z.string()),
   active: z.boolean(),

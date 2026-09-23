@@ -360,6 +360,12 @@ export class FaberLoomViewService extends TypertRemoteService {
           maxAttempts: agent.policy.budget.maxAttempts,
           maxEscalations: agent.policy.budget.maxEscalations,
         },
+      provider: agent.provider ?? null,
+      model: agent.model ?? null,
+      hasApiKey: agent.hasApiKey,
+      webAccess: agent.webAccess,
+      mailConnectionIds: [...agent.mailConnectionIds],
+      subagentIds: agent.subagents.map(entry => String(entry.agentId)),
     }
   }
 
@@ -371,10 +377,33 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('saveAgent')
   async saveAgent(id: string, input: AgentSaveInput): Promise<FaberLoomOverview> {
-    const patch: { name?: string; responsibility?: string; skills?: readonly string[]; policy?: PolicyPatch } = {}
+    const patch: {
+      name?: string
+      responsibility?: string
+      skills?: readonly string[]
+      provider?: string | null
+      model?: string | null
+      apiKey?: string | null
+      webAccess?: boolean
+      mailConnectionIds?: readonly string[]
+      subagents?: readonly { name: string; agentId: FaberLoomAgentId }[]
+      policy?: PolicyPatch
+    } = {}
     if (input.name !== undefined) patch.name = input.name
     if (input.responsibility !== undefined) patch.responsibility = input.responsibility
     if (input.skills !== undefined) patch.skills = [...input.skills]
+    if (input.provider !== undefined) patch.provider = input.provider
+    if (input.model !== undefined) patch.model = input.model
+    if (input.apiKey !== undefined) patch.apiKey = input.apiKey.length === 0 ? null : input.apiKey
+    if (input.webAccess !== undefined) patch.webAccess = input.webAccess
+    if (input.mailConnectionIds !== undefined) patch.mailConnectionIds = [...input.mailConnectionIds]
+    if (input.subagentIds !== undefined) {
+      const catalog = await this.ctx.faberloomAgents.listAgents()
+      patch.subagents = input.subagentIds.map(agentId => ({
+        name: catalog.find(candidate => candidate.id === agentId)?.name ?? agentId,
+        agentId: agentId as FaberLoomAgentId,
+      }))
+    }
     if (input.primaryModelId !== undefined || input.exclusive !== undefined || input.fallbacks !== undefined
       || input.escalation !== undefined || input.budget !== undefined) {
       patch.policy = {
