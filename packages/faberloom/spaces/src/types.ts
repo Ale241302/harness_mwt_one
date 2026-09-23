@@ -81,6 +81,8 @@ export interface CreateSpaceInput {
   readonly parentId?: FaberLoomSpaceId
   /** Agent in charge of the new space; the same agent may lead a parent and a sub-space. */
   readonly agentId?: string
+  /** Whether the new space inherits its ancestors' context; defaults to true. */
+  readonly inheritContext?: boolean
 }
 
 /** Mutable fields of a space. Absent fields stay unchanged. */

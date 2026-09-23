@@ -19,7 +19,7 @@ import {
   IconFolderOpenOutline16,
   IconNewChatOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomConnection, FaberLoomExecutionRow,
   FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomOverview,
@@ -46,7 +46,7 @@ export interface FaberloomPanelInjected {
   /** Leave the panel and open the harness conversation (its composer). */
   startConversation: () => void
   /** Create a space (root or sub-space) in charge of an optional agent, and refresh. */
-  createSpace: (title: string, agentId: string | null, parentId: string | null) => void
+  createSpace: (title: string, agentId: string | null, parentId: string | null, inheritContext: boolean) => void
   /** Remove one space, its Workspace, and its conversation area. */
   deleteSpace: (id: string) => void
   /** Open the space's Workspace in the sidebar conversation area. */
@@ -246,6 +246,8 @@ function spacesScreen() {
     const [members, setMembers] = useState('')
     const [spaceAgentId, setSpaceAgentId] = useState('')
     const [parentId, setParentId] = useState('')
+    const [newInherit, setNewInherit] = useState(true)
+    const [creating, setCreating] = useState(false)
     const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
     const rows = useMemo(
       () => (overview?.spaces ?? []).filter(space => space.title.toLowerCase().includes(query.trim().toLowerCase())),
@@ -286,10 +288,22 @@ function spacesScreen() {
     const create = (): void => {
       setMessage(null)
       const name = draft.trim().length === 0 ? t('spaces.untitled') : draft.trim()
-      createSpace(name, agentId.length === 0 ? null : agentId, parentId.length === 0 ? null : parentId)
+      createSpace(name, agentId.length === 0 ? null : agentId, parentId.length === 0 ? null : parentId, newInherit)
       setDraft('')
       setAgentId('')
       setParentId('')
+      setNewInherit(true)
+      setCreating(false)
+    }
+
+    /** Open the create dialog, optionally preset for a sub-space of `parent`. */
+    const openCreate = (parent: string, agent: string, inheritChild: boolean): void => {
+      setMessage(null)
+      setDraft('')
+      setParentId(parent)
+      setAgentId(agent)
+      setNewInherit(inheritChild)
+      setCreating(true)
     }
 
     return (
@@ -297,18 +311,7 @@ function spacesScreen() {
         trailing={(
           <>
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
-            <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.spaces.newPlaceholder')}
-              onChange={(event) => { setDraft(event.target.value) }}
-              onKeyDown={(event) => { if (event.key === 'Enter') create() }} />
-            <select className={styles.paneSearch} style={{ width: 170, padding: '8px 10px' }} value={parentId} aria-label={t('col.parent')} onChange={(event) => { setParentId(event.target.value) }}>
-              <option value="">{t('spaces.noParent')}</option>
-              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
-            </select>
-            <select className={styles.paneSearch} style={{ width: 190, padding: '8px 10px' }} value={agentId} aria-label={t('panel.spaces.newAgent')} onChange={(event) => { setAgentId(event.target.value) }}>
-              <option value="">{t('spaces.noAgent')}</option>
-              {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-            </select>
-            <button className={styles.primary} type="button" onClick={create}>{t('action.create')}</button>
+            <button className={styles.primary} type="button" onClick={() => { openCreate('', '', true) }}>{t('spaces.createTitle')}</button>
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
@@ -320,6 +323,7 @@ function spacesScreen() {
             footer={selected === null ? undefined : (
               <>
                 <span className={styles.tools}>
+                  <button className={styles.secondary} type="button" onClick={() => { openCreate(selected, spaceAgentId, true) }}>{t('spaces.newSubspace')}</button>
                   <button className={styles.danger} type="button" onClick={() => {
                     setMessage(null)
                     deleteSpace(selected)
@@ -380,6 +384,37 @@ function spacesScreen() {
                     )}
           </Inspector>
         </div>
+        <Modal open={creating} onClose={() => { setCreating(false) }} title={t('spaces.createTitle')} closeLabel={t('action.close')}
+          footer={(
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setCreating(false) }}>{t('action.cancel')}</button>
+              <button className={styles.primary} type="button" onClick={create}>{t('action.create')}</button>
+            </>
+          )}>
+          <Field label={t('field.name')}>
+            <input type="text" value={draft} placeholder={t('panel.spaces.newPlaceholder')}
+              onChange={(event) => { setDraft(event.target.value) }}
+              onKeyDown={(event) => { if (event.key === 'Enter') create() }} />
+          </Field>
+          <Field label={t('col.parent')}>
+            <select value={parentId} onChange={(event) => { setParentId(event.target.value) }}>
+              <option value="">{t('spaces.noParent')}</option>
+              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+            </select>
+          </Field>
+          <Field label={t('col.agent')}>
+            <select value={agentId} onChange={(event) => { setAgentId(event.target.value) }}>
+              <option value="">{t('spaces.noAgent')}</option>
+              {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+            </select>
+          </Field>
+          <Field label={t('field.inherit')} hint={t('spaces.inheritHint')}>
+            <select value={newInherit ? 'yes' : 'no'} onChange={(event) => { setNewInherit(event.target.value === 'yes') }}>
+              <option value="yes">{t('spaces.inheritYes')}</option>
+              <option value="no">{t('spaces.inheritNo')}</option>
+            </select>
+          </Field>
+        </Modal>
       </Screen>
     )
   }

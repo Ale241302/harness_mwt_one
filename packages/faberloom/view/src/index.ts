@@ -240,15 +240,17 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param title - display title.
    * @param agentId - catalog agent put in charge; the same agent may lead a parent and a sub-space.
    * @param parentId - parent space id, when this is a sub-space.
+   * @param inheritContext - whether the space inherits its parent's context; defaults to true.
    * @returns the refreshed overview.
    */
   @Remote('createSpace')
-  async createSpace(title: string, agentId?: string, parentId?: string): Promise<FaberLoomOverview> {
+  async createSpace(title: string, agentId?: string, parentId?: string, inheritContext?: boolean): Promise<FaberLoomOverview> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.create(actor, {
       title,
       ...agentId === undefined || agentId.length === 0 ? {} : { agentId },
       ...parentId === undefined || parentId.length === 0 ? {} : { parentId: parentId as FaberLoomSpaceId },
+      ...inheritContext === undefined ? {} : { inheritContext },
     })
     await this.ensureSpaceWorkspace(actor, space.id, space.title)
     return await this.overview()

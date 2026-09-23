@@ -188,7 +188,7 @@ export class FaberLoomSpaces extends Service {
       companyId: actor.companyId ?? null,
       title: input.title,
       parentId: input.parentId ?? null,
-      inheritContext: true,
+      inheritContext: input.inheritContext ?? true,
       excluded: [],
       members: [],
       context: {},
