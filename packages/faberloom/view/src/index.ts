@@ -31,7 +31,7 @@ import type { FaberLoomConnections } from '@deepseek-ai/dsh-faberloom-connection
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {
-  ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomOverview,
+  ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
   FaberLoomModelRow, FaberLoomModelRecommendation,
@@ -1442,15 +1442,40 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Record one owner statement on the agent-memory server. The server distils
-   * L0 into L1 asynchronously, so the new row may appear after the next read.
+   * Remember one statement, attached to a space or to no space. The entry is
+   * durable and space-scoped, so a sub-space with inheritance sees it.
    * @param text - the statement to remember.
+   * @param spaceId - the space to attach it to, when one is chosen.
    * @returns the refreshed overview.
    */
   @Remote('remember')
-  async remember(text: string): Promise<FaberLoomOverview> {
-    await this.writeMemory(text)
+  async remember(text: string, spaceId?: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomSpaces.remember(
+      this.actor(),
+      text,
+      spaceId === undefined || spaceId.length === 0 ? [] : [spaceId as FaberLoomSpaceId],
+    )
     return await this.overview()
+  }
+
+  /**
+   * Read the space-scoped memory, optionally resolved for one space (own plus
+   * inherited ancestors' entries).
+   * @param spaceId - the space to resolve for; absent lists every entry.
+   * @returns memory rows oldest first.
+   */
+  @Remote('spaceMemory')
+  async spaceMemory(spaceId?: string): Promise<readonly FaberLoomSpaceMemoryRow[]> {
+    const actor = this.actor()
+    const entries = spaceId === undefined || spaceId.length === 0
+      ? await this.ctx.faberloomSpaces.listMemory(actor)
+      : await this.ctx.faberloomSpaces.effectiveMemory(actor, spaceId as FaberLoomSpaceId)
+    return entries.map(entry => ({
+      id: entry.id,
+      text: entry.text,
+      spaceIds: entry.spaceIds.map(String),
+      createdAt: entry.createdAt,
+    }))
   }
 
   /** The deployment-supplied identity, or a read-only anonymous actor. */
@@ -1462,26 +1487,6 @@ export class FaberLoomViewService extends TypertRemoteService {
       companyId: this.config.companyId === undefined || this.config.companyId.length === 0 ? undefined : this.config.companyId,
       readOnly: this.config.readOnly ?? true,
     }
-  }
-
-  /**
-   * Append one owner statement to the memory pipeline's conversation inlet.
-   * @param text - the statement to remember.
-   * @returns nothing; the server accepts L0 and distils it asynchronously.
-   */
-  private async writeMemory(text: string): Promise<void> {
-    const base = this.memoryBase()
-    if (base === undefined) throw new Error('faberloom: the agent-memory server is not configured')
-    const response = await fetch(`${base}/v3/conversation/add`, {
-      method: 'POST',
-      headers: this.memoryHeaders(),
-      body: JSON.stringify({
-        session_id: `faberloom-ui-${new Date().toISOString()}`,
-        messages: [{ role: 'user', content: text }],
-      }),
-      signal: AbortSignal.timeout(6000),
-    })
-    if (!response.ok) throw new Error(`faberloom: the agent-memory server rejected the statement (HTTP ${response.status})`)
   }
 
   /** The memory core base URL when the deployment configured the stack. */

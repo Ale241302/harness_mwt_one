@@ -13,6 +13,7 @@ import { apply, inject } from '../src/client/index.ts'
 
 const CONVERSAR = 'faberloom-conversar' as MainPanelId
 const SPACES = 'faberloom-spaces' as MainPanelId
+const MEMORY = 'faberloom-memory' as MainPanelId
 
 const OVERVIEW = {
   spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null, agentId: 'agent-1', agentName: 'Proformas', workspaceId: 'ws-1' }],
@@ -59,6 +60,15 @@ async function bench(
   const createRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const setRoutineActive = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const remember = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const spaceMemory = vi.fn(async () => ({ ok: true, value: [] }))
+  const teachings = vi.fn(async () => ({ ok: true, value: [] }))
+  const saveTeaching = vi.fn(async () => ({ ok: true, value: [] }))
+  const editTeaching = vi.fn(async () => ({ ok: true, value: [] }))
+  const revokeTeaching = vi.fn(async () => ({ ok: true, value: [] }))
+  const performance = vi.fn(async () => ({
+    ok: true,
+    value: { uses: 0, approved: 0, corrected: 0, agentFailures: 0, correctionsByCause: {}, correctionRate: null },
+  }))
   const spaceDetail = vi.fn(async () => spaceDetailResult)
   const spaceWorkspace = vi.fn(async () => ({ ok: true, value: { registered: true, workspaceId: 'ws-1', title: 'Marluvas', sessions: 0 } }))
   const routineDetail = vi.fn(async () => ({ ok: true, value: undefined }))
@@ -74,6 +84,7 @@ async function bench(
     deactivateAgent, createBoardItem, reviewBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail,
     connections, saveConnection, removeConnection, probeConnection,
+    spaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -108,7 +119,10 @@ async function bench(
   }, Frame)
   const surface = await runtime.mount({ inject: [...inject], apply })
   const view = runtime.renderRoot()
-  return { runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, surface, view }
+  return {
+    runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace,
+    remember, spaceMemory, surface, view,
+  }
 }
 
 describe('faberloom surface', () => {
@@ -237,6 +251,17 @@ describe('faberloom surface', () => {
     fireEvent.change(await view.findByRole('combobox', { name: 'Agent' }), { target: { value: 'agent-1' } })
     fireEvent.click(view.getByRole('button', { name: 'Save' }))
     await waitFor(() => { expect(saveSpace).toHaveBeenCalledWith('space-1', expect.objectContaining({ agentId: 'agent-1' })) })
+  })
+
+  it('filters and remembers space-scoped memory', async () => {
+    const { runtime, remember, spaceMemory, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
+    await waitFor(() => { expect(spaceMemory).toHaveBeenCalledWith(undefined) })
+    fireEvent.change(view.getByRole('combobox', { name: 'Space' }), { target: { value: 'space-1' } })
+    await waitFor(() => { expect(spaceMemory).toHaveBeenLastCalledWith('space-1') })
+    fireEvent.change(view.getByPlaceholderText('Write what the agent must remember'), { target: { value: 'nota' } })
+    fireEvent.click(view.getByRole('button', { name: 'Remember' }))
+    await waitFor(() => { expect(remember).toHaveBeenCalledWith('nota', 'space-1') })
   })
 
   it('keeps the space form usable for a read-only identity (own spaces)', async () => {

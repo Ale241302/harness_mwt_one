@@ -60,6 +60,20 @@ export const spaceFileRecord = z.object({
 export type SpaceFileRecord = z.infer<typeof spaceFileRecord>
 
 /**
+ * Durable shape of one space-scoped memory entry: the owner, the spaces it is
+ * attached to (one or more), its text, and its creation instant.
+ */
+export const spaceMemoryRecord = z.object({
+  ownerId: z.string(),
+  spaceIds: z.array(spaceId),
+  text: z.string(),
+  createdAt: z.string(),
+})
+
+/** One stored memory entry, inferred from {@link spaceMemoryRecord}. */
+export type SpaceMemoryRecord = z.infer<typeof spaceMemoryRecord>
+
+/**
  * The spaces domain spec: one `spaces` table keyed by {@link FaberLoomSpaceId}.
  * The service opens this through `ctx.storageDomain`; the spec object is the
  * single source of the domain's identity, version, and schema.
@@ -73,5 +87,6 @@ export const spacesDomainSpec = defineDomain({
   tables: {
     spaces: domainTable<FaberLoomSpaceId, SpaceRecord>(spaceRecord),
     files: domainTable<string, SpaceFileRecord>(spaceFileRecord),
+    memory: domainTable<string, SpaceMemoryRecord>(spaceMemoryRecord),
   },
 })

@@ -28,7 +28,7 @@ import type {
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, TeachingSaveInput,
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace,
-  FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow,
+  FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import type { createWorkspaceStore } from './store.ts'
@@ -73,8 +73,10 @@ export interface FaberloomPanelInjected {
   createRoutine: (name: string) => void
   /** Activate or pause one routine. */
   setRoutineActive: (id: string, active: boolean) => void
-  /** Record one statement on the agent-memory server. */
-  remember: (text: string) => void
+  /** Remember one statement, attached to a space or to no space. */
+  remember: (text: string, spaceId: string | null) => void
+  /** Read the space-scoped memory, resolved for one space when given. */
+  spaceMemory: (spaceId?: string) => Promise<Result<readonly FaberLoomSpaceMemoryRow[]>>
   /** Read one agent's full editable configuration. */
   agentDetail: (id: string) => Promise<Result<FaberLoomAgentDetail | undefined>>
   /** List the model pool the panels assign from. */
@@ -1319,48 +1321,65 @@ function executionsScreen() {
 /** Memoria: the owner's rows from the agent-memory server plus the recall form. */
 function memoryScreen() {
   return function FaberloomMemory(props: ScreenProps) {
-    const { t, remember } = props
-    const { overview, status, error } = useOverview(props)
+    const { t, remember, spaceMemory } = props
+    const { overview, error } = useOverview(props)
     const [draft, setDraft] = useState('')
+    const [spaceId, setSpaceId] = useState('')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
-    const rows = overview?.memory ?? []
+    const [reload, setReload] = useState(0)
+    const memory = useLazy<readonly FaberLoomSpaceMemoryRow[]>(
+      () => spaceMemory(spaceId.length === 0 ? undefined : spaceId),
+      [spaceId, reload],
+    )
+    const rows = memory.kind === 'ready' ? memory.value : []
     const chosen = rows.find(row => row.id === selected) ?? null
+    const spaceNames = (ids: readonly string[]): string => ids.length === 0
+      ? t('spaces.noSpace')
+      : ids.map(id => (overview?.spaces ?? []).find(space => space.id === id)?.title ?? id).join(', ')
 
-    const columns: readonly Column<FaberLoomOverview['memory'][number]>[] = [
+    const columns: readonly Column<FaberLoomSpaceMemoryRow>[] = [
       { key: 'text', header: t('col.text'), cell: row => <span className={styles.cellName}>{row.text}</span> },
-      { key: 'kind', header: t('col.kind'), cell: row => <Chip>{row.kind}</Chip> },
-      { key: 'at', header: t('col.date'), cell: row => <span className={styles.cellMuted}>{row.at}</span> },
+      { key: 'space', header: t('col.space'), cell: row => <span className={styles.cellMuted}>{spaceNames(row.spaceIds)}</span> },
+      { key: 'at', header: t('col.date'), cell: row => <span className={styles.cellMuted}>{row.createdAt}</span> },
     ]
 
     return (
       <Screen title={t('panel.memory.title')} subtitle={t('panel.memory.intro')}
         trailing={(
           <>
-            <input className={styles.paneSearch} style={{ width: 260, padding: '8px 10px' }} value={draft} placeholder={t('panel.memory.rememberPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
+            <select className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={spaceId} aria-label={t('col.space')}
+              onChange={(event) => { setSpaceId(event.target.value); setSelected(null) }}>
+              <option value="">{t('memory.allSpaces')}</option>
+              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+            </select>
+            <input className={styles.paneSearch} style={{ width: 240, padding: '8px 10px' }} value={draft} placeholder={t('panel.memory.rememberPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
             <button className={styles.primary} type="button" onClick={() => {
               if (draft.trim().length === 0) { setMessage(t('state.needsText')); return }
               setMessage(null)
-              remember(draft.trim())
+              remember(draft.trim(), spaceId.length === 0 ? null : spaceId)
               setDraft('')
+              setReload(value => value + 1)
             }}>{t('action.remember')}</button>
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
         <p className={styles.hint}>{t('state.memoryPending')}</p>
         <div className={styles.split}>
-          {overview === null && status === 'loading'
+          {memory.kind === 'loading'
             ? <StateBlock kind="loading" title={t('state.loading')} />
-            : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
-              emptyTitle={t('state.empty.title')} emptyText={t('state.empty.memory')} labels={tableLabels(t)} />}
-          <Inspector title={chosen === null ? t('memory.detail') : chosen.kind}>
+            : memory.kind === 'error'
+              ? <StateBlock kind="error" title={t('state.error')} text={memory.message} />
+              : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+                emptyTitle={t('state.empty.title')} emptyText={t('state.empty.memory')} labels={tableLabels(t)} />}
+          <Inspector title={chosen === null ? t('memory.detail') : t('col.text')}>
             {chosen === null
               ? <StateBlock kind="empty" title={t('memory.selectTitle')} text={t('memory.selectText')} />
               : (
                 <>
                   <Field label={t('field.text')}><span className={styles.cellMuted}>{chosen.text}</span></Field>
-                  <Field label={t('field.kind')}><Chip>{chosen.kind}</Chip></Field>
-                  <Field label={t('field.date')}><span className={styles.cellMuted}>{chosen.at}</span></Field>
+                  <Field label={t('col.space')}><span className={styles.cellMuted}>{spaceNames(chosen.spaceIds)}</span></Field>
+                  <Field label={t('field.date')}><span className={styles.cellMuted}>{chosen.createdAt}</span></Field>
                 </>
               )}
           </Inspector>

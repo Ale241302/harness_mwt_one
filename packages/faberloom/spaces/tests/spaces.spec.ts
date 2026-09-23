@@ -63,6 +63,27 @@ describe('FaberLoomSpaces', () => {
     expect((await spaces.update(SONDEL, child.id, { agentId: null })).agentId).toBeUndefined()
   })
 
+  it('remembers space-scoped memory and inherits it into sub-spaces', async () => {
+    const { spaces } = await harness()
+    const parent = await spaces.create(SONDEL, { title: 'Padre' })
+    const child = await spaces.create(SONDEL, { title: 'Hijo', parentId: parent.id })
+    await spaces.remember(SONDEL, 'dato del padre', [parent.id])
+    await spaces.remember(SONDEL, 'dato solo hijo', [child.id])
+    await spaces.remember(SONDEL, 'en los dos', [parent.id, child.id])
+
+    expect((await spaces.listMemory(SONDEL, parent.id)).map(entry => entry.text)).toEqual(['dato del padre', 'en los dos'])
+    expect((await spaces.listMemory(SONDEL)).map(entry => entry.text)).toHaveLength(3)
+    expect((await spaces.effectiveMemory(SONDEL, child.id)).map(entry => entry.text))
+      .toEqual(['dato del padre', 'dato solo hijo', 'en los dos'])
+
+    await spaces.update(SONDEL, child.id, { inheritContext: false })
+    expect((await spaces.effectiveMemory(SONDEL, child.id)).map(entry => entry.text))
+      .toEqual(['dato solo hijo', 'en los dos'])
+
+    await expect(spaces.effectiveMemory(SONEPAR, child.id)).rejects.toThrow('access denied')
+    await expect(spaces.remember(SONEPAR, 'x', [parent.id])).rejects.toThrow('access denied')
+  })
+
   it('F02 · inheritance off omits the parent context; on includes it', async () => {
     const { spaces } = await harness()
     const parent = await spaces.create(SONDEL, { title: 'Marluvas' })

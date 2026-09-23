@@ -10,10 +10,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { spacesDomainSpec, type SpaceFileRecord, type SpaceRecord } from './spec.ts'
+import { spacesDomainSpec, type SpaceFileRecord, type SpaceMemoryRecord, type SpaceRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   CreateSpaceInput,
+  FaberLoomSpaceMemory,
   EffectiveContext,
   EffectiveContextConflict,
   FaberLoomSpace,
@@ -59,6 +60,16 @@ function toSpace(id: FaberLoomSpaceId, record: SpaceRecord): FaberLoomSpace {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     version: record.version,
+  }
+}
+
+/** Map one durable memory record to the consumer-facing entry. */
+function toMemory(id: string, record: SpaceMemoryRecord): FaberLoomSpaceMemory {
+  return {
+    id,
+    spaceIds: record.spaceIds,
+    text: record.text,
+    createdAt: record.createdAt,
   }
 }
 
@@ -156,6 +167,11 @@ export class FaberLoomSpaces extends Service {
   /** The attached-files table handle. */
   private async files(): Promise<KvTable<string, SpaceFileRecord>> {
     return (await this.domain()).table('files')
+  }
+
+  /** The space-scoped memory table handle. */
+  private async memory(): Promise<KvTable<string, SpaceMemoryRecord>> {
+    return (await this.domain()).table('memory')
   }
 
   /** Read a record or fail loud. */
@@ -287,6 +303,78 @@ export class FaberLoomSpaces extends Service {
       if (file.spaceId === id) await files.delete(fileId)
     }
     return await table.delete(id)
+  }
+
+  /**
+   * Attach one memory entry to one or more spaces the actor may read. A
+   * sub-space with inheritance on later reads its ancestors' entries too.
+   * @param actor - the acting identity.
+   * @param text - the remembered text.
+   * @param spaceIds - the spaces the entry is attached to.
+   * @returns the created entry.
+   */
+  async remember(actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[]): Promise<FaberLoomSpaceMemory> {
+    for (const spaceId of spaceIds) {
+      const { record } = await this.requireRecord(spaceId)
+      if (!canRead(record, actor)) throw new Error('faberloom: space access denied')
+    }
+    const id = randomUUID()
+    const record: SpaceMemoryRecord = {
+      ownerId: actor.id,
+      spaceIds: [...spaceIds],
+      text,
+      createdAt: new Date().toISOString(),
+    }
+    await (await this.memory()).put(id, record)
+    return toMemory(id, record)
+  }
+
+  /**
+   * List the actor's memory entries, optionally only those attached to one space.
+   * @param actor - the acting identity.
+   * @param spaceId - when set, only entries attached to this space.
+   * @returns entries oldest first.
+   */
+  async listMemory(actor: SpaceActor, spaceId?: FaberLoomSpaceId): Promise<FaberLoomSpaceMemory[]> {
+    const out: FaberLoomSpaceMemory[] = []
+    for (const [id, record] of (await this.memory()).entries()) {
+      if (record.ownerId !== actor.id) continue
+      if (spaceId !== undefined && !record.spaceIds.includes(spaceId)) continue
+      out.push(toMemory(id, record))
+    }
+    out.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    return out
+  }
+
+  /**
+   * Resolve the memory one space sees: its own entries plus, while inheritance
+   * is on, each ancestor's entries.
+   * @param actor - the acting identity.
+   * @param spaceId - the space to resolve for.
+   * @returns entries from the inheriting chain, oldest first.
+   * @throws when the space is absent or not readable.
+   */
+  async effectiveMemory(actor: SpaceActor, spaceId: FaberLoomSpaceId): Promise<FaberLoomSpaceMemory[]> {
+    const chain = new Set<FaberLoomSpaceId>()
+    let current: FaberLoomSpaceId | undefined = spaceId
+    while (current !== undefined) {
+      const { record } = await this.requireRecord(current)
+      if (!canRead(record, actor)) {
+        if (current === spaceId) throw new Error('faberloom: space access denied')
+        break
+      }
+      chain.add(current)
+      if (!record.inheritContext) break
+      current = record.parentId ?? undefined
+    }
+    const out: FaberLoomSpaceMemory[] = []
+    for (const [id, record] of (await this.memory()).entries()) {
+      if (record.ownerId !== actor.id) continue
+      if (!record.spaceIds.some(entry => chain.has(entry))) continue
+      out.push(toMemory(id, record))
+    }
+    out.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    return out
   }
 
   /**

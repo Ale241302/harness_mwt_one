@@ -59,6 +59,10 @@ function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
     remove: vi.fn(async (): Promise<boolean> => true),
     update: vi.fn(async (): Promise<{ id: string; title: string }> => ({ id: 'sp1', title: 'Eguisa' })),
     resolveWorkdir: vi.fn(async (_actor?: unknown, _id?: string): Promise<{ kind: 'opaque'; ref: string }> => ({ kind: 'opaque', ref: 'fw_abc123' })),
+    remember: vi.fn(async (): Promise<{ id: string; spaceIds: string[]; text: string; createdAt: string }> =>
+      ({ id: 'm1', spaceIds: [], text: '', createdAt: '2026-01-01T00:00:00Z' })),
+    listMemory: vi.fn(async (): Promise<readonly { id: string; spaceIds: string[]; text: string; createdAt: string }[]> => []),
+    effectiveMemory: vi.fn(async (): Promise<readonly { id: string; spaceIds: string[]; text: string; createdAt: string }[]> => []),
   }
   const agents = {
     listAgents: vi.fn(async (): Promise<readonly { id: string; name: string; spaceId: string | undefined; active: boolean }[]> => []),
@@ -229,6 +233,29 @@ describe('FaberLoomViewService space lifecycle', () => {
 
     expect((await view.spaceDetail('sp1'))?.agentId).toBeNull()
     expect(await view.spaceDetail('missing')).toBeUndefined()
+  })
+
+  it('remembers into a space and reads its effective memory', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces } = harness()
+    spaces.effectiveMemory.mockResolvedValue([
+      { id: 'm1', spaceIds: ['sp1'], text: 'dato', createdAt: '2026-01-01T00:00:00Z' },
+    ])
+
+    expect(await view.spaceMemory('sp1')).toEqual([
+      { id: 'm1', text: 'dato', spaceIds: ['sp1'], createdAt: '2026-01-01T00:00:00Z' },
+    ])
+    expect(spaces.effectiveMemory).toHaveBeenCalledWith(expect.anything(), 'sp1')
+
+    spaces.listMemory.mockResolvedValue([])
+    expect(await view.spaceMemory()).toEqual([])
+
+    await view.remember('nuevo', 'sp1')
+    expect(spaces.remember).toHaveBeenCalledWith(expect.anything(), 'nuevo', ['sp1'])
+    await view.remember('global')
+    expect(spaces.remember).toHaveBeenLastCalledWith(expect.anything(), 'global', [])
   })
 
   it('omits the workspace in the overview when no registry is mounted', async () => {

@@ -52,6 +52,18 @@ export interface FaberLoomRoutineRow {
   readonly status: string
 }
 
+/** One space-scoped memory entry the Memoria panel renders. */
+export interface FaberLoomSpaceMemoryRow {
+  /** Entry id. */
+  readonly id: string
+  /** Remembered text. */
+  readonly text: string
+  /** Spaces the entry is attached to. */
+  readonly spaceIds: readonly string[]
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+}
+
 /** One L1 memory row the Memoria panel renders, as the memory server returns it. */
 export interface FaberLoomMemoryRow {
   /** Record id. */

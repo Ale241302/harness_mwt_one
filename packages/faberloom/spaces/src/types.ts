@@ -137,6 +137,21 @@ export interface SpaceFileContent extends SpaceFile {
   readonly contentBase64: string
 }
 
+/**
+ * One memory entry attached to one or more spaces. A sub-space whose
+ * inheritance is on also sees its ancestors' entries.
+ */
+export interface FaberLoomSpaceMemory {
+  /** Stable memory id (generated uuid). */
+  readonly id: string
+  /** Spaces this entry is attached to. */
+  readonly spaceIds: readonly FaberLoomSpaceId[]
+  /** The remembered text. */
+  readonly text: string
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+}
+
 /** One key for which two or more contributing spaces disagree. */
 export interface EffectiveContextConflict {
   /** The contested context key. */
