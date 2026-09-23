@@ -251,6 +251,21 @@
   font-weight: 600;
 }
 
+.cellLink {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cellLink:hover {
+  text-decoration: underline;
+}
+
 .cellMuted {
   display: block;
   max-width: 280px;

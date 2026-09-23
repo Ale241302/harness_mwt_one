@@ -45,8 +45,12 @@ export interface FaberloomPanelInjected {
   load: () => void
   /** Leave the panel and open the harness conversation (its composer). */
   startConversation: () => void
-  /** Create a root space and refresh. */
-  createSpace: (title: string) => void
+  /** Create a root space in charge of an optional agent, and refresh. */
+  createSpace: (title: string, agentId: string | null) => void
+  /** Remove one space, its Workspace, and its conversation area. */
+  deleteSpace: (id: string) => void
+  /** Open the space's Workspace in the sidebar conversation area. */
+  goToWorkspace: (spaceId: string) => void
   /** Rename one space and refresh. */
   renameSpace: (id: string, title: string) => void
   /** Create an agent and refresh. */
@@ -230,15 +234,17 @@ function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null 
 /** Espacios: list, create, and rename. */
 function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
-    const { t, createSpace, spaceDetail, saveSpace, spaceWorkspace, startSpaceSession } = props
+    const { t, createSpace, deleteSpace, goToWorkspace, spaceDetail, saveSpace, spaceWorkspace, startSpaceSession } = props
     const { overview, status, error } = useOverview(props)
     const [draft, setDraft] = useState('')
+    const [agentId, setAgentId] = useState('')
     const [query, setQuery] = useState('')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [title, setTitle] = useState('')
     const [inherit, setInherit] = useState(true)
     const [members, setMembers] = useState('')
+    const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
     const rows = useMemo(
       () => (overview?.spaces ?? []).filter(space => space.title.toLowerCase().includes(query.trim().toLowerCase())),
       [overview, query],
@@ -262,8 +268,16 @@ function spacesScreen() {
     }, [detail])
 
     const columns: readonly Column<FaberLoomOverview['spaces'][number]>[] = [
-      { key: 'title', header: t('col.name'), cell: space => <span className={styles.cellName}>{space.title}</span> },
+      {
+        key: 'title',
+        header: t('col.name'),
+        cell: space => (
+          <button className={styles.cellLink} type="button" title={t('spaces.openWorkspace')}
+            onClick={(event) => { event.stopPropagation(); goToWorkspace(space.id) }}>{space.title}</button>
+        ),
+      },
       { key: 'parent', header: t('col.parent'), cell: space => <span className={styles.cellMuted}>{space.parentId ?? t('spaces.root')}</span> },
+      { key: 'agent', header: t('col.agent'), cell: space => <span className={styles.cellMuted}>{space.agentName ?? t('spaces.noAgent')}</span> },
     ]
 
     return (
@@ -272,10 +286,15 @@ function spacesScreen() {
           <>
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.spaces.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
+            <select className={styles.paneSearch} style={{ width: 200, padding: '8px 10px' }} value={agentId} aria-label={t('panel.spaces.newAgent')} onChange={(event) => { setAgentId(event.target.value) }}>
+              <option value="">{t('spaces.noAgent')}</option>
+              {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+            </select>
             <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => {
               setMessage(null)
-              createSpace(draft.trim())
+              createSpace(draft.trim(), agentId.length === 0 ? null : agentId)
               setDraft('')
+              setAgentId('')
             }}>{t('action.create')}</button>
           </>
         )}>
@@ -286,12 +305,24 @@ function spacesScreen() {
             : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />}
           <Inspector title={detail.kind === 'ready' && detail.value !== undefined ? detail.value.title : t('spaces.detail')}
             footer={selected === null ? undefined : (
-              <button className={styles.primary} type="button" onClick={() => {
-                setMessage(null)
-                void saveSpace(selected, { title, inheritContext: inherit, members: members.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0) })
-                  .then((result) => { if (!result.ok) setMessage(result.error.message) })
-                  .catch((cause: unknown) => { setMessage(String(cause)) })
-              }}>{t('action.save')}</button>
+              <>
+                <span className={styles.tools}>
+                  <button className={styles.danger} type="button" onClick={() => {
+                    setMessage(null)
+                    deleteSpace(selected)
+                    setSelected(null)
+                  }}>{t('action.delete')}</button>
+                </span>
+                <span className={styles.tools}>
+                  <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.cancel')}</button>
+                  <button className={styles.primary} type="button" onClick={() => {
+                    setMessage(null)
+                    void saveSpace(selected, { title, inheritContext: inherit, members: members.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0) })
+                      .then((result) => { if (!result.ok) setMessage(result.error.message) })
+                      .catch((cause: unknown) => { setMessage(String(cause)) })
+                  }}>{t('action.save')}</button>
+                </span>
+              </>
             )}>
             {selected === null
               ? <StateBlock kind="empty" title={t('spaces.selectTitle')} text={t('spaces.selectText')} />

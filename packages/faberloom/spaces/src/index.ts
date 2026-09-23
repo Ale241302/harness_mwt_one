@@ -109,9 +109,12 @@ function canRead(record: SpaceRecord, actor: SpaceActor): boolean {
   return record.ownerId === actor.id || record.members.includes(actor.id)
 }
 
-/** Whether one identity may mutate a space: not read-only, tenant scope, admin or owner. */
+/**
+ * Whether one identity may mutate a space: tenant scope, then admin or owner.
+ * A console read-only role still manages its own spaces: a space is the user's
+ * own container, not company data.
+ */
 function canManage(record: SpaceRecord, actor: SpaceActor): boolean {
-  if (actor.readOnly) return false
   if (!tenantAdmits(record, actor)) return false
   return actor.role === 'admin' || record.ownerId === actor.id
 }
@@ -163,14 +166,14 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
-   * Create one space scoped to the actor's company, under an optional parent
-   * the actor controls.
+   * Create one space owned by the actor, scoped to its company, under an
+   * optional parent the actor controls. Every identity may create its own
+   * space, including a console read-only role.
    * @param actor - the acting identity.
    * @param input - title and optional parent.
    * @returns the created space.
    */
   async create(actor: SpaceActor, input: CreateSpaceInput): Promise<FaberLoomSpace> {
-    if (actor.readOnly) throw new Error('faberloom: identity is read-only and cannot mutate spaces')
     const table = await this.table()
     if (input.parentId !== undefined) {
       const parent = table.get(input.parentId)
@@ -263,6 +266,24 @@ export class FaberLoomSpaces extends Service {
     const next: SpaceRecord = { ...record, archived: true, updatedAt: new Date().toISOString(), version: record.version + 1 }
     await table.update(id, () => next)
     return toSpace(id, next)
+  }
+
+  /**
+   * Remove one space the actor may manage, together with every file attached to
+   * it. Deletion is permanent: the caller removes the space's conversation area.
+   * @param actor - the acting identity.
+   * @param id - space id.
+   * @returns `true` when the stored record was deleted.
+   * @throws when the space is absent or not manageable.
+   */
+  async remove(actor: SpaceActor, id: FaberLoomSpaceId): Promise<boolean> {
+    const { table, record } = await this.requireRecord(id)
+    if (!canManage(record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    const files = await this.files()
+    for (const [fileId, file] of files.entries()) {
+      if (file.spaceId === id) await files.delete(fileId)
+    }
+    return await table.delete(id)
   }
 
   /**

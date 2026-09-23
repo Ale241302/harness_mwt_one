@@ -12,6 +12,12 @@ export interface FaberLoomSpaceRow {
   readonly title: string
   /** Parent space id, or null for a root space. */
   readonly parentId: string | null
+  /** The agent in charge of the space (first agent whose owning space is this one), or null. */
+  readonly agentId: string | null
+  /** Display name of {@link FaberLoomSpaceRow.agentId}, or null. */
+  readonly agentName: string | null
+  /** The registered Workspace for the space's conversation area, or null when none is registered. */
+  readonly workspaceId: string | null
 }
 
 /** One catalog agent as the Agentes panel renders it. */
@@ -562,7 +568,7 @@ export interface AgentSaveInput {
   readonly routines: readonly FaberLoomRoutineRow[]
   /** The owner's rows on the agent-memory server; empty when it is unreachable. */
   readonly memory: readonly FaberLoomMemoryRow[]
-  /** Whether this identity may run the panel writes; read-only identities cannot. */
+  /** Whether this identity may run the panel writes; read-only identities cannot. Spaces stay writable: the owner manages its own. */
   readonly canWrite: boolean
 }
 

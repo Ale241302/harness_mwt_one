@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 /** The minimal service graph the workspace and board remotes touch. */
-function harness(options: { readOnly?: boolean } = {}) {
+function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
   const board = {
     list: vi.fn(async () => []),
     get: vi.fn(async () => ({ id: 'b1', version: 3 })),
@@ -33,27 +33,38 @@ function harness(options: { readOnly?: boolean } = {}) {
       entities.push(entity)
       return entity
     }),
+    delete: vi.fn(async () => true),
   }
+  let nextSpace = 0
   const spaces = {
-    list: vi.fn(async () => []),
-    get: vi.fn(async () => ({ id: 'sp1', title: 'Eguisa' })),
-    resolveWorkdir: vi.fn(async () => ({ kind: 'opaque', ref: 'fw_abc123' })),
+    list: vi.fn(async (): Promise<readonly { id: string; title: string; parentId: string | null }[]> => []),
+    get: vi.fn(async (): Promise<{ id: string; title: string }> => ({ id: 'sp1', title: 'Eguisa' })),
+    create: vi.fn(async (_actor: unknown, input: { title: string }): Promise<{ id: string; title: string }> => {
+      nextSpace += 1
+      return { id: `sp${String(nextSpace)}`, title: input.title }
+    }),
+    remove: vi.fn(async (): Promise<boolean> => true),
+    resolveWorkdir: vi.fn(async (_actor?: unknown, _id?: string): Promise<{ kind: 'opaque'; ref: string }> => ({ kind: 'opaque', ref: 'fw_abc123' })),
+  }
+  const agents = {
+    listAgents: vi.fn(async (): Promise<readonly { id: string; name: string; spaceId: string | undefined; active: boolean }[]> => []),
+    updateAgent: vi.fn(async () => ({})),
   }
   const ctx = {
     faberloomSpaces: spaces,
-    faberloomAgents: { listAgents: vi.fn(async () => []) },
+    faberloomAgents: agents,
     faberloomBoard: board,
     faberloomRoutines: { listRoutines: vi.fn(async () => []) },
     provide: () => {},
     reflect: { provide: () => {} },
-    get: (name: string) => (name === 'workspaceRegistry' ? registry : undefined),
+    get: (name: string) => (name === 'workspaceRegistry' && options.registry !== false ? registry : undefined),
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, {
     ownerId: 'owner@muitowork.com',
     role: 'admin',
     readOnly: options.readOnly === true,
   })
-  return { view, board, registry, spaces, entities }
+  return { view, board, registry, spaces, agents, entities }
 }
 
 describe('FaberLoomViewService space workspace', () => {
@@ -73,6 +84,107 @@ describe('FaberLoomViewService space workspace', () => {
 
     const after = await view.spaceWorkspace('sp1')
     expect(after).toMatchObject({ registered: true, workspaceId: 'ws-1', title: 'Eguisa' })
+  })
+})
+
+describe('FaberLoomViewService space lifecycle', () => {
+  it('creates a space with a responsible agent and registers its workspace', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, agents, entities, spaces } = harness()
+
+    await view.createSpace('Marluvas', 'a1')
+    expect(spaces.create).toHaveBeenCalledWith(
+      { id: 'owner@muitowork.com', role: 'admin', companyId: undefined, readOnly: false },
+      { title: 'Marluvas' },
+    )
+    expect(agents.updateAgent).toHaveBeenCalledWith('a1', { spaceId: 'sp1' })
+    expect(entities).toHaveLength(1)
+    expect(existsSync(join(home, 'spaces', 'fw_abc123'))).toBe(true)
+  })
+
+  it('keeps creating a space when no workspace registry is mounted', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view } = harness({ registry: false })
+
+    await expect(view.createSpace('Solo')).resolves.toBeDefined()
+    await expect(view.openSpaceWorkspace('sp1')).rejects.toThrow('workspace registry is not mounted')
+  })
+
+  it('creates a space without assigning an agent when none is chosen', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, agents } = harness()
+
+    await view.createSpace('Solo')
+    await view.createSpace('Vacio', '')
+    expect(agents.updateAgent).not.toHaveBeenCalled()
+  })
+
+  it('deletes a space with its workspace, clearing its responsible agents', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, agents, entities, registry, spaces } = harness()
+    const dir = join(home, 'spaces', 'fw_abc123')
+    entities.push({ id: 'ws-1', path: dir, title: 'Eguisa', sessionIds: [] })
+    mkdirSync(dir, { recursive: true })
+    agents.listAgents.mockResolvedValue([
+      { id: 'a1', name: 'Recepción', spaceId: 'sp1', active: true },
+      { id: 'a2', name: 'Otro', spaceId: 'sp-other', active: true },
+    ])
+
+    await view.deleteSpace('sp1')
+    expect(agents.updateAgent).toHaveBeenCalledTimes(1)
+    expect(agents.updateAgent).toHaveBeenCalledWith('a1', { spaceId: null })
+    expect(registry.delete).toHaveBeenCalledWith('ws-1')
+    expect(existsSync(dir)).toBe(false)
+    expect(spaces.remove).toHaveBeenCalled()
+  })
+
+  it('deletes a space without a mounted registry or a registered workspace', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view } = harness({ registry: false })
+
+    await view.deleteSpace('sp1')
+    expect(existsSync(join(home, 'spaces', 'fw_abc123'))).toBe(false)
+  })
+
+  it('projects the responsible agent and workspace into the overview rows', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, agents, entities } = harness()
+    entities.push({ id: 'ws-1', path: join(home, 'spaces', 'fw_abc123'), title: 'Marluvas', sessionIds: [] })
+    spaces.list.mockResolvedValue([
+      { id: 'sp1', title: 'Marluvas', parentId: null },
+      { id: 'sp2', title: 'Otra', parentId: null },
+    ])
+    spaces.resolveWorkdir.mockImplementation(async (_actor?: unknown, id?: string) => ({ kind: 'opaque', ref: id === 'sp1' ? 'fw_abc123' : 'fw_other' }))
+    agents.listAgents.mockResolvedValue([{ id: 'a1', name: 'Recepción', spaceId: 'sp1', active: true }])
+
+    const overview = await view.overview()
+    expect(overview.spaces).toEqual([
+      { id: 'sp1', title: 'Marluvas', parentId: null, agentId: 'a1', agentName: 'Recepción', workspaceId: 'ws-1' },
+      { id: 'sp2', title: 'Otra', parentId: null, agentId: null, agentName: null, workspaceId: null },
+    ])
+  })
+
+  it('omits the workspace in the overview when no registry is mounted', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces } = harness({ registry: false })
+    spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Marluvas', parentId: null }])
+
+    const overview = await view.overview()
+    expect(overview.spaces[0]).toMatchObject({ agentId: null, workspaceId: null })
   })
 })
 

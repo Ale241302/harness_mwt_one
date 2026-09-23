@@ -23,7 +23,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
 import type { SpaceActor, FaberLoomSpaceId } from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the workspace registry, read through ctx.get like the product services.
-import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
+import type { Workspace, WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
@@ -38,7 +38,7 @@ import type {
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
-  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, BoardRevisionInput,
+  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow, BoardRevisionInput,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -201,8 +201,31 @@ export class FaberLoomViewService extends TypertRemoteService {
       this.ctx.faberloomRoutines.listRoutines(actor.id),
       this.readMemory(),
     ])
+    const registry = this.workspaceRegistryOrUndefined()
+    // The agent in charge is the first catalog agent whose owning space is this
+    // space; the space's Workspace is keyed by its opaque workdir.
+    const leadBySpace = new Map<string, { readonly id: string; readonly name: string }>()
+    for (const agent of agents) {
+      if (agent.spaceId !== undefined && !leadBySpace.has(agent.spaceId)) {
+        leadBySpace.set(agent.spaceId, { id: agent.id, name: agent.name })
+      }
+    }
+    const rows = await Promise.all(spaces.map(async (space): Promise<FaberLoomSpaceRow> => {
+      const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
+      const dir = join(this.dshHome(), 'spaces', ref.ref)
+      const workspace = registry?.list().find(candidate => candidate.path === dir)
+      const lead = leadBySpace.get(space.id)
+      return {
+        id: space.id,
+        title: space.title,
+        parentId: space.parentId ?? null,
+        agentId: lead?.id ?? null,
+        agentName: lead?.name ?? null,
+        workspaceId: workspace === undefined ? null : String(workspace.id),
+      }
+    }))
     return {
-      spaces: spaces.map(space => ({ id: space.id, title: space.title, parentId: space.parentId ?? null })),
+      spaces: rows,
       agents: agents.map(agent => ({ id: agent.id, name: agent.name, spaceId: agent.spaceId ?? null, active: agent.active })),
       board: board.map(item => ({ id: item.id, title: item.title, status: item.status })),
       routines: routines.map(routine => ({ id: routine.id, name: routine.name, status: routine.status })),
@@ -212,13 +235,45 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Create a root space for the owner.
+   * Create a root space for the owner, assign the responsible agent, and
+   * register the space's conversation area as a Workspace so the sidebar and
+   * the Espacios panel show the same thing.
    * @param title - display title.
+   * @param agentId - catalog agent put in charge of the space, when chosen.
    * @returns the refreshed overview.
    */
   @Remote('createSpace')
-  async createSpace(title: string): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomSpaces.create(this.actor(), { title })
+  async createSpace(title: string, agentId?: string): Promise<FaberLoomOverview> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.create(actor, { title })
+    if (agentId !== undefined && agentId.length > 0) {
+      await this.ctx.faberloomAgents.updateAgent(agentId as FaberLoomAgentId, { spaceId: String(space.id) })
+    }
+    await this.ensureSpaceWorkspace(actor, space.id, space.title)
+    return await this.overview()
+  }
+
+  /**
+   * Remove a space permanently: clear the responsible agents, drop the
+   * Workspace registration, delete its conversation directory, and delete the
+   * space record with its attached files.
+   * @param id - space id.
+   * @returns the refreshed overview.
+   */
+  @Remote('deleteSpace')
+  async deleteSpace(id: string): Promise<FaberLoomOverview> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    for (const agent of await this.ctx.faberloomAgents.listAgents()) {
+      if (agent.spaceId === id) await this.ctx.faberloomAgents.updateAgent(agent.id, { spaceId: null })
+    }
+    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
+    const dir = join(this.dshHome(), 'spaces', ref.ref)
+    const registry = this.workspaceRegistryOrUndefined()
+    const existing = registry?.list().find(workspace => workspace.path === dir)
+    if (registry !== undefined && existing !== undefined) await registry.delete(existing.id)
+    rmSync(dir, { recursive: true, force: true })
+    await this.ctx.faberloomSpaces.remove(actor, space.id)
     return await this.overview()
   }
 
@@ -680,11 +735,27 @@ export class FaberLoomViewService extends TypertRemoteService {
   async openSpaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
-    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, id as FaberLoomSpaceId)
+    const workspace = await this.ensureSpaceWorkspace(actor, space.id, space.title)
+    if (workspace === undefined) throw new Error('faberloom: the workspace registry is not mounted')
+    return { registered: true, workspaceId: String(workspace.id), title: workspace.title, sessions: workspace.sessionIds.length }
+  }
+
+  /**
+   * Create the space's conversation directory when needed and register it as a
+   * Workspace titled after the space. A deployment without the workspace
+   * registry keeps spaces working: registration is skipped, not failed.
+   * @param actor - the acting identity.
+   * @param id - space id.
+   * @param title - Workspace title.
+   * @returns the registered Workspace, or undefined when none can be registered.
+   */
+  private async ensureSpaceWorkspace(actor: SpaceActor, id: FaberLoomSpaceId, title: string): Promise<Workspace | undefined> {
+    const registry = this.workspaceRegistryOrUndefined()
+    if (registry === undefined) return undefined
+    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, id)
     const dir = join(this.dshHome(), 'spaces', ref.ref)
     mkdirSync(dir, { recursive: true })
-    const workspace = await this.workspaceRegistry().create(dir, space.title)
-    return { registered: true, workspaceId: String(workspace.id), title: workspace.title, sessions: workspace.sessionIds.length }
+    return await registry.create(dir, title)
   }
 
   /** The workspace registry, resolved lazily like the connections service. */
@@ -692,6 +763,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     const service = this.ctx.get('workspaceRegistry')
     if (service === undefined) throw new Error('faberloom: the workspace registry is not mounted')
     return service
+  }
+
+  /** The workspace registry when the deployment mounted it, otherwise undefined. */
+  private workspaceRegistryOrUndefined(): WorkspaceRegistry | undefined {
+    return this.ctx.get('workspaceRegistry')
   }
 
   /**
@@ -702,7 +778,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('saveSpace')
   async saveSpace(id: string, input: SpaceSaveInput): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot change spaces')
     await this.ctx.faberloomSpaces.update(this.actor(), id as FaberLoomSpaceId, {
       ...input.title === undefined ? {} : { title: input.title },
       ...input.inheritContext === undefined ? {} : { inheritContext: input.inheritContext },

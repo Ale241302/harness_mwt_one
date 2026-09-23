@@ -106,7 +106,17 @@ export function apply(ctx: ClientContext): void {
     return {
       load: refresh,
       startConversation: () => { ctx.layout.selectPanel(null) },
-      createSpace: (title) => { write(() => ctx.remote.faberloomView.createSpace(title)) },
+      createSpace: (title, agentId) => { write(() => ctx.remote.faberloomView.createSpace(title, agentId ?? undefined)) },
+      deleteSpace: (id) => { write(() => ctx.remote.faberloomView.deleteSpace(id)) },
+      goToWorkspace: (spaceId) => {
+        void ctx.remote.faberloomView.openSpaceWorkspace(spaceId).then(async (result) => {
+          if (!result.ok || result.value.workspaceId === null) return
+          await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
+          ctx.layout.selectPanel(null)
+        }).catch(() => {
+          // A failed navigation keeps the current selection.
+        })
+      },
       renameSpace: (id, title) => { write(() => ctx.remote.faberloomView.renameSpace(id, title)) },
       createAgent: (name) => { write(() => ctx.remote.faberloomView.createAgent(name, name)) },
       deactivateAgent: (id) => { write(() => ctx.remote.faberloomView.deleteAgent(id)) },

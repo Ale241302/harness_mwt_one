@@ -48,7 +48,7 @@ Independent of live requests: the registration never touches a request prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Console-role scoping** — access uses the console role, company, and read-only flag the gateway injects; a member from another company is denied and a read-only role cannot mutate spaces.
+- **Console-role scoping** — access uses the console role, company, and read-only flag the gateway injects; a member from another company is denied, while a read-only role still creates and manages its own spaces (a space is the user's own container, not company data).
 
 <a id="dev-note"></a>
 ### Dev Note

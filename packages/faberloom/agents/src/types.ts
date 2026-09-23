@@ -178,6 +178,8 @@ export interface AgentPatch {
   readonly name?: string
   /** New responsibility. */
   readonly responsibility?: string
+  /** New owning space id, or `null` to clear the assignment. */
+  readonly spaceId?: string | null
   /** New skill list. */
   readonly skills?: readonly string[]
   /** New tool list. */

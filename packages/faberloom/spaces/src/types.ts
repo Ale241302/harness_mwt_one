@@ -35,7 +35,7 @@ export interface SpaceActor {
   readonly role: string
   /** The user's single company id, or `undefined` when they have several. */
   readonly companyId: string | undefined
-  /** True when the console marks the role read-only. */
+  /** True when the console marks the role read-only; the owner still manages its own spaces. */
   readonly readOnly: boolean
 }
 

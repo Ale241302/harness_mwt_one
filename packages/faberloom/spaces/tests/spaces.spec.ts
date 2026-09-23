@@ -99,13 +99,16 @@ describe('FaberLoomSpaces', () => {
     expect(archived).toMatchObject({ archived: true, version: 3 })
   })
 
-  it('enforces console-role ACL: read-only, tenant scope, and admin override', async () => {
+  it('enforces console-role ACL: own spaces writable, tenant scope, and admin override', async () => {
     const { spaces } = await harness()
     const space = await spaces.create(SONDEL, { title: 'Sondel' })
 
-    await expect(spaces.create(SONDEL_RO, { title: 'nope' })).rejects.toThrow('read-only')
-    await expect(spaces.update(SONDEL_RO, space.id, { title: 'nope' })).rejects.toThrow('cannot manage')
-    await expect(spaces.archive(SONDEL_RO, space.id)).rejects.toThrow('cannot manage')
+    // A console read-only role still owns and manages its own spaces.
+    const own = await spaces.create(SONDEL_RO, { title: 'Propio' })
+    expect(own.ownerId).toBe(SONDEL_RO.id)
+    expect((await spaces.update(SONDEL_RO, own.id, { title: 'Editado' })).title).toBe('Editado')
+    expect((await spaces.archive(SONDEL_RO, own.id)).archived).toBe(true)
+    expect(await spaces.remove(SONDEL_RO, own.id)).toBe(true)
 
     await expect(spaces.effectiveContext(SONEPAR, space.id)).rejects.toThrow('access denied')
     await expect(spaces.resolveWorkdir(SONEPAR, space.id)).rejects.toThrow('access denied')
@@ -185,12 +188,28 @@ describe('FaberLoomSpaces', () => {
     await expect(spaces.readFile(SONDEL, 'missing-file')).rejects.toThrow('not found')
   })
 
-  it('real console identity: a read-only client_b2b cannot mutate spaces', async () => {
+  it('removes a space permanently with its attached files', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'Temporal' })
+    const doomed = await spaces.attachFile(SONDEL, space.id, { name: 'nota.txt', mediaType: 'text/plain', contentBase64: Buffer.from('hola').toString('base64') })
+    const other = await spaces.create(SONDEL, { title: 'Se queda' })
+    const kept = await spaces.attachFile(SONDEL, other.id, { name: 'otro.txt', mediaType: 'text/plain', contentBase64: Buffer.from('queda').toString('base64') })
+
+    expect(await spaces.remove(SONDEL, space.id)).toBe(true)
+    expect((await spaces.list(SONDEL)).map(entry => entry.title)).toEqual(['Se queda'])
+    await expect(spaces.get(SONDEL, space.id)).rejects.toThrow('not found')
+    await expect(spaces.readFile(SONDEL, doomed.id)).rejects.toThrow('not found')
+    expect((await spaces.readFile(SONDEL, kept.id)).name).toBe('otro.txt')
+    await expect(spaces.remove(SONDEL, space.id)).rejects.toThrow('not found')
+  })
+
+  it('real console identity: a read-only client_b2b manages only its own spaces', async () => {
     const { spaces } = await harness()
     const adminSpace = await spaces.create(ADMIN, { title: 'Compartido' })
     const actor: SpaceActor = { id: 'compras2@sondelsa.com', role: 'client_b2b', companyId: 'c588c410-468a-4d54-b676-3bec174eb39d', readOnly: true }
-    await expect(spaces.create(actor, { title: 'x' })).rejects.toThrow('read-only')
+    expect((await spaces.create(actor, { title: 'Propio' })).ownerId).toBe(actor.id)
     await expect(spaces.update(actor, adminSpace.id, { title: 'x' })).rejects.toThrow('cannot manage')
     await expect(spaces.archive(actor, adminSpace.id)).rejects.toThrow('cannot manage')
+    await expect(spaces.remove(actor, adminSpace.id)).rejects.toThrow('cannot manage')
   })
 })

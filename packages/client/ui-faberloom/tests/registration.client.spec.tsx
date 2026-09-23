@@ -15,7 +15,7 @@ const CONVERSAR = 'faberloom-conversar' as MainPanelId
 const SPACES = 'faberloom-spaces' as MainPanelId
 
 const OVERVIEW = {
-  spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null }],
+  spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null, agentId: 'agent-1', agentName: 'Proformas', workspaceId: 'ws-1' }],
   agents: [{ id: 'agent-1', name: 'Proformas', spaceId: 'space-1', active: true }],
   board: [{ id: 'item-1', title: 'Preparar proforma', status: 'needs_review' }],
   routines: [{ id: 'routine-1', name: 'Pedido a proforma', status: 'active' }],
@@ -45,6 +45,8 @@ async function bench(overviewResult: unknown = { ok: true, value: OVERVIEW }) {
   const layout = { selectPanel: vi.fn((activePanelId: MainPanelId | null) => { runtime.panelInfo.set({ activePanelId }) }) }
   const overview = vi.fn(async () => overviewResult)
   const createSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const deleteSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const openSpaceWorkspace = vi.fn(async () => ({ ok: true, value: { registered: true, workspaceId: 'ws-1', title: 'Marluvas', sessions: 0 } }))
   const renameSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const createAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const renameAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
@@ -55,6 +57,7 @@ async function bench(overviewResult: unknown = { ok: true, value: OVERVIEW }) {
   const setRoutineActive = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const remember = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const spaceDetail = vi.fn(async () => ({ ok: true, value: undefined }))
+  const spaceWorkspace = vi.fn(async () => ({ ok: true, value: { registered: true, workspaceId: 'ws-1', title: 'Marluvas', sessions: 0 } }))
   const routineDetail = vi.fn(async () => ({ ok: true, value: undefined }))
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
   const saveSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
@@ -64,9 +67,10 @@ async function bench(overviewResult: unknown = { ok: true, value: OVERVIEW }) {
   const removeConnection = vi.fn(async () => ({ ok: true, value: [] }))
   const probeConnection = vi.fn(async () => ({ ok: true, value: { ok: true, detail: 'ok' } }))
   const faberloomView = {
-    overview, createSpace, renameSpace, createAgent, renameAgent,
+    overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, createRoutine, setRoutineActive, remember,
-    spaceDetail, saveSpace, routineDetail, saveRoutine, boardDetail, connections, saveConnection, removeConnection, probeConnection,
+    spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail,
+    connections, saveConnection, removeConnection, probeConnection,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -101,7 +105,7 @@ async function bench(overviewResult: unknown = { ok: true, value: OVERVIEW }) {
   }, Frame)
   const surface = await runtime.mount({ inject: [...inject], apply })
   const view = runtime.renderRoot()
-  return { runtime, theme, layout, overview, createSpace, surface, view }
+  return { runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, surface, view }
 }
 
 describe('faberloom surface', () => {
@@ -168,6 +172,42 @@ describe('faberloom surface', () => {
     const input = await view.findByPlaceholderText('Space name')
     fireEvent.change(input, { target: { value: 'Marluvas' } })
     fireEvent.click(view.getByRole('button', { name: 'Create' }))
-    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Marluvas') })
+    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Marluvas', undefined) })
+  })
+
+  it('creates a space in charge of the chosen agent', async () => {
+    const { runtime, createSpace, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    const input = await view.findByPlaceholderText('Space name')
+    fireEvent.change(input, { target: { value: 'Marluvas' } })
+    fireEvent.change(view.getByLabelText('Responsible agent (optional)'), { target: { value: 'agent-1' } })
+    fireEvent.click(view.getByRole('button', { name: 'Create' }))
+    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Marluvas', 'agent-1') })
+  })
+
+  it('opens the space Workspace from its table link', async () => {
+    const { runtime, openSpaceWorkspace, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+    await waitFor(() => { expect(openSpaceWorkspace).toHaveBeenCalledWith('space-1') })
+  })
+
+  it('removes the selected space from the inspector', async () => {
+    const { runtime, deleteSpace, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    const rows = await view.findAllByRole('row')
+    fireEvent.click(rows[1] as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
+    await waitFor(() => { expect(deleteSpace).toHaveBeenCalledWith('space-1') })
+  })
+
+  it('keeps the space form usable for a read-only identity (own spaces)', async () => {
+    const { runtime, createSpace, view } = await bench({ ok: true, value: { ...OVERVIEW, canWrite: false } })
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    const input = await view.findByPlaceholderText('Space name')
+    expect(input).toHaveProperty('disabled', false)
+    fireEvent.change(input, { target: { value: 'Propio' } })
+    fireEvent.click(view.getByRole('button', { name: 'Create' }))
+    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Propio', undefined) })
   })
 })

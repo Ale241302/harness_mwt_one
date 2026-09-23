@@ -502,6 +502,7 @@ export class FaberLoomAgents extends Service {
       ...record,
       name: patch.name ?? record.name,
       responsibility: patch.responsibility ?? record.responsibility,
+      spaceId: patch.spaceId !== undefined ? patch.spaceId : record.spaceId,
       skills: patch.skills !== undefined ? [...patch.skills] : record.skills,
       tools: patch.tools !== undefined ? [...patch.tools] : record.tools,
       subagents: patch.subagents !== undefined ? patch.subagents.map(entry => ({ ...entry })) : record.subagents,
