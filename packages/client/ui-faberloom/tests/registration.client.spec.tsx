@@ -178,6 +178,15 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Marluvas', undefined) })
   })
 
+  it('warns instead of blocking an empty create form', async () => {
+    const { runtime, createSpace, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    await view.findByPlaceholderText('Space name')
+    fireEvent.click(view.getByRole('button', { name: 'Create' }))
+    expect(await view.findByText('Type something in the field first.')).toBeTruthy()
+    expect(createSpace).not.toHaveBeenCalled()
+  })
+
   it('creates a space in charge of the chosen agent', async () => {
     const { runtime, createSpace, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })

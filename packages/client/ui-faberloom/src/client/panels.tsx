@@ -282,22 +282,27 @@ function spacesScreen() {
       { key: 'agent', header: t('col.agent'), cell: space => <span className={styles.cellMuted}>{space.agentName ?? t('spaces.noAgent')}</span> },
     ]
 
+    const create = (): void => {
+      if (draft.trim().length === 0) { setMessage(t('state.needsText')); return }
+      setMessage(null)
+      createSpace(draft.trim(), agentId.length === 0 ? null : agentId)
+      setDraft('')
+      setAgentId('')
+    }
+
     return (
       <Screen title={t('panel.spaces.title')} subtitle={t('panel.spaces.intro')}
         trailing={(
           <>
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
-            <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.spaces.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
+            <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.spaces.newPlaceholder')}
+              onChange={(event) => { setDraft(event.target.value) }}
+              onKeyDown={(event) => { if (event.key === 'Enter') create() }} />
             <select className={styles.paneSearch} style={{ width: 200, padding: '8px 10px' }} value={agentId} aria-label={t('panel.spaces.newAgent')} onChange={(event) => { setAgentId(event.target.value) }}>
               <option value="">{t('spaces.noAgent')}</option>
               {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
             </select>
-            <button className={styles.primary} type="button" disabled={draft.trim().length === 0} onClick={() => {
-              setMessage(null)
-              createSpace(draft.trim(), agentId.length === 0 ? null : agentId)
-              setDraft('')
-              setAgentId('')
-            }}>{t('action.create')}</button>
+            <button className={styles.primary} type="button" onClick={create}>{t('action.create')}</button>
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
