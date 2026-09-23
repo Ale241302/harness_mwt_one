@@ -36,7 +36,10 @@ afterEach(async () => {
   }
 })
 
-async function bench(overviewResult: unknown = { ok: true, value: OVERVIEW }) {
+async function bench(
+  overviewResult: unknown = { ok: true, value: OVERVIEW },
+  spaceDetailResult: unknown = { ok: true, value: undefined },
+) {
   const runtime = await SlotTestRuntime.create()
   runtimes.add(runtime)
   const locale = new LocaleRuntime(runtime.ctx)
@@ -56,7 +59,7 @@ async function bench(overviewResult: unknown = { ok: true, value: OVERVIEW }) {
   const createRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const setRoutineActive = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const remember = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
-  const spaceDetail = vi.fn(async () => ({ ok: true, value: undefined }))
+  const spaceDetail = vi.fn(async () => spaceDetailResult)
   const spaceWorkspace = vi.fn(async () => ({ ok: true, value: { registered: true, workspaceId: 'ws-1', title: 'Marluvas', sessions: 0 } }))
   const routineDetail = vi.fn(async () => ({ ok: true, value: undefined }))
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
@@ -105,7 +108,7 @@ async function bench(overviewResult: unknown = { ok: true, value: OVERVIEW }) {
   }, Frame)
   const surface = await runtime.mount({ inject: [...inject], apply })
   const view = runtime.renderRoot()
-  return { runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, surface, view }
+  return { runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, surface, view }
 }
 
 describe('faberloom surface', () => {
@@ -199,6 +202,23 @@ describe('faberloom surface', () => {
     fireEvent.click(rows[1] as HTMLTableRowElement)
     fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
     await waitFor(() => { expect(deleteSpace).toHaveBeenCalledWith('space-1') })
+  })
+
+  it('assigns the responsible agent from the space detail', async () => {
+    const detail = {
+      ok: true,
+      value: {
+        id: 'space-1', title: 'Marluvas', parentId: null, inheritContext: true,
+        excluded: [], members: [], sources: [], contextKeys: [], agentId: null,
+      },
+    }
+    const { runtime, saveSpace, view } = await bench({ ok: true, value: OVERVIEW }, detail)
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    const rows = await view.findAllByRole('row')
+    fireEvent.click(rows[1] as HTMLTableRowElement)
+    fireEvent.change(await view.findByRole('combobox', { name: 'Agent' }), { target: { value: 'agent-1' } })
+    fireEvent.click(view.getByRole('button', { name: 'Save' }))
+    await waitFor(() => { expect(saveSpace).toHaveBeenCalledWith('space-1', expect.objectContaining({ agentId: 'agent-1' })) })
   })
 
   it('keeps the space form usable for a read-only identity (own spaces)', async () => {

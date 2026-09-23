@@ -690,6 +690,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const spaces = await this.ctx.faberloomSpaces.list(actor)
     if (!spaces.some(space => space.id === id)) return undefined
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const agent = (await this.ctx.faberloomAgents.listAgents()).find(candidate => candidate.spaceId === id)
     return {
       id: space.id,
       title: space.title,
@@ -699,6 +700,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       members: [...space.members],
       sources: space.sources.map(source => ({ kind: String(source.kind), ref: source.id })),
       contextKeys: Object.keys(space.context),
+      agentId: agent?.id ?? null,
     }
   }
 
@@ -778,12 +780,29 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('saveSpace')
   async saveSpace(id: string, input: SpaceSaveInput): Promise<FaberLoomOverview> {
+    if (input.agentId !== undefined) await this.assignSpaceAgent(id, input.agentId)
     await this.ctx.faberloomSpaces.update(this.actor(), id as FaberLoomSpaceId, {
       ...input.title === undefined ? {} : { title: input.title },
       ...input.inheritContext === undefined ? {} : { inheritContext: input.inheritContext },
       ...input.members === undefined ? {} : { members: [...input.members] },
     })
     return await this.overview()
+  }
+
+  /**
+   * Make `agentId` the single agent in charge of a space, clearing every other
+   * agent currently assigned to it. `null` clears the assignment.
+   * @param spaceId - the space id.
+   * @param agentId - the chosen agent, or null.
+   */
+  private async assignSpaceAgent(spaceId: string, agentId: string | null): Promise<void> {
+    for (const agent of await this.ctx.faberloomAgents.listAgents()) {
+      if (agent.id === agentId) {
+        if (agent.spaceId !== spaceId) await this.ctx.faberloomAgents.updateAgent(agent.id, { spaceId })
+      } else if (agent.spaceId === spaceId) {
+        await this.ctx.faberloomAgents.updateAgent(agent.id, { spaceId: null })
+      }
+    }
   }
 
   /**

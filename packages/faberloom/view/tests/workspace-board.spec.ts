@@ -38,12 +38,22 @@ function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
   let nextSpace = 0
   const spaces = {
     list: vi.fn(async (): Promise<readonly { id: string; title: string; parentId: string | null }[]> => []),
-    get: vi.fn(async (): Promise<{ id: string; title: string }> => ({ id: 'sp1', title: 'Eguisa' })),
+    get: vi.fn(async (): Promise<{
+      id: string
+      title: string
+      parentId: null
+      inheritContext: boolean
+      excluded: readonly string[]
+      members: readonly string[]
+      sources: readonly { kind: string; id: string }[]
+      context: Record<string, string>
+    }> => ({ id: 'sp1', title: 'Eguisa', parentId: null, inheritContext: true, excluded: [], members: [], sources: [], context: {} })),
     create: vi.fn(async (_actor: unknown, input: { title: string }): Promise<{ id: string; title: string }> => {
       nextSpace += 1
       return { id: `sp${String(nextSpace)}`, title: input.title }
     }),
     remove: vi.fn(async (): Promise<boolean> => true),
+    update: vi.fn(async (): Promise<{ id: string; title: string }> => ({ id: 'sp1', title: 'Eguisa' })),
     resolveWorkdir: vi.fn(async (_actor?: unknown, _id?: string): Promise<{ kind: 'opaque'; ref: string }> => ({ kind: 'opaque', ref: 'fw_abc123' })),
   }
   const agents = {
@@ -174,6 +184,51 @@ describe('FaberLoomViewService space lifecycle', () => {
       { id: 'sp1', title: 'Marluvas', parentId: null, agentId: 'a1', agentName: 'Recepción', workspaceId: 'ws-1' },
       { id: 'sp2', title: 'Otra', parentId: null, agentId: null, agentName: null, workspaceId: null },
     ])
+  })
+
+  it('reads the responsible agent and reassigns it on save', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, agents } = harness()
+    spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Eguisa', parentId: null }])
+    agents.listAgents.mockResolvedValue([
+      { id: 'a1', name: 'Recepción', spaceId: 'sp1', active: true },
+      { id: 'a2', name: 'Otro', spaceId: 'sp1', active: true },
+      { id: 'a3', name: 'Nuevo', spaceId: undefined, active: true },
+    ])
+
+    expect((await view.spaceDetail('sp1'))?.agentId).toBe('a1')
+
+    // Re-selecting the agent already in charge only releases the others.
+    await view.saveSpace('sp1', { agentId: 'a1' })
+    expect(agents.updateAgent).toHaveBeenCalledTimes(1)
+    expect(agents.updateAgent).toHaveBeenCalledWith('a2', { spaceId: null })
+
+    // A new agent takes over; the others in the space are cleared.
+    agents.updateAgent.mockClear()
+    await view.saveSpace('sp1', { agentId: 'a3' })
+    expect(agents.updateAgent).toHaveBeenCalledWith('a1', { spaceId: null })
+    expect(agents.updateAgent).toHaveBeenCalledWith('a2', { spaceId: null })
+    expect(agents.updateAgent).toHaveBeenCalledWith('a3', { spaceId: 'sp1' })
+
+    // Clearing the assignment releases every agent of the space.
+    agents.updateAgent.mockClear()
+    await view.saveSpace('sp1', { agentId: null })
+    expect(agents.updateAgent).toHaveBeenCalledWith('a1', { spaceId: null })
+    expect(agents.updateAgent).toHaveBeenCalledWith('a2', { spaceId: null })
+    expect(agents.updateAgent).not.toHaveBeenCalledWith('a3', expect.anything())
+  })
+
+  it('reports no responsible agent when the space has none', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces } = harness()
+    spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Eguisa', parentId: null }])
+
+    expect((await view.spaceDetail('sp1'))?.agentId).toBeNull()
+    expect(await view.spaceDetail('missing')).toBeUndefined()
   })
 
   it('omits the workspace in the overview when no registry is mounted', async () => {

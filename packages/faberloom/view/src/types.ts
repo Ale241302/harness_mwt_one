@@ -150,6 +150,8 @@ export interface FaberLoomSpaceDetail {
   readonly sources: readonly { readonly kind: string; readonly ref: string }[]
   /** Context keys the space carries. */
   readonly contextKeys: readonly string[]
+  /** The agent in charge of the space, or null when none is assigned. */
+  readonly agentId: string | null
 }
 
 /** Editable space fields; an absent field stays unchanged. */
@@ -160,6 +162,8 @@ export interface SpaceSaveInput {
   readonly inheritContext?: boolean
   /** New member list, replaced wholesale. */
   readonly members?: readonly string[]
+  /** New responsible agent, or null to clear the assignment. */
+  readonly agentId?: string | null
 }
 
 /** One board item with its review state. */

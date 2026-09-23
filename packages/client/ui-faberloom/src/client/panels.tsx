@@ -244,6 +244,7 @@ function spacesScreen() {
     const [title, setTitle] = useState('')
     const [inherit, setInherit] = useState(true)
     const [members, setMembers] = useState('')
+    const [spaceAgentId, setSpaceAgentId] = useState('')
     const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
     const rows = useMemo(
       () => (overview?.spaces ?? []).filter(space => space.title.toLowerCase().includes(query.trim().toLowerCase())),
@@ -264,6 +265,7 @@ function spacesScreen() {
       setTitle(detail.value.title)
       setInherit(detail.value.inheritContext)
       setMembers(detail.value.members.join(', '))
+      setSpaceAgentId(detail.value.agentId ?? '')
       setMessage(null)
     }, [detail])
 
@@ -317,7 +319,12 @@ function spacesScreen() {
                   <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.cancel')}</button>
                   <button className={styles.primary} type="button" onClick={() => {
                     setMessage(null)
-                    void saveSpace(selected, { title, inheritContext: inherit, members: members.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0) })
+                    void saveSpace(selected, {
+                      title,
+                      inheritContext: inherit,
+                      members: members.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
+                      agentId: spaceAgentId.length === 0 ? null : spaceAgentId,
+                    })
                       .then((result) => { if (!result.ok) setMessage(result.error.message) })
                       .catch((cause: unknown) => { setMessage(String(cause)) })
                   }}>{t('action.save')}</button>
@@ -336,6 +343,12 @@ function spacesScreen() {
                       <>
                         <Field label={t('field.name')}><input type="text" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
                         <Field label={t('field.parent')}><span className={styles.cellMuted}>{detail.value.parentId ?? t('spaces.root')}</span></Field>
+                        <Field label={t('col.agent')}>
+                          <select value={spaceAgentId} onChange={(event) => { setSpaceAgentId(event.target.value) }}>
+                            <option value="">{t('spaces.noAgent')}</option>
+                            {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                          </select>
+                        </Field>
                         <Field label={t('field.inherit')} hint={t('spaces.inheritHint')}>
                           <select value={inherit ? 'yes' : 'no'} onChange={(event) => { setInherit(event.target.value === 'yes') }}>
                             <option value="yes">{t('spaces.inheritYes')}</option>
