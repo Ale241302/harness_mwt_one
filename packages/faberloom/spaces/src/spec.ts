@@ -34,7 +34,7 @@ export const spaceRecord = z.object({
   context: z.record(z.string(), z.string()),
   sources: z.array(spaceSource).default([]),
   // The agent in charge of this space. Optional so records written before the
-  // responsible-agent field (domain version 1) keep loading.
+  // responsible-agent field keep loading under the same domain version.
   agentId: z.string().nullable().default(null),
   archived: z.boolean(),
   createdAt: z.string(),
@@ -66,8 +66,10 @@ export type SpaceFileRecord = z.infer<typeof spaceFileRecord>
  */
 export const spacesDomainSpec = defineDomain({
   name: 'faberloom_spaces',
-  version: 2,
-  compatibleVersions: [1],
+  // Single-layout units reject a version mismatch outright (they do not read
+  // compatibleVersions), so the responsible-agent field stays an optional,
+  // defaulted member of the same version.
+  version: 1,
   tables: {
     spaces: domainTable<FaberLoomSpaceId, SpaceRecord>(spaceRecord),
     files: domainTable<string, SpaceFileRecord>(spaceFileRecord),
