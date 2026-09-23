@@ -101,6 +101,8 @@ const es = {
   'spaces.workspaceHint': 'Las conversaciones del espacio se agrupan en su propia área del panel lateral.',
   'spaces.newInSpace': 'Nueva conversación en este espacio',
   'spaces.noAgent': 'Sin agente',
+  'spaces.noParent': 'Sin padre (raíz)',
+  'spaces.untitled': 'Nuevo espacio',
   'spaces.openWorkspace': 'Abrir en Workspaces',
 
   'action.create': 'Crear',
@@ -539,6 +541,8 @@ export const en: Record<FaberloomKey, string> = {
   'spaces.workspaceHint': 'The space\'s conversations group under its own area in the sidebar.',
   'spaces.newInSpace': 'New conversation in this space',
   'spaces.noAgent': 'No agent',
+  'spaces.noParent': 'No parent (root)',
+  'spaces.untitled': 'New space',
   'spaces.openWorkspace': 'Open in Workspaces',
 
   'action.create': 'Create',
@@ -970,6 +974,8 @@ export const zh: Record<FaberloomKey, string> = {
   'spaces.workspaceHint': '该空间的对话会在侧边栏中归入它自己的区域。',
   'spaces.newInSpace': '在此空间中开始新对话',
   'spaces.noAgent': '无智能体',
+  'spaces.noParent': '无父空间（根）',
+  'spaces.untitled': '新空间',
   'spaces.openWorkspace': '在工作区中打开',
 
   'action.create': '创建',

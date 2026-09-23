@@ -45,8 +45,8 @@ export interface FaberloomPanelInjected {
   load: () => void
   /** Leave the panel and open the harness conversation (its composer). */
   startConversation: () => void
-  /** Create a root space in charge of an optional agent, and refresh. */
-  createSpace: (title: string, agentId: string | null) => void
+  /** Create a space (root or sub-space) in charge of an optional agent, and refresh. */
+  createSpace: (title: string, agentId: string | null, parentId: string | null) => void
   /** Remove one space, its Workspace, and its conversation area. */
   deleteSpace: (id: string) => void
   /** Open the space's Workspace in the sidebar conversation area. */
@@ -245,6 +245,7 @@ function spacesScreen() {
     const [inherit, setInherit] = useState(true)
     const [members, setMembers] = useState('')
     const [spaceAgentId, setSpaceAgentId] = useState('')
+    const [parentId, setParentId] = useState('')
     const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
     const rows = useMemo(
       () => (overview?.spaces ?? []).filter(space => space.title.toLowerCase().includes(query.trim().toLowerCase())),
@@ -283,11 +284,12 @@ function spacesScreen() {
     ]
 
     const create = (): void => {
-      if (draft.trim().length === 0) { setMessage(t('state.needsText')); return }
       setMessage(null)
-      createSpace(draft.trim(), agentId.length === 0 ? null : agentId)
+      const name = draft.trim().length === 0 ? t('spaces.untitled') : draft.trim()
+      createSpace(name, agentId.length === 0 ? null : agentId, parentId.length === 0 ? null : parentId)
       setDraft('')
       setAgentId('')
+      setParentId('')
     }
 
     return (
@@ -298,7 +300,11 @@ function spacesScreen() {
             <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.spaces.newPlaceholder')}
               onChange={(event) => { setDraft(event.target.value) }}
               onKeyDown={(event) => { if (event.key === 'Enter') create() }} />
-            <select className={styles.paneSearch} style={{ width: 200, padding: '8px 10px' }} value={agentId} aria-label={t('panel.spaces.newAgent')} onChange={(event) => { setAgentId(event.target.value) }}>
+            <select className={styles.paneSearch} style={{ width: 170, padding: '8px 10px' }} value={parentId} aria-label={t('col.parent')} onChange={(event) => { setParentId(event.target.value) }}>
+              <option value="">{t('spaces.noParent')}</option>
+              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+            </select>
+            <select className={styles.paneSearch} style={{ width: 190, padding: '8px 10px' }} value={agentId} aria-label={t('panel.spaces.newAgent')} onChange={(event) => { setAgentId(event.target.value) }}>
               <option value="">{t('spaces.noAgent')}</option>
               {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
             </select>

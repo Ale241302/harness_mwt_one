@@ -61,6 +61,8 @@ export interface FaberLoomSpace {
   readonly context: SpaceContext
   /** Commercial sources in MWT.ONE this space refers to (directives, not copies). */
   readonly sources: readonly SpaceSource[]
+  /** The agent in charge of this space, or `undefined` when none is assigned. */
+  readonly agentId: string | undefined
   /** Whether the space is archived (kept, out of the active list). */
   readonly archived: boolean
   /** ISO-8601 creation instant. */
@@ -77,6 +79,8 @@ export interface CreateSpaceInput {
   readonly title: string
   /** Parent space id, when the space is a sub-space. */
   readonly parentId?: FaberLoomSpaceId
+  /** Agent in charge of the new space; the same agent may lead a parent and a sub-space. */
+  readonly agentId?: string
 }
 
 /** Mutable fields of a space. Absent fields stay unchanged. */
@@ -93,6 +97,8 @@ export interface UpdateSpaceInput {
   readonly context?: SpaceContext
   /** New commercial-source list, replaced wholesale. */
   readonly sources?: readonly SpaceSource[]
+  /** New responsible agent, or `null` to clear the assignment. */
+  readonly agentId?: string | null
 }
 
 /** Input accepted when attaching one file to a space. */

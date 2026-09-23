@@ -33,6 +33,9 @@ export const spaceRecord = z.object({
   members: z.array(z.string()),
   context: z.record(z.string(), z.string()),
   sources: z.array(spaceSource).default([]),
+  // The agent in charge of this space. Optional so records written before the
+  // responsible-agent field (domain version 1) keep loading.
+  agentId: z.string().nullable().default(null),
   archived: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -63,7 +66,8 @@ export type SpaceFileRecord = z.infer<typeof spaceFileRecord>
  */
 export const spacesDomainSpec = defineDomain({
   name: 'faberloom_spaces',
-  version: 1,
+  version: 2,
+  compatibleVersions: [1],
   tables: {
     spaces: domainTable<FaberLoomSpaceId, SpaceRecord>(spaceRecord),
     files: domainTable<string, SpaceFileRecord>(spaceFileRecord),

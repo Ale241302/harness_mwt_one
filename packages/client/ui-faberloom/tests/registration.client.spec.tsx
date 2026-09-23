@@ -149,7 +149,7 @@ describe('faberloom surface', () => {
   it('renders real workspace rows from the host view and opens the conversation', async () => {
     const { runtime, overview, layout, surface, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
-    expect(await view.findByText('Marluvas')).toBeTruthy()
+    expect(await view.findByRole('button', { name: 'Marluvas' })).toBeTruthy()
     expect(overview).toHaveBeenCalledOnce()
 
     act(() => { runtime.panelInfo.set({ activePanelId: CONVERSAR }) })
@@ -175,16 +175,25 @@ describe('faberloom surface', () => {
     const input = await view.findByPlaceholderText('Space name')
     fireEvent.change(input, { target: { value: 'Marluvas' } })
     fireEvent.click(view.getByRole('button', { name: 'Create' }))
-    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Marluvas', undefined) })
+    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Marluvas', undefined, undefined) })
   })
 
-  it('warns instead of blocking an empty create form', async () => {
+  it('creates a space with a default name when the field is empty', async () => {
     const { runtime, createSpace, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
     await view.findByPlaceholderText('Space name')
     fireEvent.click(view.getByRole('button', { name: 'Create' }))
-    expect(await view.findByText('Type something in the field first.')).toBeTruthy()
-    expect(createSpace).not.toHaveBeenCalled()
+    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('New space', undefined, undefined) })
+  })
+
+  it('creates a sub-space under the chosen parent space', async () => {
+    const { runtime, createSpace, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    const input = await view.findByPlaceholderText('Space name')
+    fireEvent.change(input, { target: { value: 'Hijo' } })
+    fireEvent.change(view.getByRole('combobox', { name: 'Parent space' }), { target: { value: 'space-1' } })
+    fireEvent.click(view.getByRole('button', { name: 'Create' }))
+    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Hijo', undefined, 'space-1') })
   })
 
   it('creates a space in charge of the chosen agent', async () => {
@@ -194,7 +203,7 @@ describe('faberloom surface', () => {
     fireEvent.change(input, { target: { value: 'Marluvas' } })
     fireEvent.change(view.getByLabelText('Responsible agent (optional)'), { target: { value: 'agent-1' } })
     fireEvent.click(view.getByRole('button', { name: 'Create' }))
-    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Marluvas', 'agent-1') })
+    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Marluvas', 'agent-1', undefined) })
   })
 
   it('opens the space Workspace from its table link', async () => {
@@ -237,6 +246,6 @@ describe('faberloom surface', () => {
     expect(input).toHaveProperty('disabled', false)
     fireEvent.change(input, { target: { value: 'Propio' } })
     fireEvent.click(view.getByRole('button', { name: 'Create' }))
-    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Propio', undefined) })
+    await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Propio', undefined, undefined) })
   })
 })

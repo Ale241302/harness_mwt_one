@@ -202,31 +202,30 @@ export class FaberLoomViewService extends TypertRemoteService {
       this.readMemory(),
     ])
     const registry = this.workspaceRegistryOrUndefined()
-    // The agent in charge is the first catalog agent whose owning space is this
-    // space; the space's Workspace is keyed by its opaque workdir.
-    const leadBySpace = new Map<string, { readonly id: string; readonly name: string }>()
-    for (const agent of agents) {
-      if (agent.spaceId !== undefined && !leadBySpace.has(agent.spaceId)) {
-        leadBySpace.set(agent.spaceId, { id: agent.id, name: agent.name })
-      }
+    // The responsible agent lives on the space, so the same agent may lead
+    // several spaces (a parent and its sub-spaces). The space's Workspace is
+    // keyed by its opaque workdir.
+    const agentById = new Map<string, string>(agents.map(agent => [String(agent.id), agent.name]))
+    const spaceByAgent = new Map<string, string>()
+    for (const space of spaces) {
+      if (space.agentId !== undefined && !spaceByAgent.has(space.agentId)) spaceByAgent.set(space.agentId, space.id)
     }
     const rows = await Promise.all(spaces.map(async (space): Promise<FaberLoomSpaceRow> => {
       const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
       const dir = join(this.dshHome(), 'spaces', ref.ref)
       const workspace = registry?.list().find(candidate => candidate.path === dir)
-      const lead = leadBySpace.get(space.id)
       return {
         id: space.id,
         title: space.title,
         parentId: space.parentId ?? null,
-        agentId: lead?.id ?? null,
-        agentName: lead?.name ?? null,
+        agentId: space.agentId ?? null,
+        agentName: space.agentId === undefined ? null : agentById.get(space.agentId) ?? null,
         workspaceId: workspace === undefined ? null : String(workspace.id),
       }
     }))
     return {
       spaces: rows,
-      agents: agents.map(agent => ({ id: agent.id, name: agent.name, spaceId: agent.spaceId ?? null, active: agent.active })),
+      agents: agents.map(agent => ({ id: agent.id, name: agent.name, spaceId: spaceByAgent.get(agent.id) ?? null, active: agent.active })),
       board: board.map(item => ({ id: item.id, title: item.title, status: item.status })),
       routines: routines.map(routine => ({ id: routine.id, name: routine.name, status: routine.status })),
       memory,
@@ -235,28 +234,30 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Create a root space for the owner, assign the responsible agent, and
-   * register the space's conversation area as a Workspace so the sidebar and
-   * the Espacios panel show the same thing.
+   * Create a space (root or sub-space) for the owner with an optional
+   * responsible agent, and register its conversation area as a Workspace so
+   * the sidebar and the Espacios panel show the same thing.
    * @param title - display title.
-   * @param agentId - catalog agent put in charge of the space, when chosen.
+   * @param agentId - catalog agent put in charge; the same agent may lead a parent and a sub-space.
+   * @param parentId - parent space id, when this is a sub-space.
    * @returns the refreshed overview.
    */
   @Remote('createSpace')
-  async createSpace(title: string, agentId?: string): Promise<FaberLoomOverview> {
+  async createSpace(title: string, agentId?: string, parentId?: string): Promise<FaberLoomOverview> {
     const actor = this.actor()
-    const space = await this.ctx.faberloomSpaces.create(actor, { title })
-    if (agentId !== undefined && agentId.length > 0) {
-      await this.ctx.faberloomAgents.updateAgent(agentId as FaberLoomAgentId, { spaceId: String(space.id) })
-    }
+    const space = await this.ctx.faberloomSpaces.create(actor, {
+      title,
+      ...agentId === undefined || agentId.length === 0 ? {} : { agentId },
+      ...parentId === undefined || parentId.length === 0 ? {} : { parentId: parentId as FaberLoomSpaceId },
+    })
     await this.ensureSpaceWorkspace(actor, space.id, space.title)
     return await this.overview()
   }
 
   /**
-   * Remove a space permanently: clear the responsible agents, drop the
-   * Workspace registration, delete its conversation directory, and delete the
-   * space record with its attached files.
+   * Remove a space permanently: drop its Workspace registration, delete its
+   * conversation directory, and delete the space record with its attached
+   * files.
    * @param id - space id.
    * @returns the refreshed overview.
    */
@@ -264,9 +265,6 @@ export class FaberLoomViewService extends TypertRemoteService {
   async deleteSpace(id: string): Promise<FaberLoomOverview> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
-    for (const agent of await this.ctx.faberloomAgents.listAgents()) {
-      if (agent.spaceId === id) await this.ctx.faberloomAgents.updateAgent(agent.id, { spaceId: null })
-    }
     const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
     const dir = join(this.dshHome(), 'spaces', ref.ref)
     const registry = this.workspaceRegistryOrUndefined()
@@ -690,7 +688,6 @@ export class FaberLoomViewService extends TypertRemoteService {
     const spaces = await this.ctx.faberloomSpaces.list(actor)
     if (!spaces.some(space => space.id === id)) return undefined
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
-    const agent = (await this.ctx.faberloomAgents.listAgents()).find(candidate => candidate.spaceId === id)
     return {
       id: space.id,
       title: space.title,
@@ -700,7 +697,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       members: [...space.members],
       sources: space.sources.map(source => ({ kind: String(source.kind), ref: source.id })),
       contextKeys: Object.keys(space.context),
-      agentId: agent?.id ?? null,
+      agentId: space.agentId ?? null,
     }
   }
 
@@ -780,29 +777,13 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('saveSpace')
   async saveSpace(id: string, input: SpaceSaveInput): Promise<FaberLoomOverview> {
-    if (input.agentId !== undefined) await this.assignSpaceAgent(id, input.agentId)
     await this.ctx.faberloomSpaces.update(this.actor(), id as FaberLoomSpaceId, {
       ...input.title === undefined ? {} : { title: input.title },
       ...input.inheritContext === undefined ? {} : { inheritContext: input.inheritContext },
       ...input.members === undefined ? {} : { members: [...input.members] },
+      ...input.agentId === undefined ? {} : { agentId: input.agentId },
     })
     return await this.overview()
-  }
-
-  /**
-   * Make `agentId` the single agent in charge of a space, clearing every other
-   * agent currently assigned to it. `null` clears the assignment.
-   * @param spaceId - the space id.
-   * @param agentId - the chosen agent, or null.
-   */
-  private async assignSpaceAgent(spaceId: string, agentId: string | null): Promise<void> {
-    for (const agent of await this.ctx.faberloomAgents.listAgents()) {
-      if (agent.id === agentId) {
-        if (agent.spaceId !== spaceId) await this.ctx.faberloomAgents.updateAgent(agent.id, { spaceId })
-      } else if (agent.spaceId === spaceId) {
-        await this.ctx.faberloomAgents.updateAgent(agent.id, { spaceId: null })
-      }
-    }
   }
 
   /**

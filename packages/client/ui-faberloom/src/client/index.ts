@@ -106,7 +106,9 @@ export function apply(ctx: ClientContext): void {
     return {
       load: refresh,
       startConversation: () => { ctx.layout.selectPanel(null) },
-      createSpace: (title, agentId) => { write(() => ctx.remote.faberloomView.createSpace(title, agentId ?? undefined)) },
+      createSpace: (title, agentId, parentId) => {
+        write(() => ctx.remote.faberloomView.createSpace(title, agentId ?? undefined, parentId ?? undefined))
+      },
       deleteSpace: (id) => { write(() => ctx.remote.faberloomView.deleteSpace(id)) },
       goToWorkspace: (spaceId) => {
         void ctx.remote.faberloomView.openSpaceWorkspace(spaceId).then(async (result) => {
