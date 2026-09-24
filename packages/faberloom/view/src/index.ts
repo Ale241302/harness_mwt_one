@@ -12,6 +12,8 @@ import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: pulls the ctx.tools merge so `ctx.get('tools')` is typed.
 import type {} from '@deepseek-ai/dsh-tools'
+// Type-only: pulls the ctx.faberloomInbound merge for the Email panel's inbox.
+import type {} from '@deepseek-ai/dsh-faberloom-inbound'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
@@ -27,11 +29,12 @@ import type { Workspace, WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
-import type { FaberLoomConnections } from '@deepseek-ai/dsh-faberloom-connections'
+import type { FaberLoomConnections, FaberLoomEmailDraft } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
+  FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
   FaberLoomModelRow, FaberLoomModelRecommendation,
@@ -140,6 +143,23 @@ function stepText(result: unknown): string | null {
   if (result === null || typeof result !== 'object') return null
   const text = (result as { readonly text?: unknown }).text
   return typeof text === 'string' && text.length > 0 ? text : null
+}
+
+/** Project one email draft onto the fields the panel renders. */
+function draftRow(draft: FaberLoomEmailDraft): FaberLoomEmailDraftRow {
+  return {
+    id: draft.id,
+    to: draft.to,
+    cc: draft.cc,
+    subject: draft.subject,
+    text: draft.text,
+    status: draft.status,
+    inReplyTo: draft.inReplyTo,
+    spaceId: draft.spaceId,
+    createdAt: draft.createdAt,
+    updatedAt: draft.updatedAt,
+    sentAt: draft.sentAt,
+  }
 }
 
 /** Project one teaching onto the fields the panel renders. */
@@ -569,6 +589,63 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('probeConnection')
   async probeConnection(id: string): Promise<ConnectionProbe> {
     return await this.connectionsService().probe(this.actor().id, id)
+  }
+
+  /**
+   * List the owner's mailbox envelopes, newest first. Read-only.
+   * @returns one row per envelope, or an empty list without a mailbox.
+   */
+  @Remote('emailInbox')
+  async emailInbox(): Promise<readonly FaberLoomInboxRow[]> {
+    const inbound = this.ctx.get('faberloomInbound')
+    if (inbound === undefined) return []
+    const messages = await inbound.listInbox(this.actor().id)
+    return messages.map(message => ({
+      id: String(message.uid),
+      messageId: message.messageId,
+      from: message.from,
+      subject: message.subject,
+      date: message.date,
+    }))
+  }
+
+  /**
+   * List the owner's email drafts, newest first.
+   * @returns one row per draft.
+   */
+  @Remote('emailDrafts')
+  async emailDrafts(): Promise<readonly FaberLoomEmailDraftRow[]> {
+    return (await this.connectionsService().listDrafts(this.actor().id)).map(draftRow)
+  }
+
+  /**
+   * Create or replace one email draft.
+   * @param input - the draft fields.
+   * @returns the stored draft.
+   */
+  @Remote('saveEmailDraft')
+  async saveEmailDraft(input: EmailDraftSaveInput): Promise<FaberLoomEmailDraftRow> {
+    return draftRow(await this.connectionsService().saveDraft(this.actor().id, input))
+  }
+
+  /**
+   * Discard one email draft.
+   * @param id - the draft id.
+   * @returns true when a draft was removed.
+   */
+  @Remote('deleteEmailDraft')
+  async deleteEmailDraft(id: string): Promise<boolean> {
+    return await this.connectionsService().removeDraft(this.actor().id, id)
+  }
+
+  /**
+   * Send one email draft through the owner's SMTP connection.
+   * @param id - the draft id.
+   * @returns the sent draft.
+   */
+  @Remote('sendEmailDraft')
+  async sendEmailDraft(id: string): Promise<FaberLoomEmailDraftRow> {
+    return draftRow(await this.connectionsService().sendDraft(this.actor().id, id))
   }
 
   /**

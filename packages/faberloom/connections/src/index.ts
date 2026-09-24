@@ -14,16 +14,33 @@ import { join } from 'node:path'
 import { connect as connectTcp, type Socket } from 'node:net'
 import { connect as connectTls } from 'node:tls'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { connectionsDomainSpec, type ConnectionRecord } from './spec.ts'
+import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { probeSmtp, sendSmtp } from './smtp.ts'
-import type { ConnectionInput, ConnectionProbe, FaberLoomConnection, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
+import type { ConnectionInput, ConnectionProbe, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
     faberloomConnections: FaberLoomConnections
+  }
+}
+
+/** Map one durable draft record to the consumer-facing draft. */
+function toDraft(id: string, record: DraftRecord): FaberLoomEmailDraft {
+  return {
+    id,
+    to: record.to,
+    cc: record.cc,
+    subject: record.subject,
+    text: record.text,
+    status: record.status,
+    inReplyTo: record.inReplyTo,
+    spaceId: record.spaceId,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    sentAt: record.sentAt,
   }
 }
 
@@ -165,6 +182,83 @@ export class FaberLoomConnections extends Service {
   }
 
   private async table(): Promise<KvTable<string, ConnectionRecord>> { return (await this.domain()).table('connections') }
+
+  /** The owner's email-draft table handle. */
+  private async draftTable(): Promise<KvTable<string, DraftRecord>> { return (await this.domain()).table('drafts') }
+
+  /**
+   * List one owner's email drafts, newest first.
+   * @param ownerId - the owning identity.
+   * @returns the drafts.
+   */
+  async listDrafts(ownerId: string): Promise<FaberLoomEmailDraft[]> {
+    const out: FaberLoomEmailDraft[] = []
+    for (const [id, record] of (await this.draftTable()).entries()) {
+      if (record.ownerId === ownerId) out.push(toDraft(id, record))
+    }
+    out.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    return out
+  }
+
+  /**
+   * Create or replace one email draft.
+   * @param ownerId - the owning identity.
+   * @param input - the draft fields.
+   * @returns the stored draft.
+   */
+  async saveDraft(ownerId: string, input: EmailDraftInput): Promise<FaberLoomEmailDraft> {
+    const table = await this.draftTable()
+    const now = new Date().toISOString()
+    const id = input.id ?? randomUUID()
+    const existing = input.id === undefined ? undefined : table.get(id)
+    const record: DraftRecord = {
+      ownerId,
+      to: [...input.to],
+      cc: input.cc === undefined ? [] : [...input.cc],
+      subject: input.subject,
+      text: input.text,
+      status: 'draft',
+      inReplyTo: input.inReplyTo ?? null,
+      spaceId: input.spaceId ?? null,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      sentAt: null,
+    }
+    await table.put(id, record)
+    return toDraft(id, record)
+  }
+
+  /**
+   * Remove one draft the owner may discard.
+   * @param ownerId - the owning identity.
+   * @param id - the draft id.
+   * @returns true when a record was removed.
+   */
+  async removeDraft(ownerId: string, id: string): Promise<boolean> {
+    const table = await this.draftTable()
+    const record = table.get(id)
+    if (record === undefined || record.ownerId !== ownerId) return false
+    return await table.delete(id)
+  }
+
+  /**
+   * Send one draft through the owner's SMTP connection and mark it sent.
+   * @param ownerId - the owning identity.
+   * @param id - the draft id.
+   * @returns the sent draft.
+   * @throws when the draft is absent, already settled, or the send fails.
+   */
+  async sendDraft(ownerId: string, id: string): Promise<FaberLoomEmailDraft> {
+    const table = await this.draftTable()
+    const record = table.get(id)
+    if (record === undefined || record.ownerId !== ownerId) throw new Error(`faberloom: draft ${id} not found`)
+    if (record.status !== 'draft') throw new Error(`faberloom: draft ${id} is already ${record.status}`)
+    await this.sendMail(ownerId, { to: record.to, subject: record.subject, text: record.text })
+    const now = new Date().toISOString()
+    const next: DraftRecord = { ...record, status: 'sent', sentAt: now, updatedAt: now }
+    await table.update(id, () => next)
+    return toDraft(id, next)
+  }
 
   /**
    * List one owner's connections.

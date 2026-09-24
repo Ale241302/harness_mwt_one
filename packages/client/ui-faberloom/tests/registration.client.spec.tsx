@@ -143,6 +143,7 @@ describe('faberloom surface', () => {
       'faberloom-routines',
       'faberloom-memory',
       'faberloom-connections',
+      'faberloom-email',
     ])
     expect(runtime.slots.entries('main').map(entry => entry.options.key)).toEqual([
       'faberloom-conversar',
@@ -154,6 +155,7 @@ describe('faberloom surface', () => {
       'faberloom-routines',
       'faberloom-memory',
       'faberloom-connections',
+      'faberloom-email',
     ])
     expect(view.getByText('faberloom')).toBeTruthy()
     expect(view.getByRole('heading', { name: 'What do you want to solve today?' })).toBeTruthy()

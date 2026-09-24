@@ -127,6 +127,34 @@ export class FaberLoomInbound extends Service {
     }
   }
 
+  /**
+   * List the owner's mailbox envelopes, newest first, without mutating the
+   * mailbox. Read-only: never marks, moves, or deletes mail.
+   * @param ownerId - the owning identity.
+   * @param limit - most envelopes to return.
+   * @returns the envelopes, or an empty list when no mailbox is configured.
+   */
+  async listInbox(ownerId: string, limit?: number): Promise<ImapMessage[]> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) return []
+    const credentials = await connections.imap(ownerId)
+    if (credentials === undefined) return []
+    const max = limit ?? 25
+    return await searchMessages({
+      host: credentials.host,
+      port: credentials.port,
+      secure: credentials.secure,
+      starttls: credentials.starttls,
+      user: credentials.username,
+      password: credentials.password,
+      mailbox: this.config.mailbox ?? 'INBOX',
+      query: '',
+      maxMessages: max,
+      scanMessages: max,
+      timeoutMs: this.config.timeoutMs ?? 15_000,
+    })
+  }
+
   private async poll(ownerId: string, now: Date): Promise<InboundReport> {
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) return empty('no connections service')

@@ -63,6 +63,7 @@
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-inbound": "workspace:^",
     "@deepseek-ai/dsh-faberloom-learning": "workspace:^",
     "@deepseek-ai/dsh-faberloom-mcp-server": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",

@@ -15,6 +15,7 @@ import {
   IconAlarmClockOutline16,
   IconApiOutline14,
   IconChecklistOutline14,
+  IconSendOutline14,
   IconDatabaseOutline16,
   IconFolderOpenOutline16,
   IconNewChatOutline16,
@@ -29,6 +30,7 @@ import type {
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
+  FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import type { createWorkspaceStore } from './store.ts'
@@ -138,6 +140,16 @@ export interface FaberloomPanelInjected {
   removeConnection: (id: string) => Promise<Result<readonly FaberLoomConnection[]>>
   /** Check one connection for real. */
   probeConnection: (id: string) => Promise<Result<{ ok: boolean; detail: string }>>
+  /** List the mailbox envelopes, newest first. */
+  emailInbox: () => Promise<Result<readonly FaberLoomInboxRow[]>>
+  /** List the email drafts awaiting approval. */
+  emailDrafts: () => Promise<Result<readonly FaberLoomEmailDraftRow[]>>
+  /** Create or replace one email draft. */
+  saveEmailDraft: (input: EmailDraftSaveInput) => Promise<Result<FaberLoomEmailDraftRow>>
+  /** Discard one email draft. */
+  deleteEmailDraft: (id: string) => Promise<Result<boolean>>
+  /** Send one email draft through the owner's SMTP connection. */
+  sendEmailDraft: (id: string) => Promise<Result<FaberLoomEmailDraftRow>>
   /** List the owner's knowledge backups, newest first. */
   backups: () => Promise<Result<readonly FaberLoomBackupRow[]>>
   /** Capture a new knowledge backup. */
@@ -690,6 +702,186 @@ function agentsScreen() {
                       </Field>
                     </>
                   )}
+          </Inspector>
+        </div>
+      </Screen>
+    )
+  }
+}
+
+/** Correo: the mailbox envelopes and the drafts awaiting approval. */
+function emailScreen() {
+  return function FaberloomEmail(props: ScreenProps) {
+    const { t, emailInbox, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft } = props
+    const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
+    const [selected, setSelected] = useState<string | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
+    const [reload, setReload] = useState(0)
+    const [composing, setComposing] = useState(false)
+    const [draftId, setDraftId] = useState<string | null>(null)
+    const [to, setTo] = useState('')
+    const [cc, setCc] = useState('')
+    const [subject, setSubject] = useState('')
+    const [body, setBody] = useState('')
+    const [inReplyTo, setInReplyTo] = useState<string | null>(null)
+    const inbox = useLazy<readonly FaberLoomInboxRow[]>(() => emailInbox(), [reload])
+    const drafts = useLazy<readonly FaberLoomEmailDraftRow[]>(() => emailDrafts(), [reload])
+    const inboxRows = inbox.kind === 'ready' ? inbox.value : []
+    const draftRows = drafts.kind === 'ready' ? drafts.value : []
+    const rows: readonly { id: string }[] = mode === 'inbox' ? inboxRows : draftRows
+    const chosenMail = mode === 'inbox' ? inboxRows.find(row => row.id === selected) ?? null : null
+    const chosenDraft = mode === 'drafts' ? draftRows.find(row => row.id === selected) ?? null : null
+
+    const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
+
+    const openCompose = (mail?: FaberLoomInboxRow): void => {
+      setMode('drafts')
+      setComposing(true)
+      setSelected(null)
+      setDraftId(null)
+      setTo(mail?.from ?? '')
+      setCc('')
+      setSubject(mail === undefined || mail.subject === null ? '' : `Re: ${mail.subject}`)
+      setBody('')
+      setInReplyTo(mail?.messageId ?? null)
+      setMessage(null)
+    }
+
+    const openDraft = (draft: FaberLoomEmailDraftRow): void => {
+      setComposing(true)
+      setSelected(draft.id)
+      setDraftId(draft.id)
+      setTo(draft.to.join(', '))
+      setCc(draft.cc.join(', '))
+      setSubject(draft.subject)
+      setBody(draft.text)
+      setInReplyTo(draft.inReplyTo)
+      setMessage(null)
+    }
+
+    /** Persist the composer, returning the stored draft id (or null on failure). */
+    const persist = async (): Promise<string | null> => {
+      setMessage(null)
+      const result = await saveEmailDraft({
+        ...draftId === null ? {} : { id: draftId },
+        to: recipients(to),
+        cc: recipients(cc),
+        subject,
+        text: body,
+        inReplyTo,
+      })
+      if (!result.ok) { setMessage(result.error.message); return null }
+      setDraftId(result.value.id)
+      setReload(value => value + 1)
+      return result.value.id
+    }
+
+    const send = (): void => {
+      void (async () => {
+        const id = await persist()
+        if (id === null) return
+        const result = await sendEmailDraft(id)
+        if (!result.ok) { setMessage(result.error.message); return }
+        setComposing(false)
+        setDraftId(null)
+        setReload(value => value + 1)
+      })()
+    }
+
+    const discard = (): void => {
+      if (draftId === null) { setComposing(false); return }
+      void deleteEmailDraft(draftId)
+        .then((result) => {
+          if (!result.ok) { setMessage(result.error.message); return }
+          setComposing(false)
+          setDraftId(null)
+          setReload(value => value + 1)
+        })
+        .catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    const columns: readonly Column<{ id: string }>[] = mode === 'inbox'
+      ? [
+        { key: 'from', header: t('col.from'), cell: row => <span className={styles.cellName}>{(row as FaberLoomInboxRow).from ?? '—'}</span> },
+        { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.cellMuted}>{(row as FaberLoomInboxRow).subject ?? '—'}</span> },
+        { key: 'date', header: t('col.date'), cell: row => <span className={styles.cellMuted}>{(row as FaberLoomInboxRow).date ?? ''}</span> },
+      ]
+      : [
+        { key: 'to', header: t('col.to'), cell: row => <span className={styles.cellName}>{(row as FaberLoomEmailDraftRow).to.join(', ')}</span> },
+        { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.cellMuted}>{(row as FaberLoomEmailDraftRow).subject}</span> },
+        { key: 'status', header: t('col.status'), cell: row => <Chip>{(row as FaberLoomEmailDraftRow).status}</Chip> },
+      ]
+
+    const tableState = mode === 'inbox' ? inbox : drafts
+    const detailTitle = composing
+      ? draftId === null ? t('email.newDraft') : t('email.draft')
+      : mode === 'inbox' ? t('email.read') : t('email.draftDetail')
+
+    return (
+      <Screen title={t('panel.email.title')} subtitle={t('panel.email.intro')}
+        trailing={(
+          <>
+            <select className={styles.paneSearch} style={{ width: 160, padding: '8px 10px' }} value={mode} aria-label={t('email.mode')}
+              onChange={(event) => { setMode(event.target.value === 'inbox' ? 'inbox' : 'drafts'); setSelected(null); setComposing(false) }}>
+              <option value="inbox">{t('email.inbox')}</option>
+              <option value="drafts">{t('email.drafts')}</option>
+            </select>
+            <button className={styles.primary} type="button" onClick={() => { openCompose() }}>{t('email.newDraft')}</button>
+          </>
+        )}>
+        <Feedback t={t} message={message} />
+        <div className={styles.split}>
+          {tableState.kind === 'loading' && rows.length === 0
+            ? <StateBlock kind="loading" title={t('state.loading')} />
+            : tableState.kind === 'error'
+              ? <StateBlock kind="error" title={t('state.error')} text={tableState.message} />
+              : (
+                <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => {
+                  if (mode === 'drafts') {
+                    const draft = draftRows.find(candidate => candidate.id === id)
+                    if (draft !== undefined) openDraft(draft)
+                  } else {
+                    setSelected(id)
+                    setComposing(false)
+                  }
+                }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.email')} labels={tableLabels(t)} />
+              )}
+          <Inspector title={detailTitle}
+            footer={composing ? (
+              <>
+                <span className={styles.tools}>
+                  <button className={styles.danger} type="button" onClick={discard}>{t('action.delete')}</button>
+                </span>
+                <span className={styles.tools}>
+                  <button className={styles.ghost} type="button" onClick={() => { setComposing(false) }}>{t('action.cancel')}</button>
+                  <button className={styles.secondary} type="button" onClick={() => { void persist() }}>{t('action.save')}</button>
+                  <button className={styles.primary} type="button" onClick={send}>{t('email.send')}</button>
+                </span>
+              </>
+            ) : chosenMail === null ? undefined : (
+              <button className={styles.primary} type="button" onClick={() => { openCompose(chosenMail) }}>{t('email.reply')}</button>
+            )}>
+            {composing ? (
+              <>
+                <Field label={t('field.to')}><input type="text" autoComplete="off" value={to} onChange={(event) => { setTo(event.target.value) }} /></Field>
+                <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value) }} /></Field>
+                <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value) }} /></Field>
+                <Field label={t('field.body')}><textarea value={body} onChange={(event) => { setBody(event.target.value) }} /></Field>
+              </>
+            ) : chosenMail !== null ? (
+              <>
+                <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail.from ?? '—'}</span></Field>
+                <Field label={t('field.subject')}><span className={styles.cellMuted}>{chosenMail.subject ?? '—'}</span></Field>
+                <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenMail.date ?? ''}</span></Field>
+              </>
+            ) : chosenDraft !== null ? (
+              <>
+                <Field label={t('col.to')}><span className={styles.cellMuted}>{chosenDraft.to.join(', ')}</span></Field>
+                <Field label={t('field.subject')}><span className={styles.cellMuted}>{chosenDraft.subject}</span></Field>
+                <Field label={t('field.body')}><span className={styles.cellMuted}>{chosenDraft.text}</span></Field>
+                <Field label={t('col.status')}><Chip>{chosenDraft.status}</Chip></Field>
+              </>
+            ) : <StateBlock kind="empty" title={t('email.selectTitle')} text={t('email.selectText')} />}
           </Inspector>
         </div>
       </Screen>
@@ -2213,4 +2405,5 @@ export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(IconAlarmClockOutline16), Page: routinesScreen() },
   { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(IconDatabaseOutline16), Page: memoryScreen() },
   { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', Icon: panelIcon(IconApiOutline14), Page: connectionsScreen() },
+  { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', Icon: panelIcon(IconSendOutline14), Page: emailScreen() },
 ]

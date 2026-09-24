@@ -123,6 +123,53 @@ export interface OutgoingMail {
   readonly text: string
 }
 
+/** Lifecycle of one email draft an agent prepared. */
+export type EmailDraftStatus = 'draft' | 'sent' | 'rejected'
+
+/** One email draft awaiting owner approval, as consumers read it. */
+export interface FaberLoomEmailDraft {
+  /** Draft id. */
+  readonly id: string
+  /** Recipients. */
+  readonly to: readonly string[]
+  /** Carbon-copy recipients. */
+  readonly cc: readonly string[]
+  /** Subject line. */
+  readonly subject: string
+  /** Plain-text body. */
+  readonly text: string
+  /** Where the draft is in its lifecycle. */
+  readonly status: EmailDraftStatus
+  /** `Message-ID` this draft replies to, or null. */
+  readonly inReplyTo: string | null
+  /** Space the draft belongs to, or null. */
+  readonly spaceId: string | null
+  /** Creation instant, ISO-8601. */
+  readonly createdAt: string
+  /** Last update instant, ISO-8601. */
+  readonly updatedAt: string
+  /** Send instant, ISO-8601, or null while unsent. */
+  readonly sentAt: string | null
+}
+
+/** Create or replace input for one email draft. */
+export interface EmailDraftInput {
+  /** Draft id, when updating an existing draft. */
+  readonly id?: string
+  /** Recipients. */
+  readonly to: readonly string[]
+  /** Carbon-copy recipients. */
+  readonly cc?: readonly string[]
+  /** Subject line. */
+  readonly subject: string
+  /** Plain-text body. */
+  readonly text: string
+  /** `Message-ID` this draft replies to. */
+  readonly inReplyTo?: string | null
+  /** Space the draft belongs to. */
+  readonly spaceId?: string | null
+}
+
 /** What a successful send reports. */
 export interface SentMail {
   /** `Message-ID` the send generated. */

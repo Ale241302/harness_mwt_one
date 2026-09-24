@@ -31,11 +31,33 @@ export const connectionRecord = z.object({
 /** One stored connection, inferred from {@link connectionRecord}. */
 export type ConnectionRecord = z.infer<typeof connectionRecord>
 
+/** Durable email draft: one message an agent prepared for owner approval. */
+export const draftRecord = z.object({
+  ownerId: z.string(),
+  to: z.array(z.string()),
+  cc: z.array(z.string()),
+  subject: z.string(),
+  text: z.string(),
+  status: z.enum(['draft', 'sent', 'rejected']),
+  inReplyTo: z.string().nullable(),
+  spaceId: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  sentAt: z.string().nullable(),
+})
+
+/** One stored draft, inferred from {@link draftRecord}. */
+export type DraftRecord = z.infer<typeof draftRecord>
+
 /**
- * The connections domain spec: one `connections` table keyed by connection id.
+ * The connections domain spec: the `connections` table and the owner's email
+ * drafts awaiting approval.
  */
 export const connectionsDomainSpec = defineDomain({
   name: 'faberloom_connections',
   version: 1,
-  tables: { connections: domainTable<string, ConnectionRecord>(connectionRecord) },
+  tables: {
+    connections: domainTable<string, ConnectionRecord>(connectionRecord),
+    drafts: domainTable<string, DraftRecord>(draftRecord),
+  },
 })

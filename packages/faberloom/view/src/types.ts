@@ -64,6 +64,64 @@ export interface FaberLoomSpaceMemoryRow {
   readonly createdAt: string
 }
 
+/** One mailbox envelope the Email panel lists. */
+export interface FaberLoomInboxRow {
+  /** Mailbox UID. */
+  readonly id: string
+  /** `Message-ID` header, or null. */
+  readonly messageId: string | null
+  /** `From` header, or null. */
+  readonly from: string | null
+  /** `Subject` header, or null. */
+  readonly subject: string | null
+  /** `Date` header, or null. */
+  readonly date: string | null
+}
+
+/** One email draft as the Email panel reads it. */
+export interface FaberLoomEmailDraftRow {
+  /** Draft id. */
+  readonly id: string
+  /** Recipients. */
+  readonly to: readonly string[]
+  /** Carbon-copy recipients. */
+  readonly cc: readonly string[]
+  /** Subject line. */
+  readonly subject: string
+  /** Plain-text body. */
+  readonly text: string
+  /** Lifecycle status. */
+  readonly status: string
+  /** `Message-ID` this draft replies to, or null. */
+  readonly inReplyTo: string | null
+  /** Space the draft belongs to, or null. */
+  readonly spaceId: string | null
+  /** Creation instant, ISO-8601. */
+  readonly createdAt: string
+  /** Last update instant, ISO-8601. */
+  readonly updatedAt: string
+  /** Send instant, or null while unsent. */
+  readonly sentAt: string | null
+}
+
+/** Create or replace input for one email draft. */
+export interface EmailDraftSaveInput {
+  /** Draft id, when updating. */
+  readonly id?: string
+  /** Recipients. */
+  readonly to: readonly string[]
+  /** Carbon-copy recipients. */
+  readonly cc?: readonly string[]
+  /** Subject line. */
+  readonly subject: string
+  /** Plain-text body. */
+  readonly text: string
+  /** `Message-ID` this draft replies to. */
+  readonly inReplyTo?: string | null
+  /** Space the draft belongs to. */
+  readonly spaceId?: string | null
+}
+
 /** One L1 memory row the Memoria panel renders, as the memory server returns it. */
 export interface FaberLoomMemoryRow {
   /** Record id. */
