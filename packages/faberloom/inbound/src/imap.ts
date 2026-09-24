@@ -227,6 +227,85 @@ export async function fetchMessages(options: ImapOptions): Promise<ImapMessage[]
   }
 }
 
+/** How to read one message body. */
+export interface ImapBodyOptions {
+  /** Server host. */
+  readonly host: string
+  /** Server port. */
+  readonly port: number
+  /** Whether the connection starts TLS immediately. */
+  readonly secure: boolean
+  /** Whether the connection upgrades with STARTTLS after the greeting. */
+  readonly starttls?: boolean
+  /** Account name. */
+  readonly user: string
+  /** Account password; never logged. */
+  readonly password: string
+  /** Mailbox to read. */
+  readonly mailbox: string
+  /** UID of the message to read. */
+  readonly uid: number
+  /** Milliseconds before the connection is abandoned. */
+  readonly timeoutMs: number
+}
+
+/**
+ * Read one message's plain-text body, newest decode applied. Read-only
+ * (`BODY.PEEK[TEXT]` never marks the message seen).
+ * @param options - connection settings and the message UID.
+ * @returns the decoded body, or null when the server returned no literal.
+ */
+export async function fetchBody(options: ImapBodyOptions): Promise<string | null> {
+  const session = await ImapSession.open({ ...options, since: null, maxMessages: 1 })
+  try {
+    await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
+    await session.command(`SELECT ${quote(options.mailbox)}`)
+    const fetch = await session.command(`UID FETCH ${String(options.uid)} (BODY.PEEK[TEXT])`)
+    const raw = bodyLiteral(fetch.lines)
+    return raw === null ? null : decodeBodyText(raw)
+  } finally {
+    try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
+    session.close()
+  }
+}
+
+/** Take the body literal out of one `FETCH` response, as the server returned it. */
+function bodyLiteral(lines: readonly string[]): string | null {
+  const marker = lines.findIndex(line => /\{\d+\}\s*$/.test(line))
+  if (marker === -1) return null
+  // `consume` already stripped the protocol CRLFs; join the literal's own lines
+  // back with `\n`. Base64 survives the re-join; 7bit text keeps its words.
+  return lines.slice(marker + 1).join('\n')
+}
+
+/**
+ * Decode a message body literal by its likely transfer encoding.
+ * @param raw - the body literal as received.
+ * @returns decoded UTF-8 text with the trailing FETCH `)` removed.
+ */
+export function decodeBodyText(raw: string): string {
+  const text = raw.replace(/\r?\n\)\s*$/, '').replace(/\)\s*$/, '')
+  const compact = text.replace(/\s/g, '')
+  // Base64 bodies have no spaces; requiring that keeps prose from being decoded as base64.
+  const looksBase64 = !text.includes(' ') && compact.length > 0 && compact.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(compact)
+  if (looksBase64) {
+    const decoded = Buffer.from(compact, 'base64').toString('utf8')
+    if (decoded.trim().length > 0) return decoded
+  }
+  return decodeQuotedPrintable(text)
+}
+
+/**
+ * Decode quoted-printable text (RFC 2045) without external dependencies.
+ * @param input - the encoded text.
+ * @returns the decoded text; multibyte `=XX` sequences decode byte by byte.
+ */
+export function decodeQuotedPrintable(input: string): string {
+  return input
+    .replace(/=\r?\n/g, '')
+    .replace(/=([0-9A-Fa-f]{2})/g, (_match, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+}
+
 /** Quote one IMAP string argument. */
 function quote(value: string): string {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`

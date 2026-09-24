@@ -44,6 +44,7 @@ const es = {
   'email.voiceHint': 'Lo que el sistema ha aprendido de tus correos enviados.',
   'email.voiceEmpty': 'Sin voz todavía',
   'email.voiceEmptyText': 'Cuando envíes correos, se guardará aquí tu forma de escribirlos.',
+  'email.noBody': 'Sin cuerpo legible.',
 
   'panel.conversar.title': '¿Qué quieres resolver hoy?',
   'panel.conversar.intro': 'Una idea, un documento o un trabajo por descubrir.',
@@ -542,6 +543,7 @@ export const en: Record<FaberloomKey, string> = {
   'email.voiceHint': 'What the system has learned from your sent emails.',
   'email.voiceEmpty': 'No voice yet',
   'email.voiceEmptyText': 'When you send emails, your writing style is captured here.',
+  'email.noBody': 'No readable body.',
 
   'panel.conversar.title': 'What do you want to solve today?',
   'panel.conversar.intro': 'An idea, a document, or a job to figure out.',
@@ -1033,6 +1035,7 @@ export const zh: Record<FaberloomKey, string> = {
   'email.voiceHint': '系统从你已发送邮件中学习到的内容。',
   'email.voiceEmpty': '暂无语气档案',
   'email.voiceEmptyText': '当你发送邮件后，这里会记录你的写作风格。',
+  'email.noBody': '无可读正文。',
 
   'panel.conversar.title': '你今天想解决什么？',
   'panel.conversar.intro': '一个想法、一份文档，或一件待厘清的工作。',

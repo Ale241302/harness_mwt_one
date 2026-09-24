@@ -20,7 +20,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
-import { fetchMessages, searchMessages, type ImapMessage } from './imap.ts'
+import { fetchBody, fetchMessages, searchMessages, type ImapMessage } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
 export type { ImapMessage } from './imap.ts'
@@ -151,6 +151,30 @@ export class FaberLoomInbound extends Service {
       query: '',
       maxMessages: max,
       scanMessages: max,
+      timeoutMs: this.config.timeoutMs ?? 15_000,
+    })
+  }
+
+  /**
+   * Read one mailbox message's body, read-only.
+   * @param ownerId - the owning identity.
+   * @param uid - the message UID.
+   * @returns the decoded body, or null when no mailbox is configured or the message has no body.
+   */
+  async readEmail(ownerId: string, uid: number): Promise<string | null> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) return null
+    const credentials = await connections.imap(ownerId)
+    if (credentials === undefined) return null
+    return await fetchBody({
+      host: credentials.host,
+      port: credentials.port,
+      secure: credentials.secure,
+      starttls: credentials.starttls,
+      user: credentials.username,
+      password: credentials.password,
+      mailbox: this.config.mailbox ?? 'INBOX',
+      uid,
       timeoutMs: this.config.timeoutMs ?? 15_000,
     })
   }

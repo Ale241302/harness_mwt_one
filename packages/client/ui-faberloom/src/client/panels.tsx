@@ -142,6 +142,8 @@ export interface FaberloomPanelInjected {
   probeConnection: (id: string) => Promise<Result<{ ok: boolean; detail: string }>>
   /** List the mailbox envelopes, newest first. */
   emailInbox: () => Promise<Result<readonly FaberLoomInboxRow[]>>
+  /** Read one mailbox message's body, read-only. */
+  emailRead: (uid: string) => Promise<Result<string | null>>
   /** List the email drafts awaiting approval. */
   emailDrafts: () => Promise<Result<readonly FaberLoomEmailDraftRow[]>>
   /** Create or replace one email draft. */
@@ -714,7 +716,7 @@ function agentsScreen() {
 /** Correo: the mailbox envelopes and the drafts awaiting approval. */
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
-    const { t, emailInbox, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailVoice } = props
+    const { t, emailInbox, emailRead, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailVoice } = props
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
@@ -729,6 +731,10 @@ function emailScreen() {
     const inbox = useLazy<readonly FaberLoomInboxRow[]>(() => emailInbox(), [reload])
     const drafts = useLazy<readonly FaberLoomEmailDraftRow[]>(() => emailDrafts(), [reload])
     const voice = useLazy<readonly FaberLoomTeachingRow[]>(() => emailVoice(), [reload])
+    const mailBody = useLazy<string | null>(
+      () => selected === null || mode !== 'inbox' ? Promise.resolve({ ok: true as const, value: null }) : emailRead(selected),
+      [selected, mode],
+    )
     const inboxRows = inbox.kind === 'ready' ? inbox.value : []
     const draftRows = drafts.kind === 'ready' ? drafts.value : []
     const rows: readonly { id: string }[] = mode === 'inbox' ? inboxRows : draftRows
@@ -876,6 +882,15 @@ function emailScreen() {
                 <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail.from ?? '—'}</span></Field>
                 <Field label={t('field.subject')}><span className={styles.cellMuted}>{chosenMail.subject ?? '—'}</span></Field>
                 <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenMail.date ?? ''}</span></Field>
+                <Field label={t('field.body')}>
+                  {mailBody.kind === 'loading'
+                    ? <span className={styles.cellMuted}>{t('state.loading')}</span>
+                    : mailBody.kind === 'error'
+                      ? <span className={styles.cellMuted}>{mailBody.message}</span>
+                      : mailBody.value === null
+                        ? <span className={styles.cellMuted}>{t('email.noBody')}</span>
+                        : <span className={styles.cellMuted}>{mailBody.value}</span>}
+                </Field>
               </>
             ) : chosenDraft !== null ? (
               <>

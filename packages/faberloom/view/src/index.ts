@@ -610,6 +610,20 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Read one mailbox message's body, read-only.
+   * @param uid - the message UID.
+   * @returns the decoded body, or null.
+   */
+  @Remote('emailRead')
+  async emailRead(uid: string): Promise<string | null> {
+    const inbound = this.ctx.get('faberloomInbound')
+    if (inbound === undefined) return null
+    const id = Number(uid)
+    if (!Number.isSafeInteger(id) || id <= 0) return null
+    return await inbound.readEmail(this.actor().id, id)
+  }
+
+  /**
    * List the owner's email drafts, newest first.
    * @returns one row per draft.
    */
