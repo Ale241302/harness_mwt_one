@@ -607,6 +607,11 @@ function renderPatch(home, user, memory) {
   const companyIdsYaml = allClientIds.length === 0
     ? []
     : ['    companyIds:', ...allClientIds.map(id => `      - ${yamlScalar(id)}`)]
+  // Nombres de empresa resueltos en el login (portal/me/), id -> nombre.
+  const entNames = user.entNames !== null && typeof user.entNames === 'object' ? user.entNames : {}
+  const companyNamesYaml = Object.keys(entNames).length === 0
+    ? []
+    : ['    companyNames:', ...Object.entries(entNames).map(([id, name]) => `      ${yamlScalar(id)}: ${yamlScalar(name)}`)]
   const entries = []
 
   // MCP de MWT.ONE (identidad por cabecera).
@@ -693,6 +698,7 @@ function renderPatch(home, user, memory) {
     `    role: ${yamlScalar(user.role || 'client_b2b')}`,
     ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
     ...companyIdsYaml,
+    ...companyNamesYaml,
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     // Catálogo de skills del rol, para el panel Skills.
     `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,
@@ -1162,27 +1168,45 @@ async function resolveEntityNames(accessToken, ids) {
   if (typeof accessToken !== 'string' || accessToken.length === 0 || ids.length === 0) return {}
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 4000)
+  const headers = { authorization: `Bearer ${accessToken}`, accept: 'application/json' }
+  const wanted = new Set(ids.map(String))
+  const names = {}
+  /** Keep only the wanted ids, preferring the first non-empty label. */
+  const add = (id, ...labels) => {
+    const key = id === undefined || id === null ? '' : String(id)
+    if (key.length === 0 || !wanted.has(key) || names[key] !== undefined) return
+    const label = labels.find(value => typeof value === 'string' && value.trim().length > 0)
+    if (typeof label === 'string') names[key] = label.trim()
+  }
   try {
-    const response = await fetch(`${cfg.consolaApi}/clientes/?is_parent=all`, {
-      headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
-      signal: controller.signal,
-    })
-    if (!response.ok) return {}
-    const rows = await response.json()
-    if (!Array.isArray(rows)) return {}
-    const wanted = new Set(ids.map(String))
-    const names = {}
-    for (const row of rows) {
-      if (row === null || typeof row !== 'object') continue
-      const id = row.id === undefined || row.id === null ? '' : String(row.id)
-      if (!wanted.has(id)) continue
-      const label = [row.nombre_comercial, row.razon_social]
-        .find(value => typeof value === 'string' && value.trim().length > 0)
-      if (typeof label === 'string') names[id] = label.trim()
+    // `portal/me/` works for every role (client_b2b gets 403 on `clientes/`);
+    // it returns `empresas: [{ id, nombre, razon_social }]`.
+    try {
+      const me = await fetch(`${cfg.consolaApi}/portal/me/`, { headers, signal: controller.signal })
+      if (me.ok) {
+        const data = await me.json()
+        for (const empresa of data?.empresas ?? []) {
+          if (empresa === null || typeof empresa !== 'object') continue
+          add(empresa.id, empresa.nombre, empresa.razon_social)
+        }
+      }
+    } catch {
+      // Fall through to the clientes/ fallback.
+    }
+    if (Object.keys(names).length === 0) {
+      const response = await fetch(`${cfg.consolaApi}/clientes/?is_parent=all`, { headers, signal: controller.signal })
+      if (response.ok) {
+        const payload = await response.json()
+        const rows = Array.isArray(payload) ? payload : (payload?.results ?? [])
+        for (const row of rows) {
+          if (row === null || typeof row !== 'object') continue
+          add(row.id, row.nombre_comercial, row.razon_social)
+        }
+      }
     }
     return names
   } catch {
-    return {}
+    return names
   } finally {
     clearTimeout(timer)
   }

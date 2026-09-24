@@ -1840,13 +1840,15 @@ function MwtBlock(props: {
               <>
                 <div className={styles.grid2}>
                   <Field label={t('mwt.identity')}><span className={styles.cellMuted}>{`${value.ownerId} · ${value.role}`}</span></Field>
-                  <Field label={t('mwt.company')} hint={value.companyIds.length > 1 ? t('mwt.companiesHint') : undefined}>
-                    {value.companyIds.length === 0
+                  <Field label={t('mwt.company')} hint={value.companies.length > 1 ? t('mwt.companiesHint') : undefined}>
+                    {value.companies.length === 0
                       ? <span className={styles.cellMuted}>{value.companyId ?? t('mwt.companyUnset')}</span>
                       : (
                         <span className={styles.chips}>
-                          {value.companyIds.map(id => (
-                            <Chip key={id} tone={value.companyId !== null && id.toLowerCase() === value.companyId.toLowerCase() ? 'accent' : 'muted'}>{id}</Chip>
+                          {value.companies.map(company => (
+                            <Chip key={company.id} tone={value.companyId !== null && company.id.toLowerCase() === value.companyId.toLowerCase() ? 'accent' : 'muted'}>
+                              {company.name ?? company.id}
+                            </Chip>
                           ))}
                         </span>
                       )}

@@ -85,6 +85,8 @@ export interface Config {
   companyId?: string
   /** Every company the user belongs to (console `legal_entity_ids`). */
   companyIds?: string[]
+  /** Display names per company id, when the deployment could resolve them. */
+  companyNames?: Record<string, string>
   /** Whether the console role is read-only. */
   readOnly?: boolean
   /** Agent-memory core base URL, when the memory stack is configured. */
@@ -107,6 +109,7 @@ export const Config: z<Config> = z.object({
   role: z.string(),
   companyId: z.string(),
   companyIds: z.array(z.string()).default([]),
+  companyNames: z.dict(z.string()).default({}),
   readOnly: z.boolean(),
   memoryCoreUrl: z.string(),
   memoryServiceId: z.string(),
@@ -980,11 +983,13 @@ export class FaberLoomViewService extends TypertRemoteService {
         byServer.set(match[1], names)
       }
     }
+    const companyIds = [...(this.config.companyIds ?? [])]
     return {
       ownerId: actor.id,
       role: actor.role,
       companyId: actor.companyId ?? null,
-      companyIds: [...(this.config.companyIds ?? [])],
+      companyIds,
+      companies: companyIds.map(id => ({ id, name: this.config.companyNames?.[id] ?? null })),
       servers: [...byServer.entries()]
         .map(([name, names]) => ({ name, tools: names.sort() }))
         .sort((left, right) => left.name.localeCompare(right.name)),

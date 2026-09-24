@@ -296,6 +296,8 @@ export interface FaberLoomMwtStatus {
   readonly companyId: string | null
   /** Every company the user belongs to; the chat can query any of them. */
   readonly companyIds: readonly string[]
+  /** Every company with its resolved display name (null when unknown). */
+  readonly companies: readonly { readonly id: string; readonly name: string | null }[]
   /** External MCP servers connected for this identity, with their tools. */
   readonly servers: readonly FaberLoomMcpClientStatus[]
 }
