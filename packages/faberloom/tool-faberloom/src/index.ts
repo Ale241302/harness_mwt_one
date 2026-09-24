@@ -1928,7 +1928,7 @@ export function apply(ctx: Context, config: Config): void {
         type: 'text',
         text: value.messages.length === 0
           ? 'Sin coincidencias en el buzón.'
-          : value.messages.map(message => `${message.date} · ${message.from} · ${message.subject}`).join('\n'),
+          : value.messages.map(message => `uid ${message.uid} · ${message.date} · ${message.from} · ${message.subject}`).join('\n'),
       }],
     },
     execute: async (args) => {
@@ -1952,7 +1952,7 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_mail_read',
-    description: 'Read one message from the owner mailbox (the IMAP connection configured in Conexiones) by uid: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Take the uid from faberloom_mail_search; use this when the message or its document is not yet in the MWT.ONE Correo module and only the envelope is reachable.',
+    description: 'Read one message from the owner mailbox (the IMAP connection configured in Conexiones) by uid: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Use the uid printed by faberloom_mail_search; never probe uids in a loop. This returns the document text, not the original file: when the user asks for the attached file itself, do not rebuild it with a report tool — the original is downloadable from the Email panel attachment row, so point the user there (or offer to read its contents here).',
     parameters: {
       uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
     },

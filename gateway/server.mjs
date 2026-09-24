@@ -829,6 +829,12 @@ const FABERLOOM_INSTRUCTIONS = `# FaberLoom · reglas del espacio de trabajo
 - Lee con \`*_listar\`/\`*_obtener\` antes de escribir, y comprueba el resultado después.
 - Documentos y reportes (proformas, listados, informes) se construyen con datos del MCP;
   si piden formato, colores o plantilla, aplícalos sobre esos datos.
+- **Correo del buzón**: usa \`faberloom_mail_search\` (imprime el \`uid\` en cada línea) y luego
+  \`faberloom_mail_read\` con ese \`uid\`. No adivines ni recorras uids en bucle. No uses el
+  módulo \`correo_*\` del MCP para leer el buzón crudo: solo tiene lo ya importado o vinculado a
+  expedientes. \`faberloom_mail_read\` devuelve el **texto** de los adjuntos, no el archivo: si
+  piden el PDF/documento adjunto original, **no lo reconstruyas** con reportes; el original se
+  descarga desde el panel Email (botón de descarga del adjunto), indícalo.
 - Responde en español, con el resultado y las tools usadas.
 `
 

@@ -13,6 +13,7 @@ The Email panel could show a message and hand back its attachments, and a routin
 A new model tool `faberloom_mail_read(uid)` returns the message's plain-text body and every attachment converted to Markdown, so the agent reads the order, proforma, or spec text itself.
 
 - The tool resolves the mounted inbound receiver (`ctx.get('faberloomInbound')`), calls `readEmail(ownerId, uid)`, and converts the attachments with the shared `markdownFromAttachments` helper.
+- `faberloom_mail_search` prints each message's `uid` in its rendered line, so the model calls `faberloom_mail_read` with a real uid instead of probing the sequence by hand; the read tool's description and the workspace mail rule forbid that probing and forbid rebuilding an attached file with a report tool, pointing at the Email panel for the original.
 - Attachment ingestion moved from `packages/faberloom/view/src/documents.ts` to `packages/faberloom/inbound/src/documents.ts` and is re-exported from the inbound entry, so the panel and the tool share one converter and one `@firecrawl/anydoc` dependency. The tool reads the converter options from its own `Config` (`anydoc`, `anydocOcr`, `anydocApiKey`), which the gateway fills from the same `ANYDOC_*` / `FIRECRAWL_API_KEY` variables as the view.
 - Degradation matches the panel: with anydoc off, the subprocess provider absent, the converter missing, or OCR needed, the tool still returns the body and lists the attachments with empty Markdown; it never fails the call.
 
@@ -27,6 +28,7 @@ A new model tool `faberloom_mail_read(uid)` returns the message's plain-text bod
 ## Consequences
 
 - A model request can now spend a document's Markdown in context; the helper's 200 KB per-document cap and the message body bound the added tokens.
+- The tool returns document text, not the original binary: the user downloads the original file from the Email panel, and the agent is told not to fabricate a replacement.
 - `faberloom_mail_read` reads the primary IMAP connection, like the panel; choosing another connection is left to the search tool's `connectionId` until a consumer needs it here.
 - The `@firecrawl/anydoc` runtime dependency and the subprocess peer now sit on `inbound`, not `view`.
 

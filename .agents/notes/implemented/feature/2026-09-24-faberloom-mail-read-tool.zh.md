@@ -13,6 +13,7 @@ Status: implemented
 新增模型工具 `faberloom_mail_read(uid)`，返回邮件的纯文本正文，并把每个附件转为 Markdown，让智能体自己读到订单、形式发票或规格文本。
 
 - 该工具解析已挂载的收件服务（`ctx.get('faberloomInbound')`），调用 `readEmail(ownerId, uid)`，并用共享的 `markdownFromAttachments` 转换附件。
+- `faberloom_mail_search` 在渲染的每一行打印邮件的 `uid`，模型因此用真实 `uid` 调用 `faberloom_mail_read`，而不再手工逐个探测序号；读取工具的说明与工作区邮件规则都禁止这种探测，也禁止用报告工具重建附件文件，并指引用户到邮件面板取原件。
 - 附件摄取从 `packages/faberloom/view/src/documents.ts` 移到 `packages/faberloom/inbound/src/documents.ts`，并从 inbound 入口重新导出，于是面板与工具共享同一个转换器和同一份 `@firecrawl/anydoc` 依赖。工具从自己的 `Config`（`anydoc`、`anydocOcr`、`anydocApiKey`）读取转换选项，网关用与 view 相同的 `ANYDOC_*` / `FIRECRAWL_API_KEY` 变量填充。
 - 退化行为与面板一致：anydoc 关闭、子进程提供者缺失、转换器未安装或需要 OCR 时，工具仍返回正文并列出附件（Markdown 为空）；它绝不使调用失败。
 
@@ -27,6 +28,7 @@ Status: implemented
 ## Consequences
 
 - 模型请求现在会把文档的 Markdown 放进上下文；助手的每文档 200 KB 上限与邮件正文长度限制了新增 token。
+- 该工具返回文档文本而非原始二进制：用户从邮件面板下载原件，智能体被明确告知不要伪造替代文件。
 - `faberloom_mail_read` 像面板一样读取主 IMAP 连接；选择其他连接留给搜索工具的 `connectionId`，直到此处出现真实需求。
 - `@firecrawl/anydoc` 运行时依赖与 subprocess peer 现在挂在 `inbound`，而非 `view`。
 
