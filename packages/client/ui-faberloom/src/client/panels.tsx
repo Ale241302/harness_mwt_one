@@ -741,6 +741,7 @@ function emailScreen() {
     const [instruction, setInstruction] = useState('')
     const [aiText, setAiText] = useState<string | null>(null)
     const [replyBody, setReplyBody] = useState<string | null>(null)
+    const [attachments, setAttachments] = useState<readonly string[]>([])
     const inbox = useLazy<readonly FaberLoomInboxRow[]>(() => emailInbox(), [reload])
     const drafts = useLazy<readonly FaberLoomEmailDraftRow[]>(() => emailDrafts(), [reload])
     const voice = useLazy<readonly FaberLoomTeachingRow[]>(() => emailVoice(), [reload])
@@ -760,7 +761,6 @@ function emailScreen() {
     const draftRows = drafts.kind === 'ready' ? drafts.value : []
     const rows: readonly { id: string }[] = mode === 'inbox' ? inboxRows : draftRows
     const chosenMail = mode === 'inbox' ? inboxRows.find(row => row.id === selected) ?? null : null
-    const chosenDraft = mode === 'drafts' ? draftRows.find(row => row.id === selected) ?? null : null
 
     const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
 
@@ -776,6 +776,7 @@ function emailScreen() {
       setInstruction('')
       setAiText(null)
       setReplyBody(mailBody.kind === 'ready' ? mailBody.value : null)
+      setAttachments([])
       setMessage(null)
     }
 
@@ -791,7 +792,16 @@ function emailScreen() {
       setInstruction('')
       setAiText(draft.aiText)
       setReplyBody(null)
+      setAttachments([])
       setMessage(null)
+    }
+
+    /** Note the chosen file names in the body; real SMTP attachments are next. */
+    const onFiles = (files: FileList | null): void => {
+      const names = files === null ? [] : Array.from(files).map(file => file.name)
+      if (names.length === 0) return
+      setAttachments(previous => [...new Set([...previous, ...names])])
+      setBody(previous => previous.length === 0 ? `Adjuntos: ${names.join(', ')}` : `${previous}\n\nAdjuntos: ${names.join(', ')}`)
     }
 
     /** Persist the composer, returning the stored draft id (or null on failure). */
@@ -867,9 +877,6 @@ function emailScreen() {
       ]
 
     const tableState = mode === 'inbox' ? inbox : drafts
-    const detailTitle = composing
-      ? draftId === null ? t('email.newDraft') : t('email.draft')
-      : mode === 'inbox' ? t('email.read') : t('email.draftDetail')
 
     return (
       <Screen title={t('panel.email.title')} subtitle={t('panel.email.intro')}
@@ -884,76 +891,69 @@ function emailScreen() {
           </>
         )}>
         <Feedback t={t} message={message} />
-        <div className={styles.split}>
-          {tableState.kind === 'loading' && rows.length === 0
-            ? <StateBlock kind="loading" title={t('state.loading')} />
-            : tableState.kind === 'error'
-              ? <StateBlock kind="error" title={t('state.error')} text={tableState.message} />
-              : (
-                <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => {
-                  if (mode === 'drafts') {
-                    const draft = draftRows.find(candidate => candidate.id === id)
-                    if (draft !== undefined) openDraft(draft)
-                  } else {
-                    setSelected(id)
-                    setComposing(false)
-                  }
-                }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.email')} labels={tableLabels(t)} />
-              )}
-          <Inspector title={detailTitle}
-            footer={composing ? (
-              <>
-                <span className={styles.tools}>
-                  <button className={styles.danger} type="button" onClick={discard}>{t('action.delete')}</button>
-                </span>
-                <span className={styles.tools}>
-                  <button className={styles.ghost} type="button" onClick={() => { setComposing(false) }}>{t('action.cancel')}</button>
-                  <button className={styles.secondary} type="button" onClick={() => { void persist() }}>{t('action.save')}</button>
-                  <button className={styles.primary} type="button" onClick={send}>{t('email.send')}</button>
-                </span>
-              </>
-            ) : chosenMail === null ? undefined : (
-              <button className={styles.primary} type="button" onClick={() => { openCompose(chosenMail) }}>{t('email.reply')}</button>
-            )}>
-            {composing ? (
-              <>
-                <Field label={t('email.instruction')} hint={t('email.instructionHint')}>
-                  <textarea value={instruction} onChange={(event) => { setInstruction(event.target.value) }} />
-                  <span className={styles.tools}>
-                    <button className={styles.secondary} type="button" onClick={draftWithAi}>{t('email.draftWithAi')}</button>
-                    <button className={styles.ghost} type="button" onClick={() => { startConversation() }}>{t('email.draftInChat')}</button>
-                  </span>
-                </Field>
-                <Field label={t('field.to')}><input type="text" autoComplete="off" value={to} onChange={(event) => { setTo(event.target.value) }} /></Field>
-                <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value) }} /></Field>
-                <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value) }} /></Field>
-                <Field label={t('field.body')}><textarea value={body} onChange={(event) => { setBody(event.target.value) }} /></Field>
-              </>
-            ) : chosenMail !== null ? (
-              <>
-                <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail.from ?? '—'}</span></Field>
-                <Field label={t('field.subject')}><span className={styles.cellMuted}>{chosenMail.subject ?? '—'}</span></Field>
-                <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenMail.date ?? ''}</span></Field>
-                <Field label={t('field.body')}>
-                  {mailBody.kind === 'loading'
-                    ? <span className={styles.cellMuted}>{t('state.loading')}</span>
-                    : mailBody.kind === 'error'
-                      ? <span className={styles.cellMuted}>{mailBody.message}</span>
-                      : mailBody.value === null
-                        ? <span className={styles.cellMuted}>{t('email.noBody')}</span>
-                        : <span className={styles.cellMuted}>{mailBody.value}</span>}
-                </Field>
-              </>
-            ) : chosenDraft !== null ? (
-              <>
-                <Field label={t('col.to')}><span className={styles.cellMuted}>{chosenDraft.to.join(', ')}</span></Field>
-                <Field label={t('field.subject')}><span className={styles.cellMuted}>{chosenDraft.subject}</span></Field>
-                <Field label={t('field.body')}><span className={styles.cellMuted}>{chosenDraft.text}</span></Field>
-                <Field label={t('col.status')}><Chip>{chosenDraft.status}</Chip></Field>
-              </>
-            ) : <StateBlock kind="empty" title={t('email.selectTitle')} text={t('email.selectText')} />}
-          </Inspector>
-        </div>
+        {tableState.kind === 'loading' && rows.length === 0
+          ? <StateBlock kind="loading" title={t('state.loading')} />
+          : tableState.kind === 'error'
+            ? <StateBlock kind="error" title={t('state.error')} text={tableState.message} />
+            : (
+              <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => {
+                if (mode === 'drafts') {
+                  const draft = draftRows.find(candidate => candidate.id === id)
+                  if (draft !== undefined) openDraft(draft)
+                } else {
+                  setSelected(id)
+                  setComposing(false)
+                }
+              }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.email')} labels={tableLabels(t)} />
+            )}
+        <Modal open={!composing && chosenMail !== null} onClose={() => { setSelected(null) }} title={chosenMail?.subject ?? t('email.read')}
+          closeLabel={t('action.close')} className={String(styles.emailModal)} contentClassName={String(styles.emailModal)}
+          footer={(
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+              <button className={styles.primary} type="button" onClick={() => { if (chosenMail !== null) openCompose(chosenMail) }}>{t('email.reply')}</button>
+            </>
+          )}>
+          <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail?.from ?? '—'}</span></Field>
+          <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenMail?.date ?? ''}</span></Field>
+          <Field label={t('field.body')}>
+            <textarea className={styles.emailBody} readOnly value={mailBody.kind === 'ready' && mailBody.value !== null
+              ? mailBody.value
+              : mailBody.kind === 'error' ? mailBody.message : mailBody.kind === 'loading' ? t('state.loading') : t('email.noBody')} />
+          </Field>
+        </Modal>
+        <Modal open={composing} onClose={() => { setComposing(false) }} title={draftId === null ? t('email.newDraft') : t('email.draft')}
+          closeLabel={t('action.close')} className={String(styles.emailModal)} contentClassName={String(styles.emailModal)}
+          footer={(
+            <>
+              <span className={styles.tools}>
+                <button className={styles.danger} type="button" onClick={discard}>{t('action.delete')}</button>
+              </span>
+              <span className={styles.tools}>
+                <button className={styles.ghost} type="button" onClick={() => { setComposing(false) }}>{t('action.cancel')}</button>
+                <button className={styles.secondary} type="button" onClick={() => { void persist() }}>{t('action.save')}</button>
+                <button className={styles.primary} type="button" onClick={send}>{t('email.send')}</button>
+              </span>
+            </>
+          )}>
+          <Field label={t('email.instruction')} hint={t('email.instructionHint')}>
+            <textarea value={instruction} onChange={(event) => { setInstruction(event.target.value) }} />
+            <span className={styles.tools}>
+              <button className={styles.secondary} type="button" onClick={draftWithAi}>{t('email.draftWithAi')}</button>
+              <button className={styles.ghost} type="button" onClick={() => { startConversation() }}>{t('email.draftInChat')}</button>
+            </span>
+          </Field>
+          <div className={styles.grid2}>
+            <Field label={t('field.to')}><input type="text" autoComplete="off" value={to} onChange={(event) => { setTo(event.target.value) }} /></Field>
+            <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value) }} /></Field>
+          </div>
+          <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value) }} /></Field>
+          <Field label={t('field.attachments')}>
+            <input type="file" multiple onChange={(event) => { onFiles(event.target.files) }} />
+            {attachments.length === 0 ? null : <span className={styles.cellMuted}>{attachments.join(', ')}</span>}
+          </Field>
+          <Field label={t('field.body')}><textarea className={styles.emailBody} value={body} onChange={(event) => { setBody(event.target.value) }} /></Field>
+        </Modal>
         <Block title={t('email.voice')} subtitle={t('email.voiceHint')}>
           {voice.kind === 'loading'
             ? <StateBlock kind="loading" title={t('state.loading')} />

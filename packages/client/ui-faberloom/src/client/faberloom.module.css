@@ -251,6 +251,16 @@
   font-weight: 600;
 }
 
+.emailModal {
+  width: min(880px, 92vw);
+}
+
+.emailBody {
+  min-height: 320px;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
 .cellLink {
   padding: 0;
   border: none;
