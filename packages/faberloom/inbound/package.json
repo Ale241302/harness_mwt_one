@@ -26,6 +26,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@firecrawl/anydoc": "^0.2.4",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -33,6 +34,7 @@
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-storage-domain": "workspace:^",
+    "@deepseek-ai/dsh-subprocess": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "devDependencies": {
@@ -40,6 +42,7 @@
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-storage-domain": "workspace:^",
+    "@deepseek-ai/dsh-subprocess": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^"
   }
 }

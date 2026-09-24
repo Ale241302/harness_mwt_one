@@ -6829,6 +6829,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      '@firecrawl/anydoc':
+        specifier: ^0.2.4
+        version: 0.2.4
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -6845,6 +6848,9 @@ importers:
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
 
   packages/faberloom/learning:
     dependencies:
@@ -6964,6 +6970,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-spaces':
         specifier: workspace:^
         version: link:../spaces
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
@@ -6976,9 +6985,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      '@firecrawl/anydoc':
-        specifier: ^0.2.4
-        version: 0.2.4
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

@@ -12,7 +12,7 @@ Status: implemented
 
 邮件附件通过外部转换器 `anydoc` 转为 GitHub 风格 Markdown，并作为空间记忆保存；该能力默认关闭且尽力而为。
 
-- 新增 `packages/faberloom/view/src/documents.ts`：经 Node 模块图解析转换器（对 `@firecrawl/anydoc/package.json` 使用 `createRequire`，再取其 `bin` 字段），并通过 harness 子进程提供者（`ctx.get('subprocess')`）启动其 `cli.js` 启动器，绝不使用 `node:child_process`。JavaScript 启动器由当前 Node 运行，因此 Windows 无需可执行位。
+- `packages/faberloom/inbound/src/documents.ts`（归属邮件读取方，使所有消费者共享同一实现）：经 Node 模块图解析转换器（对 `@firecrawl/anydoc/package.json` 使用 `createRequire`，再取其 `bin` 字段），并通过 harness 子进程提供者（`ctx.get('subprocess')`）启动其 `cli.js` 启动器，绝不使用 `node:child_process`。JavaScript 启动器由当前 Node 运行，因此 Windows 无需可执行位。
 - 转换在设计上就是容错的：不支持的扩展名、子进程提供者缺失、转换器无法解析或未安装、非零退出（含退出码 3“该 PDF 需要 OCR”）、启动失败或超时，都会跳过该附件，让调用方仅凭正文继续工作。其暂存目录在每条退出路径上都会被删除。
 - `spaceFromEmail` 把每个已转换文档记入新空间；`learnFromEmail` 以所有者范围记入，并把 Markdown 追加到抽取提示中。记忆文本与提示共享同一段有界切片。
 - 这是部署配置：`anydoc`（布尔，默认 `false`）、`anydocOcr`（`reject` 跳过扫描版 PDF；`hosted` 交给 Firecrawl Parse，默认 `reject`）、`anydocApiKey`（为空则沿用转换器自身环境）。上限是固定的安全不变量而非可调项：保留 200 KB Markdown、8 KB 诊断、每个文档 20 秒、终止宽限 5 秒。
@@ -29,10 +29,10 @@ Status: implemented
 
 ## Consequences
 
-- view 包新增运行时依赖 `@firecrawl/anydoc` 与 peer 依赖 `@deepseek-ai/dsh-subprocess`，并在其 `tsconfig.json` 中新增项目引用；`pnpm-lock.yaml` 随之变化。
+- `inbound` 包新增运行时依赖 `@firecrawl/anydoc` 与 peer 依赖 `@deepseek-ai/dsh-subprocess`，并在其 `tsconfig.json` 中新增项目引用；`pnpm-lock.yaml` 随之变化。view 与 `faberloom_mail_read` 工具都经由 `inbound` 使用该转换器。
 - 失败是刻意软化的：转换失败会退化为此前仅正文的行为，绝不使面板失败，因此在真正可用之前该能力不可见。
 - 部署的宿主必须安装 `@firecrawl/anydoc`，首次转换可能拉取平台二进制；无法下载的部署只是跳过摄取。
 
 ## Testing
 
-`packages/faberloom/view/tests/documents.spec.ts` 覆盖格式映射、不启动进程的路径（空批次、不支持的附件）、带 argv 与 stdio 断言的成功转换、托管 OCR 的 argv、非零退出，以及两个文档中一个启动失败。曾在 Windows 上真实执行一次 `node <anydoc>/cli.js <file> --format csv`，确认二进制可转换。
+`packages/faberloom/inbound/tests/documents.spec.ts` 覆盖格式映射、不启动进程的路径（空批次、不支持的附件）、带 argv 与 stdio 断言的成功转换、托管 OCR 的 argv、非零退出，以及两个文档中一个启动失败。曾在 Windows 上真实执行一次 `node <anydoc>/cli.js <file> --format csv`，确认二进制可转换。

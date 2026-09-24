@@ -1,11 +1,11 @@
 /**
- * Email-attachment ingestion for the FaberLoom view: convert one attachment's
- * bytes to GitHub-Flavored Markdown with the external `anydoc` converter, so the
- * model reads inside spreadsheets, PDFs, and word-processor files instead of
- * only the message body. Conversion is best-effort — a missing converter, an
- * unsupported format, a scanned PDF that needs OCR, a non-zero exit, a timeout,
- * or an oversized document all leave that attachment unconverted and never fail
- * the caller.
+ * Attachment ingestion for the mail module: convert one attachment's bytes to
+ * GitHub-Flavored Markdown with the external `anydoc` converter, so a reader —
+ * the Email panel or a model tool — sees inside spreadsheets, PDFs, and
+ * word-processor files instead of only the file name. Conversion is
+ * best-effort: a missing converter, an unsupported format, a scanned PDF that
+ * needs OCR, a non-zero exit, a timeout, or an oversized document all leave
+ * that attachment unconverted and never fail the caller.
  * @module
  */
 import { createRequire } from 'node:module'
@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 
-/** Attachment bytes as the inbound reader hands them to the view. */
+/** Attachment bytes as the mail reader hands them to a consumer. */
 export interface EmailAttachmentBytes {
   /** Original file name, the format hint. */
   readonly name: string
@@ -32,7 +32,7 @@ export interface ConvertedDocument {
   readonly markdown: string
 }
 
-/** Everything one conversion batch needs; assembled from the view's config. */
+/** Everything one conversion batch needs; assembled from the caller's config. */
 export interface DocumentIngestOptions {
   /** The host's subprocess provider — the only process-spawning seam allowed here. */
   readonly runtime: SubprocessRuntime
@@ -42,7 +42,7 @@ export interface DocumentIngestOptions {
   readonly ocr: 'reject' | 'hosted'
   /** Firecrawl API key for hosted OCR; empty falls back to the converter's environment. */
   readonly apiKey: string
-  /** Bound for the whole batch, so one slow document cannot hold the panel open. */
+  /** Bound for the whole batch, so one slow document cannot hold the caller open. */
   readonly signal?: AbortSignal | undefined
 }
 

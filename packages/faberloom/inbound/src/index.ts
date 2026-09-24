@@ -25,6 +25,10 @@ import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
 export type { ImapMessage } from './imap.ts'
 export type * from './spec.ts'
+// Attachment ingestion lives with the mail reader so every consumer (the Email
+// panel, the model tools) converts a document through one implementation.
+export { formatForAttachment, markdownFromAttachments, resolveAnyDocBin } from './documents.ts'
+export type { ConvertedDocument, DocumentIngestOptions, EmailAttachmentBytes } from './documents.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

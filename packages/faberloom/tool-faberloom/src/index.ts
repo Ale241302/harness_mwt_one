@@ -18,6 +18,9 @@ import type {} from '@deepseek-ai/dsh-faberloom-access'
 // Type-only: the mail services (outgoing through connections, incoming search through inbound).
 import type { FaberLoomConnections } from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
+import { markdownFromAttachments, resolveAnyDocBin, type DocumentIngestOptions } from '@deepseek-ai/dsh-faberloom-inbound'
+// Type-only: the subprocess provider that runs the optional document converter.
+import type {} from '@deepseek-ai/dsh-subprocess'
 // Type-only: the system prompt registry, read through ctx.get like the product services.
 import type { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 // Type-only: the routines service and its vocabulary, also read through ctx.get.
@@ -52,6 +55,12 @@ export interface Config {
   mcpUrl?: string
   /** Shared gateway key for the internal MWT MCP, injected by the gateway. */
   mcpGatewayKey?: string
+  /** Whether an attached document is converted to Markdown for `faberloom_mail_read`. */
+  anydoc?: boolean
+  /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
+  anydocOcr?: string
+  /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
+  anydocApiKey?: string
 }
 
 /** Schemastery configuration for the product tools. */
@@ -63,6 +72,9 @@ export const Config: z<Config> = z.object({
   readOnly: z.boolean(),
   mcpUrl: z.string(),
   mcpGatewayKey: z.string(),
+  anydoc: z.boolean().default(false),
+  anydocOcr: z.string().default('reject'),
+  anydocApiKey: z.string().default(''),
 })
 
 /** Resolve the mounted board service at call time, or fail loud. */
@@ -98,6 +110,23 @@ function inbound(ctx: Context): FaberLoomInbound {
   const service = ctx.get('faberloomInbound')
   if (service === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
   return service
+}
+
+/**
+ * The document converter's options when this deployment enabled ingestion.
+ * Absent when the feature is off, the subprocess provider is missing, or the
+ * converter is not installed; the caller then returns the message without
+ * extracted documents instead of failing.
+ * @param ctx - the host context.
+ * @param config - this plugin's deployment configuration.
+ * @returns the conversion options, or undefined when ingestion is unavailable.
+ */
+function mailDocuments(ctx: Context, config: Config): DocumentIngestOptions | undefined {
+  if (config.anydoc !== true) return undefined
+  const runtime = ctx.get('subprocess')
+  const bin = resolveAnyDocBin()
+  if (runtime === undefined || bin === undefined) return undefined
+  return { runtime, bin, ocr: config.anydocOcr === 'hosted' ? 'hosted' : 'reject', apiKey: config.anydocApiKey ?? '' }
 }
 
 /**
@@ -1919,6 +1948,57 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Search mailbox', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_mail_read',
+    description: 'Read one message from the owner mailbox (the IMAP connection configured in Conexiones) by uid: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Take the uid from faberloom_mail_search; use this when the message or its document is not yet in the MWT.ONE Correo module and only the envelope is reachable.',
+    parameters: {
+      uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          text: { type: 'string', required: true },
+          attachments: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true },
+                mediaType: { type: 'string', required: true },
+                markdown: { type: 'string', required: true },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{
+        type: 'text',
+        text: [
+          value.text.length > 0 ? value.text : '(sin cuerpo de texto)',
+          ...value.attachments.map(attachment => attachment.markdown.length > 0
+            ? `\n\n### Adjunto ${attachment.name}\n\n${attachment.markdown}`
+            : `\n\n### Adjunto ${attachment.name} (${attachment.mediaType}): sin texto extraíble`),
+        ].join(''),
+      }],
+    },
+    execute: async (args) => {
+      const content = await inbound(ctx).readEmail(actor(config).id, args.uid)
+      const options = mailDocuments(ctx, config)
+      const documents = options === undefined ? [] : await markdownFromAttachments(content.attachments, options)
+      const byName = new Map(documents.map(document => [document.name, document.markdown]))
+      return {
+        text: content.text,
+        attachments: content.attachments.map(attachment => ({
+          name: attachment.name,
+          mediaType: attachment.mediaType,
+          markdown: byName.get(attachment.name) ?? '',
+        })),
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Read mail', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({

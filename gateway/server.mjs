@@ -696,6 +696,10 @@ function renderPatch(home, user, memory) {
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     `    mcpUrl: ${yamlScalar(cfg.mcpUrl)}`,
     '    mcpGatewayKey: !!js process.env.MWT_MCP_GATEWAY_KEY ?? \'\'',
+    // El conversor de adjuntos que usa `faberloom_mail_read` para leer pdf/xlsx.
+    `    anydoc: ${cfg.anydocEnabled ? 'true' : 'false'}`,
+    `    anydocOcr: ${yamlScalar(cfg.anydocOcr)}`,
+    ...(cfg.anydocApiKey ? [`    anydocApiKey: ${yamlScalar(cfg.anydocApiKey)}`] : []),
     '',
     // La vista de FaberLoom para el navegador recibe la misma identidad que las
     // tools; el actor se resuelve en el host y nunca viaja desde el cliente.

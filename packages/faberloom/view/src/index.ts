@@ -51,7 +51,7 @@ import type {
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow, BoardRevisionInput,
 } from './types.ts'
-import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from './documents.ts'
+import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 
 export type * from './types.ts'
 
