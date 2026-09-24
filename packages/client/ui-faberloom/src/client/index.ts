@@ -173,6 +173,22 @@ export function apply(ctx: ClientContext): void {
       emailInbox: () => ctx.remote.faberloomView.emailInbox(),
       emailRead: uid => ctx.remote.faberloomView.emailRead(uid),
       emailAttachment: (uid, index) => ctx.remote.faberloomView.emailAttachment(uid, index),
+      spaceFromEmail: (uid, name, agentId) => {
+        void ctx.remote.faberloomView.spaceFromEmail(uid, name, agentId ?? undefined).then((result) => {
+          if (!result.ok) { bound.setError(result.error.message); return }
+          refresh()
+          if (result.value.workspaceId === null) return
+          void ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
+            .then(() => { ctx.layout.selectPanel(null) })
+            .catch(() => { /* a failed session keeps the current panel */ })
+        }).catch(() => { bound.setError('space from email failed') })
+      },
+      routineChat: (uid, messages, subject, from) =>
+        ctx.remote.faberloomView.routineChat(uid, [...messages], subject ?? undefined, from ?? undefined),
+      routineFromEmail: (uid, name, instruction, subject, from) =>
+        ctx.remote.faberloomView.routineFromEmail(uid, name, instruction, subject ?? undefined, from ?? undefined),
+      openRoutines: () => { ctx.layout.selectPanel('faberloom-routines' as never) },
+      learnFromEmail: uid => ctx.remote.faberloomView.learnFromEmail(uid),
       emailDrafts: () => ctx.remote.faberloomView.emailDrafts(),
       saveEmailDraft: input => ctx.remote.faberloomView.saveEmailDraft(input),
       deleteEmailDraft: id => ctx.remote.faberloomView.deleteEmailDraft(id),

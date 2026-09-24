@@ -32,6 +32,7 @@ import type {
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
   FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
+  FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import type { createWorkspaceStore } from './store.ts'
@@ -147,6 +148,20 @@ export interface FaberloomPanelInjected {
   emailRead: (uid: string) => Promise<Result<FaberLoomEmailContent>>
   /** Read one attachment's bytes for download. */
   emailAttachment: (uid: string, index: number) => Promise<Result<FaberLoomEmailAttachmentContent | undefined>>
+  /** Turn one email into a Space with its Workspace, memory, and files. */
+  spaceFromEmail: (uid: string, name: string, agentId: string | null) => void
+  /** Answer one message in the routine-designer chat. */
+  routineChat: (
+    uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject: string | null, from: string | null,
+  ) => Promise<Result<string>>
+  /** Create a routine from a described workflow. */
+  routineFromEmail: (
+    uid: string, name: string, instruction: string, subject: string | null, from: string | null,
+  ) => Promise<Result<FaberLoomRoutineCreated>>
+  /** Jump to the Routines panel. */
+  openRoutines: () => void
+  /** Extract expediente facts from one email into Space memory. */
+  learnFromEmail: (uid: string) => Promise<Result<FaberLoomEmailFacts>>
   /** List the email drafts awaiting approval. */
   emailDrafts: () => Promise<Result<readonly FaberLoomEmailDraftRow[]>>
   /** Create or replace one email draft. */
@@ -727,8 +742,11 @@ function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
       t, emailInbox, emailRead, emailAttachment, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft,
-      emailVoice, emailDraftWithAi, emailPolicy, saveEmailPolicy, startConversation,
+      emailVoice, emailDraftWithAi, emailPolicy, saveEmailPolicy, spaceFromEmail, routineChat, routineFromEmail,
+      openRoutines, learnFromEmail, startConversation,
     } = props
+    const { overview } = useOverview(props)
+    const agentOptions = (overview?.agents ?? []).filter(agent => agent.active)
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
@@ -744,6 +762,14 @@ function emailScreen() {
     const [aiText, setAiText] = useState<string | null>(null)
     const [replyBody, setReplyBody] = useState<string | null>(null)
     const [attachments, setAttachments] = useState<readonly string[]>([])
+    const [spaceOpen, setSpaceOpen] = useState(false)
+    const [spaceName, setSpaceName] = useState('')
+    const [spaceAgent, setSpaceAgent] = useState('')
+    const [routineOpen, setRoutineOpen] = useState(false)
+    const [routineMessages, setRoutineMessages] = useState<readonly FaberLoomRoutineChatMessage[]>([])
+    const [routineInput, setRoutineInput] = useState('')
+    const [routineBusy, setRoutineBusy] = useState(false)
+    const [routineCreated, setRoutineCreated] = useState<FaberLoomRoutineCreated | null>(null)
     const inbox = useLazy<readonly FaberLoomInboxRow[]>(() => emailInbox(), [reload])
     const drafts = useLazy<readonly FaberLoomEmailDraftRow[]>(() => emailDrafts(), [reload])
     const voice = useLazy<readonly FaberLoomTeachingRow[]>(() => emailVoice(), [reload])
@@ -871,6 +897,71 @@ function emailScreen() {
       })()
     }
 
+    /** Open the "turn this email into a Space" dialog, presetting the subject. */
+    const openSpace = (): void => {
+      if (chosenMail === null) return
+      setSpaceName(chosenMail.subject ?? '')
+      setSpaceAgent('')
+      setSpaceOpen(true)
+    }
+
+    /** Open the routine-designer chat for the chosen email. */
+    const openRoutine = (): void => {
+      if (chosenMail === null) return
+      setRoutineMessages([])
+      setRoutineInput('')
+      setRoutineCreated(null)
+      setRoutineOpen(true)
+    }
+
+    const appendRoutine = (role: string, content: string): void => {
+      setRoutineMessages(current => [...current, { role, content }])
+    }
+
+    const sendRoutine = (): void => {
+      const text = routineInput.trim()
+      if (text.length === 0 || routineBusy) return
+      const next = [...routineMessages, { role: 'user', content: text }]
+      setRoutineMessages(next)
+      setRoutineInput('')
+      setRoutineBusy(true)
+      void routineChat(selected ?? '', next, chosenMail?.subject ?? null, chosenMail?.from ?? null).then((result) => {
+        setRoutineBusy(false)
+        appendRoutine('assistant', result.ok ? result.value : result.error.message)
+      }).catch(() => {
+        setRoutineBusy(false)
+        appendRoutine('assistant', t('routine.failed'))
+      })
+    }
+
+    const createRoutine = (): void => {
+      const instruction = routineMessages.filter(entry => entry.role === 'user').map(entry => entry.content).join('\n')
+      if (instruction.trim().length === 0 || routineBusy) return
+      setRoutineBusy(true)
+      void routineFromEmail(selected ?? '', chosenMail?.subject ?? '', instruction, chosenMail?.subject ?? null, chosenMail?.from ?? null).then((result) => {
+        setRoutineBusy(false)
+        if (!result.ok) { appendRoutine('assistant', result.error.message); return }
+        setRoutineCreated(result.value)
+        appendRoutine('assistant', `${t('routine.created')}: ${result.value.name}`)
+      }).catch(() => {
+        setRoutineBusy(false)
+        appendRoutine('assistant', t('routine.failed'))
+      })
+    }
+
+    const learn = (): void => {
+      if (chosenMail === null) return
+      setMessage(t('learn.working'))
+      void learnFromEmail(selected ?? '').then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        const parts = [
+          result.value.cliente, result.value.oc, result.value.po, result.value.sku,
+          result.value.tallas, result.value.cantidad, result.value.precio,
+        ].filter(part => part.length > 0)
+        setMessage(`${t('learn.done')}: ${parts.join(' · ')}`)
+      }).catch(() => { setMessage(t('learn.failed')) })
+    }
+
     const discard = (): void => {
       if (draftId === null) { setComposing(false); return }
       void deleteEmailDraft(draftId)
@@ -930,6 +1021,9 @@ function emailScreen() {
           footer={(
             <>
               <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+              <button className={styles.secondary} type="button" onClick={openSpace}>{t('email.toSpace')}</button>
+              <button className={styles.secondary} type="button" onClick={openRoutine}>{t('routine.title')}</button>
+              <button className={styles.secondary} type="button" onClick={learn}>{t('learn.button')}</button>
               <button className={styles.primary} type="button" onClick={() => { if (chosenMail !== null) openCompose(chosenMail) }}>{t('email.reply')}</button>
             </>
           )}>
@@ -958,6 +1052,47 @@ function emailScreen() {
               </Field>
             )
             : null}
+        </Modal>
+        <Modal open={spaceOpen} onClose={() => { setSpaceOpen(false) }} title={t('email.toSpace')} closeLabel={t('action.close')}
+          className={String(styles.emailModal)} contentClassName={String(styles.emailModalContent)}
+          footer={(
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setSpaceOpen(false) }}>{t('action.cancel')}</button>
+              <button className={styles.primary} type="button" onClick={() => {
+                setMessage(null)
+                spaceFromEmail(selected ?? '', spaceName.trim(), spaceAgent.length === 0 ? null : spaceAgent)
+                setSpaceOpen(false)
+                setSelected(null)
+              }}>{t('action.create')}</button>
+            </>
+          )}>
+          <Field label={t('email.spaceName')}><input type="text" autoComplete="off" value={spaceName} onChange={(event) => { setSpaceName(event.target.value) }} /></Field>
+          <Field label={t('col.agent')}>
+            <select value={spaceAgent} onChange={(event) => { setSpaceAgent(event.target.value) }}>
+              <option value="">{t('spaces.noAgent')}</option>
+              {agentOptions.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+            </select>
+          </Field>
+        </Modal>
+        <Modal open={routineOpen} onClose={() => { setRoutineOpen(false) }} title={t('routine.title')} closeLabel={t('action.close')}
+          className={String(styles.emailModal)} contentClassName={String(styles.emailModalContent)}
+          footer={(
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setRoutineOpen(false) }}>{t('action.close')}</button>
+              <button className={styles.secondary} type="button" disabled={routineBusy} onClick={sendRoutine}>{t('routine.send')}</button>
+              <button className={styles.primary} type="button" disabled={routineBusy} onClick={createRoutine}>{t('routine.create')}</button>
+            </>
+          )}>
+          <div className={styles.emailBody}>
+            {routineMessages.map((entry, index) => <p key={index}>{entry.content}</p>)}
+            {routineBusy ? <p>{t('routine.thinking')}</p> : null}
+          </div>
+          {routineCreated === null ? null : (
+            <button className={styles.secondary} type="button" onClick={() => { setRoutineOpen(false); openRoutines() }}>{t('routine.open')}</button>
+          )}
+          <Field label={t('routine.describe')}>
+            <textarea rows={3} value={routineInput} onChange={(event) => { setRoutineInput(event.target.value) }} />
+          </Field>
         </Modal>
         <Modal open={composing} onClose={() => { setComposing(false) }} title={draftId === null ? t('email.newDraft') : t('email.draft')}
           closeLabel={t('action.close')} className={String(styles.emailModal)} contentClassName={String(styles.emailModalContent)}

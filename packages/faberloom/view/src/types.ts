@@ -136,6 +136,50 @@ export interface FaberLoomEmailAttachment {
   readonly size: number
 }
 
+/** One message in the routine-designer chat. */
+export interface FaberLoomRoutineChatMessage {
+  /** Speaker role: `user` or `assistant`. */
+  readonly role: string
+  /** Message text. */
+  readonly content: string
+}
+
+/** One created routine, as the Email panel reports it. */
+export interface FaberLoomRoutineCreated {
+  /** Routine id. */
+  readonly id: string
+  /** Display name. */
+  readonly name: string
+}
+
+/** Expediente facts learned from one email, for the Space memory. */
+export interface FaberLoomEmailFacts {
+  /** Purchase order (OC) reference, or empty. */
+  readonly oc: string
+  /** Production order (PO) reference, or empty. */
+  readonly po: string
+  /** Client name, or empty. */
+  readonly cliente: string
+  /** SKU or style, or empty. */
+  readonly sku: string
+  /** Sizes, or empty. */
+  readonly tallas: string
+  /** Quantities, or empty. */
+  readonly cantidad: string
+  /** Prices, or empty. */
+  readonly precio: string
+  /** One-line summary, or empty. */
+  readonly resumen: string
+}
+
+/** Result of turning one email into a space. */
+export interface FaberLoomSpaceFromEmail {
+  /** The created space id. */
+  readonly spaceId: string
+  /** The space's Workspace id, or null when none could be registered. */
+  readonly workspaceId: string | null
+}
+
 /** One decoded message as the Email panel reads it. */
 export interface FaberLoomEmailContent {
   /** Plain-text body, empty when the message carried none. */

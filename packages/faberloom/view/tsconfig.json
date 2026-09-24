@@ -21,6 +21,9 @@
       "path": "../../workspace/workspace"
     },
     {
+      "path": "../../subprocess/subprocess"
+    },
+    {
       "path": "../spaces"
     },
     {

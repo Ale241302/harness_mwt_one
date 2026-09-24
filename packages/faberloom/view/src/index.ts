@@ -36,10 +36,13 @@ import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomConnections, FaberLoomEmailDraft } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
+// Type-only: the subprocess provider that runs the optional document converter.
+import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
   FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
+  FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
   FaberLoomModelRow, FaberLoomModelRecommendation,
@@ -48,6 +51,7 @@ import type {
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow, BoardRevisionInput,
 } from './types.ts'
+import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from './documents.ts'
 
 export type * from './types.ts'
 
@@ -109,6 +113,12 @@ export interface Config {
   memoryLimit?: number
   /** Root of the role skill catalog mounted in the deployment. */
   skillsCatalogRoot?: string
+  /** Whether email attachments are converted to Markdown for Space memory. */
+  anydoc?: boolean
+  /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
+  anydocOcr?: string
+  /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
+  anydocApiKey?: string
 }
 
 /** Schemastery configuration for the workspace view. */
@@ -125,6 +135,9 @@ export const Config: z<Config> = z.object({
   memoryGatewayKey: z.string(),
   memoryLimit: z.number(),
   skillsCatalogRoot: z.string(),
+  anydoc: z.boolean().default(false),
+  anydocOcr: z.string().default('reject'),
+  anydocApiKey: z.string().default(''),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -135,6 +148,116 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /** One memory-server atomic row as the core returns it. */
+/** Trigger the routine designer may emit. */
+interface RoutineJsonTrigger {
+  readonly kind: 'manual' | 'event' | 'email' | 'date' | 'recurrence'
+  readonly match?: string
+}
+
+/** Step the routine designer may emit. */
+interface RoutineJsonStep {
+  readonly id: string
+  readonly instruction: string
+  readonly handler: string
+  readonly dependsOn: readonly string[]
+  readonly effect: boolean
+}
+
+/** One routine definition decoded from the model. */
+interface RoutineJson {
+  readonly name: string
+  readonly intent: string
+  readonly triggers: readonly RoutineJsonTrigger[]
+  readonly steps: readonly RoutineJsonStep[]
+  readonly expectedResult: string
+  readonly permissions: readonly string[]
+  readonly failurePolicy: 'stop' | 'continue' | 'review'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/**
+ * Decode the routine JSON the model returned, tolerating fences and stray prose.
+ * @param raw - the raw model output.
+ * @returns the decoded definition.
+ */
+function parseRoutineJson(raw: string): RoutineJson {
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start < 0 || end <= start) throw new Error('faberloom: the model did not return a routine')
+  let value: unknown
+  try {
+    value = JSON.parse(raw.slice(start, end + 1))
+  } catch (error) {
+    throw new Error(`faberloom: the model returned invalid routine JSON: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (!isRecord(value)) throw new Error('faberloom: the model returned invalid routine JSON')
+  const text = (key: string): string => typeof value[key] === 'string' ? value[key] : ''
+  const triggerRaw = value.trigger
+  const triggers: RoutineJsonTrigger[] = []
+  if (isRecord(triggerRaw)) {
+    const kind = triggerRaw.kind
+    triggers.push({
+      kind: kind === 'event' || kind === 'manual' || kind === 'date' || kind === 'recurrence' ? kind : 'email',
+      ...typeof triggerRaw.match === 'string' && triggerRaw.match.length > 0 ? { match: triggerRaw.match } : {},
+    })
+  }
+  const stepsRaw = Array.isArray(value.steps) ? value.steps : []
+  const steps: RoutineJsonStep[] = []
+  stepsRaw.forEach((entry, index) => {
+    if (!isRecord(entry)) return
+    steps.push({
+      id: typeof entry.id === 'string' && entry.id.length > 0 ? entry.id : `paso-${String(index + 1)}`,
+      instruction: typeof entry.instruction === 'string' ? entry.instruction : '',
+      handler: typeof entry.handler === 'string' && entry.handler.length > 0 ? entry.handler : 'agent',
+      dependsOn: Array.isArray(entry.dependsOn) ? entry.dependsOn.filter(step => typeof step === 'string') : [],
+      effect: entry.effect === true,
+    })
+  })
+  if (steps.length === 0) throw new Error('faberloom: the model produced a routine without steps')
+  const permissions = Array.isArray(value.permissions) ? value.permissions.filter(item => typeof item === 'string') : []
+  return {
+    name: text('name'),
+    intent: text('intent'),
+    triggers,
+    steps,
+    expectedResult: text('expectedResult'),
+    permissions,
+    failurePolicy: value.failurePolicy === 'stop' || value.failurePolicy === 'continue' ? value.failurePolicy : 'review',
+  }
+}
+
+/**
+ * Decode the expediente-facts JSON the model returned, tolerating fences.
+ * @param raw - the raw model output.
+ * @returns the decoded facts.
+ */
+function parseFactsJson(raw: string): FaberLoomEmailFacts {
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start < 0 || end <= start) throw new Error('faberloom: the model did not return facts')
+  let value: unknown
+  try {
+    value = JSON.parse(raw.slice(start, end + 1))
+  } catch (error) {
+    throw new Error(`faberloom: the model returned invalid facts JSON: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (!isRecord(value)) throw new Error('faberloom: the model returned invalid facts JSON')
+  const text = (key: string): string => typeof value[key] === 'string' ? value[key] : ''
+  return {
+    oc: text('oc'),
+    po: text('po'),
+    cliente: text('cliente'),
+    sku: text('sku'),
+    tallas: text('tallas'),
+    cantidad: text('cantidad'),
+    precio: text('precio'),
+    resumen: text('resumen'),
+  }
+}
+
 interface AtomicItem {
   readonly id?: unknown
   readonly type?: unknown
@@ -205,6 +328,38 @@ export class FaberLoomViewService extends TypertRemoteService {
     const service = this.ctx.get('faberloomConnections')
     if (service === undefined) throw new Error('faberloom: the connections service is not mounted')
     return service
+  }
+
+  /**
+   * Convert one email's attachments to Markdown and remember each as Space
+   * memory, so a routine or a chat reads inside the document rather than its
+   * file name. Ingestion is opt-in and best-effort: when disabled, when the
+   * subprocess provider is absent, or when the converter is not installed this
+   * returns '' and every other panel keeps working.
+   * @param actor - the signed-in owner.
+   * @param files - the attachments carried by the email.
+   * @param spaceIds - spaces the documents are remembered in; empty is owner-wide.
+   * @returns the concatenated Markdown for a drafting prompt, or '' when none converted.
+   */
+  private async emailDocuments(
+    actor: SpaceActor,
+    files: readonly EmailAttachmentBytes[],
+    spaceIds: readonly FaberLoomSpaceId[],
+  ): Promise<string> {
+    if (this.config.anydoc !== true || files.length === 0) return ''
+    const runtime = this.ctx.get('subprocess')
+    const bin = resolveAnyDocBin()
+    if (runtime === undefined || bin === undefined) return ''
+    const documents = await markdownFromAttachments(files, {
+      runtime,
+      bin,
+      ocr: this.config.anydocOcr === 'hosted' ? 'hosted' : 'reject',
+      apiKey: this.config.anydocApiKey ?? '',
+    })
+    for (const document of documents) {
+      await this.ctx.faberloomSpaces.remember(actor, `Documento «${document.name}»:\n\n${document.markdown}`, spaceIds)
+    }
+    return documents.map(document => `Documento «${document.name}»:\n${document.markdown}`).join('\n\n')
   }
 
   /**
@@ -659,6 +814,46 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Turn one email into a Space: create it with its agent and Workspace, store
+   * the email as the space's memory, and attach every file it carried.
+   * @param uid - the message UID.
+   * @param name - the space title (usually the subject).
+   * @param agentId - the agent put in charge, when chosen.
+   * @returns the created space and its Workspace id.
+   */
+  @Remote('spaceFromEmail')
+  async spaceFromEmail(uid: string, name: string, agentId?: string): Promise<FaberLoomSpaceFromEmail> {
+    const actor = this.actor()
+    const inbound = this.ctx.get('faberloomInbound')
+    if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
+    const id = Number(uid)
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error('faberloom: invalid message id')
+    const title = name.trim().length === 0 ? 'Correo' : name.trim()
+    const content = await inbound.readEmail(actor.id, id)
+    const space = await this.ctx.faberloomSpaces.create(actor, {
+      title,
+      ...agentId === undefined || agentId.length === 0 ? {} : { agentId },
+    })
+    await this.ensureSpaceWorkspace(actor, space.id, space.title)
+    const bodyText = content.text.length > 0 ? content.text : content.html ?? ''
+    if (bodyText.trim().length > 0) {
+      await this.ctx.faberloomSpaces.remember(actor, `Correo «${title}»:\n\n${bodyText}`, [space.id])
+    }
+    for (const attachment of content.attachments) {
+      await this.ctx.faberloomSpaces.attachFile(actor, space.id, {
+        name: attachment.name,
+        mediaType: attachment.mediaType,
+        contentBase64: attachment.contentBase64,
+      })
+    }
+    await this.emailDocuments(actor, content.attachments, [space.id])
+    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
+    const dir = join(this.dshHome(), 'spaces', ref.ref)
+    const workspace = this.workspaceRegistryOrUndefined()?.list().find(candidate => candidate.path === dir)
+    return { spaceId: String(space.id), workspaceId: workspace === undefined ? null : String(workspace.id) }
+  }
+
+  /**
    * List the owner's email drafts, newest first.
    * @returns one row per draft.
    */
@@ -804,6 +999,199 @@ export class FaberLoomViewService extends TypertRemoteService {
       return draftRow(await this.connectionsService().sendDraft(actor.id, saved.id))
     }
     return draftRow(saved)
+  }
+
+  /**
+   * Resolve the first mounted provider/model route for one-shot design calls.
+   * @returns the provider and model ids.
+   */
+  private async modelRoute(): Promise<{ provider: string; model: string }> {
+    const llm = this.ctx.get('llm')
+    if (llm === undefined) throw new Error('faberloom: no model provider is mounted')
+    const provider = llm.listProviders()[0]?.id
+    if (provider === undefined) throw new Error('faberloom: no model provider is available')
+    const model = (await llm.listModels(provider))[0]?.id
+    if (model === undefined) throw new Error('faberloom: no model is available for the provider')
+    return { provider, model }
+  }
+
+  /**
+   * Run one one-shot completion and return its text.
+   * @param system - system prompt.
+   * @param prompt - user prompt.
+   * @param maxTokens - output cap.
+   * @returns the trimmed model text.
+   */
+  private async completeModel(system: string, prompt: string, maxTokens: number): Promise<string> {
+    const llm = this.ctx.get('llm')
+    if (llm === undefined) throw new Error('faberloom: no model provider is mounted')
+    const { provider, model } = await this.modelRoute()
+    // Locally minted uuid keeps the `dsh-llm` wire shape without importing the
+    // branded constructor (which would need a reviewed dependency-policy entry).
+    const messages: Message[] = [{
+      id: randomUUID(),
+      role: 'user',
+      content: [{ type: 'text', text: prompt }],
+      source: { kind: 'plugin', plugin: 'dsh-faberloom-view' },
+    } as unknown as Message]
+    let text = ''
+    let failure: string | undefined
+    for await (const chunk of llm.stream({ provider, model, messages, system, maxTokens })) {
+      if (chunk.type === 'text-delta') text += chunk.text
+      else if (chunk.type === 'finish' && (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted')) failure = chunk.reason.failure.message
+      else if (chunk.type === 'finish' && chunk.reason.kind === 'max-tokens') failure = 'the model hit its output limit'
+    }
+    if (failure !== undefined) throw new Error(`faberloom: the model could not answer: ${failure}`)
+    return text.trim()
+  }
+
+  /**
+   * Build the email + space-memory context shared by the routine designer.
+   * @param uid - the message UID.
+   * @param subject - the subject, when the caller already has it.
+   * @param from - the sender, when the caller already has it.
+   * @returns context lines.
+   */
+  private async routineContext(uid: string, subject?: string, from?: string): Promise<string[]> {
+    const actor = this.actor()
+    const lines: string[] = []
+    if (from !== undefined && from.length > 0) lines.push(`De: ${from}`)
+    if (subject !== undefined && subject.length > 0) lines.push(`Asunto: ${subject}`)
+    const inbound = this.ctx.get('faberloomInbound')
+    const id = Number(uid)
+    if (inbound !== undefined && Number.isSafeInteger(id) && id > 0) {
+      const content = await inbound.readEmail(actor.id, id)
+      const body = content.text.length > 0 ? content.text : content.html ?? ''
+      if (body.trim().length > 0) lines.push('', 'Correo:', body.slice(0, 4000))
+      if (content.attachments.length > 0) {
+        lines.push('', `Adjuntos: ${content.attachments.map(file => file.name).join(', ')}`)
+      }
+    }
+    const memory = await this.ctx.faberloomSpaces.listMemory(actor)
+    const notes = memory.slice(-20).map(entry => entry.text.slice(0, 800))
+    if (notes.length > 0) {
+      lines.push('', 'Memoria de los Spaces (cliente, SKU, talla, cantidad, precio):', ...notes)
+    }
+    return lines
+  }
+
+  /**
+   * Answer one message in the routine-designer chat, grounded in the email and
+   * the owner's space memory. Never creates anything.
+   * @param uid - the message UID used as context.
+   * @param messages - the chat so far.
+   * @param subject - the subject, when the caller already has it.
+   * @param from - the sender, when the caller already has it.
+   * @returns the assistant reply.
+   */
+  @Remote('routineChat')
+  async routineChat(uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string): Promise<string> {
+    const system = [
+      'You design FaberLoom routines from a workflow the owner describes.',
+      'Ask one short clarifying question when a required detail is missing (cliente, SKU, talla, cantidad, precio, o el match de asunto PO/OC/PF).',
+      'Routines run on email triggers and mcp steps against MWT.ONE; when the owner is ready, summarize the routine you will create.',
+      'Reply in the language the owner uses.',
+    ].join('\n')
+    const transcript = messages.slice(-12)
+      .map(entry => `${entry.role === 'assistant' ? 'Asistente' : 'Usuario'}: ${entry.content.slice(0, 2000)}`)
+      .join('\n')
+    const prompt = [
+      ...await this.routineContext(uid, subject, from),
+      '', 'Conversación:', transcript, '',
+      'Responde al último mensaje del usuario.',
+    ].join('\n')
+    return await this.completeModel(system, prompt, 1200)
+  }
+
+  /**
+   * Turn a described workflow into a real routine: the model returns a JSON
+   * definition, which is validated and stored as a draft routine.
+   * @param uid - the message UID used as context.
+   * @param name - the routine name.
+   * @param instruction - the workflow description.
+   * @param subject - the subject, when the caller already has it.
+   * @param from - the sender, when the caller already has it.
+   * @returns the created routine.
+   */
+  @Remote('routineFromEmail')
+  async routineFromEmail(
+    uid: string, name: string, instruction: string, subject?: string, from?: string,
+  ): Promise<FaberLoomRoutineCreated> {
+    const actor = this.actor()
+    const system = [
+      'You design FaberLoom routines. Reply with one JSON object and nothing else: no fences, no prose.',
+      'Schema:',
+      '{"name":string,"intent":string,"trigger":{"kind":"email","match":string},'
+        + '"steps":[{"id":string,"instruction":string,"handler":string,"dependsOn":string[],"effect":boolean}],'
+        + '"expectedResult":string,"permissions":string[],"failurePolicy":"stop"|"continue"|"review"}',
+      'Allowed handler values: email.extract-spreadsheet-link, mcp, email.send, email.followup, agent, wait, backup.',
+      'Route every MWT.ONE action (buscar, crear, actualizar el expediente) through handler "mcp".',
+      'Mark external writes with "effect": true. Steps run in order; list prior step ids in dependsOn.',
+    ].join('\n')
+    const title = name.trim().length === 0 ? 'Rutina de correo' : name.trim()
+    const prompt = [
+      ...await this.routineContext(uid, subject, from), '',
+      'Nombre deseado:', title, '',
+      'Descripción de la rutina:', instruction.slice(0, 4000), '',
+      'Devuelve solo el JSON.',
+    ].join('\n')
+    const parsed = parseRoutineJson(await this.completeModel(system, prompt, 2000))
+    const routine = await this.ctx.faberloomRoutines.createRoutine(actor.id, {
+      name: parsed.name.length > 0 ? parsed.name : title,
+      definition: {
+        intent: parsed.intent,
+        triggers: parsed.triggers,
+        steps: parsed.steps,
+        expectedResult: parsed.expectedResult,
+        permissions: parsed.permissions,
+        failurePolicy: parsed.failurePolicy,
+      },
+    })
+    return { id: String(routine.id), name: routine.name }
+  }
+
+  /**
+   * Learn the expediente facts from one email and store them as Space memory,
+   * so a routine can later create or update the record without intervention.
+   * @param uid - the message UID.
+   * @returns the extracted facts.
+   */
+  @Remote('learnFromEmail')
+  async learnFromEmail(uid: string): Promise<FaberLoomEmailFacts> {
+    const actor = this.actor()
+    const inbound = this.ctx.get('faberloomInbound')
+    if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
+    const id = Number(uid)
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error('faberloom: invalid message id')
+    const content = await inbound.readEmail(actor.id, id)
+    const body = content.text.length > 0 ? content.text : content.html ?? ''
+    const documents = await this.emailDocuments(actor, content.attachments, [])
+    const system = [
+      'You read a business email and extract the expediente facts.',
+      'Reply with one JSON object and nothing else: no fences, no prose.',
+      'Schema: {"oc":string,"po":string,"cliente":string,"sku":string,"tallas":string,"cantidad":string,"precio":string,"resumen":string}',
+      'Use "" for any field the email does not state. Keep order ids, quantities and prices verbatim.',
+    ].join('\n')
+    const attachments = content.attachments.map(file => file.name).join(', ')
+    const prompt = [
+      `Adjuntos: ${attachments.length > 0 ? attachments : 'ninguno'}`,
+      documents.length > 0 ? `Documentos:\n${documents.slice(0, 12_000)}` : '',
+      '', 'Correo:', body.slice(0, 6000), '', 'Devuelve solo el JSON.',
+    ].join('\n')
+    const facts = parseFactsJson(await this.completeModel(system, prompt, 800))
+    const line = [
+      'Expediente',
+      facts.cliente.length > 0 ? `Cliente: ${facts.cliente}` : '',
+      facts.oc.length > 0 ? `OC: ${facts.oc}` : '',
+      facts.po.length > 0 ? `PO: ${facts.po}` : '',
+      facts.sku.length > 0 ? `SKU: ${facts.sku}` : '',
+      facts.tallas.length > 0 ? `Tallas: ${facts.tallas}` : '',
+      facts.cantidad.length > 0 ? `Cantidad: ${facts.cantidad}` : '',
+      facts.precio.length > 0 ? `Precio: ${facts.precio}` : '',
+      facts.resumen.length > 0 ? `Resumen: ${facts.resumen}` : '',
+    ].filter(part => part.length > 0).join(' · ')
+    await this.ctx.faberloomSpaces.remember(actor, line, [])
+    return facts
   }
 
   /**
