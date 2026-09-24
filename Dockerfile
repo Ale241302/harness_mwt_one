@@ -31,6 +31,10 @@ RUN npm install -g --no-audit --no-fund "context-mode@${CONTEXT_MODE_VERSION}" \
   && test -f /usr/local/lib/node_modules/context-mode/start.mjs \
   && echo "context-mode ${CONTEXT_MODE_VERSION} instalado"
 
+# context-mode renders its prompts in the container locale; the slim image has
+# none, so it falls back to Chinese. Pin English for every process it starts.
+ENV CONTEXT_MODE_LOCALE=en-US
+
 # The built harness fork: a workspace with its built lib/ and node_modules.
 COPY vendor/deepseek-harness-built.tgz /tmp/fork.tgz
 RUN mkdir -p /opt/dsh \

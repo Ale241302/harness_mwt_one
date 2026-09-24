@@ -909,6 +909,9 @@ function startInstance(user, memory) {
         // teniendo DEEPSEEK_API_KEY como respaldo del arranque.
         ...(memory && memory.userKey ? { PROXY_USER_KEY: memory.userKey } : {}),
         DSH_WEB_URL: `https://${cfg.publicHost}/`,
+        // `context-mode` otherwise falls back to Chinese in an image without a
+        // system locale; the session-init form must read in English.
+        CONTEXT_MODE_LOCALE: process.env.CONTEXT_MODE_LOCALE || 'en-US',
         NODE_OPTIONS: nodeOptions,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
