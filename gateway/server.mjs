@@ -829,12 +829,16 @@ const FABERLOOM_INSTRUCTIONS = `# FaberLoom · reglas del espacio de trabajo
 - Lee con \`*_listar\`/\`*_obtener\` antes de escribir, y comprueba el resultado después.
 - Documentos y reportes (proformas, listados, informes) se construyen con datos del MCP;
   si piden formato, colores o plantilla, aplícalos sobre esos datos.
-- **Correo del buzón**: usa \`faberloom_mail_search\` (imprime el \`uid\` en cada línea) y luego
-  \`faberloom_mail_read\` con ese \`uid\`. No adivines ni recorras uids en bucle. No uses el
-  módulo \`correo_*\` del MCP para leer el buzón crudo: solo tiene lo ya importado o vinculado a
-  expedientes. \`faberloom_mail_read\` devuelve el **texto** de los adjuntos, no el archivo: si
-  piden el PDF/documento adjunto original, **no lo reconstruyas** con reportes; el original se
-  descarga desde el panel Email (botón de descarga del adjunto), indícalo.
+- **Correo**: para leer, identificar o resumir correo y sus adjuntos usa **exclusivamente** las
+  tools \`faberloom_mail_search\` (imprime el \`uid\` en cada línea) y \`faberloom_mail_read\`
+  (con ese \`uid\`). No adivines ni recorras uids en bucle. **No** llames a \`mwt_whoami\`,
+  \`correo_mensaje_listar\`, \`expediente_buscar\`, \`cliente_listar\`, \`oc_listar\` ni a otras
+  \`mcp__mwt__*\` para tareas de correo: solo contienen datos de negocio ya registrados y no
+  aportan a leer el buzón. Usa las tools \`mcp__mwt__*\` **solo** cuando el usuario pida
+  explícitamente consultar o crear datos de negocio (expediente, OC, cliente, factura).
+  \`faberloom_mail_read\` devuelve el **texto** de los adjuntos, no el archivo: si piden el
+  PDF/documento adjunto original, **no lo reconstruyas** con reportes; el original se descarga
+  desde el panel Email (fila del adjunto), indícalo.
 - Responde en español, con el resultado y las tools usadas.
 `
 
