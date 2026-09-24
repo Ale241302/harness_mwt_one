@@ -92,6 +92,13 @@ const cfg = {
   inboundEnabled: process.env.INBOUND_ENABLED === '1',
   inboundIntervalMs: Number(process.env.INBOUND_INTERVAL_MS || 300000),
   inboundMailbox: process.env.INBOUND_MAILBOX || 'INBOX',
+  // Ingesta de adjuntos de correo: convierte xlsx/pdf/docx a Markdown con el
+  // conversor `anydoc` y lo guarda como memoria del espacio. Activa por
+  // defecto; ANYDOC_ENABLED=0 la apaga. El OCR de PDFs escaneados queda en
+  // `reject` (se omiten) salvo ANYDOC_OCR=hosted con firecrawl key.
+  anydocEnabled: process.env.ANYDOC_ENABLED !== '0',
+  anydocOcr: process.env.ANYDOC_OCR || 'reject',
+  anydocApiKey: process.env.FIRECRAWL_API_KEY || '',
   // Plazo de una espera de rutina antes de pasar a revision (24 h por defecto).
   waitTimeoutMs: Number(process.env.WAIT_TIMEOUT_MS || 86400000),
   // M1 · rate limit de /mcp (peticiones por minuto por IP cliente).
@@ -702,6 +709,10 @@ function renderPatch(home, user, memory) {
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     // Catálogo de skills del rol, para el panel Skills.
     `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,
+    // Ingesta de adjuntos: el conversor `anydoc` ya viene instalado en el árbol.
+    `    anydoc: ${cfg.anydocEnabled ? 'true' : 'false'}`,
+    `    anydocOcr: ${yamlScalar(cfg.anydocOcr)}`,
+    ...(cfg.anydocApiKey ? [`    anydocApiKey: ${yamlScalar(cfg.anydocApiKey)}`] : []),
     ...(memory && memory.userId
       ? [
           `    memoryCoreUrl: ${yamlScalar(cfg.memoryCoreUrl)}`,
