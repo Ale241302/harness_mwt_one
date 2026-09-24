@@ -252,18 +252,25 @@
 }
 
 .emailModal {
+  display: flex;
+  flex-direction: column;
   width: min(880px, 92vw);
+  max-height: 88vh;
+}
+
+.emailModalContent {
+  overflow-y: auto;
 }
 
 .emailBody {
-  min-height: 320px;
-  max-height: 55vh;
+  min-height: 220px;
+  max-height: 50vh;
   overflow-y: auto;
 }
 
 .emailHtml {
   width: 100%;
-  min-height: 60vh;
+  height: 55vh;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-base);

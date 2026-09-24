@@ -926,7 +926,7 @@ function emailScreen() {
               }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.email')} labels={tableLabels(t)} />
             )}
         <Modal open={!composing && chosenMail !== null} onClose={() => { setSelected(null) }} title={chosenMail?.subject ?? t('email.read')}
-          closeLabel={t('action.close')} className={String(styles.emailModal)} contentClassName={String(styles.emailModal)}
+          closeLabel={t('action.close')} className={String(styles.emailModal)} contentClassName={String(styles.emailModalContent)}
           footer={(
             <>
               <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
@@ -960,7 +960,7 @@ function emailScreen() {
             : null}
         </Modal>
         <Modal open={composing} onClose={() => { setComposing(false) }} title={draftId === null ? t('email.newDraft') : t('email.draft')}
-          closeLabel={t('action.close')} className={String(styles.emailModal)} contentClassName={String(styles.emailModal)}
+          closeLabel={t('action.close')} className={String(styles.emailModal)} contentClassName={String(styles.emailModalContent)}
           footer={(
             <>
               <span className={styles.tools}>
