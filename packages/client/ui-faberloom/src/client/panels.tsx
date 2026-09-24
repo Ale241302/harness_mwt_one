@@ -805,9 +805,10 @@ function boardScreen() {
   return function FaberloomBoard(props: ScreenProps) {
     const { t, createBoardItem, reviewBoardItem, reopenBoardItem, submitBoardRevision, boardException, boardDetail } = props
     const { overview, error } = useOverview(props)
-    const [draft, setDraft] = useState('')
+    const [title, setTitle] = useState('')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
+    const [drafting, setDrafting] = useState(false)
     const [tick, setTick] = useState(0)
     const [summary, setSummary] = useState('')
     const [evidence, setEvidence] = useState('')
@@ -833,102 +834,122 @@ function boardScreen() {
     const value = detail.kind === 'ready' ? detail.value : undefined
     const reviewable = value !== undefined && value.status !== 'completed' && value.status !== 'failed'
 
+    /** Open the inspector in create mode with an editable title. */
+    const openDraft = (): void => {
+      setDrafting(true)
+      setSelected(null)
+      setTitle('')
+      setMessage(null)
+    }
+
+    const create = (): void => {
+      setMessage(null)
+      createBoardItem(title.trim().length === 0 ? t('board.untitled') : title.trim())
+      setDrafting(false)
+    }
+
     return (
       <Screen title={t('panel.board.title')} subtitle={t('panel.board.intro')}
         trailing={(
           <>
-            <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.board.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
-            <button className={styles.primary} type="button" onClick={() => {
-              setMessage(null)
-              createBoardItem(draft.trim().length === 0 ? t('board.untitled') : draft.trim())
-              setDraft('')
-            }}>{t('action.create')}</button>
+            <button className={styles.primary} type="button" onClick={openDraft}>{t('board.newTitle')}</button>
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
         <div className={styles.split}>
-          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => { setSelected(id); setNote('') }}
+          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => { setDrafting(false); setSelected(id); setNote('') }}
             emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
-          <Inspector title={chosen?.title ?? t('board.detail')}
-            status={value !== undefined ? <Chip>{value.status}</Chip> : undefined}
-            footer={chosen === null || !reviewable ? undefined : (
-              <span className={styles.tools}>
-                <button className={styles.primary} type="button" onClick={() => { void reviewBoardItem(chosen.id, true, note).then(apply) }}>{t('action.approve')}</button>
-                <button className={styles.secondary} type="button" onClick={() => { void reviewBoardItem(chosen.id, false, note).then(apply) }}>{t('action.reject')}</button>
-                <button className={styles.ghost} type="button" onClick={() => { void reopenBoardItem(chosen.id).then(() => { setTick(tick + 1) }) }}>{t('action.reopen')}</button>
-                <button className={styles.ghost} type="button" onClick={() => { void boardException(chosen.id, 'request_data').then(apply) }}>{t('board.requestData')}</button>
-                <button className={styles.danger} type="button" onClick={() => { void boardException(chosen.id, 'fail').then(apply) }}>{t('board.fail')}</button>
-              </span>
-            )}>
-            {chosen === null
-              ? <StateBlock kind="empty" title={t('board.selectTitle')} text={t('board.selectText')} />
-              : detail.kind === 'loading'
-                ? <StateBlock kind="loading" title={t('state.loading')} />
-                : detail.kind === 'error'
-                  ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
-                  : value === undefined
-                    ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
-                    : (
-                      <>
-                        <Field label={t('field.revision')}>
-                          <span className={styles.cellMuted}>{String(value.version)}{value.approvedRevision === null ? '' : ` · ${t('board.approved')} ${String(value.approvedRevision)}`}</span>
-                        </Field>
-                        <Field label={t('field.summary')}><span className={styles.cellMuted}>{value.summary.length === 0 ? '—' : value.summary}</span></Field>
-                        <Field label={t('field.evidence')}>
-                          {value.evidence.length === 0
-                            ? <span className={styles.cellMuted}>{t('board.noEvidence')}</span>
-                            : <span className={styles.chips}>{value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry}</Chip>)}</span>}
-                        </Field>
-                        <Field label={t('field.stale')}>
-                          <StatusDot on={!value.stale} label={value.stale ? (value.staleReason ?? t('board.stale')) : t('board.fresh')} />
-                        </Field>
-                        <Field label={t('field.effects')}>
-                          {value.effects.length === 0
-                            ? <span className={styles.cellMuted}>{t('board.noEffects')}</span>
-                            : (
-                              <div className={styles.steps}>
-                                {value.effects.map(effect => (
-                                  <span className={styles.cellMuted} key={`${effect.ref}-${effect.at}`}>{`${effect.ref}${effect.detail === null ? '' : ` · ${effect.detail}`} · ${effect.at}`}</span>
-                                ))}
-                              </div>
-                            )}
-                        </Field>
-                        {value.status === 'approved'
-                          ? (
-                            <Field label={t('board.completeHint')}>
-                              <button className={styles.primary} type="button" onClick={() => { void boardException(chosen.id, 'complete').then(apply) }}>{t('board.complete')}</button>
-                            </Field>
-                          )
-                          : null}
-                        {reviewable
-                          ? (
-                            <>
-                              <Field label={t('board.submitRevision')} hint={t('board.revisionHint')}>
-                                <textarea value={summary} placeholder={t('board.summaryPlaceholder')} onChange={(event) => { setSummary(event.target.value) }} />
-                                <input type="text" value={evidence} placeholder={t('board.evidencePlaceholder')} onChange={(event) => { setEvidence(event.target.value) }} />
-                                <span className={styles.tools}>
-                                  <button className={styles.secondary} type="button"
-                                    disabled={summary.trim().length === 0 || evidence.trim().length === 0}
-                                    onClick={() => {
-                                      setMessage(null)
-                                      void submitBoardRevision(chosen.id, {
-                                        summary: summary.trim(),
-                                        evidence: evidence.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
-                                      }).then((result) => {
-                                        apply(result)
-                                        if (result.ok) { setSummary(''); setEvidence('') }
-                                      })
-                                    }}>{t('board.submitRevision')}</button>
-                                </span>
+          <Inspector title={drafting ? t('board.newTitle') : chosen?.title ?? t('board.detail')}
+            status={drafting || value === undefined ? undefined : <Chip>{value.status}</Chip>}
+            footer={drafting
+              ? (
+                <span className={styles.tools}>
+                  <button className={styles.ghost} type="button" onClick={() => { setDrafting(false) }}>{t('action.cancel')}</button>
+                  <button className={styles.primary} type="button" onClick={create}>{t('action.create')}</button>
+                </span>
+              )
+              : chosen === null || !reviewable
+                ? undefined
+                : (
+                  <span className={styles.tools}>
+                    <button className={styles.primary} type="button" onClick={() => { void reviewBoardItem(chosen.id, true, note).then(apply) }}>{t('action.approve')}</button>
+                    <button className={styles.secondary} type="button" onClick={() => { void reviewBoardItem(chosen.id, false, note).then(apply) }}>{t('action.reject')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => { void reopenBoardItem(chosen.id).then(() => { setTick(tick + 1) }) }}>{t('action.reopen')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => { void boardException(chosen.id, 'request_data').then(apply) }}>{t('board.requestData')}</button>
+                    <button className={styles.danger} type="button" onClick={() => { void boardException(chosen.id, 'fail').then(apply) }}>{t('board.fail')}</button>
+                  </span>
+                )}>
+            {drafting
+              ? <Field label={t('col.title')}><input type="text" autoComplete="off" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
+              : chosen === null
+                ? <StateBlock kind="empty" title={t('board.selectTitle')} text={t('board.selectText')} />
+                : detail.kind === 'loading'
+                  ? <StateBlock kind="loading" title={t('state.loading')} />
+                  : detail.kind === 'error'
+                    ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+                    : value === undefined
+                      ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
+                      : (
+                        <>
+                          <Field label={t('field.revision')}>
+                            <span className={styles.cellMuted}>{String(value.version)}{value.approvedRevision === null ? '' : ` · ${t('board.approved')} ${String(value.approvedRevision)}`}</span>
+                          </Field>
+                          <Field label={t('field.summary')}><span className={styles.cellMuted}>{value.summary.length === 0 ? '—' : value.summary}</span></Field>
+                          <Field label={t('field.evidence')}>
+                            {value.evidence.length === 0
+                              ? <span className={styles.cellMuted}>{t('board.noEvidence')}</span>
+                              : <span className={styles.chips}>{value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry}</Chip>)}</span>}
+                          </Field>
+                          <Field label={t('field.stale')}>
+                            <StatusDot on={!value.stale} label={value.stale ? (value.staleReason ?? t('board.stale')) : t('board.fresh')} />
+                          </Field>
+                          <Field label={t('field.effects')}>
+                            {value.effects.length === 0
+                              ? <span className={styles.cellMuted}>{t('board.noEffects')}</span>
+                              : (
+                                <div className={styles.steps}>
+                                  {value.effects.map(effect => (
+                                    <span className={styles.cellMuted} key={`${effect.ref}-${effect.at}`}>{`${effect.ref}${effect.detail === null ? '' : ` · ${effect.detail}`} · ${effect.at}`}</span>
+                                  ))}
+                                </div>
+                              )}
+                          </Field>
+                          {value.status === 'approved'
+                            ? (
+                              <Field label={t('board.completeHint')}>
+                                <button className={styles.primary} type="button" onClick={() => { void boardException(chosen.id, 'complete').then(apply) }}>{t('board.complete')}</button>
                               </Field>
-                              <Field label={t('board.reviewNote')}>
-                                <input type="text" value={note} placeholder={t('board.notePlaceholder')} onChange={(event) => { setNote(event.target.value) }} />
-                              </Field>
-                            </>
-                          )
-                          : null}
-                      </>
-                    )}
+                            )
+                            : null}
+                          {reviewable
+                            ? (
+                              <>
+                                <Field label={t('board.submitRevision')} hint={t('board.revisionHint')}>
+                                  <textarea value={summary} placeholder={t('board.summaryPlaceholder')} onChange={(event) => { setSummary(event.target.value) }} />
+                                  <input type="text" value={evidence} placeholder={t('board.evidencePlaceholder')} onChange={(event) => { setEvidence(event.target.value) }} />
+                                  <span className={styles.tools}>
+                                    <button className={styles.secondary} type="button"
+                                      disabled={summary.trim().length === 0 || evidence.trim().length === 0}
+                                      onClick={() => {
+                                        setMessage(null)
+                                        void submitBoardRevision(chosen.id, {
+                                          summary: summary.trim(),
+                                          evidence: evidence.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
+                                        }).then((result) => {
+                                          apply(result)
+                                          if (result.ok) { setSummary(''); setEvidence('') }
+                                        })
+                                      }}>{t('board.submitRevision')}</button>
+                                  </span>
+                                </Field>
+                                <Field label={t('board.reviewNote')}>
+                                  <input type="text" value={note} placeholder={t('board.notePlaceholder')} onChange={(event) => { setNote(event.target.value) }} />
+                                </Field>
+                              </>
+                            )
+                            : null}
+                        </>
+                      )}
           </Inspector>
         </div>
       </Screen>
@@ -944,10 +965,10 @@ function routinesScreen() {
       startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
     } = props
     const { overview, error } = useOverview(props)
-    const [draft, setDraft] = useState('')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
+    const [drafting, setDrafting] = useState(false)
     const [name, setName] = useState('')
     const [intent, setIntent] = useState('')
     const [triggerKind, setTriggerKind] = useState('manual')
@@ -1002,64 +1023,89 @@ function routinesScreen() {
       setSteps(steps.map((step, at) => at === index ? { ...step, ...patch } : step))
     }
 
+    /** Open the inspector in create mode with empty fields. */
+    const openDraft = (): void => {
+      setDrafting(true)
+      setSelected(null)
+      setName('')
+      setIntent('')
+      setTriggerKind('manual')
+      setTriggerMatch('')
+      setSteps([])
+      setExpectedResult('')
+      setPermissions('')
+      setFailurePolicy('review')
+      setMessage(null)
+    }
+
+    const save = (): void => {
+      setMessage(null)
+      if (drafting) {
+        createRoutine(name.trim().length === 0 ? t('routines.untitled') : name.trim())
+        setDrafting(false)
+        return
+      }
+      if (selected === null) return
+      setSaving(true)
+      void saveRoutine(selected, {
+        name, intent,
+        triggerKind,
+        triggerMatch: triggerMatch.trim().length === 0 ? null : triggerMatch,
+        steps,
+        expectedResult,
+        permissions: permissions.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
+        failurePolicy,
+      })
+        .then((result) => { if (!result.ok) setMessage(result.error.message) })
+        .catch((cause: unknown) => { setMessage(String(cause)) })
+        .finally(() => { setSaving(false) })
+    }
+
     return (
       <Screen title={t('panel.routines.title')} subtitle={t('panel.routines.intro')}
         trailing={(
           <>
-            <input className={styles.paneSearch} style={{ width: 220, padding: '8px 10px' }} value={draft} placeholder={t('panel.routines.newPlaceholder')} onChange={(event) => { setDraft(event.target.value) }} />
-            <button className={styles.primary} type="button" onClick={() => {
-              setMessage(null)
-              createRoutine(draft.trim().length === 0 ? t('routines.untitled') : draft.trim())
-              setDraft('')
-            }}>{t('action.create')}</button>
+            <button className={styles.primary} type="button" onClick={openDraft}>{t('routines.newTitle')}</button>
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
         <div className={styles.split}>
-          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => { setDrafting(false); setSelected(id) }}
             emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
-          <Inspector title={detail.kind === 'ready' && detail.value !== undefined ? detail.value.name : t('routines.detail')}
-            status={chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
-            footer={selected === null ? undefined : (
+          <Inspector title={drafting ? t('routines.newTitle') : detail.kind === 'ready' && detail.value !== undefined ? detail.value.name : t('routines.detail')}
+            status={drafting || chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
+            footer={selected === null && !drafting ? undefined : (
               <>
                 <span className={styles.tools}>
-                  <button className={styles.danger} type="button" onClick={() => {
-                    if (selected === null) return
-                    setMessage(null)
-                    void removeRoutine(selected)
-                      .then((result) => { if (!result.ok) setMessage(result.error.message); else setSelected(null) })
-                      .catch((cause: unknown) => { setMessage(String(cause)) })
-                  }}>{t('action.delete')}</button>
-                  <button className={styles.primary} type="button" onClick={() => { setRoutineActive(selected, true) }}>{t('action.activate')}</button>
-                  <button className={styles.secondary} type="button" onClick={() => { setRoutineActive(selected, false) }}>{t('action.pause')}</button>
-                  <button className={styles.primary} type="button" onClick={() => { applyRun(startRoutine(selected)) }}>{t('routines.start')}</button>
-                  <button className={styles.secondary} type="button" onClick={() => { applyRun(tickRoutine(selected)) }}>{t('routines.tick')}</button>
+                  {drafting ? null : (
+                    <>
+                      <button className={styles.danger} type="button" onClick={() => {
+                        if (selected === null) return
+                        setMessage(null)
+                        void removeRoutine(selected)
+                          .then((result) => { if (!result.ok) setMessage(result.error.message); else setSelected(null) })
+                          .catch((cause: unknown) => { setMessage(String(cause)) })
+                      }}>{t('action.delete')}</button>
+                      <button className={styles.primary} type="button" onClick={() => { if (selected !== null) setRoutineActive(selected, true) }}>{t('action.activate')}</button>
+                      <button className={styles.secondary} type="button" onClick={() => { if (selected !== null) setRoutineActive(selected, false) }}>{t('action.pause')}</button>
+                      <button className={styles.primary} type="button" onClick={() => { if (selected !== null) applyRun(startRoutine(selected)) }}>{t('routines.start')}</button>
+                      <button className={styles.secondary} type="button" onClick={() => { if (selected !== null) applyRun(tickRoutine(selected)) }}>{t('routines.tick')}</button>
+                    </>
+                  )}
                 </span>
-                <button className={styles.primary} type="button" disabled={saving} onClick={() => {
-                  setSaving(true)
-                  setMessage(null)
-                  void saveRoutine(selected, {
-                    name, intent,
-                    triggerKind,
-                    triggerMatch: triggerMatch.trim().length === 0 ? null : triggerMatch,
-                    steps,
-                    expectedResult,
-                    permissions: permissions.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
-                    failurePolicy,
-                  })
-                    .then((result) => { if (!result.ok) setMessage(result.error.message) })
-                    .catch((cause: unknown) => { setMessage(String(cause)) })
-                    .finally(() => { setSaving(false) })
-                }}>{t('action.save')}</button>
+                <span className={styles.tools}>
+                  <button className={styles.ghost} type="button" onClick={() => { if (drafting) setDrafting(false); else setSelected(null) }}>{t('action.cancel')}</button>
+                  <button className={styles.primary} type="button" disabled={saving} onClick={save}>{drafting ? t('action.create') : t('action.save')}</button>
+                </span>
               </>
             )}>
-            {selected === null
+            {selected === null && !drafting
               ? <StateBlock kind="empty" title={t('routines.selectTitle')} text={t('routines.selectText')} />
-              : detail.kind === 'loading'
+              : !drafting && detail.kind === 'loading'
                 ? <StateBlock kind="loading" title={t('state.loading')} />
-                : detail.kind === 'error'
+                : !drafting && detail.kind === 'error'
                   ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
-                  : detail.value === undefined
+                  : !drafting && detail.kind === 'ready' && detail.value === undefined
                     ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
                     : (
                       <>
