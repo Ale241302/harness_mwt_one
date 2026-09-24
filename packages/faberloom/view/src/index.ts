@@ -814,12 +814,13 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Turn one email into a Space: create it with its agent and Workspace, store
-   * the email as the space's memory, and attach every file it carried.
+   * Turn one email into a Space: reuse the space with the same title when it
+   * already exists, otherwise create it with its agent and Workspace, store the
+   * email as the space's memory, and attach every file it carried.
    * @param uid - the message UID.
    * @param name - the space title (usually the subject).
-   * @param agentId - the agent put in charge, when chosen.
-   * @returns the created space and its Workspace id.
+   * @param agentId - the agent put in charge, when chosen and the space is new.
+   * @returns the space and its Workspace id, so the browser starts a session in it.
    */
   @Remote('spaceFromEmail')
   async spaceFromEmail(uid: string, name: string, agentId?: string): Promise<FaberLoomSpaceFromEmail> {
@@ -830,11 +831,16 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (!Number.isSafeInteger(id) || id <= 0) throw new Error('faberloom: invalid message id')
     const title = name.trim().length === 0 ? 'Correo' : name.trim()
     const content = await inbound.readEmail(actor.id, id)
-    const space = await this.ctx.faberloomSpaces.create(actor, {
+    // Same title means the same space: the email's files and body join the
+    // existing record and the browser opens one more session there, instead of
+    // duplicating the space.
+    const existing = (await this.ctx.faberloomSpaces.list(actor))
+      .find(candidate => candidate.title.trim().toLowerCase() === title.toLowerCase())
+    const space = existing ?? await this.ctx.faberloomSpaces.create(actor, {
       title,
       ...agentId === undefined || agentId.length === 0 ? {} : { agentId },
     })
-    await this.ensureSpaceWorkspace(actor, space.id, space.title)
+    const workspace = await this.ensureSpaceWorkspace(actor, space.id, space.title)
     const bodyText = content.text.length > 0 ? content.text : content.html ?? ''
     if (bodyText.trim().length > 0) {
       await this.ctx.faberloomSpaces.remember(actor, `Correo «${title}»:\n\n${bodyText}`, [space.id])
@@ -847,9 +853,6 @@ export class FaberLoomViewService extends TypertRemoteService {
       })
     }
     await this.emailDocuments(actor, content.attachments, [space.id])
-    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
-    const dir = join(this.dshHome(), 'spaces', ref.ref)
-    const workspace = this.workspaceRegistryOrUndefined()?.list().find(candidate => candidate.path === dir)
     return { spaceId: String(space.id), workspaceId: workspace === undefined ? null : String(workspace.id) }
   }
 

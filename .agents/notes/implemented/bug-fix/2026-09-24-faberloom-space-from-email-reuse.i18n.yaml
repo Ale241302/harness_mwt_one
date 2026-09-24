@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-24-faberloom-space-from-email-reuse.md
+2026-09-24-faberloom-space-from-email-reuse.md: 788f15249a8891af9747650068c355ab7d2dd662
+2026-09-24-faberloom-space-from-email-reuse.zh.md: 9b9f91a85ada5862f986b87a9a2dc438ee59acbd
