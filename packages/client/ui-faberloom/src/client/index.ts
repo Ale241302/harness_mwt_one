@@ -175,6 +175,7 @@ export function apply(ctx: ClientContext): void {
       saveEmailDraft: input => ctx.remote.faberloomView.saveEmailDraft(input),
       deleteEmailDraft: id => ctx.remote.faberloomView.deleteEmailDraft(id),
       sendEmailDraft: id => ctx.remote.faberloomView.sendEmailDraft(id),
+      emailVoice: spaceId => ctx.remote.faberloomView.emailVoice(spaceId),
       backups: () => ctx.remote.faberloomView.backups(),
       createBackup: note => ctx.remote.faberloomView.createBackup(note),
       verifyBackup: id => ctx.remote.faberloomView.verifyBackup(id),

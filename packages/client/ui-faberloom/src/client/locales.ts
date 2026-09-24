@@ -40,6 +40,10 @@ const es = {
   'field.cc': 'CC',
   'field.subject': 'Asunto',
   'field.body': 'Cuerpo',
+  'email.voice': 'Perfil de voz',
+  'email.voiceHint': 'Lo que el sistema ha aprendido de tus correos enviados.',
+  'email.voiceEmpty': 'Sin voz todavía',
+  'email.voiceEmptyText': 'Cuando envíes correos, se guardará aquí tu forma de escribirlos.',
 
   'panel.conversar.title': '¿Qué quieres resolver hoy?',
   'panel.conversar.intro': 'Una idea, un documento o un trabajo por descubrir.',
@@ -534,6 +538,10 @@ export const en: Record<FaberloomKey, string> = {
   'field.cc': 'CC',
   'field.subject': 'Subject',
   'field.body': 'Body',
+  'email.voice': 'Voice profile',
+  'email.voiceHint': 'What the system has learned from your sent emails.',
+  'email.voiceEmpty': 'No voice yet',
+  'email.voiceEmptyText': 'When you send emails, your writing style is captured here.',
 
   'panel.conversar.title': 'What do you want to solve today?',
   'panel.conversar.intro': 'An idea, a document, or a job to figure out.',
@@ -1021,6 +1029,10 @@ export const zh: Record<FaberloomKey, string> = {
   'field.cc': '抄送',
   'field.subject': '主题',
   'field.body': '正文',
+  'email.voice': '语气档案',
+  'email.voiceHint': '系统从你已发送邮件中学习到的内容。',
+  'email.voiceEmpty': '暂无语气档案',
+  'email.voiceEmptyText': '当你发送邮件后，这里会记录你的写作风格。',
 
   'panel.conversar.title': '你今天想解决什么？',
   'panel.conversar.intro': '一个想法、一份文档，或一件待厘清的工作。',

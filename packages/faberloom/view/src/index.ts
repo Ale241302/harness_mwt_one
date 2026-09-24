@@ -639,13 +639,47 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Send one email draft through the owner's SMTP connection.
+   * Send one email draft through the owner's SMTP connection. The sent text is
+   * remembered as an email teaching so the owner's voice profile grows from the
+   * messages they actually approved; a capture failure never fails the send.
    * @param id - the draft id.
    * @returns the sent draft.
    */
   @Remote('sendEmailDraft')
   async sendEmailDraft(id: string): Promise<FaberLoomEmailDraftRow> {
-    return draftRow(await this.connectionsService().sendDraft(this.actor().id, id))
+    const actor = this.actor()
+    const draft = await this.connectionsService().sendDraft(actor.id, id)
+    if (draft.text.trim().length > 0) {
+      try {
+        await this.ctx.faberloomMemory.createTeaching(actor.id, {
+          scope: draft.spaceId === null ? 'global' : 'space',
+          text: draft.text,
+          source: 'email',
+          author: actor.id,
+          task: 'email',
+          ...draft.spaceId === null ? {} : { spaceId: draft.spaceId },
+        })
+      } catch (error: unknown) {
+        // The send already succeeded; a voice capture failure is not fatal.
+        this.ctx.logger.warn(`faberloom: email voice capture failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    return draftRow(draft)
+  }
+
+  /**
+   * Read the owner's email voice profile: the teachings captured from sent mail,
+   * optionally resolved for one space.
+   * @param spaceId - restrict to one space's teachings.
+   * @returns the email teachings, oldest first.
+   */
+  @Remote('emailVoice')
+  async emailVoice(spaceId?: string): Promise<readonly FaberLoomTeachingRow[]> {
+    const rows = await this.ctx.faberloomMemory.listTeachings(this.actor().id, {
+      task: 'email',
+      ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
+    })
+    return rows.map(teachingRow)
   }
 
   /**

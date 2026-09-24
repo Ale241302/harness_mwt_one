@@ -6989,6 +6989,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../connections
+      '@deepseek-ai/dsh-faberloom-inbound':
+        specifier: workspace:^
+        version: link:../inbound
       '@deepseek-ai/dsh-faberloom-learning':
         specifier: workspace:^
         version: link:../learning

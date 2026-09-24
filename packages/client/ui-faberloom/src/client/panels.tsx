@@ -150,6 +150,8 @@ export interface FaberloomPanelInjected {
   deleteEmailDraft: (id: string) => Promise<Result<boolean>>
   /** Send one email draft through the owner's SMTP connection. */
   sendEmailDraft: (id: string) => Promise<Result<FaberLoomEmailDraftRow>>
+  /** Read the email voice profile captured from sent mail. */
+  emailVoice: (spaceId?: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
   /** List the owner's knowledge backups, newest first. */
   backups: () => Promise<Result<readonly FaberLoomBackupRow[]>>
   /** Capture a new knowledge backup. */
@@ -712,7 +714,7 @@ function agentsScreen() {
 /** Correo: the mailbox envelopes and the drafts awaiting approval. */
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
-    const { t, emailInbox, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft } = props
+    const { t, emailInbox, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailVoice } = props
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
@@ -726,6 +728,7 @@ function emailScreen() {
     const [inReplyTo, setInReplyTo] = useState<string | null>(null)
     const inbox = useLazy<readonly FaberLoomInboxRow[]>(() => emailInbox(), [reload])
     const drafts = useLazy<readonly FaberLoomEmailDraftRow[]>(() => emailDrafts(), [reload])
+    const voice = useLazy<readonly FaberLoomTeachingRow[]>(() => emailVoice(), [reload])
     const inboxRows = inbox.kind === 'ready' ? inbox.value : []
     const draftRows = drafts.kind === 'ready' ? drafts.value : []
     const rows: readonly { id: string }[] = mode === 'inbox' ? inboxRows : draftRows
@@ -884,6 +887,21 @@ function emailScreen() {
             ) : <StateBlock kind="empty" title={t('email.selectTitle')} text={t('email.selectText')} />}
           </Inspector>
         </div>
+        <Block title={t('email.voice')} subtitle={t('email.voiceHint')}>
+          {voice.kind === 'loading'
+            ? <StateBlock kind="loading" title={t('state.loading')} />
+            : voice.kind === 'error'
+              ? <StateBlock kind="error" title={t('state.error')} text={voice.message} />
+              : voice.value.length === 0
+                ? <StateBlock kind="empty" title={t('email.voiceEmpty')} text={t('email.voiceEmptyText')} />
+                : (
+                  <div className={styles.steps}>
+                    {voice.value.slice(0, 20).map(entry => (
+                      <span className={styles.cellMuted} key={entry.id}>{entry.text.slice(0, 160)}</span>
+                    ))}
+                  </div>
+                )}
+        </Block>
       </Screen>
     )
   }
