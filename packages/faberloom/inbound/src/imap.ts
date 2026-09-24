@@ -56,6 +56,8 @@ export interface ImapOptions {
 interface Exchange {
   readonly status: string
   readonly lines: readonly string[]
+  /** The raw response text with CRLFs and blank lines preserved. */
+  readonly raw: string
 }
 
 /** Raised when the server answers a command with `NO` or `BAD`. */
@@ -179,10 +181,11 @@ class ImapSession {
     const match = tagged.exec(this.buffer)
     if (match === null) return
     const index = this.buffer.indexOf(match[0])
-    const lines = this.buffer.slice(0, index).split('\r\n').filter(Boolean)
+    const raw = this.buffer.slice(0, index)
+    const lines = raw.split('\r\n').filter(Boolean)
     this.buffer = this.buffer.slice(index + match[0].length).replace(/^\r\n/, '')
     this.pending = undefined
-    const exchange: Exchange = { status: match[1] ?? 'BAD', lines }
+    const exchange: Exchange = { status: match[1] ?? 'BAD', lines, raw }
     if (exchange.status === 'OK') pending.resolve(exchange)
     else pending.reject(new ImapError(`el servidor respondió ${exchange.status}: ${lines.at(-1) ?? ''}`))
   }
@@ -249,33 +252,149 @@ export interface ImapBodyOptions {
   readonly timeoutMs: number
 }
 
+/** One decoded attachment part of a message. */
+export interface ImapAttachment {
+  /** File name from `Content-Disposition`/`Content-Type`, or a fallback. */
+  readonly name: string
+  /** Media type. */
+  readonly mediaType: string
+  /** Byte length. */
+  readonly size: number
+  /** Decoded bytes, base64-encoded. */
+  readonly contentBase64: string
+}
+
+/** One decoded message: the best text/html plus its attachments. */
+export interface ImapMessageContent {
+  /** Plain-text body, empty when the message carried none. */
+  readonly text: string
+  /** HTML body, or null when the message carried none. */
+  readonly html: string | null
+  /** Attachment parts, in order. */
+  readonly attachments: readonly ImapAttachment[]
+}
+
 /**
- * Read one message's plain-text body, newest decode applied. Read-only
- * (`BODY.PEEK[TEXT]` never marks the message seen).
+ * Read one full message (headers, multipart body, attachments). Read-only:
+ * `BODY.PEEK[]` never marks the message seen.
  * @param options - connection settings and the message UID.
- * @returns the decoded body, or null when the server returned no literal.
+ * @returns the decoded content, or an empty content when the server returned no literal.
  */
-export async function fetchBody(options: ImapBodyOptions): Promise<string | null> {
+export async function fetchContent(options: ImapBodyOptions): Promise<ImapMessageContent> {
   const session = await ImapSession.open({ ...options, since: null, maxMessages: 1 })
   try {
     await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
     await session.command(`SELECT ${quote(options.mailbox)}`)
-    const fetch = await session.command(`UID FETCH ${String(options.uid)} (BODY.PEEK[TEXT])`)
-    const raw = bodyLiteral(fetch.lines)
-    return raw === null ? null : decodeBodyText(raw)
+    const fetch = await session.command(`UID FETCH ${String(options.uid)} (BODY.PEEK[])`)
+    const raw = literalOf(fetch.raw)
+    return raw === null ? { text: '', html: null, attachments: [] } : parseMessage(raw)
   } finally {
     try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
     session.close()
   }
 }
 
-/** Take the body literal out of one `FETCH` response, as the server returned it. */
-function bodyLiteral(lines: readonly string[]): string | null {
-  const marker = lines.findIndex(line => /\{\d+\}\s*$/.test(line))
-  if (marker === -1) return null
-  // `consume` already stripped the protocol CRLFs; join the literal's own lines
-  // back with `\n`. Base64 survives the re-join; 7bit text keeps its words.
-  return lines.slice(marker + 1).join('\n')
+/** Cut the `{size}` literal out of a raw FETCH response. */
+function literalOf(raw: string): string | null {
+  const marker = /\{(\d+)\}\r?\n/.exec(raw)
+  if (marker === null) return null
+  const size = Number(marker[1])
+  const start = marker.index + marker[0].length
+  return raw.slice(start, start + size)
+}
+
+/**
+ * Parse one raw RFC 822 message into display content and attachments.
+ * @param message - the raw message bytes decoded as UTF-8.
+ * @returns the plain text, HTML, and attachment parts.
+ */
+export function parseMessage(message: string): ImapMessageContent {
+  const out: { text: string; html: string | null; attachments: ImapAttachment[] } = {
+    text: '',
+    html: null,
+    attachments: [],
+  }
+  collectPart(message, out)
+  return out
+}
+
+/** Walk one MIME part, filling the display fields and attachments. */
+function collectPart(part: string, out: { text: string; html: string | null; attachments: ImapAttachment[] }): void {
+  const split = part.indexOf('\r\n\r\n')
+  const headerText = split === -1 ? part : part.slice(0, split)
+  const body = split === -1 ? '' : part.slice(split + 4)
+  const headers = headerMap(headerText)
+  const contentType = headers['content-type'] ?? 'text/plain'
+  const disposition = headers['content-disposition'] ?? ''
+  const mediaType = (contentType.split(';')[0] ?? 'text/plain').trim().toLowerCase()
+  const filename = paramOf(disposition, 'filename') ?? paramOf(contentType, 'name')
+  if (mediaType.startsWith('multipart/')) {
+    const boundary = paramOf(contentType, 'boundary')
+    if (boundary === null) return
+    for (const child of body.split(`--${boundary}`)) {
+      const trimmed = child.replace(/^\r?\n/, '')
+      if (trimmed.trim().length === 0 || trimmed.startsWith('--')) continue
+      collectPart(trimmed, out)
+    }
+    return
+  }
+  const bytes = decodeTransfer(headers['content-transfer-encoding'], body)
+  if (filename !== null || disposition.toLowerCase().startsWith('attachment')) {
+    out.attachments.push({
+      name: filename ?? `adjunto-${String(out.attachments.length + 1)}`,
+      mediaType,
+      size: bytes.length,
+      contentBase64: bytes.toString('base64'),
+    })
+    return
+  }
+  if (mediaType === 'text/html' && out.html === null) out.html = bytes.toString('utf8')
+  else if (mediaType === 'text/plain' && out.text.length === 0) out.text = bytes.toString('utf8')
+}
+
+/** Folded header lines into a lower-case name map. */
+function headerMap(text: string): Record<string, string> {
+  const map: Record<string, string> = {}
+  let name = ''
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^([!-9;-~]+):\s?(.*)$/.exec(line)
+    if (match !== null) {
+      name = (match[1] ?? '').toLowerCase()
+      map[name] = match[2] ?? ''
+    } else if (name !== '' && /^\s/.test(line)) {
+      map[name] = `${map[name] ?? ''} ${line.trim()}`
+    }
+  }
+  return map
+}
+
+/** One `key=value` (quoted or bare) parameter of a header value. */
+function paramOf(value: string, key: string): string | null {
+  const match = new RegExp(`${key}\\s*=\\s*"([^"]*)"|${key}\\s*=\\s*([^;\\s]+)`, 'i').exec(value)
+  if (match === null) return null
+  const found = (match[1] ?? match[2] ?? '').trim()
+  return found.length === 0 ? null : found
+}
+
+/** Decode one part body by its `Content-Transfer-Encoding`. */
+function decodeTransfer(encoding: string | undefined, body: string): Buffer {
+  const mode = (encoding ?? '').trim().toLowerCase()
+  if (mode === 'base64') return Buffer.from(body.replace(/[^A-Za-z0-9+/=]/g, ''), 'base64')
+  if (mode === 'quoted-printable') {
+    const text = body.replace(/=\r?\n/g, '')
+    const bytes: number[] = []
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index] as string
+      if (char === '=' && /^[0-9A-Fa-f]{2}$/.test(text.slice(index + 1, index + 3))) {
+        bytes.push(Number.parseInt(text.slice(index + 1, index + 3), 16))
+        index += 2
+      } else {
+        bytes.push(char.charCodeAt(0) & 0xff)
+      }
+    }
+    return Buffer.from(bytes)
+  }
+  return Buffer.from(body, 'utf8')
 }
 
 /**

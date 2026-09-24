@@ -172,6 +172,7 @@ export function apply(ctx: ClientContext): void {
       probeConnection: id => ctx.remote.faberloomView.probeConnection(id),
       emailInbox: () => ctx.remote.faberloomView.emailInbox(),
       emailRead: uid => ctx.remote.faberloomView.emailRead(uid),
+      emailAttachment: (uid, index) => ctx.remote.faberloomView.emailAttachment(uid, index),
       emailDrafts: () => ctx.remote.faberloomView.emailDrafts(),
       saveEmailDraft: input => ctx.remote.faberloomView.saveEmailDraft(input),
       deleteEmailDraft: id => ctx.remote.faberloomView.deleteEmailDraft(id),

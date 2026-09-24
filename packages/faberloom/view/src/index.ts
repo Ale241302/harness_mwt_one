@@ -39,7 +39,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
   FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
-  FaberLoomEmailPolicy, EmailPolicySaveInput,
+  FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
   FaberLoomModelRow, FaberLoomModelRecommendation,
@@ -621,12 +621,41 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @returns the decoded body, or null.
    */
   @Remote('emailRead')
-  async emailRead(uid: string): Promise<string | null> {
+  async emailRead(uid: string): Promise<FaberLoomEmailContent> {
+    const empty: FaberLoomEmailContent = { text: '', html: null, attachments: [] }
     const inbound = this.ctx.get('faberloomInbound')
-    if (inbound === undefined) return null
+    if (inbound === undefined) return empty
     const id = Number(uid)
-    if (!Number.isSafeInteger(id) || id <= 0) return null
-    return await inbound.readEmail(this.actor().id, id)
+    if (!Number.isSafeInteger(id) || id <= 0) return empty
+    const content = await inbound.readEmail(this.actor().id, id)
+    return {
+      text: content.text,
+      html: content.html,
+      attachments: content.attachments.map(attachment => ({
+        name: attachment.name,
+        mediaType: attachment.mediaType,
+        size: attachment.size,
+      })),
+    }
+  }
+
+  /**
+   * Read one attachment's bytes for download.
+   * @param uid - the message UID.
+   * @param index - the attachment index in the message.
+   * @returns the attachment bytes as base64, or undefined.
+   */
+  @Remote('emailAttachment')
+  async emailAttachment(uid: string, index: number): Promise<FaberLoomEmailAttachmentContent | undefined> {
+    const inbound = this.ctx.get('faberloomInbound')
+    if (inbound === undefined) return undefined
+    const id = Number(uid)
+    if (!Number.isSafeInteger(id) || id <= 0) return undefined
+    const content = await inbound.readEmail(this.actor().id, id)
+    const attachment = content.attachments[index]
+    return attachment === undefined
+      ? undefined
+      : { name: attachment.name, mediaType: attachment.mediaType, contentBase64: attachment.contentBase64 }
   }
 
   /**

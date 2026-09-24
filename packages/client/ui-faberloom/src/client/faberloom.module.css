@@ -261,6 +261,14 @@
   overflow-y: auto;
 }
 
+.emailHtml {
+  width: 100%;
+  min-height: 60vh;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+}
+
 .cellLink {
   padding: 0;
   border: none;

@@ -1,5 +1,44 @@
 import { describe, expect, it } from 'vitest'
-import { decodeBodyText, decodeMimeWords, decodeQuotedPrintable } from '../src/imap.ts'
+import { decodeBodyText, decodeMimeWords, decodeQuotedPrintable, parseMessage } from '../src/imap.ts'
+
+describe('imap MIME parsing', () => {
+  it('picks the HTML part and lists a base64 attachment', () => {
+    const pdf = Buffer.from('%PDF-1.4 hola', 'utf8')
+    const raw = [
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary="B"',
+      '',
+      '--B',
+      'Content-Type: text/html; charset=utf-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      Buffer.from('<p>Hola</p>', 'utf8').toString('base64'),
+      '--B',
+      'Content-Type: application/pdf; name="f.pdf"',
+      'Content-Transfer-Encoding: base64',
+      'Content-Disposition: attachment; filename="f.pdf"',
+      '',
+      pdf.toString('base64'),
+      '--B--',
+    ].join('\r\n')
+
+    const content = parseMessage(raw)
+    expect(content.html).toBe('<p>Hola</p>')
+    expect(content.attachments).toHaveLength(1)
+    expect(content.attachments[0]).toMatchObject({ name: 'f.pdf', mediaType: 'application/pdf', size: pdf.length })
+    expect(content.attachments[0]?.contentBase64).toBe(pdf.toString('base64'))
+  })
+
+  it('decodes a quoted-printable plain-text part', () => {
+    const raw = [
+      'Content-Type: text/plain; charset=utf-8',
+      'Content-Transfer-Encoding: quoted-printable',
+      '',
+      'Hola =C3=A9',
+    ].join('\r\n')
+    expect(parseMessage(raw).text).toBe('Hola é')
+  })
+})
 
 describe('imap header decoding', () => {
   it('decodes Q-encoded and B-encoded words', () => {

@@ -20,7 +20,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
-import { fetchBody, fetchMessages, searchMessages, type ImapMessage } from './imap.ts'
+import { fetchContent, fetchMessages, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
 export type { ImapMessage } from './imap.ts'
@@ -161,12 +161,13 @@ export class FaberLoomInbound extends Service {
    * @param uid - the message UID.
    * @returns the decoded body, or null when no mailbox is configured or the message has no body.
    */
-  async readEmail(ownerId: string, uid: number): Promise<string | null> {
+  async readEmail(ownerId: string, uid: number): Promise<ImapMessageContent> {
+    const empty: ImapMessageContent = { text: '', html: null, attachments: [] }
     const connections = this.ctx.get('faberloomConnections')
-    if (connections === undefined) return null
+    if (connections === undefined) return empty
     const credentials = await connections.imap(ownerId)
-    if (credentials === undefined) return null
-    return await fetchBody({
+    if (credentials === undefined) return empty
+    return await fetchContent({
       host: credentials.host,
       port: credentials.port,
       secure: credentials.secure,

@@ -269,8 +269,9 @@ async function emailExtractHandler(ctx: Context, context: StepContext): Promise<
   if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
   const uid = context.event?.data === undefined ? undefined : context.event.data['uid']
   if (typeof uid !== 'number') return { handler: 'email.extract-spreadsheet-link', link: null }
-  const body = await inbound.readEmail(await executionOwner(ctx, context), uid)
-  return { handler: 'email.extract-spreadsheet-link', link: body === null ? null : extractSpreadsheetLink(body) }
+  const content = await inbound.readEmail(await executionOwner(ctx, context), uid)
+  const text = content.text.length > 0 ? content.text : content.html ?? ''
+  return { handler: 'email.extract-spreadsheet-link', link: text.length === 0 ? null : extractSpreadsheetLink(text) }
 }
 
 /**

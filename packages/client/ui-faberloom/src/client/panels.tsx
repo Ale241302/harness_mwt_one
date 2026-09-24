@@ -31,7 +31,7 @@ import type {
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
   FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
-  FaberLoomEmailPolicy, EmailPolicySaveInput,
+  FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import type { createWorkspaceStore } from './store.ts'
@@ -143,8 +143,10 @@ export interface FaberloomPanelInjected {
   probeConnection: (id: string) => Promise<Result<{ ok: boolean; detail: string }>>
   /** List the mailbox envelopes, newest first. */
   emailInbox: () => Promise<Result<readonly FaberLoomInboxRow[]>>
-  /** Read one mailbox message's body, read-only. */
-  emailRead: (uid: string) => Promise<Result<string | null>>
+  /** Read one mailbox message, read-only: text, HTML, and attachments. */
+  emailRead: (uid: string) => Promise<Result<FaberLoomEmailContent>>
+  /** Read one attachment's bytes for download. */
+  emailAttachment: (uid: string, index: number) => Promise<Result<FaberLoomEmailAttachmentContent | undefined>>
   /** List the email drafts awaiting approval. */
   emailDrafts: () => Promise<Result<readonly FaberLoomEmailDraftRow[]>>
   /** Create or replace one email draft. */
@@ -724,7 +726,7 @@ function agentsScreen() {
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
-      t, emailInbox, emailRead, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft,
+      t, emailInbox, emailRead, emailAttachment, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, emailPolicy, saveEmailPolicy, startConversation,
     } = props
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
@@ -753,10 +755,27 @@ function emailScreen() {
       setAutoEnabled(policy.value.enabled)
       setAutoThreshold(String(policy.value.threshold))
     }, [policy])
-    const mailBody = useLazy<string | null>(
-      () => selected === null || mode !== 'inbox' ? Promise.resolve({ ok: true as const, value: null }) : emailRead(selected),
+    const mailBody = useLazy<FaberLoomEmailContent>(
+      () => selected === null || mode !== 'inbox'
+        ? Promise.resolve({ ok: true as const, value: { text: '', html: null, attachments: [] } })
+        : emailRead(selected),
       [selected, mode],
     )
+
+    /** Fetch one attachment's bytes and save it through a temporary link. */
+    const downloadAttachment = (uid: string, index: number, name: string): void => {
+      void emailAttachment(uid, index).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        if (result.value === undefined) { setMessage(t('state.error')); return }
+        const bytes = Uint8Array.from(atob(result.value.contentBase64), char => char.charCodeAt(0))
+        const url = URL.createObjectURL(new Blob([bytes], { type: result.value.mediaType }))
+        const link = document.createElement('a')
+        link.href = url
+        link.download = name
+        link.click()
+        URL.revokeObjectURL(url)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
     const inboxRows = inbox.kind === 'ready' ? inbox.value : []
     const draftRows = drafts.kind === 'ready' ? drafts.value : []
     const rows: readonly { id: string }[] = mode === 'inbox' ? inboxRows : draftRows
@@ -775,7 +794,7 @@ function emailScreen() {
       setInReplyTo(mail?.messageId ?? null)
       setInstruction('')
       setAiText(null)
-      setReplyBody(mailBody.kind === 'ready' ? mailBody.value : null)
+      setReplyBody(mailBody.kind === 'ready' ? (mailBody.value.text.length > 0 ? mailBody.value.text : mailBody.value.html) : null)
       setAttachments([])
       setMessage(null)
     }
@@ -917,10 +936,28 @@ function emailScreen() {
           <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail?.from ?? '—'}</span></Field>
           <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenMail?.date ?? ''}</span></Field>
           <Field label={t('field.body')}>
-            <textarea className={styles.emailBody} readOnly value={mailBody.kind === 'ready' && mailBody.value !== null
-              ? mailBody.value
-              : mailBody.kind === 'error' ? mailBody.message : mailBody.kind === 'loading' ? t('state.loading') : t('email.noBody')} />
+            {mailBody.kind === 'loading'
+              ? <span className={styles.cellMuted}>{t('state.loading')}</span>
+              : mailBody.kind === 'error'
+                ? <span className={styles.cellMuted}>{mailBody.message}</span>
+                : mailBody.value.html !== null
+                  ? <iframe className={styles.emailHtml} sandbox="" srcDoc={mailBody.value.html} title={t('field.body')} />
+                  : <textarea className={styles.emailBody} readOnly value={mailBody.value.text.length === 0 ? t('email.noBody') : mailBody.value.text} />}
           </Field>
+          {mailBody.kind === 'ready' && mailBody.value.attachments.length > 0
+            ? (
+              <Field label={t('field.attachments')}>
+                <div className={styles.steps}>
+                  {mailBody.value.attachments.map((attachment, index) => (
+                    <button className={styles.rowAction} type="button" key={`${attachment.name}-${String(index)}`}
+                      onClick={() => { downloadAttachment(selected ?? '', index, attachment.name) }}>
+                      {`${attachment.name} · ${String(attachment.size)} B`}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            )
+            : null}
         </Modal>
         <Modal open={composing} onClose={() => { setComposing(false) }} title={draftId === null ? t('email.newDraft') : t('email.draft')}
           closeLabel={t('action.close')} className={String(styles.emailModal)} contentClassName={String(styles.emailModal)}

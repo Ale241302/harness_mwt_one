@@ -126,6 +126,36 @@ export interface EmailDraftSaveInput {
   readonly spaceId?: string | null
 }
 
+/** One attachment of a message as the Email panel reads it. */
+export interface FaberLoomEmailAttachment {
+  /** File name. */
+  readonly name: string
+  /** Media type. */
+  readonly mediaType: string
+  /** Byte length. */
+  readonly size: number
+}
+
+/** One decoded message as the Email panel reads it. */
+export interface FaberLoomEmailContent {
+  /** Plain-text body, empty when the message carried none. */
+  readonly text: string
+  /** HTML body, or null when the message carried none. */
+  readonly html: string | null
+  /** Attachment metadata, in order. */
+  readonly attachments: readonly FaberLoomEmailAttachment[]
+}
+
+/** One attachment's bytes, base64-encoded, for download. */
+export interface FaberLoomEmailAttachmentContent {
+  /** File name. */
+  readonly name: string
+  /** Media type. */
+  readonly mediaType: string
+  /** Decoded bytes, base64-encoded. */
+  readonly contentBase64: string
+}
+
 /** Auto-send policy as the Email panel reads it. */
 export interface FaberLoomEmailPolicy {
   /** Whether automatic sending is enabled. */
