@@ -304,7 +304,10 @@ export class FaberLoomViewService extends TypertRemoteService {
     apiKey?: string,
     webAccess?: boolean,
     mwtMcp?: boolean,
+    mailConnectionIds?: readonly string[],
+    subagentIds?: readonly string[],
   ): Promise<FaberLoomOverview> {
+    const catalog = subagentIds === undefined ? undefined : await this.ctx.faberloomAgents.listAgents()
     await this.ctx.faberloomAgents.createAgent({
       name,
       responsibility,
@@ -313,6 +316,13 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...apiKey === undefined || apiKey.length === 0 ? {} : { apiKey },
       ...webAccess === undefined ? {} : { webAccess },
       ...mwtMcp === undefined ? {} : { mwtMcp },
+      ...mailConnectionIds === undefined ? {} : { mailConnectionIds },
+      ...subagentIds === undefined ? {} : {
+        subagents: subagentIds.map(agentId => ({
+          name: catalog?.find(candidate => candidate.id === agentId)?.name ?? agentId,
+          agentId: agentId as FaberLoomAgentId,
+        })),
+      },
     } satisfies AgentInput)
     return await this.overview()
   }

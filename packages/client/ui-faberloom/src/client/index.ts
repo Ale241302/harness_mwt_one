@@ -124,6 +124,7 @@ export function apply(ctx: ClientContext): void {
         write(() => ctx.remote.faberloomView.createAgent(
           input.name, input.responsibility, input.provider ?? undefined, input.model ?? undefined,
           input.apiKey.length === 0 ? undefined : input.apiKey, input.webAccess, input.mwtMcp,
+          input.mailConnectionIds, input.subagentIds,
         ))
       },
       deactivateAgent: (id) => { write(() => ctx.remote.faberloomView.deleteAgent(id)) },

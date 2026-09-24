@@ -65,6 +65,8 @@ export interface FaberloomPanelInjected {
     readonly apiKey: string
     readonly webAccess: boolean
     readonly mwtMcp: boolean
+    readonly mailConnectionIds: readonly string[]
+    readonly subagentIds: readonly string[]
   }) => void
   /** Deactivate one agent and refresh. */
   deactivateAgent: (id: string) => void
@@ -442,14 +444,7 @@ function agentsScreen() {
     const [query, setQuery] = useState('')
     const [message, setMessage] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
-    const [creating, setCreating] = useState(false)
-    const [newName, setNewName] = useState('')
-    const [newPrompt, setNewPrompt] = useState('')
-    const [newProvider, setNewProvider] = useState('')
-    const [newModel, setNewModel] = useState('')
-    const [newKey, setNewKey] = useState('')
-    const [newWeb, setNewWeb] = useState(false)
-    const [newMcp, setNewMcp] = useState(true)
+    const [drafting, setDrafting] = useState(false)
     const [name, setName] = useState('')
     const [responsibility, setResponsibility] = useState('')
     const [assigned, setAssigned] = useState<readonly string[]>([])
@@ -496,7 +491,41 @@ function agentsScreen() {
       { key: 'space', header: t('col.space'), cell: agent => <span className={styles.cellMuted}>{agent.spaceId ?? t('spaces.root')}</span> },
     ]
 
+    /** Open the inspector in create mode with empty fields. */
+    const openDraft = (): void => {
+      setDrafting(true)
+      setSelected(null)
+      setName('')
+      setResponsibility('')
+      setAssigned([])
+      setProvider('')
+      setModelId('')
+      setApiKey('')
+      setHasApiKey(false)
+      setWebAccess(false)
+      setMwtMcp(true)
+      setMailIds([])
+      setSubagentIds([])
+      setMessage(null)
+    }
+
     const save = (): void => {
+      if (drafting) {
+        setMessage(null)
+        createAgent({
+          name: name.trim().length === 0 ? t('agents.untitled') : name.trim(),
+          responsibility,
+          provider: provider.length === 0 ? null : provider,
+          model: modelId.length === 0 ? null : modelId,
+          apiKey,
+          webAccess,
+          mwtMcp,
+          mailConnectionIds: mailIds,
+          subagentIds,
+        })
+        setDrafting(false)
+        return
+      }
       if (selected === null) return
       setSaving(true)
       setMessage(null)
@@ -517,71 +546,55 @@ function agentsScreen() {
         .finally(() => { setSaving(false) })
     }
 
-    const editTitle = detail.kind === 'ready' && detail.value !== undefined
-      ? detail.value.name
-      : t('agents.editor')
-
-    const createNewAgent = (): void => {
-      setMessage(null)
-      createAgent({
-        name: newName.trim().length === 0 ? t('agents.untitled') : newName.trim(),
-        responsibility: newPrompt,
-        provider: newProvider.length === 0 ? null : newProvider,
-        model: newModel.length === 0 ? null : newModel,
-        apiKey: newKey,
-        webAccess: newWeb,
-        mwtMcp: newMcp,
-      })
-      setCreating(false)
-    }
+    const editTitle = drafting
+      ? t('agents.createTitle')
+      : detail.kind === 'ready' && detail.value !== undefined
+        ? detail.value.name
+        : t('agents.editor')
 
     return (
       <Screen title={t('panel.agents.title')} subtitle={t('panel.agents.intro')}
         trailing={(
           <>
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
-            <button className={styles.primary} type="button" onClick={() => {
-              setMessage(null)
-              setNewName('')
-              setNewPrompt('')
-              setNewProvider('')
-              setNewModel('')
-              setNewKey('')
-              setNewWeb(false)
-              setNewMcp(true)
-              setCreating(true)
-            }}>{t('agents.createTitle')}</button>
+            <button className={styles.primary} type="button" onClick={openDraft}>{t('agents.createTitle')}</button>
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
         <div className={styles.split}>
-          <DataTable columns={columns} rows={agents} selectedId={selected} onSelect={setSelected}
+          <DataTable columns={columns} rows={agents} selectedId={selected} onSelect={(id) => { setDrafting(false); setSelected(id) }}
             emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
           <Inspector
             title={editTitle}
-            status={detail.kind === 'ready' && detail.value !== undefined
-              ? <StatusDot on={detail.value.active} label={detail.value.active ? t('status.active') : t('status.inactive')} />
-              : undefined}
-            footer={selected === null ? undefined : (
+            status={drafting
+              ? <StatusDot on label={t('status.active')} />
+              : detail.kind === 'ready' && detail.value !== undefined
+                ? <StatusDot on={detail.value.active} label={detail.value.active ? t('status.active') : t('status.inactive')} />
+                : undefined}
+            footer={selected === null && !drafting ? undefined : (
               <>
                 <span className={styles.tools}>
-                  <button className={styles.danger} type="button" onClick={() => { purgeAgent(selected); setSelected(null) }}>{t('action.delete')}</button>
-                  {detail.kind === 'ready' && detail.value?.active === true
-                    ? <button className={styles.ghost} type="button" onClick={() => { deactivateAgent(selected) }}>{t('action.deactivate')}</button>
-                    : null}
+                  {drafting ? null : (
+                    <>
+                      <button className={styles.danger} type="button" onClick={() => { purgeAgent(selected ?? ''); setSelected(null) }}>{t('action.delete')}</button>
+                      {detail.kind === 'ready' && detail.value?.active === true
+                        ? <button className={styles.ghost} type="button" onClick={() => { if (selected !== null) deactivateAgent(selected) }}>{t('action.deactivate')}</button>
+                        : null}
+                    </>
+                  )}
                 </span>
                 <span className={styles.tools}>
-                  <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.cancel')}</button>
-                  <button className={styles.primary} type="button" disabled={saving} onClick={save}>{t('action.save')}</button>
+                  <button className={styles.ghost} type="button" onClick={() => { if (drafting) setDrafting(false); else setSelected(null) }}>{t('action.cancel')}</button>
+                  <button className={styles.primary} type="button" disabled={saving} onClick={save}>{drafting ? t('action.create') : t('action.save')}</button>
                 </span>
               </>
             )}
           >
-            {selected === null
+            {selected === null && !drafting
               ? <StateBlock kind="empty" title={t('agents.selectTitle')} text={t('agents.selectText')} />
-              : detail.kind === 'loading'
+              : !drafting && detail.kind === 'loading'
                 ? <StateBlock kind="loading" title={t('state.loading')} />
-                : detail.kind === 'error'
+                : !drafting && detail.kind === 'error'
                   ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
                   : (
                     <>
@@ -679,45 +692,6 @@ function agentsScreen() {
                   )}
           </Inspector>
         </div>
-        <Modal open={creating} onClose={() => { setCreating(false) }} title={t('agents.createTitle')} closeLabel={t('action.close')}
-          footer={(
-            <>
-              <button className={styles.ghost} type="button" onClick={() => { setCreating(false) }}>{t('action.cancel')}</button>
-              <button className={styles.primary} type="button" onClick={createNewAgent}>{t('action.create')}</button>
-            </>
-          )}>
-          <Field label={t('field.name')}>
-            <input type="text" autoComplete="off" value={newName} placeholder={t('panel.agents.newPlaceholder')} onChange={(event) => { setNewName(event.target.value) }} />
-          </Field>
-          <Field label={t('field.responsibility')} hint={t('agents.promptHint')}>
-            <textarea value={newPrompt} onChange={(event) => { setNewPrompt(event.target.value) }} />
-          </Field>
-          <Field label={t('field.provider')}>
-            <select value={newProvider} onChange={(event) => { setNewProvider(event.target.value) }}>
-              <option value="">{t('agents.providerUnset')}</option>
-              {MODEL_PROVIDERS.map(item => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </Field>
-          <Field label={t('field.modelId')} hint={t('agents.modelIdHint')}>
-            <input type="text" autoComplete="off" value={newModel} placeholder={t('agents.modelIdPlaceholder')} onChange={(event) => { setNewModel(event.target.value) }} />
-          </Field>
-          <Field label={t('field.apiKey')} hint={t('agents.apiKeyHint')}>
-            <SecretInput showLabel={t('agents.apiKeyShow')} hideLabel={t('agents.apiKeyHide')} value={newKey}
-              placeholder={t('agents.apiKeyPlaceholder')} autoComplete="new-password" onChange={(event) => { setNewKey(event.target.value) }} />
-          </Field>
-          <Field label={t('field.webAccess')} hint={t('agents.webAccessHint')}>
-            <label className={styles.stepFlag}>
-              <input type="checkbox" checked={newWeb} onChange={(event) => { setNewWeb(event.target.checked) }} />
-              {t('agents.webAccessAllow')}
-            </label>
-          </Field>
-          <Field label={t('field.mwtMcp')} hint={t('agents.mwtMcpHint')}>
-            <label className={styles.stepFlag}>
-              <input type="checkbox" checked={newMcp} onChange={(event) => { setNewMcp(event.target.checked) }} />
-              {t('agents.mwtMcpAllow')}
-            </label>
-          </Field>
-        </Modal>
       </Screen>
     )
   }
