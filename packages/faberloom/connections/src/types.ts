@@ -140,6 +140,8 @@ export interface FaberLoomEmailDraft {
   readonly text: string
   /** Where the draft is in its lifecycle. */
   readonly status: EmailDraftStatus
+  /** The AI's original text, when the draft was machine-written; otherwise null. */
+  readonly aiText: string | null
   /** `Message-ID` this draft replies to, or null. */
   readonly inReplyTo: string | null
   /** Space the draft belongs to, or null. */
@@ -164,10 +166,32 @@ export interface EmailDraftInput {
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
+  /** The AI's original text, when the draft is machine-written. */
+  readonly aiText?: string | null
   /** `Message-ID` this draft replies to. */
   readonly inReplyTo?: string | null
   /** Space the draft belongs to. */
   readonly spaceId?: string | null
+}
+
+/** Auto-send policy for one owner (and space, when scoped). */
+export interface EmailAutoPolicy {
+  /** Whether the owner enabled automatic sending. */
+  readonly enabled: boolean
+  /** Consecutive clean AI sends required before automatic sending. */
+  readonly threshold: number
+  /** Consecutive AI drafts currently sent without owner edits. */
+  readonly cleanSends: number
+}
+
+/** Update input for the auto-send policy. */
+export interface EmailAutoPolicyInput {
+  /** Space the policy applies to; absent is the owner-wide policy. */
+  readonly spaceId?: string | null
+  /** Whether automatic sending is enabled. */
+  readonly enabled: boolean
+  /** Consecutive clean sends required. */
+  readonly threshold: number
 }
 
 /** What a successful send reports. */

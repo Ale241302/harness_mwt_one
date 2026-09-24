@@ -6805,6 +6805,12 @@ importers:
       '@deepseek-ai/dsh-faberloom-backup':
         specifier: workspace:^
         version: link:../backup
+      '@deepseek-ai/dsh-faberloom-connections':
+        specifier: workspace:^
+        version: link:../connections
+      '@deepseek-ai/dsh-faberloom-inbound':
+        specifier: workspace:^
+        version: link:../inbound
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines

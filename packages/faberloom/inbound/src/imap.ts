@@ -414,12 +414,35 @@ export function messagesOf(lines: readonly string[]): ImapMessage[] {
     messages.push({
       uid,
       messageId: headerValue(headers, 'message-id'),
-      from: headerValue(headers, 'from'),
-      subject: headerValue(headers, 'subject'),
+      from: decoded(headerValue(headers, 'from')),
+      subject: decoded(headerValue(headers, 'subject')),
       date: headerValue(headers, 'date'),
     })
   }
   return messages.sort((left, right) => left.uid - right.uid)
+}
+
+/**
+ * Decode RFC 2047 encoded-words (`=?utf-8?q?…?=` / `=?utf-8?B?…?=`) in a
+ * header value so names and subjects read as text.
+ * @param value - the raw header value.
+ * @returns the decoded value; unknown charsets fall back to Latin-1.
+ */
+export function decodeMimeWords(value: string): string {
+  return value.replace(/=\?([^?\s]+)\?([bBqQ])\?([^?]*)\?=/g, (_match, charset: string, encoding: string, text: string) => {
+    const latin1 = encoding.toLowerCase() === 'b'
+      ? Buffer.from(text, 'base64').toString('latin1')
+      : text.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (_hex, pair: string) => String.fromCharCode(Number.parseInt(pair, 16)))
+    const bytes = Buffer.from(latin1, 'latin1')
+    return charset.toLowerCase().startsWith('iso-8859') || charset.toLowerCase() === 'latin1'
+      ? bytes.toString('latin1')
+      : bytes.toString('utf8')
+  })
+}
+
+/** Decode one optional header value. */
+function decoded(value: string | null): string | null {
+  return value === null ? null : decodeMimeWords(value)
 }
 
 /** Take the header literal out of one FETCH chunk. */

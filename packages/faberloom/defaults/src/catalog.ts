@@ -30,6 +30,8 @@ export interface SeedStep {
   readonly dependsOn: readonly string[]
   /** Wait pattern the step parks on, when it waits for a person or an event. */
   readonly waitFor?: string
+  /** Whether the step performs a ledgered external effect. */
+  readonly effect?: boolean
 }
 
 /** One routine the catalogue seeds. */
@@ -100,5 +102,65 @@ export const SEED_ROUTINES: readonly SeedRoutine[] = [
     expectedResult: 'Un respaldo diario verificado del conocimiento del propietario.',
     permissions: [],
     failurePolicy: 'continue',
+  },
+  {
+    name: 'Seguimiento de correo',
+    intent: 'Reenviar un correo si no hay respuesta en dos días.',
+    trigger: { kind: 'manual' },
+    steps: [
+      {
+        id: 'enviar',
+        instruction: 'Redacta y envía el correo inicial al destinatario indicado en la entrada (to, subject, text).',
+        handler: 'email.send',
+        dependsOn: [],
+        effect: true,
+      },
+      {
+        id: 'esperar',
+        instruction: 'Espera dos días a que llegue una respuesta del mismo hilo.',
+        handler: 'wait',
+        dependsOn: ['enviar'],
+        waitFor: '2d',
+      },
+      {
+        id: 'seguimiento',
+        instruction: 'Si no hubo respuesta, reenvía el correo anterior; si la hubo, termina sin reenviar.',
+        handler: 'email.followup',
+        dependsOn: ['esperar'],
+        effect: true,
+      },
+    ],
+    expectedResult: 'El correo queda respondido o reenviado una vez.',
+    permissions: [],
+    failurePolicy: 'review',
+  },
+  {
+    name: 'SAP a expediente',
+    intent: 'Extraer el Excel del SAP de un correo, buscar la PF en MWT.ONE y adjuntarlo al expediente.',
+    trigger: { kind: 'email', match: 'SAP' },
+    steps: [
+      {
+        id: 'enlace',
+        instruction: 'Extrae del cuerpo del correo entrante el enlace al archivo Excel (xlsx/xls).',
+        handler: 'email.extract-spreadsheet-link',
+        dependsOn: [],
+      },
+      {
+        id: 'buscar-pf',
+        instruction: 'Con el enlace y el número del correo, busca la PF mencionada en el MCP de MWT.ONE y localiza su expediente.',
+        handler: 'mcp',
+        dependsOn: ['enlace'],
+      },
+      {
+        id: 'adjuntar',
+        instruction: 'Descarga el Excel y súbelo al expediente de la PF encontrada usando el MCP de MWT.ONE.',
+        handler: 'mcp',
+        dependsOn: ['buscar-pf'],
+        effect: true,
+      },
+    ],
+    expectedResult: 'El Excel del SAP queda adjunto al expediente de la PF.',
+    permissions: ['mwt'],
+    failurePolicy: 'review',
   },
 ]

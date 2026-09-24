@@ -30,7 +30,8 @@ import type {
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
-  FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput,
+  FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
+  FaberLoomEmailPolicy, EmailPolicySaveInput,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import type { createWorkspaceStore } from './store.ts'
@@ -154,6 +155,12 @@ export interface FaberloomPanelInjected {
   sendEmailDraft: (id: string) => Promise<Result<FaberLoomEmailDraftRow>>
   /** Read the email voice profile captured from sent mail. */
   emailVoice: (spaceId?: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Draft one email with the model, in the owner's voice, and enqueue it. */
+  emailDraftWithAi: (input: EmailDraftAiInput) => Promise<Result<FaberLoomEmailDraftRow>>
+  /** Read the owner's auto-send policy. */
+  emailPolicy: () => Promise<Result<FaberLoomEmailPolicy>>
+  /** Save the owner's auto-send policy. */
+  saveEmailPolicy: (input: EmailPolicySaveInput) => Promise<Result<FaberLoomEmailPolicy>>
   /** List the owner's knowledge backups, newest first. */
   backups: () => Promise<Result<readonly FaberLoomBackupRow[]>>
   /** Capture a new knowledge backup. */
@@ -716,7 +723,10 @@ function agentsScreen() {
 /** Correo: the mailbox envelopes and the drafts awaiting approval. */
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
-    const { t, emailInbox, emailRead, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailVoice } = props
+    const {
+      t, emailInbox, emailRead, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft,
+      emailVoice, emailDraftWithAi, emailPolicy, saveEmailPolicy, startConversation,
+    } = props
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
@@ -728,9 +738,20 @@ function emailScreen() {
     const [subject, setSubject] = useState('')
     const [body, setBody] = useState('')
     const [inReplyTo, setInReplyTo] = useState<string | null>(null)
+    const [instruction, setInstruction] = useState('')
+    const [aiText, setAiText] = useState<string | null>(null)
+    const [replyBody, setReplyBody] = useState<string | null>(null)
     const inbox = useLazy<readonly FaberLoomInboxRow[]>(() => emailInbox(), [reload])
     const drafts = useLazy<readonly FaberLoomEmailDraftRow[]>(() => emailDrafts(), [reload])
     const voice = useLazy<readonly FaberLoomTeachingRow[]>(() => emailVoice(), [reload])
+    const policy = useLazy<FaberLoomEmailPolicy>(() => emailPolicy(), [reload])
+    const [autoEnabled, setAutoEnabled] = useState(false)
+    const [autoThreshold, setAutoThreshold] = useState('3')
+    useEffect(() => {
+      if (policy.kind !== 'ready') return
+      setAutoEnabled(policy.value.enabled)
+      setAutoThreshold(String(policy.value.threshold))
+    }, [policy])
     const mailBody = useLazy<string | null>(
       () => selected === null || mode !== 'inbox' ? Promise.resolve({ ok: true as const, value: null }) : emailRead(selected),
       [selected, mode],
@@ -744,7 +765,6 @@ function emailScreen() {
     const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
 
     const openCompose = (mail?: FaberLoomInboxRow): void => {
-      setMode('drafts')
       setComposing(true)
       setSelected(null)
       setDraftId(null)
@@ -753,6 +773,9 @@ function emailScreen() {
       setSubject(mail === undefined || mail.subject === null ? '' : `Re: ${mail.subject}`)
       setBody('')
       setInReplyTo(mail?.messageId ?? null)
+      setInstruction('')
+      setAiText(null)
+      setReplyBody(mailBody.kind === 'ready' ? mailBody.value : null)
       setMessage(null)
     }
 
@@ -765,6 +788,9 @@ function emailScreen() {
       setSubject(draft.subject)
       setBody(draft.text)
       setInReplyTo(draft.inReplyTo)
+      setInstruction('')
+      setAiText(draft.aiText)
+      setReplyBody(null)
       setMessage(null)
     }
 
@@ -777,12 +803,31 @@ function emailScreen() {
         cc: recipients(cc),
         subject,
         text: body,
+        aiText,
         inReplyTo,
       })
       if (!result.ok) { setMessage(result.error.message); return null }
       setDraftId(result.value.id)
       setReload(value => value + 1)
       return result.value.id
+    }
+
+    /** Ask the model to write the draft in the owner's voice; never sends. */
+    const draftWithAi = (): void => {
+      if (instruction.trim().length === 0) { setMessage(t('state.needsText')); return }
+      setMessage(null)
+      void emailDraftWithAi({
+        to: recipients(to),
+        subject,
+        instruction,
+        replyToBody: replyBody,
+      }).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setDraftId(result.value.id)
+        setBody(result.value.text)
+        setAiText(result.value.aiText)
+        setReload(value => value + 1)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
     const send = (): void => {
@@ -872,6 +917,13 @@ function emailScreen() {
             )}>
             {composing ? (
               <>
+                <Field label={t('email.instruction')} hint={t('email.instructionHint')}>
+                  <textarea value={instruction} onChange={(event) => { setInstruction(event.target.value) }} />
+                  <span className={styles.tools}>
+                    <button className={styles.secondary} type="button" onClick={draftWithAi}>{t('email.draftWithAi')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => { startConversation() }}>{t('email.draftInChat')}</button>
+                  </span>
+                </Field>
                 <Field label={t('field.to')}><input type="text" autoComplete="off" value={to} onChange={(event) => { setTo(event.target.value) }} /></Field>
                 <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value) }} /></Field>
                 <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value) }} /></Field>
@@ -916,6 +968,27 @@ function emailScreen() {
                     ))}
                   </div>
                 )}
+        </Block>
+        <Block title={t('email.autoSend')} subtitle={t('email.autoSendHint')}>
+          {policy.kind !== 'ready'
+            ? <StateBlock kind="loading" title={t('state.loading')} />
+            : (
+              <div className={styles.steps}>
+                <label className={styles.stepFlag}>
+                  <input type="checkbox" checked={autoEnabled} onChange={(event) => { setAutoEnabled(event.target.checked) }} />
+                  {t('email.autoSendEnable')}
+                </label>
+                <input type="number" min={1} style={{ width: 90, padding: '8px 10px' }} value={autoThreshold} aria-label={t('email.autoSendThreshold')} onChange={(event) => { setAutoThreshold(event.target.value) }} />
+                <span className={styles.cellMuted}>{`${t('email.cleanSends')}: ${String(policy.value.cleanSends)} / ${String(policy.value.threshold)}`}</span>
+                <button className={styles.secondary} type="button" onClick={() => {
+                  setMessage(null)
+                  const threshold = Number(autoThreshold)
+                  void saveEmailPolicy({ enabled: autoEnabled, threshold: Number.isFinite(threshold) && threshold > 0 ? threshold : 1 })
+                    .then((result) => { if (!result.ok) setMessage(result.error.message); else setReload(value => value + 1) })
+                    .catch((cause: unknown) => { setMessage(String(cause)) })
+                }}>{t('action.save')}</button>
+              </div>
+            )}
         </Block>
       </Screen>
     )

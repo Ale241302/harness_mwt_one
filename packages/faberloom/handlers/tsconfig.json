@@ -18,6 +18,12 @@
       "path": "../backup"
     },
     {
+      "path": "../connections"
+    },
+    {
+      "path": "../inbound"
+    },
+    {
       "path": "../../core/agent"
     },
     {

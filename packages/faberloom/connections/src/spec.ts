@@ -39,6 +39,8 @@ export const draftRecord = z.object({
   subject: z.string(),
   text: z.string(),
   status: z.enum(['draft', 'sent', 'rejected']),
+  // The AI's original text, kept to capture the owner's correction on send.
+  aiText: z.string().nullable().default(null),
   inReplyTo: z.string().nullable(),
   spaceId: z.string().nullable(),
   createdAt: z.string(),
@@ -48,6 +50,20 @@ export const draftRecord = z.object({
 
 /** One stored draft, inferred from {@link draftRecord}. */
 export type DraftRecord = z.infer<typeof draftRecord>
+
+/** Durable auto-send policy for one owner (and space, when scoped). */
+export const emailPolicyRecord = z.object({
+  ownerId: z.string(),
+  spaceId: z.string().nullable(),
+  enabled: z.boolean(),
+  threshold: z.number(),
+  // Consecutive AI drafts sent without owner edits.
+  cleanSends: z.number(),
+  updatedAt: z.string(),
+})
+
+/** One stored auto-send policy, inferred from {@link emailPolicyRecord}. */
+export type EmailPolicyRecord = z.infer<typeof emailPolicyRecord>
 
 /**
  * The connections domain spec: the `connections` table and the owner's email
@@ -59,5 +75,6 @@ export const connectionsDomainSpec = defineDomain({
   tables: {
     connections: domainTable<string, ConnectionRecord>(connectionRecord),
     drafts: domainTable<string, DraftRecord>(draftRecord),
+    policies: domainTable<string, EmailPolicyRecord>(emailPolicyRecord),
   },
 })

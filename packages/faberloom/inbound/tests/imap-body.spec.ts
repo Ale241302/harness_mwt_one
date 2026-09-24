@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { decodeBodyText, decodeQuotedPrintable } from '../src/imap.ts'
+import { decodeBodyText, decodeMimeWords, decodeQuotedPrintable } from '../src/imap.ts'
+
+describe('imap header decoding', () => {
+  it('decodes Q-encoded and B-encoded words', () => {
+    expect(decodeMimeWords('=?UTF-8?q?Matr=C3=ADcula?=')).toBe('Matrícula')
+    const base64 = Buffer.from('Educación!', 'utf8').toString('base64')
+    expect(decodeMimeWords(`=?utf-8?B?${base64}?=`)).toBe('Educación!')
+  })
+
+  it('decodes a name beside an address', () => {
+    expect(decodeMimeWords('=?UTF-8?q?Escuela_de_Ciencias?= <a@b.cr>')).toBe('Escuela de Ciencias <a@b.cr>')
+  })
+})
 
 describe('imap body decoding', () => {
   it('decodes a base64 body and drops the trailing fetch paren', () => {

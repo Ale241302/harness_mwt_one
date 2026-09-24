@@ -102,6 +102,9 @@ export const executionRecord = z.object({
   steps: z.record(z.string(), stepStateRecord),
   evidence: z.array(evidenceRecord),
   event: eventRecord.nullable(),
+  // Every event the execution has received, oldest first; defaulted so rows
+  // written before the field existed keep validating under the same version.
+  events: z.array(eventRecord).default([]),
   waitingFor: z.string().nullable(),
   /**
    * When the wait the execution is parked on stops being reasonable, as an

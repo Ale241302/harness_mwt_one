@@ -14,10 +14,10 @@ import { join } from 'node:path'
 import { connect as connectTcp, type Socket } from 'node:net'
 import { connect as connectTls } from 'node:tls'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord } from './spec.ts'
+import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type EmailPolicyRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { probeSmtp, sendSmtp } from './smtp.ts'
-import type { ConnectionInput, ConnectionProbe, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
+import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
 
@@ -36,6 +36,7 @@ function toDraft(id: string, record: DraftRecord): FaberLoomEmailDraft {
     subject: record.subject,
     text: record.text,
     status: record.status,
+    aiText: record.aiText ?? null,
     inReplyTo: record.inReplyTo,
     spaceId: record.spaceId,
     createdAt: record.createdAt,
@@ -186,6 +187,63 @@ export class FaberLoomConnections extends Service {
   /** The owner's email-draft table handle. */
   private async draftTable(): Promise<KvTable<string, DraftRecord>> { return (await this.domain()).table('drafts') }
 
+  /** The auto-send policy table handle. */
+  private async policyTable(): Promise<KvTable<string, EmailPolicyRecord>> { return (await this.domain()).table('policies') }
+
+  /** Stable policy key for one owner and optional space. */
+  private policyKey(ownerId: string, spaceId: string | null): string {
+    return `${ownerId}|${spaceId ?? ''}`
+  }
+
+  /**
+   * Read the auto-send policy for one owner (and space, when scoped).
+   * @param ownerId - the owning identity.
+   * @param spaceId - the space, or null for the owner-wide policy.
+   * @returns the policy, defaulting to disabled with a threshold of three.
+   */
+  async emailPolicy(ownerId: string, spaceId: string | null = null): Promise<EmailAutoPolicy> {
+    const record = (await this.policyTable()).get(this.policyKey(ownerId, spaceId))
+    if (record === undefined) return { enabled: false, threshold: 3, cleanSends: 0 }
+    return { enabled: record.enabled, threshold: record.threshold, cleanSends: record.cleanSends }
+  }
+
+  /**
+   * Save the auto-send policy, preserving the accumulated clean-send count.
+   * @param ownerId - the owning identity.
+   * @param input - the policy fields.
+   * @returns the stored policy.
+   */
+  async saveEmailPolicy(ownerId: string, input: EmailAutoPolicyInput): Promise<EmailAutoPolicy> {
+    const spaceId = input.spaceId ?? null
+    const existing = (await this.policyTable()).get(this.policyKey(ownerId, spaceId))
+    return await this.putPolicy(ownerId, spaceId, {
+      enabled: input.enabled,
+      threshold: input.threshold,
+      cleanSends: existing?.cleanSends ?? 0,
+    })
+  }
+
+  /** Write one policy record wholesale. */
+  private async putPolicy(
+    ownerId: string,
+    spaceId: string | null,
+    policy: EmailAutoPolicy,
+  ): Promise<EmailAutoPolicy> {
+    const key = this.policyKey(ownerId, spaceId)
+    const record: EmailPolicyRecord = {
+      ownerId,
+      spaceId,
+      enabled: policy.enabled,
+      threshold: policy.threshold,
+      cleanSends: policy.cleanSends,
+      updatedAt: new Date().toISOString(),
+    }
+    const table = await this.policyTable()
+    if (table.get(key) === undefined) await table.put(key, record)
+    else await table.update(key, () => record)
+    return { enabled: record.enabled, threshold: record.threshold, cleanSends: record.cleanSends }
+  }
+
   /**
    * List one owner's email drafts, newest first.
    * @param ownerId - the owning identity.
@@ -218,6 +276,7 @@ export class FaberLoomConnections extends Service {
       subject: input.subject,
       text: input.text,
       status: 'draft',
+      aiText: input.aiText ?? null,
       inReplyTo: input.inReplyTo ?? null,
       spaceId: input.spaceId ?? null,
       createdAt: existing?.createdAt ?? now,
@@ -257,6 +316,13 @@ export class FaberLoomConnections extends Service {
     const now = new Date().toISOString()
     const next: DraftRecord = { ...record, status: 'sent', sentAt: now, updatedAt: now }
     await table.update(id, () => next)
+    // Track the auto-send streak: an AI draft sent unchanged counts; an edited
+    // one resets it, so the owner's corrections always stop auto-sending.
+    if (record.aiText !== null) {
+      const policy = await this.emailPolicy(ownerId, record.spaceId)
+      const clean = record.aiText.trim() === record.text.trim()
+      await this.putPolicy(ownerId, record.spaceId, { ...policy, cleanSends: clean ? policy.cleanSends + 1 : 0 })
+    }
     return toDraft(id, next)
   }
 

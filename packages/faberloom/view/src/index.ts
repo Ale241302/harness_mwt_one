@@ -4,6 +4,7 @@
  * authenticated owner and that owner's agent-memory identity), never as a client
  * argument, so a panel cannot ask for another owner's rows.
  */
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +15,9 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-tools'
 // Type-only: pulls the ctx.faberloomInbound merge for the Email panel's inbox.
 import type {} from '@deepseek-ai/dsh-faberloom-inbound'
+// Type-only: the LLM service merge and the message frame the drafting call sends.
+import type {} from '@deepseek-ai/dsh-llm'
+import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
@@ -34,7 +38,8 @@ import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
-  FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput,
+  FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
+  FaberLoomEmailPolicy, EmailPolicySaveInput,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
   FaberLoomModelRow, FaberLoomModelRecommendation,
@@ -154,6 +159,7 @@ function draftRow(draft: FaberLoomEmailDraft): FaberLoomEmailDraftRow {
     subject: draft.subject,
     text: draft.text,
     status: draft.status,
+    aiText: draft.aiText,
     inReplyTo: draft.inReplyTo,
     spaceId: draft.spaceId,
     createdAt: draft.createdAt,
@@ -665,10 +671,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     const draft = await this.connectionsService().sendDraft(actor.id, id)
     if (draft.text.trim().length > 0) {
       try {
+        const corrected = draft.aiText !== null && draft.aiText.trim() !== draft.text.trim()
         await this.ctx.faberloomMemory.createTeaching(actor.id, {
           scope: draft.spaceId === null ? 'global' : 'space',
           text: draft.text,
-          source: 'email',
+          source: corrected ? 'email-correction' : 'email',
           author: actor.id,
           task: 'email',
           ...draft.spaceId === null ? {} : { spaceId: draft.spaceId },
@@ -694,6 +701,103 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
     })
     return rows.map(teachingRow)
+  }
+
+  /**
+   * Draft one email with the model, in the owner's voice, and enqueue it as a
+   * draft. Never sends. Uses the first mounted provider/model route.
+   * @param input - recipients, subject, instruction, and optional email being answered.
+   * @returns the stored draft.
+   */
+  @Remote('emailDraftWithAi')
+  async emailDraftWithAi(input: EmailDraftAiInput): Promise<FaberLoomEmailDraftRow> {
+    const actor = this.actor()
+    const llm = this.ctx.get('llm')
+    if (llm === undefined) throw new Error('faberloom: no model provider is mounted')
+    const provider = llm.listProviders()[0]?.id
+    if (provider === undefined) throw new Error('faberloom: no model provider is available')
+    const model = (await llm.listModels(provider))[0]?.id
+    if (model === undefined) throw new Error('faberloom: no model is available for the provider')
+
+    // The voice profile: recent email teachings, space-scoped when the draft is.
+    const voice = await this.ctx.faberloomMemory.listTeachings(actor.id, {
+      task: 'email',
+      ...input.spaceId === undefined || input.spaceId === null || input.spaceId.length === 0 ? {} : { spaceId: input.spaceId },
+    })
+    const examples = voice.slice(-8).map(entry => entry.text.slice(0, 1200))
+    const system = [
+      "You write email drafts in the owner's voice.",
+      'Match the greeting, formality, sentence length, punctuation and sign-off of the examples.',
+      'Return only the email body text: no headers, no subject line, no markdown fences.',
+      ...examples.length === 0 ? [] : ['', "Examples of the owner's writing:", ...examples],
+    ].join('\n')
+    const prompt = [
+      `To: ${input.to.join(', ')}`,
+      `Subject: ${input.subject}`,
+      ...input.replyToBody === undefined || input.replyToBody === null || input.replyToBody.length === 0
+        ? []
+        : ['', 'Email being answered:', input.replyToBody.slice(0, 4000)],
+      '',
+      'What to say:',
+      input.instruction,
+    ].join('\n')
+    // `createUserMessage` mints the branded message id, but importing that value
+    // from `@deepseek-ai/dsh-llm` would need a reviewed dependency-policy entry.
+    // A locally minted uuid keeps the same wire shape without widening the policy.
+    const messages: Message[] = [{
+      id: randomUUID(),
+      role: 'user',
+      content: [{ type: 'text', text: prompt }],
+      source: { kind: 'plugin', plugin: 'dsh-faberloom-view' },
+    } as unknown as Message]
+
+    let text = ''
+    let failure: string | undefined
+    for await (const chunk of llm.stream({ provider, model, messages, system, maxTokens: 1200 })) {
+      if (chunk.type === 'text-delta') text += chunk.text
+      else if (chunk.type === 'finish' && (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted')) failure = chunk.reason.failure.message
+      else if (chunk.type === 'finish' && chunk.reason.kind === 'max-tokens') failure = 'the model hit its output limit'
+    }
+    if (failure !== undefined) throw new Error(`faberloom: the model could not draft the email: ${failure}`)
+    if (text.trim().length === 0) throw new Error('faberloom: the model produced no text')
+
+    const saved = await this.connectionsService().saveDraft(actor.id, {
+      to: [...input.to],
+      subject: input.subject,
+      text: text.trim(),
+      aiText: text.trim(),
+      ...input.spaceId === undefined || input.spaceId === null ? {} : { spaceId: input.spaceId },
+    })
+    // Auto-approval: once the owner has approved enough clean AI drafts for this
+    // scope, the next one is sent without waiting. An edited send resets the streak.
+    const policy = await this.connectionsService().emailPolicy(actor.id, saved.spaceId)
+    if (policy.enabled && policy.cleanSends >= policy.threshold) {
+      return draftRow(await this.connectionsService().sendDraft(actor.id, saved.id))
+    }
+    return draftRow(saved)
+  }
+
+  /**
+   * Read the owner's auto-send policy.
+   * @param spaceId - the space, or absent for the owner-wide policy.
+   * @returns the policy.
+   */
+  @Remote('emailPolicy')
+  async emailPolicy(spaceId?: string): Promise<FaberLoomEmailPolicy> {
+    return await this.connectionsService().emailPolicy(
+      this.actor().id,
+      spaceId === undefined || spaceId.length === 0 ? null : spaceId,
+    )
+  }
+
+  /**
+   * Save the owner's auto-send policy.
+   * @param input - the policy fields.
+   * @returns the stored policy.
+   */
+  @Remote('saveEmailPolicy')
+  async saveEmailPolicy(input: EmailPolicySaveInput): Promise<FaberLoomEmailPolicy> {
+    return await this.connectionsService().saveEmailPolicy(this.actor().id, input)
   }
 
   /**

@@ -163,6 +163,8 @@ export interface Execution {
   readonly evidence: readonly ExecutionEvidence[]
   /** The event that produced or resumed the execution, or `null`. */
   readonly event: IngestEvent | null
+  /** Every event the execution has received, oldest first. */
+  readonly events: readonly IngestEvent[]
   /** The wait pattern the execution is blocked on, or `null`. */
   readonly waitingFor: string | null
   /**
@@ -218,6 +220,10 @@ export interface StepContext {
   readonly input: unknown
   /** The event that resumed the step, when any. */
   readonly event: IngestEvent | undefined
+  /** Results of completed steps, keyed by step id. */
+  readonly results: Readonly<Record<string, unknown>>
+  /** Every event the execution has received, oldest first. */
+  readonly events: readonly IngestEvent[]
 }
 
 /** A registered step handler. */

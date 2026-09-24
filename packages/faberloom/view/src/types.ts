@@ -92,6 +92,8 @@ export interface FaberLoomEmailDraftRow {
   readonly text: string
   /** Lifecycle status. */
   readonly status: string
+  /** The AI's original text, when machine-written; otherwise null. */
+  readonly aiText: string | null
   /** `Message-ID` this draft replies to, or null. */
   readonly inReplyTo: string | null
   /** Space the draft belongs to, or null. */
@@ -116,8 +118,44 @@ export interface EmailDraftSaveInput {
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
+  /** The AI's original text, when the draft is machine-written. */
+  readonly aiText?: string | null
   /** `Message-ID` this draft replies to. */
   readonly inReplyTo?: string | null
+  /** Space the draft belongs to. */
+  readonly spaceId?: string | null
+}
+
+/** Auto-send policy as the Email panel reads it. */
+export interface FaberLoomEmailPolicy {
+  /** Whether automatic sending is enabled. */
+  readonly enabled: boolean
+  /** Consecutive clean AI sends required before automatic sending. */
+  readonly threshold: number
+  /** Consecutive AI drafts currently sent without owner edits. */
+  readonly cleanSends: number
+}
+
+/** Update input for the auto-send policy. */
+export interface EmailPolicySaveInput {
+  /** Space the policy applies to; absent is the owner-wide policy. */
+  readonly spaceId?: string | null
+  /** Whether automatic sending is enabled. */
+  readonly enabled: boolean
+  /** Consecutive clean sends required. */
+  readonly threshold: number
+}
+
+/** Input for one AI-written email draft. */
+export interface EmailDraftAiInput {
+  /** Recipients. */
+  readonly to: readonly string[]
+  /** Subject line. */
+  readonly subject: string
+  /** What the email should say, in the owner's words. */
+  readonly instruction: string
+  /** Body of the email being answered, when replying. */
+  readonly replyToBody?: string | null
   /** Space the draft belongs to. */
   readonly spaceId?: string | null
 }

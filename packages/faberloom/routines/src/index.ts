@@ -185,6 +185,16 @@ function toEvent(record: EventRecord): IngestEvent {
   }
 }
 
+/** Map one incoming event to its durable record. */
+function toEventRecord(event: IngestEvent): EventRecord {
+  return {
+    key: event.key,
+    type: event.type,
+    subject: event.subject ?? null,
+    data: (event.data ?? null) as EventRecord['data'],
+  }
+}
+
 /** Map a durable execution to the consumer-facing execution. */
 function toExecution(id: FaberLoomExecutionId, record: ExecutionRecord): Execution {
   return {
@@ -197,6 +207,7 @@ function toExecution(id: FaberLoomExecutionId, record: ExecutionRecord): Executi
     steps: record.steps,
     evidence: record.evidence,
     event: record.event === null ? null : toEvent(record.event),
+    events: (record.events ?? []).map(toEvent),
     waitingFor: record.waitingFor,
     deadlineAt: record.deadlineAt ?? null,
     reason: record.reason,
@@ -563,6 +574,7 @@ export class FaberLoomRoutines extends Service {
       idempotencyKey: request.idempotencyKey,
       steps: initialState(routine.definition),
       evidence: [{ channel: request.channel, eventKey: request.event?.key ?? null, at: now }],
+      events: request.event === undefined ? [] : [toEventRecord(request.event)],
       event: request.event === undefined
         ? null
         : { key: request.event.key, type: request.event.type, subject: request.event.subject ?? null, data: request.event.data ?? null },
@@ -639,7 +651,22 @@ export class FaberLoomRoutines extends Service {
         await this.saveExecution(id, record)
         return record
       }
-      const context: StepContext = { executionId: id, routineId: record.routineId, stepId: step.id, input, event }
+      if (event !== undefined && !(record.events ?? []).some(entry => entry.key === event.key)) {
+        record = { ...record, events: [...(record.events ?? []), toEventRecord(event)], updatedAt: new Date().toISOString() }
+      }
+      const results: Record<string, unknown> = {}
+      for (const [stepId, state] of Object.entries(steps)) {
+        if (state.status === 'completed') results[stepId] = state.result
+      }
+      const context: StepContext = {
+        executionId: id,
+        routineId: record.routineId,
+        stepId: step.id,
+        input,
+        event,
+        results,
+        events: (record.events ?? []).map(toEvent),
+      }
       try {
         const result = await handler(context)
         if (step.effect) {

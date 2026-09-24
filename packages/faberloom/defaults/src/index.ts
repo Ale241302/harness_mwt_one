@@ -175,6 +175,7 @@ export class FaberLoomDefaults extends Service {
             handler: step.handler,
             dependsOn: [...step.dependsOn],
             ...step.waitFor === undefined ? {} : { waitFor: step.waitFor },
+            ...step.effect === undefined ? {} : { effect: step.effect },
           })),
           expectedResult: seed.expectedResult,
           permissions: [...seed.permissions],

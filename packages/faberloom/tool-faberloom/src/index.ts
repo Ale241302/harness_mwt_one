@@ -389,6 +389,39 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   ctx.tools.register(defineTool({
+    name: 'faberloom_email_draft',
+    description: 'Prepare an email draft for the owner to review, written in the owner\'s voice. Never sends: the owner approves it in the Email panel.',
+    parameters: {
+      to: { type: 'string', required: true, description: 'Recipient addresses, comma-separated.' },
+      subject: { type: 'string', required: true, description: 'Subject line.' },
+      text: { type: 'string', required: true, description: 'Plain-text body, in the owner\'s voice.' },
+      spaceId: { type: 'string', description: 'Space the draft belongs to, when scoped.' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          subject: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Draft ready for approval: "${value.subject}" (${value.id}).` }],
+    },
+    execute: async (args) => {
+      const draft = await connections(ctx).saveDraft(actor(config).id, {
+        to: args.to.split(',').map(value => value.trim()).filter(value => value.length > 0),
+        subject: args.subject,
+        text: args.text,
+        aiText: args.text,
+        ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
+      })
+      return { id: draft.id, subject: draft.subject }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Draft email', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'faberloom_spaces_create',
     description: 'Create a product space: a topic that groups related work, documents, and agents.',
     parameters: {
