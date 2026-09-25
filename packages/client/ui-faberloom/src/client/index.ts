@@ -27,6 +27,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { FaberloomBrandName, FABERLOOM_SECTIONS, type FaberloomPanelInjected } from './panels.tsx'
 import { registerChatGestures } from './triggers.ts'
+import { runSpaceFromEmail } from './space-from-email.ts'
 import { createWorkspaceStore } from './store.ts'
 import { en, zh, type FaberloomKey } from './locales.ts'
 import { FABERLOOM_THEME_SOURCE, faberloomTokens } from './theme.ts'
@@ -174,22 +175,7 @@ export function apply(ctx: ClientContext): void {
       emailRead: uid => ctx.remote.faberloomView.emailRead(uid),
       emailAttachment: (uid, index) => ctx.remote.faberloomView.emailAttachment(uid, index),
       spaceFromEmail: (uid, name, agentId, from) => {
-        void ctx.remote.faberloomView.spaceFromEmail(uid, name, agentId ?? undefined, from ?? undefined)
-          .then(async (result) => {
-            if (!result.ok) { bound.setError(result.error.message); return }
-            refresh()
-            if (result.value.workspaceId === null) return
-            try {
-              const sessionId = await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
-              // The email is the session's first message, so the agent starts with the
-              // body and the extracted attachment text instead of hunting for it.
-              const session = ctx.sessions.binding(sessionId)?.session
-              if (session !== undefined && result.value.context.length > 0) {
-                await session.prompt([{ type: 'text', text: result.value.context }], 'queue')
-              }
-            } catch { /* a failed session keeps the current panel */ }
-            ctx.layout.selectPanel(null)
-          }).catch(() => { bound.setError('space from email failed') })
+        runSpaceFromEmail(ctx, bound, refresh, { uid, name, agentId, from })
       },
       routineChat: (uid, messages, subject, from) =>
         ctx.remote.faberloomView.routineChat(uid, [...messages], subject ?? undefined, from ?? undefined),
