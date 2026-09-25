@@ -1,5 +1,8 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply, type Config } from '../src/index.ts'
 
@@ -87,6 +90,27 @@ describe('faberloom mail attachment tools', () => {
     expect(save).toBeDefined()
     const result = await save!.execute({ uid: 2843, name: 'otro.pdf' } as never) as unknown as { files: unknown[] }
     expect(result.files).toEqual([])
+  })
+
+  it('writes the original bytes into correo-adjuntos/ under the working directory', async () => {
+    const tools = harness(CONFIG, { faberloomInbound: inbound })
+    const save = tools.get('faberloom_mail_attachment')
+    const dir = mkdtempSync(join(tmpdir(), 'mail-attach-'))
+    const cwd = process.cwd()
+    process.chdir(dir)
+    try {
+      const result = await save!.execute({ uid: 2843 } as never) as unknown as {
+        files: { name: string; path: string; bytes: number }[]
+      }
+      expect(result.files).toHaveLength(1)
+      expect(result.files[0]?.name).toBe('PO 505433.pdf')
+      expect(result.files[0]?.bytes).toBe(3)
+      expect(existsSync(join(dir, 'correo-adjuntos', 'PO 505433.pdf'))).toBe(true)
+      expect(readFileSync(join(dir, 'correo-adjuntos', 'PO 505433.pdf'), 'utf8')).toBe('abc')
+    } finally {
+      process.chdir(cwd)
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('refuses the link when no console token is configured', async () => {
