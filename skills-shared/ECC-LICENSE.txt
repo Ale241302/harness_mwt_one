@@ -1,15 +1,14 @@
-Third-party skills in this directory
-====================================
+Third-party content in this directory
+=====================================
 
-The skills listed below are vendored from ECC (https://github.com/affaan-m/ECC),
-version 2.2.2, by Affaan Mustafa, under the MIT License reproduced at the end:
+Everything under `skills-shared/` except `interview-me/` is vendored from ECC
+(https://github.com/affaan-m/ECC), version 2.2.2, by Affaan Mustafa, under the
+MIT License:
 
-  carrier-relationship-management, competitive-platform-analysis, council,
-  customer-billing-ops, customs-trade-compliance, deep-research, e2e-testing,
-  email-ops, intent-driven-development, inventory-demand-planning,
-  logistics-exception-management, market-research, product-lens,
-  production-scheduling, quality-nonconformance, returns-reverse-logistics,
-  security-review, taste
+  - 292 skills, copied verbatim; the 24 curated ones stay model-invocable and
+    the rest carry `disable-model-invocation: true` (user-invocable via `/name`).
+  - 94 commands, rewritten as user-invocable skills named `cmd-<command>`.
+  - 68 agents, rewritten as user-invocable skills named `agent-<agent>`.
 
 `interview-me` is the workspace owner's own skill, not from ECC.
 
