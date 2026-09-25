@@ -27,7 +27,7 @@ Mount this plugin where `ctx.slots`, `ctx.locale`, and `ctx.theme` are present. 
 
 - an accent layer through `ctx.theme.overrideTokens`, which follows light and dark;
 - the `sidebar.brand.name` occupant;
-- seven `sidebar.panellist` rows and their matching `main` panels, addressed by the shared `MainPanelId`;
+- ten `sidebar.panellist` rows and their matching `main` panels, addressed by the shared `MainPanelId`;
 - the chat gestures: an `@` trigger source that lists the owner's active agents (a pick inserts `@name`) and a `/routine` command contribution with a popup that starts the picked routine, both fed by the workspace overview through `ctx.remote.faberloomView`.
 
 The Spaces detail links the business space to the harness workspace: `spaceWorkspace` projects the space's conversation area (its `fw_` workdir registered as a workspace, titled after the space) and "New conversation in this space" opens a session in it, so the sidebar's workspace group and the space stay the same thing. The Work bench reviews with a note, submits new prepared revisions, moves items through the exception states (request data, fail, complete), and lists recorded effects with detail and date.

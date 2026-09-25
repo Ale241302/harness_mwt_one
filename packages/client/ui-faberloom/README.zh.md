@@ -27,7 +27,10 @@ FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoo
 
 - 通过 `ctx.theme.overrideTokens` 注册的强调色层，随浅色/深色模式变化；
 - `sidebar.brand.name` 的占用者；
-- 七个 `sidebar.panellist` 行及其对应的 `main` 面板，以共享的 `MainPanelId` 寻址。
+- 十个 `sidebar.panellist` 行及其对应的 `main` 面板，以共享的 `MainPanelId` 寻址；
+- 聊天手势：一个 `@` 触发器源，列出所有者的活跃代理（选中会插入 `@name`），以及一个带弹窗的 `/routine` 命令贡献，用于启动选中的例程；两者都由工作区总览经 `ctx.remote.faberloomView` 提供。
+
+Espacios 详情把业务空间与 harness 工作区连接起来：`spaceWorkspace` 投射该空间的对话区域（其 `fw_` 工作目录注册为工作区，标题取自空间），而「在此空间新建对话」会在其中打开一个会话，因此侧边栏的工作区分组与空间始终是同一个东西。Mesa de trabajo（工作台）可带备注评审、提交新的已准备修订、让条目经过异常状态（请求数据、失败、完成），并列出已记录的效果及其明细与日期。
 
 所有注册都是调用方 fiber 上的 effect，并随其消失。
 
@@ -40,7 +43,7 @@ FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoo
 
 #### 模型看到的内容
 
-没有。插件的 `apply` 只调用 `ctx.locale.register`、`ctx.theme.overrideTokens` 与 `ctx.slots.register`；不贡献工具、不注入提示文本、不写入会话事件。
+没有直接影响。该插件不贡献工具、不注入提示文本，也不写入会话事件。`@` 手势只是把纯文本放进草稿，因此模型收到的是用户消息里的代理名称；委派给该代理是宿主机的 `faberloom_agents_delegate` 工具，而从 `/routine` 启动例程是宿主机的执行服务。
 
 #### Token 影响
 

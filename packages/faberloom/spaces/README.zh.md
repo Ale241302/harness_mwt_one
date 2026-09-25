@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包承载主题空间与有效上下文。它注册 `ctx.faberloomSpaces` 主机服务；工具、设置与持久化记录在后续切片加入。
+此包承载主题空间与有效上下文。它通过存储域与控制台角色访问控制注册 `ctx.faberloomSpaces` 主机服务并保存持久记录；模型工具位于 `dsh-tool-faberloom`。
 
 ## 目录
 
@@ -48,7 +48,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **控制台角色范围** — 访问使用网关注入的控制台角色、公司与只读标志；其他公司的成员被拒绝，只读角色不能变更空间。
+- **控制台角色范围** — 访问使用网关注入的控制台角色、公司与只读标志；其他公司的成员被拒绝，而只读角色仍可创建并管理自己的空间（空间是用户自己的容器，不是公司数据）。
 
 <a id="dev-note"></a>
 ### 开发备注

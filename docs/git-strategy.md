@@ -1,5 +1,7 @@
 # Estrategia de repositorios git
 
+English | [中文](git-strategy.zh.md)
+
 Actualizado el 20 de septiembre de 2026.
 
 ## Remotos

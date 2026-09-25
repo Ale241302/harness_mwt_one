@@ -1,5 +1,7 @@
 # Endpoints y topología · mwt-one-harness
 
+English | [中文](endpoints.zh.md)
+
 Verificado en el VPS el 14 de septiembre de 2026.
 
 ## Principio de identidad (decidido)
