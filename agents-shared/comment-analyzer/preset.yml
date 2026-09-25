@@ -1,0 +1,3 @@
+name: Comment Analyzer
+description: "Analyze code comments for accuracy, completeness, maintainability, and comment rot risk."
+order: 109

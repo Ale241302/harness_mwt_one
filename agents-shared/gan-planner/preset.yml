@@ -1,0 +1,3 @@
+name: Gan Planner
+description: "GAN Harness — Planner agent. Expands a one-line prompt into a full product specification with features, sprints, evaluation criteria, and design direction."
+order: 126

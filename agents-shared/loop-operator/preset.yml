@@ -1,0 +1,3 @@
+name: Loop Operator
+description: "Operate autonomous agent loops, monitor progress, and intervene safely when loops stall."
+order: 137

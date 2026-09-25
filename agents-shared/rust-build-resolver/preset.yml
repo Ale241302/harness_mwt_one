@@ -1,0 +1,3 @@
+name: Rust Build Resolver
+description: "Rust build, compilation, and dependency error resolution specialist. Fixes cargo build errors, borrow checker issues, and Cargo.toml problems with minimal changes. Use when Rust builds fail."
+order: 156

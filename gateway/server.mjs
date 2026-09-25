@@ -87,6 +87,8 @@ const cfg = {
   skillsCatalogRoot: process.env.SKILLS_CATALOG_ROOT || '/opt/skills-catalog',
   // Skills curadas compartidas por todos los roles (ECC + propias).
   skillsSharedRoot: process.env.SKILLS_SHARED_ROOT || '/opt/skills-shared',
+  // Presets de agente nativos (ECC) sembrados en el home del usuario.
+  agentsSharedRoot: process.env.AGENTS_SHARED_ROOT || '/opt/agents-shared',
   // Cadencia del despachador persistente de rutinas (una pasada cada N ms).
   dispatcherIntervalMs: Number(process.env.DISPATCHER_INTERVAL_MS || 60000),
   // Receptor de correo: sondeo del IMAP del usuario (desactivado por defecto
@@ -914,6 +916,21 @@ function writeUserInstructions(home) {
   return file
 }
 
+// Siembra una vez los presets de agente compartidos en la raíz de usuario del
+// roster (`<DSH_HOME>/.agent-presets`), de donde `dsh-agent-presets` los
+// descubre; un preset propio del usuario nunca se pisa.
+function writeUserPresets(home) {
+  if (!fs.existsSync(cfg.agentsSharedRoot)) return
+  const root = path.join(home, '.agent-presets')
+  fs.mkdirSync(root, { recursive: true })
+  for (const entry of fs.readdirSync(cfg.agentsSharedRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const dest = path.join(root, entry.name)
+    if (fs.existsSync(dest)) continue
+    try { fs.cpSync(path.join(cfg.agentsSharedRoot, entry.name), dest, { recursive: true }) } catch { /* el preset se reintenta en el próximo arranque */ }
+  }
+}
+
 function waitForToken(child, timeoutMs, onLog) {
   return new Promise((resolve, reject) => {
     let buf = ''
@@ -954,6 +971,7 @@ function startInstance(user, memory) {
   fs.mkdirSync(home, { recursive: true })
   const patchFile = writeUserPatch(home, user, memory)
   writeUserInstructions(home)
+  writeUserPresets(home)
   // El perfil materializa enlaces de módulos en `<home>/profiles`; si ese
   // almacén se creó antes que un paquete nuevo (una fila añadida después), la
   // fila falla al importarse. Se retira para que el launcher lo reconstruya.

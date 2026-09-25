@@ -1,0 +1,3 @@
+name: Network Troubleshooter
+description: "Diagnoses network connectivity, routing, DNS, interface, and policy symptoms with a read-only OSI-layer workflow and evidence-backed root cause summary."
+order: 142
