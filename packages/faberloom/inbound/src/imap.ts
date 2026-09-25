@@ -102,7 +102,7 @@ class ImapSession {
    */
   private waitConnected(socket: Socket, timeoutMs: number): Promise<void> {
     this.socket = socket
-    const onData = (chunk: Buffer): void => { this.consume(chunk.toString('utf8')) }
+    const onData = (chunk: Buffer): void => { this.consume(chunk.toString('latin1')) }
     this.onData = onData
     socket.setTimeout(timeoutMs, () => { this.fail(new ImapError('tiempo de espera agotado')) })
     return new Promise<void>((resolve, reject) => {
@@ -130,7 +130,7 @@ class ImapSession {
     plain.setTimeout(0)
     const encrypted = connectTls({ socket: plain, servername: host })
     this.socket = encrypted
-    const onData = (chunk: Buffer): void => { this.consume(chunk.toString('utf8')) }
+    const onData = (chunk: Buffer): void => { this.consume(chunk.toString('latin1')) }
     this.onData = onData
     encrypted.setTimeout(timeoutMs, () => { this.fail(new ImapError('tiempo de espera agotado')) })
     await new Promise<void>((resolve, reject) => {
@@ -348,8 +348,26 @@ function collectPart(part: string, out: { text: string; html: string | null; att
     })
     return
   }
-  if (mediaType === 'text/html' && out.html === null) out.html = bytes.toString('utf8')
-  else if (mediaType === 'text/plain' && out.text.length === 0) out.text = bytes.toString('utf8')
+  if (mediaType === 'text/html' && out.html === null) out.html = decodeText(bytes, paramOf(contentType, 'charset'))
+  else if (mediaType === 'text/plain' && out.text.length === 0) out.text = decodeText(bytes, paramOf(contentType, 'charset'))
+}
+
+/**
+ * Decode one text part with the charset its `Content-Type` declares. The socket
+ * is read byte-for-byte (Latin-1), so the part's bytes are intact here; only the
+ * final step needs the declared charset, not an assumed UTF-8.
+ * @param bytes - the transfer-decoded part bytes.
+ * @param charset - the `charset` parameter, or null when the part named none.
+ * @returns the decoded text; an unknown charset falls back to UTF-8.
+ */
+function decodeText(bytes: Buffer, charset: string | null): string {
+  const name = (charset ?? '').trim().toLowerCase()
+  if (name.length === 0 || name === 'utf-8' || name === 'utf8') return bytes.toString('utf8')
+  try {
+    return new TextDecoder(name).decode(bytes)
+  } catch {
+    return bytes.toString('utf8')
+  }
 }
 
 /** Folded header lines into a lower-case name map. */
@@ -394,7 +412,7 @@ function decodeTransfer(encoding: string | undefined, body: string): Buffer {
     }
     return Buffer.from(bytes)
   }
-  return Buffer.from(body, 'utf8')
+  return Buffer.from(body, 'latin1')
 }
 
 /**

@@ -38,6 +38,25 @@ describe('imap MIME parsing', () => {
     ].join('\r\n')
     expect(parseMessage(raw).text).toBe('Hola é')
   })
+
+  it('decodes a non-UTF-8 charset from the Content-Type header', () => {
+    const raw = [
+      'Content-Type: text/plain; charset=iso-8859-1',
+      'Content-Transfer-Encoding: 8bit',
+      '',
+      `Buen d${String.fromCharCode(0xed)}a`,
+    ].join('\r\n')
+    expect(parseMessage(raw).text).toBe('Buen día')
+  })
+
+  it('reads windows-1252 bytes the way a mail client does', () => {
+    const raw = [
+      'Content-Type: text/plain; charset=windows-1252',
+      '',
+      `Total ${String.fromCharCode(0x80)} 10`,
+    ].join('\r\n')
+    expect(parseMessage(raw).text).toBe('Total € 10')
+  })
 })
 
 describe('imap header decoding', () => {
