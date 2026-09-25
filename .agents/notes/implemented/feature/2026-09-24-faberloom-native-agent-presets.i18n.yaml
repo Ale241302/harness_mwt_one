@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-24-faberloom-native-agent-presets.md
-2026-09-24-faberloom-native-agent-presets.md: 590fd98432f1e3cc4adddecb5a206eac468d9e45
-2026-09-24-faberloom-native-agent-presets.zh.md: 38333820c91610ebee02902c7b147f256877a4df
+2026-09-24-faberloom-native-agent-presets.md: f82038d925a212058c643328671dc5493dc28371
+2026-09-24-faberloom-native-agent-presets.zh.md: 0b5268eb6e75211886297e42840b364344903800

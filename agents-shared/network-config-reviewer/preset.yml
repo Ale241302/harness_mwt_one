@@ -1,3 +1,0 @@
-name: Network Config Reviewer
-description: "Reviews router and switch configurations for security, correctness, stale references, risky change-window commands, and missing operational guardrails."
-order: 141

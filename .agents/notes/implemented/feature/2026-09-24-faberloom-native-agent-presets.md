@@ -28,9 +28,9 @@ Generate one dsh agent preset per ECC agent and seed them into each user's roste
 ## Consequences
 
 - Every ECC agent is a selectable preset, distinguished by its persona and by whether it carries the shell and web rows.
-- The 68 preset rows appear in the picker alongside `standard`, `ptc`, `cordis`, and `minimal`.
+- The 35 preset rows appear in the picker alongside `standard`, `ptc`, `cordis`, and `minimal`.
 - The seeded presets are user-root copies; editing one is local and persists until removed.
 
 ## Testing
 
-A validator confirmed all 68 generated compositions parse and carry a persona prefix and preset metadata. The gateway seeding runs at instance start and is exercised by the deploy smoke; a live session confirms an ECC preset is selectable and starts with its persona.
+A validator confirmed all 35 generated compositions parse and carry a persona prefix and preset metadata. The gateway seeding runs at instance start and is exercised by the deploy smoke; a live session confirms an ECC preset is selectable and starts with its persona.

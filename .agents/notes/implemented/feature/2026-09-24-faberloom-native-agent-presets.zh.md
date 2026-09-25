@@ -28,9 +28,9 @@ ECC 目录此前是作为技能导入的，因此其中的智能体变成了“�
 ## 后果
 
 - 每个 ECC 智能体都是可选择的 preset，区别在于 persona 以及是否携带 shell 与 web 行。
-- 选择器中会与 `standard`、`ptc`、`cordis`、`minimal` 一起出现这 68 个 preset 行。
+- 选择器中会与 `standard`、`ptc`、`cordis`、`minimal` 一起出现这 35 个 preset 行。
 - 播种的 preset 是用户根副本；编辑它们是本地的，并会保留到被删除为止。
 
 ## 测试
 
-校验器确认全部 68 个生成的组合都能解析，并带有 persona 前缀与 preset 元数据。网关播种在实例启动时运行，并由部署冒烟覆盖；实机会话确认某个 ECC preset 可被选中并以它的 persona 启动。
+校验器确认全部 35 个生成的组合都能解析，并带有 persona 前缀与 preset 元数据。网关播种在实例启动时运行，并由部署冒烟覆盖；实机会话确认某个 ECC preset 可被选中并以它的 persona 启动。

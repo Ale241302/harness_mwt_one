@@ -3,10 +3,11 @@ Third-party content in this directory
 
 Every preset under `agents-shared/` is generated from the ECC agent catalog
 (https://github.com/affaan-m/ECC), version 2.2.2, by Affaan Mustafa, under the
-MIT License. Each preset is the shipped `standard` composition with the ECC
-agent's body as its persona and its tool rows scoped from the agent's `tools:`
-field (the shell stack when the agent declares `Bash`, the web tool when it
-declares `WebSearch`/`WebFetch`).
+MIT License. 35 presets remain after pruning stack-specific agents (language,
+framework, cloud, network, healthcare, and ML reviewers/resolvers); each preset
+is the shipped `standard` composition with the ECC agent's body as its persona
+and its tool rows scoped from the agent's `tools:` field (the shell stack when
+the agent declares `Bash`, the web tool when it declares `WebSearch`/`WebFetch`).
 
 MIT License
 
