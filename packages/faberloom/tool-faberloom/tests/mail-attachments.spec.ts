@@ -8,7 +8,7 @@ import { apply, type Config } from '../src/index.ts'
 
 interface CapturedTool {
   readonly name: string
-  readonly execute: (args: never) => Promise<never>
+  readonly execute: (args: never, exec?: never) => Promise<never>
 }
 
 /** Boot the product tools over a stub registry and capture the definitions. */
@@ -92,23 +92,22 @@ describe('faberloom mail attachment tools', () => {
     expect(result.files).toEqual([])
   })
 
-  it('writes the original bytes into correo-adjuntos/ under the working directory', async () => {
+  it('writes the original bytes into correo-adjuntos/ under the session cwd, not the process cwd', async () => {
     const tools = harness(CONFIG, { faberloomInbound: inbound })
     const save = tools.get('faberloom_mail_attachment')
     const dir = mkdtempSync(join(tmpdir(), 'mail-attach-'))
-    const cwd = process.cwd()
-    process.chdir(dir)
     try {
-      const result = await save!.execute({ uid: 2843 } as never) as unknown as {
+      const exec = { agent: { session: { header: { cwd: dir } } } }
+      const result = await save!.execute({ uid: 2843 } as never, exec as never) as unknown as {
         files: { name: string; path: string; bytes: number }[]
       }
       expect(result.files).toHaveLength(1)
       expect(result.files[0]?.name).toBe('PO 505433.pdf')
       expect(result.files[0]?.bytes).toBe(3)
+      expect(result.files[0]?.path).toBe(join(dir, 'correo-adjuntos', 'PO 505433.pdf'))
       expect(existsSync(join(dir, 'correo-adjuntos', 'PO 505433.pdf'))).toBe(true)
       expect(readFileSync(join(dir, 'correo-adjuntos', 'PO 505433.pdf'), 'utf8')).toBe('abc')
     } finally {
-      process.chdir(cwd)
       rmSync(dir, { recursive: true, force: true })
     }
   })

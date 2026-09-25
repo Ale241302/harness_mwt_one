@@ -2034,11 +2034,14 @@ export function apply(ctx: Context, config: Config): void {
           : value.files.map(file => `${file.name} → ${file.path} (${String(file.bytes)} B)`).join('\n'),
       }],
     },
-    execute: async (args) => {
+    execute: async (args, exec) => {
       const content = await inbound(ctx).readEmail(actor(config).id, args.uid)
       const wanted = args.name === undefined ? content.attachments : content.attachments.filter(attachment => attachment.name === args.name)
       if (wanted.length === 0) return { files: [] }
-      const dir = join(process.cwd(), 'correo-adjuntos')
+      // The workspace Files tab lists the session's cwd, so the copy must land
+      // there; the process cwd is only the fallback when no session is bound.
+      const root = exec.agent?.session.header.cwd ?? process.cwd()
+      const dir = join(root, 'correo-adjuntos')
       mkdirSync(dir, { recursive: true })
       const files = wanted.map((attachment) => {
         const path = join(dir, basename(attachment.name))

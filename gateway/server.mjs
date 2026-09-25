@@ -882,12 +882,13 @@ const FABERLOOM_INSTRUCTIONS = `# FaberLoom · reglas del espacio de trabajo
   aportan a leer el buzón. Usa las tools \`mcp__mwt__*\` **solo** cuando el usuario pida
   explícitamente consultar o crear datos de negocio (expediente, OC, cliente, factura).
   \`faberloom_mail_read\` devuelve el **texto** de los adjuntos, no el archivo.
-- **Entregar un documento o imagen adjunto del correo**: guárdalo con
-  \`faberloom_mail_attachment(uid, name?)\` — devuelve la ruta del **fichero original** en el
-  workspace — y entrégasela al usuario. Si necesita un **enlace**, usa
-  \`faberloom_mail_attachment_link(uid, name?)\`: sube el adjunto al storage de la consola
-  (MinIO) con la identidad del propio usuario y devuelve la URL de descarga. **Nunca**
-  reconstruyas el adjunto con reportes ni lo sustituyas por texto.
+- **Entregar un documento o imagen adjunto del correo**: entrega principal el **enlace** —
+  \`faberloom_mail_attachment_link(uid, name?)\` sube el adjunto al storage de la consola
+  (MinIO) con la identidad del propio usuario y devuelve la **URL de descarga**. Si el enlace
+  no está disponible (sin sesión iniciada), guarda el original en el workspace con
+  \`faberloom_mail_attachment(uid, name?)\`: queda en \`correo-adjuntos/\` y el usuario lo abre en
+  la pestaña **Ficheros** de la barra lateral. **Nunca** reconstruyas el adjunto con reportes
+  ni lo sustituyas por texto.
 - Responde en español, con el resultado y las tools usadas.
 `
 
