@@ -326,6 +326,18 @@ export class ClientSessions implements ISessions {
   }
 
   /**
+   * Permanently delete every stored Session the Host reports as belonging to no
+   * Workspace, then re-project the list so the removed rows disappear.
+   * @returns the removed ids.
+   */
+  async deleteOrphans(): Promise<readonly SessionId[]> {
+    const result = await this.manager.deleteOrphans()
+    if (!result.ok) throw new Error(`deleteOrphans failed: ${result.error.code}: ${result.error.message}`)
+    this.projectList()
+    return result.value.deleted
+  }
+
+  /**
    * Search the Host's visible message-content index. Results stay
    * request-local; the list snapshot remains the metadata authority.
    * @param query - non-blank literal phrase.

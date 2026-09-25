@@ -615,10 +615,37 @@ export class SessionManager {
   }
 
   /**
+   * Permanently delete one session, dropping every removed id — the parent and
+   * any forked children the Host cascaded — from the list store.
+   * @param sessionId - the session to delete.
+   * @returns the removed ids, or the business/transport error.
+   */
+  async deleteSession(sessionId: SessionId): Promise<RemoteResult<{ deleted: readonly SessionId[] }>> {
+    const result = await this.remote.session.delete({ sessionId })
+    if (result.ok) {
+      for (const id of result.value.deleted) this.recordMutation({ kind: 'remove', sessionId: id })
+    }
+    return result
+  }
+
+  /**
+   * Permanently delete every stored session the Host reports as unowned.
+   * @returns the removed ids, or the business/transport error.
+   */
+  async deleteOrphans(): Promise<RemoteResult<{ deleted: readonly SessionId[] }>> {
+    const result = await this.remote.session.deleteOrphans()
+    if (result.ok) {
+      for (const id of result.value.deleted) this.recordMutation({ kind: 'remove', sessionId: id })
+    }
+    return result
+  }
+
+  /**
    * Insert-or-enrich a locally synthesized summary: a new id prepends; an
    * existing entry only gains fields it lacks (the session-added frame and the
    * create() echo race — whichever lands second must fill the placeholder's
    * missing cwd/parentSessionId, never overwrite list-refresh data).
+   * @param summary - the locally synthesized summary to merge.
    */
   private mergeSummary(summary: SessionSummary): void {
     this.recordMutation({ kind: 'upsert', summary })

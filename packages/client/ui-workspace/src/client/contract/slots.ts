@@ -134,6 +134,16 @@ export type WorkspaceBrowserInjected = {
    * session clears the selection into the New Session view state.
    */
   archiveSession: (sessionId: SessionId) => Promise<void>
+  /**
+   * Permanently delete a Session and its forked children; rejects on the Host
+   * when the Session is live, resolves once the row leaves the list store.
+   */
+  deleteSession: (sessionId: SessionId) => Promise<void>
+  /**
+   * Permanently delete every Session outside every Workspace (the ungrouped
+   * bucket); resolves once the removed rows leave the list store.
+   */
+  deleteOrphans: () => Promise<void>
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
 }

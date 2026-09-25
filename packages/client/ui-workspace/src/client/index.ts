@@ -126,6 +126,16 @@ export function apply(ctx: Context): void {
       await workspaces.insertBefore(workspaceId, beforeWorkspaceId)
     },
     archiveSession: async (sessionId) => { await uiWorkspace.archiveSession(sessionId) },
+    deleteSession: async (sessionId) => {
+      // Row → session-face hop: delete is a per-session verb (ISession); the
+      // refresh re-projects the list after the Host cascades children.
+      const session = sessions.binding(sessionId)?.session
+      if (session === undefined) throw new Error(`unknown session "${sessionId}"`)
+      const result = await session.delete()
+      if (!result.ok) throw new Error(result.error.message)
+      await sessions.refresh()
+    },
+    deleteOrphans: async () => { await sessions.deleteOrphans() },
     createWorkspace: input => workspaces.create(input),
     hooks: { directoryFlow: browserFlowSource, hostInfo },
   })

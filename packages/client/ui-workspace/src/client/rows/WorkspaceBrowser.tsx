@@ -197,6 +197,10 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
+  /** Open the browser-owned session delete-confirmation dialog (row menu action). */
+  onSessionDelete: (sessionId: SessionNode['id']) => void
+  /** Open the browser-owned confirmation that deletes every ungrouped session. */
+  onSessionDeleteOrphans: () => void
   /** One Session chosen from search that must be exposed and scrolled into view. */
   revealSessionId?: SessionId | undefined
   /** Acknowledge that the chosen Session row has been revealed. */
@@ -209,6 +213,7 @@ function SessionTree({
   archivedSessionIds,
   workspaceReady, usePanelInfo,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  onSessionDelete, onSessionDeleteOrphans,
   insertWorkspaceBefore,
   groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
@@ -430,6 +435,7 @@ function SessionTree({
                       if (group.workspaceId !== undefined) onDeleteRequest(group.workspaceId, group.label)
                     },
                   }}
+                onDeleteOrphans={group.workspaceId === undefined ? onSessionDeleteOrphans : undefined}
               />
               {(sessionsExpanded
                 ? group.sessions
@@ -473,6 +479,7 @@ function SessionTree({
                     onRename={onSessionRename}
                     onFork={forkSession}
                     onArchive={onSessionArchive}
+                    onDelete={onSessionDelete}
                     onReveal={node.id === revealSessionId && group.key === revealGroup
                       ? () => { onSessionRevealed(node.id) }
                       : undefined}
@@ -505,6 +512,7 @@ function SessionTree({
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
   list, sessionIds, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive,
+  onSessionDelete,
   usePanelInfo, setSessionOrder,
   revealSessionId, onSessionRevealed, t,
 }: Pick<
@@ -514,6 +522,7 @@ function FlatList({
   | 'forkSession'
   | 'onSessionRename'
   | 'onSessionArchive'
+  | 'onSessionDelete'
   | 'usePanelInfo'
   | 'setSessionOrder'
   | 'revealSessionId'
@@ -570,6 +579,7 @@ function FlatList({
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
+              onDelete={onSessionDelete}
               onReveal={node.id === revealSessionId
                 ? () => { onSessionRevealed(node.id) }
                 : undefined}
@@ -710,6 +720,8 @@ export function WorkspaceBrowser({
   deleteWorkspace,
   insertWorkspaceBefore,
   archiveSession,
+  deleteSession,
+  deleteOrphans,
   createWorkspace,
   searchSessions,
   searchResultLimit,
@@ -1004,6 +1016,74 @@ export function WorkspaceBrowser({
     })
   }
 
+  // Session delete confirmation (destructive): the row menu opens the dialog;
+  // confirming deletes the session and its forked children on the Host, then
+  // re-projects the list. Like workspace delete, the dialog stays mounted
+  // until the committed row is gone from the projection.
+  const [sessionDeleteTarget, setSessionDeleteTarget] = useState<{ sessionId: SessionNode['id']; title: string } | null>(null)
+  const [sessionDeleting, setSessionDeleting] = useState(false)
+  const [sessionDeleteCommittedId, setSessionDeleteCommittedId] = useState<SessionNode['id'] | null>(null)
+  const [sessionDeleteError, setSessionDeleteError] = useState<string | null>(null)
+  useEffect(() => {
+    if (sessionDeleteCommittedId === null || list.byId[sessionDeleteCommittedId] !== undefined) return
+    setSessionDeleting(false)
+    setSessionDeleteCommittedId(null)
+    setSessionDeleteTarget(null)
+  }, [sessionDeleteCommittedId, list])
+  const closeSessionDelete = () => {
+    if (sessionDeleting) return
+    setSessionDeleteTarget(null)
+    setSessionDeleteError(null)
+  }
+  const confirmSessionDelete = () => {
+    /* v8 ignore next -- the Modal is absent without a target and its button is disabled while deleting. */
+    if (sessionDeleting || sessionDeleteTarget === null) return
+    setSessionDeleting(true)
+    setSessionDeleteCommittedId(null)
+    setSessionDeleteError(null)
+    deleteSession(sessionDeleteTarget.sessionId).then(() => {
+      // Wait for the re-projected list to drop the row before unmounting the
+      // confirmation state, mirroring the workspace-delete commit point.
+      setSessionDeleteCommittedId(sessionDeleteTarget.sessionId)
+    }).catch((reason: unknown) => {
+      setSessionDeleting(false)
+      setSessionDeleteError(reason instanceof Error ? reason.message : String(reason))
+    })
+  }
+  const onSessionDelete = (sessionId: SessionNode['id']) => {
+    setSessionDeleteTarget({ sessionId, title: list.byId[sessionId]?.title ?? '' })
+    setSessionDeleteError(null)
+  }
+
+  // Delete-all-ungrouped confirmation: same destructive posture as a single
+  // delete; the Host refuses any live session, so the whole ungrouped bucket
+  // disappears at once.
+  const [orphanDeleteOpen, setOrphanDeleteOpen] = useState(false)
+  const [orphanDeleting, setOrphanDeleting] = useState(false)
+  const [orphanDeleteError, setOrphanDeleteError] = useState<string | null>(null)
+  const closeOrphanDelete = () => {
+    if (orphanDeleting) return
+    setOrphanDeleteOpen(false)
+    setOrphanDeleteError(null)
+  }
+  const confirmOrphanDelete = () => {
+    /* v8 ignore next -- the Modal is absent while closed and its button is disabled while deleting. */
+    if (orphanDeleting) return
+    setOrphanDeleting(true)
+    setOrphanDeleteError(null)
+    deleteOrphans().then(() => {
+      setOrphanDeleting(false)
+      setOrphanDeleteOpen(false)
+    }).catch((reason: unknown) => {
+      setOrphanDeleting(false)
+      setOrphanDeleteError(reason instanceof Error ? reason.message : String(reason))
+    })
+  }
+  const onSessionDeleteOrphans = () => {
+    setOrphanDeleteOpen(true)
+    setOrphanDeleteError(null)
+  }
+
   // Delete dialog is separate from the row so a successful removal can
   // unmount that row without tearing down the in-flight confirmation state.
   const [deleteTarget, setDeleteTarget] = useState<{ workspaceId: WorkspaceId; title: string } | null>(null)
@@ -1197,6 +1277,7 @@ export function WorkspaceBrowser({
                 useSessionPendingInteraction={useSessionPendingInteraction}
                 open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
+                onSessionDelete={onSessionDelete}
                 setSessionOrder={saveSessionOrder}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
@@ -1210,6 +1291,8 @@ export function WorkspaceBrowser({
                 useSessionPendingInteraction={useSessionPendingInteraction}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
+                onSessionDelete={onSessionDelete}
+                onSessionDeleteOrphans={onSessionDeleteOrphans}
                 forkSession={forkSession}
                 workspaces={orderedWorkspaces}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
@@ -1328,6 +1411,56 @@ export function WorkspaceBrowser({
       >
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
+      </Modal>
+
+      <Modal
+        open={sessionDeleteTarget !== null}
+        onClose={closeSessionDelete}
+        closeLabel={t('close')}
+        title={t('delete.session')}
+        {...sessionDeleteTarget === null
+          ? {}
+          : { description: t('delete.session.desc', { name: sessionDeleteTarget.title }) }}
+        footer={(
+          <>
+            <Button variant="outline" disabled={sessionDeleting} onClick={closeSessionDelete}>{t('cancel')}</Button>
+            <Button
+              variant="outline"
+              className={css.deleteAction}
+              disabled={sessionDeleting}
+              onClick={confirmSessionDelete}
+            >
+              {t('delete.session')}
+            </Button>
+          </>
+        )}
+      >
+        {sessionDeleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
+        {sessionDeleteError !== null && <div className={css.renameError} role="alert">{sessionDeleteError}</div>}
+      </Modal>
+
+      <Modal
+        open={orphanDeleteOpen}
+        onClose={closeOrphanDelete}
+        closeLabel={t('close')}
+        title={t('delete.orphans')}
+        description={t('delete.orphans.desc')}
+        footer={(
+          <>
+            <Button variant="outline" disabled={orphanDeleting} onClick={closeOrphanDelete}>{t('cancel')}</Button>
+            <Button
+              variant="outline"
+              className={css.deleteAction}
+              disabled={orphanDeleting}
+              onClick={confirmOrphanDelete}
+            >
+              {t('delete.orphans')}
+            </Button>
+          </>
+        )}
+      >
+        {orphanDeleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
+        {orphanDeleteError !== null && <div className={css.renameError} role="alert">{orphanDeleteError}</div>}
       </Modal>
     </div>
   )

@@ -39,6 +39,9 @@ import type {
   SessionCancelValue,
   SessionCreateRequest,
   SessionCreateValue,
+  SessionDeleteOrphansValue,
+  SessionDeleteRequest,
+  SessionDeleteValue,
   SessionForkRequest,
   SessionForkValue,
   SessionPromptRequest,
@@ -64,6 +67,14 @@ type PromptContentCandidate =
 
 function hasPromptContent(content: readonly PromptContentCandidate[]): boolean {
   return content.some(part => part.type !== 'text' || part.text.trim().length > 0)
+}
+
+/** The slice of the Session persistence service that permanent deletion needs. */
+interface SessionPersistenceDeleter {
+  list(): Promise<readonly {
+    readonly header: { readonly id: SessionId; readonly cwd?: string; readonly parentSession?: SessionId }
+  }[]>
+  delete(id: SessionId, options?: { readonly signal?: AbortSignal }): Promise<boolean>
 }
 
 /** Implements Session business commands delegated by the Session Controller Remote service. */
@@ -166,6 +177,106 @@ export class SessionCommandController {
         )
       }
     })
+  }
+
+  /**
+   * Permanently delete one Session and every Session forked from it.
+   *
+   * A live Session is refused: deleting runs no disposal, so the caller closes
+   * it first. Children are removed before their parent, so a partial failure
+   * never leaves a child pointing at a missing parent.
+   * @param request - the Session to delete.
+   * @returns the ids removed, children before their parent.
+   */
+  async delete(request: SessionDeleteRequest): Promise<SessionDeleteValue> {
+    const persistence = this.requirePersistence()
+    const childrenOf = new Map<SessionId, SessionId[]>()
+    for (const { header } of await persistence.list()) {
+      const parent = header.parentSession
+      if (parent === undefined) continue
+      const children = childrenOf.get(parent)
+      if (children === undefined) childrenOf.set(parent, [header.id])
+      else children.push(header.id)
+    }
+    const ordered: SessionId[] = []
+    const collect = (id: SessionId): void => {
+      for (const child of childrenOf.get(id) ?? []) {
+        collect(child)
+        ordered.push(child)
+      }
+    }
+    collect(request.sessionId)
+    ordered.push(request.sessionId)
+    return { deleted: await this.removeAll(ordered, persistence) }
+  }
+
+  /**
+   * Permanently delete every stored Session that belongs to no Workspace.
+   *
+   * A Session belongs to a Workspace when its recorded working directory
+   * resolves to one. Live Sessions are skipped, so an open conversation never
+   * disappears under the user.
+   * @returns the ids removed, in listing order.
+   */
+  async deleteOrphans(): Promise<SessionDeleteOrphansValue> {
+    const persistence = this.requirePersistence()
+    const sessions = this.ctx.get('sessions')
+    const ordered: SessionId[] = []
+    for (const { header } of await persistence.list()) {
+      if (sessions?.get(header.id) !== undefined) continue
+      if (await this.belongsToWorkspace(header.cwd)) continue
+      ordered.push(header.id)
+    }
+    return { deleted: await this.removeAll(ordered, persistence) }
+  }
+
+  /**
+   * Resolve the persistence backend, refusing loudly when the deployment mounts none.
+   * @returns the mounted Session persistence service.
+   */
+  private requirePersistence(): SessionPersistenceDeleter {
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) {
+      throw new RemoteError('gateway/internal', 'deleting is unavailable: this deployment mounts no session-persistence service', {})
+    }
+    return persistence
+  }
+
+  /**
+   * Whether a recorded working directory resolves to a registered Workspace.
+   * @param cwd - recorded Session working directory, when any.
+   * @returns true when a Workspace owns that canonical directory.
+   */
+  private async belongsToWorkspace(cwd: string | undefined): Promise<boolean> {
+    if (cwd === undefined) return false
+    try {
+      return (await this.ctx.workspaceRegistry.resolveByPath(cwd)) !== undefined
+    } catch (error: unknown) {
+      // realpath rejects when the recorded directory no longer exists on disk.
+      if (error instanceof Error) return false
+      throw error
+    }
+  }
+
+  /**
+   * Refuse every live id, then delete each in order, dropping Workspace accounting.
+   * @param ids - ids to remove, children before their parent.
+   * @param persistence - mounted Session persistence backend.
+   * @returns the subset whose stored directory was actually removed.
+   */
+  private async removeAll(ids: readonly SessionId[], persistence: SessionPersistenceDeleter): Promise<SessionId[]> {
+    const sessions = this.ctx.get('sessions')
+    for (const id of ids) {
+      if (sessions?.get(id) !== undefined) {
+        throw new RemoteError('session/busy', `session "${id}" is open; close it before deleting`, { sessionId: id })
+      }
+    }
+    const removed: SessionId[] = []
+    for (const id of ids) {
+      if (await persistence.delete(id)) removed.push(id)
+      this.ctx.workspaceRegistry.forgetSession(id)
+    }
+    return removed
   }
 
   /**

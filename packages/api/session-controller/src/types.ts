@@ -204,6 +204,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'session/steer-unavailable': { readonly itemId: MessageId }
     'session/title-invalid': { readonly sessionId: SessionId }
     'session/fork-unavailable': { readonly sessionId: SessionId }
+    'session/busy': { readonly sessionId: SessionId }
     'subagent/not-found': {
       readonly parentSessionId: SessionId
       readonly childSessionId: SessionId
@@ -306,6 +307,28 @@ export interface SessionForkRequest {
 /** Identity of a newly forked Session. */
 export interface SessionForkValue {
   readonly sessionId: SessionId
+}
+
+/** Session delete request. */
+export interface SessionDeleteRequest {
+  /** The session to delete; sessions forked from it are deleted first. */
+  readonly sessionId: SessionId
+}
+
+/** Sessions permanently removed by one delete call, children before their parent. */
+export interface SessionDeleteValue {
+  readonly deleted: readonly SessionId[]
+}
+
+/** Request to delete every stored session that belongs to no Workspace. */
+export interface SessionDeleteOrphansRequest {
+  /** Reserved; present so the Remote method keeps a stable request position. */
+  readonly _reserved?: undefined
+}
+
+/** Sessions permanently removed by one orphan delete, in listing order. */
+export interface SessionDeleteOrphansValue {
+  readonly deleted: readonly SessionId[]
 }
 
 /** Session prompt request. */

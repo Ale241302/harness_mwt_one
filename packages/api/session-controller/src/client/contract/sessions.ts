@@ -96,6 +96,12 @@ export interface ISessions {
    */
   fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId>
   /**
+   * Permanently delete every stored Session the Host reports as belonging to no
+   * Workspace. On resolution the removed ids are gone from the list store.
+   * @returns the removed ids.
+   */
+  deleteOrphans(): Promise<readonly SessionId[]>
+  /**
    * Resolve an Agent-scoped context view (use-and-discard).
    * @param id - session id.
    * @returns scoped ctx, or undefined for a session neither listed nor already scoped.

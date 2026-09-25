@@ -145,6 +145,14 @@ export class FixtureSession implements SessionFace {
   }
 
   /**
+   * Fail-loud stub; supply `delete` on the fixture's session face to exercise it.
+   * @returns never — always throws.
+   */
+  delete(): never {
+    throw new Error(`test session "${this.sessionId}": delete is not stubbed — supply it on the fixture's session face`)
+  }
+
+  /**
    * Fail-loud stub; supply `loadOlder` on the fixture's session face to exercise it.
    * @returns never — always throws.
    */
@@ -198,7 +206,7 @@ export class TestSessions implements ISessions {
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
     method: 'create' | 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'refresh' | 'search' | 'fork'
+      | 'clear' | 'refresh' | 'search' | 'fork' | 'deleteOrphans'
     args: unknown[]
   }[] = []
 
@@ -483,6 +491,12 @@ export class TestSessions implements ISessions {
   refresh(): Promise<void> {
     this.calls.push({ method: 'refresh', args: [] })
     return Promise.resolve()
+  }
+
+  /** Record an orphan delete; fixture callers publish the removed rows explicitly. */
+  deleteOrphans(): Promise<readonly SessionId[]> {
+    this.calls.push({ method: 'deleteOrphans', args: [] })
+    return Promise.resolve([])
   }
 
   /**

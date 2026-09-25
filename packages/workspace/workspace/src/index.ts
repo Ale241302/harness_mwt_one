@@ -281,6 +281,18 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Drop one session from the in-memory index after its storage is deleted, so
+   * the board stops listing it without waiting for a re-index. The durable
+   * archive set is left untouched: a deleted id can never resolve again.
+   * @param sessionId - The deleted session to forget.
+   */
+  forgetSession(sessionId: SessionId): void {
+    this.headers.delete(sessionId)
+    this.sessionPaths.delete(sessionId)
+    this.invalidSessionPaths.delete(sessionId)
+  }
+
+  /**
    * Unarchive one session durably by dropping it from the registry-global
    * archive set; the accounting slot was never touched, so the session
    * returns to its recorded position. Unarchiving runs no session-existence

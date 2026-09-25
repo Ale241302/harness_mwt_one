@@ -93,6 +93,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
     archiveSession: vi.fn(async () => {}),
+    deleteSession: vi.fn(async () => {}),
+    deleteOrphans: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
@@ -665,9 +667,39 @@ describe('WorkspaceBrowser', () => {
     }
   })
 
+  it('deletes a session from the row menu only after confirmation', async () => {
+    const deleteSession = vi.fn(async () => {})
+    mount({
+      useSessions: hook(sessionState([summary('kept-s', 2), summary('gone-s', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['kept-s', 'gone-s'])])),
+      deleteSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '会话“gone-s”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+    expect(deleteSession).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '删除会话' }))
+    await waitFor(() => { expect(deleteSession).toHaveBeenCalledWith(sid('gone-s')) })
+  })
+
+  it('deletes every ungrouped session from the bucket header after confirmation', async () => {
+    const deleteOrphans = vi.fn(async () => {})
+    mount({
+      useSessions: hook(sessionState([summary('loose-s', 1)])),
+      useWorkspaces: hook(workspaceState([])),
+      deleteOrphans,
+    })
+    const headerButton = screen.getAllByRole('button', { name: '删除所有未分组' })[0]
+    fireEvent.click(headerButton!)
+    const confirm = screen.getAllByRole('button', { name: '删除所有未分组' }).at(-1)
+    fireEvent.click(confirm!)
+    await waitFor(() => { expect(deleteOrphans).toHaveBeenCalled() })
+  })
+
   it('renders a fork child as a top-level row without a session twist', () => {
     const parent = summary('parent-s', 2)
     const child = { ...summary('child-s', 1), parentId: parent.id }
+
     mount({
       useSessions: hook(sessionState([parent, child])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['parent-s', 'child-s'])])),

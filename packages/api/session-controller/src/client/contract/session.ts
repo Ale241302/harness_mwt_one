@@ -118,6 +118,12 @@ export interface ISession {
    */
   rename(title: string): Promise<RemoteResult<{ title: string; seq: SessionSeq }>>
   /**
+   * Permanently delete this session and every session forked from it. The Host
+   * refuses a live session; on success the caller refreshes the list.
+   * @returns the removed ids, children before their parent, or the business error.
+   */
+  delete(): Promise<RemoteResult<{ deleted: readonly SessionId[] }>>
+  /**
    * Extend the history window backwards (older messages pagination).
    * @returns completion; failures land in snapshot.openState/loadingOlder.
    */

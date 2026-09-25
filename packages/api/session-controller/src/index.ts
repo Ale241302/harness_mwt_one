@@ -33,6 +33,9 @@ import type {
   SessionControlFrame,
   SessionCreateRequest,
   SessionCreateValue,
+  SessionDeleteOrphansValue,
+  SessionDeleteRequest,
+  SessionDeleteValue,
   SessionFollowFrame,
   SessionFollowRequest,
   SessionForkRequest,
@@ -335,6 +338,27 @@ export class SessionController extends TypertRemoteService {
   @Remote('fork')
   fork(request: SessionForkRequest): Promise<SessionForkValue> {
     return this.commands.fork(request)
+  }
+
+  /**
+   * Permanently delete one Session and every Session forked from it.
+   *
+   * Refuses a live Session so deleting never races an open conversation.
+   * @param request - the Session to delete.
+   * @returns the ids removed, children before their parent.
+   */
+  @Remote('delete')
+  delete(request: SessionDeleteRequest): Promise<SessionDeleteValue> {
+    return this.commands.delete(request)
+  }
+
+  /**
+   * Permanently delete every stored Session that belongs to no Workspace.
+   * @returns the ids removed, in listing order.
+   */
+  @Remote('deleteOrphans')
+  deleteOrphans(): Promise<SessionDeleteOrphansValue> {
+    return this.commands.deleteOrphans()
   }
 
   /**

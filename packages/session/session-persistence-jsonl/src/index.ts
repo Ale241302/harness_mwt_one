@@ -26,6 +26,7 @@ import {
   type SessionAccess, type SessionHandle,
   type SessionHandleReadResult,
   type SessionLocation, type SessionPersistenceCreateOptions,
+  type SessionPersistenceDeleteOptions,
   type SessionPersistenceListOptions, type SessionPersistenceOpenOptions,
   type SessionPersistenceSnapshot, type SessionPersistenceStatOptions,
   type SessionPersistenceRevision as PersistenceRevision,
@@ -487,6 +488,25 @@ class JsonlSessionPersistence extends SessionPersistence {
     }
     signal?.throwIfAborted()
     return snapshots
+  }
+
+  /**
+   * Permanently delete one stored session's directory across every project.
+   *
+   * Whole generation artifacts are removed, never rewritten; the id returns to
+   * "never existed". A live write handle must be closed by the caller first.
+   * @param id - the stored session to delete.
+   * @param options - optional cancellation.
+   * @returns `true` when a stored session directory was removed, `false` when none existed.
+   */
+  override async delete(id: SessionId, options?: SessionPersistenceDeleteOptions): Promise<boolean> {
+    const signal = options?.signal
+    const found = await this.findLog(id, signal)
+    if (found === undefined) return false
+    signal?.throwIfAborted()
+    await rm(dirname(found.sourcePath), { recursive: true, force: true })
+    this.coldLogMemo.delete(id)
+    return true
   }
 
   // --- handle-facing storage internals (package-private via the handle class below) ---
