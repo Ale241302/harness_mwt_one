@@ -67,7 +67,6 @@ function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
   const agents = {
     listAgents: vi.fn(async (): Promise<readonly { id: string; name: string; spaceId: string | undefined; active: boolean }[]> => []),
     updateAgent: vi.fn(async () => ({})),
-    removeAgent: vi.fn(async (): Promise<boolean> => true),
   }
   const ctx = {
     faberloomSpaces: spaces,
@@ -98,31 +97,6 @@ describe('FaberLoomViewService space workspace', () => {
     spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Eguisa', parentId: null }])
     await (view as unknown as { forgetSpacePath: (path: string) => Promise<void> }).forgetSpacePath(join(home, 'spaces', 'fw_abc123'))
     expect(spaces.remove).toHaveBeenCalledWith(expect.anything(), 'sp1')
-  })
-
-  it('removes the space agent only once it leads no other space', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'view-ws-'))
-    homes.push(home)
-    vi.stubEnv('DSH_HOME', home)
-    const { view, spaces, agents } = harness()
-    const service = view as unknown as { removeOrphanAgent: (id: string) => Promise<void> }
-    spaces.list.mockResolvedValue([{ id: 'sp2', title: 'Otra', parentId: null, agentId: 'a1' }])
-    await service.removeOrphanAgent('a1')
-    expect(agents.removeAgent).not.toHaveBeenCalled()
-
-    spaces.list.mockResolvedValue([])
-    await service.removeOrphanAgent('a1')
-    expect(agents.removeAgent).toHaveBeenCalledWith('a1')
-  })
-
-  it('does not fail the deletion when the agent cannot be removed', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'view-ws-'))
-    homes.push(home)
-    vi.stubEnv('DSH_HOME', home)
-    const { view, spaces, agents } = harness()
-    spaces.list.mockResolvedValue([])
-    agents.removeAgent.mockRejectedValue(new Error('no se pudo'))
-    await expect((view as unknown as { removeOrphanAgent: (id: string) => Promise<void> }).removeOrphanAgent('a1')).resolves.toBeUndefined()
   })
   it('reads an unregistered area without creating it, then opens it titled after the space', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-ws-'))
