@@ -47,6 +47,9 @@ function harness(options: { spaces?: readonly { id: string; title: string }[]; r
     faberloomSpaces: spaces,
     provide: () => {},
     reflect: { provide: () => {} },
+    effect: (run: () => unknown) => { run(); return () => {} },
+    on: vi.fn(() => () => {}),
+    logger: { warn: vi.fn(), info: vi.fn() },
     get: (name: string) => {
       if (name === 'workspaceRegistry') return options.registry === false ? undefined : registry
       if (name === 'faberloomInbound') return inbound

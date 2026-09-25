@@ -372,6 +372,29 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomView')
+    // The Space and its registered Workspace are the same area; deleting the
+    // workspace from the sidebar must drop the Space, or the record and its
+    // agent link outlive the area the user removed.
+    ctx.effect(() => ctx.on('workspace/removed', (_workspaceId, workspacePath) => {
+      void this.forgetSpacePath(workspacePath).catch((error: unknown) => {
+        ctx.logger.warn(`faberloom: could not drop the space for a removed workspace: ${String(error)}`)
+      })
+    }), 'faberloom.view.workspace-removed')
+  }
+
+  /**
+   * Drop the product Space whose conversation area was a removed workspace.
+   * @param workspacePath - the removed workspace's filesystem path.
+   */
+  private async forgetSpacePath(workspacePath: string): Promise<void> {
+    const actor = this.actor()
+    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
+      const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
+      if (join(this.dshHome(), 'spaces', ref.ref) === workspacePath) {
+        await this.ctx.faberloomSpaces.remove(actor, space.id)
+        return
+      }
+    }
   }
 
   /**

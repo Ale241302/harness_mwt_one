@@ -75,6 +75,9 @@ function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
     faberloomRoutines: { listRoutines: vi.fn(async () => []) },
     provide: () => {},
     reflect: { provide: () => {} },
+    effect: (run: () => unknown) => { run(); return () => {} },
+    on: vi.fn(() => () => {}),
+    logger: { warn: vi.fn(), info: vi.fn() },
     get: (name: string) => (name === 'workspaceRegistry' && options.registry !== false ? registry : undefined),
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, {
@@ -86,6 +89,15 @@ function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
 }
 
 describe('FaberLoomViewService space workspace', () => {
+  it('drops the space whose workspace was removed from the sidebar', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-ws-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces } = harness()
+    spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Eguisa', parentId: null }])
+    await (view as unknown as { forgetSpacePath: (path: string) => Promise<void> }).forgetSpacePath(join(home, 'spaces', 'fw_abc123'))
+    expect(spaces.remove).toHaveBeenCalledWith(expect.anything(), 'sp1')
+  })
   it('reads an unregistered area without creating it, then opens it titled after the space', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-ws-'))
     homes.push(home)

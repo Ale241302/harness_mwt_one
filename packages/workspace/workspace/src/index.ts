@@ -67,6 +67,17 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     workspaceRegistry: WorkspaceRegistry
   }
+
+  interface Events {
+    /**
+     * A workspace record was deleted from the durable registry. Consumers that
+     * mirror a workspace — a product Space, for example — drop their record too.
+     * @param workspaceId - the removed workspace.
+     * @param path - the removed workspace's filesystem path.
+     * @mode emit
+     */
+    'workspace/removed'(workspaceId: WorkspaceId, path: string): void
+  }
 }
 
 interface BootstrapGroup {
@@ -419,6 +430,7 @@ export class WorkspaceRegistry extends Service {
         `workspace '${id}' was deleted but its pending marker could not be cleared: ${String(error)}`,
       )
     }
+    this.ctx.emit('workspace/removed', id, entity.path)
     return true
   }
 
