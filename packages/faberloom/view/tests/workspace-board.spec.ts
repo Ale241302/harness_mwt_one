@@ -200,7 +200,7 @@ describe('FaberLoomViewService space lifecycle', () => {
       { id: 'sp2', title: 'Otra', parentId: null, agentId: null, agentName: null, workspaceId: null },
     ])
     // The Agents panel's Space column derives from the space's responsible agent.
-    expect(overview.agents).toEqual([{ id: 'a1', name: 'Recepción', spaceId: 'sp1', active: true }])
+    expect(overview.agents).toEqual([{ id: 'a1', name: 'Recepción', spaceIds: ['sp1'], active: true }])
   })
 
   it('reads the responsible agent from the space and saves it', async () => {

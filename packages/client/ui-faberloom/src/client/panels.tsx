@@ -501,6 +501,10 @@ function agentsScreen() {
       () => (overview?.agents ?? []).filter(agent => agent.name.toLowerCase().includes(query.trim().toLowerCase())),
       [overview, query],
     )
+    const spaceTitles = useMemo(
+      () => new Map((overview?.spaces ?? []).map(space => [space.id, space.title])),
+      [overview],
+    )
     const detail = useLazy<FaberLoomAgentDetail | undefined>(
       () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : agentDetail(selected),
       [selected],
@@ -528,7 +532,7 @@ function agentsScreen() {
     const columns: readonly Column<FaberLoomOverview['agents'][number]>[] = [
       { key: 'name', header: t('col.name'), cell: agent => <span className={styles.cellName}>{agent.name}</span> },
       { key: 'status', header: t('col.status'), cell: agent => <StatusDot on={agent.active} label={agent.active ? t('status.active') : t('status.inactive')} /> },
-      { key: 'space', header: t('col.space'), cell: agent => <span className={styles.cellMuted}>{agent.spaceId ?? t('spaces.root')}</span> },
+      { key: 'space', header: t('col.space'), cell: agent => <span className={styles.cellMuted}>{agent.spaceIds.length === 0 ? t('spaces.root') : agent.spaceIds.map(id => spaceTitles.get(id) ?? id).join(', ')}</span> },
     ]
 
     /** Open the inspector in create mode with empty fields. */

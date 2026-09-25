@@ -26,8 +26,8 @@ export interface FaberLoomAgentRow {
   readonly id: string
   /** Display name. */
   readonly name: string
-  /** Owning space id, or null for an unscoped agent. */
-  readonly spaceId: string | null
+  /** Spaces this agent leads, in catalog order; empty for an unscoped agent. */
+  readonly spaceIds: readonly string[]
   /** Whether the agent is still active in the catalog. */
   readonly active: boolean
 }

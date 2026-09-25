@@ -393,9 +393,12 @@ export class FaberLoomViewService extends TypertRemoteService {
     // several spaces (a parent and its sub-spaces). The space's Workspace is
     // keyed by its opaque workdir.
     const agentById = new Map<string, string>(agents.map(agent => [String(agent.id), agent.name]))
-    const spaceByAgent = new Map<string, string>()
+    const spacesByAgent = new Map<string, string[]>()
     for (const space of spaces) {
-      if (space.agentId !== undefined && !spaceByAgent.has(space.agentId)) spaceByAgent.set(space.agentId, space.id)
+      if (space.agentId === undefined) continue
+      const led = spacesByAgent.get(space.agentId) ?? []
+      led.push(space.id)
+      spacesByAgent.set(space.agentId, led)
     }
     const rows = await Promise.all(spaces.map(async (space): Promise<FaberLoomSpaceRow> => {
       const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
@@ -412,7 +415,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     }))
     return {
       spaces: rows,
-      agents: agents.map(agent => ({ id: agent.id, name: agent.name, spaceId: spaceByAgent.get(agent.id) ?? null, active: agent.active })),
+      agents: agents.map(agent => ({ id: agent.id, name: agent.name, spaceIds: spacesByAgent.get(agent.id) ?? [], active: agent.active })),
       board: board.map(item => ({ id: item.id, title: item.title, status: item.status })),
       routines: routines.map(routine => ({ id: routine.id, name: routine.name, status: routine.status })),
       memory,

@@ -62,7 +62,7 @@ export function registerChatGestures(ctx: ClientContext, t: Translate): void {
         .map(agent => ({
           name: agent.name,
           label: agent.name,
-          description: agent.spaceId === null ? t('trigger.personalSpace') : (spaces.get(agent.spaceId) ?? ''),
+          description: agent.spaceIds.length === 0 ? t('trigger.personalSpace') : agent.spaceIds.map(id => spaces.get(id) ?? '').filter(title => title.length > 0).join(', '),
           section: t('trigger.agents'),
           value: agent.name,
         }))
