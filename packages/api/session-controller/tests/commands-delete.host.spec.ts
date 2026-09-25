@@ -38,8 +38,8 @@ function fakePersistence(headers: readonly Partial<SessionHeader>[]): FakePersis
 
 async function baseContext(
   persistence: FakePersistence,
-  resolveByPath = vi.fn(async () => undefined),
-  forgetSession = vi.fn(),
+  resolveByPath: (path: string) => Promise<unknown> = vi.fn(async () => undefined),
+  forgetSession: (id: SessionId) => void = vi.fn(),
 ): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
