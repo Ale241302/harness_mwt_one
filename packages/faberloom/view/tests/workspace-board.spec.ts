@@ -34,6 +34,7 @@ function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
       return entity
     }),
     delete: vi.fn(async () => true),
+    archiveSessionsUnder: vi.fn(async () => 0),
   }
   let nextSpace = 0
   const spaces = {

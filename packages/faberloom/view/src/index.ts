@@ -392,6 +392,8 @@ export class FaberLoomViewService extends TypertRemoteService {
       const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
       if (join(this.dshHome(), 'spaces', ref.ref) === workspacePath) {
         const agentId = space.agentId ?? null
+        const registry = this.workspaceRegistryOrUndefined()
+        if (registry !== undefined) await registry.archiveSessionsUnder(workspacePath)
         await this.ctx.faberloomSpaces.remove(actor, space.id)
         if (agentId !== null) await this.detachAgentIfOrphan(agentId)
         return
@@ -521,6 +523,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const dir = join(this.dshHome(), 'spaces', ref.ref)
     const registry = this.workspaceRegistryOrUndefined()
     const existing = registry?.list().find(workspace => workspace.path === dir)
+    if (registry !== undefined) await registry.archiveSessionsUnder(dir)
     if (registry !== undefined && existing !== undefined) await registry.delete(existing.id)
     rmSync(dir, { recursive: true, force: true })
     await this.ctx.faberloomSpaces.remove(actor, space.id)

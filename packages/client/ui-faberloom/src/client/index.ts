@@ -114,7 +114,8 @@ export function apply(ctx: ClientContext): void {
       goToWorkspace: (spaceId) => {
         void ctx.remote.faberloomView.openSpaceWorkspace(spaceId).then(async (result) => {
           if (!result.ok || result.value.workspaceId === null) return
-          await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
+          const sessionId = await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
+          ctx.sessions.open(sessionId)
           ctx.layout.selectPanel(null)
         }).catch(() => {
           // A failed navigation keeps the current selection.
@@ -208,7 +209,7 @@ export function apply(ctx: ClientContext): void {
         void ctx.remote.faberloomView.openSpaceWorkspace(spaceId).then((result) => {
           if (!result.ok || result.value.workspaceId === null) return
           void ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
-            .then(() => { ctx.layout.selectPanel(null) })
+            .then((sessionId) => { ctx.sessions.open(sessionId); ctx.layout.selectPanel(null) })
         })
       },
       routineDetail: id => ctx.remote.faberloomView.routineDetail(id),

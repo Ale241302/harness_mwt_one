@@ -57,6 +57,8 @@ export function runSpaceFromEmail(
         if (session !== undefined && result.value.context.length > 0) {
           await session.prompt([{ type: 'text', text: result.value.context }], 'queue')
         }
+        // Stage the seeded session so the panel opens it instead of a blank one.
+        ctx.sessions.open(sessionId)
       } catch { /* a failed session keeps the current panel */ }
       ctx.layout.selectPanel(null)
     })

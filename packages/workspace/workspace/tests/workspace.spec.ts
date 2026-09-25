@@ -926,6 +926,14 @@ describe('registry-global session archive', () => {
     expect(result.registry.archivedSessionIds).toEqual(['gone', 'kept'])
   })
 
+  it('archives every stored session under one directory', async () => {
+    const dir = await makeDir('archive-under')
+    const other = await makeDir('archive-other')
+    const result = await harness({ sessions: [header('a', dir, 100), header('b', dir, 200), header('c', other, 300)] })
+    expect(await result.registry.archiveSessionsUnder(dir)).toBe(2)
+    expect([...result.registry.archivedSessionIds].sort()).toEqual(['a', 'b'])
+  })
+
   it('accepts unaccounted and live sessions but rejects unknown ids without writing', async () => {
     const dir = await makeDir('archive-strays')
     const live = await makeDir('archive-live')

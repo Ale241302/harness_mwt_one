@@ -265,6 +265,22 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Archive every known session whose recorded working directory is `path`, so
+   * removing the workspace that held them does not drop its conversations into
+   * the ungrouped bucket.
+   * @param path - canonical workspace directory.
+   * @returns how many sessions were archived.
+   */
+  async archiveSessionsUnder(path: string): Promise<number> {
+    await this.indexHeaders(await this.listStoredHeaders())
+    const ids = [...this.headers.entries()]
+      .filter(([, header]) => header.cwd === path)
+      .map(([id]) => id)
+    for (const id of ids) await this.archiveSession(id)
+    return ids.length
+  }
+
+  /**
    * Unarchive one session durably by dropping it from the registry-global
    * archive set; the accounting slot was never touched, so the session
    * returns to its recorded position. Unarchiving runs no session-existence

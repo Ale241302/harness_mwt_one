@@ -14,6 +14,7 @@ Turning an email into a Space created and opened the Space's Workspace, but the 
 
 - `FaberLoomSpaceFromEmail` gains `context: string`, additive to `spaceId` / `workspaceId`.
 - The panel's Create gesture, after `ctx.sessions.create({ workspaceId })`, resolves the Session (`ctx.sessions.binding(id)?.session`) and calls `session.prompt([{ type: 'text', text: context }], 'queue')` before opening the conversation.
+- The panel then stages the created session with `ctx.sessions.open(id)`, so `selectPanel(null)` lands the user on the seeded chat rather than a blank one.
 - The gesture lives in `packages/client/ui-faberloom/src/client/space-from-email.ts` (`runSpaceFromEmail`), extracted from the panel's `inject` face so it can be tested without the render machinery; `index.ts` keeps only the one-line wiring.
 - The sender line comes from the panel, which already holds the envelope `from`; the IMAP reader exposes no headers.
 - The seed opens with the message uid and a guardrail: it labels the body context rather than an instruction, tells the model to apply the `interview-me` skill ("grill me") one question at a time before acting, keeps it out of the mailbox and the business MCP until the user asks, and records the uid so a later request for the attached document is served without a search. The gateway workspace instructions restate the guard and name the business-intent criterion for the MCP.
