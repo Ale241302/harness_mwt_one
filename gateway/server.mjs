@@ -426,6 +426,12 @@ function rememberUser(user) {
     const parsed = JSON.parse(fs.readFileSync(cfg.userStateFile, 'utf8'))
     if (parsed && typeof parsed === 'object' && parsed.users) state = parsed
   } catch { /* ausente o ilegible: se reconstruye */ }
+  // La consola MWT.ONE emite un access/refresh en el login; se conservan aqui
+  // para que cada dsh pueda subir los adjuntos del correo a su MinIO con la
+  // identidad del propio usuario (no con una credencial de servicio).
+  const prior = state.users[user.email] ?? {}
+  const consolaAccess = user.consolaAccess ?? prior.consolaAccess
+  const consolaRefresh = user.consolaRefresh ?? prior.consolaRefresh
   state.users[user.email] = {
     email: user.email,
     id: user.id,
@@ -434,6 +440,8 @@ function rememberUser(user) {
     legalEntityIds: Array.isArray(user.legalEntityIds) ? user.legalEntityIds : [],
     ...(typeof user.entityId === 'string' && user.entityId.length > 0 ? { entityId: user.entityId } : {}),
     ...(user.entNames !== null && typeof user.entNames === 'object' ? { entNames: user.entNames } : {}),
+    ...(typeof consolaAccess === 'string' && consolaAccess.length > 0 ? { consolaAccess } : {}),
+    ...(typeof consolaRefresh === 'string' && consolaRefresh.length > 0 ? { consolaRefresh } : {}),
   }
   const tmp = `${cfg.userStateFile}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8')
@@ -455,6 +463,43 @@ function readUserState(email) {
     }
   } catch { /* ausente o ilegible */ }
   return undefined
+}
+
+/** True when a JWT is missing, unreadable, or expires within ten minutes. */
+function consolaTokenStale(token) {
+  if (typeof token !== 'string' || token.length === 0) return true
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'))
+    return typeof payload.exp !== 'number' || payload.exp * 1000 - Date.now() < 10 * 60 * 1000
+  } catch { /* no es un JWT legible */ return true }
+}
+
+/**
+ * Keep the user's console access token current, refreshing the stored one when
+ * it is about to expire. Best-effort: a failed refresh keeps the previous token,
+ * and the attachment tool then degrades to the workspace file.
+ * @param user - the user record; `consolaAccess` is updated in place.
+ * @returns the current access token, when one exists.
+ */
+async function refreshConsolaAccess(user) {
+  if (!consolaTokenStale(user.consolaAccess)) return user.consolaAccess
+  if (typeof user.consolaRefresh !== 'string' || user.consolaRefresh.length === 0) return user.consolaAccess
+  try {
+    const resp = await fetch(`${cfg.consolaApi}/auth/refresh/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ refresh: user.consolaRefresh }),
+    })
+    if (!resp.ok) return user.consolaAccess
+    const data = await resp.json()
+    if (typeof data.access !== 'string') return user.consolaAccess
+    user.consolaAccess = data.access
+    rememberUser(user)
+    return data.access
+  } catch {
+    // La consola no responde: se conserva el token previo.
+    return user.consolaAccess
+  }
 }
 
 // ── M1 · índice token→owner ───────────────────────────────────────────
@@ -839,10 +884,10 @@ const FABERLOOM_INSTRUCTIONS = `# FaberLoom · reglas del espacio de trabajo
   \`faberloom_mail_read\` devuelve el **texto** de los adjuntos, no el archivo.
 - **Entregar un documento o imagen adjunto del correo**: guárdalo con
   \`faberloom_mail_attachment(uid, name?)\` — devuelve la ruta del **fichero original** en el
-  workspace — y entrégasela al usuario. Si el usuario necesita un **enlace**, súbelo con las
-  tools de documentos de negocio (\`documento_subir\` con \`file_path\`) y comparte el enlace
-  firmado que devuelve la consola (\`documento_descargar\`). **Nunca** reconstruyas el adjunto
-  con reportes ni lo sustituyas por texto.
+  workspace — y entrégasela al usuario. Si necesita un **enlace**, usa
+  \`faberloom_mail_attachment_link(uid, name?)\`: sube el adjunto al storage de la consola
+  (MinIO) con la identidad del propio usuario y devuelve la URL de descarga. **Nunca**
+  reconstruyas el adjunto con reportes ni lo sustituyas por texto.
 - Responde en español, con el resultado y las tools usadas.
 `
 
@@ -930,6 +975,10 @@ function startInstance(user, memory) {
         // `context-mode` otherwise falls back to Chinese in an image without a
         // system locale; the session-init form must read in English.
         CONTEXT_MODE_LOCALE: process.env.CONTEXT_MODE_LOCALE || 'en-US',
+        // Identidad del usuario ante el storage de la consola: `faberloom_mail_attachment_link`
+        // sube el adjunto a MinIO y devuelve un enlace de descarga.
+        CONSOLA_API_BASE: cfg.consolaApi,
+        ...(typeof user.consolaAccess === 'string' && user.consolaAccess.length > 0 ? { CONSOLA_TOKEN: user.consolaAccess } : {}),
         NODE_OPTIONS: nodeOptions,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -983,6 +1032,7 @@ async function ensureInstance(user) {
     instances.delete(user.id)
   }
   const memory = await ensureMemoryIdentity(user)
+  await refreshConsolaAccess(user)
   return startInstance(user, memory).ready
 }
 
@@ -1136,6 +1186,8 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
     ...(Object.keys(entNames).length === 0 ? {} : { entNames }),
     role: typeof user.role === 'string' ? user.role : '',
     readOnly: deriveReadOnly(user),
+    ...(typeof data.access === 'string' ? { consolaAccess: data.access } : {}),
+    ...(typeof data.refresh === 'string' ? { consolaRefresh: data.refresh } : {}),
   }
 
   let inst

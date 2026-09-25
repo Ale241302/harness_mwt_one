@@ -2051,6 +2051,58 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'faberloom_mail_attachment_link',
+    description: 'Upload one attachment of a mailbox message to the MWT.ONE storage as the signed-in user and return a download link for the user. Use the uid from faberloom_mail_search; pass name to pick an attachment. Fails when the console token is unavailable, so fall back to faberloom_mail_attachment (the real file in the workspace).',
+    parameters: {
+      uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
+      name: { type: 'string', description: 'The attachment name to upload; the first attachment otherwise.' },
+      scope: { type: 'string', description: 'Storage folder, e.g. "documento/<id>"; "correo" otherwise.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          url: { type: 'string', required: true },
+          key: { type: 'string', required: true },
+          name: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Enlace de descarga (${value.name}): ${value.url}` }],
+    },
+    execute: async (args) => {
+      const base = process.env.CONSOLA_API_BASE
+      const token = process.env.CONSOLA_TOKEN
+      if (typeof base !== 'string' || base.length === 0 || typeof token !== 'string' || token.length === 0) {
+        throw new Error('faberloom: no hay token de la consola; usa faberloom_mail_attachment (fichero en el workspace)')
+      }
+      const content = await inbound(ctx).readEmail(actor(config).id, args.uid)
+      const attachment = args.name === undefined
+        ? content.attachments[0]
+        : content.attachments.find(candidate => candidate.name === args.name)
+      if (attachment === undefined) throw new Error('faberloom: el correo no tiene ese adjunto')
+      const bytes = Buffer.from(attachment.contentBase64, 'base64')
+      const form = new FormData()
+      form.append('scope', args.scope ?? 'correo')
+      form.append('filename', attachment.name)
+      form.append('file', new Blob([bytes], { type: attachment.mediaType }), attachment.name)
+      const root = base.replace(/\/+$/, '')
+      const upload = await fetch(`${root}/storage/upload-proxy/`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+        body: form,
+      })
+      if (!upload.ok) throw new Error(`faberloom: la subida a la consola falló (${String(upload.status)})`)
+      const data = await upload.json() as Record<string, unknown>
+      if (data.ok !== true || typeof data.key !== 'string' || data.key.length === 0) {
+        throw new Error('faberloom: la consola no devolvió la clave del objeto')
+      }
+      const url = `${root}/storage/download/?key=${encodeURIComponent(data.key)}&token=${encodeURIComponent(token)}`
+      return { url, key: data.key, name: attachment.name }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Upload mail attachment', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'faberloom_mail_send',
     description: 'Send a plain-text email through the owner SMTP connection (configured in Conexiones), as the owner. This is an external effect: it requires the mail.send grant, and the message leaves the system once accepted.',
     parameters: {
