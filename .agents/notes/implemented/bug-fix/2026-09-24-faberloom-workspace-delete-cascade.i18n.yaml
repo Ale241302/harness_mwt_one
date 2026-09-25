@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-24-faberloom-workspace-delete-cascade.md
-2026-09-24-faberloom-workspace-delete-cascade.md: 331ae8d83ce25a1119c92ea55b00dfd55a18e0e3
-2026-09-24-faberloom-workspace-delete-cascade.zh.md: d77edfa21e26000fcb1883c27e1f9d7318e51e61
+2026-09-24-faberloom-workspace-delete-cascade.md: 26e28fb74cc71610980d3bf96a1dd395cb62f7ee
+2026-09-24-faberloom-workspace-delete-cascade.zh.md: b0eaa89c938a02a825d0c5b1515200e97e3dd80c

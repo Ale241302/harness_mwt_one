@@ -391,9 +391,27 @@ export class FaberLoomViewService extends TypertRemoteService {
     for (const space of await this.ctx.faberloomSpaces.list(actor)) {
       const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
       if (join(this.dshHome(), 'spaces', ref.ref) === workspacePath) {
+        const agentId = space.agentId ?? null
         await this.ctx.faberloomSpaces.remove(actor, space.id)
+        if (agentId !== null) await this.removeOrphanAgent(agentId)
         return
       }
+    }
+  }
+
+  /**
+   * Remove a Space's agent once it leads no other Space, so a deleted area does
+   * not leave a specialist behind.
+   * @param agentId - the agent the removed Space was in charge of.
+   */
+  private async removeOrphanAgent(agentId: string): Promise<void> {
+    const actor = this.actor()
+    const spaces = await this.ctx.faberloomSpaces.list(actor)
+    if (spaces.some(space => space.agentId === agentId)) return
+    try {
+      await this.ctx.faberloomAgents.removeAgent(agentId as FaberLoomAgentId)
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: could not remove the orphan agent of a deleted space: ${String(error)}`)
     }
   }
 
@@ -487,6 +505,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (registry !== undefined && existing !== undefined) await registry.delete(existing.id)
     rmSync(dir, { recursive: true, force: true })
     await this.ctx.faberloomSpaces.remove(actor, space.id)
+    if (space.agentId !== undefined && space.agentId !== null) await this.removeOrphanAgent(space.agentId)
     return await this.overview()
   }
 
