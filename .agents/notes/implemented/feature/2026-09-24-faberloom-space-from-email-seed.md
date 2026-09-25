@@ -16,6 +16,7 @@ Turning an email into a Space created and opened the Space's Workspace, but the 
 - The panel's Create gesture, after `ctx.sessions.create({ workspaceId })`, resolves the Session (`ctx.sessions.binding(id)?.session`) and calls `session.prompt([{ type: 'text', text: context }], 'queue')` before opening the conversation.
 - The gesture lives in `packages/client/ui-faberloom/src/client/space-from-email.ts` (`runSpaceFromEmail`), extracted from the panel's `inject` face so it can be tested without the render machinery; `index.ts` keeps only the one-line wiring.
 - The sender line comes from the panel, which already holds the envelope `from`; the IMAP reader exposes no headers.
+- The seed opens with a guardrail: it labels the body context rather than an instruction and ends by telling the model not to read the mailbox or touch the business MCP until the user asks. The gateway workspace instructions restate the rule.
 
 ## Alternatives considered
 
@@ -27,6 +28,7 @@ Turning an email into a Space created and opened the Space's Workspace, but the 
 
 - A new Space conversation begins with the message as its first user turn; the same text also feeds attachment ingestion, so the agent sees the document Markdown without another call.
 - The seed is one queue-mode prompt; when the create or the prompt fails, the panel opens anyway with an empty session.
+- The guardrail costs one short line of tokens but prevents an unwarranted sweep of the mailbox and the business MCP, which reading the email as a task otherwise triggered.
 
 ## Testing
 

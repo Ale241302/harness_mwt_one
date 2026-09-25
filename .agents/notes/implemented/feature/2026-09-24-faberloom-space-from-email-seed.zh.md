@@ -16,6 +16,7 @@ Status: implemented
 - 面板的 Create 手势在 `ctx.sessions.create({ workspaceId })` 之后解析 Session（`ctx.sessions.binding(id)?.session`），并在打开会话前调用 `session.prompt([{ type: 'text', text: context }], 'queue')`。
 - 该手势位于 `packages/client/ui-faberloom/src/client/space-from-email.ts`（`runSpaceFromEmail`），从面板的 `inject` face 中抽出，以便不依赖渲染机制进行测试；`index.ts` 只保留一行接线。
 - 发件人行来自面板——它已经持有信封的 `from`；IMAP 读取器不暴露头部。
+- 种子带有护栏：它把正文标记为上下文而非指令，并在结尾告诉模型在用户要求之前不要读取邮箱或触碰业务 MCP。网关工作区规则也重申了这条规则。
 
 ## 考虑过的替代方案
 
@@ -27,6 +28,7 @@ Status: implemented
 
 - 新的 Space 会话以这封邮件作为第一条用户消息开始；同一文本也用于附件摄取，因此智能体无需再次调用就能看到文档 Markdown。
 - 该种子是一条 queue 模式的消息；当创建或发送失败时，面板仍会以一个空会话打开。
+- 护栏只多花一行 token，却避免了把邮件当作任务来读时触发的、对邮箱与业务 MCP 的无谓扫荡。
 
 ## 测试
 
