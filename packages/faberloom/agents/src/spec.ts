@@ -61,6 +61,9 @@ export const agentRecord = z.object({
   name: z.string(),
   responsibility: z.string(),
   spaceId: z.string().nullable(),
+  // Set when a Space was deleted while this agent was in charge of it, so the
+  // panel can show it as unassigned instead of as personal.
+  detached: z.boolean().default(false),
   origin: z.union([z.literal('scratch'), z.literal('pool'), z.literal('task')]),
   originRef: z.string().nullable(),
   baseAgentId: agentId.nullable(),

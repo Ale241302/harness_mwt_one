@@ -15,6 +15,7 @@ Space 的对话区域是一个已注册的 dsh Workspace。从侧边栏删除该
 - `packages/workspace/workspace` 声明 `workspace/removed` 事件，并在 `deleteKnown` 中于记录与注册顺序提交之后发出它。
 - `FaberLoomViewService` 在构造函数中订阅，通过比较每个 Space 的 `<DSH_HOME>/spaces/<ref>` 与所删除路径来解析出 Space，再将其移除——这同时会删除它的文件并解除智能体关联。
 - 从面板删除 Space 时本就会移除其工作区；有了新事件，该路径现在也走同一处理器，而幂等的移除让第二次调用无害。
+- 被删除 Space 的智能体会保留并标记为 `detached`，于是 Agentes 面板把它显示为「未分配」，而不是仍指向已删除的 Space；把该智能体指派到另一个 Space 会清除此标记。
 
 ## 考虑过的替代方案
 
@@ -31,4 +32,4 @@ Space 的对话区域是一个已注册的 dsh Workspace。从侧边栏删除该
 
 ## 测试
 
-`packages/faberloom/view/tests/workspace-board.spec.ts` 驱动该移除处理器并断言匹配的 Space 被移除。工作区注册表既有的删除测试覆盖了该事件的发出。
+`packages/faberloom/view/tests/workspace-board.spec.ts` 驱动该移除处理器、未分配标记（当另一个 Space 仍在使用时保留，一旦没有则设置，写入失败也不会让删除失败），以及保存时的智能体指派。工作区注册表既有的删除测试覆盖了该事件的发出。

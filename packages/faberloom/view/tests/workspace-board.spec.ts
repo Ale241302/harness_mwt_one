@@ -65,7 +65,13 @@ function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
     effectiveMemory: vi.fn(async (): Promise<readonly { id: string; spaceIds: string[]; text: string; createdAt: string }[]> => []),
   }
   const agents = {
-    listAgents: vi.fn(async (): Promise<readonly { id: string; name: string; spaceId: string | undefined; active: boolean }[]> => []),
+    listAgents: vi.fn(async (): Promise<readonly {
+      id: string
+      name: string
+      spaceId: string | undefined
+      detached: boolean
+      active: boolean
+    }[]> => []),
     updateAgent: vi.fn(async () => ({})),
   }
   const ctx = {
@@ -97,6 +103,31 @@ describe('FaberLoomViewService space workspace', () => {
     spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Eguisa', parentId: null }])
     await (view as unknown as { forgetSpacePath: (path: string) => Promise<void> }).forgetSpacePath(join(home, 'spaces', 'fw_abc123'))
     expect(spaces.remove).toHaveBeenCalledWith(expect.anything(), 'sp1')
+  })
+
+  it('marks the space agent unassigned once it leads no other space', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-ws-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, agents } = harness()
+    const service = view as unknown as { detachAgentIfOrphan: (id: string) => Promise<void> }
+    spaces.list.mockResolvedValue([{ id: 'sp2', title: 'Otra', parentId: null, agentId: 'a1' }])
+    await service.detachAgentIfOrphan('a1')
+    expect(agents.updateAgent).not.toHaveBeenCalled()
+
+    spaces.list.mockResolvedValue([])
+    await service.detachAgentIfOrphan('a1')
+    expect(agents.updateAgent).toHaveBeenCalledWith('a1', { spaceId: null, detached: true })
+  })
+
+  it('keeps a deletion successful when the agent cannot be marked', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-ws-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, agents } = harness()
+    spaces.list.mockResolvedValue([])
+    agents.updateAgent.mockRejectedValue(new Error('no se pudo'))
+    await expect((view as unknown as { detachAgentIfOrphan: (id: string) => Promise<void> }).detachAgentIfOrphan('a1')).resolves.toBeUndefined()
   })
   it('reads an unregistered area without creating it, then opens it titled after the space', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-ws-'))
@@ -204,7 +235,7 @@ describe('FaberLoomViewService space lifecycle', () => {
       { id: 'sp2', title: 'Otra', parentId: null },
     ])
     spaces.resolveWorkdir.mockImplementation(async (_actor?: unknown, id?: string) => ({ kind: 'opaque', ref: id === 'sp1' ? 'fw_abc123' : 'fw_other' }))
-    agents.listAgents.mockResolvedValue([{ id: 'a1', name: 'Recepción', spaceId: undefined, active: true }])
+    agents.listAgents.mockResolvedValue([{ id: 'a1', name: 'Recepción', spaceId: undefined, detached: false, active: true }])
 
     const overview = await view.overview()
     expect(overview.spaces).toEqual([
@@ -212,7 +243,7 @@ describe('FaberLoomViewService space lifecycle', () => {
       { id: 'sp2', title: 'Otra', parentId: null, agentId: null, agentName: null, workspaceId: null },
     ])
     // The Agents panel's Space column derives from the space's responsible agent.
-    expect(overview.agents).toEqual([{ id: 'a1', name: 'Recepción', spaceIds: ['sp1'], active: true }])
+    expect(overview.agents).toEqual([{ id: 'a1', name: 'Recepción', spaceIds: ['sp1'], detached: false, active: true }])
   })
 
   it('reads the responsible agent from the space and saves it', async () => {
@@ -233,7 +264,8 @@ describe('FaberLoomViewService space lifecycle', () => {
 
     await view.saveSpace('sp1', { agentId: null })
     expect(spaces.update).toHaveBeenLastCalledWith(expect.anything(), 'sp1', expect.objectContaining({ agentId: null }))
-    expect(agents.updateAgent).not.toHaveBeenCalled()
+    expect(agents.updateAgent).toHaveBeenCalledTimes(1)
+    expect(agents.updateAgent).toHaveBeenCalledWith('a2', { spaceId: 'sp1', detached: false })
   })
 
   it('reports no responsible agent when the space has none', async () => {
@@ -275,7 +307,7 @@ describe('FaberLoomViewService space lifecycle', () => {
     homes.push(home)
     vi.stubEnv('DSH_HOME', home)
     const { view, agents } = harness()
-    agents.listAgents.mockResolvedValue([{ id: 'a2', name: 'Otro', spaceId: undefined, active: true }])
+    agents.listAgents.mockResolvedValue([{ id: 'a2', name: 'Otro', spaceId: undefined, detached: true, active: true }])
 
     await view.saveAgent('a1', {
       provider: 'openai', model: 'gpt-4o', webAccess: true, mailConnectionIds: ['c1'],

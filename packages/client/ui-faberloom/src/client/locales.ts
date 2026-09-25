@@ -326,6 +326,7 @@ const es = {
   'skills.own': 'propia',
   'skills.role': 'del rol',
   'skills.shared': 'compartida',
+  'agents.unassigned': 'sin asignar',
   'skills.unused': 'sin asignar',
 
   'board.detail': 'Detalle de la tarea',
@@ -850,6 +851,7 @@ export const en: Record<FaberloomKey, string> = {
   'skills.own': 'own',
   'skills.role': 'from the role',
   'skills.shared': 'shared',
+  'agents.unassigned': 'unassigned',
   'skills.unused': 'unassigned',
 
   'board.detail': 'Task detail',
@@ -1367,6 +1369,7 @@ export const zh: Record<FaberloomKey, string> = {
   'skills.own': '自有',
   'skills.role': '来自角色',
   'skills.shared': '共享',
+  'agents.unassigned': '未分配',
   'skills.unused': '未分配',
 
   'board.detail': '任务详情',

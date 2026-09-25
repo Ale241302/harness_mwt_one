@@ -17,7 +17,7 @@ const MEMORY = 'faberloom-memory' as MainPanelId
 
 const OVERVIEW = {
   spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null, agentId: 'agent-1', agentName: 'Proformas', workspaceId: 'ws-1' }],
-  agents: [{ id: 'agent-1', name: 'Proformas', spaceIds: ['space-1'], active: true }],
+  agents: [{ id: 'agent-1', name: 'Proformas', spaceIds: ['space-1'], detached: false, active: true }],
   board: [{ id: 'item-1', title: 'Preparar proforma', status: 'needs_review' }],
   routines: [{ id: 'routine-1', name: 'Pedido a proforma', status: 'active' }],
   memory: [{ id: 'mem-1', kind: 'episodic', text: 'El precio de Eguisa se consulta antes de cotizar.', at: '2026-09-16T00:00:00Z' }],

@@ -391,9 +391,39 @@ export class FaberLoomViewService extends TypertRemoteService {
     for (const space of await this.ctx.faberloomSpaces.list(actor)) {
       const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
       if (join(this.dshHome(), 'spaces', ref.ref) === workspacePath) {
+        const agentId = space.agentId ?? null
         await this.ctx.faberloomSpaces.remove(actor, space.id)
+        if (agentId !== null) await this.detachAgentIfOrphan(agentId)
         return
       }
+    }
+  }
+
+  /**
+   * Mark an agent unassigned once a deleted Space leaves it leading none.
+   * @param agentId - the agent the removed Space was in charge of.
+   */
+  private async detachAgentIfOrphan(agentId: string): Promise<void> {
+    const actor = this.actor()
+    const spaces = await this.ctx.faberloomSpaces.list(actor)
+    if (spaces.some(space => space.agentId === agentId)) return
+    try {
+      await this.ctx.faberloomAgents.updateAgent(agentId as FaberLoomAgentId, { spaceId: null, detached: true })
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: could not mark the agent of a deleted space as unassigned: ${String(error)}`)
+    }
+  }
+
+  /**
+   * Record an agent as in charge of a Space, clearing its unassigned marker.
+   * @param agentId - the agent to assign.
+   * @param spaceId - the Space it now leads.
+   */
+  private async assignAgent(agentId: string, spaceId: string): Promise<void> {
+    try {
+      await this.ctx.faberloomAgents.updateAgent(agentId as FaberLoomAgentId, { spaceId, detached: false })
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: could not record an agent's space: ${String(error)}`)
     }
   }
 
@@ -438,7 +468,13 @@ export class FaberLoomViewService extends TypertRemoteService {
     }))
     return {
       spaces: rows,
-      agents: agents.map(agent => ({ id: agent.id, name: agent.name, spaceIds: spacesByAgent.get(agent.id) ?? [], active: agent.active })),
+      agents: agents.map(agent => ({
+        id: agent.id,
+        name: agent.name,
+        spaceIds: spacesByAgent.get(agent.id) ?? [],
+        detached: agent.detached,
+        active: agent.active,
+      })),
       board: board.map(item => ({ id: item.id, title: item.title, status: item.status })),
       routines: routines.map(routine => ({ id: routine.id, name: routine.name, status: routine.status })),
       memory,
@@ -466,6 +502,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...inheritContext === undefined ? {} : { inheritContext },
     })
     await this.ensureSpaceWorkspace(actor, space.id, space.title)
+    if (agentId !== undefined && agentId.length > 0) await this.assignAgent(agentId, space.id)
     return await this.overview()
   }
 
@@ -487,6 +524,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (registry !== undefined && existing !== undefined) await registry.delete(existing.id)
     rmSync(dir, { recursive: true, force: true })
     await this.ctx.faberloomSpaces.remove(actor, space.id)
+    if (space.agentId !== undefined && space.agentId !== null) await this.detachAgentIfOrphan(space.agentId)
     return await this.overview()
   }
 
@@ -875,6 +913,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...agentId === undefined || agentId.length === 0 ? {} : { agentId },
     })
     const workspace = await this.ensureSpaceWorkspace(actor, space.id, space.title)
+    if (agentId !== undefined && agentId.length > 0) await this.assignAgent(agentId, space.id)
     const bodyText = content.text.length > 0 ? content.text : content.html ?? ''
     if (bodyText.trim().length > 0) {
       await this.ctx.faberloomSpaces.remember(actor, `Correo «${title}»:\n\n${bodyText}`, [space.id])
@@ -1546,6 +1585,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...input.members === undefined ? {} : { members: [...input.members] },
       ...input.agentId === undefined ? {} : { agentId: input.agentId },
     })
+    if (typeof input.agentId === 'string' && input.agentId.length > 0) await this.assignAgent(input.agentId, id)
     return await this.overview()
   }
 

@@ -532,7 +532,9 @@ function agentsScreen() {
     const columns: readonly Column<FaberLoomOverview['agents'][number]>[] = [
       { key: 'name', header: t('col.name'), cell: agent => <span className={styles.cellName}>{agent.name}</span> },
       { key: 'status', header: t('col.status'), cell: agent => <StatusDot on={agent.active} label={agent.active ? t('status.active') : t('status.inactive')} /> },
-      { key: 'space', header: t('col.space'), cell: agent => <span className={styles.cellMuted}>{agent.spaceIds.length === 0 ? t('spaces.root') : agent.spaceIds.map(id => spaceTitles.get(id) ?? id).join(', ')}</span> },
+      { key: 'space', header: t('col.space'), cell: agent => agent.detached
+        ? <Chip tone="muted">{t('agents.unassigned')}</Chip>
+        : <span className={styles.cellMuted}>{agent.spaceIds.length === 0 ? t('spaces.root') : agent.spaceIds.map(id => spaceTitles.get(id) ?? id).join(', ')}</span> },
     ]
 
     /** Open the inspector in create mode with empty fields. */

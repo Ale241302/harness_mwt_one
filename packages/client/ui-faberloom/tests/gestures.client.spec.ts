@@ -9,9 +9,9 @@ import { en, type FaberloomKey } from '../src/client/locales.ts'
 const OVERVIEW = {
   spaces: [{ id: 'sp1', title: 'Marluvas', parentId: null }],
   agents: [
-    { id: 'ag1', name: 'Proformas Eguisa', spaceIds: ['sp1'], active: true },
-    { id: 'ag2', name: 'Recepción', spaceIds: [], active: true },
-    { id: 'ag3', name: 'Archivado', spaceIds: [], active: false },
+    { id: 'ag1', name: 'Proformas Eguisa', spaceIds: ['sp1'], detached: false, active: true },
+    { id: 'ag2', name: 'Recepción', spaceIds: [], detached: false, active: true },
+    { id: 'ag3', name: 'Archivado', spaceIds: [], detached: false, active: false },
   ],
   board: [],
   routines: [

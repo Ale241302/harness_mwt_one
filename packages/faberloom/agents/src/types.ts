@@ -126,6 +126,8 @@ export interface FaberLoomAgent {
   readonly responsibility: string
   /** Optional owning space id. */
   readonly spaceId: string | undefined
+  /** Whether a Space deletion left this agent unassigned; the panel marks it so. */
+  readonly detached: boolean
   /** Creation route. */
   readonly origin: 'scratch' | 'pool' | 'task'
   /** Origin reference (template id, task id) when applicable. */
@@ -204,6 +206,8 @@ export interface AgentPatch {
   readonly responsibility?: string
   /** New owning space id, or `null` to clear the assignment. */
   readonly spaceId?: string | null
+  /** New unassigned marker; set when a Space deletion detached the agent. */
+  readonly detached?: boolean
   /** New skill list. */
   readonly skills?: readonly string[]
   /** New tool list. */

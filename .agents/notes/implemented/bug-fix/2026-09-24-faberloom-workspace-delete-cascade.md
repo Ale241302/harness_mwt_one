@@ -15,6 +15,7 @@ The workspace registry emits `workspace/removed(workspaceId, path)` after a comm
 - `packages/workspace/workspace` declares the `workspace/removed` event and emits it in `deleteKnown` after the record and registry order commit.
 - `FaberLoomViewService` subscribes in its constructor, resolves the Space by comparing each Space's `<DSH_HOME>/spaces/<ref>` against the removed path, and removes it, which also deletes its files and detaches the agent.
 - Deleting a Space from the panel already removed its workspace; with the new event that path now runs through the same handler, and the idempotent removal makes the second call harmless.
+- The removed Space's agent is kept and marked `detached`, so the Agentes panel shows it as unassigned ("sin asignar") instead of still pointing at the deleted Space; assigning the agent to another Space clears the mark.
 
 ## Alternatives considered
 
@@ -31,4 +32,4 @@ The workspace registry emits `workspace/removed(workspaceId, path)` after a comm
 
 ## Testing
 
-`packages/faberloom/view/tests/workspace-board.spec.ts` drives the removal handler and asserts the matching Space is removed. The workspace registry's existing delete tests exercise the emit.
+`packages/faberloom/view/tests/workspace-board.spec.ts` drives the removal handler, the unassigned marker (kept while another Space uses the agent, set once none does, contained when the write fails), and the agent assignment on save. The workspace registry's existing delete tests exercise the emit.
