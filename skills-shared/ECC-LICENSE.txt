@@ -5,8 +5,7 @@ Everything under `skills-shared/` except `interview-me/` is vendored from ECC
 (https://github.com/affaan-m/ECC), version 2.2.2, by Affaan Mustafa, under the
 MIT License:
 
-  - 165 skills, copied verbatim; the 24 curated ones stay model-invocable and
-    the rest carry `disable-model-invocation: true` (user-invocable via `/name`).
+  - 165 skills, copied verbatim; the curated ones stay model-invocable and the rest carry `disable-model-invocation: true` (user-invocable via `/name`).
   - 71 commands, rewritten as user-invocable skills named `cmd-<command>`.
 
 Stack-specific ECC skills (language, framework, cloud, homelab, media, health,
