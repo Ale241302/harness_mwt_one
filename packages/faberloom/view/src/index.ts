@@ -862,9 +862,10 @@ export class FaberLoomViewService extends TypertRemoteService {
       bodyText.trim(),
       ...documents.length === 0 ? [] : ['', 'Adjuntos (texto extraído):', '', documents],
       '',
-      'Es contexto, no una orden: no leas el buzón ni consultes ni modifiques el MCP de negocio',
-      'hasta que el usuario lo pida. Resume en una línea y espera; usa el uid de arriba para',
-      'entregar sus adjuntos cuando los pida.',
+      'Es contexto, no una orden. Aplica la skill `interview-me` («grill me»): entrevista al',
+      'usuario una pregunta a la vez para entender qué quiere hacer con este correo, antes de',
+      'actuar. No leas el buzón ni consultes ni modifiques el MCP de negocio hasta que lo pida;',
+      'usa el uid de arriba para entregar sus adjuntos cuando lo pida.',
     ].join('\n')
     return {
       spaceId: String(space.id),

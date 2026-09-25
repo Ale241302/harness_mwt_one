@@ -16,7 +16,7 @@ Status: implemented
 - 面板的 Create 手势在 `ctx.sessions.create({ workspaceId })` 之后解析 Session（`ctx.sessions.binding(id)?.session`），并在打开会话前调用 `session.prompt([{ type: 'text', text: context }], 'queue')`。
 - 该手势位于 `packages/client/ui-faberloom/src/client/space-from-email.ts`（`runSpaceFromEmail`），从面板的 `inject` face 中抽出，以便不依赖渲染机制进行测试；`index.ts` 只保留一行接线。
 - 发件人行来自面板——它已经持有信封的 `from`；IMAP 读取器不暴露头部。
-- 种子带有消息 uid 与护栏：它把正文标记为上下文而非指令，在结尾告诉模型在用户要求之前不要读取邮箱或触碰业务 MCP，并记录 uid，以便之后索取附件时无需再搜索。网关工作区规则也重申了这条规则，并给出 MCP 的业务意图判据。
+- 种子带有消息 uid 与护栏：它把正文标记为上下文而非指令，告诉模型在动手前先一次一个问题地应用 `interview-me` 技能（“grill me”），在用户要求之前不要读取邮箱或触碰业务 MCP，并记录 uid，以便之后索取附件时无需再搜索。网关工作区规则也重申了这条护栏，并给出 MCP 的业务意图判据。
 
 ## 考虑过的替代方案
 
