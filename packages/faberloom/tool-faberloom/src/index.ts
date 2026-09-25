@@ -2037,6 +2037,7 @@ export function apply(ctx: Context, config: Config): void {
     execute: async (args) => {
       const content = await inbound(ctx).readEmail(actor(config).id, args.uid)
       const wanted = args.name === undefined ? content.attachments : content.attachments.filter(attachment => attachment.name === args.name)
+      if (wanted.length === 0) return { files: [] }
       const dir = join(process.cwd(), 'correo-adjuntos')
       mkdirSync(dir, { recursive: true })
       const files = wanted.map((attachment) => {
