@@ -173,15 +173,23 @@ export function apply(ctx: ClientContext): void {
       emailInbox: () => ctx.remote.faberloomView.emailInbox(),
       emailRead: uid => ctx.remote.faberloomView.emailRead(uid),
       emailAttachment: (uid, index) => ctx.remote.faberloomView.emailAttachment(uid, index),
-      spaceFromEmail: (uid, name, agentId) => {
-        void ctx.remote.faberloomView.spaceFromEmail(uid, name, agentId ?? undefined).then((result) => {
-          if (!result.ok) { bound.setError(result.error.message); return }
-          refresh()
-          if (result.value.workspaceId === null) return
-          void ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
-            .then(() => { ctx.layout.selectPanel(null) })
-            .catch(() => { /* a failed session keeps the current panel */ })
-        }).catch(() => { bound.setError('space from email failed') })
+      spaceFromEmail: (uid, name, agentId, from) => {
+        void ctx.remote.faberloomView.spaceFromEmail(uid, name, agentId ?? undefined, from ?? undefined)
+          .then(async (result) => {
+            if (!result.ok) { bound.setError(result.error.message); return }
+            refresh()
+            if (result.value.workspaceId === null) return
+            try {
+              const sessionId = await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
+              // The email is the session's first message, so the agent starts with the
+              // body and the extracted attachment text instead of hunting for it.
+              const session = ctx.sessions.binding(sessionId)?.session
+              if (session !== undefined && result.value.context.length > 0) {
+                await session.prompt([{ type: 'text', text: result.value.context }], 'queue')
+              }
+            } catch { /* a failed session keeps the current panel */ }
+            ctx.layout.selectPanel(null)
+          }).catch(() => { bound.setError('space from email failed') })
       },
       routineChat: (uid, messages, subject, from) =>
         ctx.remote.faberloomView.routineChat(uid, [...messages], subject ?? undefined, from ?? undefined),

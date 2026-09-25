@@ -149,7 +149,7 @@ export interface FaberloomPanelInjected {
   /** Read one attachment's bytes for download. */
   emailAttachment: (uid: string, index: number) => Promise<Result<FaberLoomEmailAttachmentContent | undefined>>
   /** Turn one email into a Space with its Workspace, memory, and files. */
-  spaceFromEmail: (uid: string, name: string, agentId: string | null) => void
+  spaceFromEmail: (uid: string, name: string, agentId: string | null, from: string | null) => void
   /** Answer one message in the routine-designer chat. */
   routineChat: (
     uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject: string | null, from: string | null,
@@ -1060,7 +1060,7 @@ function emailScreen() {
               <button className={styles.ghost} type="button" onClick={() => { setSpaceOpen(false) }}>{t('action.cancel')}</button>
               <button className={styles.primary} type="button" onClick={() => {
                 setMessage(null)
-                spaceFromEmail(selected ?? '', spaceName.trim(), spaceAgent.length === 0 ? null : spaceAgent)
+                spaceFromEmail(selected ?? '', spaceName.trim(), spaceAgent.length === 0 ? null : spaceAgent, chosenMail?.from ?? null)
                 setSpaceOpen(false)
                 setSelected(null)
               }}>{t('action.create')}</button>

@@ -820,10 +820,11 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param uid - the message UID.
    * @param name - the space title (usually the subject).
    * @param agentId - the agent put in charge, when chosen and the space is new.
-   * @returns the space and its Workspace id, so the browser starts a session in it.
+   * @param from - the sender line the browser already holds, for the seeded context.
+   * @returns the space, its Workspace id, and the email as a first-message seed.
    */
   @Remote('spaceFromEmail')
-  async spaceFromEmail(uid: string, name: string, agentId?: string): Promise<FaberLoomSpaceFromEmail> {
+  async spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<FaberLoomSpaceFromEmail> {
     const actor = this.actor()
     const inbound = this.ctx.get('faberloomInbound')
     if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
@@ -852,8 +853,20 @@ export class FaberLoomViewService extends TypertRemoteService {
         contentBase64: attachment.contentBase64,
       })
     }
-    await this.emailDocuments(actor, content.attachments, [space.id])
-    return { spaceId: String(space.id), workspaceId: workspace === undefined ? null : String(workspace.id) }
+    const documents = await this.emailDocuments(actor, content.attachments, [space.id])
+    const context = [
+      'Correo recibido:',
+      ...from === undefined || from.trim().length === 0 ? [] : [`De: ${from.trim()}`],
+      `Asunto: ${title}`,
+      '',
+      bodyText.trim(),
+      ...documents.length === 0 ? [] : ['', 'Adjuntos (texto extraído):', '', documents],
+    ].join('\n')
+    return {
+      spaceId: String(space.id),
+      workspaceId: workspace === undefined ? null : String(workspace.id),
+      context,
+    }
   }
 
   /**

@@ -64,9 +64,12 @@ describe('spaceFromEmail', () => {
     vi.stubEnv('DSH_HOME', home)
     const { view, spaces, entities } = harness()
 
-    const result = await view.spaceFromEmail('12', 'RE: PO 505433')
+    const result = await view.spaceFromEmail('12', 'RE: PO 505433', undefined, 'compras2@sondelsa.com')
 
-    expect(result).toEqual({ spaceId: 'sp-new-1', workspaceId: 'ws-1' })
+    expect(result).toMatchObject({ spaceId: 'sp-new-1', workspaceId: 'ws-1' })
+    expect(result.context).toContain('De: compras2@sondelsa.com')
+    expect(result.context).toContain('Asunto: RE: PO 505433')
+    expect(result.context).toContain('Adjunto la orden de compra')
     expect(entities).toHaveLength(1)
     expect(spaces.attachFile).toHaveBeenCalledWith(expect.anything(), 'sp-new-1', expect.objectContaining({ name: 'oc.xlsx' }))
   })
@@ -79,7 +82,7 @@ describe('spaceFromEmail', () => {
 
     const result = await view.spaceFromEmail('13', '  re: po 505433 ')
 
-    expect(result).toEqual({ spaceId: 'sp1', workspaceId: 'ws-1' })
+    expect(result).toMatchObject({ spaceId: 'sp1', workspaceId: 'ws-1' })
     expect(spaces.create).not.toHaveBeenCalled()
     expect(spaces.remember).toHaveBeenCalledWith(expect.anything(), expect.stringContaining('PO 505433'), ['sp1'])
     expect(spaces.attachFile).toHaveBeenCalledWith(expect.anything(), 'sp1', expect.objectContaining({ name: 'oc.xlsx' }))

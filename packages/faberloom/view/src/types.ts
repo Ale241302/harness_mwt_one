@@ -178,6 +178,8 @@ export interface FaberLoomSpaceFromEmail {
   readonly spaceId: string
   /** The space's Workspace id, or null when none could be registered. */
   readonly workspaceId: string | null
+  /** The email as a first-message seed: sender, subject, body, and extracted attachment text. */
+  readonly context: string
 }
 
 /** One decoded message as the Email panel reads it. */
