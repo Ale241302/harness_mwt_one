@@ -9,7 +9,7 @@
  * @module @deepseek-ai/dsh-faberloom-defaults
  */
 
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -36,6 +36,8 @@ export interface Config {
   readOnly?: boolean
   /** Root of the role skill catalogue, when the deployment mounts one. */
   skillsCatalogRoot?: string
+  /** Root of the shared agent presets the deployment seeds for every owner. */
+  agentsSharedRoot?: string
 }
 
 /** Schemastery configuration for the defaults seeder. */
@@ -44,6 +46,7 @@ export const Config: z<Config> = z.object({
   role: z.string(),
   readOnly: z.boolean(),
   skillsCatalogRoot: z.string(),
+  agentsSharedRoot: z.string().default(''),
 })
 
 /** How long a claim left by a dead pass blocks the next one. */
@@ -98,13 +101,16 @@ export class FaberLoomDefaults extends Service {
     const ownerId = this.config.ownerId ?? ''
     if (this.config.readOnly === true) return { seeded: false, skipped: 'read-only identity', agents: [], routines: [] }
     if (ownerId.length === 0) return { seeded: false, skipped: 'no owner configured', agents: [], routines: [] }
+    // Shared agent presets are deployment-provided and re-synced on every start
+    // (idempotent by name), independent of the one-time plan marker.
+    const shared = await this.seedSharedAgents()
     const marker = this.markerPath()
-    if (existsSync(marker)) return { seeded: false, skipped: 'already seeded', agents: [], routines: [] }
-    if (!this.claim()) return { seeded: false, skipped: 'another pass is seeding', agents: [], routines: [] }
+    if (existsSync(marker)) return { seeded: shared.length > 0, skipped: 'already seeded', agents: shared, routines: [] }
+    if (!this.claim()) return { seeded: shared.length > 0, skipped: 'another pass is seeding', agents: shared, routines: [] }
 
     try {
       const available = new Set(this.availableSkills())
-      const agents = await this.seedAgents(available)
+      const agents = [...shared, ...await this.seedAgents(available)]
       const routines = await this.seedRoutines(ownerId)
       mkdirSync(this.dshHome(), { recursive: true })
       writeFileSync(marker, `${JSON.stringify({
@@ -185,6 +191,45 @@ export class FaberLoomDefaults extends Service {
       created.push(seed.name)
     }
     return created
+  }
+
+  /**
+   * Create the deployment's shared agent presets for this owner. Idempotent by
+   * name, so a restart adds new presets without duplicating existing agents.
+   * @returns the names created in this pass.
+   */
+  private async seedSharedAgents(): Promise<string[]> {
+    const root = this.config.agentsSharedRoot
+    if (root === undefined || root.length === 0 || !existsSync(root)) return []
+    const existing = new Set((await this.ctx.faberloomAgents.listAgents()).map(agent => agent.name))
+    const created: string[] = []
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const preset = this.readPreset(join(root, entry.name, 'preset.yml'))
+      if (preset === undefined || existing.has(preset.name)) continue
+      await this.ctx.faberloomAgents.createAgent({ name: preset.name, responsibility: preset.description, origin: 'scratch', skills: [] })
+      created.push(preset.name)
+    }
+    return created
+  }
+
+  /**
+   * Read one shared preset's display name and description.
+   * @param file - the preset's `preset.yml` path.
+   * @returns the name and description, or undefined when the file is absent or unnamed.
+   */
+  private readPreset(file: string): { name: string; description: string } | undefined {
+    if (!existsSync(file)) return undefined
+    let text = ''
+    try { text = readFileSync(file, 'utf8') } catch { return undefined }
+    const name = /^name:\s*(.+)$/m.exec(text)?.[1]?.trim() ?? ''
+    if (name.length === 0) return undefined
+    const raw = (/^description:\s*(.+)$/m.exec(text)?.[1] ?? '').trim()
+    let description = raw
+    if (raw.startsWith('"')) {
+      try { description = String(JSON.parse(raw)) } catch { description = raw }
+    }
+    return { name, description: description.length > 0 ? description : `Especialista ${name}.` }
   }
 
   /** Skill names the owner can use: their own uploads plus the role catalogue. */

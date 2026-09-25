@@ -16,6 +16,7 @@ ECC 目录此前是作为技能导入的，因此其中的智能体变成了“�
 - 每个 preset 的工具行按 ECC 的 `tools:` 字段裁剪：只有当智能体声明 `Bash` 时才保留 shell 栈（`tool-bash`/`tool-pwsh`）与后台任务，只有声明 `WebSearch`/`WebFetch` 时才保留 `tool-web`。文件与搜索插件对所有智能体都保留，因为它们全都声明了 `Read` 与 `Grep`。
 - `writeUserPresets(home)` 在实例启动时把 `agentsSharedRoot`（`/opt/agents-shared`）复制到用户的 `<DSH_HOME>/.agent-presets`，由 `dsh-agent-presets` 的 `includeUserRoot` 发现；已存在的用户 preset 不会被覆盖。
 - Dockerfile 把 `/opt/agents-shared` 打进镜像，`push-to-vps.ps1` 上传 `agents-shared/`。
+- `faberloom-defaults` 还会在每次实例启动时把每个共享 preset 播种为一个 FaberLoom 智能体（使用显示名与描述，不带技能），按名称幂等，因此 Agentes 面板会列出它们，Space 也能指派其中之一负责。
 
 ## 考虑过的替代方案
 
@@ -29,6 +30,7 @@ ECC 目录此前是作为技能导入的，因此其中的智能体变成了“�
 
 - 每个 ECC 智能体都是可选择的 preset，区别在于 persona 以及是否携带 shell 与 web 行。
 - 选择器中会与 `standard`、`ptc`、`cordis`、`minimal` 一起出现这 35 个 preset 行。
+- Agentes 面板会在播种的业务智能体旁列出这些共享智能体；它们初始不带技能。
 - 播种的 preset 是用户根副本；编辑它们是本地的，并会保留到被删除为止。
 
 ## 测试

@@ -130,6 +130,26 @@ describe('FaberLoomDefaults', () => {
     expect(await first.ctx.faberloomAgents.listAgents()).toHaveLength(SEED_AGENTS.length)
   })
 
+  it('F16 — re-syncs the shared agent presets on restart without duplicating them', async () => {
+    const home = ownerHome()
+    const shared = mkdtempSync(join(tmpdir(), 'faberloom-agents-'))
+    homes.push(shared)
+    mkdirSync(join(shared, 'architect'), { recursive: true })
+    writeFileSync(join(shared, 'architect', 'preset.yml'), 'name: Architect\ndescription: "System design and scalability."\norder: 100\n', 'utf8')
+    mkdirSync(join(shared, 'not-a-preset'), { recursive: true })
+    const pool = new MemoryMediaPool()
+    const first = await services(home, [], pool)
+    const report = await seedWith(first.ctx, first.catalog, { agentsSharedRoot: shared })
+    expect(report.agents).toContain('Architect')
+    const agent = (await first.ctx.faberloomAgents.listAgents()).find(candidate => candidate.name === 'Architect')
+    expect(agent?.responsibility).toBe('System design and scalability.')
+
+    const second = await services(home, [], pool)
+    const again = await seedWith(second.ctx, second.catalog, { agentsSharedRoot: shared })
+    expect(again.seeded).toBe(false)
+    expect((await second.ctx.faberloomAgents.listAgents()).filter(candidate => candidate.name === 'Architect')).toHaveLength(1)
+  })
+
   it('F16 — seeds nothing for a read-only identity, and a retry never duplicates what already landed', async () => {
     const readOnlyHome = ownerHome()
     const readOnly = await services(readOnlyHome, ['mwt-compras-clientes-leer'])

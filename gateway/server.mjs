@@ -791,6 +791,7 @@ function renderPatch(home, user, memory) {
     `    role: ${yamlScalar(user.role || 'client_b2b')}`,
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,
+    `    agentsSharedRoot: ${yamlScalar(cfg.agentsSharedRoot)}`,
     '',
     // El despachador persistente: sin el nadie inicia las rutinas con
     // disparador de fecha o recurrencia cuando el usuario no tiene el panel abierto.

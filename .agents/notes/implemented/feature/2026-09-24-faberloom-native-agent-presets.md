@@ -16,6 +16,7 @@ Generate one dsh agent preset per ECC agent and seed them into each user's roste
 - Each preset's tool rows are scoped from the ECC `tools:` field: the shell stack (`tool-bash`/`tool-pwsh`) and background jobs are kept only when the agent declares `Bash`, and `tool-web` only on `WebSearch`/`WebFetch`. The file and search plugins stay for every agent because all of them declare `Read` and `Grep`.
 - `writeUserPresets(home)` copies `agentsSharedRoot` (`/opt/agents-shared`) into the user's `<DSH_HOME>/.agent-presets` at instance start, where `dsh-agent-presets`' `includeUserRoot` discovers it; an existing user preset is never overwritten.
 - The Dockerfile bakes `/opt/agents-shared` and `push-to-vps.ps1` uploads `agents-shared/`.
+- `faberloom-defaults` also seeds each shared preset as a FaberLoom agent (display name and description, no skills) on every instance start, idempotent by name, so the Agentes panel lists them and a Space can put one in charge.
 
 ## Alternatives considered
 
@@ -29,6 +30,7 @@ Generate one dsh agent preset per ECC agent and seed them into each user's roste
 
 - Every ECC agent is a selectable preset, distinguished by its persona and by whether it carries the shell and web rows.
 - The 35 preset rows appear in the picker alongside `standard`, `ptc`, `cordis`, and `minimal`.
+- The Agentes panel lists the shared agents beside the seeded business ones; they start with no skills.
 - The seeded presets are user-root copies; editing one is local and persists until removed.
 
 ## Testing
