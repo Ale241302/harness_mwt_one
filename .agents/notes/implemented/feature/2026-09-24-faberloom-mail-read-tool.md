@@ -16,6 +16,7 @@ A new model tool `faberloom_mail_read(uid)` returns the message's plain-text bod
 - `faberloom_mail_search` prints each message's `uid` in its rendered line, so the model calls `faberloom_mail_read` with a real uid instead of probing the sequence by hand; the read tool's description and the workspace mail rule forbid that probing and forbid rebuilding an attached file with a report tool, pointing at the Email panel for the original.
 - Attachment ingestion moved from `packages/faberloom/view/src/documents.ts` to `packages/faberloom/inbound/src/documents.ts` and is re-exported from the inbound entry, so the panel and the tool share one converter and one `@firecrawl/anydoc` dependency. The tool reads the converter options from its own `Config` (`anydoc`, `anydocOcr`, `anydocApiKey`), which the gateway fills from the same `ANYDOC_*` / `FIRECRAWL_API_KEY` variables as the view.
 - Degradation matches the panel: with anydoc off, the subprocess provider absent, the converter missing, or OCR needed, the tool still returns the body and lists the attachments with empty Markdown; it never fails the call.
+- A companion `faberloom_mail_attachment(uid, name?)` writes the original attachment bytes into `correo-adjuntos/` under the session workspace and returns their paths, so the user receives the real file and the agent can upload it with the business document tools; the mailbox stays read-only.
 
 ## Alternatives considered
 

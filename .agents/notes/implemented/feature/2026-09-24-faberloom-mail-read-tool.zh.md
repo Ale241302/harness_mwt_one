@@ -16,6 +16,7 @@ Status: implemented
 - `faberloom_mail_search` 在渲染的每一行打印邮件的 `uid`，模型因此用真实 `uid` 调用 `faberloom_mail_read`，而不再手工逐个探测序号；读取工具的说明与工作区邮件规则都禁止这种探测，也禁止用报告工具重建附件文件，并指引用户到邮件面板取原件。
 - 附件摄取从 `packages/faberloom/view/src/documents.ts` 移到 `packages/faberloom/inbound/src/documents.ts`，并从 inbound 入口重新导出，于是面板与工具共享同一个转换器和同一份 `@firecrawl/anydoc` 依赖。工具从自己的 `Config`（`anydoc`、`anydocOcr`、`anydocApiKey`）读取转换选项，网关用与 view 相同的 `ANYDOC_*` / `FIRECRAWL_API_KEY` 变量填充。
 - 退化行为与面板一致：anydoc 关闭、子进程提供者缺失、转换器未安装或需要 OCR 时，工具仍返回正文并列出附件（Markdown 为空）；它绝不使调用失败。
+- 配套工具 `faberloom_mail_attachment(uid, name?)` 把附件的原始字节写入会话工作区下的 `correo-adjuntos/` 并返回路径，用户因此拿到真实文件，智能体也可用业务文档工具上传；邮箱保持只读。
 
 ## Alternatives considered
 

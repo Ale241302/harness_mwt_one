@@ -5,6 +5,8 @@
  * @module @deepseek-ai/dsh-tool-faberloom
  */
 
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -1999,6 +2001,53 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Read mail', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_mail_attachment',
+    description: 'Save the original attachment(s) of one mailbox message into the session workspace as real files and return their paths, so the user can download the actual file rather than a reconstruction (or you can upload it with the business document tools). Use the uid from faberloom_mail_search; pass name to save one attachment. Read-only for the mailbox.',
+    parameters: {
+      uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
+      name: { type: 'string', description: 'Save only the attachment with this exact name; every attachment otherwise.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          files: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true },
+                path: { type: 'string', required: true },
+                bytes: { type: 'integer', required: true },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{
+        type: 'text',
+        text: value.files.length === 0
+          ? 'Sin adjuntos que guardar.'
+          : value.files.map(file => `${file.name} → ${file.path} (${String(file.bytes)} B)`).join('\n'),
+      }],
+    },
+    execute: async (args) => {
+      const content = await inbound(ctx).readEmail(actor(config).id, args.uid)
+      const wanted = args.name === undefined ? content.attachments : content.attachments.filter(attachment => attachment.name === args.name)
+      const dir = join(process.cwd(), 'correo-adjuntos')
+      mkdirSync(dir, { recursive: true })
+      const files = wanted.map((attachment) => {
+        const path = join(dir, basename(attachment.name))
+        const bytes = Buffer.from(attachment.contentBase64, 'base64')
+        writeFileSync(path, bytes)
+        return { name: attachment.name, path, bytes: bytes.length }
+      })
+      return { files }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Save mail attachment', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({
