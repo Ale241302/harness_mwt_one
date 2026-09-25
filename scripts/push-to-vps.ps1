@@ -76,7 +76,7 @@ if (-not $SkipHarnessPackage) {
 # Con CRLF, bash falla en el shebang y en `set -o pipefail` de los .sh (rompe el
 # cron de respaldo) y Docker ve un `\r` en las continuaciones del Dockerfile.
 $deployPaths = @(
-  'gateway', 'scripts', 'skills-catalog',
+  'gateway', 'scripts', 'skills-catalog', 'skills-shared',
   'docker-compose.yml', 'Dockerfile', '.dockerignore', 'MANIFEST.md', 'README.mwt-one.md', '.env.example'
 )
 # `nginx/` se omite a propósito: harness.conf es un bind-mount de archivo y

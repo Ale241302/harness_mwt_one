@@ -85,6 +85,8 @@ const cfg = {
   contextModeTimeoutMs: Number(process.env.CONTEXT_MODE_TIMEOUT_MS || 120000),
   // Catálogo de skills del MCP: un directorio por rol con <skill>/SKILL.md.
   skillsCatalogRoot: process.env.SKILLS_CATALOG_ROOT || '/opt/skills-catalog',
+  // Skills curadas compartidas por todos los roles (ECC + propias).
+  skillsSharedRoot: process.env.SKILLS_SHARED_ROOT || '/opt/skills-shared',
   // Cadencia del despachador persistente de rutinas (una pasada cada N ms).
   dispatcherIntervalMs: Number(process.env.DISPATCHER_INTERVAL_MS || 60000),
   // Receptor de correo: sondeo del IMAP del usuario (desactivado por defecto
@@ -702,7 +704,13 @@ function renderPatch(home, user, memory) {
   // catálogo que ya aporta cada preset.
   const role = String(user.role || '').toLowerCase()
   const roleDir = path.join(cfg.skillsCatalogRoot, role)
-  if (role.length > 0 && fs.existsSync(roleDir)) {
+  // Skills compartidas (curadas) para todos los roles, además del catálogo del rol.
+  const sharedDir = cfg.skillsSharedRoot
+  const skillDirs = [
+    ...role.length > 0 && fs.existsSync(roleDir) ? [roleDir] : [],
+    ...fs.existsSync(sharedDir) ? [sharedDir] : [],
+  ]
+  if (skillDirs.length > 0) {
     entries.push([
       '    - id: faberloom-skills',
       "      name: '@deepseek-ai/dsh-skill-filesystem'",
@@ -711,7 +719,7 @@ function renderPatch(home, user, memory) {
       '        includeDefaultRoots: false',
       '        watch: false',
       '        customSkillDirs:',
-      `          - ${yamlScalar(roleDir)}`,
+      ...skillDirs.map(dir => `          - ${yamlScalar(dir)}`),
     ].join('\n'))
   }
 

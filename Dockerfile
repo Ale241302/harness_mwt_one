@@ -44,6 +44,7 @@ RUN mkdir -p /opt/dsh \
 
 # Catálogo de skills del MCP, aplanado por rol (<rol>/<skill>/SKILL.md).
 COPY skills-catalog/ /opt/skills-catalog/
+COPY skills-shared/ /opt/skills-shared/
 
 # Stable entrypoint the supervisor spawns per user (DSH_BIN).
 RUN printf '#!/bin/sh\nexec node /opt/dsh/apps/cli/lib/bin.js "$@"\n' > /opt/dsh/bin-dsh \
