@@ -56,7 +56,7 @@ import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } 
 export type * from './types.ts'
 
 /** Reads one skill root into rows, ignoring anything without a frontmatter name. */
-function readSkillDirectories(root: string, origin: 'role' | 'owner' = 'role'): FaberLoomSkillRow[] {
+function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' = 'role'): FaberLoomSkillRow[] {
   if (!existsSync(root)) return []
   const rows: FaberLoomSkillRow[] = []
   for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -113,6 +113,8 @@ export interface Config {
   memoryLimit?: number
   /** Root of the role skill catalog mounted in the deployment. */
   skillsCatalogRoot?: string
+  /** Root of the shared skill catalog mounted in the deployment (ECC plus the owner set). */
+  skillsSharedRoot?: string
   /** Whether email attachments are converted to Markdown for Space memory. */
   anydoc?: boolean
   /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
@@ -135,6 +137,7 @@ export const Config: z<Config> = z.object({
   memoryGatewayKey: z.string(),
   memoryLimit: z.number(),
   skillsCatalogRoot: z.string(),
+  skillsSharedRoot: z.string().default(''),
   anydoc: z.boolean().default(false),
   anydocOcr: z.string().default('reject'),
   anydocApiKey: z.string().default(''),
@@ -664,6 +667,10 @@ export class FaberLoomViewService extends TypertRemoteService {
     const rows = new Map<string, FaberLoomSkillRow>()
     const roleDir = this.roleSkillsDir()
     for (const entry of roleDir === undefined ? [] : readSkillDirectories(roleDir, 'role')) {
+      rows.set(entry.name, entry)
+    }
+    const sharedDir = this.sharedSkillsDir()
+    for (const entry of sharedDir === undefined ? [] : readSkillDirectories(sharedDir, 'shared')) {
       rows.set(entry.name, entry)
     }
     for (const entry of readSkillDirectories(join(this.dshHome(), 'skills'), 'owner')) {
@@ -2046,6 +2053,13 @@ export class FaberLoomViewService extends TypertRemoteService {
     const role = (this.config.role ?? '').toLowerCase()
     if (root === undefined || root.length === 0 || role.length === 0) return undefined
     return join(root, role)
+  }
+
+  /** The deployment's shared skill catalog directory, when mounted. */
+  private sharedSkillsDir(): string | undefined {
+    const root = this.config.skillsSharedRoot
+    if (root === undefined || root.length === 0) return undefined
+    return root
   }
 
   /**

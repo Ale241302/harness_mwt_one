@@ -766,8 +766,9 @@ function renderPatch(home, user, memory) {
     ...companyIdsYaml,
     ...companyNamesYaml,
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
-    // Catálogo de skills del rol, para el panel Skills.
+    // Catálogos de skills para el panel Skills: el del rol y el compartido.
     `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,
+    `    skillsSharedRoot: ${yamlScalar(cfg.skillsSharedRoot)}`,
     // Ingesta de adjuntos: el conversor `anydoc` ya viene instalado en el árbol.
     `    anydoc: ${cfg.anydocEnabled ? 'true' : 'false'}`,
     `    anydocOcr: ${yamlScalar(cfg.anydocOcr)}`,

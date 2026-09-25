@@ -623,8 +623,8 @@ export interface FaberLoomSkillRow {
   readonly module: string | null
   /** Action the skill covers, when the frontmatter declares one. */
   readonly action: string | null
-  /** Where the skill came from: the role catalog or the owner's own uploads. */
-  readonly origin: 'role' | 'owner'
+  /** Where the skill came from: the role catalog, the deployment's shared catalog, or the owner's own uploads. */
+  readonly origin: 'role' | 'owner' | 'shared'
   /** Ids of the agents that already list this skill. */
   readonly assignedTo: readonly string[]
 }

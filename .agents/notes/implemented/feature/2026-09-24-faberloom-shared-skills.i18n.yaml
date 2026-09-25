@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-24-faberloom-shared-skills.md
-2026-09-24-faberloom-shared-skills.md: e19f9ee846ef307370cfd06701787499c7fa9534
-2026-09-24-faberloom-shared-skills.zh.md: 727c94f35f83b6d2c2c1ffcdbaa0d544ec08f52f
+2026-09-24-faberloom-shared-skills.md: ec260777afb684c971c440eb1384804115d42ef7
+2026-09-24-faberloom-shared-skills.zh.md: 8edc0cd6263e5c96a595ae4e13a366b75351bb60

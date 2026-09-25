@@ -1218,7 +1218,7 @@ function skillsScreen() {
     const columns: readonly Column<FaberLoomSkillRow>[] = [
       { key: 'name', header: t('col.name'), cell: skill => <span className={styles.cellName}>{skill.name}</span> },
       { key: 'module', header: t('col.module'), cell: skill => <span className={styles.cellMuted}>{skill.module ?? '—'}{skill.action === null ? '' : ` · ${skill.action}`}</span> },
-      { key: 'origin', header: t('col.origin'), cell: skill => <Chip tone={skill.origin === 'owner' ? 'accent' : 'muted'}>{skill.origin === 'owner' ? t('skills.own') : t('skills.role')}</Chip> },
+      { key: 'origin', header: t('col.origin'), cell: skill => <Chip tone={skill.origin === 'owner' ? 'accent' : 'muted'}>{skill.origin === 'owner' ? t('skills.own') : skill.origin === 'shared' ? t('skills.shared') : t('skills.role')}</Chip> },
       { key: 'used', header: t('col.usedBy'), cell: skill => <span className={styles.cellMuted}>{skill.assignedTo.length === 0 ? t('skills.unused') : String(skill.assignedTo.length)}</span> },
     ]
 

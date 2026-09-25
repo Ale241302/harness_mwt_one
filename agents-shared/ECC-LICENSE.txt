@@ -1,17 +1,12 @@
 Third-party content in this directory
 =====================================
 
-Everything under `skills-shared/` except `interview-me/` is vendored from ECC
+Every preset under `agents-shared/` is generated from the ECC agent catalog
 (https://github.com/affaan-m/ECC), version 2.2.2, by Affaan Mustafa, under the
-MIT License:
-
-  - 292 skills, copied verbatim; the 24 curated ones stay model-invocable and
-    the rest carry `disable-model-invocation: true` (user-invocable via `/name`).
-  - 94 commands, rewritten as user-invocable skills named `cmd-<command>`.
-
-ECC agents are NOT here; they ship as native dsh presets under `agents-shared/`.
-
-`interview-me` is the workspace owner's own skill, not from ECC.
+MIT License. Each preset is the shipped `standard` composition with the ECC
+agent's body as its persona and its tool rows scoped from the agent's `tools:`
+field (the shell stack when the agent declares `Bash`, the web tool when it
+declares `WebSearch`/`WebFetch`).
 
 MIT License
 

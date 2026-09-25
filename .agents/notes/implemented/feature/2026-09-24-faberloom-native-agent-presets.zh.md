@@ -13,6 +13,7 @@ ECC 目录此前是作为技能导入的，因此其中的智能体变成了“�
 为每个 ECC 智能体生成一个 dsh agent preset，并把它们播种进每个用户的名册。
 
 - `agents-shared/<id>/` 存放 `agent.cordis.yml`——随发行版交付的 `standard` 组合的副本，只把 persona 的 `prefix` 换成 ECC 智能体正文——以及带显示名、描述与顺序的 `preset.yml`。
+- 每个 preset 的工具行按 ECC 的 `tools:` 字段裁剪：只有当智能体声明 `Bash` 时才保留 shell 栈（`tool-bash`/`tool-pwsh`）与后台任务，只有声明 `WebSearch`/`WebFetch` 时才保留 `tool-web`。文件与搜索插件对所有智能体都保留，因为它们全都声明了 `Read` 与 `Grep`。
 - `writeUserPresets(home)` 在实例启动时把 `agentsSharedRoot`（`/opt/agents-shared`）复制到用户的 `<DSH_HOME>/.agent-presets`，由 `dsh-agent-presets` 的 `includeUserRoot` 发现；已存在的用户 preset 不会被覆盖。
 - Dockerfile 把 `/opt/agents-shared` 打进镜像，`push-to-vps.ps1` 上传 `agents-shared/`。
 
@@ -22,11 +23,11 @@ ECC 目录此前是作为技能导入的，因此其中的智能体变成了“�
 
 **配置一条部署级 `roots`。** 它需要在每用户补丁里覆盖基础的 `agent-presets` 行；用户根是受支持的扩展点，且无需合并行。
 
-**按 ECC 的 `tools:` 字段裁剪每个 preset 的工具。** 映射（`Read`→`read`/`read_image`，`Grep`/`Glob`→`grep`/`glob`，`Bash`→`bash`，`Web*`→`web`）已经就绪，但错误的行会把整个 preset 标记为损坏；本版本保留标准工具集，把裁剪留作后续。
+**按 ECC 的每个工具裁剪。** dsh 的工具插件按组提供工具（`tool-fs` 同时是 read、write、edit 与 read_image），因此无法表达逐工具限制；preset 保留文件与搜索插件，只裁剪 shell、jobs 与 web 三类行。
 
 ## 后果
 
-- 每个 ECC 智能体都是可选择的 preset，区别在于 persona 而不是工具集。
+- 每个 ECC 智能体都是可选择的 preset，区别在于 persona 以及是否携带 shell 与 web 行。
 - 选择器中会与 `standard`、`ptc`、`cordis`、`minimal` 一起出现这 68 个 preset 行。
 - 播种的 preset 是用户根副本；编辑它们是本地的，并会保留到被删除为止。
 
