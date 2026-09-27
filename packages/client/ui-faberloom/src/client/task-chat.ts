@@ -24,14 +24,24 @@ export interface TaskChatInput {
   readonly title: string
   /** Extra context: status, sender, summary, or the task id. */
   readonly detail: string
+  /** FabreLoom agent the owner assigned to the task, when they picked one. */
+  readonly agentName?: string | null
 }
 
 /** The first thing every task chat must do: name the task before acting. */
 const TASK_GUIDE = 'Empieza aplicando la skill `grill-me-lite`: resume en una línea de qué trata esta tarea del banco de trabajo y cuál es el siguiente paso concreto; luego ayúdame a resolverla.'
 
+/** Name the assigned agent so the live agent works with it, not instead of it. */
+function agentLine(agentName: string | null | undefined): string {
+  const name = (agentName ?? '').trim()
+  return name.length === 0
+    ? ''
+    : `\n\nEl usuario asignó a esta tarea el agente «${name}»: trabaja con él como especialista, además del agente vivo.`
+}
+
 /** Build the model-facing opening prompt for one task source. */
 function promptFor(input: TaskChatInput): string {
-  return `${TASK_GUIDE}\n\n${taskBody(input)}`
+  return `${TASK_GUIDE}\n\n${taskBody(input)}${agentLine(input.agentName)}`
 }
 
 /** Build the source-specific body of the opening prompt. */
@@ -54,17 +64,6 @@ function taskBody(input: TaskChatInput): string {
       `Contexto: ${input.detail}`,
       '',
       'Lee el correo completo con las herramientas de correo de FaberLoom, redacta una respuesta con la voz del remitente y guárdala como borrador. No la envíes sin mi confirmación.',
-    ].join('\n')
-  }
-  if (input.kind === 'mwt') {
-    return [
-      'Revisa MWT.ONE con las herramientas del MCP `mwt` y crea aquí las tareas del banco de trabajo que hagan falta.',
-      '',
-      'Reglas:',
-      '- Usa solo datos reales del MCP; no inventes.',
-      '- Por cada expediente que lo requiera, crea una tarea con `faberloom_board_create` (title claro y evidence con el dato real, p. ej. `expediente:EXP-...`).',
-      '- Cubre: falta subir la OC/PO (`documento_listar` frente a `expediente_obtener`); falta el SAP (solo rol Admin/CEO); estado que ya pasó su fecha fin de fase (`expediente_phase_durations_get` y `phase_durations_json`; `expediente_avanzar_estado` para cambiarlo); falta el operador (`operating_company_id`); lista de precios por vencer.',
-      '- Si algo no es consultable con las herramientas del MCP, dilo y no crees la tarea.',
     ].join('\n')
   }
   return [

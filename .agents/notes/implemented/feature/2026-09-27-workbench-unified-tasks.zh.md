@@ -22,6 +22,9 @@ Status: implemented
 - 工作台用 **批准并关闭** 解决任务（先批准修订再完成），任务随即离开队列；已完成和失败的任务会被过滤掉。打开任务对话时会先以 `grill-me-lite` 摘要规则播种再行动。
 - **活的邮件例程**（`LIVE_MAIL_ROUTINE`，"Vigía de correo"）是被**自动供给**而非用户编写的：当所有者同时拥有 IMAP 与 SMTP 连接时，`faberloomView.saveConnection` 与 inbound 轮询器会创建它并激活（幂等；暂停的会被重新激活）。它的 `email` 触发器运行一个 agent 步骤对每封邮件分类（丢弃 / 回复 / 案卷），再用一个 `mcp` 步骤在邮件带有 OC/PO/SAP 时通过 `mwt` MCP 解决该案卷。
 - 读取器把**内联正文图片**保留为附件（携带其 `Content-ID`），因此 `faberloom_mail_read` 可以对其做 OCR 或交给视觉模型；它还会返回正文中的**下载链接**，`faberloom_mail_download` 可把其中一个链接保存到工作区。于是 agent 能读正文、附件、正文图片，以及邮件指向的 Excel/PDF/照片链接。
+- 工作台里的邮件任务与看板任务拥有同一套交互：**打开对话**（带播种的会话）、**回复**、**标为已读**、**移入垃圾箱**，草稿还有**删除**。每个任务还提供一个可选的 **代理** 选择——不选则只用活的 agent；选中后会在播种提示词里点名该代理，让活的 agent 与它作为专家一起工作。
+- MWT.ONE 审查不再是手动任务：**MWT 守卫例程**（`MWT_GUARD_ROUTINE`，"Vigía MWT.ONE"）以六小时重复运行，把案卷的跟进项（缺少 OC/PO/SAP、阶段已过期、缺少操作方、价格表即将到期）登记为看板任务。`faberloomView.ensureBuiltinRoutines` 会从 `overview()`（一次）以及每次保存连接时激活它——以及活的邮件例程——因此守卫无需所有者编写即可出现。
+- `saveRoutine` 与 `removeRoutine` 会重新发布 overview store，因此保存或删除例程会立即改变列表；此前服务端变更已生效，但列表仍保留旧行。
 
 ## 考虑过的替代方案
 
@@ -40,4 +43,4 @@ Status: implemented
 
 ## 测试
 
-`packages/faberloom/board/tests/board.spec.ts` 覆盖 `remove`、`setRoutine` 以及带例程创建。`packages/client/ui-faberloom/tests/registration.client.spec.tsx` 覆盖删除看板任务、发送并丢弃草稿、列出待回复的未读邮件、以及标为已读/移入垃圾箱。`packages/client/ui-faberloom/tests/task-chat.client.spec.ts` 覆盖每个来源的播种（含 `grill-me-lite` 规则）与失败路径。`packages/faberloom/view/tests/email-actions.spec.ts` 覆盖邮箱写入、学到的丢弃模式，以及活邮件例程的供给。`packages/faberloom/inbound/tests/imap-body.spec.ts` 覆盖把内联正文图片保留为附件。
+`packages/faberloom/board/tests/board.spec.ts` 覆盖 `remove`、`setRoutine` 以及带例程创建。`packages/client/ui-faberloom/tests/registration.client.spec.tsx` 覆盖删除看板任务、发送并丢弃草稿、列出待回复的未读邮件、以及标为已读/移入垃圾箱。`packages/client/ui-faberloom/tests/task-chat.client.spec.ts` 覆盖每个来源的播种（含 `grill-me-lite` 规则）与失败路径。`packages/faberloom/view/tests/email-actions.spec.ts` 覆盖邮箱写入、学到的丢弃模式，以及活邮件例程的供给。`packages/faberloom/inbound/tests/imap-body.spec.ts` 覆盖把内联正文图片保留为附件。`packages/faberloom/view/tests/email-actions.spec.ts` 还覆盖在挂载 mwt 工具时供给 MWT 守卫，`packages/client/ui-faberloom/tests/task-chat.client.spec.ts` 覆盖点名所选代理，`packages/client/ui-faberloom/tests/registration.client.spec.tsx` 覆盖邮件任务的回复/对话/标为已读/垃圾箱操作。

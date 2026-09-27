@@ -217,8 +217,16 @@ export function apply(ctx: ClientContext): void {
         })
       },
       routineDetail: id => ctx.remote.faberloomView.routineDetail(id),
-      saveRoutine: (id, input) => ctx.remote.faberloomView.saveRoutine(id, input),
-      removeRoutine: id => ctx.remote.faberloomView.removeRoutine(id),
+      saveRoutine: (id, input) => {
+        const run = ctx.remote.faberloomView.saveRoutine(id, input)
+        write(() => run)
+        return run
+      },
+      removeRoutine: (id) => {
+        const run = ctx.remote.faberloomView.removeRoutine(id)
+        write(() => run)
+        return run
+      },
       boardDetail: id => ctx.remote.faberloomView.boardDetail(id),
       deleteBoardItem: (id) => {
         const run = ctx.remote.faberloomView.deleteBoardItem(id)
@@ -230,7 +238,9 @@ export function apply(ctx: ClientContext): void {
         write(() => run)
         return run
       },
-      openTaskChat: (kind, title, detail) => { runTaskChat(ctx, bound, { kind, title, detail }) },
+      openTaskChat: (kind, title, detail, agentName) => {
+        runTaskChat(ctx, bound, { kind, title, detail, ...agentName === undefined ? {} : { agentName } })
+      },
       executions: routineId => ctx.remote.faberloomView.executions(routineId),
       startRoutine: routineId => ctx.remote.faberloomView.startRoutine(routineId),
       tickRoutine: routineId => ctx.remote.faberloomView.tickRoutine(routineId),

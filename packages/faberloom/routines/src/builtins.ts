@@ -12,6 +12,33 @@ import type { RoutineInput } from './types.ts'
 /** Display name of the built-in live mail routine; provisioning matches on it. */
 export const LIVE_MAIL_ROUTINE_NAME = 'Vigía de correo'
 
+/** Display name of the built-in MWT.ONE guard routine; provisioning matches on it. */
+export const MWT_GUARD_ROUTINE_NAME = 'Vigía MWT.ONE'
+
+/**
+ * The MWT.ONE guard routine: a periodic review that files the expediente
+ * follow-ups (missing OC/PO/SAP, an expired phase, a missing operator, an
+ * expiring price list) as board tasks, with nobody opening a panel.
+ */
+export const MWT_GUARD_ROUTINE: RoutineInput = {
+  name: MWT_GUARD_ROUTINE_NAME,
+  definition: {
+    intent: 'Revisar MWT.ONE periódicamente y crear en el banco de trabajo las tareas del expediente que hagan falta (OC/PO/SAP faltante, estado por fecha fin de fase, operador, lista de precios por vencer).',
+    triggers: [{ kind: 'recurrence', match: '6h' }],
+    steps: [
+      {
+        id: 'mwt-revisar',
+        instruction: 'Revisa MWT.ONE con las herramientas del MCP `mwt` y crea en el banco de trabajo las tareas que falten. Usa solo datos reales; no inventes. Cubre: falta subir la OC/PO (`documento_listar` frente a `expediente_obtener`); falta el SAP (solo rol Admin/CEO); estado que ya pasó su fecha fin de fase (`expediente_phase_durations_get` y `phase_durations_json`; `expediente_avanzar_estado` para cambiarlo); falta el operador (`operating_company_id`); lista de precios por vencer (`pricelist_por_vencer`). Por cada hallazgo crea una tarea con `faberloom_board_create` (title claro y evidence con el dato real, p. ej. `expediente:EXP-...`). Si algo no es consultable con las herramientas del MCP, dilo y no crees la tarea.',
+        handler: 'mcp',
+        dependsOn: [],
+      },
+    ],
+    expectedResult: 'Las tareas pendientes del expediente aparecen en el banco de trabajo sin que nadie las pida.',
+    permissions: ['mwt'],
+    failurePolicy: 'review',
+  },
+}
+
 /**
  * The live mail routine: classify each incoming message, discard what the owner
  * always discards, leave a reply draft in the owner's voice, and resolve the

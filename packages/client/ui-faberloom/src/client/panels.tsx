@@ -224,8 +224,8 @@ export interface FaberloomPanelInjected {
   deleteBoardItem: (id: string) => Promise<Result<FaberLoomOverview>>
   /** Link one board task to the routine that runs it, or unlink it with null. */
   setBoardRoutine: (id: string, routineId: string | null) => Promise<Result<FaberLoomOverview>>
-  /** Open a chat session seeded with the work-bench task's context. */
-  openTaskChat: (kind: string, title: string, detail: string) => void
+  /** Open a chat session seeded with the work-bench task's context and the assigned agent. */
+  openTaskChat: (kind: string, title: string, detail: string, agentName?: string | null) => void
   /** List one routine's executions. */
   executions: (routineId?: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
   /** Start a manual run of one routine. */
@@ -1329,7 +1329,7 @@ function boardScreen() {
     const {
       t, createBoardItem, reviewBoardItem, reopenBoardItem, submitBoardRevision, boardException,
       deleteBoardItem, setBoardRoutine, boardDetail, emailDrafts, sendEmailDraft, deleteEmailDraft,
-      emailInbox, mwtStatus, openTaskChat,
+      emailInbox, emailMarkSeen, emailTrash, openTaskChat,
     } = props
     const { overview, error } = useOverview(props)
     const [title, setTitle] = useState('')
@@ -1342,10 +1342,10 @@ function boardScreen() {
     const [note, setNote] = useState('')
     const [drafts, setDrafts] = useState<readonly FaberLoomEmailDraftRow[]>([])
     const [inbox, setInbox] = useState<readonly FaberLoomInboxRow[]>([])
-    const [mwtConnected, setMwtConnected] = useState(false)
+    const [assignedAgent, setAssignedAgent] = useState('')
 
-    // The email and MWT sources reload on every board write (tick) so a send,
-    // discard, or scan repaints the whole queue without a manual refresh.
+    // The email sources reload on every board write (tick) so a send, discard,
+    // trash, or read repaints the whole queue without a manual refresh.
     useEffect(() => {
       let live = true
       void emailDrafts().then((result) => { if (live && result.ok) setDrafts(result.value) }).catch(() => {})
@@ -1356,11 +1356,6 @@ function boardScreen() {
       void emailInbox().then((result) => { if (live && result.ok) setInbox(result.value) }).catch(() => {})
       return () => { live = false }
     }, [tick])
-    useEffect(() => {
-      let live = true
-      void mwtStatus().then((result) => { if (live && result.ok) setMwtConnected(result.value.servers.some(server => server.name === 'mwt')) }).catch(() => {})
-      return () => { live = false }
-    }, [])
 
     const boardItems = overview?.board ?? []
     const [pickedSource, ...pickedRest] = selected === null ? [null, ''] : selected.split(':')
@@ -1381,7 +1376,6 @@ function boardScreen() {
     }
 
     const rows: readonly WorkbenchRow[] = [
-      ...(mwtConnected ? [{ id: 'mwt:scan', source: 'mwt' as const, title: t('workbench.mwtScan'), status: t('workbench.source.mwt') }] : []),
       ...boardItems.filter(item => item.status !== 'completed' && item.status !== 'failed').map(item => ({ id: `board:${item.id}`, source: 'board' as const, title: item.title, status: item.status })),
       ...drafts.filter(entry => entry.status === 'draft').map(entry => ({
         id: `draft:${entry.id}`, source: 'draft' as const,
@@ -1432,11 +1426,13 @@ function boardScreen() {
     const inspectorTitle = (): string => {
       if (drafting) return t('board.newTitle')
       if (chosenBoard !== null) return chosenBoard.title
-      if (pickedSource === 'mwt') return t('workbench.mwtDetail')
       if (chosenDraft !== null) return t('workbench.draftDetail')
       if (chosenInbox !== null) return t('workbench.inboxDetail')
       return t('board.detail')
     }
+
+    /** The assigned agent's name, or an empty string for the live agent alone. */
+    const agentName = (): string => (overview?.agents ?? []).find(agent => agent.id === assignedAgent)?.name ?? ''
 
     const boardFooter = chosenBoard === null ? null : (
       <span className={styles.tools}>
@@ -1455,7 +1451,7 @@ function boardScreen() {
           ? <button className={styles.primary} type="button" onClick={resolve}>{t('workbench.resolve')}</button>
           : null}
         <button className={styles.secondary} type="button"
-          onClick={() => { openTaskChat('board', chosenBoard.title, `${chosenBoard.status} · ${chosenBoard.routineId ?? t('workbench.noRoutine')}`) }}>
+          onClick={() => { openTaskChat('board', chosenBoard.title, `${chosenBoard.status} · ${chosenBoard.routineId ?? t('workbench.noRoutine')}`, agentName()) }}>
           {t('workbench.chat')}
         </button>
         <button className={styles.danger} type="button" onClick={() => { void deleteBoardItem(chosenBoard.id).then(apply) }}>{t('action.delete')}</button>
@@ -1466,7 +1462,7 @@ function boardScreen() {
       <span className={styles.tools}>
         <button className={styles.primary} type="button" onClick={() => { void sendEmailDraft(chosenDraft.id).then(apply) }}>{t('email.send')}</button>
         <button className={styles.ghost} type="button"
-          onClick={() => { openTaskChat('draft', chosenDraft.subject, `Para: ${chosenDraft.to.join(', ')}`) }}>{t('workbench.chat')}</button>
+          onClick={() => { openTaskChat('draft', chosenDraft.subject, `Para: ${chosenDraft.to.join(', ')}`, agentName()) }}>{t('workbench.chat')}</button>
         <button className={styles.danger} type="button" onClick={() => { void deleteEmailDraft(chosenDraft.id).then(apply) }}>{t('action.delete')}</button>
       </span>
     )
@@ -1474,13 +1470,14 @@ function boardScreen() {
     const inboxFooter = chosenInbox === null ? null : (
       <span className={styles.tools}>
         <button className={styles.primary} type="button"
-          onClick={() => { openTaskChat('inbox', chosenInbox.subject ?? t('workbench.untitled'), `De: ${chosenInbox.from ?? ''} · ${chosenInbox.date ?? ''}`) }}>{t('email.reply')}</button>
+          onClick={() => { openTaskChat('inbox', chosenInbox.subject ?? t('workbench.untitled'), `De: ${chosenInbox.from ?? ''} · ${chosenInbox.date ?? ''}`, agentName()) }}>{t('email.reply')}</button>
+        <button className={styles.secondary} type="button"
+          onClick={() => { openTaskChat('inbox', chosenInbox.subject ?? t('workbench.untitled'), `De: ${chosenInbox.from ?? ''} · ${chosenInbox.date ?? ''}`, agentName()) }}>{t('workbench.chat')}</button>
+        <button className={styles.ghost} type="button" onClick={() => { void emailMarkSeen(chosenInbox.id).then(apply) }}>{t('email.markRead')}</button>
+        <button className={styles.danger} type="button"
+          onClick={() => { void emailTrash(chosenInbox.id, chosenInbox.from ?? undefined, chosenInbox.subject ?? undefined).then(apply) }}>{t('email.trash')}</button>
       </span>
     )
-
-    const mwtFooter = pickedSource === 'mwt'
-      ? <button className={styles.primary} type="button" onClick={() => { openTaskChat('mwt', t('workbench.mwtDetail'), '') }}>{t('workbench.mwtScan')}</button>
-      : null
 
     const footer = drafting
       ? (
@@ -1495,7 +1492,7 @@ function boardScreen() {
           ? draftFooter
           : chosenInbox !== null
             ? inboxFooter
-            : mwtFooter
+            : null
 
     const boardBody = value === undefined
       ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
@@ -1606,17 +1603,27 @@ function boardScreen() {
               ? <Field label={t('col.title')}><input type="text" autoComplete="off" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
               : selected === null
                 ? <StateBlock kind="empty" title={t('board.selectTitle')} text={t('board.selectText')} />
-                : pickedSource === 'mwt'
-                  ? <StateBlock kind="empty" title={t('workbench.mwtDetail')} text={t('workbench.mwtDetailText')} />
-                  : chosenDraft !== null
-                    ? draftBody
-                    : chosenInbox !== null
-                      ? inboxBody
-                      : detail.kind === 'loading'
-                        ? <StateBlock kind="loading" title={t('state.loading')} />
-                        : detail.kind === 'error'
-                          ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
-                          : boardBody}
+                : (
+                  <>
+                    <Field label={t('workbench.agent')} hint={t('workbench.agentHint')}>
+                      <select value={assignedAgent} aria-label={t('workbench.agent')} onChange={(event) => { setAssignedAgent(event.target.value) }}>
+                        <option value="">{t('workbench.liveAgent')}</option>
+                        {(overview?.agents ?? [])
+                          .filter(agent => agent.active)
+                          .map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                      </select>
+                    </Field>
+                    {chosenDraft !== null
+                      ? draftBody
+                      : chosenInbox !== null
+                        ? inboxBody
+                        : detail.kind === 'loading'
+                          ? <StateBlock kind="loading" title={t('state.loading')} />
+                          : detail.kind === 'error'
+                            ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+                            : boardBody}
+                  </>
+                )}
           </Inspector>
         </div>
       </Screen>

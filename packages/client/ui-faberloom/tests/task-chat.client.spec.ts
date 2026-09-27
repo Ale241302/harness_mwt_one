@@ -17,7 +17,7 @@ function fakeCtx() {
 }
 
 describe('runTaskChat', () => {
-  it.each(['board', 'draft', 'inbox', 'mwt'])('seeds a %s task and opens the session', async (kind) => {
+  it.each(['board', 'draft', 'inbox'])('seeds a %s task and opens the session', async (kind) => {
     const { ctx, create, prompt, open, selectPanel } = fakeCtx()
     const bound = { setError: vi.fn() }
 
@@ -32,6 +32,14 @@ describe('runTaskChat', () => {
     if (kind !== 'mwt') expect(content[0]?.text).toContain('Preparar proforma')
     expect(selectPanel).toHaveBeenCalledWith(null)
     expect(bound.setError).not.toHaveBeenCalled()
+  })
+
+  it('names the agent the owner assigned to the task', async () => {
+    const { ctx, prompt } = fakeCtx()
+    runTaskChat(ctx, { setError: vi.fn() }, { kind: 'inbox', title: 'OC 1', detail: 'De: x', agentName: 'Compras' })
+    await vi.waitFor(() => { expect(prompt).toHaveBeenCalledOnce() })
+    const [content] = prompt.mock.calls[0] as unknown as [readonly { text: string }[]]
+    expect(content[0]?.text).toContain('Compras')
   })
 
   it('reports a failed session create to the store', async () => {

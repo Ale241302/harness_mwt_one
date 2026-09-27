@@ -289,9 +289,9 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(deleteEmailDraft).toHaveBeenCalledWith('draft-1') })
   })
 
-  it('lists an unread email as a work-bench task to answer', async () => {
+  it('offers reply, chat, mark-read and trash on an unread email task', async () => {
     const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
-    const { runtime, view } = await bench(
+    const { runtime, emailMarkSeen, emailTrash, view } = await bench(
       { ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] },
     )
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
@@ -299,6 +299,11 @@ describe('faberloom surface', () => {
     const inboxRows = view.getAllByRole('row')
     fireEvent.click(inboxRows[inboxRows.length - 1] as HTMLTableRowElement)
     expect(await view.findByRole('button', { name: 'Reply' })).toBeTruthy()
+    expect(view.getByRole('button', { name: 'Open chat' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Mark as read' }))
+    await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith('42') })
+    fireEvent.click(view.getByRole('button', { name: 'Trash' }))
+    await waitFor(() => { expect(emailTrash).toHaveBeenCalledWith('42', 'proveedor@mwt.one', 'OC 505433') })
   })
 
   it('shows the space name and a snippet, and deletes the memory from a modal', async () => {

@@ -7,7 +7,7 @@ import { FaberLoomViewService } from '../src/index.ts'
 function harness(
   inbound: unknown,
   memory: unknown,
-  extra: { connections?: unknown; routines?: unknown; spaces?: unknown } = {},
+  extra: { connections?: unknown; routines?: unknown; spaces?: unknown; tools?: unknown } = {},
 ): FaberLoomViewService {
   const ctx = {
     reflect: { provide: () => {} },
@@ -18,6 +18,7 @@ function harness(
       if (name === 'faberloomInbound') return inbound
       if (name === 'faberloomMemory') return memory
       if (name === 'faberloomConnections') return extra.connections
+      if (name === 'tools') return extra.tools
       return undefined
     },
     faberloomInbound: inbound,
@@ -105,6 +106,22 @@ describe('FaberLoomViewService mailbox writes', () => {
 
     expect(routines.createRoutine).not.toHaveBeenCalled()
     expect(routines.activateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'r9')
+  })
+
+  it('provisions the MWT.ONE guard while the mwt MCP tools are mounted', async () => {
+    const connections = { list: vi.fn(async () => []), save: vi.fn(async () => ({})) }
+    const routines = {
+      listRoutines: vi.fn(async () => []),
+      createRoutine: vi.fn(async (_owner: string, input: { name: string }) => ({ id: 'g1', name: input.name, status: 'draft' })),
+      activateRoutine: vi.fn(async () => ({})),
+    }
+    const tools = { schemas: () => [{ name: 'mcp__mwt__expediente_listar' }] }
+    const view = harness(undefined, undefined, { connections, routines, tools })
+
+    await view.saveConnection({} as never)
+
+    expect(routines.createRoutine).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ name: 'Vigía MWT.ONE' }))
+    expect(routines.activateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'g1')
   })
 
   it('deletes one space-memory entry and returns the refreshed list', async () => {

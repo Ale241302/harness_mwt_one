@@ -21,8 +21,8 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
-import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
+import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
@@ -436,6 +436,12 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('overview')
   async overview(): Promise<FaberLoomOverview> {
+    if (!this.builtinsEnsured) {
+      this.builtinsEnsured = true
+      void this.ensureBuiltinRoutines(this.actor().id).catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: built-in routine provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }
     const actor = this.actor()
     const [spaces, agents, board, routines, memory] = await Promise.all([
       this.ctx.faberloomSpaces.list(actor),
@@ -804,33 +810,50 @@ export class FaberLoomViewService extends TypertRemoteService {
     const owner = this.actor().id
     await this.connectionsService().save(owner, input)
     try {
-      await this.ensureLiveMailRoutine(owner)
+      await this.ensureBuiltinRoutines(owner)
     } catch (error: unknown) {
-      this.ctx.logger.warn(`faberloom: live mail routine provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
+      this.ctx.logger.warn(`faberloom: built-in routine provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
     }
     return await this.connectionsService().list(owner)
   }
 
+  /** Set once per process so the read path provisions the built-ins a single time. */
+  private builtinsEnsured = false
+
   /**
-   * Provision the built-in live mail routine as soon as the owner has both an
-   * IMAP and an SMTP connection, and keep it active. Idempotent: an existing
-   * active routine is left untouched. Provisioning turns "mail is configured"
-   * into "the agent watches mail" without the owner authoring a routine.
+   * Provision the built-in routines the product runs without the owner
+   * authoring them, and keep them active. Idempotent: an existing active
+   * routine is left untouched.
+   *
+   * - the live mail routine, once the owner has both an IMAP and an SMTP
+   *   connection (the agent watches mail on every incoming message), and
+   * - the MWT.ONE guard, while the `mwt` MCP tools are mounted (a periodic
+   *   expediente review that files its follow-ups as board tasks).
    * @param ownerId - the owning identity.
    */
-  private async ensureLiveMailRoutine(ownerId: string): Promise<void> {
-    const connections = await this.connectionsService().list(ownerId)
-    const hasImap = connections.some(connection => connection.kind === 'imap')
-    const hasSmtp = connections.some(connection => connection.kind === 'smtp')
-    if (!hasImap || !hasSmtp) return
+  private async ensureBuiltinRoutines(ownerId: string): Promise<void> {
     const routines = this.ctx.faberloomRoutines
-    const existing = (await routines.listRoutines(ownerId)).find(routine => routine.name === LIVE_MAIL_ROUTINE_NAME)
-    if (existing === undefined) {
-      const created = await routines.createRoutine(ownerId, LIVE_MAIL_ROUTINE)
-      await routines.activateRoutine(ownerId, created.id)
-      return
+    const existing = await routines.listRoutines(ownerId)
+    const ensure = async (input: RoutineInput, name: string): Promise<void> => {
+      const found = existing.find(routine => routine.name === name)
+      if (found === undefined) {
+        const created = await routines.createRoutine(ownerId, input)
+        await routines.activateRoutine(ownerId, created.id)
+        return
+      }
+      if (found.status !== 'active') await routines.activateRoutine(ownerId, found.id)
     }
-    if (existing.status !== 'active') await routines.activateRoutine(ownerId, existing.id)
+    const connections = await this.connectionsService().list(ownerId)
+    const hasMail = connections.some(connection => connection.kind === 'imap') && connections.some(connection => connection.kind === 'smtp')
+    if (hasMail) await ensure(LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME)
+    if (this.hasMwtTools()) await ensure(MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME)
+  }
+
+  /** Whether this deployment mounted the MWT.ONE MCP client tools. */
+  private hasMwtTools(): boolean {
+    const tools = this.ctx.get('tools')
+    if (tools === undefined) return false
+    return tools.schemas().some(schema => /^mcp__mwt__/.test(schema.name))
   }
 
   /**
