@@ -94,6 +94,7 @@ function toAgent(id: FaberLoomAgentId, record: AgentRecord): FaberLoomAgent {
     webAccess: record.webAccess,
     mwtMcp: record.mwtMcp,
     hasApiKey: record.apiKey !== null,
+    ...record.apiKey === null ? {} : { apiKeyTail: record.apiKey.slice(-4) },
     mailConnectionIds: record.mailConnectionIds,
     policy: {
       primary: record.policy.primary ?? undefined,

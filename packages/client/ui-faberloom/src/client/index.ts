@@ -152,6 +152,7 @@ export function apply(ctx: ClientContext): void {
       deleteSpaceMemory: id => ctx.remote.faberloomView.deleteSpaceMemory(id),
       agentDetail: id => ctx.remote.faberloomView.agentDetail(id),
       models: () => ctx.remote.faberloomView.models(),
+      modelCatalog: () => ctx.remote.faberloomView.modelCatalog(),
       recommendModel: agentId => ctx.remote.faberloomView.recommendModel(agentId),
       teachings: (spaceId, agentId, task) => ctx.remote.faberloomView.teachings(spaceId, agentId, task),
       saveTeaching: input => ctx.remote.faberloomView.saveTeaching(input),

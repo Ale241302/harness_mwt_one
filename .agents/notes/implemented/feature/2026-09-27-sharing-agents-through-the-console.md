@@ -18,6 +18,7 @@ The console is the shared store; the harness reads it and materializes read-only
 - The Agents panel shows a Share field (named emails plus "my whole company") for an agent the actor manages.
 - Skills share the same way: `shareSkill` publishes the owner's `SKILL.md`, and a received skill is written under the owner's skills directory with a `.shared-by` marker. `saveSkill` and `removeSkill` refuse a marked skill (unless Admin/CEO), and the panel shows it as "Shared with you" with the publisher and no Delete button. A skill whose share is gone is pruned on the next pull, like an agent copy.
 - The panel lists what the owner already shares, with a "stop sharing" action, and shows "Shared by <publisher>" on a received agent.
+- `agentDetail` also reports `apiKeyTail`, the stored key's last four characters, so the owner can recognize which key is set even though the key itself is write-only; the panel shows it under the key field. The provider and model fields are selects fed by the new `modelCatalog` remote, which reads the live `ctx.llm` providers and their models, so a model the provider adds later appears without a code change.
 
 ## What the presets actually carry
 

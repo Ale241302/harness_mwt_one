@@ -23,7 +23,7 @@ import {
 import { Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomConnection, FaberLoomExecutionRow,
-  FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomOverview,
+  FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomModelCatalog, FaberLoomOverview,
   FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
   FaberLoomCostSummary,
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, TeachingSaveInput,
@@ -100,6 +100,8 @@ export interface FaberloomPanelInjected {
   agentDetail: (id: string) => Promise<Result<FaberLoomAgentDetail | undefined>>
   /** List the model pool the panels assign from. */
   models: () => Promise<Result<readonly FaberLoomModelRow[]>>
+  /** Live provider/model catalog so the panels offer what this deployment can run. */
+  modelCatalog: () => Promise<Result<FaberLoomModelCatalog>>
   /** Ask the recommender which model suits one agent. */
   recommendModel: (agentId: string) => Promise<Result<FaberLoomModelRecommendation | undefined>>
   /** List the owner's versioned teachings, optionally filtered by space, agent, or task. */
@@ -498,7 +500,10 @@ function spacesScreen() {
 /** Agentes: table plus the full editor. */
 function agentsScreen() {
   return function FaberloomAgents(props: ScreenProps) {
-    const { t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, connections, shareAgent, shares, unshareShare } = props
+    const {
+      t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, connections,
+      shareAgent, shares, unshareShare, modelCatalog,
+    } = props
     const { overview, error } = useOverview(props)
     const [selected, setSelected] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -516,6 +521,7 @@ function agentsScreen() {
     const [mwtMcp, setMwtMcp] = useState(true)
     const [mailIds, setMailIds] = useState<readonly string[]>([])
     const [subagentIds, setSubagentIds] = useState<readonly string[]>([])
+    const [apiKeyTail, setApiKeyTail] = useState<string | null>(null)
     const [shareEmails, setShareEmails] = useState('')
     const [shareAll, setShareAll] = useState(false)
     const [shareMsg, setShareMsg] = useState<string | null>(null)
@@ -535,6 +541,19 @@ function agentsScreen() {
     )
     const catalog = useLazy<readonly FaberLoomSkillRow[]>(() => props.skills(), [])
     const connectionsList = useLazy<readonly FaberLoomConnection[]>(() => connections(), [])
+    const liveCatalog = useLazy<FaberLoomModelCatalog>(() => modelCatalog(), [])
+    const liveProviders = useMemo(
+      () => liveCatalog.kind === 'ready' && liveCatalog.value !== undefined ? liveCatalog.value.providers : [],
+      [liveCatalog],
+    )
+    const providerOptions = useMemo(
+      () => liveProviders.length > 0 ? liveProviders.map(entry => entry.id) : [...MODEL_PROVIDERS],
+      [liveProviders],
+    )
+    const modelOptions = useMemo(
+      () => liveProviders.find(entry => entry.id === provider)?.models ?? [],
+      [liveProviders, provider],
+    )
 
     // Load the selected agent's configuration into the editable fields.
     useEffect(() => {
@@ -546,6 +565,7 @@ function agentsScreen() {
       setModelId(detail.value.model ?? '')
       setApiKey('')
       setHasApiKey(detail.value.hasApiKey)
+      setApiKeyTail(detail.value.apiKeyTail ?? null)
       setWebAccess(detail.value.webAccess)
       setMwtMcp(detail.value.mwtMcp)
       setMailIds(detail.value.mailConnectionIds)
@@ -713,13 +733,22 @@ function agentsScreen() {
                             )}
                       </Field>
                       <Field label={t('field.provider')}>
-                        <select value={provider} onChange={(event) => { setProvider(event.target.value) }}>
+                        <select value={provider} onChange={(event) => { setProvider(event.target.value); setModelId('') }}>
                           <option value="">{t('agents.providerUnset')}</option>
-                          {MODEL_PROVIDERS.map(item => <option key={item} value={item}>{item}</option>)}
+                          {provider !== '' && !providerOptions.includes(provider) ? <option value={provider}>{provider}</option> : null}
+                          {providerOptions.map(item => <option key={item} value={item}>{item}</option>)}
                         </select>
                       </Field>
                       <Field label={t('field.modelId')} hint={t('agents.modelIdHint')}>
-                        <input type="text" autoComplete="off" value={modelId} placeholder={t('agents.modelIdPlaceholder')} onChange={(event) => { setModelId(event.target.value) }} />
+                        {modelOptions.length === 0
+                          ? <input type="text" autoComplete="off" value={modelId} placeholder={t('agents.modelIdPlaceholder')} onChange={(event) => { setModelId(event.target.value) }} />
+                          : (
+                            <select value={modelId} onChange={(event) => { setModelId(event.target.value) }}>
+                              <option value="">{t('agents.modelUnset')}</option>
+                              {modelId !== '' && !modelOptions.includes(modelId) ? <option value={modelId}>{modelId}</option> : null}
+                              {modelOptions.map(item => <option key={item} value={item}>{item}</option>)}
+                            </select>
+                          )}
                       </Field>
                       <Field label={t('field.apiKey')} hint={t('agents.apiKeyHint')}>
                         <div className={styles.grid2}>
@@ -742,6 +771,9 @@ function agentsScreen() {
                             }}>{t('agents.apiKeyClear')}</button>
                           ) : null}
                         </div>
+                        {hasApiKey && apiKeyTail !== null ? (
+                          <p className={styles.hint}>{t('agents.apiKeyStored')}{' '}{apiKeyTail}</p>
+                        ) : null}
                       </Field>
                       {drafting || canEdit ? null : (
                         <p className={styles.hint}>{t('agents.adminOnly')}</p>

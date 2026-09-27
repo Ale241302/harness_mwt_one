@@ -717,6 +717,8 @@ export interface FaberLoomAgentDetail {
   readonly model: string | null
   /** Whether a provider API key is stored; the key itself is never returned. */
   readonly hasApiKey: boolean
+  /** Last four characters of the stored key, so the owner can recognize it; absent when none. */
+  readonly apiKeyTail?: string
   /** Whether the agent may browse the open web; otherwise only MWT.ONE MCP. */
   readonly webAccess: boolean
   /** Whether the agent may query the MWT.ONE MCP server. */
@@ -728,8 +730,21 @@ export interface FaberLoomAgentDetail {
 }
 
 /** One model of the agent model pool, as the panel reads it. */
-export interface FaberLoomModelRow {
-  /** Pool id used by every policy field. */
+/** One provider with the models the harness currently mounts for it. */
+export interface FaberLoomProviderModels {
+  /** Provider id, as the agent's `provider` field stores it. */
+  readonly id: string
+  /** Provider model ids currently offered. */
+  readonly models: readonly string[]
+}
+
+/** The live provider/model catalog the panels offer when configuring an agent. */
+export interface FaberLoomModelCatalog {
+  /** One entry per mounted provider. */
+  readonly providers: readonly FaberLoomProviderModels[]
+}
+
+export interface FaberLoomModelRow {  /** Pool id used by every policy field. */
   readonly id: string
   /** Provider name. */
   readonly provider: string

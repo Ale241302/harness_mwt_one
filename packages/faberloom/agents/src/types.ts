@@ -158,6 +158,8 @@ export interface FaberLoomAgent {
   readonly mwtMcp: boolean
   /** Whether a provider API key is stored; the key itself is never exposed. */
   readonly hasApiKey: boolean
+  /** Last four characters of the stored key, so the owner can recognize it; absent when none. */
+  readonly apiKeyTail?: string
   /** User mail connections the agent may use. */
   readonly mailConnectionIds: readonly string[]
   /** Versioned model policy. */

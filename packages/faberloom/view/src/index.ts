@@ -46,7 +46,7 @@ import type {
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
-  FaberLoomModelRow, FaberLoomModelRecommendation,
+  FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
@@ -671,6 +671,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       provider: agent.provider ?? null,
       model: agent.model ?? null,
       hasApiKey: agent.hasApiKey,
+      ...agent.apiKeyTail === undefined ? {} : { apiKeyTail: agent.apiKeyTail },
       webAccess: agent.webAccess,
       mwtMcp: agent.mwtMcp,
       mailConnectionIds: [...agent.mailConnectionIds],
@@ -1934,6 +1935,24 @@ export class FaberLoomViewService extends TypertRemoteService {
       currency: model.currency ?? null,
       available: model.available,
     }))
+  }
+
+  /**
+   * List the model providers and models the harness currently mounts, read live
+   * from `ctx.llm`, so the panels offer exactly what this deployment can run and
+   * new models appear as soon as the provider exposes them.
+   * @returns one entry per mounted provider with its current model ids.
+   */
+  @Remote('modelCatalog')
+  async modelCatalog(): Promise<FaberLoomModelCatalog> {
+    const llm = this.ctx.get('llm')
+    if (llm === undefined) return { providers: [] }
+    const providers: FaberLoomProviderModels[] = []
+    for (const provider of llm.listProviders()) {
+      const models = (await llm.listModels(provider.id)).map(model => String(model.id))
+      providers.push({ id: String(provider.id), models })
+    }
+    return { providers }
   }
 
   /**
