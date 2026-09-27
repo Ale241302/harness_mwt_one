@@ -28,6 +28,7 @@ describe('runTaskChat', () => {
     expect(prompt).toHaveBeenCalledOnce()
     const [content] = prompt.mock.calls[0] as unknown as [readonly { type: string; text: string }[]]
     expect((content[0]?.text ?? '').length).toBeGreaterThan(0)
+    expect(content[0]?.text).toContain('grill-me-lite')
     if (kind !== 'mwt') expect(content[0]?.text).toContain('Preparar proforma')
     expect(selectPanel).toHaveBeenCalledWith(null)
     expect(bound.setError).not.toHaveBeenCalled()

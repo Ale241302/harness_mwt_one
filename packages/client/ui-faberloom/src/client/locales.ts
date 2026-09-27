@@ -538,6 +538,11 @@ const es = {
   'workbench.inboxDetail': 'Correo pendiente',
   'workbench.mwtDetail': 'Tareas MWT.ONE',
   'workbench.mwtDetailText': 'Pulsa el botón para que la IA revise MWT.ONE con el MCP y cree aquí las tareas pendientes.',
+  'workbench.resolve': 'Aprobar y cerrar',
+  'workbench.edit': 'Editar',
+  'workbench.save': 'Guardar',
+  'email.markRead': 'Marcar leído',
+  'email.trash': 'Papelera',
 } satisfies Record<string, string>
 
 /** The faberloom namespace key union. */
@@ -1079,6 +1084,11 @@ export const en: Record<FaberloomKey, string> = {
   'workbench.inboxDetail': 'Pending email',
   'workbench.mwtDetail': 'MWT.ONE tasks',
   'workbench.mwtDetailText': 'Press the button so the AI reviews MWT.ONE through the MCP and creates the pending tasks here.',
+  'workbench.resolve': 'Approve and close',
+  'workbench.edit': 'Edit',
+  'workbench.save': 'Save',
+  'email.markRead': 'Mark as read',
+  'email.trash': 'Trash',
 }
 
 /** Simplified Chinese dictionary; a real translation of the same key set. */
@@ -1613,4 +1623,9 @@ export const zh: Record<FaberloomKey, string> = {
   'workbench.inboxDetail': '待回复邮件',
   'workbench.mwtDetail': 'MWT.ONE 任务',
   'workbench.mwtDetailText': '点击按钮，让 AI 通过 MCP 检查 MWT.ONE 并在此创建待办任务。',
+  'workbench.resolve': '批准并关闭',
+  'workbench.edit': '编辑',
+  'workbench.save': '保存',
+  'email.markRead': '标为已读',
+  'email.trash': '垃圾箱',
 }

@@ -17,6 +17,10 @@ Status: implemented
 - 面板读取三个实时来源——来自 `overview` 的看板项、`emailDrafts()`、以及 `emailInbox()`（IMAP 未读）——合并为一张带来源标签的表格；草稿提供“发送/丢弃”，未读邮件提供“回复”，任意行都提供**打开对话**。
 - **打开对话**（`runTaskChat`）创建一个 harness 会话，用点名具体任务的面向模型提示词进行播种（看板项、草稿、待回复邮件，或 MWT 审查），然后打开它。任务上下文是提示词，不是界面文案。
 - MWT.ONE 来源是单个 **扫描 MWT.ONE** 任务，仅在 `mwt` MCP 服务器已连接时显示（`ctx.faberloomView.mwtStatus().servers`）。选择它会打开一个带审查规则播种的对话；agent 使用 `mcp__mwt__*`（`expediente_listar`、`expediente_obtener`、`documento_listar`、`expediente_phase_durations_get`、`expediente_avanzar_estado` 等）并通过 `faberloom_board_create` 把每个跟进项登记为看板项。“忽略”即删除所创建的看板项。
+- 邮箱新增两个显式写入手势，面板与模型共用：`ctx.faberloomInbound.markSeen`（`UID STORE +FLAGS (\Seen)`）与 `moveToTrash`（`UID MOVE`，带回退 `COPY` + `\Deleted` + expunge，以及候选邮箱列表）。`faberloomView` 暴露 `emailMarkSeen`/`emailTrash`；工具 `faberloom_mail_mark_read`/`faberloom_mail_trash` 把同样的能力交给 agent。
+- 丢弃邮件会把发件人与主题记录为 `email-trash` 教学；已发送的 AI 草稿此前就已记录为 `email` 教学。声音画像与丢弃模式都从真实操作中增长，`emailDraftWithAi` 会读取声音示例。
+- 工作台用 **批准并关闭** 解决任务（先批准修订再完成），任务随即离开队列；已完成和失败的任务会被过滤掉。打开任务对话时会先以 `grill-me-lite` 摘要规则播种再行动。
+- 种子目录新增 **Vigía de correo** 例程：`email` 触发器运行一个 agent 步骤对每封邮件分类（丢弃 / 回复 / 案卷），再用一个 `mcp` 步骤在邮件带有 OC/PO/SAP 时通过 `mwt` MCP 解决该案卷。该例程就是活的 agent：无人打开面板时也会行动。
 
 ## 考虑过的替代方案
 
@@ -35,4 +39,4 @@ Status: implemented
 
 ## 测试
 
-`packages/faberloom/board/tests/board.spec.ts` 覆盖 `remove`、`setRoutine` 以及带例程创建。`packages/client/ui-faberloom/tests/registration.client.spec.tsx` 覆盖删除看板任务、发送并丢弃草稿、以及列出待回复的未读邮件。`packages/client/ui-faberloom/tests/task-chat.client.spec.ts` 覆盖每个来源的播种与失败路径。
+`packages/faberloom/board/tests/board.spec.ts` 覆盖 `remove`、`setRoutine` 以及带例程创建。`packages/client/ui-faberloom/tests/registration.client.spec.tsx` 覆盖删除看板任务、发送并丢弃草稿、列出待回复的未读邮件、以及标为已读/移入垃圾箱。`packages/client/ui-faberloom/tests/task-chat.client.spec.ts` 覆盖每个来源的播种（含 `grill-me-lite` 规则）与失败路径。`packages/faberloom/view/tests/email-actions.spec.ts` 覆盖邮箱写入与学到的丢弃模式。

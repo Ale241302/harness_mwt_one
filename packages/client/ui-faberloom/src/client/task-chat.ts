@@ -26,8 +26,16 @@ export interface TaskChatInput {
   readonly detail: string
 }
 
+/** The first thing every task chat must do: name the task before acting. */
+const TASK_GUIDE = 'Empieza aplicando la skill `grill-me-lite`: resume en una línea de qué trata esta tarea del banco de trabajo y cuál es el siguiente paso concreto; luego ayúdame a resolverla.'
+
 /** Build the model-facing opening prompt for one task source. */
 function promptFor(input: TaskChatInput): string {
+  return `${TASK_GUIDE}\n\n${taskBody(input)}`
+}
+
+/** Build the source-specific body of the opening prompt. */
+function taskBody(input: TaskChatInput): string {
   if (input.kind === 'draft') {
     return [
       'Estoy revisando un borrador de correo en el banco de trabajo (Work bench).',

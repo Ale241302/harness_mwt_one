@@ -8,10 +8,13 @@
  * message subject therefore starts its routine with nobody watching, which is
  * what closes the plan's promise that work does not stop when the panel closes.
  *
- * The receiver never writes to the mailbox: it does not mark messages read, move
- * them, or delete them, so the owner's own mail client is unaffected. Idempotency
- * is the engine's: the event key is the message's `Message-ID` when it has one,
- * and the mailbox UID otherwise, so re-reading a message never starts a run twice.
+ * The receiver itself polls read-only: it does not mark messages read, move
+ * them, or delete them, so the owner's own mail client is unaffected. Two
+ * explicit user gestures write to the mailbox through the same protocol client:
+ * `markSeen` sets `\Seen` and `moveToTrash` moves the message to the Trash
+ * mailbox. Idempotency is the engine's: the event key is the message's
+ * `Message-ID` when it has one, and the mailbox UID otherwise, so re-reading a
+ * message never starts a run twice.
  * @module @deepseek-ai/dsh-faberloom-inbound
  */
 
@@ -20,7 +23,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
-import { fetchContent, fetchMessages, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
+import { fetchContent, fetchMessages, markMessageSeen, moveMessage, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
 export type { ImapMessage } from './imap.ts'
@@ -46,6 +49,8 @@ export interface Config {
   intervalMs?: number
   /** Mailbox to read. */
   mailbox?: string
+  /** Mailbox the Trash action moves a message to; empty uses the built-in candidates. */
+  trashMailbox?: string
   /** Most messages one pass reads, oldest first. */
   maxMessages?: number
   /** Milliseconds before a mailbox connection is abandoned. */
@@ -58,9 +63,29 @@ export const Config: z<Config> = z.object({
   enabled: z.boolean(),
   intervalMs: z.number(),
   mailbox: z.string(),
+  trashMailbox: z.string().default(''),
   maxMessages: z.number(),
   timeoutMs: z.number(),
 })
+
+/** Trash mailbox names tried in order when the deployment names none. */
+const TRASH_CANDIDATES = ['Trash', 'Papelera', 'INBOX.Trash', '[Gmail]/Trash', '[Gmail]/Papelera'] as const
+
+/** The mailbox credentials the connections service hands the receiver. */
+interface MailboxCredentials {
+  /** Server host. */
+  readonly host: string
+  /** Server port. */
+  readonly port: number
+  /** Whether the connection starts TLS immediately. */
+  readonly secure: boolean
+  /** Whether the connection upgrades with STARTTLS. */
+  readonly starttls?: boolean
+  /** Account name. */
+  readonly username: string
+  /** Account password. */
+  readonly password: string
+}
 
 /** Shortest poll interval the receiver accepts. */
 export const MIN_INTERVAL_MS = 10_000
@@ -182,6 +207,66 @@ export class FaberLoomInbound extends Service {
       uid,
       timeoutMs: this.config.timeoutMs ?? 15_000,
     })
+  }
+
+  /**
+   * Mark one message as read (`\Seen`). Unlike the poller this writes to the
+   * mailbox, so it runs only for an explicit user gesture.
+   * @param ownerId - the owning identity.
+   * @param uid - the message UID.
+   * @returns true when the mailbox accepted the flag update, false without a mailbox.
+   */
+  async markSeen(ownerId: string, uid: number): Promise<boolean> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) return false
+    const credentials = await connections.imap(ownerId)
+    if (credentials === undefined) return false
+    return await markMessageSeen(this.bodyOptions(credentials, uid))
+  }
+
+  /**
+   * Move one message to the Trash mailbox, trying the configured name and then
+   * the built-in candidates. Writes to the mailbox on an explicit gesture only.
+   * @param ownerId - the owning identity.
+   * @param uid - the message UID.
+   * @returns the mailbox the message moved to.
+   * @throws when every candidate mailbox rejects the move.
+   */
+  async moveToTrash(ownerId: string, uid: number): Promise<string> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
+    const credentials = await connections.imap(ownerId)
+    if (credentials === undefined) throw new Error('faberloom: no hay un buzón IMAP configurado; añádelo en Conexiones')
+    const configured = (this.config.trashMailbox ?? '').trim()
+    const targets = [...new Set(configured.length > 0 ? [configured, ...TRASH_CANDIDATES] : [...TRASH_CANDIDATES])]
+    let lastError: unknown
+    for (const target of targets) {
+      try {
+        await moveMessage(this.bodyOptions(credentials, uid), target)
+        return target
+      } catch (error: unknown) {
+        lastError = error
+      }
+    }
+    throw new Error(`faberloom: no pude mover el correo a la papelera (probé ${targets.join(', ')}): ${String(lastError)}`)
+  }
+
+  /** Connection settings for one message in the primary mailbox. */
+  private bodyOptions(
+    credentials: MailboxCredentials,
+    uid: number,
+  ) {
+    return {
+      host: credentials.host,
+      port: credentials.port,
+      secure: credentials.secure,
+      ...credentials.starttls === undefined ? {} : { starttls: credentials.starttls },
+      user: credentials.username,
+      password: credentials.password,
+      mailbox: this.config.mailbox ?? 'INBOX',
+      uid,
+      timeoutMs: this.config.timeoutMs ?? 15_000,
+    }
   }
 
   private async poll(ownerId: string, now: Date): Promise<InboundReport> {

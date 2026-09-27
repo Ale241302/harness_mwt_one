@@ -163,4 +163,32 @@ export const SEED_ROUTINES: readonly SeedRoutine[] = [
     permissions: ['mwt'],
     failurePolicy: 'review',
   },
+  {
+    name: 'Vigía de correo',
+    intent: 'Clasificar el correo entrante, descartar lo que el usuario siempre borra y dejar un borrador de respuesta; resolver el expediente cuando el correo traiga la OC/PO/SAP.',
+    trigger: { kind: 'email', match: '' },
+    steps: [
+      {
+        id: 'vigia-clasificar',
+        instruction: 'Lee el correo entrante (usa el uid del evento con faberloom_mail_read). Revisa la memoria de descartes (enseñanzas con task email-trash) y clasifícalo: SPAM/DESCARTAR, RESPUESTA o EXPEDIENTE. Empieza aplicando la skill `grill-me-lite`: resume en una línea qué trae el correo y qué vas a hacer.',
+        handler: 'agent',
+        dependsOn: [],
+      },
+      {
+        id: 'vigia-actuar',
+        instruction: 'Según la clasificación: si es SPAM o coincide con un patrón que el usuario siempre descarta, usa faberloom_mail_trash; si requiere respuesta, redacta un borrador en la voz del usuario con faberloom_email_draft (nunca lo envíes). No marques como leído ni muevas correo sin motivo.',
+        handler: 'agent',
+        dependsOn: ['vigia-clasificar'],
+      },
+      {
+        id: 'vigia-expediente',
+        instruction: 'Si el correo trae una OC, PO, SAP o proforma, busca el expediente en el MCP de MWT.ONE y súbele el documento que falte (OC/PO/SAP) o avanza su estado si la fecha fin de fase ya venció. Si no aplica, termina sin tocar el MCP.',
+        handler: 'mcp',
+        dependsOn: ['vigia-actuar'],
+      },
+    ],
+    expectedResult: 'El correo se clasifica y se actúa: descartado si es spam, con borrador si requiere respuesta, y con el expediente actualizado si traía su documento.',
+    permissions: ['mwt'],
+    failurePolicy: 'review',
+  },
 ]

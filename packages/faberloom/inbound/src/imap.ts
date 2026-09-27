@@ -294,6 +294,53 @@ export async function fetchContent(options: ImapBodyOptions): Promise<ImapMessag
   }
 }
 
+/**
+ * Mark one message as seen (`\Seen`) in its mailbox.
+ * @param options - connection settings and the message UID.
+ * @returns true after the server accepts the flag update.
+ */
+export async function markMessageSeen(options: ImapBodyOptions): Promise<boolean> {
+  const session = await ImapSession.open({ ...options, since: null, maxMessages: 1 })
+  try {
+    await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
+    await session.command(`SELECT ${quote(options.mailbox)}`)
+    await session.command(`UID STORE ${String(options.uid)} +FLAGS (\\Seen)`)
+    return true
+  } finally {
+    try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
+    session.close()
+  }
+}
+
+/**
+ * Move one message from its mailbox to `target`, first with `UID MOVE` and then
+ * with the `COPY` + `\Deleted` + expunge fallback for servers without MOVE.
+ * @param options - connection settings and the message UID.
+ * @param target - destination mailbox name (for example `Trash`).
+ * @returns true after the message left its mailbox.
+ */
+export async function moveMessage(options: ImapBodyOptions, target: string): Promise<boolean> {
+  const session = await ImapSession.open({ ...options, since: null, maxMessages: 1 })
+  try {
+    await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
+    await session.command(`SELECT ${quote(options.mailbox)}`)
+    try {
+      await session.command(`UID MOVE ${String(options.uid)} ${quote(target)}`)
+      return true
+    } catch {
+      // RFC 6851 MOVE is optional; fall back to copy-then-expunge.
+      await session.command(`UID COPY ${String(options.uid)} ${quote(target)}`)
+      await session.command(`UID STORE ${String(options.uid)} +FLAGS (\\Deleted)`)
+      try { await session.command(`UID EXPUNGE ${String(options.uid)}`) }
+      catch { await session.command('EXPUNGE') }
+      return true
+    }
+  } finally {
+    try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
+    session.close()
+  }
+}
+
 /** Cut the `{size}` literal out of a raw FETCH response. */
 function literalOf(raw: string): string | null {
   const marker = /\{(\d+)\}\r?\n/.exec(raw)

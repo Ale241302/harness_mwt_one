@@ -15,6 +15,7 @@ const CONVERSAR = 'faberloom-conversar' as MainPanelId
 const BOARD = 'faberloom-board' as MainPanelId
 const SPACES = 'faberloom-spaces' as MainPanelId
 const MEMORY = 'faberloom-memory' as MainPanelId
+const EMAIL = 'faberloom-email' as MainPanelId
 
 const OVERVIEW = {
   spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null, agentId: 'agent-1', agentName: 'Proformas', workspaceId: 'ws-1' }],
@@ -79,6 +80,14 @@ async function bench(
   const setBoardRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
   const emailInbox = vi.fn(async () => ({ ok: true, value: email.inbox ?? [] }))
+  const emailRead = vi.fn(async () => ({ ok: true, value: { text: 'cuerpo', html: null, attachments: [] } }))
+  const emailMarkSeen = vi.fn(async () => ({ ok: true, value: true }))
+  const emailTrash = vi.fn(async () => ({ ok: true, value: { movedTo: 'Trash' } }))
+  const emailVoice = vi.fn(async () => ({ ok: true, value: [] }))
+  const emailPolicy = vi.fn(async () => ({ ok: true, value: { enabled: false, cleanSends: 0, threshold: 3 } }))
+  const saveEmailPolicy = vi.fn(async () => ({ ok: true, value: { enabled: false, cleanSends: 0, threshold: 3 } }))
+  const emailDraftWithAi = vi.fn(async () => ({ ok: true, value: undefined }))
+  const learnFromEmail = vi.fn(async () => ({ ok: true, value: {} }))
   const sendEmailDraft = vi.fn(async () => ({ ok: true, value: [] }))
   const deleteEmailDraft = vi.fn(async () => ({ ok: true, value: [] }))
   const mwtStatus = vi.fn(async () => ({
@@ -95,7 +104,8 @@ async function bench(
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, setBoardRoutine,
-    emailDrafts, emailInbox, sendEmailDraft, deleteEmailDraft, mwtStatus,
+    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, mwtStatus,
+    emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
     spaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
   }
@@ -134,7 +144,7 @@ async function bench(
   const view = runtime.renderRoot()
   return {
     runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace,
-    deleteBoardItem, emailDrafts, emailInbox, sendEmailDraft, deleteEmailDraft,
+    deleteBoardItem, emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     remember, spaceMemory, surface, view,
   }
 }
@@ -287,6 +297,21 @@ describe('faberloom surface', () => {
     const inboxRows = view.getAllByRole('row')
     fireEvent.click(inboxRows[inboxRows.length - 1] as HTMLTableRowElement)
     expect(await view.findByRole('button', { name: 'Reply' })).toBeTruthy()
+  })
+
+  it('marks read and trashes a message from the Email panel', async () => {
+    const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
+    const { runtime, emailMarkSeen, emailTrash, view } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('OC 505433')
+    const rows = view.getAllByRole('row')
+    fireEvent.click(rows[rows.length - 1] as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Mark as read' }))
+    await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith('42') })
+    fireEvent.click(await view.findByRole('button', { name: 'Trash' }))
+    await waitFor(() => { expect(emailTrash).toHaveBeenCalledWith('42', 'proveedor@mwt.one', 'OC 505433') })
   })
 
   it('assigns the responsible agent from the space detail', async () => {

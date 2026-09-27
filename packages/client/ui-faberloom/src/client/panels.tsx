@@ -146,6 +146,10 @@ export interface FaberloomPanelInjected {
   emailInbox: () => Promise<Result<readonly FaberLoomInboxRow[]>>
   /** Read one mailbox message, read-only: text, HTML, and attachments. */
   emailRead: (uid: string) => Promise<Result<FaberLoomEmailContent>>
+  /** Mark one mailbox message as read. */
+  emailMarkSeen: (uid: string) => Promise<Result<boolean>>
+  /** Move one mailbox message to the Trash mailbox. */
+  emailTrash: (uid: string, sender?: string, subject?: string) => Promise<Result<{ movedTo: string }>>
   /** Read one attachment's bytes for download. */
   emailAttachment: (uid: string, index: number) => Promise<Result<FaberLoomEmailAttachmentContent | undefined>>
   /** Turn one email into a Space with its Workspace, memory, and files. */
@@ -753,7 +757,7 @@ function agentsScreen() {
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
-      t, emailInbox, emailRead, emailAttachment, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft,
+      t, emailInbox, emailRead, emailAttachment, emailMarkSeen, emailTrash, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, emailPolicy, saveEmailPolicy, spaceFromEmail, routineChat, routineFromEmail,
       openRoutines, learnFromEmail, startConversation,
     } = props
@@ -1033,6 +1037,23 @@ function emailScreen() {
           footer={(
             <>
               <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+              <button className={styles.secondary} type="button" onClick={() => {
+                if (chosenMail === null) return
+                setMessage(null)
+                void emailMarkSeen(chosenMail.id).then((result) => {
+                  if (!result.ok) { setMessage(result.error.message); return }
+                  setReload(reload + 1)
+                }).catch((cause: unknown) => { setMessage(String(cause)) })
+              }}>{t('email.markRead')}</button>
+              <button className={styles.danger} type="button" onClick={() => {
+                if (chosenMail === null) return
+                setMessage(null)
+                void emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined).then((result) => {
+                  if (!result.ok) { setMessage(result.error.message); return }
+                  setSelected(null)
+                  setReload(reload + 1)
+                }).catch((cause: unknown) => { setMessage(String(cause)) })
+              }}>{t('email.trash')}</button>
               <button className={styles.secondary} type="button" onClick={openSpace}>{t('email.toSpace')}</button>
               <button className={styles.secondary} type="button" onClick={openRoutine}>{t('routine.title')}</button>
               <button className={styles.secondary} type="button" onClick={learn}>{t('learn.button')}</button>
@@ -1359,7 +1380,7 @@ function boardScreen() {
 
     const rows: readonly WorkbenchRow[] = [
       ...(mwtConnected ? [{ id: 'mwt:scan', source: 'mwt' as const, title: t('workbench.mwtScan'), status: t('workbench.source.mwt') }] : []),
-      ...boardItems.map(item => ({ id: `board:${item.id}`, source: 'board' as const, title: item.title, status: item.status })),
+      ...boardItems.filter(item => item.status !== 'completed' && item.status !== 'failed').map(item => ({ id: `board:${item.id}`, source: 'board' as const, title: item.title, status: item.status })),
       ...drafts.filter(entry => entry.status === 'draft').map(entry => ({
         id: `draft:${entry.id}`, source: 'draft' as const,
         title: entry.subject.length === 0 ? t('workbench.untitled') : entry.subject, status: entry.status,
@@ -1393,6 +1414,19 @@ function boardScreen() {
       setDrafting(false)
     }
 
+    /** Approve the current revision and close the task, so it leaves the queue. */
+    const resolve = (): void => {
+      if (chosenBoard === null) return
+      setMessage(null)
+      void reviewBoardItem(chosenBoard.id, true, note).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        return boardException(chosenBoard.id, 'complete').then((done) => {
+          if (done.ok) setSelected(null)
+          apply(done)
+        })
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
     const inspectorTitle = (): string => {
       if (drafting) return t('board.newTitle')
       if (chosenBoard !== null) return chosenBoard.title
@@ -1414,6 +1448,9 @@ function boardScreen() {
               <button className={styles.danger} type="button" onClick={() => { void boardException(chosenBoard.id, 'fail').then(apply) }}>{t('board.fail')}</button>
             </>
           )
+          : null}
+        {reviewable
+          ? <button className={styles.primary} type="button" onClick={resolve}>{t('workbench.resolve')}</button>
           : null}
         <button className={styles.secondary} type="button"
           onClick={() => { openTaskChat('board', chosenBoard.title, `${chosenBoard.status} · ${chosenBoard.routineId ?? t('workbench.noRoutine')}`) }}>

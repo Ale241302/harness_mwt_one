@@ -869,6 +869,50 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Mark one mailbox message as read.
+   * @param uid - the message UID.
+   * @returns true when the mailbox accepted the flag update.
+   */
+  @Remote('emailMarkSeen')
+  async emailMarkSeen(uid: string): Promise<boolean> {
+    const inbound = this.ctx.get('faberloomInbound')
+    const id = Number(uid)
+    if (inbound === undefined || !Number.isSafeInteger(id) || id <= 0) return false
+    return await inbound.markSeen(this.actor().id, id)
+  }
+
+  /**
+   * Move one mailbox message to Trash, then remember the deletion so the live
+   * agent learns which mail the owner discards. A capture failure never fails
+   * the move.
+   * @param uid - the message UID.
+   * @param sender - sender line, for the learned pattern.
+   * @param subject - subject line, for the learned pattern.
+   * @returns the mailbox the message moved to.
+   */
+  @Remote('emailTrash')
+  async emailTrash(uid: string, sender?: string, subject?: string): Promise<{ movedTo: string }> {
+    const actor = this.actor()
+    const inbound = this.ctx.get('faberloomInbound')
+    if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
+    const id = Number(uid)
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error('faberloom: invalid message id')
+    const movedTo = await inbound.moveToTrash(actor.id, id)
+    try {
+      await this.ctx.faberloomMemory.createTeaching(actor.id, {
+        scope: 'global',
+        text: [`De: ${sender ?? 'desconocido'}`, `Asunto: ${subject ?? ''}`].join('\n'),
+        source: 'email-trash',
+        author: actor.id,
+        task: 'email-trash',
+      })
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: trash pattern capture failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    return { movedTo }
+  }
+
+  /**
    * Read one attachment's bytes for download.
    * @param uid - the message UID.
    * @param index - the attachment index in the message.

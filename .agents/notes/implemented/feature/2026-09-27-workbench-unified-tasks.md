@@ -17,6 +17,10 @@ The Work bench becomes one queue over several sources, with a source-agnostic "o
 - The panel reads three live sources — board items from `overview`, `emailDrafts()`, and `emailInbox()` (IMAP unread) — into one table with a source chip; drafts offer Send/Discard, unread mail offers Reply, and any row offers **Open chat**.
 - **Open chat** (`runTaskChat`) creates a harness session, seeds it with a model-facing prompt that names the exact task (board item, draft, pending email, or the MWT review), and opens it. The task context is a prompt, not UI copy.
 - The MWT.ONE source is a single **Scan MWT.ONE** task, shown only while the `mwt` MCP server is connected (`ctx.faberloomView.mwtStatus().servers`). Selecting it opens a chat seeded with the review rules; the agent uses `mcp__mwt__*` (`expediente_listar`, `expediente_obtener`, `documento_listar`, `expediente_phase_durations_get`, `expediente_avanzar_estado`, …) and files each follow-up as a board item through `faberloom_board_create`. "Omitir" is deleting the created board item.
+- The mailbox gains two explicit write gestures, shared by the panel and the model: `ctx.faberloomInbound.markSeen` (`UID STORE +FLAGS (\Seen)`) and `moveToTrash` (`UID MOVE`, with a `COPY` + `\Deleted` + expunge fallback and a candidate mailbox list). `faberloomView` exposes `emailMarkSeen`/`emailTrash`; the tools `faberloom_mail_mark_read`/`faberloom_mail_trash` expose the same to the agent.
+- Discarding mail records the sender and subject as an `email-trash` teaching; sent AI drafts were already recorded as `email` teachings. The voice profile and the discard patterns both grow from real actions, and `emailDraftWithAi` reads the voice examples.
+- The Work bench resolves a task with **Approve and close** (approve the revision, then complete), which leaves the queue; completed and failed tasks are filtered out. Opening a task's chat seeds it with the `grill-me-lite` summary rule before it acts.
+- The seed catalog ships a **Vigía de correo** routine: an `email` trigger runs an agent step that classifies each message (discard / answer / expediente) and an `mcp` step that, for an OC/PO/SAP mail, resolves the expediente through the `mwt` MCP. That routine is the live agent: it acts with nobody in the panel.
 
 ## Alternatives considered
 
@@ -35,4 +39,4 @@ The Work bench becomes one queue over several sources, with a source-agnostic "o
 
 ## Testing
 
-`packages/faberloom/board/tests/board.spec.ts` covers `remove`, `setRoutine`, and create-with-routine. `packages/client/ui-faberloom/tests/registration.client.spec.tsx` covers deleting a board task, sending and discarding a draft, and listing an unread email to answer. `packages/client/ui-faberloom/tests/task-chat.client.spec.ts` covers the seed for every source and the failure path.
+`packages/faberloom/board/tests/board.spec.ts` covers `remove`, `setRoutine`, and create-with-routine. `packages/client/ui-faberloom/tests/registration.client.spec.tsx` covers deleting a board task, sending and discarding a draft, listing an unread email to answer, and marking read / trashing a message. `packages/client/ui-faberloom/tests/task-chat.client.spec.ts` covers the seed (including the `grill-me-lite` rule) for every source and the failure path. `packages/faberloom/view/tests/email-actions.spec.ts` covers the mailbox writes and the learned discard pattern.

@@ -1953,6 +1953,39 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'faberloom_mail_mark_read',
+    description: 'Mark one mailbox message as read (\\Seen). Use the uid from faberloom_mail_search. This writes to the mailbox: only when the user asked or a rule authorizes it.',
+    parameters: {
+      uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: value.ok ? 'Marcado como leído.' : 'No se pudo marcar como leído.' }],
+    },
+    execute: async args => ({ ok: await inbound(ctx).markSeen(actor(config).id, args.uid) }),
+    presentCall: args => ({ card: 'generic', title: 'Mark mail read', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_mail_trash',
+    description: 'Move one mailbox message to the Trash mailbox. Use the uid from faberloom_mail_search. This writes to the mailbox: use it to discard spam or mail the owner always discards, and only when the user asked or a rule authorizes it. Pass sender and subject so the discard pattern is recorded.',
+    parameters: {
+      uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
+      sender: { type: 'string', description: 'The sender line, for the learned pattern.' },
+      subject: { type: 'string', description: 'The subject line, for the learned pattern.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { movedTo: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Correo movido a ${value.movedTo}.` }],
+    },
+    execute: async (args) => {
+      const movedTo = await inbound(ctx).moveToTrash(actor(config).id, args.uid)
+      return { movedTo }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Trash mail', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'faberloom_mail_read',
     description: 'Read one message from the owner mailbox (the IMAP connection configured in Conexiones) by uid: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Use the uid printed by faberloom_mail_search; never probe uids in a loop. This returns the document text, not the original file: when the user asks for the attached file itself, do not rebuild it with a report tool — the original is downloadable from the Email panel attachment row, so point the user there (or offer to read its contents here).',
     parameters: {

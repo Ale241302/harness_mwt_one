@@ -175,6 +175,8 @@ export function apply(ctx: ClientContext): void {
       probeConnection: id => ctx.remote.faberloomView.probeConnection(id),
       emailInbox: () => ctx.remote.faberloomView.emailInbox(),
       emailRead: uid => ctx.remote.faberloomView.emailRead(uid),
+      emailMarkSeen: uid => ctx.remote.faberloomView.emailMarkSeen(uid),
+      emailTrash: (uid, sender, subject) => ctx.remote.faberloomView.emailTrash(uid, sender, subject),
       emailAttachment: (uid, index) => ctx.remote.faberloomView.emailAttachment(uid, index),
       spaceFromEmail: (uid, name, agentId, from) => {
         runSpaceFromEmail(ctx, bound, refresh, { uid, name, agentId, from })
