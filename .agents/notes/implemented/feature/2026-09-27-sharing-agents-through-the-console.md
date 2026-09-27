@@ -16,6 +16,12 @@ The console is the shared store; the harness reads it and materializes read-only
 - `FaberLoomViewService` gains `shares`, `shareAgent`, `unshareShare`, and `syncShared`. `shareAgent` sends the agent's responsibility, skills, tools, provider, and model, and **never its provider API key** — the key belongs to the owner's account and is not portable.
 - On the first `overview()`, and on `syncShared`, the view pulls the incoming shares and materializes each agent as a local copy with `seeded: true`, `ownerId` set to the publisher's email, and `originRef` `share:<publisher>`. The existing ownership rule then makes the copy read-only for everyone but that publisher or an Admin/CEO. A copy whose share is gone is pruned on the next pull.
 - The Agents panel shows a Share field (named emails plus "my whole company") for an agent the actor manages.
+- Skills share the same way: `shareSkill` publishes the owner's `SKILL.md`, and a received skill is written under the owner's skills directory with a `.shared-by` marker. `saveSkill` and `removeSkill` refuse a marked skill (unless Admin/CEO), and the panel shows it as "Shared with you" with the publisher and no Delete button. A skill whose share is gone is pruned on the next pull, like an agent copy.
+- The panel lists what the owner already shares, with a "stop sharing" action, and shows "Shared by <publisher>" on a received agent.
+
+## What the presets actually carry
+
+The 35 shared presets under `agents-shared/` carry only `preset.yml` (name, description, order) and a generated `agent.cordis.yml`. That composition is the shipped `standard` preset with the generic persona prefix; it does not hold the ECC agent body, concrete skill names, or subagent connections. Those live in the external `affaan-m/ECC` catalog, which the repository does not vendor, and there is no generator in the repository. Assigning skills to the presets or connecting them is therefore authored curation, not extraction from `agent.cordis.yml`.
 
 ## Alternatives considered
 
@@ -26,9 +32,9 @@ The console is the shared store; the harness reads it and materializes read-only
 ## Consequences
 
 - A recipient cannot edit or delete a shared agent: it is seeded and owned by the publisher, so only the publisher or an Admin/CEO can change it, exactly like the deployment baseline.
-- Sharing is agent-only in this increment; sharing a skill needs the same table with `kind='skill'` (the API already accepts it) and a skill-materialization path, which is the next step.
+- Both agents and skills share; a received skill is a read-only copy under the owner's skills directory, marked `.shared-by`.
 - The copy carries no API key, so a shared agent runs with the recipient's own configured provider key.
 
 ## Testing
 
-The console suite `backend/tests/test_harness_share.py` covers publish-by-email, share-with-the-company versus a stranger, owner-only deletion, upsert on re-publish, and input validation (4 passed in the container). The harness suite `packages/faberloom/view/tests/workspace-board.spec.ts` covers the share payload never carrying the key and materializing an incoming share as a seeded copy owned by the publisher.
+The console suite `backend/tests/test_harness_share.py` covers publish-by-email, share-with-the-company versus a stranger, owner-only deletion, upsert on re-publish, and input validation (4 passed in the container). The harness suite `packages/faberloom/view/tests/workspace-board.spec.ts` covers the share payload never carrying the key, materializing an incoming agent as a seeded copy owned by the publisher, and materializing an incoming skill as a `.shared-by` copy that `removeSkill` refuses.

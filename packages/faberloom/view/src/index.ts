@@ -77,13 +77,16 @@ function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' 
       if (line === undefined) return null
       return line.slice(line.indexOf(':') + 1).trim().replace(/^["']|["']$/g, '') || null
     }
+    const marker = join(root, entry.name, '.shared-by')
+    const sharedBy = origin === 'owner' && existsSync(marker) ? readFileSync(marker, 'utf8').trim() : ''
     rows.push({
       name: field('name') ?? entry.name,
       description: field('description') ?? '',
       module: field('module'),
       action: field('action'),
-      origin,
+      origin: sharedBy.length > 0 ? 'incoming' : origin,
       assignedTo: [],
+      ...sharedBy.length === 0 ? {} : { sharedBy },
     })
   }
   return rows.sort((left, right) => left.name.localeCompare(right.name))
@@ -484,14 +487,18 @@ export class FaberLoomViewService extends TypertRemoteService {
     }))
     return {
       spaces: rows,
-      agents: agents.map(agent => ({
-        id: agent.id,
-        name: agent.name,
-        spaceIds: spacesByAgent.get(agent.id) ?? [],
-        detached: agent.detached,
-        active: agent.active,
-        editable: this.canManageAgent(agent),
-      })),
+      agents: agents.map((agent) => {
+        const ref = agent.originRef ?? ''
+        return {
+          id: agent.id,
+          name: agent.name,
+          spaceIds: spacesByAgent.get(agent.id) ?? [],
+          detached: agent.detached,
+          active: agent.active,
+          editable: this.canManageAgent(agent),
+          ...ref.startsWith('share:') ? { sharedBy: ref.slice('share:'.length) } : {},
+        }
+      }),
       board: board.map(item => ({ id: item.id, title: item.title, status: item.status, routineId: item.routineId })),
       routines: routines.map(routine => ({ id: routine.id, name: routine.name, status: routine.status })),
       memory,
@@ -788,6 +795,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (clean.length === 0) throw new Error('faberloom: the skill needs a name')
     if (!/^---[\s\S]*?name:\s*\S/.test(markdown)) throw new Error('faberloom: the skill needs YAML frontmatter with a name')
     const dir = join(this.dshHome(), 'skills', clean)
+    if (existsSync(join(dir, '.shared-by')) && !this.isPrivileged()) {
+      throw new Error('faberloom: una skill compartida por otro usuario solo la puede cambiar un Admin/CEO')
+    }
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'SKILL.md'), markdown, 'utf8')
     return await this.skills()
@@ -804,6 +814,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     const clean = name.trim().replace(/[^a-zA-Z0-9-]+/g, '')
     const dir = join(this.dshHome(), 'skills', clean)
     if (!existsSync(dir)) throw new Error('faberloom: only uploaded skills can be removed')
+    if (existsSync(join(dir, '.shared-by')) && !this.isPrivileged()) {
+      throw new Error('faberloom: una skill compartida por otro usuario solo la puede quitar un Admin/CEO')
+    }
     rmSync(dir, { recursive: true, force: true })
     return await this.skills()
   }
@@ -957,6 +970,30 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Share one skill the owner uploaded, with named emails or with the whole
+   * company. A skill someone shared with the owner is not re-shareable.
+   * @param name - skill name (its directory).
+   * @param emails - exact emails to share with.
+   * @param allUsers - also offer it to every user of the owner's company.
+   * @returns the refreshed share rows.
+   */
+  @Remote('shareSkill')
+  async shareSkill(name: string, emails: readonly string[], allUsers: boolean): Promise<FaberLoomShares> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot share')
+    const clean = name.trim().replace(/[^a-zA-Z0-9-]+/g, '')
+    const dir = join(this.dshHome(), 'skills', clean)
+    const file = join(dir, 'SKILL.md')
+    if (!existsSync(file)) throw new Error('faberloom: solo puedes compartir una skill propia')
+    if (existsSync(join(dir, '.shared-by'))) throw new Error('faberloom: esa skill te la compartió otro usuario')
+    const markdown = readFileSync(file, 'utf8')
+    await this.consoleShare('', {
+      method: 'POST',
+      body: JSON.stringify({ kind: 'skill', name: clean, payload: { markdown }, share_all: allUsers, shared_emails: [...emails] }),
+    })
+    return await this.shares()
+  }
+
+  /**
    * Stop sharing one resource the owner published.
    * @param shareId - console-side share id.
    * @returns the refreshed share rows.
@@ -1018,6 +1055,31 @@ export class FaberLoomViewService extends TypertRemoteService {
         responsibility: payload.responsibility ?? existing.responsibility,
         skills,
       })
+    }
+    // Skills another user shared become read-only copies under the owner's
+    // skills directory, marked with the publisher so the panel can show it and
+    // refuse edits; a skill whose share is gone is pruned.
+    const skillShares = (data.incoming ?? []).filter(share => share.kind === 'skill')
+    const skillsRoot = join(this.dshHome(), 'skills')
+    const desiredSkills = new Set<string>()
+    for (const share of skillShares) desiredSkills.add(`${share.owner_email}\u0000${share.name}`)
+    if (existsSync(skillsRoot)) {
+      for (const entry of readdirSync(skillsRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        const marker = join(skillsRoot, entry.name, '.shared-by')
+        if (!existsSync(marker)) continue
+        const owner = readFileSync(marker, 'utf8').trim()
+        if (desiredSkills.has(`${owner}\u0000${entry.name}`)) continue
+        rmSync(join(skillsRoot, entry.name), { recursive: true, force: true })
+      }
+    }
+    for (const share of skillShares) {
+      const markdown = typeof share.payload.markdown === 'string' ? share.payload.markdown : ''
+      if (markdown.length === 0) continue
+      const dir = join(skillsRoot, share.name)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'SKILL.md'), markdown, 'utf8')
+      writeFileSync(join(dir, '.shared-by'), share.owner_email, 'utf8')
     }
   }
 

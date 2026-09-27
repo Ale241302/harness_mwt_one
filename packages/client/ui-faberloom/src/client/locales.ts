@@ -562,6 +562,13 @@ const es = {
   'agents.sharePlaceholder': 'colega@empresa.com',
   'agents.shareDone': 'Compartido.',
   'agents.shareNeedTarget': 'Indica al menos un correo o marca toda tu empresa.',
+  'agents.sharedBy': 'Compartido por',
+  'agents.unshare': 'Dejar de compartir',
+  'agents.shareAllShort': 'Toda mi empresa',
+  'skills.incoming': 'Compartida contigo',
+  'skills.sharedBy': 'Compartida por',
+  'skills.share': 'Compartir',
+  'skills.shareHint': 'Quien la recibe la usa como copia de solo lectura; no puede editarla.',
 } satisfies Record<string, string>
 
 /** The faberloom namespace key union. */
@@ -1127,6 +1134,13 @@ export const en: Record<FaberloomKey, string> = {
   'agents.sharePlaceholder': 'colleague@company.com',
   'agents.shareDone': 'Shared.',
   'agents.shareNeedTarget': 'Add at least one email or choose your whole company.',
+  'agents.sharedBy': 'Shared by',
+  'agents.unshare': 'Stop sharing',
+  'agents.shareAllShort': 'My whole company',
+  'skills.incoming': 'Shared with you',
+  'skills.sharedBy': 'Shared by',
+  'skills.share': 'Share',
+  'skills.shareHint': 'Recipients use it as a read-only copy; they cannot edit it.',
 }
 
 /** Simplified Chinese dictionary; a real translation of the same key set. */
@@ -1685,4 +1699,11 @@ export const zh: Record<FaberloomKey, string> = {
   'agents.sharePlaceholder': 'colleague@company.com',
   'agents.shareDone': '已共享。',
   'agents.shareNeedTarget': '至少填写一个邮箱，或选择整个公司。',
+  'agents.sharedBy': '共享者',
+  'agents.unshare': '取消共享',
+  'agents.shareAllShort': '整个公司',
+  'skills.incoming': '与你共享',
+  'skills.sharedBy': '共享者',
+  'skills.share': '共享',
+  'skills.shareHint': '接收者以只读副本使用，无法编辑。',
 }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -415,6 +415,35 @@ describe('FaberLoomViewService space lifecycle', () => {
       originRef: 'share:ana@sondelsa.com',
       skills: ['mwt-compras-clientes-leer'],
     }))
+  })
+
+  it('materializes a shared skill and refuses to edit it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces } = harness({ role: 'client_b2b' })
+    spaces.listMemory.mockResolvedValue([])
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        incoming: [{
+          id: 'sk1', kind: 'skill', owner_email: 'ana@sondelsa.com', name: 'mi-skill',
+          payload: { markdown: '---\nname: mi-skill\ndescription: hola\n---\nCuerpo' },
+          share_all: false, shared_emails: ['owner@muitowork.com'],
+        }],
+      }),
+    })))
+    vi.stubEnv('CONSOLA_API_BASE', 'https://consola.test/api')
+    vi.stubEnv('CONSOLA_TOKEN', 'tok')
+
+    await view.syncShared()
+    const dir = join(home, 'skills', 'mi-skill')
+    expect(existsSync(join(dir, 'SKILL.md'))).toBe(true)
+    expect(readFileSync(join(dir, '.shared-by'), 'utf8')).toBe('ana@sondelsa.com')
+    const rows = await view.skills()
+    expect(rows.find(row => row.name === 'mi-skill')).toMatchObject({ origin: 'incoming', sharedBy: 'ana@sondelsa.com' })
+    await expect(view.removeSkill('mi-skill')).rejects.toThrow('Admin/CEO')
   })
 
   it('omits the workspace in the overview when no registry is mounted', async () => {

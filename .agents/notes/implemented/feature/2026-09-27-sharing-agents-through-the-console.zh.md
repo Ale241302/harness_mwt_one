@@ -16,6 +16,12 @@ Status: implemented
 - `FaberLoomViewService` 新增 `shares`、`shareAgent`、`unshareShare` 与 `syncShared`。`shareAgent` 发送 agent 的 responsibility、skills、tools、provider 和 model，且**永不发送其提供方 API key**——该 key 属于所有者账户，不可携带。
 - 首次 `overview()` 以及 `syncShared` 时，视图拉取传入的共享，并将每个 agent 物化为本地副本：`seeded: true`、`ownerId` 设为发布者邮箱、`originRef` 为 `share:<发布者>`。既有的所有权规则随即使该副本对除发布者或 Admin/CEO 之外的所有人只读。共享已消失的副本会在下次拉取时被清理。
 - Agents 面板为发起者可管理的 agent 显示一个共享字段（指定邮箱加“整个公司”）。
+- Skill 以同样方式共享：`shareSkill` 发布所有者自己的 `SKILL.md`，收到的 skill 被写入所有者的 skills 目录并带有 `.shared-by` 标记。`saveSkill` 与 `removeSkill` 拒绝被标记的 skill（除非 Admin/CEO），面板将其显示为“与你共享”并标注发布者、隐藏删除按钮。共享消失的 skill 会在下次拉取时清理，与 agent 副本相同。
+- 面板列出所有者已共享的内容并提供“取消共享”，并在收到的 agent 上显示“共享者 <发布者>”。
+
+## 预置实际包含什么
+
+`agents-shared/` 下的 35 个共享预置只包含 `preset.yml`（name、description、order）和生成的 `agent.cordis.yml`。该组合是随发布的 `standard` 预置加上通用 persona 前缀；它不包含 ECC 的 agent 正文、具体 skill 名称或 subagent 连接。这些位于外部 `affaan-m/ECC` 目录，仓库并未 vendor，也不存在生成器。因此为预置分配 skill 或连接 agent 属于人工整理，而非从 `agent.cordis.yml` 提取。
 
 ## 考虑过的替代方案
 
@@ -26,7 +32,7 @@ Status: implemented
 ## 后果
 
 - 接收者不能编辑或删除共享的 agent：它是种子且归发布者所有，因此只有发布者或 Admin/CEO 可以更改它，与部署基线完全一致。
-- 本次增量仅共享 agent；共享 skill 需要同一张表配合 `kind='skill'`（API 已接受）以及一条 skill 物化路径，这是下一步。
+- agent 与 skill 均可共享；收到的 skill 是所有者 skills 目录下的只读副本，并带有 `.shared-by` 标记。
 - 副本不携带 API key，因此共享的 agent 使用接收者自己配置的提供方 key 运行。
 
 ## 测试

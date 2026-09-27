@@ -32,7 +32,7 @@ import type {
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
   FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
-  FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares,
+  FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import type { createWorkspaceStore } from './store.ts'
@@ -132,6 +132,12 @@ export interface FaberloomPanelInjected {
   saveAgent: (id: string, input: AgentSaveInput) => Promise<Result<FaberLoomOverview>>
   /** Share one managed agent with named emails, the whole company, or both. */
   shareAgent: (id: string, emails: readonly string[], allUsers: boolean) => Promise<Result<FaberLoomShares>>
+  /** Share one uploaded skill with named emails, the whole company, or both. */
+  shareSkill: (name: string, emails: readonly string[], allUsers: boolean) => Promise<Result<FaberLoomShares>>
+  /** List what the owner shares and what others share with them. */
+  shares: () => Promise<Result<FaberLoomShares>>
+  /** Stop sharing one published resource. */
+  unshareShare: (id: string) => Promise<Result<FaberLoomShares>>
   /** List the skills available to this owner. */
   skills: () => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** Add or replace one uploaded skill. */
@@ -492,7 +498,7 @@ function spacesScreen() {
 /** Agentes: table plus the full editor. */
 function agentsScreen() {
   return function FaberloomAgents(props: ScreenProps) {
-    const { t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, connections, shareAgent } = props
+    const { t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, connections, shareAgent, shares, unshareShare } = props
     const { overview, error } = useOverview(props)
     const [selected, setSelected] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -513,6 +519,7 @@ function agentsScreen() {
     const [shareEmails, setShareEmails] = useState('')
     const [shareAll, setShareAll] = useState(false)
     const [shareMsg, setShareMsg] = useState<string | null>(null)
+    const [outShares, setOutShares] = useState<readonly FaberLoomShareRow[]>([])
 
     const agents = useMemo(
       () => (overview?.agents ?? []).filter(agent => agent.name.toLowerCase().includes(query.trim().toLowerCase())),
@@ -549,8 +556,22 @@ function agentsScreen() {
       setMessage(null)
     }, [detail])
 
+    // What the owner already shares, so the panel can list and retract it.
+    useEffect(() => {
+      void shares()
+        .then((result) => { if (result.ok) setOutShares(result.value.outgoing) })
+        .catch(() => {})
+    }, [shares, selected])
+
     const columns: readonly Column<FaberLoomOverview['agents'][number]>[] = [
-      { key: 'name', header: t('col.name'), cell: agent => <span className={styles.cellName}>{agent.name}</span> },
+      { key: 'name', header: t('col.name'), cell: agent => (
+        <span className={styles.cellName}>
+          {agent.name}
+          {agent.sharedBy === undefined
+            ? null
+            : <span className={styles.cellMuted}>{t('agents.sharedBy')}{' '}{agent.sharedBy}</span>}
+        </span>
+      ) },
       { key: 'status', header: t('col.status'), cell: agent => <StatusDot on={agent.active} label={agent.active ? t('status.active') : t('status.inactive')} /> },
       { key: 'space', header: t('col.space'), cell: agent => agent.detached
         ? <Chip tone="muted">{t('agents.unassigned')}</Chip>
@@ -742,13 +763,23 @@ function agentsScreen() {
                                 void shareAgent(selected ?? '', emails, shareAll)
                                   .then((result) => {
                                     if (!result.ok) setShareMsg(result.error.message)
-                                    else { setShareMsg(t('agents.shareDone')); setShareEmails(''); setShareAll(false) }
+                                    else { setShareMsg(t('agents.shareDone')); setShareEmails(''); setShareAll(false); setOutShares(result.value.outgoing) }
                                   })
                                   .catch((cause: unknown) => { setShareMsg(String(cause)) })
                                   .finally(() => { setSaving(false) })
                               }}>{t('agents.share')}</button>
                             {shareMsg === null ? null : <span className={styles.cellMuted}>{shareMsg}</span>}
                           </div>
+                          {outShares.filter(share => share.kind === 'agent' && share.name === name).map(share => (
+                            <div key={share.id} className={styles.grid2}>
+                              <span className={styles.cellMuted}>{share.share_all ? t('agents.shareAllShort') : share.shared_emails.join(', ')}</span>
+                              <button className={styles.ghost} type="button" onClick={() => {
+                                void unshareShare(share.id)
+                                  .then((result) => { if (result.ok) setOutShares(result.value.outgoing) })
+                                  .catch(() => {})
+                              }}>{t('agents.unshare')}</button>
+                            </div>
+                          ))}
                         </Field>
                       )}
                       <Field label={t('field.webAccess')} hint={t('agents.webAccessHint')}>
@@ -1250,13 +1281,17 @@ function emailScreen() {
 /** Skills: the role catalog plus the owner's uploads. */
 function skillsScreen() {
   return function FaberloomSkills(props: ScreenProps) {
-    const { t, skills, saveSkill, removeSkill } = props
+    const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare } = props
     const [list, setList] = useState<readonly FaberLoomSkillRow[] | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [query, setQuery] = useState('')
     const [moduleFilter, setModuleFilter] = useState('')
     const [selected, setSelected] = useState<string | null>(null)
     const [uploading, setUploading] = useState(false)
+    const [shareEmails, setShareEmails] = useState('')
+    const [shareAll, setShareAll] = useState(false)
+    const [shareMsg, setShareMsg] = useState<string | null>(null)
+    const [outShares, setOutShares] = useState<readonly FaberLoomShareRow[]>([])
 
     const apply = (result: Result<readonly FaberLoomSkillRow[]>): void => {
       if (result.ok) setList(result.value)
@@ -1268,6 +1303,13 @@ function skillsScreen() {
       void skills().then((result) => { if (live) apply(result) }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
       return () => { live = false }
     }, [])
+
+    // What the owner already shares, so the panel can list and retract it.
+    useEffect(() => {
+      void shares()
+        .then((result) => { if (result.ok) setOutShares(result.value.outgoing) })
+        .catch(() => {})
+    }, [shares])
 
     const modules = useMemo(
       () => [...new Set((list ?? []).map(skill => skill.module).filter((value): value is string => value !== null))].sort(),
@@ -1298,7 +1340,7 @@ function skillsScreen() {
     const columns: readonly Column<FaberLoomSkillRow>[] = [
       { key: 'name', header: t('col.name'), cell: skill => <span className={styles.cellName}>{skill.name}</span> },
       { key: 'module', header: t('col.module'), cell: skill => <span className={styles.cellMuted}>{skill.module ?? '—'}{skill.action === null ? '' : ` · ${skill.action}`}</span> },
-      { key: 'origin', header: t('col.origin'), cell: skill => <Chip tone={skill.origin === 'owner' ? 'accent' : 'muted'}>{skill.origin === 'owner' ? t('skills.own') : skill.origin === 'shared' ? t('skills.shared') : t('skills.role')}</Chip> },
+      { key: 'origin', header: t('col.origin'), cell: skill => <Chip tone={skill.origin === 'owner' ? 'accent' : 'muted'}>{skill.origin === 'owner' ? t('skills.own') : skill.origin === 'shared' ? t('skills.shared') : skill.origin === 'incoming' ? t('skills.incoming') : t('skills.role')}</Chip> },
       { key: 'used', header: t('col.usedBy'), cell: skill => <span className={styles.cellMuted}>{skill.assignedTo.length === 0 ? t('skills.unused') : String(skill.assignedTo.length)}</span> },
     ]
 
@@ -1340,7 +1382,40 @@ function skillsScreen() {
                       ? <span className={styles.cellMuted}>{t('skills.unused')}</span>
                       : <span className={styles.chips}>{chosen.assignedTo.map(id => <Chip key={id}>{id.slice(0, 8)}</Chip>)}</span>}
                   </Field>
-                  <Field label={t('field.origin')}><Chip tone={chosen.origin === 'owner' ? 'accent' : 'muted'}>{chosen.origin === 'owner' ? t('skills.own') : t('skills.role')}</Chip></Field>
+                  <Field label={t('field.origin')}><Chip tone={chosen.origin === 'owner' ? 'accent' : 'muted'}>{chosen.origin === 'owner' ? t('skills.own') : chosen.origin === 'shared' ? t('skills.shared') : chosen.origin === 'incoming' ? t('skills.incoming') : t('skills.role')}</Chip></Field>
+                  {chosen.sharedBy === undefined ? null : <Field label={t('skills.sharedBy')}><span className={styles.cellMuted}>{chosen.sharedBy}</span></Field>}
+                  {chosen.origin !== 'owner' ? null : (
+                    <Field label={t('skills.share')} hint={t('skills.shareHint')}>
+                      <input type="text" value={shareEmails} placeholder={t('agents.sharePlaceholder')} onChange={(event) => { setShareEmails(event.target.value) }} />
+                      <label className={styles.stepFlag}>
+                        <input type="checkbox" checked={shareAll} onChange={(event) => { setShareAll(event.target.checked) }} />
+                        <span>{t('agents.shareAll')}</span>
+                      </label>
+                      <div className={styles.grid2}>
+                        <button className={styles.ghost} type="button" onClick={() => {
+                          const emails = shareEmails.split(',').map(value => value.trim()).filter(value => value.length > 0)
+                          if (!shareAll && emails.length === 0) { setShareMsg(t('agents.shareNeedTarget')); return }
+                          void shareSkill(chosen.name, emails, shareAll)
+                            .then((result) => {
+                              if (!result.ok) setShareMsg(result.error.message)
+                              else { setShareMsg(t('agents.shareDone')); setShareEmails(''); setShareAll(false); setOutShares(result.value.outgoing) }
+                            })
+                            .catch((cause: unknown) => { setShareMsg(String(cause)) })
+                        }}>{t('skills.share')}</button>
+                        {shareMsg === null ? null : <span className={styles.cellMuted}>{shareMsg}</span>}
+                      </div>
+                      {outShares.filter(share => share.kind === 'skill' && share.name === chosen.name).map(share => (
+                        <div key={share.id} className={styles.grid2}>
+                          <span className={styles.cellMuted}>{share.share_all ? t('agents.shareAllShort') : share.shared_emails.join(', ')}</span>
+                          <button className={styles.ghost} type="button" onClick={() => {
+                            void unshareShare(share.id)
+                              .then((result) => { if (result.ok) setOutShares(result.value.outgoing) })
+                              .catch(() => {})
+                          }}>{t('agents.unshare')}</button>
+                        </div>
+                      ))}
+                    </Field>
+                  )}
                 </>
               )}
           </Inspector>

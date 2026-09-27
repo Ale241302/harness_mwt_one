@@ -34,6 +34,8 @@ export interface FaberLoomAgentRow {
   readonly active: boolean
   /** Whether the actor may edit or delete it (owns it, or is Admin/CEO). */
   readonly editable: boolean
+  /** Publisher email when another user shared this agent; absent for a local one. */
+  readonly sharedBy?: string
 }
 
 /** Portable definition of a shared resource, as it travels through the console. */
@@ -44,6 +46,8 @@ export interface FaberLoomSharePayload {
   readonly skills?: readonly string[]
   /** Tool names the resource uses. */
   readonly tools?: readonly string[]
+  /** Skill body, when the shared resource is a skill. */
+  readonly markdown?: string
   /** Provider the publisher chose, when set. */
   readonly provider?: string | null
   /** Model the publisher chose, when set. */
@@ -673,10 +677,12 @@ export interface FaberLoomSkillRow {
   readonly module: string | null
   /** Action the skill covers, when the frontmatter declares one. */
   readonly action: string | null
-  /** Where the skill came from: the role catalog, the deployment's shared catalog, or the owner's own uploads. */
-  readonly origin: 'role' | 'owner' | 'shared'
+  /** Where the skill came from: the role catalog, the deployment's shared catalog, the owner's own uploads, or another user. */
+  readonly origin: 'role' | 'owner' | 'shared' | 'incoming'
   /** Ids of the agents that already list this skill. */
   readonly assignedTo: readonly string[]
+  /** Publisher email when another user shared this skill; absent for a local one. */
+  readonly sharedBy?: string
 }
 
 /** One agent with its full editable configuration. */

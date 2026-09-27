@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-27-sharing-agents-through-the-console.md
-2026-09-27-sharing-agents-through-the-console.md: 82825dea75aba834021843c39dc88da333a14b8b
-2026-09-27-sharing-agents-through-the-console.zh.md: 42a7a7ac9e24ae9ea4f78be14ec43c551dcb571a
+2026-09-27-sharing-agents-through-the-console.md: 51b901dcc01e98c59d191623f93a3145ccf24809
+2026-09-27-sharing-agents-through-the-console.zh.md: d0feb3c244e089c32ff213566e04c1716c9c02e2
