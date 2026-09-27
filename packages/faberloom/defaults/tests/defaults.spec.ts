@@ -150,6 +150,29 @@ describe('FaberLoomDefaults', () => {
     expect((await second.ctx.faberloomAgents.listAgents()).filter(candidate => candidate.name === 'Architect')).toHaveLength(1)
   })
 
+  it('F16 — converges baseline agents to the configured provider/model/key without clobbering an admin choice', async () => {
+    const home = ownerHome()
+    const pool = new MemoryMediaPool()
+    const first = await services(home, ['mwt-compras-clientes-leer'], pool)
+    await seedWith(first.ctx, first.catalog)
+    const [reception] = await first.ctx.faberloomAgents.listAgents()
+    if (reception === undefined) throw new Error('seeding created no agent')
+    // The admin already pinned a model on this baseline agent.
+    await first.ctx.faberloomAgents.updateAgent(reception.id, { model: 'admin-pinned' })
+
+    process.env.FABERLOOM_TEST_AGENT_KEY = 'sk-test'
+    try {
+      const second = await services(home, ['mwt-compras-clientes-leer'], pool)
+      await seedWith(second.ctx, second.catalog, {
+        agentProvider: 'deepseek', agentModel: 'deepseek-flash', agentApiKeyEnv: 'FABERLOOM_TEST_AGENT_KEY',
+      })
+      const converged = (await second.ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === reception.id)
+      expect(converged).toMatchObject({ provider: 'deepseek', model: 'admin-pinned', hasApiKey: true })
+    } finally {
+      delete process.env.FABERLOOM_TEST_AGENT_KEY
+    }
+  })
+
   it('F16 — seeds nothing for a read-only identity, and a retry never duplicates what already landed', async () => {
     const readOnlyHome = ownerHome()
     const readOnly = await services(readOnlyHome, ['mwt-compras-clientes-leer'])

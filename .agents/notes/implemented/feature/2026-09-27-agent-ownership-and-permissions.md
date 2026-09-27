@@ -15,7 +15,7 @@ Ownership is recorded on the agent and enforced where the write is accepted.
 - `AgentRecord` gains `ownerId` (`''` for a seeded/global agent) and `seeded`, both defaulted so existing records keep loading.
 - `FaberLoomViewService` treats `admin`, `superadmin`, and `ceo` as privileged; a privileged actor may manage any agent, while every other role may manage only a non-seeded agent it owns. Every agent write also requires `!readOnly`, which the agent writes previously omitted.
 - `createAgent` and `createAgentFromWork` stamp the acting identity as `ownerId`.
-- `faberloom-defaults` seeds agents with `seeded: true` and, when the deployment configures them, `provider`, `model`, and an API key read from the environment variable named by `agentApiKeyEnv` (the gateway defaults it to `DEEPSEEK_API_KEY`). The key never enters the repository; it is stored per agent and a read only ever reports `hasApiKey`.
+- `faberloom-defaults` seeds agents with `seeded: true` and, when the deployment configures them, `provider`, `model`, and an API key read from the environment variable named by `agentApiKeyEnv` (the gateway defaults it to `DEEPSEEK_API_KEY`). The key never enters the repository; it is stored per agent and a read only ever reports `hasApiKey`. On every start the seeder then converges the deployment's baseline agents — the native seeds and the shared presets — filling `provider`, `model`, and the key only where the field is still unset, so agents seeded by an earlier deployment are configured without losing an admin's pinned value.
 - The overview agent row carries `editable`; the Agents panel hides Delete/Deactivate and disables Save and the API-key field for an agent the actor cannot manage. `SecretInput` gains `revealable`, so the reveal toggle is absent for a key the actor may not see.
 - Skills keep their file model: the role and shared catalogs are deployment files the API never writes, and only the owner's `DSH_HOME/skills` directory is creatable or removable. A normal user can therefore create and manage their own skill while the shipped catalog stays an Admin/deployment concern.
 
@@ -29,7 +29,7 @@ Ownership is recorded on the agent and enforced where the write is accepted.
 
 - A normal user can no longer edit or delete a seeded agent; only Admin/CEO can. An agent records whose owner is another identity is equally refused.
 - The stored provider key is never revealable for an agent the actor cannot manage.
-- Seeding stamps the configured provider/model/key only on agents it creates; agents seeded by an earlier deployment keep their own values until they are re-created or an admin saves them.
+- Seeding stamps the configured provider/model/key on the agents it creates, and the convergence pass fills them into any baseline agent that still has the field unset; an admin's pinned value is left alone.
 
 ## Testing
 

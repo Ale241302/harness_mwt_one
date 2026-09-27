@@ -121,6 +121,7 @@ export class FaberLoomDefaults extends Service {
     // Shared agent presets are deployment-provided and re-synced on every start
     // (idempotent by name), independent of the one-time plan marker.
     const shared = await this.seedSharedAgents()
+    await this.convergeBaselineAgents()
     const marker = this.markerPath()
     if (existsSync(marker)) return { seeded: shared.length > 0, skipped: 'already seeded', agents: shared, routines: [] }
     if (!this.claim()) return { seeded: shared.length > 0, skipped: 'another pass is seeding', agents: shared, routines: [] }
@@ -182,6 +183,49 @@ export class FaberLoomDefaults extends Service {
       ...model === undefined || model.length === 0 ? {} : { model },
       ...apiKey === undefined || apiKey.length === 0 ? {} : { apiKey },
     }
+  }
+
+  /**
+   * Fill the configured provider, model, and API key on the deployment's
+   * baseline agents — the native seeds and the shared presets — but only where
+   * the field is still unset, so an admin's choice survives. Runs on every
+   * start, so agents a previous deployment seeded converge without recreation.
+   * @returns the baseline agent names updated in this pass.
+   */
+  private async convergeBaselineAgents(): Promise<string[]> {
+    const defaults = this.agentDefaults()
+    if (defaults.provider === undefined && defaults.model === undefined && defaults.apiKey === undefined) return []
+    const baseline = this.baselineNames()
+    const updated: string[] = []
+    for (const agent of await this.ctx.faberloomAgents.listAgents()) {
+      if (!baseline.has(agent.name)) continue
+      const patch: { provider?: string; model?: string; apiKey?: string } = {}
+      if (agent.provider === undefined && defaults.provider !== undefined) patch.provider = defaults.provider
+      if (agent.model === undefined && defaults.model !== undefined) patch.model = defaults.model
+      if (!agent.hasApiKey && defaults.apiKey !== undefined) patch.apiKey = defaults.apiKey
+      if (patch.provider === undefined && patch.model === undefined && patch.apiKey === undefined) continue
+      await this.ctx.faberloomAgents.updateAgent(agent.id, patch)
+      updated.push(agent.name)
+    }
+    if (updated.length > 0) this.ctx.logger.info(`faberloom: configured ${String(updated.length)} baseline agent(s)`)
+    return updated
+  }
+
+  /**
+   * Names of the deployment's baseline agents: the native seeds plus every
+   * shared preset the deployment mounts.
+   * @returns the baseline names, matched against the catalogue by name.
+   */
+  private baselineNames(): Set<string> {
+    const names = new Set<string>(SEED_AGENTS.map(seed => seed.name))
+    const root = this.config.agentsSharedRoot
+    if (root === undefined || root.length === 0 || !existsSync(root)) return names
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const preset = this.readPreset(join(root, entry.name, 'preset.yml'))
+      if (preset !== undefined) names.add(preset.name)
+    }
+    return names
   }
 
   private async seedAgents(available: ReadonlySet<string>): Promise<string[]> {
