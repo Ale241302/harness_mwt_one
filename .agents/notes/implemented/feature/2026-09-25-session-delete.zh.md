@@ -14,7 +14,7 @@ Status: implemented
 
 - `packages/session/session-persistence` 增加 `SessionPersistence.delete(id, options)`，返回 `boolean`。基类实现以具名错误拒绝，使未实现该能力的后端（以及继承该服务的测试替身）保持诚实，而不是假装删除成功。
 - `packages/session/session-persistence-jsonl` 覆盖它：`findLog(id)` 定位存储目录，整个目录被删除，冷日志缓存条目被丢弃。删除只移除产物，绝不重写或快照。
-- `SessionCommandController.delete({ sessionId })` 对任何在本进程中仍存活的会话（`ctx.sessions.get(id)`）以 `session/busy` 拒绝，然后删除该会话以及所有由它分叉出的会话。通过 `header.parentSession` 让子会话排在其父会话之前，使部分失败时绝不会留下指向已消失父会话的子会话。
+- `SessionCommandController.delete({ sessionId })` 通过保留的 Agent handle 释放它所拥有的每个存活会话，然后删除该会话以及所有由它分叉出的会话。通过 `header.parentSession` 让子会话排在其父会话之前，使部分失败时绝不会留下指向已消失父会话的子会话。（[存活拒绝为何改为释放](../bug-fix/2026-09-27-session-delete-disposes-live-agent.zh.md)）
 - `SessionCommandController.deleteOrphans()` 删除所有记录在案的 `cwd` 未解析到任何已注册工作区的会话。存活会话被跳过而非拒绝，磁盘上已不存在的 `cwd` 视为无归属。
 - `@Remote('delete')` 与 `@Remote('deleteOrphans')` 承载这两条命令；生成的 Client 接口由 Typert 构建自动产生。
 - `WorkspaceRegistry.forgetSession(id)` 从内存中的 header 与路径索引里移除已删除的 id，使看板无需等待重建索引即可停止列出它。持久化的归档集合保持不变：已删除的 id 再也无法解析。
@@ -23,7 +23,7 @@ Client 数据层与 Host 对应：`ISession.delete()` 是 1:1 动词，`ISession
 
 ## 考虑过的替代方案
 
-**中止正在运行的回合并强行删除。** 在存活写入者之下删除存储会与重放和工具输出竞争；拒绝能让破坏性路径保持同步且诚实。
+**中止正在运行的回合并强行删除。** 在存活写入者之下删除存储会与重放和工具输出竞争，因此最初的实现拒绝删除。[删除打开的会话会释放其 Agent](../bug-fix/2026-09-27-session-delete-disposes-live-agent.zh.md) 之后在被移除存储前通过其保留的 handle 让存活 Agent 静默，从而既保持破坏性路径同步，又不再阻塞打开的对话。
 
 **保留分叉出的子会话。** 父行已无法解析的子会话会在用户正清理的同一个未分组桶里表现为丢失的孤儿，因此级联删除才是唯一不留残留的结果。
 
@@ -33,8 +33,8 @@ Client 数据层与 Host 对应：`ISession.delete()` 是 1:1 动词，`ISession
 
 - 删除会话不可逆；确认对话框和“删除所有未分组”对话框都如此声明。
 - `session/busy` 是会话控制器上新的 Remote 错误码。
-- 任何界面中打开的会话在被关闭前都无法删除；Host 会报告是哪个 id 忙。
+- 对于本部署并不拥有其 Agent 的会话，必须等该 Agent 被释放后才能删除；Host 会报告是哪个 id 忙。本部署创建或恢复的会话会先被释放，因此打开的对话可以正常删除。
 
 ## 测试
 
-`packages/api/session-controller/tests/commands-delete.host.spec.ts` 覆盖子会话先行的级联、不删除任何内容的存活拒绝、跳过存活与属于工作区会话的孤儿选择，以及缺少持久层时的拒绝。侧边栏删除菜单、其确认闸门和未分组头部操作由 `packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx` 覆盖。`packages/session/session-persistence-jsonl` 的生成套件在新的覆盖实现之上保持通过。
+`packages/api/session-controller/tests/commands-delete.host.spec.ts` 覆盖子会话先行的级联、删除前释放所拥有的存活会话、拒绝不拥有的存活会话且不删除任何内容、跳过存活与属于工作区会话的孤儿选择，以及缺少持久层时的拒绝。侧边栏删除菜单、其确认闸门和未分组头部操作由 `packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx` 覆盖。`packages/session/session-persistence-jsonl` 的生成套件在新的覆盖实现之上保持通过。

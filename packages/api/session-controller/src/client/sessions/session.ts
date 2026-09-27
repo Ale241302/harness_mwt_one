@@ -363,8 +363,9 @@ export class Session implements SessionFace {
   }
 
   /**
-   * Delete: contract session.delete 1:1. The Host cascades forked children and
-   * refuses a live session; the caller refreshes the list after success.
+   * Delete: contract session.delete 1:1. The Host disposes a live session it
+   * owns, cascades forked children, and removes the storage; the caller
+   * refreshes the list after success.
    * @returns the removed ids, or the business/transport error.
    */
   async delete(): Promise<RemoteResult<{ deleted: readonly SessionId[] }>> {

@@ -143,9 +143,10 @@ describe('ApiSession Agent lookup and recovery', () => {
     const { ctx, agents } = await harness()
     const meta = header('observed-resume')
     const resumed = unpublishedAgent(ctx, meta)
+    const dispose = vi.fn(() => Promise.resolve())
     const resume = vi.spyOn(ctx.agents, 'resume').mockResolvedValue({
       agent: resumed,
-      dispose: () => Promise.resolve(),
+      dispose,
     })
     const observed = {
       source: 'prepared',
@@ -159,6 +160,12 @@ describe('ApiSession Agent lookup and recovery', () => {
 
     await expect(agents.resolveObservedAgent(observed)).resolves.toEqual({ agent: resumed })
     expect(resume).toHaveBeenCalledWith(expect.objectContaining({ resumeSessionId: meta.id }))
+
+    expect(agents.ownsSession(meta.id)).toBe(true)
+    await agents.disposeSession(meta.id)
+    expect(dispose).toHaveBeenCalledOnce()
+    expect(agents.ownsSession(meta.id)).toBe(false)
+    await expect(agents.disposeSession(SessionId('no-retained-handle'))).resolves.toBeUndefined()
 
     const invalid = {
       ...observed,

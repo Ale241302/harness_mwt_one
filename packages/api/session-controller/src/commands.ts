@@ -182,9 +182,10 @@ export class SessionCommandController {
   /**
    * Permanently delete one Session and every Session forked from it.
    *
-   * A live Session is refused: deleting runs no disposal, so the caller closes
-   * it first. Children are removed before their parent, so a partial failure
-   * never leaves a child pointing at a missing parent.
+   * Live Sessions this controller owns are cancelled and disposed first, so an
+   * open conversation deletes without a separate close. Children are removed
+   * before their parent, so a partial failure never leaves a child pointing at
+   * a missing parent.
    * @param request - the Session to delete.
    * @returns the ids removed, children before their parent.
    */
@@ -259,13 +260,24 @@ export class SessionCommandController {
   }
 
   /**
-   * Refuse every live id, then delete each in order, dropping Workspace accounting.
+   * Dispose every live Session this controller owns, then delete each in order,
+   * dropping Workspace accounting.
+   *
+   * A Session this controller created or resumed is cancelled and torn down
+   * first, so an open conversation never blocks its own permanent delete. A
+   * Session left live by another creator has no disposer here and is refused.
    * @param ids - ids to remove, children before their parent.
    * @param persistence - mounted Session persistence backend.
    * @returns the subset whose stored directory was actually removed.
    */
   private async removeAll(ids: readonly SessionId[], persistence: SessionPersistenceDeleter): Promise<SessionId[]> {
     const sessions = this.ctx.get('sessions')
+    const live = ids.filter(id => sessions?.get(id) !== undefined)
+    const unowned = live.find(id => !this.agents.ownsSession(id))
+    if (unowned !== undefined) {
+      throw new RemoteError('session/busy', `session "${unowned}" is open; close it before deleting`, { sessionId: unowned })
+    }
+    for (const id of live) await this.agents.disposeSession(id)
     for (const id of ids) {
       if (sessions?.get(id) !== undefined) {
         throw new RemoteError('session/busy', `session "${id}" is open; close it before deleting`, { sessionId: id })
@@ -366,7 +378,7 @@ export class SessionCommandController {
     const composition = await this.agents.composeAgent(this.agents.presetForObservation(source))
     try {
       const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
-      await this.ctx.agents.create({
+      const handle = await this.ctx.agents.create({
         sessionId: childId,
         seed: source.events.slice(0, cut),
         inheritedEventCount: cut,
@@ -381,6 +393,7 @@ export class SessionCommandController {
         agentOptions: { provider, model },
         setup: composition.setup,
       })
+      this.agents.retainHandle(handle)
     } catch (error) {
       throw new RemoteError(
         'gateway/internal',

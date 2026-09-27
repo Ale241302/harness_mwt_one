@@ -14,6 +14,8 @@ function controllerAgents(overrides: object = {}): ApiSessionAgentController {
     composeAgent: () => Promise.resolve({ setup: () => {} }),
     presetForSession: () => undefined,
     presetForObservation: () => undefined,
+    ownsSession: () => false,
+    disposeSession: () => Promise.resolve(),
     ...overrides,
   } as unknown as ApiSessionAgentController
 }
@@ -85,11 +87,96 @@ describe('Session deletion', () => {
     await ctx.fiber.dispose()
   })
 
+  it('disposes a live session this controller owns before removing storage', async () => {
+    const persistence = fakePersistence([
+      { id: SessionId('live'), cwd: '/w' },
+      { id: SessionId('child'), cwd: '/w', parentSession: SessionId('live') },
+    ])
+    const ctx = await baseContext(persistence)
+    const live = new Set<SessionId>([SessionId('live')])
+    vi.spyOn(ctx.sessions, 'get').mockImplementation((id: SessionId) => (
+      live.has(id) ? ({ id } as never) : undefined
+    ))
+    const disposeSession = vi.fn(async (id: SessionId) => { live.delete(id) })
+    const controller = new SessionCommandController(ctx, controllerAgents({
+      ownsSession: (id: SessionId) => live.has(id),
+      disposeSession,
+    }), '/default')
+
+    const result = await controller.delete({ sessionId: SessionId('live') })
+
+    expect(disposeSession).toHaveBeenCalledWith(SessionId('live'))
+    expect(result.deleted).toEqual([SessionId('child'), SessionId('live')])
+    expect(persistence.deleted).toEqual([SessionId('child'), SessionId('live')])
+    await ctx.fiber.dispose()
+  })
+
+  it('refuses a live session that survives disposal', async () => {
+    const persistence = fakePersistence([{ id: SessionId('live'), cwd: '/w' }])
+    const ctx = await baseContext(persistence)
+    const live = new Set<SessionId>([SessionId('live')])
+    vi.spyOn(ctx.sessions, 'get').mockImplementation((id: SessionId) => (
+      live.has(id) ? ({ id } as never) : undefined
+    ))
+    const controller = new SessionCommandController(ctx, controllerAgents({
+      ownsSession: () => true,
+      disposeSession: () => Promise.resolve(),
+    }), '/default')
+
+    await expect(controller.delete({ sessionId: SessionId('live') }))
+      .rejects.toMatchObject({ code: 'session/busy' })
+    expect(persistence.deleted).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it('orders sibling children before their parent', async () => {
+    const persistence = fakePersistence([
+      { id: SessionId('parent'), cwd: '/w' },
+      { id: SessionId('child-a'), cwd: '/w', parentSession: SessionId('parent') },
+      { id: SessionId('child-b'), cwd: '/w', parentSession: SessionId('parent') },
+    ])
+    const ctx = await baseContext(persistence)
+    const controller = new SessionCommandController(ctx, controllerAgents(), '/default')
+
+    const result = await controller.delete({ sessionId: SessionId('parent') })
+
+    expect(result.deleted).toEqual([
+      SessionId('child-a'), SessionId('child-b'), SessionId('parent'),
+    ])
+    await ctx.fiber.dispose()
+  })
+
+  it('treats an unreadable workspace path as unowned', async () => {
+    const persistence = fakePersistence([{ id: SessionId('gone'), cwd: '/gone' }])
+    const ctx = await baseContext(persistence, vi.fn(async () => {
+      throw new Error('ENOENT: no such file or directory')
+    }))
+    const controller = new SessionCommandController(ctx, controllerAgents(), '/default')
+
+    const result = await controller.deleteOrphans()
+
+    expect(result.deleted).toEqual([SessionId('gone')])
+    await ctx.fiber.dispose()
+  })
+
+  it('propagates a non-Error workspace resolution failure', async () => {
+    const persistence = fakePersistence([{ id: SessionId('boom'), cwd: '/boom' }])
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercises the branch that propagates a non-Error rejection value.
+    const rejectNonError = vi.fn(() => Promise.reject({ reason: 'plain' }))
+    const ctx = await baseContext(persistence, rejectNonError)
+    const controller = new SessionCommandController(ctx, controllerAgents(), '/default')
+
+    await expect(controller.deleteOrphans()).rejects.toEqual({ reason: 'plain' })
+    expect(persistence.deleted).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
   it('deletes only unowned sessions, skipping workspaces and live sessions', async () => {
     const persistence = fakePersistence([
       { id: SessionId('owned'), cwd: '/workspace' },
       { id: SessionId('orphan'), cwd: '/loose' },
       { id: SessionId('homeless') },
+      { id: SessionId('cwd-less') },
     ])
     const ctx = await baseContext(persistence, vi.fn(async (path: string) => (
       path === '/workspace' ? ({} as never) : undefined
@@ -99,8 +186,24 @@ describe('Session deletion', () => {
 
     const result = await controller.deleteOrphans()
 
-    expect(result.deleted).toEqual([SessionId('orphan')])
-    expect(persistence.deleted).toEqual([SessionId('orphan')])
+    expect(result.deleted).toEqual([SessionId('orphan'), SessionId('cwd-less')])
+    expect(persistence.deleted).toEqual([SessionId('orphan'), SessionId('cwd-less')])
+    await ctx.fiber.dispose()
+  })
+
+  it('omits an id whose stored directory was already absent', async () => {
+    const persistence = {
+      deleted: [] as SessionId[],
+      list: () => Promise.resolve([{ header: { id: SessionId('gone'), cwd: '/w' } as SessionHeader }]),
+      delete: () => Promise.resolve(false),
+    }
+    const ctx = await baseContext(persistence)
+    const controller = new SessionCommandController(ctx, controllerAgents(), '/default')
+
+    const result = await controller.delete({ sessionId: SessionId('gone') })
+
+    expect(result.deleted).toEqual([])
+    expect(persistence.deleted).toEqual([])
     await ctx.fiber.dispose()
   })
 

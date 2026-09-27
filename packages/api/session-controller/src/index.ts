@@ -343,7 +343,8 @@ export class SessionController extends TypertRemoteService {
   /**
    * Permanently delete one Session and every Session forked from it.
    *
-   * Refuses a live Session so deleting never races an open conversation.
+   * A live Session this deployment owns is cancelled and disposed first, so
+   * deleting an open conversation neither races it nor requires a separate close.
    * @param request - the Session to delete.
    * @returns the ids removed, children before their parent.
    */
