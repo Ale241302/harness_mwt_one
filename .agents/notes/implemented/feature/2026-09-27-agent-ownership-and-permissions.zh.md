@@ -15,7 +15,7 @@ Agent 目录没有所有者，视图里的 agent 写入甚至不检查 `readOnly
 - `AgentRecord` 新增 `ownerId`（种子/全局 agent 为 `''`）与 `seeded`，两者都有默认值，因此旧记录仍能加载。
 - `FaberLoomViewService` 把 `admin`、`superadmin`、`ceo` 视为特权角色；特权者可管理任意 agent，其它角色只能管理自己拥有的、非种子 agent。每次 agent 写入还要求 `!readOnly`，而此前 agent 写入缺少这一检查。
 - `createAgent` 与 `createAgentFromWork` 把发起身份写入 `ownerId`。
-- `faberloom-defaults` 以 `seeded: true` 供给 agent，并在部署配置时写入 `provider`、`model` 以及从 `agentApiKeyEnv` 命名的环境变量读取的 API key（gateway 默认指向 `DEEPSEEK_API_KEY`）。key 绝不进入仓库；它按 agent 存储，读取只报告 `hasApiKey`。每次启动时，供给器随后收敛部署的基线 agent——原生种子与共享预设——仅在字段仍未设置时填入 `provider`、`model` 与该 key，因此更早部署供给的 agent 会被配置，而 admin 已固定的值不会被覆盖。
+- `faberloom-defaults` 以 `seeded: true` 供给 agent，并在部署配置时写入 `provider`、`model` 以及从 `agentApiKeyEnv` 命名的环境变量读取的 API key（gateway 默认指向 `DEEPSEEK_API_KEY`）。key 绝不进入仓库；它按 agent 存储，读取只报告 `hasApiKey`。每次启动时，供给器随后收敛部署的基线 agent——原生种子与共享预设——写入配置好的 `provider` 与 `model`（基线属于部署，因此更早的值会被替换），并且仅在没有存储 key 时写入该 key，因为已存的 key 永不读回。
 - overview 的 agent 行携带 `editable`；对于发起者不能管理的 agent，Agents 面板隐藏 Delete/Deactivate，并禁用 Save 与 API-key 字段。`SecretInput` 新增 `revealable`，因此发起者无权查看的 key 不显示显示开关。
 - Skills 保持其文件模型：role 与 shared 目录是部署文件，API 从不写入，只有所有者自己的 `DSH_HOME/skills` 目录可创建/删除。因此普通用户可以创建并管理自己的 skill，而随部署发布的目录仍属 Admin/部署事项。
 
@@ -29,7 +29,7 @@ Agent 目录没有所有者，视图里的 agent 写入甚至不检查 `readOnly
 
 - 普通用户不再能编辑或删除种子 agent；只有 Admin/CEO 可以。所有者是其它身份的 agent 同样被拒绝。
 - 发起者不能管理的 agent，其已存提供方 key 永不显示。
-- 供给会给它创建的 agent 写入配置好的 provider/model/key，收敛过程也会把尚未设置的字段补进任何基线 agent，而 admin 已固定的值保持不变。
+- 供给会给它创建的 agent 写入配置好的 provider/model/key，收敛过程也会把配置好的 provider 与 model 写入每个基线 agent，替换更早的值；仅在没有存储 key 时写入该 key。
 
 ## 测试
 

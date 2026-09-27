@@ -176,24 +176,25 @@ describe('FaberLoomDefaults', () => {
     expect(reviewer?.subagents.map(subagent => subagent.name)).toEqual(['Security Reviewer'])
   })
 
-  it('F16 — converges baseline agents to the configured provider/model/key without clobbering an admin choice', async () => {
+  it('F16 — converges baseline agents to the configured provider and model, replacing an earlier value', async () => {
     const home = ownerHome()
     const pool = new MemoryMediaPool()
     const first = await services(home, ['mwt-compras-clientes-leer'], pool)
     await seedWith(first.ctx, first.catalog)
     const [reception] = await first.ctx.faberloomAgents.listAgents()
     if (reception === undefined) throw new Error('seeding created no agent')
-    // The admin already pinned a model on this baseline agent.
-    await first.ctx.faberloomAgents.updateAgent(reception.id, { model: 'admin-pinned' })
+    // An earlier deployment left a different model on this baseline agent.
+    await first.ctx.faberloomAgents.updateAgent(reception.id, { model: 'stale-model' })
 
     process.env.FABERLOOM_TEST_AGENT_KEY = 'sk-test'
     try {
       const second = await services(home, ['mwt-compras-clientes-leer'], pool)
       await seedWith(second.ctx, second.catalog, {
-        agentProvider: 'deepseek', agentModel: 'deepseek-flash', agentApiKeyEnv: 'FABERLOOM_TEST_AGENT_KEY',
+        agentProvider: 'deepseek-official', agentModel: 'deepseek-flash', agentApiKeyEnv: 'FABERLOOM_TEST_AGENT_KEY',
       })
       const converged = (await second.ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === reception.id)
-      expect(converged).toMatchObject({ provider: 'deepseek', model: 'admin-pinned', hasApiKey: true })
+      // The deployment owns the baseline: its provider and model replace the stale one.
+      expect(converged).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-flash', hasApiKey: true })
     } finally {
       delete process.env.FABERLOOM_TEST_AGENT_KEY
     }

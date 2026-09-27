@@ -191,10 +191,12 @@ export class FaberLoomDefaults extends Service {
   }
 
   /**
-   * Fill the configured provider, model, and API key on the deployment's
-   * baseline agents — the native seeds and the shared presets — but only where
-   * the field is still unset, so an admin's choice survives. Runs on every
-   * start, so agents a previous deployment seeded converge without recreation.
+   * Set the configured provider, model, and API key on the deployment's baseline
+   * agents — the native seeds and the shared presets. The deployment owns the
+   * baseline, so its provider and model are authoritative and replace an earlier
+   * value; a user's own agents are untouched. The key is only written when none
+   * is stored, since a stored key can never be read back to compare. Runs on
+   * every start, so agents a previous deployment seeded converge in place.
    * @returns the baseline agent names updated in this pass.
    */
   private async convergeBaselineAgents(): Promise<string[]> {
@@ -205,9 +207,9 @@ export class FaberLoomDefaults extends Service {
     for (const agent of await this.ctx.faberloomAgents.listAgents()) {
       if (!baseline.has(agent.name)) continue
       const patch: { provider?: string; model?: string; apiKey?: string } = {}
-      if (agent.provider === undefined && defaults.provider !== undefined) patch.provider = defaults.provider
-      if (agent.model === undefined && defaults.model !== undefined) patch.model = defaults.model
-      if (!agent.hasApiKey && defaults.apiKey !== undefined) patch.apiKey = defaults.apiKey
+      if (defaults.provider !== undefined && agent.provider !== defaults.provider) patch.provider = defaults.provider
+      if (defaults.model !== undefined && agent.model !== defaults.model) patch.model = defaults.model
+      if (defaults.apiKey !== undefined && !agent.hasApiKey) patch.apiKey = defaults.apiKey
       if (patch.provider === undefined && patch.model === undefined && patch.apiKey === undefined) continue
       await this.ctx.faberloomAgents.updateAgent(agent.id, patch)
       updated.push(agent.name)
@@ -234,11 +236,16 @@ export class FaberLoomDefaults extends Service {
   }
 
   private async seedAgents(available: ReadonlySet<string>): Promise<string[]> {
-    const existing = new Set((await this.ctx.faberloomAgents.listAgents()).map(agent => agent.name))
+    const existing = await this.ctx.faberloomAgents.listAgents()
+    const byName = new Map<string, { id: FaberLoomAgentId; name: string; connected: boolean }>()
     const created: string[] = []
     for (const seed of SEED_AGENTS) {
-      if (existing.has(seed.name)) continue
-      await this.ctx.faberloomAgents.createAgent({
+      const found = existing.find(agent => agent.name === seed.name)
+      if (found !== undefined) {
+        byName.set(seed.name, { id: found.id, name: found.name, connected: found.subagents.length > 0 })
+        continue
+      }
+      const agent = await this.ctx.faberloomAgents.createAgent({
         name: seed.name,
         responsibility: seed.responsibility,
         origin: 'scratch',
@@ -246,7 +253,19 @@ export class FaberLoomDefaults extends Service {
         skills: seed.skills.filter(skill => available.has(skill)),
         ...this.agentDefaults(),
       })
+      byName.set(seed.name, { id: agent.id, name: agent.name, connected: false })
       created.push(seed.name)
+    }
+    // Connect the catalogue partners, leaving an agent's own connections alone.
+    for (const seed of SEED_AGENTS) {
+      const self = byName.get(seed.name)
+      if (self === undefined || self.connected) continue
+      const subagents = seed.connects
+        .map(partner => byName.get(partner))
+        .filter((partner): partner is { id: FaberLoomAgentId; name: string; connected: boolean } => partner !== undefined)
+        .map(partner => ({ name: partner.name, agentId: partner.id }))
+      if (subagents.length === 0) continue
+      await this.ctx.faberloomAgents.updateAgent(self.id, { subagents })
     }
     return created
   }

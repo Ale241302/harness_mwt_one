@@ -16,6 +16,8 @@ export interface SeedAgent {
   readonly responsibility: string
   /** Skill names the plan's flows need; the seeder keeps only the ones that exist. */
   readonly skills: readonly string[]
+  /** Names of the other seeded agents this one works with, wired as its connected agents. */
+  readonly connects: readonly string[]
 }
 
 /** One routine step the catalogue seeds. */
@@ -58,16 +60,19 @@ export const SEED_AGENTS: readonly SeedAgent[] = [
     name: 'Recepción',
     responsibility: 'Identifica al cliente y el espacio de cada caso que entra, y deja el expediente listo para el resto del proceso.',
     skills: ['mwt-compras-clientes-leer', 'mwt-compras-expedientes-leer'],
+    connects: ['Revisión de pedidos'],
   },
   {
     name: 'Revisión de pedidos',
     responsibility: 'Contrasta cada pedido con las condiciones y el historial antes de que se prepare un documento.',
     skills: ['mwt-compras-historial-precios-leer', 'mwt-compras-cartera-leer'],
+    connects: ['Proformas'],
   },
   {
     name: 'Proformas',
     responsibility: 'Prepara el documento con precios verificados y lo deja listo para revisión.',
     skills: ['mwt-compras-clientes-leer', 'mwt-compras-inventario-leer', 'mwt-compras-historial-precios-leer'],
+    connects: [],
   },
 ]
 

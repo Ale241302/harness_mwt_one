@@ -92,7 +92,7 @@ const cfg = {
   // Proveedor/modelo de los agentes sembrados. La API key NUNCA va en el repo:
   // se lee de la variable de entorno que aquí se nombra (por defecto
   // DEEPSEEK_API_KEY) y se guarda por agente, sin devolverse nunca en una lectura.
-  agentProvider: process.env.FABERLOOM_AGENT_PROVIDER || 'deepseek',
+  agentProvider: process.env.FABERLOOM_AGENT_PROVIDER || 'deepseek-official',
   // `deepseek-flash` es el id de proveedor de "DeepSeek V4.1 Flash".
   agentModel: process.env.FABERLOOM_AGENT_MODEL || 'deepseek-flash',
   agentApiKeyEnv: process.env.FABERLOOM_AGENT_API_KEY_ENV || 'DEEPSEEK_API_KEY',
