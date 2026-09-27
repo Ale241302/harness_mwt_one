@@ -1533,6 +1533,47 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;')
 }
 
+// Las páginas sin sesión del gateway no cargan el CSS del cliente, así que
+// repiten aquí los tokens oscuros de @deepseek-ai/dsh-client-ui-theme para verse
+// como el resto del producto: base #151517, capas #232324/#2c2c2e, texto
+// #f9fafb/#adb2b8, primario casi blanco, y la misma familia tipográfica.
+const AUTH_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Helvetica Neue',Helvetica,Arial,sans-serif"
+const AUTH_MONO = "'SF Mono','JetBrains Mono','Fira Code',Consolas,'Liberation Mono',Menlo,Courier,'PingFang SC','Microsoft YaHei'"
+const AUTH_CSS = `
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       font-family:${AUTH_FONT};background:#151517;color:#f9fafb;-webkit-font-smoothing:antialiased}
+  .card{width:360px;max-width:92vw;background:#232324;border:1px solid rgba(255,255,255,.06);border-radius:16px;
+        padding:28px;box-shadow:0 16px 48px rgba(0,0,0,.4)}
+  h1{font-size:18px;font-weight:600;margin:0 0 4px}
+  p.sub{margin:0 0 20px;font-size:13px;color:#adb2b8}
+  label:not(.opt){display:block;font-size:12px;color:#adb2b8;margin:14px 0 6px}
+  input:not([type=radio]){width:100%;padding:11px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);
+       background:#1b1b1c;color:#f9fafb;font-size:14px;font-family:inherit}
+  input:not([type=radio]):focus{outline:none;border-color:rgba(255,255,255,.24);box-shadow:0 0 0 3px rgba(255,255,255,.06)}
+  .secret{position:relative;display:block}
+  .secret input{padding-right:40px}
+  #secret-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:28px;height:28px;padding:0;margin:0;
+                 border:0;border-radius:8px;background:transparent;color:#adb2b8;cursor:pointer;
+                 display:inline-flex;align-items:center;justify-content:center}
+  #secret-toggle:hover{background:rgba(255,255,255,.08);color:#f9fafb}
+  button[type=submit]{margin-top:20px;width:100%;padding:12px;border:0;border-radius:10px;background:#f9fafb;color:#151517;
+       font-weight:600;font-size:14px;cursor:pointer;font-family:inherit}
+  button[type=submit]:hover{background:#e9ecf2}
+  .err{margin-top:16px;padding:10px 12px;border-radius:10px;background:rgba(242,90,90,.12);
+       border:1px solid rgba(242,90,90,.35);color:#f25a5a;font-size:13px}
+`
+// El selector de empresa reutiliza el tema; sus opciones son radios en filas.
+const AUTH_ENTITY_CSS = `
+  .card{width:420px}
+  .opt{display:flex;gap:10px;align-items:center;padding:11px 12px;border:1px solid rgba(255,255,255,.12);
+       border-radius:10px;margin-top:8px;background:#1b1b1c;font-size:14px;cursor:pointer}
+  .opt:hover{background:#2c2c2e}
+  .name{font-weight:600}
+  .id{display:block;font-size:11px;color:#adb2b8;margin-top:2px;font-family:${AUTH_MONO}}
+`
+
 // G7 · Página del selector de entidad (tenant). La etiqueta es el nombre de la
 // empresa cuando el gateway pudo resolverlo (`entNames`), con el id debajo para
 // soporte; el usuario también puede no fijar ninguna.
@@ -1558,25 +1599,7 @@ function entityPage(sess, errCode) {
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cambiar de empresa · Harness MWT.ONE</title>
-<style>
-  :root{color-scheme:dark}
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-       font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0B1E3A;color:#E8EDF3}
-  .card{width:420px;max-width:92vw;background:#102846;border:1px solid #1d3a5f;border-radius:14px;
-        padding:28px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
-  h1{font-size:18px;margin:0 0 4px}
-  p.sub{margin:0 0 16px;font-size:13px;color:#94A7B8}
-  .opt{display:flex;gap:10px;align-items:center;padding:11px 12px;border:1px solid #274a72;border-radius:9px;
-       margin-top:8px;background:#0B1E3A;font-size:14px}
-  .name{font-weight:600}
-  .id{display:block;font-size:11px;color:#94A7B8;margin-top:2px;font-family:ui-monospace,Consolas,monospace}
-  button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:9px;background:#13B98A;color:#04231a;
-         font-weight:700;font-size:14px;cursor:pointer}
-  button:hover{background:#17c997}
-  .err{margin-top:16px;padding:10px 12px;border-radius:8px;background:#3a1720;border:1px solid #7a2b3a;
-       color:#ffb4c0;font-size:13px}
-</style></head>
+<style>${AUTH_CSS}${AUTH_ENTITY_CSS}</style></head>
 <body>
   <form class="card" method="post" action="/entity">
     <h1>Cambiar de empresa</h1>
@@ -1605,31 +1628,7 @@ function loginPage(errCode, csrf = '') {
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Harness MWT.ONE</title>
-<style>
-  :root{color-scheme:dark}
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-       font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0B1E3A;color:#E8EDF3}
-  .card{width:360px;max-width:92vw;background:#102846;border:1px solid #1d3a5f;border-radius:14px;
-        padding:28px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
-  h1{font-size:18px;margin:0 0 4px}
-  p.sub{margin:0 0 20px;font-size:13px;color:#94A7B8}
-  label{display:block;font-size:12px;color:#94A7B8;margin:14px 0 6px}
-  input{width:100%;padding:11px 12px;border-radius:9px;border:1px solid #274a72;background:#0B1E3A;color:#E8EDF3;font-size:14px}
-  input:focus{outline:none;border-color:#13B98A}
-  .secret{position:relative;display:block}
-  .secret input{padding-right:40px}
-  /* The card's rule styles every button; the toggle is an icon, not the submit. */
-  #secret-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:28px;height:28px;padding:0;margin:0;
-                 border:0;border-radius:8px;background:transparent;color:#94A7B8;cursor:pointer;
-                 display:inline-flex;align-items:center;justify-content:center}
-  #secret-toggle:hover{background:#16304f;color:#E8EDF3}
-  button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:9px;background:#13B98A;color:#04231a;
-         font-weight:700;font-size:14px;cursor:pointer}
-  button:hover{background:#17c997}
-  .err{margin-top:16px;padding:10px 12px;border-radius:8px;background:#3a1720;border:1px solid #7a2b3a;
-       color:#ffb4c0;font-size:13px}
-</style></head>
+<style>${AUTH_CSS}</style></head>
 <body>
   <form class="card" method="post" action="/login">
     <h1>Harness MWT.ONE</h1>
