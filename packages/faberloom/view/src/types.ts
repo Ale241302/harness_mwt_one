@@ -42,6 +42,8 @@ export interface FaberLoomBoardRow {
   readonly title: string
   /** Current status token. */
   readonly status: string
+  /** Routine this task feeds, or null when it is standalone. */
+  readonly routineId: string | null
 }
 
 /** One routine as the Rutinas panel renders it. */
@@ -374,6 +376,8 @@ export interface FaberLoomBoardDetail {
   readonly staleReason: string | null
   /** Recorded external effects. */
   readonly effects: readonly { readonly ref: string; readonly detail: string | null; readonly at: string }[]
+  /** Routine this task feeds, or null when it is standalone. */
+  readonly routineId: string | null
 }
 
 /** Editable fields of a new teaching; the author is the signed-in owner. */

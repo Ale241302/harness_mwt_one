@@ -477,7 +477,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         detached: agent.detached,
         active: agent.active,
       })),
-      board: board.map(item => ({ id: item.id, title: item.title, status: item.status })),
+      board: board.map(item => ({ id: item.id, title: item.title, status: item.status, routineId: item.routineId })),
       routines: routines.map(routine => ({ id: routine.id, name: routine.name, status: routine.status })),
       memory,
       canWrite: !actor.readOnly,
@@ -2107,7 +2107,21 @@ export class FaberLoomViewService extends TypertRemoteService {
       stale: item.stale,
       staleReason: item.staleReason,
       effects: item.effects.map(effect => ({ ref: effect.ref, detail: effect.detail, at: effect.at })),
+      routineId: item.routineId,
     }
+  }
+
+  /**
+   * Link one board item to the routine that runs it, or unlink it.
+   * @param id - board item id.
+   * @param routineId - routine id to attach, or null to detach.
+   * @returns the refreshed overview.
+   */
+  @Remote('setBoardRoutine')
+  async setBoardRoutine(id: string, routineId: string | null): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot link board items')
+    await this.ctx.faberloomBoard.setRoutine(this.actor().id, id as FaberLoomBoardItemId, routineId)
+    return await this.overview()
   }
 
   /** The owner's DSH home, where uploaded skills live. */
@@ -2215,6 +2229,18 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (action === 'request_data') await service.requestData(owner, itemId)
     else if (action === 'fail') await service.fail(owner, itemId)
     else await service.complete(owner, itemId)
+    return await this.overview()
+  }
+
+  /**
+   * Permanently remove one board item from the work table.
+   * @param id - board item id.
+   * @returns the refreshed overview.
+   */
+  @Remote('deleteBoardItem')
+  async deleteBoardItem(id: string): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot delete board items')
+    await this.ctx.faberloomBoard.remove(this.actor().id, id as FaberLoomBoardItemId)
     return await this.overview()
   }
 

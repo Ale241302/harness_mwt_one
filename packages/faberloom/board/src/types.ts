@@ -62,6 +62,8 @@ export interface FaberLoomBoardItem {
   readonly ownerId: string
   /** Optional owning space id. */
   readonly spaceId: string | null
+  /** Routine this task feeds, or null when it is standalone. */
+  readonly routineId: string | null
   /** Display title. */
   readonly title: string
   /** Current status. */
@@ -104,6 +106,8 @@ export interface BoardCreateInput extends BoardSubmitInput {
   readonly title: string
   /** Optional owning space id. */
   readonly spaceId?: string
+  /** Optional routine this task feeds. */
+  readonly routineId?: string
   /** Originating execution id. */
   readonly executionId?: string
 }

@@ -37,6 +37,8 @@ const effectRecord = z.object({
 export const boardItemRecord = z.object({
   ownerId: z.string(),
   spaceId: z.string().nullable(),
+  /** Routine this task feeds, or null when it is standalone. */
+  routineId: z.string().nullable().default(null),
   title: z.string(),
   status: z.union([
     z.literal('in_progress'), z.literal('waiting_data'), z.literal('waiting_approval'), z.literal('approved'),

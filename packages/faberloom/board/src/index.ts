@@ -94,6 +94,7 @@ export class FaberLoomBoard extends Service {
     const record: BoardItemRecord = {
       ownerId,
       spaceId: input.spaceId ?? null,
+      routineId: input.routineId ?? null,
       title: input.title,
       status: 'waiting_approval',
       version: 1,
@@ -183,6 +184,33 @@ export class FaberLoomBoard extends Service {
     if (record.ownerId !== ownerId) throw new Error('faberloom: only the owner can complete this item')
     if (record.status !== 'approved') throw new Error('faberloom: item is not approved')
     return this.setStatus(ownerId, id, 'completed', record)
+  }
+
+  /**
+   * Permanently remove one item from the work table, regardless of status.
+   * @param ownerId - the acting identity.
+   * @param id - item id.
+   * @returns whether the item existed and was removed.
+   */
+  async remove(ownerId: string, id: FaberLoomBoardItemId): Promise<boolean> {
+    const record = await this.requireItem(id)
+    if (record.ownerId !== ownerId) throw new Error('faberloom: only the owner can remove this item')
+    return await (await this.items()).delete(id)
+  }
+
+  /**
+   * Link the item to the routine that will run it, or unlink it with `null`.
+   * @param ownerId - the acting identity.
+   * @param id - item id.
+   * @param routineId - routine id to attach, or null to detach.
+   * @returns the updated item.
+   */
+  async setRoutine(ownerId: string, id: FaberLoomBoardItemId, routineId: string | null): Promise<FaberLoomBoardItem> {
+    const record = await this.requireItem(id)
+    if (record.ownerId !== ownerId) throw new Error('faberloom: only the owner can link this item')
+    const next: BoardItemRecord = { ...record, routineId, updatedAt: new Date().toISOString() }
+    await this.save(id, next)
+    return toItem(id, next)
   }
 
   private async setStatus(

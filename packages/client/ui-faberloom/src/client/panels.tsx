@@ -214,6 +214,12 @@ export interface FaberloomPanelInjected {
   removeRoutine: (id: string) => Promise<Result<FaberLoomOverview>>
   /** Read one board item's review state. */
   boardDetail: (id: string) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Permanently remove one board item from the work table. */
+  deleteBoardItem: (id: string) => Promise<Result<FaberLoomOverview>>
+  /** Link one board task to the routine that runs it, or unlink it with null. */
+  setBoardRoutine: (id: string, routineId: string | null) => Promise<Result<FaberLoomOverview>>
+  /** Open a chat session seeded with the work-bench task's context. */
+  openTaskChat: (kind: string, title: string, detail: string) => void
   /** List one routine's executions. */
   executions: (routineId?: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
   /** Start a manual run of one routine. */
@@ -1276,10 +1282,32 @@ function skillsScreen() {
   }
 }
 
-/** Mesa de trabajo: board items with approve/reject. */
+/** Mesa de trabajo: board tasks, email drafts, unread mail, and the MWT scan. */
+type WorkbenchSource = 'board' | 'draft' | 'inbox' | 'mwt'
+
+/** Locale key for each work-bench source's chip label. */
+const WORKBENCH_SOURCE_KEY: Record<WorkbenchSource, FaberloomKey> = {
+  board: 'workbench.source.board',
+  draft: 'workbench.source.draft',
+  inbox: 'workbench.source.inbox',
+  mwt: 'workbench.source.mwt',
+}
+
+/** One unified work-bench row, whatever its source. */
+interface WorkbenchRow {
+  readonly id: string
+  readonly source: WorkbenchSource
+  readonly title: string
+  readonly status: string
+}
+
 function boardScreen() {
   return function FaberloomBoard(props: ScreenProps) {
-    const { t, createBoardItem, reviewBoardItem, reopenBoardItem, submitBoardRevision, boardException, boardDetail } = props
+    const {
+      t, createBoardItem, reviewBoardItem, reopenBoardItem, submitBoardRevision, boardException,
+      deleteBoardItem, setBoardRoutine, boardDetail, emailDrafts, sendEmailDraft, deleteEmailDraft,
+      emailInbox, mwtStatus, openTaskChat,
+    } = props
     const { overview, error } = useOverview(props)
     const [title, setTitle] = useState('')
     const [selected, setSelected] = useState<string | null>(null)
@@ -1289,22 +1317,63 @@ function boardScreen() {
     const [summary, setSummary] = useState('')
     const [evidence, setEvidence] = useState('')
     const [note, setNote] = useState('')
-    const rows = overview?.board ?? []
-    const chosen = rows.find(row => row.id === selected) ?? null
+    const [drafts, setDrafts] = useState<readonly FaberLoomEmailDraftRow[]>([])
+    const [inbox, setInbox] = useState<readonly FaberLoomInboxRow[]>([])
+    const [mwtConnected, setMwtConnected] = useState(false)
+
+    // The email and MWT sources reload on every board write (tick) so a send,
+    // discard, or scan repaints the whole queue without a manual refresh.
+    useEffect(() => {
+      let live = true
+      void emailDrafts().then((result) => { if (live && result.ok) setDrafts(result.value) }).catch(() => {})
+      return () => { live = false }
+    }, [tick])
+    useEffect(() => {
+      let live = true
+      void emailInbox().then((result) => { if (live && result.ok) setInbox(result.value) }).catch(() => {})
+      return () => { live = false }
+    }, [tick])
+    useEffect(() => {
+      let live = true
+      void mwtStatus().then((result) => { if (live && result.ok) setMwtConnected(result.value.servers.some(server => server.name === 'mwt')) }).catch(() => {})
+      return () => { live = false }
+    }, [])
+
+    const boardItems = overview?.board ?? []
+    const [pickedSource, ...pickedRest] = selected === null ? [null, ''] : selected.split(':')
+    const pickedId = pickedRest.join(':')
+    const boardId = pickedSource === 'board' ? pickedId : null
+    const chosenBoard = boardId === null ? null : boardItems.find(row => row.id === boardId) ?? null
+    const chosenDraft = pickedSource === 'draft' ? drafts.find(entry => entry.id === pickedId) ?? null : null
+    const chosenInbox = pickedSource === 'inbox' ? inbox.find(entry => entry.id === pickedId) ?? null : null
     const detail = useLazy<FaberLoomBoardDetail | undefined>(
-      () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : boardDetail(selected),
-      [selected, tick],
+      () => boardId === null ? Promise.resolve({ ok: true, value: undefined }) : boardDetail(boardId),
+      [boardId, tick],
     )
 
-    /** Report one write's failure or refresh the detail on success. */
+    /** Report one write's failure or refresh the queue on success. */
     const apply = (result: Result<unknown>): void => {
       if (result.ok) setTick(tick + 1)
       else setMessage(result.error.message)
     }
 
-    const columns: readonly Column<FaberLoomOverview['board'][number]>[] = [
-      { key: 'title', header: t('col.title'), cell: item => <span className={styles.cellName}>{item.title}</span> },
-      { key: 'status', header: t('col.status'), cell: item => <Chip>{item.status}</Chip> },
+    const rows: readonly WorkbenchRow[] = [
+      ...(mwtConnected ? [{ id: 'mwt:scan', source: 'mwt' as const, title: t('workbench.mwtScan'), status: t('workbench.source.mwt') }] : []),
+      ...boardItems.map(item => ({ id: `board:${item.id}`, source: 'board' as const, title: item.title, status: item.status })),
+      ...drafts.filter(entry => entry.status === 'draft').map(entry => ({
+        id: `draft:${entry.id}`, source: 'draft' as const,
+        title: entry.subject.length === 0 ? t('workbench.untitled') : entry.subject, status: entry.status,
+      })),
+      ...inbox.map(entry => ({
+        id: `inbox:${entry.id}`, source: 'inbox' as const,
+        title: entry.subject ?? t('workbench.untitled'), status: t('workbench.source.inbox'),
+      })),
+    ]
+
+    const columns: readonly Column<WorkbenchRow>[] = [
+      { key: 'title', header: t('col.title'), cell: row => <span className={styles.cellName}>{row.title}</span> },
+      { key: 'source', header: t('col.source'), cell: row => <Chip>{t(WORKBENCH_SOURCE_KEY[row.source])}</Chip> },
+      { key: 'status', header: t('col.status'), cell: row => <Chip>{row.status}</Chip> },
     ]
 
     const value = detail.kind === 'ready' ? detail.value : undefined
@@ -1324,6 +1393,162 @@ function boardScreen() {
       setDrafting(false)
     }
 
+    const inspectorTitle = (): string => {
+      if (drafting) return t('board.newTitle')
+      if (chosenBoard !== null) return chosenBoard.title
+      if (pickedSource === 'mwt') return t('workbench.mwtDetail')
+      if (chosenDraft !== null) return t('workbench.draftDetail')
+      if (chosenInbox !== null) return t('workbench.inboxDetail')
+      return t('board.detail')
+    }
+
+    const boardFooter = chosenBoard === null ? null : (
+      <span className={styles.tools}>
+        {reviewable
+          ? (
+            <>
+              <button className={styles.primary} type="button" onClick={() => { void reviewBoardItem(chosenBoard.id, true, note).then(apply) }}>{t('action.approve')}</button>
+              <button className={styles.secondary} type="button" onClick={() => { void reviewBoardItem(chosenBoard.id, false, note).then(apply) }}>{t('action.reject')}</button>
+              <button className={styles.ghost} type="button" onClick={() => { void reopenBoardItem(chosenBoard.id).then(() => { setTick(tick + 1) }) }}>{t('action.reopen')}</button>
+              <button className={styles.ghost} type="button" onClick={() => { void boardException(chosenBoard.id, 'request_data').then(apply) }}>{t('board.requestData')}</button>
+              <button className={styles.danger} type="button" onClick={() => { void boardException(chosenBoard.id, 'fail').then(apply) }}>{t('board.fail')}</button>
+            </>
+          )
+          : null}
+        <button className={styles.secondary} type="button"
+          onClick={() => { openTaskChat('board', chosenBoard.title, `${chosenBoard.status} · ${chosenBoard.routineId ?? t('workbench.noRoutine')}`) }}>
+          {t('workbench.chat')}
+        </button>
+        <button className={styles.danger} type="button" onClick={() => { void deleteBoardItem(chosenBoard.id).then(apply) }}>{t('action.delete')}</button>
+      </span>
+    )
+
+    const draftFooter = chosenDraft === null ? null : (
+      <span className={styles.tools}>
+        <button className={styles.primary} type="button" onClick={() => { void sendEmailDraft(chosenDraft.id).then(apply) }}>{t('email.send')}</button>
+        <button className={styles.ghost} type="button"
+          onClick={() => { openTaskChat('draft', chosenDraft.subject, `Para: ${chosenDraft.to.join(', ')}`) }}>{t('workbench.chat')}</button>
+        <button className={styles.danger} type="button" onClick={() => { void deleteEmailDraft(chosenDraft.id).then(apply) }}>{t('action.delete')}</button>
+      </span>
+    )
+
+    const inboxFooter = chosenInbox === null ? null : (
+      <span className={styles.tools}>
+        <button className={styles.primary} type="button"
+          onClick={() => { openTaskChat('inbox', chosenInbox.subject ?? t('workbench.untitled'), `De: ${chosenInbox.from ?? ''} · ${chosenInbox.date ?? ''}`) }}>{t('email.reply')}</button>
+      </span>
+    )
+
+    const mwtFooter = pickedSource === 'mwt'
+      ? <button className={styles.primary} type="button" onClick={() => { openTaskChat('mwt', t('workbench.mwtDetail'), '') }}>{t('workbench.mwtScan')}</button>
+      : null
+
+    const footer = drafting
+      ? (
+        <span className={styles.tools}>
+          <button className={styles.ghost} type="button" onClick={() => { setDrafting(false) }}>{t('action.cancel')}</button>
+          <button className={styles.primary} type="button" onClick={create}>{t('action.create')}</button>
+        </span>
+      )
+      : chosenBoard !== null
+        ? boardFooter
+        : chosenDraft !== null
+          ? draftFooter
+          : chosenInbox !== null
+            ? inboxFooter
+            : mwtFooter
+
+    const boardBody = value === undefined
+      ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
+      : (
+        <>
+          <Field label={t('field.revision')}>
+            <span className={styles.cellMuted}>{String(value.version)}{value.approvedRevision === null ? '' : ` · ${t('board.approved')} ${String(value.approvedRevision)}`}</span>
+          </Field>
+          <Field label={t('field.summary')}><span className={styles.cellMuted}>{value.summary.length === 0 ? '—' : value.summary}</span></Field>
+          <Field label={t('field.evidence')}>
+            {value.evidence.length === 0
+              ? <span className={styles.cellMuted}>{t('board.noEvidence')}</span>
+              : <span className={styles.chips}>{value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry}</Chip>)}</span>}
+          </Field>
+          <Field label={t('workbench.routine')}>
+            <select value={value.routineId ?? ''} onChange={(event) => {
+              if (chosenBoard === null) return
+              const next = event.target.value
+              void setBoardRoutine(chosenBoard.id, next.length === 0 ? null : next).then(apply)
+            }}>
+              <option value="">{t('workbench.noRoutine')}</option>
+              {(overview?.routines ?? []).map(routine => <option key={routine.id} value={routine.id}>{routine.name}</option>)}
+            </select>
+          </Field>
+          <Field label={t('field.stale')}>
+            <StatusDot on={!value.stale} label={value.stale ? (value.staleReason ?? t('board.stale')) : t('board.fresh')} />
+          </Field>
+          <Field label={t('field.effects')}>
+            {value.effects.length === 0
+              ? <span className={styles.cellMuted}>{t('board.noEffects')}</span>
+              : (
+                <div className={styles.steps}>
+                  {value.effects.map(effect => (
+                    <span className={styles.cellMuted} key={`${effect.ref}-${effect.at}`}>{`${effect.ref}${effect.detail === null ? '' : ` · ${effect.detail}`} · ${effect.at}`}</span>
+                  ))}
+                </div>
+              )}
+          </Field>
+          {value.status === 'approved'
+            ? (
+              <Field label={t('board.completeHint')}>
+                <button className={styles.primary} type="button" onClick={() => { if (chosenBoard !== null) void boardException(chosenBoard.id, 'complete').then(apply) }}>{t('board.complete')}</button>
+              </Field>
+            )
+            : null}
+          {reviewable
+            ? (
+              <>
+                <Field label={t('board.submitRevision')} hint={t('board.revisionHint')}>
+                  <textarea value={summary} placeholder={t('board.summaryPlaceholder')} onChange={(event) => { setSummary(event.target.value) }} />
+                  <input type="text" value={evidence} placeholder={t('board.evidencePlaceholder')} onChange={(event) => { setEvidence(event.target.value) }} />
+                  <span className={styles.tools}>
+                    <button className={styles.secondary} type="button"
+                      disabled={summary.trim().length === 0 || evidence.trim().length === 0}
+                      onClick={() => {
+                        if (chosenBoard === null) return
+                        setMessage(null)
+                        void submitBoardRevision(chosenBoard.id, {
+                          summary: summary.trim(),
+                          evidence: evidence.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
+                        }).then((result) => {
+                          apply(result)
+                          if (result.ok) { setSummary(''); setEvidence('') }
+                        })
+                      }}>{t('board.submitRevision')}</button>
+                  </span>
+                </Field>
+                <Field label={t('board.reviewNote')}>
+                  <input type="text" value={note} placeholder={t('board.notePlaceholder')} onChange={(event) => { setNote(event.target.value) }} />
+                </Field>
+              </>
+            )
+            : null}
+        </>
+      )
+
+    const draftBody = chosenDraft === null ? null : (
+      <>
+        <Field label={t('field.to')}><span className={styles.cellMuted}>{chosenDraft.to.join(', ')}</span></Field>
+        <Field label={t('col.subject')}><span className={styles.cellMuted}>{chosenDraft.subject}</span></Field>
+        <Field label={t('field.body')}><span className={styles.cellMuted}>{chosenDraft.text.slice(0, 400)}</span></Field>
+      </>
+    )
+
+    const inboxBody = chosenInbox === null ? null : (
+      <>
+        <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenInbox.from ?? '—'}</span></Field>
+        <Field label={t('col.subject')}><span className={styles.cellMuted}>{chosenInbox.subject ?? t('workbench.untitled')}</span></Field>
+        <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenInbox.date ?? '—'}</span></Field>
+      </>
+    )
+
     return (
       <Screen title={t('panel.board.title')} subtitle={t('panel.board.intro')}
         trailing={(
@@ -1335,97 +1560,24 @@ function boardScreen() {
         <div className={styles.split}>
           <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => { setDrafting(false); setSelected(id); setNote('') }}
             emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
-          <Inspector title={drafting ? t('board.newTitle') : chosen?.title ?? t('board.detail')}
+          <Inspector title={inspectorTitle()}
             status={drafting || value === undefined ? undefined : <Chip>{value.status}</Chip>}
-            footer={drafting
-              ? (
-                <span className={styles.tools}>
-                  <button className={styles.ghost} type="button" onClick={() => { setDrafting(false) }}>{t('action.cancel')}</button>
-                  <button className={styles.primary} type="button" onClick={create}>{t('action.create')}</button>
-                </span>
-              )
-              : chosen === null || !reviewable
-                ? undefined
-                : (
-                  <span className={styles.tools}>
-                    <button className={styles.primary} type="button" onClick={() => { void reviewBoardItem(chosen.id, true, note).then(apply) }}>{t('action.approve')}</button>
-                    <button className={styles.secondary} type="button" onClick={() => { void reviewBoardItem(chosen.id, false, note).then(apply) }}>{t('action.reject')}</button>
-                    <button className={styles.ghost} type="button" onClick={() => { void reopenBoardItem(chosen.id).then(() => { setTick(tick + 1) }) }}>{t('action.reopen')}</button>
-                    <button className={styles.ghost} type="button" onClick={() => { void boardException(chosen.id, 'request_data').then(apply) }}>{t('board.requestData')}</button>
-                    <button className={styles.danger} type="button" onClick={() => { void boardException(chosen.id, 'fail').then(apply) }}>{t('board.fail')}</button>
-                  </span>
-                )}>
+            footer={footer}>
             {drafting
               ? <Field label={t('col.title')}><input type="text" autoComplete="off" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
-              : chosen === null
+              : selected === null
                 ? <StateBlock kind="empty" title={t('board.selectTitle')} text={t('board.selectText')} />
-                : detail.kind === 'loading'
-                  ? <StateBlock kind="loading" title={t('state.loading')} />
-                  : detail.kind === 'error'
-                    ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
-                    : value === undefined
-                      ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
-                      : (
-                        <>
-                          <Field label={t('field.revision')}>
-                            <span className={styles.cellMuted}>{String(value.version)}{value.approvedRevision === null ? '' : ` · ${t('board.approved')} ${String(value.approvedRevision)}`}</span>
-                          </Field>
-                          <Field label={t('field.summary')}><span className={styles.cellMuted}>{value.summary.length === 0 ? '—' : value.summary}</span></Field>
-                          <Field label={t('field.evidence')}>
-                            {value.evidence.length === 0
-                              ? <span className={styles.cellMuted}>{t('board.noEvidence')}</span>
-                              : <span className={styles.chips}>{value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry}</Chip>)}</span>}
-                          </Field>
-                          <Field label={t('field.stale')}>
-                            <StatusDot on={!value.stale} label={value.stale ? (value.staleReason ?? t('board.stale')) : t('board.fresh')} />
-                          </Field>
-                          <Field label={t('field.effects')}>
-                            {value.effects.length === 0
-                              ? <span className={styles.cellMuted}>{t('board.noEffects')}</span>
-                              : (
-                                <div className={styles.steps}>
-                                  {value.effects.map(effect => (
-                                    <span className={styles.cellMuted} key={`${effect.ref}-${effect.at}`}>{`${effect.ref}${effect.detail === null ? '' : ` · ${effect.detail}`} · ${effect.at}`}</span>
-                                  ))}
-                                </div>
-                              )}
-                          </Field>
-                          {value.status === 'approved'
-                            ? (
-                              <Field label={t('board.completeHint')}>
-                                <button className={styles.primary} type="button" onClick={() => { void boardException(chosen.id, 'complete').then(apply) }}>{t('board.complete')}</button>
-                              </Field>
-                            )
-                            : null}
-                          {reviewable
-                            ? (
-                              <>
-                                <Field label={t('board.submitRevision')} hint={t('board.revisionHint')}>
-                                  <textarea value={summary} placeholder={t('board.summaryPlaceholder')} onChange={(event) => { setSummary(event.target.value) }} />
-                                  <input type="text" value={evidence} placeholder={t('board.evidencePlaceholder')} onChange={(event) => { setEvidence(event.target.value) }} />
-                                  <span className={styles.tools}>
-                                    <button className={styles.secondary} type="button"
-                                      disabled={summary.trim().length === 0 || evidence.trim().length === 0}
-                                      onClick={() => {
-                                        setMessage(null)
-                                        void submitBoardRevision(chosen.id, {
-                                          summary: summary.trim(),
-                                          evidence: evidence.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
-                                        }).then((result) => {
-                                          apply(result)
-                                          if (result.ok) { setSummary(''); setEvidence('') }
-                                        })
-                                      }}>{t('board.submitRevision')}</button>
-                                  </span>
-                                </Field>
-                                <Field label={t('board.reviewNote')}>
-                                  <input type="text" value={note} placeholder={t('board.notePlaceholder')} onChange={(event) => { setNote(event.target.value) }} />
-                                </Field>
-                              </>
-                            )
-                            : null}
-                        </>
-                      )}
+                : pickedSource === 'mwt'
+                  ? <StateBlock kind="empty" title={t('workbench.mwtDetail')} text={t('workbench.mwtDetailText')} />
+                  : chosenDraft !== null
+                    ? draftBody
+                    : chosenInbox !== null
+                      ? inboxBody
+                      : detail.kind === 'loading'
+                        ? <StateBlock kind="loading" title={t('state.loading')} />
+                        : detail.kind === 'error'
+                          ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+                          : boardBody}
           </Inspector>
         </div>
       </Screen>
@@ -1666,150 +1818,6 @@ function routinesScreen() {
                         </Field>
                       </>
                     )}
-          </Inspector>
-        </div>
-      </Screen>
-    )
-  }
-}
-
-/** Ejecución: the owner's cases, with the task log and the correction form. */
-function executionsScreen() {
-  return function FaberloomExecutions(props: ScreenProps) {
-    const { t, executions, teachings, saveTeaching, performance } = props
-    const [runs, setRuns] = useState<readonly FaberLoomExecutionRow[]>([])
-    const [selected, setSelected] = useState<string | null>(null)
-    const [message, setMessage] = useState<string | null>(null)
-    const [detected, setDetected] = useState('')
-    const [treatment, setTreatment] = useState('correction')
-    const [impact, setImpact] = useState('')
-    const [teachingText, setTeachingText] = useState('')
-    const [evidence, setEvidence] = useState<FaberLoomPerformanceRow | null>(null)
-
-    useEffect(() => {
-      let live = true
-      void executions().then((result) => {
-        if (!live) return
-        if (result.ok) setRuns(result.value)
-        else setMessage(result.error.message)
-      }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
-      return () => { live = false }
-    }, [])
-
-    const chosen = runs.find(run => run.id === selected) ?? null
-
-    useEffect(() => {
-      setEvidence(null)
-      if (chosen === null) return
-      let live = true
-      void performance(undefined, chosen.routineName).then((result) => { if (live && result.ok) setEvidence(result.value) })
-        .catch(() => { /* evidence is optional; the log still renders */ })
-      return () => { live = false }
-    }, [selected])
-
-    const columns: readonly Column<FaberLoomExecutionRow>[] = [
-      { key: 'routine', header: t('col.routine'), cell: run => <span className={styles.cellName}>{run.routineName}</span> },
-      { key: 'status', header: t('col.status'), cell: run => <Chip>{run.status}</Chip> },
-      { key: 'when', header: t('col.date'), cell: run => <span className={styles.cellMuted}>{run.updatedAt.slice(11, 16)}</span> },
-    ]
-
-    const propose = (): void => {
-      if (chosen === null || teachingText.trim().length === 0) return
-      setMessage(null)
-      void saveTeaching({
-        scope: 'case',
-        text: teachingText.trim(),
-        source: `caso ${chosen.id}`,
-        task: chosen.routineName,
-        active: treatment !== 'investigation',
-      }).then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
-        setTeachingText('')
-        setDetected('')
-        setImpact('')
-        return teachings()
-      }).catch((cause: unknown) => { setMessage(String(cause)) })
-    }
-
-    return (
-      <Screen title={t('panel.executions.title')} subtitle={t('panel.executions.intro')}
-        trailing={<button className={styles.secondary} type="button" onClick={() => {
-          void executions().then((result) => { if (result.ok) setRuns(result.value); else setMessage(result.error.message) })
-        }}>{t('action.refresh')}</button>}>
-        <Feedback t={t} message={message} />
-        <div className={styles.split}>
-          <DataTable columns={columns} rows={runs} selectedId={selected} onSelect={setSelected}
-            emptyTitle={t('state.empty.title')} emptyText={t('panel.executions.empty')} labels={tableLabels(t)} />
-          <Inspector title={chosen === null ? t('executions.detail') : chosen.routineName}
-            status={chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
-            footer={chosen === null ? undefined : (
-              <button className={styles.primary} type="button" onClick={() => {
-                if (teachingText.trim().length === 0) { setMessage(t('state.needsText')); return }
-                propose()
-              }}>{t('executions.applyCorrection')}</button>
-            )}>
-            {chosen === null
-              ? <StateBlock kind="empty" title={t('executions.selectTitle')} text={t('executions.selectText')} />
-              : (
-                <>
-                  <Field label={t('executions.input')}>
-                    <span className={styles.cellMuted}>
-                      {chosen.event === null ? t('executions.manualStart') : `${chosen.event.type} · ${chosen.event.subject ?? chosen.event.key}`}
-                    </span>
-                  </Field>
-                  <Field label={t('executions.context')}>
-                    <span className={styles.cellMuted}>{`${chosen.routineName} · ${t('routines.versionShort')}${String(chosen.routineVersion)}`}</span>
-                  </Field>
-                  <Field label={t('executions.decision')}>
-                    <span className={styles.cellMuted}>{`${chosen.status}${chosen.reason === null ? '' : ` · ${chosen.reason}`}`}</span>
-                  </Field>
-                  <Field label={t('executions.run')} hint={t('executions.runHint')}>
-                    <div className={styles.steps}>
-                      {chosen.steps.map(step => (
-                        <div className={styles.stepRow} key={step.id}>
-                          <span className={styles.stepIndex}>{step.id}</span>
-                          <Chip>{step.status}</Chip>
-                          <span className={styles.cellMuted}>{step.reason ?? ''}</span>
-                          <span className={styles.cellMuted}>{step.effect ? t('executions.effectStep') : ''}</span>
-                          {step.text === null ? null : <span className={styles.cellMuted} title={step.text}>{step.text.slice(0, 80)}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </Field>
-                  <Field label={t('executions.cost')}>
-                    <span className={styles.cellMuted}>{t('executions.costUnrecorded')}</span>
-                  </Field>
-                  <Field label={t('executions.review')}>
-                    <span className={styles.cellMuted}>{`${String(chosen.evidenceCount)} ${t('executions.evidence')}`}</span>
-                  </Field>
-                  <Field label={t('executions.effect')}>
-                    <span className={styles.cellMuted}>{chosen.steps.some(step => step.effect && step.status === 'completed') ? t('executions.effectApplied') : t('executions.effectNone')}</span>
-                  </Field>
-                  <Field label={t('executions.evidenceFor')} hint={t('executions.evidenceHint')}>
-                    <span className={styles.cellMuted}>
-                      {evidence === null
-                        ? t('state.loading')
-                        : `${t('executions.approved')} ${String(evidence.approved)} · ${t('executions.corrected')} ${String(evidence.corrected)} · ${t('executions.correctionRate')} ${evidence.correctionRate === null ? t('agents.costUnknown') : evidence.correctionRate.toFixed(2)}`}
-                    </span>
-                  </Field>
-                  <Field label={t('executions.whatDetected')}>
-                    <input type="text" value={detected} onChange={(event) => { setDetected(event.target.value) }} />
-                  </Field>
-                  <Field label={t('executions.treatment')}>
-                    <select value={treatment} onChange={(event) => { setTreatment(event.target.value) }}>
-                      <option value="correction">{t('executions.correctRecord')}</option>
-                      <option value="adjustment">{t('executions.laterAdjustment')}</option>
-                      <option value="investigation">{t('executions.investigate')}</option>
-                    </select>
-                  </Field>
-                  <Field label={t('executions.impact')}>
-                    <input type="text" value={impact} onChange={(event) => { setImpact(event.target.value) }} />
-                  </Field>
-                  <Field label={t('executions.teaching')} hint={t('executions.teachingHint')}>
-                    <textarea value={teachingText} onChange={(event) => { setTeachingText(event.target.value) }} />
-                  </Field>
-                </>
-              )}
           </Inspector>
         </div>
       </Screen>
@@ -2682,7 +2690,6 @@ export interface FaberloomSection {
 export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel() },
   { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', Icon: panelIcon(IconChecklistOutline14), Page: boardScreen() },
-  { id: 'faberloom-executions' as MainPanelId, order: 25, labelKey: 'nav.executions', Icon: panelIcon(IconAlarmClockOutline16), Page: executionsScreen() },
   { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', Icon: panelIcon(IconFolderOpenOutline16), Page: spacesScreen() },
   { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agents', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsScreen() },
   { id: 'faberloom-skills' as MainPanelId, order: 45, labelKey: 'nav.skills', Icon: panelIcon(IconAgentPresetOutline16), Page: skillsScreen() },

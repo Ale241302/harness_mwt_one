@@ -12,6 +12,7 @@ import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-
 import { apply, inject } from '../src/client/index.ts'
 
 const CONVERSAR = 'faberloom-conversar' as MainPanelId
+const BOARD = 'faberloom-board' as MainPanelId
 const SPACES = 'faberloom-spaces' as MainPanelId
 const MEMORY = 'faberloom-memory' as MainPanelId
 
@@ -40,6 +41,7 @@ afterEach(async () => {
 async function bench(
   overviewResult: unknown = { ok: true, value: OVERVIEW },
   spaceDetailResult: unknown = { ok: true, value: undefined },
+  email: { drafts?: unknown[]; inbox?: unknown[] } = {},
 ) {
   const runtime = await SlotTestRuntime.create()
   runtimes.add(runtime)
@@ -57,6 +59,7 @@ async function bench(
   const deactivateAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const createBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const reviewBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const deleteBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const createRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const setRoutineActive = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const remember = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
@@ -73,6 +76,15 @@ async function bench(
   const spaceWorkspace = vi.fn(async () => ({ ok: true, value: { registered: true, workspaceId: 'ws-1', title: 'Marluvas', sessions: 0 } }))
   const routineDetail = vi.fn(async () => ({ ok: true, value: undefined }))
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
+  const setBoardRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
+  const emailInbox = vi.fn(async () => ({ ok: true, value: email.inbox ?? [] }))
+  const sendEmailDraft = vi.fn(async () => ({ ok: true, value: [] }))
+  const deleteEmailDraft = vi.fn(async () => ({ ok: true, value: [] }))
+  const mwtStatus = vi.fn(async () => ({
+    ok: true,
+    value: { ownerId: '', role: '', companyId: null, companyIds: [], companies: [], servers: [] },
+  }))
   const saveSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const saveRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const connections = vi.fn(async () => ({ ok: true, value: [] }))
@@ -81,8 +93,9 @@ async function bench(
   const probeConnection = vi.fn(async () => ({ ok: true, value: { ok: true, detail: 'ok' } }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
-    deactivateAgent, createBoardItem, reviewBoardItem, createRoutine, setRoutineActive, remember,
-    spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail,
+    deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
+    spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, setBoardRoutine,
+    emailDrafts, emailInbox, sendEmailDraft, deleteEmailDraft, mwtStatus,
     connections, saveConnection, removeConnection, probeConnection,
     spaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
   }
@@ -121,6 +134,7 @@ async function bench(
   const view = runtime.renderRoot()
   return {
     runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace,
+    deleteBoardItem, emailDrafts, emailInbox, sendEmailDraft, deleteEmailDraft,
     remember, spaceMemory, surface, view,
   }
 }
@@ -136,7 +150,6 @@ describe('faberloom surface', () => {
     expect(runtime.slots.entries('sidebar.panellist').map(row => row.options.id)).toEqual([
       'faberloom-conversar',
       'faberloom-board',
-      'faberloom-executions',
       'faberloom-spaces',
       'faberloom-agents',
       'faberloom-skills',
@@ -148,7 +161,6 @@ describe('faberloom surface', () => {
     expect(runtime.slots.entries('main').map(entry => entry.options.key)).toEqual([
       'faberloom-conversar',
       'faberloom-board',
-      'faberloom-executions',
       'faberloom-spaces',
       'faberloom-agents',
       'faberloom-skills',
@@ -236,6 +248,45 @@ describe('faberloom surface', () => {
     fireEvent.click(rows[1] as HTMLTableRowElement)
     fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
     await waitFor(() => { expect(deleteSpace).toHaveBeenCalledWith('space-1') })
+  })
+
+  it('deletes the selected work-bench task from the inspector', async () => {
+    const { runtime, deleteBoardItem, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    const rows = await view.findAllByRole('row')
+    fireEvent.click(rows[1] as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
+    await waitFor(() => { expect(deleteBoardItem).toHaveBeenCalledWith('item-1') })
+  })
+
+  it('sends and discards an email draft from the work bench', async () => {
+    const draft = {
+      id: 'draft-1', to: ['cliente@mwt.one'], cc: [], subject: 'Propuesta', text: 'cuerpo',
+      status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
+    }
+    const { runtime, sendEmailDraft, deleteEmailDraft, view } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('Propuesta')
+    const draftRows = view.getAllByRole('row')
+    fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Send' }))
+    await waitFor(() => { expect(sendEmailDraft).toHaveBeenCalledWith('draft-1') })
+    fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
+    await waitFor(() => { expect(deleteEmailDraft).toHaveBeenCalledWith('draft-1') })
+  })
+
+  it('lists an unread email as a work-bench task to answer', async () => {
+    const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
+    const { runtime, view } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('OC 505433')
+    const inboxRows = view.getAllByRole('row')
+    fireEvent.click(inboxRows[inboxRows.length - 1] as HTMLTableRowElement)
+    expect(await view.findByRole('button', { name: 'Reply' })).toBeTruthy()
   })
 
   it('assigns the responsible agent from the space detail', async () => {

@@ -28,6 +28,7 @@ import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { FaberloomBrandName, FABERLOOM_SECTIONS, type FaberloomPanelInjected } from './panels.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
+import { runTaskChat } from './task-chat.ts'
 import { createWorkspaceStore } from './store.ts'
 import { en, zh, type FaberloomKey } from './locales.ts'
 import { FABERLOOM_THEME_SOURCE, faberloomTokens } from './theme.ts'
@@ -216,6 +217,17 @@ export function apply(ctx: ClientContext): void {
       saveRoutine: (id, input) => ctx.remote.faberloomView.saveRoutine(id, input),
       removeRoutine: id => ctx.remote.faberloomView.removeRoutine(id),
       boardDetail: id => ctx.remote.faberloomView.boardDetail(id),
+      deleteBoardItem: (id) => {
+        const run = ctx.remote.faberloomView.deleteBoardItem(id)
+        write(() => run)
+        return run
+      },
+      setBoardRoutine: (id, routineId) => {
+        const run = ctx.remote.faberloomView.setBoardRoutine(id, routineId)
+        write(() => run)
+        return run
+      },
+      openTaskChat: (kind, title, detail) => { runTaskChat(ctx, bound, { kind, title, detail }) },
       executions: routineId => ctx.remote.faberloomView.executions(routineId),
       startRoutine: routineId => ctx.remote.faberloomView.startRoutine(routineId),
       tickRoutine: routineId => ctx.remote.faberloomView.tickRoutine(routineId),

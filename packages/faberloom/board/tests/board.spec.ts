@@ -96,4 +96,22 @@ describe('FaberLoomBoard', () => {
     expect(await board.list({ status: 'waiting_approval' })).toHaveLength(2)
     expect(await board.list({ ownerId: OWNER, status: 'approved' })).toEqual([])
   })
+
+  it('permanently removes one item, owner-only', async () => {
+    const { board } = await harness()
+    const item = await board.create(OWNER, { title: 'x', summary: 's', evidence: ['e'] })
+    await expect(board.remove('otro', item.id)).rejects.toThrow('only the owner')
+    expect(await board.remove(OWNER, item.id)).toBe(true)
+    await expect(board.get(item.id)).rejects.toThrow('not found')
+    expect(await board.list({ ownerId: OWNER })).toEqual([])
+  })
+
+  it('links a task to a routine, owner-only, and creates with one', async () => {
+    const { board } = await harness()
+    const linked = await board.create(OWNER, { title: 'x', summary: 's', evidence: ['e'], routineId: 'routine-1' })
+    expect(linked.routineId).toBe('routine-1')
+    await expect(board.setRoutine('otro', linked.id, 'routine-2')).rejects.toThrow('only the owner')
+    expect((await board.setRoutine(OWNER, linked.id, 'routine-2')).routineId).toBe('routine-2')
+    expect((await board.setRoutine(OWNER, linked.id, null)).routineId).toBeNull()
+  })
 })
