@@ -150,6 +150,32 @@ describe('FaberLoomDefaults', () => {
     expect((await second.ctx.faberloomAgents.listAgents()).filter(candidate => candidate.name === 'Architect')).toHaveLength(1)
   })
 
+  it('F16 — seeds a curated preset with its skills and connected agents', async () => {
+    const home = ownerHome()
+    const shared = mkdtempSync(join(tmpdir(), 'faberloom-agents-'))
+    homes.push(shared)
+    mkdirSync(join(shared, 'code-reviewer'), { recursive: true })
+    writeFileSync(join(shared, 'code-reviewer', 'preset.yml'), 'name: Code Reviewer\ndescription: "Reviews code."\norder: 107\n', 'utf8')
+    mkdirSync(join(shared, 'security-reviewer'), { recursive: true })
+    writeFileSync(join(shared, 'security-reviewer', 'preset.yml'), 'name: Security Reviewer\ndescription: "Finds vulnerabilities."\norder: 155\n', 'utf8')
+
+    const sharedSkills = mkdtempSync(join(tmpdir(), 'faberloom-shared-skills-'))
+    homes.push(sharedSkills)
+    for (const name of ['coding-standards', 'security-review']) {
+      mkdirSync(join(sharedSkills, name), { recursive: true })
+      writeFileSync(join(sharedSkills, name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${name}\n---\n`, 'utf8')
+    }
+
+    const pool = new MemoryMediaPool()
+    const { ctx, catalog } = await services(home, [], pool)
+    await seedWith(ctx, catalog, { agentsSharedRoot: shared, skillsSharedRoot: sharedSkills })
+
+    const agents = await ctx.faberloomAgents.listAgents()
+    const reviewer = agents.find(agent => agent.name === 'Code Reviewer')
+    expect(reviewer?.skills).toEqual(['coding-standards', 'security-review'])
+    expect(reviewer?.subagents.map(subagent => subagent.name)).toEqual(['Security Reviewer'])
+  })
+
   it('F16 — converges baseline agents to the configured provider/model/key without clobbering an admin choice', async () => {
     const home = ownerHome()
     const pool = new MemoryMediaPool()

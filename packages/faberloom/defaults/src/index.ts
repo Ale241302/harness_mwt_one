@@ -17,6 +17,8 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import { SEED_AGENTS, SEED_ROUTINES } from './catalog.ts'
+import { PRESET_CURATION } from './preset-curation.ts'
+import type { FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
 
 export type * from './catalog.ts'
 
@@ -36,6 +38,8 @@ export interface Config {
   readOnly?: boolean
   /** Root of the role skill catalogue, when the deployment mounts one. */
   skillsCatalogRoot?: string
+  /** Root of the curated shared skill catalogue, when the deployment mounts one. */
+  skillsSharedRoot?: string
   /** Root of the shared agent presets the deployment seeds for every owner. */
   agentsSharedRoot?: string
   /**
@@ -60,6 +64,7 @@ export const Config: z<Config> = z.object({
   role: z.string(),
   readOnly: z.boolean(),
   skillsCatalogRoot: z.string(),
+  skillsSharedRoot: z.string().default(''),
   agentsSharedRoot: z.string().default(''),
   agentProvider: z.string().default(''),
   agentModel: z.string().default(''),
@@ -282,17 +287,44 @@ export class FaberLoomDefaults extends Service {
   private async seedSharedAgents(): Promise<string[]> {
     const root = this.config.agentsSharedRoot
     if (root === undefined || root.length === 0 || !existsSync(root)) return []
-    const existing = new Set((await this.ctx.faberloomAgents.listAgents()).map(agent => agent.name))
+    const available = new Set(this.availableSkills())
+    const existing = await this.ctx.faberloomAgents.listAgents()
+    const directories = readdirSync(root, { withFileTypes: true }).filter(entry => entry.isDirectory())
+    const byDir = new Map<string, { id: FaberLoomAgentId; name: string; connected: boolean }>()
     const created: string[] = []
-    for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue
+    for (const entry of directories) {
       const preset = this.readPreset(join(root, entry.name, 'preset.yml'))
-      if (preset === undefined || existing.has(preset.name)) continue
-      await this.ctx.faberloomAgents.createAgent({
-        name: preset.name, responsibility: preset.description, origin: 'scratch', seeded: true, skills: [],
+      if (preset === undefined) continue
+      const curated = (PRESET_CURATION[entry.name]?.skills ?? []).filter(skill => available.has(skill))
+      const found = existing.find(agent => agent.name === preset.name)
+      if (found !== undefined) {
+        byDir.set(entry.name, { id: found.id, name: found.name, connected: found.subagents.length > 0 })
+        // An earlier deployment seeded this before the curation existed: add the
+        // curated skills it is still missing, keeping whatever it already has.
+        const merged = [...found.skills, ...curated.filter(skill => !found.skills.includes(skill))]
+        if (merged.length !== found.skills.length) {
+          await this.ctx.faberloomAgents.updateAgent(found.id, { skills: merged })
+        }
+        continue
+      }
+      const agent = await this.ctx.faberloomAgents.createAgent({
+        name: preset.name, responsibility: preset.description, origin: 'scratch', seeded: true, skills: curated,
         ...this.agentDefaults(),
       })
+      byDir.set(entry.name, { id: agent.id, name: agent.name, connected: false })
       created.push(preset.name)
+    }
+    // Second pass: connect each preset's curated partners that are present, by
+    // name, unless the agent already declares its own connections.
+    for (const entry of directories) {
+      const self = byDir.get(entry.name)
+      if (self === undefined || self.connected) continue
+      const subagents = (PRESET_CURATION[entry.name]?.connects ?? [])
+        .map(partner => byDir.get(partner))
+        .filter((partner): partner is { id: FaberLoomAgentId; name: string; connected: boolean } => partner !== undefined)
+        .map(partner => ({ name: partner.name, agentId: partner.id }))
+      if (subagents.length === 0) continue
+      await this.ctx.faberloomAgents.updateAgent(self.id, { subagents })
     }
     return created
   }
@@ -316,16 +348,22 @@ export class FaberLoomDefaults extends Service {
     return { name, description: description.length > 0 ? description : `Especialista ${name}.` }
   }
 
-  /** Skill names the owner can use: their own uploads plus the role catalogue. */
+  /** Skill names the owner can use: their own uploads, the role catalogue, and the shared catalogue. */
   private availableSkills(): string[] {
     const names: string[] = []
-    for (const root of [join(this.dshHome(), 'skills'), this.roleSkillsDir()]) {
+    for (const root of [join(this.dshHome(), 'skills'), this.roleSkillsDir(), this.sharedSkillsDir()]) {
       if (root === undefined || !existsSync(root)) continue
       for (const entry of readdirSync(root, { withFileTypes: true })) {
         if (entry.isDirectory() && existsSync(join(root, entry.name, 'SKILL.md'))) names.push(entry.name)
       }
     }
     return names
+  }
+
+  /** The curated shared skill catalogue the deployment mounts, when it mounts one. */
+  private sharedSkillsDir(): string | undefined {
+    const root = this.config.skillsSharedRoot
+    return root === undefined || root.length === 0 ? undefined : root
   }
 
   /** The role's skill catalog directory, when the deployment mounted one. */

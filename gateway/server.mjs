@@ -798,6 +798,7 @@ function renderPatch(home, user, memory) {
     `    role: ${yamlScalar(user.role || 'client_b2b')}`,
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,
+    `    skillsSharedRoot: ${yamlScalar(cfg.skillsSharedRoot)}`,
     `    agentsSharedRoot: ${yamlScalar(cfg.agentsSharedRoot)}`,
     `    agentProvider: ${yamlScalar(cfg.agentProvider)}`,
     `    agentModel: ${yamlScalar(cfg.agentModel)}`,
