@@ -543,7 +543,7 @@ function agentsScreen() {
     const connectionsList = useLazy<readonly FaberLoomConnection[]>(() => connections(), [])
     const liveCatalog = useLazy<FaberLoomModelCatalog>(() => modelCatalog(), [])
     const liveProviders = useMemo(
-      () => liveCatalog.kind === 'ready' && liveCatalog.value !== undefined ? liveCatalog.value.providers : [],
+      () => liveCatalog.kind === 'ready' ? liveCatalog.value.providers : [],
       [liveCatalog],
     )
     const providerOptions = useMemo(
@@ -726,11 +726,22 @@ function agentsScreen() {
                               <SkillTransfer
                                 t={t}
                                 labels={{ available: t('skills.available'), assigned: t('skills.assigned'), search: t('action.search'), add: t('action.add'), remove: t('action.remove') }}
-                                available={catalog.value.map(skill => ({ name: skill.name, meta: skill.module ?? skill.description }))}
+                                available={catalog.value.map(skill => ({
+                                  id: skill.name, name: skill.name, meta: skill.module ?? skill.description,
+                                }))}
                                 assigned={assigned}
                                 onChange={setAssigned}
                               />
                             )}
+                      </Field>
+                      <Field label={t('field.connectedAgents')} hint={t('agents.connectedHint')}>
+                        <SkillTransfer
+                          t={t}
+                          labels={{ available: t('agents.connectedAvailable'), assigned: t('agents.connectedAssigned'), search: t('action.search'), add: t('action.add'), remove: t('action.remove') }}
+                          available={(overview?.agents ?? []).filter(agent => agent.id !== selected).map(agent => ({ id: agent.id, name: agent.name, meta: agent.spaceIds.length === 0 ? t('agents.unassigned') : '' }))}
+                          assigned={subagentIds}
+                          onChange={setSubagentIds}
+                        />
                       </Field>
                       <Field label={t('field.provider')}>
                         <select value={provider} onChange={(event) => { setProvider(event.target.value); setModelId('') }}>

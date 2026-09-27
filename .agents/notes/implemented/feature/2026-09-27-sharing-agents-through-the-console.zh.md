@@ -18,6 +18,7 @@ Status: implemented
 - Agents 面板为发起者可管理的 agent 显示一个共享字段（指定邮箱加“整个公司”）。
 - Skill 以同样方式共享：`shareSkill` 发布所有者自己的 `SKILL.md`，收到的 skill 被写入所有者的 skills 目录并带有 `.shared-by` 标记。`saveSkill` 与 `removeSkill` 拒绝被标记的 skill（除非 Admin/CEO），面板将其显示为“与你共享”并标注发布者、隐藏删除按钮。共享消失的 skill 会在下次拉取时清理，与 agent 副本相同。
 - 面板列出所有者已共享的内容并提供“取消共享”，并在收到的 agent 上显示“共享者 <发布者>”。
+- Agents 检查器还新增 **Connected agents** 字段：一个覆盖其他 agent 的转移列表，写入该 agent 的 `subagents`。
 - `agentDetail` 还报告 `apiKeyTail`（已存 key 的最后四个字符），使所有者在 key 本身为只写时仍能辨认当前设置的是哪把 key；面板在 key 字段下方显示它。provider 与 model 字段是由新的 `modelCatalog` 远程驱动的下拉框，它读取实时的 `ctx.llm` 提供方及其模型，因此提供方以后新增的模型无需改代码即可出现。
 
 ## 预置实际包含什么

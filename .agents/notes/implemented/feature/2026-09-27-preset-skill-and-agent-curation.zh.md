@@ -16,6 +16,7 @@ Status: implemented
 - `connects` 列出其他预置目录 id；供给器按名称解析为已供给的 agent 并写入其 `subagents`。
 - 现在创建的预置 agent 会带着整理好的 skill 与连接启动。更早部署供给的 agent 会把整理好的 skill 合并进去（取并集，保留其已有项），并且仅在其自身未声明连接时才获得连接，因此 Admin 的选择在重启后仍保留。
 - gateway 把 `skillsSharedRoot` 传给 `faberloom-defaults`，使可用性检查能看到整理后的共享目录。
+- 三个原生种子 agent 也声明了 `connects`（Recepción → Revisión de pedidos → Proformas），并同时列出角色的 `mwt-compras-*` skill 与对应的 `mwt-admin-*`；供给器只保留所有者角色实际随附的那些，并在重启时把目录中的 skill 合并进更早部署供给的 agent。
 
 ## 考虑过的替代方案
 

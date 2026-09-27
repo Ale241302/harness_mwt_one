@@ -243,6 +243,13 @@ export class FaberLoomDefaults extends Service {
       const found = existing.find(agent => agent.name === seed.name)
       if (found !== undefined) {
         byName.set(seed.name, { id: found.id, name: found.name, connected: found.subagents.length > 0 })
+        // An earlier deployment seeded this before the catalogue grew: add the
+        // skills it is still missing, keeping whatever it already has.
+        const curated = seed.skills.filter(skill => available.has(skill))
+        const merged = [...found.skills, ...curated.filter(skill => !found.skills.includes(skill))]
+        if (merged.length !== found.skills.length) {
+          await this.ctx.faberloomAgents.updateAgent(found.id, { skills: merged })
+        }
         continue
       }
       const agent = await this.ctx.faberloomAgents.createAgent({

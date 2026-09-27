@@ -16,6 +16,7 @@ The skills and the working partners are authored, not extracted, in `packages/fa
 - `connects` lists other preset directory ids; the seeder resolves them to the seeded agents by name and writes them as the agent's `subagents`.
 - A preset agent created now starts with its curated skills and connections. An agent an earlier deployment seeded has the curated skills merged in (a union that keeps whatever it already had) and receives its connections only when it declares none of its own, so an Admin's choices survive a restart.
 - The gateway passes `skillsSharedRoot` to `faberloom-defaults` so availability sees the curated shared catalog.
+- The three native seed agents also declare `connects` (Recepción → Revisión de pedidos → Proformas) and list both the role's `mwt-compras-*` skills and the equivalent `mwt-admin-*` ones; the seeder keeps the ones the owner's role actually ships, and on a restart merges the catalogue's skills into an agent a previous deployment seeded.
 
 ## Alternatives considered
 

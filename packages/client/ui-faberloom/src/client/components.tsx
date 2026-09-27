@@ -246,7 +246,7 @@ export function StateBlock({ kind, title, text, action }: {
 
 /** Two-pane skill assignment: available on the left, assigned on the right. */
 export function SkillTransfer({ available, assigned, onChange, labels, t }: {
-  available: readonly { name: string; meta: string }[]
+  available: readonly { id: string; name: string; meta: string }[]
   assigned: readonly string[]
   onChange: (next: readonly string[]) => void
   labels: { available: string; assigned: string; search: string; add: string; remove: string }
@@ -254,8 +254,9 @@ export function SkillTransfer({ available, assigned, onChange, labels, t }: {
 }) {
   const [query, setQuery] = useState('')
   const assignedSet = useMemo(() => new Set(assigned), [assigned])
+  const labelById = useMemo(() => new Map(available.map(item => [item.id, item.name])), [available])
   const needle = query.trim().toLowerCase()
-  const pool = available.filter(item => !assignedSet.has(item.name)
+  const pool = available.filter(item => !assignedSet.has(item.id)
     && (needle.length === 0 || item.name.toLowerCase().includes(needle) || item.meta.toLowerCase().includes(needle)))
   return (
     <div className={styles.transfer}>
@@ -274,11 +275,11 @@ export function SkillTransfer({ available, assigned, onChange, labels, t }: {
         <div className={styles.paneRows}>
           {pool.length === 0 ? <p className={styles.hint}>{t('skills.noMatch')}</p> : pool.map(item => (
             <button
-              key={item.name}
+              key={item.id}
               type="button"
               className={styles.paneRow}
               title={item.meta}
-              onClick={() => { onChange([...assigned, item.name]) }}
+              onClick={() => { onChange([...assigned, item.id]) }}
             >
               <code>{item.name}</code><span className={styles.paneAdd}>+</span>
             </button>
@@ -289,14 +290,14 @@ export function SkillTransfer({ available, assigned, onChange, labels, t }: {
       <div className={styles.pane}>
         <div className={styles.paneHead}><span className={styles.hint}>{labels.assigned} ({assigned.length})</span></div>
         <div className={styles.paneRows}>
-          {assigned.length === 0 ? <p className={styles.hint}>{t('skills.noneAssigned')}</p> : assigned.map(name => (
+          {assigned.length === 0 ? <p className={styles.hint}>{t('skills.noneAssigned')}</p> : assigned.map(id => (
             <button
-              key={name}
+              key={id}
               type="button"
               className={styles.paneRow}
-              onClick={() => { onChange(assigned.filter(entry => entry !== name)) }}
+              onClick={() => { onChange(assigned.filter(entry => entry !== id)) }}
             >
-              <code>{name}</code><span className={styles.paneAdd}>−</span>
+              <code>{labelById.get(id) ?? id}</code><span className={styles.paneAdd}>−</span>
             </button>
           ))}
         </div>

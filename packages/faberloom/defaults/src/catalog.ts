@@ -59,19 +59,19 @@ export const SEED_AGENTS: readonly SeedAgent[] = [
   {
     name: 'Recepción',
     responsibility: 'Identifica al cliente y el espacio de cada caso que entra, y deja el expediente listo para el resto del proceso.',
-    skills: ['mwt-compras-clientes-leer', 'mwt-compras-expedientes-leer'],
+    skills: ['mwt-compras-clientes-leer', 'mwt-compras-expedientes-leer', 'mwt-admin-clientes-leer', 'mwt-admin-expedientes-leer'],
     connects: ['Revisión de pedidos'],
   },
   {
     name: 'Revisión de pedidos',
     responsibility: 'Contrasta cada pedido con las condiciones y el historial antes de que se prepare un documento.',
-    skills: ['mwt-compras-historial-precios-leer', 'mwt-compras-cartera-leer'],
+    skills: ['mwt-compras-historial-precios-leer', 'mwt-compras-cartera-leer', 'mwt-admin-historial-precios-leer', 'mwt-admin-cartera-leer'],
     connects: ['Proformas'],
   },
   {
     name: 'Proformas',
     responsibility: 'Prepara el documento con precios verificados y lo deja listo para revisión.',
-    skills: ['mwt-compras-clientes-leer', 'mwt-compras-inventario-leer', 'mwt-compras-historial-precios-leer'],
+    skills: ['mwt-compras-clientes-leer', 'mwt-compras-inventario-leer', 'mwt-compras-historial-precios-leer', 'mwt-admin-clientes-leer', 'mwt-admin-inventario-leer', 'mwt-admin-historial-precios-leer'],
     connects: [],
   },
 ]
