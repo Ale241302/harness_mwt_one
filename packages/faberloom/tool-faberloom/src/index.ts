@@ -201,8 +201,10 @@ function policyFromArgs(args: {
 }
 
 /** The flat policy parameters shared by agent create and update. */
-const POLICY_PARAMS = {
-  primary: { type: 'string' as const, description: 'Primary model id; empty string clears it.' },
+/** Download URLs worth surfacing from a mail body; stops at quotes, brackets, or whitespace. */
+const DOWNLOAD_LINK = /https?:\/\/[^\s"'<>)\]]+/gi
+
+const POLICY_PARAMS = {  primary: { type: 'string' as const, description: 'Primary model id; empty string clears it.' },
   exclusive: { type: 'boolean' as const, description: 'Use this model exclusively: never substitute.' },
   fallbacks: { type: 'array' as const, description: 'Ordered fallback model ids.', items: { type: 'string' as const } },
   escalationAuthorized: { type: 'array' as const, description: 'Model ids authorized for escalation.', items: { type: 'string' as const } },
@@ -1996,6 +1998,11 @@ export function apply(ctx: Context, config: Config): void {
         type: 'object', additionalProperties: false,
         properties: {
           text: { type: 'string', required: true },
+          links: {
+            type: 'array', required: true,
+            items: { type: 'string' },
+            description: 'Download URLs found in the body (Excel, PDF, images, ...).',
+          },
           attachments: {
             type: 'array', required: true,
             items: {
@@ -2013,6 +2020,7 @@ export function apply(ctx: Context, config: Config): void {
         type: 'text',
         text: [
           value.text.length > 0 ? value.text : '(sin cuerpo de texto)',
+          ...value.links.length === 0 ? [] : ['\n\n### Enlaces de descarga en el cuerpo\n', ...value.links.map(link => `- ${link}`)],
           ...value.attachments.map(attachment => attachment.markdown.length > 0
             ? `\n\n### Adjunto ${attachment.name}\n\n${attachment.markdown}`
             : `\n\n### Adjunto ${attachment.name} (${attachment.mediaType}): sin texto extraíble`),
@@ -2024,8 +2032,11 @@ export function apply(ctx: Context, config: Config): void {
       const options = mailDocuments(ctx, config)
       const documents = options === undefined ? [] : await markdownFromAttachments(content.attachments, options)
       const byName = new Map(documents.map(document => [document.name, document.markdown]))
+      const body = `${content.text}\n${content.html ?? ''}`
+      const links = [...new Set(body.match(DOWNLOAD_LINK) ?? [])]
       return {
         text: content.text,
+        links,
         attachments: content.attachments.map(attachment => ({
           name: attachment.name,
           mediaType: attachment.mediaType,
@@ -2085,6 +2096,47 @@ export function apply(ctx: Context, config: Config): void {
       return { files }
     },
     presentCall: args => ({ card: 'generic', title: 'Save mail attachment', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_mail_download',
+    description: 'Download one http(s) link found in a mail body (faberloom_mail_read returns them as links) into the session workspace as a real file and return its path. Use it for Excel/PDF/image download links, then read the file or upload it with the business document tools.',
+    parameters: {
+      url: { type: 'string', required: true, description: 'An http(s) URL from the mail body, as returned by faberloom_mail_read.' },
+      name: { type: 'string', description: 'File name to save as; derived from the URL otherwise.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          path: { type: 'string', required: true },
+          name: { type: 'string', required: true },
+          bytes: { type: 'integer', required: true },
+          mediaType: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `${value.name} → ${value.path} (${String(value.bytes)} B, ${value.mediaType})` }],
+    },
+    execute: async (args, exec) => {
+      const url = args.url.trim()
+      if (!/^https?:\/\//i.test(url)) throw new Error('faberloom: only http(s) links can be downloaded')
+      const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(30_000) })
+      if (!response.ok) throw new Error(`faberloom: the link answered HTTP ${String(response.status)}`)
+      const bytes = Buffer.from(await response.arrayBuffer())
+      let guessed = args.name ?? ''
+      if (guessed.length === 0) {
+        try { guessed = decodeURIComponent(new URL(response.url).pathname.split('/').filter(Boolean).pop() ?? '') }
+        catch { guessed = '' }
+      }
+      const name = basename(guessed.length === 0 ? 'descarga' : guessed)
+      const root = exec.agent?.session.header.cwd ?? process.cwd()
+      const dir = join(root, 'correo-adjuntos')
+      mkdirSync(dir, { recursive: true })
+      const path = join(dir, name)
+      writeFileSync(path, bytes)
+      return { path, name, bytes: bytes.length, mediaType: response.headers.get('content-type') ?? 'application/octet-stream' }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Download mail link', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({

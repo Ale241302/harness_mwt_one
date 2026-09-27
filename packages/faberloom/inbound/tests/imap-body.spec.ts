@@ -29,6 +29,36 @@ describe('imap MIME parsing', () => {
     expect(content.attachments[0]?.contentBase64).toBe(pdf.toString('base64'))
   })
 
+  it('keeps an inline body image as an attachment with its Content-ID', () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47])
+    const raw = [
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/related; boundary="B"',
+      '',
+      '--B',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      '<img src="cid:logo1">',
+      '--B',
+      'Content-Type: image/png; name="logo.png"',
+      'Content-Transfer-Encoding: base64',
+      'Content-ID: <logo1>',
+      'Content-Disposition: inline',
+      '',
+      png.toString('base64'),
+      '--B--',
+    ].join('\r\n')
+
+    const content = parseMessage(raw)
+    expect(content.attachments).toHaveLength(1)
+    expect(content.attachments[0]).toMatchObject({ name: 'logo.png', mediaType: 'image/png', contentId: 'logo1', size: png.length })
+  })
+
+  it('names a bare inline image with no filename', () => {
+    const raw = ['Content-Type: image/jpeg', '', 'x'].join('\r\n')
+    expect(parseMessage(raw).attachments[0]).toMatchObject({ name: 'imagen-1.jpeg', mediaType: 'image/jpeg' })
+  })
+
   it('decodes a quoted-printable plain-text part', () => {
     const raw = [
       'Content-Type: text/plain; charset=utf-8',

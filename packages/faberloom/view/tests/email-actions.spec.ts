@@ -3,16 +3,27 @@ import type { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { FaberLoomViewService } from '../src/index.ts'
 
-/** The minimal service graph the mailbox remotes touch. */
-function harness(inbound: unknown, memory: unknown): FaberLoomViewService {
+/** The minimal service graph the mailbox and connection remotes touch. */
+function harness(
+  inbound: unknown,
+  memory: unknown,
+  extra: { connections?: unknown; routines?: unknown } = {},
+): FaberLoomViewService {
   const ctx = {
     reflect: { provide: () => {} },
     effect: (run: () => unknown) => { run(); return () => {} },
     on: vi.fn(() => () => {}),
     logger: { warn: vi.fn(), info: vi.fn() },
-    get: (name: string) => (name === 'faberloomInbound' ? inbound : name === 'faberloomMemory' ? memory : undefined),
+    get: (name: string) => {
+      if (name === 'faberloomInbound') return inbound
+      if (name === 'faberloomMemory') return memory
+      if (name === 'faberloomConnections') return extra.connections
+      return undefined
+    },
     faberloomInbound: inbound,
     faberloomMemory: memory,
+    faberloomConnections: extra.connections,
+    faberloomRoutines: extra.routines,
   } as unknown as Context
   return new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
 }
@@ -48,5 +59,50 @@ describe('FaberLoomViewService mailbox writes', () => {
   it('fails loud when the receiver is not mounted', async () => {
     const view = harness(undefined, undefined)
     await expect(view.emailTrash('42')).rejects.toThrow('not mounted')
+  })
+
+  it('provisions and activates the live mail routine once IMAP and SMTP exist', async () => {
+    const connections = {
+      list: vi.fn(async () => [{ kind: 'imap' }, { kind: 'smtp' }]),
+      save: vi.fn(async () => ({})),
+    }
+    const routines = {
+      listRoutines: vi.fn(async () => []),
+      createRoutine: vi.fn(async () => ({ id: 'r1', name: 'Vigía de correo', status: 'draft' })),
+      activateRoutine: vi.fn(async () => ({})),
+    }
+    const view = harness(undefined, undefined, { connections, routines })
+
+    await view.saveConnection({} as never)
+
+    expect(connections.save).toHaveBeenCalledOnce()
+    expect(routines.createRoutine).toHaveBeenCalledOnce()
+    expect(routines.activateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'r1')
+  })
+
+  it('does not provision the live mail routine while a mail half is missing', async () => {
+    const connections = { list: vi.fn(async () => [{ kind: 'imap' }]), save: vi.fn(async () => ({})) }
+    const routines = { listRoutines: vi.fn(async () => []), createRoutine: vi.fn(), activateRoutine: vi.fn() }
+    const view = harness(undefined, undefined, { connections, routines })
+
+    await view.saveConnection({} as never)
+
+    expect(routines.createRoutine).not.toHaveBeenCalled()
+    expect(routines.activateRoutine).not.toHaveBeenCalled()
+  })
+
+  it('activates an existing paused live mail routine instead of duplicating it', async () => {
+    const connections = { list: vi.fn(async () => [{ kind: 'imap' }, { kind: 'smtp' }]), save: vi.fn(async () => ({})) }
+    const routines = {
+      listRoutines: vi.fn(async () => [{ id: 'r9', name: 'Vigía de correo', status: 'paused' }]),
+      createRoutine: vi.fn(),
+      activateRoutine: vi.fn(async () => ({})),
+    }
+    const view = harness(undefined, undefined, { connections, routines })
+
+    await view.saveConnection({} as never)
+
+    expect(routines.createRoutine).not.toHaveBeenCalled()
+    expect(routines.activateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'r9')
   })
 })

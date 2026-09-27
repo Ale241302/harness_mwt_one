@@ -20,7 +20,8 @@ Status: implemented
 - 邮箱新增两个显式写入手势，面板与模型共用：`ctx.faberloomInbound.markSeen`（`UID STORE +FLAGS (\Seen)`）与 `moveToTrash`（`UID MOVE`，带回退 `COPY` + `\Deleted` + expunge，以及候选邮箱列表）。`faberloomView` 暴露 `emailMarkSeen`/`emailTrash`；工具 `faberloom_mail_mark_read`/`faberloom_mail_trash` 把同样的能力交给 agent。
 - 丢弃邮件会把发件人与主题记录为 `email-trash` 教学；已发送的 AI 草稿此前就已记录为 `email` 教学。声音画像与丢弃模式都从真实操作中增长，`emailDraftWithAi` 会读取声音示例。
 - 工作台用 **批准并关闭** 解决任务（先批准修订再完成），任务随即离开队列；已完成和失败的任务会被过滤掉。打开任务对话时会先以 `grill-me-lite` 摘要规则播种再行动。
-- 种子目录新增 **Vigía de correo** 例程：`email` 触发器运行一个 agent 步骤对每封邮件分类（丢弃 / 回复 / 案卷），再用一个 `mcp` 步骤在邮件带有 OC/PO/SAP 时通过 `mwt` MCP 解决该案卷。该例程就是活的 agent：无人打开面板时也会行动。
+- **活的邮件例程**（`LIVE_MAIL_ROUTINE`，"Vigía de correo"）是被**自动供给**而非用户编写的：当所有者同时拥有 IMAP 与 SMTP 连接时，`faberloomView.saveConnection` 与 inbound 轮询器会创建它并激活（幂等；暂停的会被重新激活）。它的 `email` 触发器运行一个 agent 步骤对每封邮件分类（丢弃 / 回复 / 案卷），再用一个 `mcp` 步骤在邮件带有 OC/PO/SAP 时通过 `mwt` MCP 解决该案卷。
+- 读取器把**内联正文图片**保留为附件（携带其 `Content-ID`），因此 `faberloom_mail_read` 可以对其做 OCR 或交给视觉模型；它还会返回正文中的**下载链接**，`faberloom_mail_download` 可把其中一个链接保存到工作区。于是 agent 能读正文、附件、正文图片，以及邮件指向的 Excel/PDF/照片链接。
 
 ## 考虑过的替代方案
 
@@ -39,4 +40,4 @@ Status: implemented
 
 ## 测试
 
-`packages/faberloom/board/tests/board.spec.ts` 覆盖 `remove`、`setRoutine` 以及带例程创建。`packages/client/ui-faberloom/tests/registration.client.spec.tsx` 覆盖删除看板任务、发送并丢弃草稿、列出待回复的未读邮件、以及标为已读/移入垃圾箱。`packages/client/ui-faberloom/tests/task-chat.client.spec.ts` 覆盖每个来源的播种（含 `grill-me-lite` 规则）与失败路径。`packages/faberloom/view/tests/email-actions.spec.ts` 覆盖邮箱写入与学到的丢弃模式。
+`packages/faberloom/board/tests/board.spec.ts` 覆盖 `remove`、`setRoutine` 以及带例程创建。`packages/client/ui-faberloom/tests/registration.client.spec.tsx` 覆盖删除看板任务、发送并丢弃草稿、列出待回复的未读邮件、以及标为已读/移入垃圾箱。`packages/client/ui-faberloom/tests/task-chat.client.spec.ts` 覆盖每个来源的播种（含 `grill-me-lite` 规则）与失败路径。`packages/faberloom/view/tests/email-actions.spec.ts` 覆盖邮箱写入、学到的丢弃模式，以及活邮件例程的供给。`packages/faberloom/inbound/tests/imap-body.spec.ts` 覆盖把内联正文图片保留为附件。

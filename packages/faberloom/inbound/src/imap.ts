@@ -262,6 +262,8 @@ export interface ImapAttachment {
   readonly size: number
   /** Decoded bytes, base64-encoded. */
   readonly contentBase64: string
+  /** `Content-ID` header when the part is inline (for example an image in the body), else undefined. */
+  readonly contentId?: string
 }
 
 /** One decoded message: the best text/html plus its attachments. */
@@ -386,17 +388,34 @@ function collectPart(part: string, out: { text: string; html: string | null; att
     return
   }
   const bytes = decodeTransfer(headers['content-transfer-encoding'], body)
-  if (filename !== null || disposition.toLowerCase().startsWith('attachment')) {
+  // An inline image (`Content-Disposition: inline` or a bare `image/*` part) is
+  // body content the owner sees, so it is kept as an attachment the reader can
+  // OCR or hand to a vision model instead of being dropped.
+  const inlineImage = filename === null && !disposition.toLowerCase().startsWith('attachment') && mediaType.startsWith('image/')
+  if (filename !== null || disposition.toLowerCase().startsWith('attachment') || inlineImage) {
+    const contentId = headers['content-id']
     out.attachments.push({
-      name: filename ?? `adjunto-${String(out.attachments.length + 1)}`,
+      name: filename ?? inlineImageName(mediaType, out.attachments.length + 1),
       mediaType,
       size: bytes.length,
       contentBase64: bytes.toString('base64'),
+      ...contentId === undefined ? {} : { contentId: contentId.replace(/^<|>$/g, '') },
     })
     return
   }
   if (mediaType === 'text/html' && out.html === null) out.html = decodeText(bytes, paramOf(contentType, 'charset'))
   else if (mediaType === 'text/plain' && out.text.length === 0) out.text = decodeText(bytes, paramOf(contentType, 'charset'))
+}
+
+/**
+ * Build a stable file name for one inline image part.
+ * @param mediaType - the part's media type (for example `image/png`).
+ * @param index - 1-based position among the message's attachments.
+ * @returns `imagen-<index>.<ext>` where `ext` comes from the subtype.
+ */
+function inlineImageName(mediaType: string, index: number): string {
+  const subtype = mediaType.slice(mediaType.indexOf('/') + 1).replace(/[^a-z0-9.+-]/gi, '') || 'bin'
+  return `imagen-${String(index)}.${subtype}`
 }
 
 /**

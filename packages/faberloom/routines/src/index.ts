@@ -43,6 +43,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export * from './builtins.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

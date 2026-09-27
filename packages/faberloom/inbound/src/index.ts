@@ -23,6 +23,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
 import { fetchContent, fetchMessages, markMessageSeen, moveMessage, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
@@ -150,10 +151,37 @@ export class FaberLoomInbound extends Service {
     if (this.running) return empty('another poll is running')
     this.running = true
     try {
+      try {
+        await this.ensureLiveMailRoutine(ownerId)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: live mail routine provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
       return await this.poll(ownerId, now)
     } finally {
       this.running = false
     }
+  }
+
+  /**
+   * Provision and activate the built-in live mail routine once the owner has an
+   * IMAP and an SMTP connection. This is the path that covers connections saved
+   * outside the Connections panel (MCP, an earlier deployment), so the routine
+   * is always present for every configured mailbox.
+   * @param ownerId - the owning identity.
+   */
+  private async ensureLiveMailRoutine(ownerId: string): Promise<void> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) return
+    const list = await connections.list(ownerId)
+    if (!list.some(connection => connection.kind === 'imap') || !list.some(connection => connection.kind === 'smtp')) return
+    const routines = this.ctx.faberloomRoutines
+    const existing = (await routines.listRoutines(ownerId)).find(routine => routine.name === LIVE_MAIL_ROUTINE_NAME)
+    if (existing === undefined) {
+      const created = await routines.createRoutine(ownerId, LIVE_MAIL_ROUTINE)
+      await routines.activateRoutine(ownerId, created.id)
+      return
+    }
+    if (existing.status !== 'active') await routines.activateRoutine(ownerId, existing.id)
   }
 
   /**
