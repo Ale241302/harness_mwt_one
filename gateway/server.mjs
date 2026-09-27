@@ -89,6 +89,12 @@ const cfg = {
   skillsSharedRoot: process.env.SKILLS_SHARED_ROOT || '/opt/skills-shared',
   // Presets de agente nativos (ECC) sembrados en el home del usuario.
   agentsSharedRoot: process.env.AGENTS_SHARED_ROOT || '/opt/agents-shared',
+  // Proveedor/modelo de los agentes sembrados. La API key NUNCA va en el repo:
+  // se lee de la variable de entorno que aquí se nombra (por defecto
+  // DEEPSEEK_API_KEY) y se guarda por agente, sin devolverse nunca en una lectura.
+  agentProvider: process.env.FABERLOOM_AGENT_PROVIDER || 'deepseek',
+  agentModel: process.env.FABERLOOM_AGENT_MODEL || 'deepseek-v4.1-flash',
+  agentApiKeyEnv: process.env.FABERLOOM_AGENT_API_KEY_ENV || 'DEEPSEEK_API_KEY',
   // Cadencia del despachador persistente de rutinas (una pasada cada N ms).
   dispatcherIntervalMs: Number(process.env.DISPATCHER_INTERVAL_MS || 60000),
   // Receptor de correo: sondeo del IMAP del usuario (desactivado por defecto
@@ -792,6 +798,9 @@ function renderPatch(home, user, memory) {
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,
     `    agentsSharedRoot: ${yamlScalar(cfg.agentsSharedRoot)}`,
+    `    agentProvider: ${yamlScalar(cfg.agentProvider)}`,
+    `    agentModel: ${yamlScalar(cfg.agentModel)}`,
+    `    agentApiKeyEnv: ${yamlScalar(cfg.agentApiKeyEnv)}`,
     '',
     // El despachador persistente: sin el nadie inicia las rutinas con
     // disparador de fecha o recurrencia cuando el usuario no tiene el panel abierto.

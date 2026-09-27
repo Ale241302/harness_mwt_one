@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 /** The minimal service graph the workspace and board remotes touch. */
-function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
+function harness(options: { readOnly?: boolean; registry?: boolean; role?: string } = {}) {
   const board = {
     list: vi.fn(async () => []),
     get: vi.fn(async () => ({ id: 'b1', version: 3 })),
@@ -72,6 +72,8 @@ function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
       spaceId: string | undefined
       detached: boolean
       active: boolean
+      ownerId?: string
+      seeded?: boolean
     }[]> => []),
     updateAgent: vi.fn(async () => ({})),
   }
@@ -89,7 +91,7 @@ function harness(options: { readOnly?: boolean; registry?: boolean } = {}) {
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, {
     ownerId: 'owner@muitowork.com',
-    role: 'admin',
+    role: options.role ?? 'admin',
     readOnly: options.readOnly === true,
   })
   return { view, board, registry, spaces, agents, entities }
@@ -244,7 +246,7 @@ describe('FaberLoomViewService space lifecycle', () => {
       { id: 'sp2', title: 'Otra', parentId: null, agentId: null, agentName: null, workspaceId: null },
     ])
     // The Agents panel's Space column derives from the space's responsible agent.
-    expect(overview.agents).toEqual([{ id: 'a1', name: 'Recepción', spaceIds: ['sp1'], detached: false, active: true }])
+    expect(overview.agents).toEqual([{ id: 'a1', name: 'Recepción', spaceIds: ['sp1'], detached: false, active: true, editable: true }])
   })
 
   it('reads the responsible agent from the space and saves it', async () => {
@@ -308,7 +310,10 @@ describe('FaberLoomViewService space lifecycle', () => {
     homes.push(home)
     vi.stubEnv('DSH_HOME', home)
     const { view, agents } = harness()
-    agents.listAgents.mockResolvedValue([{ id: 'a2', name: 'Otro', spaceId: undefined, detached: true, active: true }])
+    agents.listAgents.mockResolvedValue([
+      { id: 'a1', name: 'Recepción', spaceId: undefined, detached: false, active: true },
+      { id: 'a2', name: 'Otro', spaceId: undefined, detached: true, active: true },
+    ])
 
     await view.saveAgent('a1', {
       provider: 'openai', model: 'gpt-4o', webAccess: true, mailConnectionIds: ['c1'],
@@ -322,6 +327,32 @@ describe('FaberLoomViewService space lifecycle', () => {
     // An empty key clears the stored secret.
     await view.saveAgent('a1', { apiKey: '' })
     expect(agents.updateAgent).toHaveBeenLastCalledWith('a1', expect.objectContaining({ apiKey: null }))
+  })
+
+  it('refuses a non-admin write to a seeded agent', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, agents } = harness({ role: 'client_b2b' })
+    agents.listAgents.mockResolvedValue([
+      { id: 'a1', name: 'Recepción', spaceId: undefined, detached: false, active: true, ownerId: '', seeded: true },
+    ])
+
+    await expect(view.saveAgent('a1', { name: 'x' })).rejects.toThrow('Admin/CEO')
+    expect(agents.updateAgent).not.toHaveBeenCalled()
+  })
+
+  it('lets a normal user edit an agent they created', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, agents } = harness({ role: 'client_b2b' })
+    agents.listAgents.mockResolvedValue([
+      { id: 'a1', name: 'Mío', spaceId: undefined, detached: false, active: true, ownerId: 'owner@muitowork.com', seeded: false },
+    ])
+
+    await view.saveAgent('a1', { name: 'x' })
+    expect(agents.updateAgent).toHaveBeenCalledWith('a1', expect.objectContaining({ name: 'x' }))
   })
 
   it('omits the workspace in the overview when no registry is mounted', async () => {

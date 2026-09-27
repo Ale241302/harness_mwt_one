@@ -19,7 +19,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-inbound'
 import type {} from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
-import type { FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
+import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
@@ -483,6 +483,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         spaceIds: spacesByAgent.get(agent.id) ?? [],
         detached: agent.detached,
         active: agent.active,
+        editable: this.canManageAgent(agent),
       })),
       board: board.map(item => ({ id: item.id, title: item.title, status: item.status, routineId: item.routineId })),
       routines: routines.map(routine => ({ id: routine.id, name: routine.name, status: routine.status })),
@@ -568,10 +569,12 @@ export class FaberLoomViewService extends TypertRemoteService {
     mailConnectionIds?: readonly string[],
     subagentIds?: readonly string[],
   ): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create agents')
     const catalog = subagentIds === undefined ? undefined : await this.ctx.faberloomAgents.listAgents()
     await this.ctx.faberloomAgents.createAgent({
       name,
       responsibility,
+      ownerId: this.actor().id,
       ...provider === undefined || provider.length === 0 ? {} : { provider },
       ...model === undefined || model.length === 0 ? {} : { model },
       ...apiKey === undefined || apiKey.length === 0 ? {} : { apiKey },
@@ -596,6 +599,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('renameAgent')
   async renameAgent(id: string, name: string): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot rename agents')
+    await this.requireManageableAgent(id)
     await this.ctx.faberloomAgents.updateAgent(id as FaberLoomAgentId, { name })
     return await this.overview()
   }
@@ -607,6 +612,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('deleteAgent')
   async deleteAgent(id: string): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot deactivate agents')
+    await this.requireManageableAgent(id)
     await this.ctx.faberloomAgents.deactivateAgent(id as FaberLoomAgentId)
     return await this.overview()
   }
@@ -665,6 +672,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('saveAgent')
   async saveAgent(id: string, input: AgentSaveInput): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot save agents')
+    await this.requireManageableAgent(id)
     const patch: {
       name?: string
       responsibility?: string
@@ -727,6 +736,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('purgeAgent')
   async purgeAgent(id: string): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot purge agents')
+    await this.requireManageableAgent(id)
     await this.ctx.faberloomAgents.removeAgent(id as FaberLoomAgentId)
     return await this.overview()
   }
@@ -1535,6 +1546,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     await this.ctx.faberloomAgents.createAgent({
       name: name.trim(),
       responsibility: trimmed,
+      ownerId: this.actor().id,
       origin: 'task',
       originRef: origin,
       ...(spaceId === null ? {} : { spaceId }),
@@ -2249,6 +2261,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('setAgentResponsibility')
   async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot change agents')
+    await this.requireManageableAgent(id)
     await this.ctx.faberloomAgents.updateAgent(id as FaberLoomAgentId, { responsibility })
     return await this.overview()
   }
@@ -2425,6 +2439,43 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot delete memory')
     await this.ctx.faberloomSpaces.forgetMemory(this.actor(), id)
     return await this.spaceMemory()
+  }
+
+  /**
+   * Whether the acting identity may manage the shared, seeded catalog.
+   * @returns true for the console's privileged roles.
+   */
+  private isPrivileged(): boolean {
+    const role = (this.actor().role ?? '').toLowerCase()
+    return role === 'admin' || role === 'superadmin' || role === 'ceo'
+  }
+
+  /**
+   * Whether the actor may edit or delete one agent. A seeded agent is every
+   * user's baseline and only a privileged role may change it; a user-created
+   * agent is managed by the identity that created it.
+   * @param agent - the catalog agent.
+   * @returns true when the actor owns or administers the agent.
+   */
+  private canManageAgent(agent: FaberLoomAgent): boolean {
+    if (this.isPrivileged()) return true
+    return !agent.seeded && agent.ownerId === this.actor().id
+  }
+
+  /**
+   * Refuse a write to an agent the actor may not manage.
+   * @param id - agent id.
+   * @returns the agent, once the actor is authorized.
+   * @throws when the agent is seeded and the actor is not privileged, or is
+   *   owned by another identity.
+   */
+  private async requireManageableAgent(id: string): Promise<FaberLoomAgent> {
+    const agent = (await this.ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === id)
+    if (agent === undefined) throw new Error(`faberloom: agent "${id}" not found`)
+    if (!this.canManageAgent(agent)) {
+      throw new Error('faberloom: solo un Admin/CEO o el dueño puede modificar este agente')
+    }
+    return agent
   }
 
   /** The deployment-supplied identity, or a read-only anonymous actor. */

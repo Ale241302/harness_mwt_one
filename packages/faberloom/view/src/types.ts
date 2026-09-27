@@ -32,6 +32,8 @@ export interface FaberLoomAgentRow {
   readonly detached: boolean
   /** Whether the agent is still active in the catalog. */
   readonly active: boolean
+  /** Whether the actor may edit or delete it (owns it, or is Admin/CEO). */
+  readonly editable: boolean
 }
 
 /** One board item as the Mesa de trabajo panel renders it. */

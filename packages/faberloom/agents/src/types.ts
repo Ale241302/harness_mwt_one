@@ -128,6 +128,14 @@ export interface FaberLoomAgent {
   readonly spaceId: string | undefined
   /** Whether a Space deletion left this agent unassigned; the panel marks it so. */
   readonly detached: boolean
+  /** Identity that created the agent (`''` for a seeded/global agent). */
+  readonly ownerId: string
+  /**
+   * Whether the deployment seeded this agent as every user's baseline. A
+   * seeded agent is managed only by a privileged role; a user-created agent is
+   * managed by {@link ownerId}.
+   */
+  readonly seeded: boolean
   /** Creation route. */
   readonly origin: 'scratch' | 'pool' | 'task'
   /** Origin reference (template id, task id) when applicable. */
@@ -174,6 +182,10 @@ export interface AgentInput {
   readonly responsibility: string
   /** Creation route; defaults to `scratch`. */
   readonly origin?: 'scratch' | 'pool' | 'task'
+  /** Identity creating the agent; empty for a seeded/global agent. */
+  readonly ownerId?: string
+  /** Whether the deployment seeds this agent as every user's baseline. */
+  readonly seeded?: boolean
   /** Origin reference for the route. */
   readonly originRef?: string
   /** Optional owning space id. */

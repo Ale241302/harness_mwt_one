@@ -610,6 +610,12 @@ function agentsScreen() {
         ? detail.value.name
         : t('agents.editor')
 
+    // A seeded/global agent belongs to the deployment: only Admin/CEO may edit
+    // or delete it, and its API key is never revealable. A user-created agent is
+    // editable by its owner.
+    const selectedRow = (overview?.agents ?? []).find(agent => agent.id === selected) ?? null
+    const canEdit = drafting || selectedRow?.editable === true
+
     return (
       <Screen title={t('panel.agents.title')} subtitle={t('panel.agents.intro')}
         trailing={(
@@ -632,7 +638,7 @@ function agentsScreen() {
             footer={selected === null && !drafting ? undefined : (
               <>
                 <span className={styles.tools}>
-                  {drafting ? null : (
+                  {drafting || !canEdit ? null : (
                     <>
                       <button className={styles.danger} type="button" onClick={() => { purgeAgent(selected ?? ''); setSelected(null) }}>{t('action.delete')}</button>
                       {detail.kind === 'ready' && detail.value?.active === true
@@ -643,7 +649,7 @@ function agentsScreen() {
                 </span>
                 <span className={styles.tools}>
                   <button className={styles.ghost} type="button" onClick={() => { if (drafting) setDrafting(false); else setSelected(null) }}>{t('action.cancel')}</button>
-                  <button className={styles.primary} type="button" disabled={saving} onClick={save}>{drafting ? t('action.create') : t('action.save')}</button>
+                  <button className={styles.primary} type="button" disabled={saving || !canEdit} onClick={save}>{drafting ? t('action.create') : t('action.save')}</button>
                 </span>
               </>
             )}
@@ -691,12 +697,14 @@ function agentsScreen() {
                           <SecretInput
                             showLabel={t('agents.apiKeyShow')}
                             hideLabel={t('agents.apiKeyHide')}
+                            revealable={canEdit}
+                            disabled={!canEdit}
                             value={apiKey}
-                            placeholder={t('agents.apiKeyPlaceholder')}
+                            placeholder={hasApiKey ? '••••••••' : t('agents.apiKeyPlaceholder')}
                             autoComplete="new-password"
                             onChange={(event) => { setApiKey(event.target.value) }}
                           />
-                          {hasApiKey ? (
+                          {hasApiKey && canEdit ? (
                             <button className={styles.ghost} type="button" onClick={() => {
                               setMessage(null)
                               void saveAgent(selected ?? '', { apiKey: '' })
@@ -706,6 +714,9 @@ function agentsScreen() {
                           ) : null}
                         </div>
                       </Field>
+                      {drafting || canEdit ? null : (
+                        <p className={styles.hint}>{t('agents.adminOnly')}</p>
+                      )}
                       <Field label={t('field.webAccess')} hint={t('agents.webAccessHint')}>
                         <label className={styles.stepFlag}>
                           <input type="checkbox" checked={webAccess} onChange={(event) => { setWebAccess(event.target.checked) }} />

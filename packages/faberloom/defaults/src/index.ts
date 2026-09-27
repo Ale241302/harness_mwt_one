@@ -38,6 +38,20 @@ export interface Config {
   skillsCatalogRoot?: string
   /** Root of the shared agent presets the deployment seeds for every owner. */
   agentsSharedRoot?: string
+  /**
+   * Provider every seeded agent runs on (for example `deepseek`). Empty keeps
+   * the agent's own default.
+   */
+  agentProvider?: string
+  /** Provider model id every seeded agent runs on (for example `deepseek-v4.1-flash`). */
+  agentModel?: string
+  /**
+   * Name of the environment variable holding the provider API key the seeded
+   * agents use. The key is read from the environment, never from configuration,
+   * so it does not enter the repository; it is stored per agent and never
+   * returned by a read.
+   */
+  agentApiKeyEnv?: string
 }
 
 /** Schemastery configuration for the defaults seeder. */
@@ -47,6 +61,9 @@ export const Config: z<Config> = z.object({
   readOnly: z.boolean(),
   skillsCatalogRoot: z.string(),
   agentsSharedRoot: z.string().default(''),
+  agentProvider: z.string().default(''),
+  agentModel: z.string().default(''),
+  agentApiKeyEnv: z.string().default(''),
 })
 
 /** How long a claim left by a dead pass blocks the next one. */
@@ -149,6 +166,24 @@ export class FaberLoomDefaults extends Service {
     }
   }
 
+  /**
+   * The provider, model, and API key every seeded agent gets. The key comes from
+   * the environment variable the deployment named, so it never enters the
+   * repository; a read never returns it.
+   * @returns the configured fields, each omitted when unset.
+   */
+  private agentDefaults(): { provider?: string; model?: string; apiKey?: string } {
+    const provider = this.config.agentProvider
+    const model = this.config.agentModel
+    const envName = this.config.agentApiKeyEnv
+    const apiKey = envName === undefined || envName.length === 0 ? undefined : process.env[envName]
+    return {
+      ...provider === undefined || provider.length === 0 ? {} : { provider },
+      ...model === undefined || model.length === 0 ? {} : { model },
+      ...apiKey === undefined || apiKey.length === 0 ? {} : { apiKey },
+    }
+  }
+
   private async seedAgents(available: ReadonlySet<string>): Promise<string[]> {
     const existing = new Set((await this.ctx.faberloomAgents.listAgents()).map(agent => agent.name))
     const created: string[] = []
@@ -158,7 +193,9 @@ export class FaberLoomDefaults extends Service {
         name: seed.name,
         responsibility: seed.responsibility,
         origin: 'scratch',
+        seeded: true,
         skills: seed.skills.filter(skill => available.has(skill)),
+        ...this.agentDefaults(),
       })
       created.push(seed.name)
     }
@@ -207,7 +244,10 @@ export class FaberLoomDefaults extends Service {
       if (!entry.isDirectory()) continue
       const preset = this.readPreset(join(root, entry.name, 'preset.yml'))
       if (preset === undefined || existing.has(preset.name)) continue
-      await this.ctx.faberloomAgents.createAgent({ name: preset.name, responsibility: preset.description, origin: 'scratch', skills: [] })
+      await this.ctx.faberloomAgents.createAgent({
+        name: preset.name, responsibility: preset.description, origin: 'scratch', seeded: true, skills: [],
+        ...this.agentDefaults(),
+      })
       created.push(preset.name)
     }
     return created

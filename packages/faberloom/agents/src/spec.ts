@@ -64,6 +64,12 @@ export const agentRecord = z.object({
   // Set when a Space was deleted while this agent was in charge of it, so the
   // panel can show it as unassigned instead of as personal.
   detached: z.boolean().default(false),
+  // Ownership: the identity that created the agent ('' for a seeded/global
+  // agent). A seeded agent is every user's baseline and a privileged role is
+  // the only one that may edit or delete it; a user-created agent belongs to
+  // its owner. Defaulted so records written before ownership keep loading.
+  ownerId: z.string().default(''),
+  seeded: z.boolean().default(false),
   origin: z.union([z.literal('scratch'), z.literal('pool'), z.literal('task')]),
   originRef: z.string().nullable(),
   baseAgentId: agentId.nullable(),

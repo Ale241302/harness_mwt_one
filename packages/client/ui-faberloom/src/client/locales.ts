@@ -555,6 +555,7 @@ const es = {
   'memory.deleteHint': 'Borrar esta memoria no cambia el correo, el documento ni el espacio de origen; solo la quita de aquí.',
   'memory.detailTitle': 'Memoria',
   'memory.fullText': 'Texto completo',
+  'agents.adminOnly': 'Solo un Admin/CEO o el dueño puede modificar este agente.',
 } satisfies Record<string, string>
 
 /** The faberloom namespace key union. */
@@ -1113,6 +1114,7 @@ export const en: Record<FaberloomKey, string> = {
   'memory.deleteHint': 'Deleting this memory does not change the source email, document, or space; it only removes it here.',
   'memory.detailTitle': 'Memory',
   'memory.fullText': 'Full text',
+  'agents.adminOnly': 'Only an Admin/CEO or the owner can change this agent.',
 }
 
 /** Simplified Chinese dictionary; a real translation of the same key set. */
@@ -1664,4 +1666,5 @@ export const zh: Record<FaberloomKey, string> = {
   'memory.deleteHint': '删除这条记忆不会改变来源的邮件、文档或空间，只把它从这里移除。',
   'memory.detailTitle': '记忆',
   'memory.fullText': '全文',
+  'agents.adminOnly': '只有 Admin/CEO 或所有者可以修改该代理。',
 }
