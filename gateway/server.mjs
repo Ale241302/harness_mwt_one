@@ -851,6 +851,25 @@ function renderPatch(home, user, memory) {
     )
   }
 
+  // El adaptador multi-proveedor (llm-pi-ai) viene dormido en el bundle base;
+  // este patch le da los perfiles para que OpenAI, Anthropic, Google y Moonshot
+  // aparezcan como rutas. Las claves se leen de estas variables de entorno
+  // (nunca del repo), resueltas por request.
+  lines.push(
+    '',
+    '- id: llm-pi-ai',
+    '  config:',
+    '    providers:',
+    '      openai:',
+    '        apiKeyEnv: OPENAI_API_KEY',
+    '      anthropic:',
+    '        apiKeyEnv: ANTHROPIC_API_KEY',
+    '      google:',
+    '        apiKeyEnv: GOOGLE_API_KEY',
+    '      moonshotai:',
+    '        apiKeyEnv: MOONSHOT_API_KEY',
+  )
+
   return `${lines.join('\n')}\n`
 }
 

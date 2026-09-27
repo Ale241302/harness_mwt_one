@@ -850,21 +850,6 @@ function agentsScreen() {
                           ))}
                         </div>
                       </Field>
-                      <Field label={t('field.subagents')} hint={t('agents.subagentsHint')}>
-                        <div className={styles.steps}>
-                          {(overview?.agents ?? []).filter(agent => agent.id !== selected).map(agent => (
-                            <label className={styles.stepFlag} key={agent.id}>
-                              <input type="checkbox" checked={subagentIds.includes(agent.id)}
-                                onChange={(event) => {
-                                  setSubagentIds(event.target.checked
-                                    ? [...subagentIds, agent.id]
-                                    : subagentIds.filter(id => id !== agent.id))
-                                }} />
-                              {agent.name}
-                            </label>
-                          ))}
-                        </div>
-                      </Field>
                     </>
                   )}
           </Inspector>

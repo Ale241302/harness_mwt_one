@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import { SEED_AGENTS, SEED_ROUTINES } from './catalog.ts'
 import { PRESET_CURATION } from './preset-curation.ts'
-import type { FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
+import type { FaberLoomAgent, FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
 
 export type * from './catalog.ts'
 
@@ -123,29 +123,59 @@ export class FaberLoomDefaults extends Service {
     const ownerId = this.config.ownerId ?? ''
     if (this.config.readOnly === true) return { seeded: false, skipped: 'read-only identity', agents: [], routines: [] }
     if (ownerId.length === 0) return { seeded: false, skipped: 'no owner configured', agents: [], routines: [] }
+    const available = new Set(this.availableSkills())
     // Shared agent presets are deployment-provided and re-synced on every start
     // (idempotent by name), independent of the one-time plan marker.
     const shared = await this.seedSharedAgents()
     await this.convergeBaselineAgents()
     const marker = this.markerPath()
-    if (existsSync(marker)) return { seeded: shared.length > 0, skipped: 'already seeded', agents: shared, routines: [] }
-    if (!this.claim()) return { seeded: shared.length > 0, skipped: 'another pass is seeding', agents: shared, routines: [] }
+    let report: SeedReport
+    if (existsSync(marker)) {
+      report = { seeded: shared.length > 0, skipped: 'already seeded', agents: shared, routines: [] }
+    } else if (!this.claim()) {
+      report = { seeded: shared.length > 0, skipped: 'another pass is seeding', agents: shared, routines: [] }
+    } else {
+      try {
+        const agents = [...shared, ...await this.seedAgents(available)]
+        const routines = await this.seedRoutines(ownerId)
+        mkdirSync(this.dshHome(), { recursive: true })
+        writeFileSync(marker, `${JSON.stringify({
+          seededAt: new Date().toISOString(),
+          role: this.config.role ?? '',
+          agents,
+          routines,
+        }, null, 2)}\n`, 'utf8')
+        this.ctx.logger.info(`faberloom: seeded ${String(agents.length)} agent(s) and ${String(routines.length)} routine(s) for ${ownerId}`)
+        report = { seeded: agents.length > 0 || routines.length > 0, skipped: null, agents, routines }
+      } finally {
+        rmSync(this.claimPath(), { force: true })
+      }
+    }
+    // Keep the native seeds current on every start, not just the seeding one.
+    await this.reconcileNativeSeeds(available)
+    return report
+  }
 
-    try {
-      const available = new Set(this.availableSkills())
-      const agents = [...shared, ...await this.seedAgents(available)]
-      const routines = await this.seedRoutines(ownerId)
-      mkdirSync(this.dshHome(), { recursive: true })
-      writeFileSync(marker, `${JSON.stringify({
-        seededAt: new Date().toISOString(),
-        role: this.config.role ?? '',
-        agents,
-        routines,
-      }, null, 2)}\n`, 'utf8')
-      this.ctx.logger.info(`faberloom: seeded ${String(agents.length)} agent(s) and ${String(routines.length)} routine(s) for ${ownerId}`)
-      return { seeded: agents.length > 0 || routines.length > 0, skipped: null, agents, routines }
-    } finally {
-      rmSync(this.claimPath(), { force: true })
+  /**
+   * Keep the native seed agents current on every start: merge the catalogue's
+   * role-available skills into each, and connect its partners when it has none
+   * of its own. Idempotent, so a restart adds what a newer catalogue brought.
+   * @param available - the skill names the owner's role can use.
+   */
+  private async reconcileNativeSeeds(available: ReadonlySet<string>): Promise<void> {
+    const byName = new Map<string, FaberLoomAgent>((await this.ctx.faberloomAgents.listAgents()).map(agent => [agent.name, agent]))
+    for (const seed of SEED_AGENTS) {
+      const agent = byName.get(seed.name)
+      if (agent === undefined) continue
+      const curated = seed.skills.filter(skill => available.has(skill))
+      const merged = [...agent.skills, ...curated.filter(skill => !agent.skills.includes(skill))]
+      if (merged.length !== agent.skills.length) await this.ctx.faberloomAgents.updateAgent(agent.id, { skills: merged })
+      if (agent.subagents.length > 0) continue
+      const subagents = seed.connects
+        .map(partner => byName.get(partner))
+        .filter((partner): partner is FaberLoomAgent => partner !== undefined)
+        .map(partner => ({ name: partner.name, agentId: partner.id }))
+      if (subagents.length > 0) await this.ctx.faberloomAgents.updateAgent(agent.id, { subagents })
     }
   }
 
@@ -236,23 +266,11 @@ export class FaberLoomDefaults extends Service {
   }
 
   private async seedAgents(available: ReadonlySet<string>): Promise<string[]> {
-    const existing = await this.ctx.faberloomAgents.listAgents()
-    const byName = new Map<string, { id: FaberLoomAgentId; name: string; connected: boolean }>()
+    const existing = new Set((await this.ctx.faberloomAgents.listAgents()).map(agent => agent.name))
     const created: string[] = []
     for (const seed of SEED_AGENTS) {
-      const found = existing.find(agent => agent.name === seed.name)
-      if (found !== undefined) {
-        byName.set(seed.name, { id: found.id, name: found.name, connected: found.subagents.length > 0 })
-        // An earlier deployment seeded this before the catalogue grew: add the
-        // skills it is still missing, keeping whatever it already has.
-        const curated = seed.skills.filter(skill => available.has(skill))
-        const merged = [...found.skills, ...curated.filter(skill => !found.skills.includes(skill))]
-        if (merged.length !== found.skills.length) {
-          await this.ctx.faberloomAgents.updateAgent(found.id, { skills: merged })
-        }
-        continue
-      }
-      const agent = await this.ctx.faberloomAgents.createAgent({
+      if (existing.has(seed.name)) continue
+      await this.ctx.faberloomAgents.createAgent({
         name: seed.name,
         responsibility: seed.responsibility,
         origin: 'scratch',
@@ -260,19 +278,7 @@ export class FaberLoomDefaults extends Service {
         skills: seed.skills.filter(skill => available.has(skill)),
         ...this.agentDefaults(),
       })
-      byName.set(seed.name, { id: agent.id, name: agent.name, connected: false })
       created.push(seed.name)
-    }
-    // Connect the catalogue partners, leaving an agent's own connections alone.
-    for (const seed of SEED_AGENTS) {
-      const self = byName.get(seed.name)
-      if (self === undefined || self.connected) continue
-      const subagents = seed.connects
-        .map(partner => byName.get(partner))
-        .filter((partner): partner is { id: FaberLoomAgentId; name: string; connected: boolean } => partner !== undefined)
-        .map(partner => ({ name: partner.name, agentId: partner.id }))
-      if (subagents.length === 0) continue
-      await this.ctx.faberloomAgents.updateAgent(self.id, { subagents })
     }
     return created
   }
