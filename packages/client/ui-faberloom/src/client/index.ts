@@ -167,6 +167,7 @@ export function apply(ctx: ClientContext): void {
       mintMcpToken: input => ctx.remote.faberloomView.mintMcpToken(input),
       revokeMcpToken: token => ctx.remote.faberloomView.revokeMcpToken(token),
       saveAgent: (id, input) => ctx.remote.faberloomView.saveAgent(id, input),
+      shareAgent: (id, emails, allUsers) => ctx.remote.faberloomView.shareAgent(id, [...emails], allUsers),
       skills: () => ctx.remote.faberloomView.skills(),
       saveSkill: (name, markdown) => ctx.remote.faberloomView.saveSkill(name, markdown),
       removeSkill: name => ctx.remote.faberloomView.removeSkill(name),

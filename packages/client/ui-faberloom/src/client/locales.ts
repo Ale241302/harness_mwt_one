@@ -556,6 +556,12 @@ const es = {
   'memory.detailTitle': 'Memoria',
   'memory.fullText': 'Texto completo',
   'agents.adminOnly': 'Solo un Admin/CEO o el dueño puede modificar este agente.',
+  'agents.share': 'Compartir',
+  'agents.shareHint': 'Quien lo recibe lo ve como copia de solo lectura; tu API key nunca se comparte.',
+  'agents.shareAll': 'Compartir con toda mi empresa',
+  'agents.sharePlaceholder': 'colega@empresa.com',
+  'agents.shareDone': 'Compartido.',
+  'agents.shareNeedTarget': 'Indica al menos un correo o marca toda tu empresa.',
 } satisfies Record<string, string>
 
 /** The faberloom namespace key union. */
@@ -1115,6 +1121,12 @@ export const en: Record<FaberloomKey, string> = {
   'memory.detailTitle': 'Memory',
   'memory.fullText': 'Full text',
   'agents.adminOnly': 'Only an Admin/CEO or the owner can change this agent.',
+  'agents.share': 'Share',
+  'agents.shareHint': 'Recipients get a read-only copy; your API key is never shared.',
+  'agents.shareAll': 'Share with my whole company',
+  'agents.sharePlaceholder': 'colleague@company.com',
+  'agents.shareDone': 'Shared.',
+  'agents.shareNeedTarget': 'Add at least one email or choose your whole company.',
 }
 
 /** Simplified Chinese dictionary; a real translation of the same key set. */
@@ -1667,4 +1679,10 @@ export const zh: Record<FaberloomKey, string> = {
   'memory.detailTitle': '记忆',
   'memory.fullText': '全文',
   'agents.adminOnly': '只有 Admin/CEO 或所有者可以修改该代理。',
+  'agents.share': '共享',
+  'agents.shareHint': '接收者获得只读副本；你的 API key 不会被共享。',
+  'agents.shareAll': '共享给整个公司',
+  'agents.sharePlaceholder': 'colleague@company.com',
+  'agents.shareDone': '已共享。',
+  'agents.shareNeedTarget': '至少填写一个邮箱，或选择整个公司。',
 }

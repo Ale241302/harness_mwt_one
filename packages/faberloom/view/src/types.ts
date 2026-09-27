@@ -36,6 +36,48 @@ export interface FaberLoomAgentRow {
   readonly editable: boolean
 }
 
+/** Portable definition of a shared resource, as it travels through the console. */
+export interface FaberLoomSharePayload {
+  /** What the resource does. */
+  readonly responsibility?: string
+  /** Skill names the resource uses. */
+  readonly skills?: readonly string[]
+  /** Tool names the resource uses. */
+  readonly tools?: readonly string[]
+  /** Provider the publisher chose, when set. */
+  readonly provider?: string | null
+  /** Model the publisher chose, when set. */
+  readonly model?: string | null
+}
+
+/** One agent or skill another user shared, or the owner published, through the console. */
+export interface FaberLoomShareRow {
+  /** Console-side share id. */
+  readonly id: string
+  /** What was shared. */
+  readonly kind: 'agent' | 'skill'
+  /** Console email of the identity that published it. */
+  readonly owner_email: string
+  /** Display name of the resource. */
+  readonly name: string
+  /** Portable definition the recipient materializes (never the provider key). */
+  readonly payload: FaberLoomSharePayload
+  /** Whether it is offered to every user of the owner's company. */
+  readonly share_all: boolean
+  /** Emails it is offered to, when not offered to the whole company. */
+  readonly shared_emails: readonly string[]
+}
+
+/** What the owner published, and what others shared with them. */
+export interface FaberLoomShares {
+  /** Whether the deployment wired the console, so sharing is available. */
+  readonly configured: boolean
+  /** Resources the owner is sharing. */
+  readonly outgoing: readonly FaberLoomShareRow[]
+  /** Resources others shared with the owner. */
+  readonly incoming: readonly FaberLoomShareRow[]
+}
+
 /** One board item as the Mesa de trabajo panel renders it. */
 export interface FaberLoomBoardRow {
   /** Board item id. */

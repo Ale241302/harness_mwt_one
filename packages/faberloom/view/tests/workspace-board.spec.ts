@@ -10,6 +10,7 @@ const homes: string[] = []
 afterEach(() => {
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
 
 /** The minimal service graph the workspace and board remotes touch. */
@@ -76,6 +77,8 @@ function harness(options: { readOnly?: boolean; registry?: boolean; role?: strin
       seeded?: boolean
     }[]> => []),
     updateAgent: vi.fn(async () => ({})),
+    createAgent: vi.fn(async () => ({})),
+    removeAgent: vi.fn(async () => {}),
   }
   const ctx = {
     faberloomSpaces: spaces,
@@ -353,6 +356,65 @@ describe('FaberLoomViewService space lifecycle', () => {
 
     await view.saveAgent('a1', { name: 'x' })
     expect(agents.updateAgent).toHaveBeenCalledWith('a1', expect.objectContaining({ name: 'x' }))
+  })
+
+  it('shares an agent without its provider key', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, agents } = harness()
+    const full = {
+      id: 'a1', name: 'Recepción', responsibility: 'Atiende', skills: ['s1'], tools: [], subagents: [],
+      provider: 'deepseek', model: 'deepseek-flash', webAccess: false, mwtMcp: true, hasApiKey: true,
+      mailConnectionIds: [], policy: {}, lessons: [], active: true, version: 1,
+      createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', detached: false, spaceId: undefined,
+    }
+    agents.listAgents.mockResolvedValue([full])
+    const calls: { url: string; body: string }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: { body?: string }) => {
+      calls.push({ url, body: init.body ?? '' })
+      return { ok: true, status: 201, json: async () => ({ outgoing: [], incoming: [] }) }
+    }))
+    vi.stubEnv('CONSOLA_API_BASE', 'https://consola.test/api')
+    vi.stubEnv('CONSOLA_TOKEN', 'tok')
+
+    await view.shareAgent('a1', ['bea@sondelsa.com'], true)
+    const posted: unknown = JSON.parse(calls[0]?.body ?? '{}')
+    expect(posted).toMatchObject({ kind: 'agent', name: 'Recepción', share_all: true, shared_emails: ['bea@sondelsa.com'] })
+    expect(calls[0]?.url).toBe('https://consola.test/api/harness/shares/')
+    // The provider API key is never part of what travels.
+    expect(JSON.stringify(posted)).not.toMatch(/apiKey|sk-/)
+  })
+
+  it('materializes a shared agent as a seeded copy owned by the publisher', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, agents, spaces } = harness({ role: 'client_b2b' })
+    agents.listAgents.mockResolvedValue([])
+    spaces.listMemory.mockResolvedValue([])
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        incoming: [{
+          id: 's1', kind: 'agent', owner_email: 'ana@sondelsa.com', name: 'Analista',
+          payload: { responsibility: 'Analiza', skills: ['mwt-compras-clientes-leer'] },
+          share_all: false, shared_emails: ['owner@muitowork.com'],
+        }],
+      }),
+    })))
+    vi.stubEnv('CONSOLA_API_BASE', 'https://consola.test/api')
+    vi.stubEnv('CONSOLA_TOKEN', 'tok')
+
+    await view.syncShared()
+    expect(agents.createAgent).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Analista',
+      ownerId: 'ana@sondelsa.com',
+      seeded: true,
+      originRef: 'share:ana@sondelsa.com',
+      skills: ['mwt-compras-clientes-leer'],
+    }))
   })
 
   it('omits the workspace in the overview when no registry is mounted', async () => {

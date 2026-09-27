@@ -51,6 +51,7 @@ import type {
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow, BoardRevisionInput,
+  FaberLoomShareRow, FaberLoomShares,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 
@@ -440,6 +441,12 @@ export class FaberLoomViewService extends TypertRemoteService {
       this.builtinsEnsured = true
       void this.ensureBuiltinRoutines(this.actor().id).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: built-in routine provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }
+    if (!this.sharesSynced) {
+      this.sharesSynced = true
+      void this.pullShared().catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: shared resource sync failed: ${error instanceof Error ? error.message : String(error)}`)
       })
     }
     const actor = this.actor()
@@ -865,6 +872,153 @@ export class FaberLoomViewService extends TypertRemoteService {
     const tools = this.ctx.get('tools')
     if (tools === undefined) return false
     return tools.schemas().some(schema => /^mcp__mwt__/.test(schema.name))
+  }
+
+  /** Set once per process so the read path pulls shared resources a single time. */
+  private sharesSynced = false
+
+  /** The console API base the gateway injects, or undefined when the deployment did not. */
+  private consoleBase(): string | undefined {
+    const base = process.env.CONSOLA_API_BASE
+    return base === undefined || base.length === 0 ? undefined : base.replace(/\/+$/, '')
+  }
+
+  /** The signed-in owner's console token, or undefined when the deployment did not inject one. */
+  private consoleToken(): string | undefined {
+    const token = process.env.CONSOLA_TOKEN
+    return token === undefined || token.length === 0 ? undefined : token
+  }
+
+  /**
+   * Call the console share API as the signed-in owner.
+   * @param suffix - path after `/harness/shares/`.
+   * @param init - request method and body; the authorization header is added here.
+   * @returns the parsed JSON body, or undefined for an empty response.
+   * @throws when the console is not configured, or rejects the call.
+   */
+  private async consoleShare(suffix: string, init?: { method?: string; body?: string }): Promise<unknown> {
+    const base = this.consoleBase()
+    const token = this.consoleToken()
+    if (base === undefined || token === undefined) {
+      throw new Error('faberloom: la consola no está configurada, así que no se puede compartir')
+    }
+    const response = await fetch(`${base}/harness/shares/${suffix}`, {
+      method: init?.method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      ...init?.body === undefined ? {} : { body: init.body },
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!response.ok) throw new Error(`faberloom: la consola rechazó la operación (${String(response.status)})`)
+    if (response.status === 204) return undefined
+    return await response.json()
+  }
+
+  /**
+   * List what the owner publishes and what others share with them.
+   * @returns the share rows; unconfigured and empty when the console is not wired.
+   */
+  @Remote('shares')
+  async shares(): Promise<FaberLoomShares> {
+    if (this.consoleBase() === undefined || this.consoleToken() === undefined) {
+      return { configured: false, outgoing: [], incoming: [] }
+    }
+    const data = await this.consoleShare('') as { outgoing?: FaberLoomShareRow[]; incoming?: FaberLoomShareRow[] }
+    return { configured: true, outgoing: data.outgoing ?? [], incoming: data.incoming ?? [] }
+  }
+
+  /**
+   * Share one agent the actor manages, with named emails or with the whole
+   * company. The provider API key never travels: it belongs to the owner's
+   * account and is not portable.
+   * @param id - agent id.
+   * @param emails - exact emails to share with.
+   * @param allUsers - also offer it to every user of the owner's company.
+   * @returns the refreshed share rows.
+   */
+  @Remote('shareAgent')
+  async shareAgent(id: string, emails: readonly string[], allUsers: boolean): Promise<FaberLoomShares> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot share')
+    const agent = await this.requireManageableAgent(id)
+    const payload = {
+      responsibility: agent.responsibility,
+      skills: [...agent.skills],
+      tools: [...agent.tools],
+      provider: agent.provider ?? null,
+      model: agent.model ?? null,
+    }
+    await this.consoleShare('', {
+      method: 'POST',
+      body: JSON.stringify({ kind: 'agent', name: agent.name, payload, share_all: allUsers, shared_emails: [...emails] }),
+    })
+    return await this.shares()
+  }
+
+  /**
+   * Stop sharing one resource the owner published.
+   * @param shareId - console-side share id.
+   * @returns the refreshed share rows.
+   */
+  @Remote('unshareShare')
+  async unshareShare(shareId: string): Promise<FaberLoomShares> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot share')
+    await this.consoleShare(`${encodeURIComponent(shareId)}/`, { method: 'DELETE' })
+    return await this.shares()
+  }
+
+  /**
+   * Pull the resources others shared with the owner and return the refreshed
+   * overview.
+   * @returns the refreshed overview.
+   */
+  @Remote('syncShared')
+  async syncShared(): Promise<FaberLoomOverview> {
+    await this.pullShared()
+    return await this.overview()
+  }
+
+  /**
+   * Materialize incoming agent shares as read-only copies and prune copies whose
+   * share is gone. A copy is seeded and owned by its publisher, so only that
+   * owner or an Admin/CEO may change it here.
+   */
+  private async pullShared(): Promise<void> {
+    if (this.consoleBase() === undefined || this.consoleToken() === undefined) return
+    const data = await this.consoleShare('') as { incoming?: FaberLoomShareRow[] }
+    const agentShares = (data.incoming ?? []).filter(share => share.kind === 'agent')
+    const desired = new Set<string>()
+    for (const share of agentShares) desired.add(`${share.owner_email}\u0000${share.name}`)
+    for (const agent of await this.ctx.faberloomAgents.listAgents()) {
+      const ref = agent.originRef ?? ''
+      if (!ref.startsWith('share:')) continue
+      if (desired.has(`${ref.slice('share:'.length)}\u0000${agent.name}`)) continue
+      await this.ctx.faberloomAgents.removeAgent(agent.id)
+    }
+    for (const share of agentShares) {
+      const payload = share.payload
+      const skills = Array.isArray(payload.skills) ? [...payload.skills] : []
+      const ref = `share:${share.owner_email}`
+      const existing = (await this.ctx.faberloomAgents.listAgents())
+        .find(agent => agent.originRef === ref && agent.name === share.name)
+      if (existing === undefined) {
+        await this.ctx.faberloomAgents.createAgent({
+          name: share.name,
+          responsibility: payload.responsibility ?? `Compartido por ${share.owner_email}.`,
+          origin: 'pool',
+          originRef: ref,
+          ownerId: share.owner_email,
+          seeded: true,
+          skills,
+        })
+        continue
+      }
+      await this.ctx.faberloomAgents.updateAgent(existing.id, {
+        responsibility: payload.responsibility ?? existing.responsibility,
+        skills,
+      })
+    }
   }
 
   /**

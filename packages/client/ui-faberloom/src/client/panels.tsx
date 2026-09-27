@@ -32,7 +32,7 @@ import type {
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
   FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
-  FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
+  FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import type { createWorkspaceStore } from './store.ts'
@@ -130,6 +130,8 @@ export interface FaberloomPanelInjected {
   revokeMcpToken: (token: string) => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
   /** Save one agent's editable configuration. */
   saveAgent: (id: string, input: AgentSaveInput) => Promise<Result<FaberLoomOverview>>
+  /** Share one managed agent with named emails, the whole company, or both. */
+  shareAgent: (id: string, emails: readonly string[], allUsers: boolean) => Promise<Result<FaberLoomShares>>
   /** List the skills available to this owner. */
   skills: () => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** Add or replace one uploaded skill. */
@@ -490,7 +492,7 @@ function spacesScreen() {
 /** Agentes: table plus the full editor. */
 function agentsScreen() {
   return function FaberloomAgents(props: ScreenProps) {
-    const { t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, connections } = props
+    const { t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, connections, shareAgent } = props
     const { overview, error } = useOverview(props)
     const [selected, setSelected] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -508,6 +510,9 @@ function agentsScreen() {
     const [mwtMcp, setMwtMcp] = useState(true)
     const [mailIds, setMailIds] = useState<readonly string[]>([])
     const [subagentIds, setSubagentIds] = useState<readonly string[]>([])
+    const [shareEmails, setShareEmails] = useState('')
+    const [shareAll, setShareAll] = useState(false)
+    const [shareMsg, setShareMsg] = useState<string | null>(null)
 
     const agents = useMemo(
       () => (overview?.agents ?? []).filter(agent => agent.name.toLowerCase().includes(query.trim().toLowerCase())),
@@ -538,6 +543,9 @@ function agentsScreen() {
       setMwtMcp(detail.value.mwtMcp)
       setMailIds(detail.value.mailConnectionIds)
       setSubagentIds(detail.value.subagentIds)
+      setShareEmails('')
+      setShareAll(false)
+      setShareMsg(null)
       setMessage(null)
     }, [detail])
 
@@ -716,6 +724,32 @@ function agentsScreen() {
                       </Field>
                       {drafting || canEdit ? null : (
                         <p className={styles.hint}>{t('agents.adminOnly')}</p>
+                      )}
+                      {drafting || !canEdit ? null : (
+                        <Field label={t('agents.share')} hint={t('agents.shareHint')}>
+                          <input type="text" value={shareEmails} placeholder={t('agents.sharePlaceholder')}
+                            onChange={(event) => { setShareEmails(event.target.value) }} />
+                          <label className={styles.stepFlag}>
+                            <input type="checkbox" checked={shareAll} onChange={(event) => { setShareAll(event.target.checked) }} />
+                            <span>{t('agents.shareAll')}</span>
+                          </label>
+                          <div className={styles.grid2}>
+                            <button className={styles.ghost} type="button" disabled={saving}
+                              onClick={() => {
+                                const emails = shareEmails.split(',').map(value => value.trim()).filter(value => value.length > 0)
+                                if (!shareAll && emails.length === 0) { setShareMsg(t('agents.shareNeedTarget')); return }
+                                setSaving(true)
+                                void shareAgent(selected ?? '', emails, shareAll)
+                                  .then((result) => {
+                                    if (!result.ok) setShareMsg(result.error.message)
+                                    else { setShareMsg(t('agents.shareDone')); setShareEmails(''); setShareAll(false) }
+                                  })
+                                  .catch((cause: unknown) => { setShareMsg(String(cause)) })
+                                  .finally(() => { setSaving(false) })
+                              }}>{t('agents.share')}</button>
+                            {shareMsg === null ? null : <span className={styles.cellMuted}>{shareMsg}</span>}
+                          </div>
+                        </Field>
                       )}
                       <Field label={t('field.webAccess')} hint={t('agents.webAccessHint')}>
                         <label className={styles.stepFlag}>
