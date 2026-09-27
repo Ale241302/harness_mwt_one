@@ -2390,6 +2390,20 @@ export class FaberLoomViewService extends TypertRemoteService {
     }))
   }
 
+  /**
+   * Delete one space-memory entry the owner controls and return the refreshed
+   * list. Deleting a space never deletes its memory; this is the only path that
+   * removes an entry, and it is explicit.
+   * @param id - memory entry id.
+   * @returns the remaining memory rows, oldest first.
+   */
+  @Remote('deleteSpaceMemory')
+  async deleteSpaceMemory(id: string): Promise<readonly FaberLoomSpaceMemoryRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot delete memory')
+    await this.ctx.faberloomSpaces.forgetMemory(this.actor(), id)
+    return await this.spaceMemory()
+  }
+
   /** The deployment-supplied identity, or a read-only anonymous actor. */
   private actor(): SpaceActor {
     const ownerId = this.config.ownerId

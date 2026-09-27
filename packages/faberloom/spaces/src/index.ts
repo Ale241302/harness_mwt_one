@@ -330,6 +330,23 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
+   * Delete one memory entry the actor owns. Deleting a space deliberately does
+   * not go through here: removing a space keeps its memory, which retains the
+   * space id as the recorded origin of a space that no longer exists.
+   * @param actor - the acting identity.
+   * @param id - memory entry id.
+   * @returns whether the entry existed and was removed.
+   * @throws when the entry belongs to another owner.
+   */
+  async forgetMemory(actor: SpaceActor, id: string): Promise<boolean> {
+    const table = await this.memory()
+    const record = table.get(id)
+    if (record === undefined) return false
+    if (record.ownerId !== actor.id) throw new Error('faberloom: memory access denied')
+    return await table.delete(id)
+  }
+
+  /**
    * List the actor's memory entries, optionally only those attached to one space.
    * @param actor - the acting identity.
    * @param spaceId - when set, only entries attached to this space.

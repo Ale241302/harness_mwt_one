@@ -543,6 +543,15 @@ const es = {
   'workbench.save': 'Guardar',
   'email.markRead': 'Marcar leído',
   'email.trash': 'Papelera',
+  'col.type': 'Tipo',
+  'memory.type.email': 'Correo',
+  'memory.type.document': 'Documento',
+  'memory.type.note': 'Nota',
+  'memory.deletedSpace': '(espacio eliminado)',
+  'memory.delete': 'Eliminar memoria',
+  'memory.deleteHint': 'Borrar esta memoria no cambia el correo, el documento ni el espacio de origen; solo la quita de aquí.',
+  'memory.detailTitle': 'Memoria',
+  'memory.fullText': 'Texto completo',
 } satisfies Record<string, string>
 
 /** The faberloom namespace key union. */
@@ -1089,6 +1098,15 @@ export const en: Record<FaberloomKey, string> = {
   'workbench.save': 'Save',
   'email.markRead': 'Mark as read',
   'email.trash': 'Trash',
+  'col.type': 'Type',
+  'memory.type.email': 'Email',
+  'memory.type.document': 'Document',
+  'memory.type.note': 'Note',
+  'memory.deletedSpace': '(deleted space)',
+  'memory.delete': 'Delete memory',
+  'memory.deleteHint': 'Deleting this memory does not change the source email, document, or space; it only removes it here.',
+  'memory.detailTitle': 'Memory',
+  'memory.fullText': 'Full text',
 }
 
 /** Simplified Chinese dictionary; a real translation of the same key set. */
@@ -1628,4 +1646,13 @@ export const zh: Record<FaberloomKey, string> = {
   'workbench.save': '保存',
   'email.markRead': '标为已读',
   'email.trash': '垃圾箱',
+  'col.type': '类型',
+  'memory.type.email': '邮件',
+  'memory.type.document': '文档',
+  'memory.type.note': '笔记',
+  'memory.deletedSpace': '（已删除空间）',
+  'memory.delete': '删除记忆',
+  'memory.deleteHint': '删除这条记忆不会改变来源的邮件、文档或空间，只把它从这里移除。',
+  'memory.detailTitle': '记忆',
+  'memory.fullText': '全文',
 }

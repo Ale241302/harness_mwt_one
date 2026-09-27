@@ -149,6 +149,7 @@ export function apply(ctx: ClientContext): void {
       setRoutineActive: (id, active) => { write(() => ctx.remote.faberloomView.setRoutineActive(id, active)) },
       remember: (text, spaceId) => { write(() => ctx.remote.faberloomView.remember(text, spaceId ?? undefined)) },
       spaceMemory: spaceId => ctx.remote.faberloomView.spaceMemory(spaceId),
+      deleteSpaceMemory: id => ctx.remote.faberloomView.deleteSpaceMemory(id),
       agentDetail: id => ctx.remote.faberloomView.agentDetail(id),
       models: () => ctx.remote.faberloomView.models(),
       recommendModel: agentId => ctx.remote.faberloomView.recommendModel(agentId),

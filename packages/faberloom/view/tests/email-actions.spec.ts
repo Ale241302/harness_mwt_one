@@ -7,7 +7,7 @@ import { FaberLoomViewService } from '../src/index.ts'
 function harness(
   inbound: unknown,
   memory: unknown,
-  extra: { connections?: unknown; routines?: unknown } = {},
+  extra: { connections?: unknown; routines?: unknown; spaces?: unknown } = {},
 ): FaberLoomViewService {
   const ctx = {
     reflect: { provide: () => {} },
@@ -24,6 +24,7 @@ function harness(
     faberloomMemory: memory,
     faberloomConnections: extra.connections,
     faberloomRoutines: extra.routines,
+    faberloomSpaces: extra.spaces,
   } as unknown as Context
   return new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
 }
@@ -104,5 +105,18 @@ describe('FaberLoomViewService mailbox writes', () => {
 
     expect(routines.createRoutine).not.toHaveBeenCalled()
     expect(routines.activateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'r9')
+  })
+
+  it('deletes one space-memory entry and returns the refreshed list', async () => {
+    const spaces = {
+      forgetMemory: vi.fn(async () => true),
+      listMemory: vi.fn(async () => [{ id: 'm2', text: 'otra', spaceIds: [], createdAt: '2026-01-01T00:00:00Z' }]),
+    }
+    const view = harness(undefined, undefined, { spaces })
+
+    await expect(view.deleteSpaceMemory('m1')).resolves.toEqual([
+      { id: 'm2', text: 'otra', spaceIds: [], createdAt: '2026-01-01T00:00:00Z' },
+    ])
+    expect(spaces.forgetMemory).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'm1')
   })
 })

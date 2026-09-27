@@ -43,6 +43,7 @@ async function bench(
   overviewResult: unknown = { ok: true, value: OVERVIEW },
   spaceDetailResult: unknown = { ok: true, value: undefined },
   email: { drafts?: unknown[]; inbox?: unknown[] } = {},
+  memoryRows: unknown[] = [],
 ) {
   const runtime = await SlotTestRuntime.create()
   runtimes.add(runtime)
@@ -64,7 +65,8 @@ async function bench(
   const createRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const setRoutineActive = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const remember = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
-  const spaceMemory = vi.fn(async () => ({ ok: true, value: [] }))
+  const spaceMemory = vi.fn(async () => ({ ok: true, value: memoryRows }))
+  const deleteSpaceMemory = vi.fn(async () => ({ ok: true, value: memoryRows }))
   const teachings = vi.fn(async () => ({ ok: true, value: [] }))
   const saveTeaching = vi.fn(async () => ({ ok: true, value: [] }))
   const editTeaching = vi.fn(async () => ({ ok: true, value: [] }))
@@ -107,7 +109,7 @@ async function bench(
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
-    spaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
+    spaceMemory, deleteSpaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -145,7 +147,7 @@ async function bench(
   return {
     runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace,
     deleteBoardItem, emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
-    remember, spaceMemory, surface, view,
+    deleteSpaceMemory, remember, spaceMemory, surface, view,
   }
 }
 
@@ -299,6 +301,23 @@ describe('faberloom surface', () => {
     expect(await view.findByRole('button', { name: 'Reply' })).toBeTruthy()
   })
 
+  it('shows the space name and a snippet, and deletes the memory from a modal', async () => {
+    const named = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', text: `Correo «PO 505433»: ${'x'.repeat(400)}` }
+    const orphan = { id: 'm2', spaceIds: ['gone'], createdAt: '2026-09-26T00:00:00Z', text: 'Documento «PF 1.pdf»: resumen' }
+    const { runtime, deleteSpaceMemory, view } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, {}, [named, orphan],
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
+
+    expect(await view.findByText('Marluvas')).toBeTruthy()
+    expect(await view.findByText('(deleted space)')).toBeTruthy()
+
+    const target = view.getAllByRole('row').find(row => row.textContent?.includes('Correo «PO 505433»'))
+    fireEvent.click(target as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Delete memory' }))
+    await waitFor(() => { expect(deleteSpaceMemory).toHaveBeenCalledWith('m1') })
+  })
+
   it('marks read and trashes a message from the Email panel', async () => {
     const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
     const { runtime, emailMarkSeen, emailTrash, view } = await bench(
@@ -342,8 +361,7 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(remember).toHaveBeenCalledWith('nota', 'space-1') })
   })
 
-  it('keeps the space form usable for a read-only identity (own spaces)', async () => {
-    const { runtime, createSpace, view } = await bench({ ok: true, value: { ...OVERVIEW, canWrite: false } })
+  it('keeps the space form usable for a read-only identity (own spaces)', async () => {    const { runtime, createSpace, view } = await bench({ ok: true, value: { ...OVERVIEW, canWrite: false } })
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
     fireEvent.click(await view.findByRole('button', { name: 'New space' }))
     const input = await view.findByPlaceholderText('Space name')

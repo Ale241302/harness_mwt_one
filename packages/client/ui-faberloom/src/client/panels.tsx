@@ -94,6 +94,8 @@ export interface FaberloomPanelInjected {
   remember: (text: string, spaceId: string | null) => void
   /** Read the space-scoped memory, resolved for one space when given. */
   spaceMemory: (spaceId?: string) => Promise<Result<readonly FaberLoomSpaceMemoryRow[]>>
+  /** Delete one space-memory entry and return the refreshed list. */
+  deleteSpaceMemory: (id: string) => Promise<Result<readonly FaberLoomSpaceMemoryRow[]>>
   /** Read one agent's full editable configuration. */
   agentDetail: (id: string) => Promise<Result<FaberLoomAgentDetail | undefined>>
   /** List the model pool the panels assign from. */
@@ -1865,7 +1867,7 @@ function routinesScreen() {
 /** Memoria: the owner's rows from the agent-memory server plus the recall form. */
 function memoryScreen() {
   return function FaberloomMemory(props: ScreenProps) {
-    const { t, remember, spaceMemory } = props
+    const { t, remember, spaceMemory, deleteSpaceMemory } = props
     const { overview, error } = useOverview(props)
     const [draft, setDraft] = useState('')
     const [spaceId, setSpaceId] = useState('')
@@ -1878,12 +1880,27 @@ function memoryScreen() {
     )
     const rows = memory.kind === 'ready' ? memory.value : []
     const chosen = rows.find(row => row.id === selected) ?? null
+    // A space that no longer exists is named as deleted instead of leaking its
+    // id: the memory outlives the space, so its origin must read as history.
     const spaceNames = (ids: readonly string[]): string => ids.length === 0
       ? t('spaces.noSpace')
-      : ids.map(id => (overview?.spaces ?? []).find(space => space.id === id)?.title ?? id).join(', ')
+      : ids.map(id => (overview?.spaces ?? []).find(space => space.id === id)?.title ?? t('memory.deletedSpace')).join(', ')
+
+    /** One-line preview so a row stays a row; the modal carries the full text. */
+    const snippet = (text: string): string => {
+      const flat = text.replace(/\s+/g, ' ').trim()
+      return flat.length <= 120 ? flat : `${flat.slice(0, 120).trimEnd()}…`
+    }
+
+    /** Coarse origin of one entry, derived from its own opening words. */
+    const kindOf = (text: string): string =>
+      text.startsWith('Correo «') ? t('memory.type.email')
+        : text.startsWith('Documento «') ? t('memory.type.document')
+          : t('memory.type.note')
 
     const columns: readonly Column<FaberLoomSpaceMemoryRow>[] = [
-      { key: 'text', header: t('col.text'), cell: row => <span className={styles.cellName}>{row.text}</span> },
+      { key: 'text', header: t('col.text'), cell: row => <span className={styles.cellName}>{snippet(row.text)}</span> },
+      { key: 'type', header: t('col.type'), cell: row => <Chip>{kindOf(row.text)}</Chip> },
       { key: 'space', header: t('col.space'), cell: row => <span className={styles.cellMuted}>{spaceNames(row.spaceIds)}</span> },
       { key: 'at', header: t('col.date'), cell: row => <span className={styles.cellMuted}>{row.createdAt}</span> },
     ]
@@ -1909,25 +1926,32 @@ function memoryScreen() {
         )}>
         <Feedback t={t} message={error ?? message} />
         <p className={styles.hint}>{t('state.memoryPending')}</p>
-        <div className={styles.split}>
-          {memory.kind === 'loading'
-            ? <StateBlock kind="loading" title={t('state.loading')} />
-            : memory.kind === 'error'
-              ? <StateBlock kind="error" title={t('state.error')} text={memory.message} />
-              : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
-                emptyTitle={t('state.empty.title')} emptyText={t('state.empty.memory')} labels={tableLabels(t)} />}
-          <Inspector title={chosen === null ? t('memory.detail') : t('col.text')}>
-            {chosen === null
-              ? <StateBlock kind="empty" title={t('memory.selectTitle')} text={t('memory.selectText')} />
-              : (
-                <>
-                  <Field label={t('field.text')}><span className={styles.cellMuted}>{chosen.text}</span></Field>
-                  <Field label={t('col.space')}><span className={styles.cellMuted}>{spaceNames(chosen.spaceIds)}</span></Field>
-                  <Field label={t('field.date')}><span className={styles.cellMuted}>{chosen.createdAt}</span></Field>
-                </>
-              )}
-          </Inspector>
-        </div>
+        {memory.kind === 'loading'
+          ? <StateBlock kind="loading" title={t('state.loading')} />
+          : memory.kind === 'error'
+            ? <StateBlock kind="error" title={t('state.error')} text={memory.message} />
+            : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+              emptyTitle={t('state.empty.title')} emptyText={t('state.empty.memory')} labels={tableLabels(t)} />}
+        <Modal open={chosen !== null} onClose={() => { setSelected(null) }} title={t('memory.detailTitle')} closeLabel={t('action.close')}
+          footer={(
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+              <button className={styles.danger} type="button" onClick={() => {
+                if (chosen === null) return
+                setMessage(null)
+                void deleteSpaceMemory(chosen.id).then((result) => {
+                  if (!result.ok) { setMessage(result.error.message); return }
+                  setSelected(null)
+                  setReload(value => value + 1)
+                }).catch((cause: unknown) => { setMessage(String(cause)) })
+              }}>{t('memory.delete')}</button>
+            </>
+          )}>
+          <Field label={t('memory.fullText')}><span className={styles.cellMuted}>{chosen?.text ?? ''}</span></Field>
+          <Field label={t('col.space')}><span className={styles.cellMuted}>{chosen === null ? '' : spaceNames(chosen.spaceIds)}</span></Field>
+          <Field label={t('field.date')}><span className={styles.cellMuted}>{chosen?.createdAt ?? ''}</span></Field>
+          <p className={styles.hint}>{t('memory.deleteHint')}</p>
+        </Modal>
         <TeachingsBlock
           t={t}
           teachings={props.teachings}
