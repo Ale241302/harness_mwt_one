@@ -93,7 +93,8 @@ const cfg = {
   // se lee de la variable de entorno que aquí se nombra (por defecto
   // DEEPSEEK_API_KEY) y se guarda por agente, sin devolverse nunca en una lectura.
   agentProvider: process.env.FABERLOOM_AGENT_PROVIDER || 'deepseek',
-  agentModel: process.env.FABERLOOM_AGENT_MODEL || 'deepseek-v4.1-flash',
+  // `deepseek-flash` es el id de proveedor de "DeepSeek V4.1 Flash".
+  agentModel: process.env.FABERLOOM_AGENT_MODEL || 'deepseek-flash',
   agentApiKeyEnv: process.env.FABERLOOM_AGENT_API_KEY_ENV || 'DEEPSEEK_API_KEY',
   // Cadencia del despachador persistente de rutinas (una pasada cada N ms).
   dispatcherIntervalMs: Number(process.env.DISPATCHER_INTERVAL_MS || 60000),
