@@ -315,6 +315,21 @@
   max-width: 240px;
 }
 
+/* La evidencia son referencias largas: una rejilla de dos columnas las coloca
+   en paralelo en vez de apilarlas a ancho completo (el `max-width` de .chips
+   las obliga a una por fila). */
+.evidenceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  align-items: start;
+}
+
+.evidenceGrid .chip {
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+
 .chip {
   padding: 2px 7px;
   border: 1px solid var(--dsw-alias-border-l2);

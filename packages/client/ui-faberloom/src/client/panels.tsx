@@ -1653,7 +1653,7 @@ function boardScreen() {
           <Field label={t('field.evidence')}>
             {value.evidence.length === 0
               ? <span className={styles.cellMuted}>{t('board.noEvidence')}</span>
-              : <span className={styles.chips}>{value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry}</Chip>)}</span>}
+              : <span className={styles.evidenceGrid}>{value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry}</Chip>)}</span>}
           </Field>
           <Field label={t('workbench.routine')}>
             <select value={value.routineId ?? ''} onChange={(event) => {
