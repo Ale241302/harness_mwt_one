@@ -1649,7 +1649,7 @@ function boardScreen() {
           <Field label={t('field.revision')}>
             <span className={styles.cellMuted}>{String(value.version)}{value.approvedRevision === null ? '' : ` · ${t('board.approved')} ${String(value.approvedRevision)}`}</span>
           </Field>
-          <Field label={t('field.summary')}><span className={styles.cellMuted}>{value.summary.length === 0 ? '—' : value.summary}</span></Field>
+          <Field label={t('field.summary')}><span className={styles.summary}>{value.summary.length === 0 ? '—' : value.summary}</span></Field>
           <Field label={t('field.evidence')}>
             {value.evidence.length === 0
               ? <span className={styles.cellMuted}>{t('board.noEvidence')}</span>

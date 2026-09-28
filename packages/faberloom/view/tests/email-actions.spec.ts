@@ -71,6 +71,7 @@ describe('FaberLoomViewService mailbox writes', () => {
     const routines = {
       listRoutines: vi.fn(async () => []),
       createRoutine: vi.fn(async () => ({ id: 'r1', name: 'Vigía de correo', status: 'draft' })),
+      updateRoutine: vi.fn(async () => ({})),
       activateRoutine: vi.fn(async () => ({})),
     }
     const view = harness(undefined, undefined, { connections, routines })
@@ -84,7 +85,12 @@ describe('FaberLoomViewService mailbox writes', () => {
 
   it('does not provision the live mail routine while a mail half is missing', async () => {
     const connections = { list: vi.fn(async () => [{ kind: 'imap' }]), save: vi.fn(async () => ({})) }
-    const routines = { listRoutines: vi.fn(async () => []), createRoutine: vi.fn(), activateRoutine: vi.fn() }
+    const routines = {
+      listRoutines: vi.fn(async () => []),
+      createRoutine: vi.fn(),
+      updateRoutine: vi.fn(async () => ({})),
+      activateRoutine: vi.fn(),
+    }
     const view = harness(undefined, undefined, { connections, routines })
 
     await view.saveConnection({} as never)
@@ -98,6 +104,7 @@ describe('FaberLoomViewService mailbox writes', () => {
     const routines = {
       listRoutines: vi.fn(async () => [{ id: 'r9', name: 'Vigía de correo', status: 'paused' }]),
       createRoutine: vi.fn(),
+      updateRoutine: vi.fn(async () => ({})),
       activateRoutine: vi.fn(async () => ({})),
     }
     const view = harness(undefined, undefined, { connections, routines })
@@ -113,6 +120,7 @@ describe('FaberLoomViewService mailbox writes', () => {
     const routines = {
       listRoutines: vi.fn(async () => []),
       createRoutine: vi.fn(async (_owner: string, input: { name: string }) => ({ id: 'g1', name: input.name, status: 'draft' })),
+      updateRoutine: vi.fn(async () => ({})),
       activateRoutine: vi.fn(async () => ({})),
     }
     const tools = { schemas: () => [{ name: 'mcp__mwt__expediente_listar' }] }

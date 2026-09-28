@@ -873,6 +873,11 @@ export class FaberLoomViewService extends TypertRemoteService {
         await routines.activateRoutine(ownerId, created.id)
         return
       }
+      // Converge the deployment-owned definition so an improved prompt reaches
+      // an owner provisioned by an earlier deployment.
+      if (JSON.stringify(found.definition) !== JSON.stringify(input.definition)) {
+        await routines.updateRoutine(ownerId, found.id, input)
+      }
       if (found.status !== 'active') await routines.activateRoutine(ownerId, found.id)
     }
     const connections = await this.connectionsService().list(ownerId)
