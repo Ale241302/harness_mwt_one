@@ -54,10 +54,15 @@ step "2/6  Builder persistente (imagen toolchain, se construye una vez)"
 docker build -q -t mwt-one-harness/builder -f scripts/Dockerfile.builder scripts >/dev/null
 
 step "3/6  Build del fork (incremental sobre el árbol persistente)"
+# DSH_CLIENT_TITLE is the browser-title source the client inlines at build time
+# (ui-layout's AppFrame reads process.env.DSH_CLIENT_TITLE, falling back to the
+# "DSH Local Build" locale string). Without it the deployed tab reads the
+# fallback even though apps/web/index.html carries the product title.
 docker run --rm \
   -v "$TREE:/src" \
   -v "$BUILD_DIR/pnpm-store:/pnpm-store" \
   -e CI=1 -e PNPM_STORE_DIR=/pnpm-store -e DSH_FORK_SHA="$FORK_SHA" \
+  -e DSH_CLIENT_TITLE="Harness MWT.ONE" \
   -w /src \
   mwt-one-harness/builder sh -lc '
     set -e
