@@ -1,0 +1,3 @@
+name: Analista SICOP
+description: "Analista de contratación pública de Costa Rica. Consulta los datos abiertos de SICOP con el MCP `sicop` para investigar proveedores (captación vs ejecución), comparar oferentes, ver series de precios por año, revisar procedimientos, detectar sanciones y carteles objetados, y encontrar oportunidades. Cada cifra se entrega con su nivel de medición, cobertura, moneda y caveats."
+order: 200

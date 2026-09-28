@@ -32,6 +32,7 @@ Clientes externos (Claude/Cowork)
 | 网关健康检查 | `https://harness.mwt.one/healthz` | JSON |
 | 控制台登录 | `https://consola.mwt.one/api/auth/login/` | JSON |
 | 内部 MCP（harness 使用） | `http://consola-mwt-one-mcp:8765/mcp` | Streamable HTTP |
+| SICOP 的 MCP（公开，默认对所有用户可用） | `https://sicop.vlinte.work/mcp` | Streamable HTTP（无认证） |
 | 规范外部 MCP（产品） | `https://mcp.mwt.one` | OAuth（Authentik） |
 | IdP | `https://idp.mwt.one` | Authentik |
 | 控制台 | `https://consola.mwt.one` | HTTPS |

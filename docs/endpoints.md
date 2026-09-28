@@ -38,6 +38,7 @@ Clientes externos (Claude/Cowork)
 | Health del gateway | `https://harness.mwt.one/healthz` | JSON |
 | Login de consola | `https://consola.mwt.one/api/auth/login/` | JSON |
 | MCP interno (usado por el harness) | `http://consola-mwt-one-mcp:8765/mcp` | Streamable HTTP |
+| MCP de SICOP (público, por defecto para todo usuario) | `https://sicop.vlinte.work/mcp` | Streamable HTTP (sin auth) |
 | MCP externo canónico (producto) | `https://mcp.mwt.one` | OAuth (Authentik) |
 | IdP | `https://idp.mwt.one` | Authentik |
 | Consola | `https://consola.mwt.one` | HTTPS |

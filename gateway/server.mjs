@@ -47,6 +47,9 @@ const cfg = {
   dshProfile: process.env.DSH_PROFILE || 'faberloom',
   mcpUrl: process.env.MWT_MCP_URL || 'http://consola-mwt-one-mcp:8765/mcp',
   mcpGatewayKey: readSecret('MWT_MCP_GATEWAY_KEY'),
+  // MCP de SICOP (contratación pública de Costa Rica). Público y sin auth: se
+  // monta para todos los usuarios salvo que SICOP_MCP_URL quede vacío.
+  sicopUrl: process.env.SICOP_MCP_URL ?? 'https://sicop.vlinte.work/mcp',
   mcpClientId: process.env.MWT_MCP_CLIENT_ID || '',
   // E2 · fijar X-MWT-Client-ID con la única empresa del usuario si tiene una sola.
   mcpClientIdFromUser: process.env.MWT_MCP_CLIENT_ID_FROM_USER !== '0',
@@ -353,10 +356,12 @@ function resolveClientId(user) {
   const ents = (user && (user.legalEntityIds || user.legal_entity_ids)) || []
   return ents.length === 1 ? String(ents[0]).toLowerCase() : ''
 }
-function renderEntry({ id, serverName, url, headers, toolTimeoutMs }) {
+function renderEntry({ id, serverName, url, headers = {}, toolTimeoutMs }) {
   const headerLines = Object.entries(headers)
     .map(([k, v]) => `          ${k}: ${isEnvValue(v) ? `!!js ${v.js}` : yamlScalar(v)}`)
-    .join('\n')
+  // Un `headers:` sin items se parsea como null y el esquema del cliente MCP
+  // espera un diccionario, así que solo se emite cuando hay cabeceras.
+  const headerBlock = headerLines.length === 0 ? [] : ['        headers:', ...headerLines]
   return [
     `    - id: ${id}`,
     "      name: '@deepseek-ai/dsh-mcp-client'",
@@ -364,8 +369,7 @@ function renderEntry({ id, serverName, url, headers, toolTimeoutMs }) {
     `        serverName: ${serverName}`,
     '        transport: streamable-http',
     `        url: ${yamlScalar(url)}`,
-    '        headers:',
-    headerLines,
+    ...headerBlock,
     '        failOnStartupError: false',
     '        reconnect:',
     '          enabled: true',
@@ -689,6 +693,13 @@ function renderPatch(home, user, memory) {
     }
     if (clientId) headers['X-MWT-Client-ID'] = clientId
     entries.push(renderEntry({ id: 'mcp-mwt', serverName: 'mwt', url: cfg.mcpUrl, headers, toolTimeoutMs: 120000 }))
+  }
+
+  // MCP de SICOP (datos abiertos de contratación pública de Costa Rica). Es
+  // público y sin identidad por usuario: cualquier agente de cualquier usuario
+  // puede consultarlo. Se omite cuando SICOP_MCP_URL queda vacío.
+  if (cfg.sicopUrl) {
+    entries.push(renderEntry({ id: 'mcp-sicop', serverName: 'sicop', url: cfg.sicopUrl, toolTimeoutMs: 120000 }))
   }
 
   // context-mode (MCP stdio): mantiene los datos crudos fuera del contexto del
@@ -1146,6 +1157,7 @@ app.get('/healthz', (_req, res) => {
     publicHost: cfg.publicHost,
     consolaApi: cfg.consolaApi,
     mcpConfigured: Boolean(cfg.mcpGatewayKey),
+    sicopConfigured: Boolean(cfg.sicopUrl),
     faberloomConfigured: Boolean(cfg.faberloomUrl && cfg.faberloomGatewayKey),
     memoryEnabled: cfg.memoryEnabled,
     memoryConfigured: cfg.memoryEnabled && Boolean(cfg.memoryAdminKey),

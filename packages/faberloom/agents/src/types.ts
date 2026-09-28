@@ -156,6 +156,8 @@ export interface FaberLoomAgent {
   readonly webAccess: boolean
   /** Whether the agent may query the MWT.ONE MCP server. */
   readonly mwtMcp: boolean
+  /** Whether the agent may query the SICOP MCP server. */
+  readonly sicopMcp: boolean
   /** Whether a provider API key is stored; the key itself is never exposed. */
   readonly hasApiKey: boolean
   /** Last four characters of the stored key, so the owner can recognize it; absent when none. */
@@ -206,6 +208,8 @@ export interface AgentInput {
   readonly webAccess?: boolean
   /** Whether the agent may query the MWT.ONE MCP server. */
   readonly mwtMcp?: boolean
+  /** Whether the agent may query the SICOP MCP server. */
+  readonly sicopMcp?: boolean
   /** User mail connections the agent may use. */
   readonly mailConnectionIds?: readonly string[]
   /** Initial model policy. */
@@ -238,6 +242,8 @@ export interface AgentPatch {
   readonly webAccess?: boolean
   /** New MWT.ONE MCP access switch. */
   readonly mwtMcp?: boolean
+  /** New SICOP MCP access switch. */
+  readonly sicopMcp?: boolean
   /** New mail-connection list, replaced wholesale. */
   readonly mailConnectionIds?: readonly string[]
   /** New portable teachings. */

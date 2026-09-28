@@ -580,6 +580,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     apiKey?: string,
     webAccess?: boolean,
     mwtMcp?: boolean,
+    sicopMcp?: boolean,
     mailConnectionIds?: readonly string[],
     subagentIds?: readonly string[],
   ): Promise<FaberLoomOverview> {
@@ -594,6 +595,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...apiKey === undefined || apiKey.length === 0 ? {} : { apiKey },
       ...webAccess === undefined ? {} : { webAccess },
       ...mwtMcp === undefined ? {} : { mwtMcp },
+      ...sicopMcp === undefined ? {} : { sicopMcp },
       ...mailConnectionIds === undefined ? {} : { mailConnectionIds },
       ...subagentIds === undefined ? {} : {
         subagents: subagentIds.map(agentId => ({
@@ -674,6 +676,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...agent.apiKeyTail === undefined ? {} : { apiKeyTail: agent.apiKeyTail },
       webAccess: agent.webAccess,
       mwtMcp: agent.mwtMcp,
+      sicopMcp: agent.sicopMcp,
       mailConnectionIds: [...agent.mailConnectionIds],
       subagentIds: agent.subagents.map(entry => String(entry.agentId)),
     }
@@ -698,6 +701,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       apiKey?: string | null
       webAccess?: boolean
       mwtMcp?: boolean
+      sicopMcp?: boolean
       mailConnectionIds?: readonly string[]
       subagents?: readonly { name: string; agentId: FaberLoomAgentId }[]
       policy?: PolicyPatch
@@ -710,6 +714,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (input.apiKey !== undefined) patch.apiKey = input.apiKey.length === 0 ? null : input.apiKey
     if (input.webAccess !== undefined) patch.webAccess = input.webAccess
     if (input.mwtMcp !== undefined) patch.mwtMcp = input.mwtMcp
+    if (input.sicopMcp !== undefined) patch.sicopMcp = input.sicopMcp
     if (input.mailConnectionIds !== undefined) patch.mailConnectionIds = [...input.mailConnectionIds]
     if (input.subagentIds !== undefined) {
       const catalog = await this.ctx.faberloomAgents.listAgents()

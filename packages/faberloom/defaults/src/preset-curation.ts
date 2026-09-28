@@ -59,6 +59,7 @@ export const PRESET_CURATION: Readonly<Record<string, PresetCuration>> = {
   'refactor-cleaner': { skills: ['cmd-refactor-clean', 'coding-standards', 'hexagonal-architecture', 'verification-loop'], connects: ['code-reviewer', 'code-simplifier'] },
   'security-reviewer': { skills: ['cmd-security-scan', 'safety-guard', 'security-review', 'security-scan'], connects: ['code-reviewer', 'silent-failure-hunter'] },
   'seo-specialist': { skills: ['content-engine', 'market-research', 'seo'], connects: ['marketing-agent'] },
+  'sicop-analyst': { skills: ['sicop-contratacion-publica'], connects: [] },
   'silent-failure-hunter': { skills: ['codehealth-mcp', 'error-handling', 'verification-loop'], connects: ['code-reviewer', 'security-reviewer'] },
   'spec-miner': { skills: ['codebase-onboarding', 'contract-first', 'intent-driven-development'], connects: ['code-explorer', 'planner'] },
   'tdd-guide': { skills: ['e2e-testing', 'tdd-workflow', 'verification-loop'], connects: ['code-reviewer', 'e2e-runner', 'pr-test-analyzer'] },

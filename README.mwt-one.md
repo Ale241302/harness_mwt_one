@@ -166,6 +166,15 @@ El `Authorization: Bearer` no es un JWT válido: solo evita que el MCP
 (`MWT_MCP_OAUTH=1`) devuelva el challenge OAuth; la identidad real la aporta el
 header `X-Forwarded-User-Email` validado por el Gateway Key (diseño Ola 2).
 
+### MCP de SICOP (contratación pública de Costa Rica)
+
+Cada `dsh` arranca además con el MCP `sicop` apuntando a `SICOP_MCP_URL`
+(por defecto `https://sicop.vlinte.work/mcp`). Es un servidor público, sin
+autenticación ni identidad por usuario, así que cualquier agente de cualquier
+usuario puede consultar sus tools (`mcp__sicop__*`: adjudicaciones, proveedores,
+precios por año, expedientes, competencia, sanciones, resumen). Deja
+`SICOP_MCP_URL` vacío para no montarlo. `healthz` reporta `sicopConfigured`.
+
 ### MCP de FaberLoom (espacios)
 
 Si `FABERLOOM_MCP_URL` y `FABERLOOM_GATEWAY_KEY` están definidos, cada `dsh`

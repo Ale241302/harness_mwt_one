@@ -69,6 +69,7 @@ export interface FaberloomPanelInjected {
     readonly apiKey: string
     readonly webAccess: boolean
     readonly mwtMcp: boolean
+    readonly sicopMcp: boolean
     readonly mailConnectionIds: readonly string[]
     readonly subagentIds: readonly string[]
   }) => void
@@ -519,6 +520,7 @@ function agentsScreen() {
     const [hasApiKey, setHasApiKey] = useState(false)
     const [webAccess, setWebAccess] = useState(false)
     const [mwtMcp, setMwtMcp] = useState(true)
+    const [sicopMcp, setSicopMcp] = useState(true)
     const [mailIds, setMailIds] = useState<readonly string[]>([])
     const [subagentIds, setSubagentIds] = useState<readonly string[]>([])
     const [apiKeyTail, setApiKeyTail] = useState<string | null>(null)
@@ -568,6 +570,7 @@ function agentsScreen() {
       setApiKeyTail(detail.value.apiKeyTail ?? null)
       setWebAccess(detail.value.webAccess)
       setMwtMcp(detail.value.mwtMcp)
+      setSicopMcp(detail.value.sicopMcp)
       setMailIds(detail.value.mailConnectionIds)
       setSubagentIds(detail.value.subagentIds)
       setShareEmails('')
@@ -611,6 +614,7 @@ function agentsScreen() {
       setHasApiKey(false)
       setWebAccess(false)
       setMwtMcp(true)
+      setSicopMcp(true)
       setMailIds([])
       setSubagentIds([])
       setMessage(null)
@@ -627,6 +631,7 @@ function agentsScreen() {
           apiKey,
           webAccess,
           mwtMcp,
+          sicopMcp,
           mailConnectionIds: mailIds,
           subagentIds,
         })
@@ -644,6 +649,7 @@ function agentsScreen() {
         model: modelId.length === 0 ? null : modelId,
         webAccess,
         mwtMcp,
+        sicopMcp,
         mailConnectionIds: mailIds,
         subagentIds,
         ...apiKey.length === 0 ? {} : { apiKey },
@@ -835,6 +841,12 @@ function agentsScreen() {
                         <label className={styles.stepFlag}>
                           <input type="checkbox" checked={mwtMcp} onChange={(event) => { setMwtMcp(event.target.checked) }} />
                           {t('agents.mwtMcpAllow')}
+                        </label>
+                      </Field>
+                      <Field label={t('field.sicopMcp')} hint={t('agents.sicopMcpHint')}>
+                        <label className={styles.stepFlag}>
+                          <input type="checkbox" checked={sicopMcp} onChange={(event) => { setSicopMcp(event.target.checked) }} />
+                          {t('agents.sicopMcpAllow')}
                         </label>
                       </Field>
                       <Field label={t('field.mail')} hint={t('agents.mailHint')}>

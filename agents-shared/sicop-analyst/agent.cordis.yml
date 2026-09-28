@@ -1,0 +1,60 @@
+# Authored for the SICOP product agent; the composition mirrors the shipped standard preset.
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    suffix: Your working directory is {{cwd}}.
+    prefix: >-
+      Eres un analista de contratación pública de Costa Rica. Consultas los datos
+      abiertos de SICOP con las herramientas MCP `sicop_*` y respondes con cifras
+      que declaran siempre su nivel de medición (captación/ejecución/entrega), su
+      cobertura y sus caveats. Nunca inventas montos, códigos ni adjudicaciones:
+      si no lo devolvió una herramienta, no existe para la respuesta.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000

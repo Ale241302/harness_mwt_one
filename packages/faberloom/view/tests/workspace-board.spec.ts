@@ -319,12 +319,12 @@ describe('FaberLoomViewService space lifecycle', () => {
     ])
 
     await view.saveAgent('a1', {
-      provider: 'openai', model: 'gpt-4o', webAccess: true, mailConnectionIds: ['c1'],
-      subagentIds: ['a2'], apiKey: 'sk-secret',
+      provider: 'openai', model: 'gpt-4o', webAccess: true, mwtMcp: false, sicopMcp: true,
+      mailConnectionIds: ['c1'], subagentIds: ['a2'], apiKey: 'sk-secret',
     })
     expect(agents.updateAgent).toHaveBeenCalledWith('a1', expect.objectContaining({
-      provider: 'openai', model: 'gpt-4o', webAccess: true, mailConnectionIds: ['c1'],
-      subagents: [{ name: 'Otro', agentId: 'a2' }], apiKey: 'sk-secret',
+      provider: 'openai', model: 'gpt-4o', webAccess: true, mwtMcp: false, sicopMcp: true,
+      mailConnectionIds: ['c1'], subagents: [{ name: 'Otro', agentId: 'a2' }], apiKey: 'sk-secret',
     }))
 
     // An empty key clears the stored secret.
@@ -365,7 +365,7 @@ describe('FaberLoomViewService space lifecycle', () => {
     const { view, agents } = harness()
     const full = {
       id: 'a1', name: 'Recepción', responsibility: 'Atiende', skills: ['s1'], tools: [], subagents: [],
-      provider: 'deepseek', model: 'deepseek-flash', webAccess: false, mwtMcp: true, hasApiKey: true,
+      provider: 'deepseek', model: 'deepseek-flash', webAccess: false, mwtMcp: true, sicopMcp: true, hasApiKey: true,
       mailConnectionIds: [], policy: {}, lessons: [], active: true, version: 1,
       createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', detached: false, spaceId: undefined,
     }

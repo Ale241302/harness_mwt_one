@@ -59,6 +59,18 @@ describe('FaberLoomAgents', () => {
     await expect(agents.duplicateAgent('missing' as FaberLoomAgentId, { name: 'x' })).rejects.toThrow('not found')
   })
 
+  it('defaults MWT.ONE and SICOP MCP access on and toggles SICOP alone', async () => {
+    const { agents } = await harness()
+    const agent = await agents.createAgent({ name: 'A', responsibility: 'r' })
+    expect(agent.mwtMcp).toBe(true)
+    expect(agent.sicopMcp).toBe(true)
+
+    const updated = await agents.updateAgent(agent.id, { sicopMcp: false })
+    expect(updated.sicopMcp).toBe(false)
+    expect(updated.mwtMcp).toBe(true)
+    expect((await agents.getAgent(agent.id)).sicopMcp).toBe(false)
+  })
+
   it('F19 · provider fallback selects the fallback and records the effective model', async () => {
     const { agents } = await harness()
     const models = await seedModels(agents)
