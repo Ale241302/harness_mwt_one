@@ -2882,6 +2882,22 @@ export function FaberloomBrandName({ t }: PropsLocale<'faberloom'>) {
   return <span className={styles.brandName}>{t('brand.name')}</span>
 }
 
+/**
+ * The product brand mark: the MWT.ONE swoosh, white on the dark theme and green
+ * on the light one. It occupies `sidebar.brand.mark` and
+ * `conversation.hero.brand.mark`, replacing the harness's own mark.
+ * @param props.size - the pixel height the slot asks for.
+ * @returns the theme-appropriate mark image.
+ */
+export function FaberloomBrandMark({ size = 24 }: { size?: number }) {
+  return (
+    <span className={styles.brandMark} style={{ height: size }}>
+      <img className={styles.brandMarkDark} src="/brand-dark.png" alt="" />
+      <img className={styles.brandMarkLight} src="/brand-light.png" alt="" />
+    </span>
+  )
+}
+
 /** Sidebar row occupant type: a function component over the panellist owner props. */
 export type FaberloomPanelIconType = (props: PropsRuntime<'sidebar.panellist'>) => ReactNode
 

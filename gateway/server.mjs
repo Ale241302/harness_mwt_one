@@ -1168,6 +1168,11 @@ app.get('/metrics', (_req, res) => {
   res.type('text/plain; version=0.0.4').send(prometheus({ instances: instances.size }))
 })
 
+// Marca del producto: el favicon de la app y del login es el logo MWT.ONE.
+app.get(['/favicon.ico', '/brand-dark.png'], (_req, res) => {
+  res.sendFile(path.join(import.meta.dirname, 'assets', 'brand-dark.png'))
+})
+
 app.get('/login', (req, res) => {
   const sess = getSession(req)
   if (sess) {
@@ -1617,6 +1622,7 @@ function entityPage(sess, errCode) {
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/brand-dark.png">
 <title>Cambiar de empresa · Harness MWT.ONE</title>
 <style>${AUTH_CSS}${AUTH_ENTITY_CSS}</style></head>
 <body>
@@ -1646,6 +1652,7 @@ function loginPage(errCode, csrf = '') {
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/brand-dark.png">
 <title>Harness MWT.ONE</title>
 <style>${AUTH_CSS}</style></head>
 <body>

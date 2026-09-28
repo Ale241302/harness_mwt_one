@@ -26,7 +26,7 @@ The FaberLoom surface turns the shared Web shell into the FaberLoom workspace: i
 Mount this plugin where `ctx.slots`, `ctx.locale`, and `ctx.theme` are present. It then contributes:
 
 - an accent layer through `ctx.theme.overrideTokens`, which follows light and dark;
-- the `sidebar.brand.name` occupant;
+- the `sidebar.brand.name`, `sidebar.brand.mark`, and `conversation.hero.brand.mark` occupant;
 - ten `sidebar.panellist` rows and their matching `main` panels, addressed by the shared `MainPanelId`;
 - the chat gestures: an `@` trigger source that lists the owner's active agents (a pick inserts `@name`) and a `/routine` command contribution with a popup that starts the picked routine, both fed by the workspace overview through `ctx.remote.faberloomView`.
 

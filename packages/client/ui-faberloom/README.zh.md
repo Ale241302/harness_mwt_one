@@ -26,7 +26,7 @@ FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoo
 在存在 `ctx.slots`、`ctx.locale` 与 `ctx.theme` 的组合中挂载本插件。它会贡献：
 
 - 通过 `ctx.theme.overrideTokens` 注册的强调色层，随浅色/深色模式变化；
-- `sidebar.brand.name` 的占用者；
+- `sidebar.brand.name`、`sidebar.brand.mark` 与 `conversation.hero.brand.mark` 的占用者；
 - 十个 `sidebar.panellist` 行及其对应的 `main` 面板，以共享的 `MainPanelId` 寻址；
 - 聊天手势：一个 `@` 触发器源，列出所有者的活跃代理（选中会插入 `@name`），以及一个带弹窗的 `/routine` 命令贡献，用于启动选中的例程；两者都由工作区总览经 `ctx.remote.faberloomView` 提供。
 

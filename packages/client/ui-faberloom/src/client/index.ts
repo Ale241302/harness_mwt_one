@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
-import { FaberloomBrandName, FABERLOOM_SECTIONS, type FaberloomPanelInjected } from './panels.tsx'
+import { FaberloomBrandName, FaberloomBrandMark, FABERLOOM_SECTIONS, type FaberloomPanelInjected } from './panels.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
 import { runTaskChat } from './task-chat.ts'
@@ -259,6 +259,18 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({}),
   }, FaberloomBrandName))
+
+  // Replace the harness's own mark with the MWT.ONE one, in both places it shows.
+  ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.register({
+    name: 'sidebar.brand.mark',
+    locale: NS,
+    inject: () => ({}),
+  }, FaberloomBrandMark))
+  ctx.slots.inject('conversation.hero.brand.mark', () => ctx.slots.register({
+    name: 'conversation.hero.brand.mark',
+    locale: NS,
+    inject: () => ({}),
+  }, FaberloomBrandMark))
 
   for (const section of FABERLOOM_SECTIONS) {
     ctx.slots.inject('main', () => ctx.slots.register({

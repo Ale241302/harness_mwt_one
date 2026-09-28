@@ -1,15 +1,15 @@
 {
   "id": "/",
-  "name": "DeepSeek Harness",
-  "short_name": "DSH",
+  "name": "Harness MWT.ONE",
+  "short_name": "MWT.ONE",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
   "icons": [
     {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/brand-dark.png",
+      "sizes": "200x122",
+      "type": "image/png",
       "purpose": "any"
     }
   ]
