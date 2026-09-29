@@ -164,7 +164,9 @@ Cada `dsh` arranca con `HOME` = su directorio de usuario (`/data/users/<id>`), d
 selector de directorios del harness ("Home") crea los Workspaces bajo el volumen persistente
 y no en `/root` (capa efímera del contenedor). Un Workspace fuera del volumen se pierde al
 recrear el contenedor y sus sesiones quedan sin `cwd`, por lo que el sidebar las muestra como
-"Ungrouped".
+"Ungrouped". Para evitarlo, al arrancar cada `dsh` el gateway recrea las carpetas de los
+Workspaces registrados que falten (leyendo `storages/workspace.json`), de modo que las
+sesiones de un Workspace antiguo (p. ej. `/root/SICOP`) vuelven a agruparse.
 
 ## MCP
 

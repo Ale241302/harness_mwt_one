@@ -1033,10 +1033,41 @@ function waitForToken(child, timeoutMs, onLog) {
   })
 }
 
+/**
+ * Recreate the directories of the owner's registered Workspaces before the dsh
+ * starts. Session↔Workspace grouping is decided by each session header's
+ * canonical cwd; when a recorded Workspace directory is missing (an ephemeral
+ * path outside the persistent volume, or a deleted folder), every session under
+ * it drops to "Ungrouped". Recreating the directory restores the grouping the
+ * owner expects. Best effort: a failure only logs.
+ * @param home - the owner's DSH_HOME.
+ */
+function ensureWorkspaceDirs(home) {
+  try {
+    const file = path.join(home, 'storages', 'workspace.json')
+    if (!fs.existsSync(file)) return
+    const state = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const workspaces = state?.tables?.workspaces
+    if (workspaces === null || typeof workspaces !== 'object') return
+    for (const record of Object.values(workspaces)) {
+      const dir = record !== null && typeof record === 'object' && typeof record.path === 'string' ? record.path : ''
+      if (!dir.startsWith('/')) continue
+      try {
+        fs.mkdirSync(dir, { recursive: true })
+      } catch (err) {
+        console.error(`[gateway] no se pudo recrear el Workspace ${dir}: ${err.message}`)
+      }
+    }
+  } catch (err) {
+    console.error(`[gateway] no se pudo leer el registro de Workspaces de ${home}: ${err.message}`)
+  }
+}
+
 function startInstance(user, memory) {
   const startedAt = Date.now()
   const home = path.join(cfg.dataDir, user.id)
   fs.mkdirSync(home, { recursive: true })
+  ensureWorkspaceDirs(home)
   const patchFile = writeUserPatch(home, user, memory)
   writeUserInstructions(home)
   writeUserPresets(home)
