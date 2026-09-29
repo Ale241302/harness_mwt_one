@@ -48,6 +48,26 @@ Una cifra sin su sobre es una respuesta incorrecta.
 3. Baja a instituciones y líneas relevantes con `sicop_precios_institucion` / `sicop_mercado_familia`.
 4. Cierra con el sobre completo y los caveats.
 
+## Datos crudos: nulos y tipos (importante)
+
+El MCP devuelve datos crudos, no limpios. Antes de ordenar, unir o sumar:
+
+- Muchos campos vienen `null` o vacíos (`NRO_SICOP` puede ser `null` en cientos de filas, igual que `NRO_OFERTA`, `NRO_ACTO`, `DESCUENTO`, `IVA`, `OTROS_IMPUESTOS`, `ACARREOS`, `TIPO_CAMBIO_*`). `sorted()`/`','.join()` sobre un conjunto que contenga `None` revienta con `TypeError`; normaliza siempre: `[str(v) for v in xs if v is not None]`.
+- **No asumas el esquema.** Imprime `list(rows[0].keys())` de una fila antes de usar campos, y usa `.get()` con valor por defecto. `sicop_adjudicaciones(cedula=...)` trae `NRO_SICOP` (nullable) pero **no** institución, año ni label de procedimiento; para ubicar el cartel/institución usa `sicop_expediente`, `sicop_preguntar` o `sicop_competencia_procedimiento`.
+- Coacciona antes de operar: `r.get('CANTIDAD_ADJUDICADA') or 0`, `float(...)` con guarda, y filtra `None`.
+
+Patrón seguro para agrupar e imprimir:
+
+```python
+def s(v):  # nunca metas None a sorted()/join()
+    return '' if v is None else str(v)
+
+for k, v in sorted(d.items()):
+    sicos = ','.join(sorted({s(x) for x in v['sicos']}))
+    monedas = ','.join(sorted({s(x) for x in v['moneda']}))
+    print(k, '| lineas:', v['n'], '| sicop:', sicos, '|', monedas, round(v['monto'], 2))
+```
+
 ## Anti-patrones
 
 - No inventes montos, códigos, cédulas ni adjudicaciones: si no lo devolvió una tool, no existe para la respuesta.
