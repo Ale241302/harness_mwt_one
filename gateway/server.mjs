@@ -1066,6 +1066,12 @@ function startInstance(user, memory) {
       env: {
         ...process.env,
         DSH_HOME: home,
+        // El selector de directorios usa `os.homedir()` como "Home"; heredar
+        // HOME=/root (capa efímera del contenedor y compartida) hace que los
+        // Workspaces se creen fuera del volumen persistente y se pierdan al
+        // recrear el contenedor, dejando sus sesiones sin `cwd`. HOME por
+        // usuario los deja bajo /data/users/<id>.
+        HOME: home,
         DEEPSEEK_API_KEY: cfg.deepseekKey,
         // El parche referencia estos secretos como `!!js process.env.*`, así que
         // el proceso hijo debe recibir el valor resuelto (env o *_FILE).

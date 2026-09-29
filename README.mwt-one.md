@@ -160,6 +160,12 @@ El shell de cada `dsh` corre dentro de este contenedor e incluye `node` y `pytho
 imagen los instala) para que el agente parsee volcados de tools; no trae `pip` ni librerías
 de terceros.
 
+Cada `dsh` arranca con `HOME` = su directorio de usuario (`/data/users/<id>`), de modo que el
+selector de directorios del harness ("Home") crea los Workspaces bajo el volumen persistente
+y no en `/root` (capa efímera del contenedor). Un Workspace fuera del volumen se pierde al
+recrear el contenedor y sus sesiones quedan sin `cwd`, por lo que el sidebar las muestra como
+"Ungrouped".
+
 ## MCP
 
 Cada `dsh` arranca con un `--patch` generado por usuario:
