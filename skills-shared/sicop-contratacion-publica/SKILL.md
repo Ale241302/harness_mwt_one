@@ -48,13 +48,16 @@ Una cifra sin su sobre es una respuesta incorrecta.
 3. Baja a instituciones y líneas relevantes con `sicop_precios_institucion` / `sicop_mercado_familia`.
 4. Cierra con el sobre completo y los caveats.
 
-## Datos crudos: nulos y tipos (importante)
+## Claves crudas (`_claves`) vs etiquetas, y nulos
 
-El MCP devuelve datos crudos, no limpios. Antes de ordenar, unir o sumar:
+El MCP presenta cada fila con **etiquetas legibles** de primer nivel y mueve los **códigos crudos** a `_claves`:
 
-- Muchos campos vienen `null` o vacíos (`NRO_SICOP` puede ser `null` en cientos de filas, igual que `NRO_OFERTA`, `NRO_ACTO`, `DESCUENTO`, `IVA`, `OTROS_IMPUESTOS`, `ACARREOS`, `TIPO_CAMBIO_*`). `sorted()`/`','.join()` sobre un conjunto que contenga `None` revienta con `TypeError`; normaliza siempre: `[str(v) for v in xs if v is not None]`.
-- **No asumas el esquema.** Imprime `list(rows[0].keys())` de una fila antes de usar campos, y usa `.get()` con valor por defecto. `sicop_adjudicaciones(cedula=...)` trae `NRO_SICOP` (nullable) pero **no** institución, año ni label de procedimiento; para ubicar el cartel/institución usa `sicop_expediente`, `sicop_preguntar` o `sicop_competencia_procedimiento`.
-- Coacciona antes de operar: `r.get('CANTIDAD_ADJUDICADA') or 0`, `float(...)` con guarda, y filtra `None`.
+- Usa las etiquetas de primer nivel: `NRO_PROCEDIMIENTO`, `PROCEDIMIENTO_LABEL`, `INSTITUCION`, `NOMBRE_PROVEEDOR`, `TIPO_MONEDA`, etc. Es lo que debe aparecer en tu respuesta.
+- Los códigos crudos (`NRO_SICOP`, `CEDULA_PROVEEDOR`, `CEDULA_INSTITUCION`, …) pueden venir en `_claves`, **no** en el primer nivel. Si necesitas el código para programar, léelo de ahí:
+  `nro = r.get('NRO_SICOP') or (r.get('_claves') or {}).get('NRO_SICOP')`.
+- **No asumas dónde está un campo.** Antes de usarlo imprime `list(rows[0].keys())` y `rows[0].get('_claves')`.
+
+Además, algunos campos sí pueden ser `null` (`NRO_OFERTA`, `NRO_ACTO`, `DESCUENTO`, `IVA`, `OTROS_IMPUESTOS`, `ACARREOS`, `TIPO_CAMBIO_*`, y `_claves` puede faltar). `sorted()`/`','.join()` con un `None` dentro revienta con `TypeError`; normaliza con `str(v)` y filtra `None`.
 
 Patrón seguro para agrupar e imprimir:
 
