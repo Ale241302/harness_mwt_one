@@ -146,12 +146,15 @@ lo arranca como **MCP por stdio**, con su `DSH_HOME` como proyecto y almacenamie
 
 ## Sandbox de shell
 
-La imagen instala **`bubblewrap`**: la cadena Linux de `dsh-sandbox-local` lo necesita para
-el modo por defecto **`workspace-write`** (el launcher Landlock no viaja en la imagen). Sin
-`bwrap`, cada comando de shell falla con `SANDBOX_UNAVAILABLE` ("no sandbox backend is
-usable on this host"). El perfil base lee el modo de `DSH_PERMISSION_MODE` (por defecto
-`workspace-write`); no lo cambies a `danger-full-access` salvo que quieras ejecución sin
-confinar dentro del contenedor.
+El perfil base pide `workspace-write`, que en Linux confina los comandos con un backend
+(`bubblewrap` o Landlock). El gateway la detecta al arrancar con el probe real de
+`dsh-sandbox-local` y pasa `DSH_PERMISSION_MODE` a cada `dsh`: usa `workspace-write` si
+`bwrap` funciona, y si no cae a **`danger-full-access`** para que el shell funcione (el
+`dsh` ya corre dentro de este contenedor). La imagen instala `bubblewrap` para aprovechar
+el confinamiento donde el host lo permita; en hosts con AppArmor que restringe los user
+namespaces no privilegiados (p. ej. Ubuntu 24.04), `bwrap` no puede crear namespaces y se
+usa `danger-full-access`. `DSH_PERMISSION_MODE` fuerza un valor explícito; `healthz`
+reporta el modo en `permissionMode`.
 
 ## MCP
 

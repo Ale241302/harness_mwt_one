@@ -10,7 +10,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 import express from 'express'
@@ -32,6 +32,24 @@ function readSecret(name) {
     }
   }
   return process.env[name] || ''
+}
+
+/**
+ * Whether the local shell sandbox can confine commands. The base profile's
+ * Linux chain is bubblewrap then Landlock; the Landlock launcher is not shipped
+ * in this image, so only bubblewrap is probed. A failed probe (missing binary or
+ * a host that blocks unprivileged user namespaces) yields `danger-full-access`,
+ * which the profile accepts without a backend.
+ * @returns `workspace-write` when the sandbox works, otherwise `danger-full-access`.
+ */
+function detectSandboxMode() {
+  try {
+    const probe = spawnSync('bwrap', [
+      '--ro-bind', '/', '/', '--dev', '/dev', '--unshare-pid', '--proc', '/proc', '--die-with-parent', '--', 'true',
+    ], { timeout: 5000, stdio: 'ignore' })
+    if (probe.status === 0) return 'workspace-write'
+  } catch { /* sin bwrap usable: se usa ejecución sin confinar */ }
+  return 'danger-full-access'
 }
 
 const cfg = {
@@ -99,6 +117,13 @@ const cfg = {
   // `deepseek-flash` es el id de proveedor de "DeepSeek V4.1 Flash".
   agentModel: process.env.FABERLOOM_AGENT_MODEL || 'deepseek-flash',
   agentApiKeyEnv: process.env.FABERLOOM_AGENT_API_KEY_ENV || 'DEEPSEEK_API_KEY',
+  // Modo de sandbox del shell para cada dsh. `workspace-write` confina los
+  // comandos a su directorio de trabajo, pero en Linux exige un backend usable
+  // (bubblewrap o Landlock). Muchos hosts (Ubuntu 24.04 con AppArmor) bloquean
+  // los user namespaces no privilegiados, así que se detecta una vez y, si no
+  // hay backend, se cae a `danger-full-access` (el dsh ya corre aislado dentro
+  // de este contenedor). DSH_PERMISSION_MODE fuerza un valor explícito.
+  dshPermissionMode: process.env.DSH_PERMISSION_MODE || detectSandboxMode(),
   // Cadencia del despachador persistente de rutinas (una pasada cada N ms).
   dispatcherIntervalMs: Number(process.env.DISPATCHER_INTERVAL_MS || 60000),
   // Receptor de correo: sondeo del IMAP del usuario (desactivado por defecto
@@ -1050,6 +1075,8 @@ function startInstance(user, memory) {
         // teniendo DEEPSEEK_API_KEY como respaldo del arranque.
         ...(memory && memory.userKey ? { PROXY_USER_KEY: memory.userKey } : {}),
         DSH_WEB_URL: `https://${cfg.publicHost}/`,
+        // Modo del sandbox de shell detectado/forzado para este dsh.
+        DSH_PERMISSION_MODE: cfg.dshPermissionMode,
         // `context-mode` otherwise falls back to Chinese in an image without a
         // system locale; the session-init form must read in English.
         CONTEXT_MODE_LOCALE: process.env.CONTEXT_MODE_LOCALE || 'en-US',
@@ -1158,6 +1185,7 @@ app.get('/healthz', (_req, res) => {
     consolaApi: cfg.consolaApi,
     mcpConfigured: Boolean(cfg.mcpGatewayKey),
     sicopConfigured: Boolean(cfg.sicopUrl),
+    permissionMode: cfg.dshPermissionMode,
     faberloomConfigured: Boolean(cfg.faberloomUrl && cfg.faberloomGatewayKey),
     memoryEnabled: cfg.memoryEnabled,
     memoryConfigured: cfg.memoryEnabled && Boolean(cfg.memoryAdminKey),
@@ -1550,6 +1578,7 @@ process.on('SIGINT', shutdown)
 
 server.listen(cfg.port, '0.0.0.0', () => {
   console.log(`[gateway] escuchando en :${cfg.port} · host=${cfg.publicHost} · consola=${cfg.consolaApi}`)
+  console.log(`[gateway] sandbox de shell para dsh: ${cfg.dshPermissionMode}`)
   if (!cfg.mcpGatewayKey) console.warn('[gateway] MWT_MCP_GATEWAY_KEY vacío: el MCP no confiará la identidad')
   if (!cfg.deepseekKey) console.warn('[gateway] DEEPSEEK_API_KEY vacío: el harness no tendrá modelo')
   if (cfg.memoryEnabled) {
