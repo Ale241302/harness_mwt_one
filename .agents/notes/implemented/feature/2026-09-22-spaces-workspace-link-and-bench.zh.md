@@ -18,7 +18,7 @@ Status: implemented
 
 ## 已考虑的替代方案
 
-- **在空间记录上存储工作区 id。** 否决：路径由 `ownerId:spaceId` 确定性得出（与 `resolveWorkdir` 返回的摘要相同），且 `workspaceRegistry.create` 按规范化路径幂等——存储的链接只会漂移。
+- **在空间记录上存储工作区 id。** 否决：路径由 `ownerId:spaceId` 确定性得出（与 `resolveWorkdir` 返回的摘要相同），且 `workspaceRegistry.create` 按规范化路径幂等——存储的链接只会漂移。为自动采纳工作区而在[每个 harness 工作区镜像为空间](2026-09-28-workspaces-mirror-as-spaces.zh.md)中逆转。
 - **创建空间时即创建工作区。** 否决：未使用的空间会占一个空的侧边栏组；在首次对话时才落实能保持读取无副作用（`spaceWorkspace` 不创建任何东西）。
 - **做一个在回车时真正运行 agent 的宿主 `delegate` 命令。** 推迟而非实施：`faberloomAgents.delegate` 只是准入与预算簿记（不运行模型回合），真正的委派会话属于 subagent 运行时并需携带 agent 策略——错误的捷径会伪造这个手势。提示词规则让今天的 `faberloom_agents_delegate` 路径先可靠起来。
 - **保留 Members/Sources 可见。** 否决：members 尚无多用户语义，sources 无法从 UI 添加，二者读起来都像坏的；字段保留在模型与 MCP 工具中。

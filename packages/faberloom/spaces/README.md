@@ -49,6 +49,7 @@ Independent of live requests: the registration never touches a request prefix.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Console-role scoping** — access uses the console role, company, and read-only flag the gateway injects; a member from another company is denied, while a read-only role still creates and manages its own spaces (a space is the user's own container, not company data).
+- **Workspace mirror** — a space may store the id of the harness Workspace it mirrors when a Workspace is adopted as a Space; the service keeps the id only (never a path), and the view resolves it through the workspace registry. A space with no mirror uses the deterministic `<DSH_HOME>/spaces/<ref>` area.
 
 <a id="dev-note"></a>
 ### Dev Note

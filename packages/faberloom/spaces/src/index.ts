@@ -56,6 +56,7 @@ function toSpace(id: FaberLoomSpaceId, record: SpaceRecord): FaberLoomSpace {
     context: record.context,
     sources: record.sources,
     agentId: record.agentId ?? undefined,
+    workspaceId: record.workspaceId ?? undefined,
     archived: record.archived,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -210,6 +211,7 @@ export class FaberLoomSpaces extends Service {
       context: {},
       sources: [],
       agentId: input.agentId ?? null,
+      workspaceId: input.workspaceId ?? null,
       archived: false,
       createdAt: now,
       updatedAt: now,
@@ -266,6 +268,7 @@ export class FaberLoomSpaces extends Service {
       context: patch.context !== undefined ? { ...patch.context } : record.context,
       sources: patch.sources !== undefined ? assertSourcesAllowed(actor, patch.sources) : record.sources,
       agentId: patch.agentId !== undefined ? patch.agentId : record.agentId,
+      workspaceId: patch.workspaceId !== undefined ? patch.workspaceId : record.workspaceId,
       updatedAt: new Date().toISOString(),
       version: record.version + 1,
     }

@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -27,10 +27,10 @@ import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@dee
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
-import type { SpaceActor, FaberLoomSpaceId } from '@deepseek-ai/dsh-faberloom-spaces'
+import type { SpaceActor, FaberLoomSpaceId, FaberLoomSpace } from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the workspace registry, read through ctx.get like the product services.
-import type { Workspace, WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
+import type { Workspace, WorkspaceRegistry, WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
@@ -380,8 +380,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     // The Space and its registered Workspace are the same area; deleting the
     // workspace from the sidebar must drop the Space, or the record and its
     // agent link outlive the area the user removed.
-    ctx.effect(() => ctx.on('workspace/removed', (_workspaceId, workspacePath) => {
-      void this.forgetSpacePath(workspacePath).catch((error: unknown) => {
+    ctx.effect(() => ctx.on('workspace/removed', (workspaceId, workspacePath) => {
+      void this.forgetSpacePath(workspaceId, workspacePath).catch((error: unknown) => {
         ctx.logger.warn(`faberloom: could not drop the space for a removed workspace: ${String(error)}`)
       })
     }), 'faberloom.view.workspace-removed')
@@ -389,20 +389,25 @@ export class FaberLoomViewService extends TypertRemoteService {
 
   /**
    * Drop the product Space whose conversation area was a removed workspace.
+   * A space mirrors the workspace by id when it was adopted, and by its
+   * deterministic directory otherwise.
+   * @param workspaceId - the removed workspace's id.
    * @param workspacePath - the removed workspace's filesystem path.
    */
-  private async forgetSpacePath(workspacePath: string): Promise<void> {
+  private async forgetSpacePath(workspaceId: WorkspaceId, workspacePath: string): Promise<void> {
     const actor = this.actor()
     for (const space of await this.ctx.faberloomSpaces.list(actor)) {
-      const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
-      if (join(this.dshHome(), 'spaces', ref.ref) === workspacePath) {
-        const agentId = space.agentId ?? null
-        const registry = this.workspaceRegistryOrUndefined()
-        if (registry !== undefined) await registry.archiveSessionsUnder(workspacePath)
-        await this.ctx.faberloomSpaces.remove(actor, space.id)
-        if (agentId !== null) await this.detachAgentIfOrphan(agentId)
-        return
-      }
+      const anchored = space.workspaceId === String(workspaceId)
+      const deterministic = anchored
+        ? false
+        : join(this.dshHome(), 'spaces', (await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)).ref) === workspacePath
+      if (!anchored && !deterministic) continue
+      const agentId = space.agentId ?? null
+      const registry = this.workspaceRegistryOrUndefined()
+      if (registry !== undefined) await registry.archiveSessionsUnder(workspacePath)
+      await this.ctx.faberloomSpaces.remove(actor, space.id)
+      if (agentId !== null) await this.detachAgentIfOrphan(agentId)
+      return
     }
   }
 
@@ -453,6 +458,8 @@ export class FaberLoomViewService extends TypertRemoteService {
       })
     }
     const actor = this.actor()
+    // Make the Spaces panel mirror the sidebar before reading the rows.
+    await this.adoptOrphanWorkspaces(actor)
     const [spaces, agents, board, routines, memory] = await Promise.all([
       this.ctx.faberloomSpaces.list(actor),
       this.ctx.faberloomAgents.listAgents(),
@@ -473,8 +480,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       spacesByAgent.set(space.agentId, led)
     }
     const rows = await Promise.all(spaces.map(async (space): Promise<FaberLoomSpaceRow> => {
-      const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
-      const dir = join(this.dshHome(), 'spaces', ref.ref)
+      const dir = await this.resolveSpaceDir(actor, space)
       const workspace = registry?.list().find(candidate => candidate.path === dir)
       return {
         id: space.id,
@@ -525,7 +531,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...parentId === undefined || parentId.length === 0 ? {} : { parentId: parentId as FaberLoomSpaceId },
       ...inheritContext === undefined ? {} : { inheritContext },
     })
-    await this.ensureSpaceWorkspace(actor, space.id, space.title)
+    await this.ensureSpaceWorkspace(actor, space)
     if (agentId !== undefined && agentId.length > 0) await this.assignAgent(agentId, space.id)
     return await this.overview()
   }
@@ -541,13 +547,16 @@ export class FaberLoomViewService extends TypertRemoteService {
   async deleteSpace(id: string): Promise<FaberLoomOverview> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
-    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
-    const dir = join(this.dshHome(), 'spaces', ref.ref)
+    const dir = await this.resolveSpaceDir(actor, space)
     const registry = this.workspaceRegistryOrUndefined()
-    const existing = registry?.list().find(workspace => workspace.path === dir)
+    const existing = space.workspaceId === undefined
+      ? registry?.list().find(workspace => workspace.path === dir)
+      : registry?.get(space.workspaceId as WorkspaceId)
     if (registry !== undefined) await registry.archiveSessionsUnder(dir)
     if (registry !== undefined && existing !== undefined) await registry.delete(existing.id)
-    rmSync(dir, { recursive: true, force: true })
+    // An adopted workspace may live anywhere the picker browsed; only remove a
+    // directory this deployment owns under the harness home.
+    if (this.isUnderDshHome(dir)) rmSync(dir, { recursive: true, force: true })
     await this.ctx.faberloomSpaces.remove(actor, space.id)
     if (space.agentId !== undefined && space.agentId !== null) await this.detachAgentIfOrphan(space.agentId)
     return await this.overview()
@@ -1249,7 +1258,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       title,
       ...agentId === undefined || agentId.length === 0 ? {} : { agentId },
     })
-    const workspace = await this.ensureSpaceWorkspace(actor, space.id, space.title)
+    const workspace = await this.ensureSpaceWorkspace(actor, space)
     if (agentId !== undefined && agentId.length > 0) await this.assignAgent(agentId, space.id)
     const bodyText = content.text.length > 0 ? content.text : content.html ?? ''
     if (bodyText.trim().length > 0) {
@@ -1851,8 +1860,8 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('spaceWorkspace')
   async spaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace> {
     const actor = this.actor()
-    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, id as FaberLoomSpaceId)
-    const dir = join(this.dshHome(), 'spaces', ref.ref)
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const dir = await this.resolveSpaceDir(actor, space)
     const registry = this.workspaceRegistry()
     const existing = registry.list().find(workspace => workspace.path === dir)
     return {
@@ -1874,27 +1883,95 @@ export class FaberLoomViewService extends TypertRemoteService {
   async openSpaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
-    const workspace = await this.ensureSpaceWorkspace(actor, space.id, space.title)
+    const workspace = await this.ensureSpaceWorkspace(actor, space)
     if (workspace === undefined) throw new Error('faberloom: the workspace registry is not mounted')
     return { registered: true, workspaceId: String(workspace.id), title: workspace.title, sessions: workspace.sessionIds.length }
   }
 
   /**
    * Create the space's conversation directory when needed and register it as a
-   * Workspace titled after the space. A deployment without the workspace
-   * registry keeps spaces working: registration is skipped, not failed.
+   * Workspace titled after the space. A space adopted from an existing Workspace
+   * reuses that Workspace instead of creating a second one. A deployment without
+   * the workspace registry keeps spaces working: registration is skipped, not
+   * failed.
    * @param actor - the acting identity.
-   * @param id - space id.
-   * @param title - Workspace title.
+   * @param space - the space whose area is materialized.
    * @returns the registered Workspace, or undefined when none can be registered.
    */
-  private async ensureSpaceWorkspace(actor: SpaceActor, id: FaberLoomSpaceId, title: string): Promise<Workspace | undefined> {
+  private async ensureSpaceWorkspace(actor: SpaceActor, space: FaberLoomSpace): Promise<Workspace | undefined> {
     const registry = this.workspaceRegistryOrUndefined()
     if (registry === undefined) return undefined
-    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, id)
+    if (space.workspaceId !== undefined) {
+      const existing = registry.get(space.workspaceId as WorkspaceId)
+      if (existing !== undefined) return existing
+    }
+    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
     const dir = join(this.dshHome(), 'spaces', ref.ref)
     mkdirSync(dir, { recursive: true })
-    return await registry.create(dir, title)
+    const workspace = await registry.create(dir, space.title)
+    if (space.workspaceId !== String(workspace.id)) {
+      await this.ctx.faberloomSpaces.update(actor, space.id, { workspaceId: String(workspace.id) })
+    }
+    return workspace
+  }
+
+  /**
+   * The directory backing one space: the path of the Workspace it mirrors, or
+   * the deterministic `<DSH_HOME>/spaces/<ref>` area when it mirrors none.
+   * @param actor - the acting identity.
+   * @param space - the space to resolve.
+   * @returns the space's directory.
+   */
+  private async resolveSpaceDir(actor: SpaceActor, space: FaberLoomSpace): Promise<string> {
+    if (space.workspaceId !== undefined) {
+      const workspace = this.workspaceRegistryOrUndefined()?.get(space.workspaceId as WorkspaceId)
+      if (workspace !== undefined) return workspace.path
+    }
+    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
+    return join(this.dshHome(), 'spaces', ref.ref)
+  }
+
+  /**
+   * Make the Spaces panel mirror the sidebar: every registered Workspace without
+   * a Space becomes one, so both views name the same directory. Idempotent — an
+   * already-mirrored Workspace is left alone, and a legacy space whose
+   * deterministic area matches a Workspace is anchored instead of duplicated.
+   * Read-only identities are not written to.
+   * @param actor - the acting identity.
+   */
+  private async adoptOrphanWorkspaces(actor: SpaceActor): Promise<void> {
+    const registry = this.workspaceRegistryOrUndefined()
+    if (registry === undefined || actor.readOnly) return
+    const spaces = await this.ctx.faberloomSpaces.list(actor)
+    const anchored = new Set(spaces.map(space => space.workspaceId).filter((id): id is string => id !== undefined))
+    const legacyByDir = new Map<string, FaberLoomSpace>()
+    for (const space of spaces) {
+      if (space.workspaceId !== undefined) continue
+      const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
+      legacyByDir.set(join(this.dshHome(), 'spaces', ref.ref), space)
+    }
+    for (const workspace of registry.list()) {
+      const id = String(workspace.id)
+      if (anchored.has(id)) continue
+      try {
+        const legacy = legacyByDir.get(workspace.path)
+        if (legacy !== undefined) {
+          await this.ctx.faberloomSpaces.update(actor, legacy.id, { workspaceId: id })
+          legacyByDir.delete(workspace.path)
+        } else {
+          await this.ctx.faberloomSpaces.create(actor, { title: workspace.title, workspaceId: id })
+        }
+        anchored.add(id)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: could not adopt the workspace '${workspace.path}' as a space: ${String(error)}`)
+      }
+    }
+  }
+
+  /** Whether one directory is the harness home or lives under it. */
+  private isUnderDshHome(dir: string): boolean {
+    const home = this.dshHome()
+    return dir === home || dir.startsWith(`${home}${sep}`)
   }
 
   /** The workspace registry, resolved lazily like the connections service. */

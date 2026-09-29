@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-28-workspaces-mirror-as-spaces.md
+2026-09-28-workspaces-mirror-as-spaces.md: ce2b899ef3e84d9775a38efdd3ca1d9534a2985b
+2026-09-28-workspaces-mirror-as-spaces.zh.md: 0a99599552cbab26f39766cda0ba2807b76d9186

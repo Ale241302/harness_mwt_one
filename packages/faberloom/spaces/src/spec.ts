@@ -36,6 +36,10 @@ export const spaceRecord = z.object({
   // The agent in charge of this space. Optional so records written before the
   // responsible-agent field keep loading under the same domain version.
   agentId: z.string().nullable().default(null),
+  // The harness workspace this space mirrors when a Workspace is adopted as a
+  // Space; null keeps the deterministic `<DSH_HOME>/spaces/<ref>` area. Defaulted
+  // so records written before the anchor keep loading under the same version.
+  workspaceId: z.string().nullable().default(null),
   archived: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),

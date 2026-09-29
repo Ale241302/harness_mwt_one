@@ -63,6 +63,17 @@ describe('FaberLoomSpaces', () => {
     expect((await spaces.update(SONDEL, child.id, { agentId: null })).agentId).toBeUndefined()
   })
 
+  it('mirrors a workspace when a space adopts one', async () => {
+    const { spaces } = await harness()
+    const adopted = await spaces.create(SONDEL, { title: 'SICOP', workspaceId: 'ws-sicop' })
+    expect((await spaces.get(SONDEL, adopted.id)).workspaceId).toBe('ws-sicop')
+
+    const own = await spaces.create(SONDEL, { title: 'Propio' })
+    expect(own.workspaceId).toBeUndefined()
+    expect((await spaces.update(SONDEL, own.id, { workspaceId: 'ws-1' })).workspaceId).toBe('ws-1')
+    expect((await spaces.update(SONDEL, own.id, { workspaceId: null })).workspaceId).toBeUndefined()
+  })
+
   it('remembers space-scoped memory and inherits it into sub-spaces', async () => {
     const { spaces } = await harness()
     const parent = await spaces.create(SONDEL, { title: 'Padre' })

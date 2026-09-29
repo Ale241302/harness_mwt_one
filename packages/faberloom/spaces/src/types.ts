@@ -63,6 +63,12 @@ export interface FaberLoomSpace {
   readonly sources: readonly SpaceSource[]
   /** The agent in charge of this space, or `undefined` when none is assigned. */
   readonly agentId: string | undefined
+  /**
+   * The harness workspace this space mirrors, or `undefined` for a space whose
+   * area is the deterministic `<DSH_HOME>/spaces/<ref>` directory. A workspace
+   * adopted as a space stores its id here so both views name the same directory.
+   */
+  readonly workspaceId: string | undefined
   /** Whether the space is archived (kept, out of the active list). */
   readonly archived: boolean
   /** ISO-8601 creation instant. */
@@ -81,6 +87,8 @@ export interface CreateSpaceInput {
   readonly parentId?: FaberLoomSpaceId
   /** Agent in charge of the new space; the same agent may lead a parent and a sub-space. */
   readonly agentId?: string
+  /** Workspace this space mirrors when a Workspace is adopted as a Space. */
+  readonly workspaceId?: string
   /** Whether the new space inherits its ancestors' context; defaults to true. */
   readonly inheritContext?: boolean
 }
@@ -101,6 +109,8 @@ export interface UpdateSpaceInput {
   readonly sources?: readonly SpaceSource[]
   /** New responsible agent, or `null` to clear the assignment. */
   readonly agentId?: string | null
+  /** New mirrored workspace id, or `null` to fall back to the deterministic area. */
+  readonly workspaceId?: string | null
 }
 
 /** Input accepted when attaching one file to a space. */

@@ -49,6 +49,7 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **控制台角色范围** — 访问使用网关注入的控制台角色、公司与只读标志；其他公司的成员被拒绝，而只读角色仍可创建并管理自己的空间（空间是用户自己的容器，不是公司数据）。
+- **工作区镜像** — 当某个工作区被采纳为空间时，空间可存储它镜像的 harness 工作区 id；服务只保留 id（绝不保留路径），由 view 通过工作区注册表解析它。没有镜像的空间使用确定性的 `<DSH_HOME>/spaces/<ref>` 区域。
 
 <a id="dev-note"></a>
 ### 开发备注

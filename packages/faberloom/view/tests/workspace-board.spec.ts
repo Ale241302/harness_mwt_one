@@ -29,6 +29,7 @@ function harness(options: { readOnly?: boolean; registry?: boolean; role?: strin
   const entities: { id: string; path: string; title: string; sessionIds: string[] }[] = []
   const registry = {
     list: () => entities,
+    get: (id: string) => entities.find(entity => entity.id === id),
     create: vi.fn(async (dir: string, title?: string) => {
       const entity = { id: 'ws-1', path: dir, title: title ?? dir, sessionIds: [] as string[] }
       entities.push(entity)
@@ -37,29 +38,47 @@ function harness(options: { readOnly?: boolean; registry?: boolean; role?: strin
     delete: vi.fn(async () => true),
     archiveSessionsUnder: vi.fn(async () => 0),
   }
+  interface MockSpace {
+    id: string
+    title: string
+    parentId: string | null
+    agentId?: string
+    workspaceId?: string
+    inheritContext?: boolean
+    excluded?: readonly string[]
+    members?: readonly string[]
+    sources?: readonly { kind: string; id: string }[]
+    context?: Record<string, string>
+  }
+  const spaceRecords: MockSpace[] = []
   let nextSpace = 0
+  const defaultSpace = (id: string): MockSpace => ({
+    id, title: 'Eguisa', parentId: null, inheritContext: true, excluded: [], members: [], sources: [], context: {},
+  })
   const spaces = {
-    list: vi.fn(async (): Promise<readonly { id: string; title: string; parentId: string | null; agentId?: string }[]> => []),
-    get: vi.fn(async (): Promise<{
-      id: string
-      title: string
-      parentId: null
-      inheritContext: boolean
-      excluded: readonly string[]
-      members: readonly string[]
-      sources: readonly { kind: string; id: string }[]
-      context: Record<string, string>
-      agentId: string | null
-    }> => ({ id: 'sp1', title: 'Eguisa', parentId: null, inheritContext: true, excluded: [], members: [], sources: [], context: {}, agentId: null })),
+    list: vi.fn(async (): Promise<readonly MockSpace[]> => spaceRecords),
+    get: vi.fn(async (_actor?: unknown, id?: string): Promise<MockSpace> => spaceRecords.find(record => record.id === id) ?? defaultSpace(id ?? 'sp1')),
     create: vi.fn(async (
       _actor: unknown,
-      input: { title: string; agentId?: string; parentId?: string },
-    ): Promise<{ id: string; title: string }> => {
+      input: { title: string; agentId?: string; parentId?: string; workspaceId?: string },
+    ): Promise<MockSpace> => {
       nextSpace += 1
-      return { id: `sp${String(nextSpace)}`, title: input.title }
+      const record: MockSpace = {
+        id: `sp${String(nextSpace)}`,
+        title: input.title,
+        parentId: input.parentId ?? null,
+        ...input.agentId === undefined ? {} : { agentId: input.agentId },
+        ...input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId },
+      }
+      spaceRecords.push(record)
+      return record
     }),
     remove: vi.fn(async (): Promise<boolean> => true),
-    update: vi.fn(async (): Promise<{ id: string; title: string }> => ({ id: 'sp1', title: 'Eguisa' })),
+    update: vi.fn(async (_actor: unknown, id: string, patch: Partial<MockSpace>): Promise<MockSpace> => {
+      const record = spaceRecords.find(candidate => candidate.id === id) ?? defaultSpace(id)
+      Object.assign(record, patch)
+      return record
+    }),
     resolveWorkdir: vi.fn(async (_actor?: unknown, _id?: string): Promise<{ kind: 'opaque'; ref: string }> => ({ kind: 'opaque', ref: 'fw_abc123' })),
     remember: vi.fn(async (): Promise<{ id: string; spaceIds: string[]; text: string; createdAt: string }> =>
       ({ id: 'm1', spaceIds: [], text: '', createdAt: '2026-01-01T00:00:00Z' })),
@@ -107,7 +126,8 @@ describe('FaberLoomViewService space workspace', () => {
     vi.stubEnv('DSH_HOME', home)
     const { view, spaces } = harness()
     spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Eguisa', parentId: null }])
-    await (view as unknown as { forgetSpacePath: (path: string) => Promise<void> }).forgetSpacePath(join(home, 'spaces', 'fw_abc123'))
+    await (view as unknown as { forgetSpacePath: (workspaceId: string, path: string) => Promise<void> })
+      .forgetSpacePath('ws-x', join(home, 'spaces', 'fw_abc123'))
     expect(spaces.remove).toHaveBeenCalledWith(expect.anything(), 'sp1')
   })
 
@@ -228,6 +248,46 @@ describe('FaberLoomViewService space lifecycle', () => {
 
     await view.deleteSpace('sp1')
     expect(existsSync(join(home, 'spaces', 'fw_abc123'))).toBe(false)
+  })
+
+  it('adopts a workspace with no space so both views name the same area', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, entities, spaces } = harness()
+    entities.push({ id: 'ws-sicop', path: join(home, 'SICOP'), title: 'SICOP', sessionIds: [] })
+    spaces.list.mockResolvedValue([])
+
+    await view.overview()
+    expect(spaces.create).toHaveBeenCalledWith(expect.anything(), { title: 'SICOP', workspaceId: 'ws-sicop' })
+  })
+
+  it('anchors a legacy space to its workspace instead of duplicating it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, entities, spaces } = harness()
+    entities.push({ id: 'ws-1', path: join(home, 'spaces', 'fw_abc123'), title: 'Marluvas', sessionIds: [] })
+    spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Marluvas', parentId: null }])
+
+    await view.overview()
+    expect(spaces.create).not.toHaveBeenCalled()
+    expect(spaces.update).toHaveBeenCalledWith(expect.anything(), 'sp1', { workspaceId: 'ws-1' })
+  })
+
+  it('deletes an adopted space through its mirrored workspace', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, entities, registry, spaces } = harness()
+    const dir = join(home, 'SICOP')
+    mkdirSync(dir, { recursive: true })
+    entities.push({ id: 'ws-sicop', path: dir, title: 'SICOP', sessionIds: [] })
+    spaces.get.mockResolvedValue({ id: 'sp1', title: 'SICOP', parentId: null, workspaceId: 'ws-sicop' })
+
+    await view.deleteSpace('sp1')
+    expect(registry.delete).toHaveBeenCalledWith('ws-sicop')
+    expect(existsSync(dir)).toBe(false)
   })
 
   it('projects the responsible agent and workspace into the overview rows', async () => {

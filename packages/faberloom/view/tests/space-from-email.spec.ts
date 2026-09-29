@@ -23,6 +23,7 @@ function harness(options: { spaces?: readonly { id: string; title: string }[]; r
   const entities: { id: string; path: string; title: string; sessionIds: string[] }[] = []
   const registry = {
     list: () => entities,
+    get: (id: string) => entities.find(entity => entity.id === id),
     create: vi.fn(async (dir: string, title?: string) => {
       const existing = entities.find(entity => entity.path === dir)
       if (existing !== undefined) return existing
@@ -34,6 +35,8 @@ function harness(options: { spaces?: readonly { id: string; title: string }[]; r
   let next = 0
   const spaces = {
     list: vi.fn(async () => options.spaces ?? []),
+    get: vi.fn(async () => ({ id: 'sp-new-1', title: 'Correo', parentId: null, inheritContext: true, excluded: [], members: [], sources: [], context: {}, agentId: null })),
+    update: vi.fn(async () => ({ id: 'sp-new-1', title: 'Correo' })),
     create: vi.fn(async (_actor: unknown, input: { title: string }) => {
       next += 1
       return { id: `sp-new-${String(next)}`, title: input.title }

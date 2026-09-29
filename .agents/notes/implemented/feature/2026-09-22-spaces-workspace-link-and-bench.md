@@ -18,7 +18,7 @@ The link is one directory per space, registered as its workspace; the bench gain
 
 ## Alternatives considered
 
-- **Storing the workspace id on the space record.** Rejected: the path is deterministic from `ownerId:spaceId` (the same digest `resolveWorkdir` already returns), and `workspaceRegistry.create` is idempotent per canonical path — a stored link could only drift.
+- **Storing the workspace id on the space record.** Rejected: the path is deterministic from `ownerId:spaceId` (the same digest `resolveWorkdir` already returns), and `workspaceRegistry.create` is idempotent per canonical path — a stored link could only drift. Reversed for automatic Workspace adoption in [every harness Workspace mirrors as a Space](2026-09-28-workspaces-mirror-as-spaces.md).
 - **Creating the workspace on space creation.** Rejected: an untouched space would own an empty sidebar group; materializing on first conversation keeps reads side-effect-free (`spaceWorkspace` creates nothing).
 - **A host `delegate` command that runs the agent on Enter.** Deferred, not done: `faberloomAgents.delegate` is admission and budget bookkeeping (no model turn), and a real delegated conversation belongs to the subagent runtime with the agent's policy — a wrong shortcut would fake the gesture. The prompt rule makes today's `faberloom_agents_delegate` path reliable instead.
 - **Keeping Members/Sources visible.** Rejected: members has no multi-user semantics yet and sources cannot be added from the UI, so both read as broken; the fields remain in the model and in the MCP tools.
