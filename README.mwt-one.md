@@ -156,6 +156,10 @@ namespaces no privilegiados (p. ej. Ubuntu 24.04), `bwrap` no puede crear namesp
 usa `danger-full-access`. `DSH_PERMISSION_MODE` fuerza un valor explícito; `healthz`
 reporta el modo en `permissionMode`.
 
+El shell de cada `dsh` corre dentro de este contenedor e incluye `node` y `python3` (la
+imagen los instala) para que el agente parsee volcados de tools; no trae `pip` ni librerías
+de terceros.
+
 ## MCP
 
 Cada `dsh` arranca con un `--patch` generado por usuario:

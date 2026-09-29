@@ -20,11 +20,13 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl ca-certificates bubblewrap \
+  && apt-get install -y --no-install-recommends curl ca-certificates bubblewrap python3 \
   && rm -rf /var/lib/apt/lists/*
 # Sandbox: la cadena Linux de `dsh-sandbox-local` exige `bwrap` (el launcher
 # Landlock no viaja en la imagen), y el perfil base pide `workspace-write`.
 # Sin bubblewrap, cada comando falla con SANDBOX_UNAVAILABLE.
+# python3: los agentes lo usan para parsear volcados de tools (JSON/JSONL) en
+# el shell; la imagen slim no lo trae.
 
 # context-mode: servidor MCP de ahorro de contexto (sandbox + FTS5). Se fija la
 # versión y se instala global para que cada dsh lo arranque por stdio. Licencia
