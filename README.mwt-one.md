@@ -144,6 +144,15 @@ lo arranca como **MCP por stdio**, con su `DSH_HOME` como proyecto y almacenamie
 - Nota de licencia: Elastic-2.0 (source-available); uso interno permitido, no se puede
   revender como servicio gestionado.
 
+## Sandbox de shell
+
+La imagen instala **`bubblewrap`**: la cadena Linux de `dsh-sandbox-local` lo necesita para
+el modo por defecto **`workspace-write`** (el launcher Landlock no viaja en la imagen). Sin
+`bwrap`, cada comando de shell falla con `SANDBOX_UNAVAILABLE` ("no sandbox backend is
+usable on this host"). El perfil base lee el modo de `DSH_PERMISSION_MODE` (por defecto
+`workspace-write`); no lo cambies a `danger-full-access` salvo que quieras ejecución sin
+confinar dentro del contenedor.
+
 ## MCP
 
 Cada `dsh` arranca con un `--patch` generado por usuario:

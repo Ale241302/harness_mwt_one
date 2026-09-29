@@ -20,8 +20,11 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && apt-get install -y --no-install-recommends curl ca-certificates bubblewrap \
   && rm -rf /var/lib/apt/lists/*
+# Sandbox: la cadena Linux de `dsh-sandbox-local` exige `bwrap` (el launcher
+# Landlock no viaja en la imagen), y el perfil base pide `workspace-write`.
+# Sin bubblewrap, cada comando falla con SANDBOX_UNAVAILABLE.
 
 # context-mode: servidor MCP de ahorro de contexto (sandbox + FTS5). Se fija la
 # versión y se instala global para que cada dsh lo arranque por stdio. Licencia
