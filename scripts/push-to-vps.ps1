@@ -129,7 +129,10 @@ Invoke-Native { ssh -p $Port -o LogLevel=ERROR "${User}@${SshHost}" "mkdir -p $R
 
 Write-Host "==> Subiendo y extrayendo en $RemoteDir"
 Invoke-Native { scp -P $Port -o LogLevel=ERROR $payload "${User}@${SshHost}:/tmp/mwt-deploy-payload.tgz" } 'scp del payload'
-Invoke-Native { ssh -p $Port -o LogLevel=ERROR "${User}@${SshHost}" "rm -rf $RemoteDir/skills-shared $RemoteDir/agents-shared && tar -xzf /tmp/mwt-deploy-payload.tgz -C $RemoteDir && rm -f /tmp/mwt-deploy-payload.tgz" } 'extract en el VPS'
+# Los catálogos y presets se borran antes de extraer: `tar` no elimina los
+# archivos retirados del origen, así que un skill o preset borrado seguiría
+# viajando a la imagen.
+Invoke-Native { ssh -p $Port -o LogLevel=ERROR "${User}@${SshHost}" "rm -rf $RemoteDir/skills-catalog $RemoteDir/skills-shared $RemoteDir/agents-shared && tar -xzf /tmp/mwt-deploy-payload.tgz -C $RemoteDir && rm -f /tmp/mwt-deploy-payload.tgz" } 'extract en el VPS'
 Remove-Item -LiteralPath $payload -Force -ErrorAction SilentlyContinue
 
 if ($Deploy) {
