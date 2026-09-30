@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Fork MWT.ONE — módulos nuevos sobre la base dsh",
+    "output": ".archify/architecture-dsh-modulos-20260929-1930/dsh-modulos.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/deepseek-ai/deepseek-harness",
+      "provider": "github",
+      "link_mode": "local-only",
+      "revision": "81a46e91fff827d67b8425294f0e9dc095d1d63c"
+    },
+    "views": [
+      { "id": "upstream", "label": "Base upstream", "focus": ["base"], "note": "Runtime dsh sin cambios de nuestra parte" },
+      { "id": "nuevos", "label": "Nuevo en el fork", "focus": ["gateway", "bundle", "faberloom", "skills", "ui", "sessions"], "note": "Módulos añadidos sobre la base" },
+      { "id": "composicion", "label": "Composición", "focus": ["base", "bundle", "faberloom", "deploy"], "note": "Cómo se monta y se despliega el fork" }
+    ]
+  },
+  "components": [
+    { "id": "base", "type": "backend", "label": "dsh upstream", "sublabel": "agent loop + sesiones + skills", "tag": "base upstream", "pos": [40, 320], "size": [160, 66], "sources": [{ "path": "README.mwt-one.md", "line": 8, "end_line": 11, "label": "fork del harness" }] },
+    { "id": "gateway", "type": "security", "label": "Gateway de login", "sublabel": "login multiusuario", "tag": "nuevo · fork", "pos": [40, 120], "size": [160, 62], "sources": [{ "path": "gateway/server.mjs", "line": 1, "end_line": 13, "label": "gateway de login" }] },
+    { "id": "sessions", "type": "backend", "label": "Borrado de sesiones", "sublabel": "cascada + huérfanos", "tag": "nuevo · fork", "pos": [40, 540], "size": [160, 62], "sources": [{ "path": "packages/api/session-controller/src/index.ts", "line": 344, "end_line": 348, "label": "borrado permanente" }] },
+    { "id": "bundle", "type": "backend", "label": "Bundle faberloom-app", "sublabel": "cordis.patch.yml", "tag": "nuevo · fork", "pos": [320, 320], "size": [160, 66], "sources": [{ "path": "packages/bundle/faberloom-app/cordis.patch.yml", "line": 2, "label": "capa de producto" }] },
+    { "id": "faberloom", "type": "backend", "label": "Paquetes FaberLoom", "sublabel": "15 workspaces ctx.faberloom*", "tag": "nuevo · fork", "pos": [600, 320], "size": [180, 66], "sources": [{ "path": "packages/faberloom/README.md", "line": 2, "label": "grupo de producto" }] },
+    { "id": "skills", "type": "backend", "label": "Skills y agentes", "sublabel": "SICOP + ECC · presets", "tag": "nuevo · fork", "pos": [610, 120], "size": [160, 62], "sources": [{ "path": "skills-catalog/compras/mwt-compras-analytics-leer/SKILL.md", "line": 1, "label": "skills SICOP" }, { "path": "skills-shared/brand-discovery/SKILL.md", "line": 1, "label": "skills ECC" }, { "path": "agents-shared/tdd-guide/preset.yml", "line": 1, "label": "presets" }] },
+    { "id": "ui", "type": "frontend", "label": "UI FaberLoom", "sublabel": "paneles y work bench", "tag": "nuevo · fork", "pos": [920, 322], "size": [160, 62], "sources": [{ "path": "packages/client/ui-faberloom/src/index.ts", "line": 4, "end_line": 9, "label": "superficie web" }] },
+    { "id": "branding", "type": "frontend", "label": "Marca MWT.ONE", "sublabel": "título y favicon", "tag": "nuevo · fork", "pos": [920, 520], "size": [160, 62], "sources": [{ "path": "apps/web/index.html", "line": 8, "label": "título del producto" }] },
+    { "id": "deploy", "type": "cloud", "label": "Despliegue y respaldo", "sublabel": "builder + VPS", "tag": "nuevo · fork", "pos": [600, 540], "size": [180, 62], "sources": [{ "path": "scripts/deploy-vps.sh", "line": 53, "label": "builder persistente" }] }
+  ],
+  "connections": [
+    { "from": "base", "to": "gateway", "label": "envuelve con login", "variant": "security", "fromSide": "top", "toSide": "bottom" },
+    { "from": "base", "to": "sessions", "label": "borrado permanente", "fromSide": "bottom", "toSide": "top" },
+    { "from": "base", "to": "bundle", "label": "compone encima", "variant": "emphasis" },
+    { "from": "bundle", "to": "faberloom", "label": "monta servicios", "variant": "emphasis" },
+    { "from": "faberloom", "to": "skills", "label": "carga catálogo", "fromSide": "top", "toSide": "bottom" },
+    { "from": "faberloom", "to": "ui", "label": "expone paneles" },
+    { "from": "faberloom", "to": "deploy", "label": "build + up", "fromSide": "bottom", "toSide": "top" },
+    { "from": "ui", "to": "branding", "label": "tema y favicon", "fromSide": "bottom", "toSide": "top" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Nuevo en el fork", "items": ["Gateway de login multiusuario y un dsh por usuario", "Grupo FaberLoom: espacios, agentes, rutinas, ejecución, aprendizaje y respaldo", "Catálogo de skills SICOP por rol, skills ECC y presets de agentes", "UI FaberLoom, borrado permanente de sesiones y marca MWT.ONE", "Despliegue con builder persistente y respaldo cifrado"] },
+    { "dot": "emerald", "title": "Base upstream intacta", "items": ["Agent loop, API de sesión y formato de sesión durable", "Carga de skills, cliente MCP, sandbox de shell y UI web", "Proveedores de modelo y SDK"] },
+    { "dot": "amber", "title": "Cómo se compone", "items": ["El bundle faberloom-app se inserta después de dsh-base y dsh-web-app", "El perfil faberloom arranca con los servicios ctx.faberloom* montados", "Los seeds nativos se reconcilian en cada arranque"] },
+    { "dot": "rose", "title": "Mapa de cambios (151 commits)", "items": ["skills-catalog 652 archivos · skills-shared 420 · packages 242", "packages/faberloom 143 · .agents/notes 123 · agents-shared 73", "docs 27 · scripts 16 · apps 13 · gateway 4", "Rama main del fork Ale241302/harness_mwt_one"] }
+  ]
+}

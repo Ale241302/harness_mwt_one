@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "MWT.ONE Harness — arquitectura de ejecución",
+    "output": ".archify/architecture-mwt-one-runtime-20260929-1930/mwt-one-runtime.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/deepseek-ai/deepseek-harness",
+      "provider": "github",
+      "link_mode": "local-only",
+      "revision": "81a46e91fff827d67b8425294f0e9dc095d1d63c"
+    },
+    "views": [
+      { "id": "peticion", "label": "Flujo de una petición", "focus": ["navegador", "cloudflare", "nginx", "gateway", "dsh"], "note": "Del navegador hasta el dsh aislado del usuario" },
+      { "id": "nuevos", "label": "Módulos del fork", "focus": ["gateway", "contextmode", "mcp_sicop", "mcp_faberloom", "memoria"], "note": "Piezas añadidas sobre el dsh upstream" },
+      { "id": "estado", "label": "Estado y persistencia", "focus": ["dsh", "memoria", "volumen"], "note": "Sesiones, memoria y volumen persistente" }
+    ]
+  },
+  "components": [
+    { "id": "navegador", "type": "external", "label": "Navegador", "sublabel": "harness.mwt.one", "pos": [40, 300], "size": [130, 62], "sources": [{ "path": "README.mwt-one.md", "line": 29, "end_line": 32, "label": "acceso web" }] },
+    { "id": "cloudflare", "type": "cloud", "label": "Cloudflare", "sublabel": "proxy TLS", "pos": [300, 300], "size": [130, 62], "sources": [{ "path": "README.mwt-one.md", "line": 30, "label": "borde" }] },
+    { "id": "nginx", "type": "cloud", "label": "mwt-nginx", "sublabel": "TLS + rate limit", "pos": [580, 300], "size": [130, 62], "sources": [{ "path": "nginx/harness.conf", "line": 48, "label": "proxy_pass" }] },
+    { "id": "gateway", "type": "security", "label": "Gateway de login", "sublabel": "Node :8080", "tag": "nuevo · fork", "pos": [860, 300], "size": [150, 66], "sources": [{ "path": "gateway/server.mjs", "line": 1253, "label": "GET /login" }, { "path": "gateway/server.mjs", "line": 1088, "label": "arranque dsh" }] },
+    { "id": "consola", "type": "external", "label": "Consola MWT.ONE", "sublabel": "/api/auth/login/", "pos": [560, 100], "size": [150, 62], "sources": [{ "path": "gateway/server.mjs", "line": 4, "label": "validación de login" }] },
+    { "id": "dsh", "type": "backend", "label": "dsh por usuario", "sublabel": "DSH_HOME=/data/users/<id>", "tag": "fork 0.1.6-alpha.1", "pos": [1160, 300], "size": [160, 66], "sources": [{ "path": "README.mwt-one.md", "line": 8, "end_line": 11, "label": "un dsh por usuario" }, { "path": "README.mwt-one.md", "line": 163, "label": "HOME del usuario" }] },
+    { "id": "contextmode", "type": "backend", "label": "context-mode MCP", "sublabel": "stdio · tools ctx_*", "tag": "nuevo · fork", "pos": [820, 100], "size": [150, 62], "sources": [{ "path": "Dockerfile", "line": 31, "end_line": 37, "label": "context-mode global" }] },
+    { "id": "mcp_consola", "type": "cloud", "label": "MCP consola", "sublabel": ":8765/mcp · 175 tools", "pos": [1040, 100], "size": [150, 62], "sources": [{ "path": "README.mwt-one.md", "line": 178, "label": "cliente MCP mwt" }] },
+    { "id": "mcp_sicop", "type": "cloud", "label": "MCP SICOP", "sublabel": "sicop.vlinte.work", "tag": "nuevo · fork", "pos": [1260, 100], "size": [150, 62], "sources": [{ "path": "README.mwt-one.md", "line": 195, "end_line": 200, "label": "MCP SICOP" }] },
+    { "id": "mcp_faberloom", "type": "cloud", "label": "MCP FaberLoom", "sublabel": "faberloom-mcp:8090", "tag": "nuevo · fork", "pos": [1480, 100], "size": [150, 62], "sources": [{ "path": "README.mwt-one.md", "line": 204, "end_line": 209, "label": "MCP FaberLoom" }] },
+    { "id": "memoria", "type": "database", "label": "Memoria TDAI", "sublabel": "TencentDB Agent Memory", "tag": "nuevo · fork", "pos": [860, 540], "size": [150, 62], "sources": [{ "path": "README.mwt-one.md", "line": 126, "end_line": 131, "label": "stack de memoria" }] },
+    { "id": "llm_proxy", "type": "cloud", "label": "tdai-proxy", "sublabel": "proxy:8096/dsh/default", "pos": [1180, 540], "size": [150, 62], "sources": [{ "path": "README.mwt-one.md", "line": 128, "label": "enrutado de modelo" }] },
+    { "id": "volumen", "type": "database", "label": "Volumen harness-users", "sublabel": "DSH_HOME + storages", "pos": [1500, 302], "size": [160, 62], "sources": [{ "path": "README.mwt-one.md", "line": 167, "end_line": 169, "label": "workspaces persistentes" }] }
+  ],
+  "connections": [
+    { "from": "navegador", "to": "cloudflare", "label": "HTTPS", "variant": "emphasis" },
+    { "from": "cloudflare", "to": "nginx", "label": "TLS al origen" },
+    { "from": "nginx", "to": "gateway", "label": "proxy_pass :8080" },
+    { "from": "gateway", "to": "consola", "label": "valida login", "variant": "security", "fromSide": "top", "toSide": "bottom" },
+    { "from": "gateway", "to": "dsh", "label": "proxy 127.0.0.1:<puerto>", "variant": "emphasis" },
+    { "from": "dsh", "to": "contextmode", "label": "MCP stdio", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "from": "dsh", "to": "mcp_consola", "label": "MCP streamable-http", "fromSide": "top", "toSide": "bottom" },
+    { "from": "dsh", "to": "mcp_sicop", "label": "MCP público", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "from": "dsh", "to": "mcp_faberloom", "label": "MCP espacios", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "from": "dsh", "to": "memoria", "label": "recall / write", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "from": "dsh", "to": "llm_proxy", "label": "modelo HTTP", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "from": "dsh", "to": "volumen", "label": "sesiones + storages", "fromSide": "right", "toSide": "left" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Nuevo en el fork", "items": ["Gateway de login multiusuario y un dsh aislado por usuario", "MCP de SICOP y de FaberLoom, y context-mode por stdio", "Stack de memoria TDAI y scripts de despliegue y respaldo", "Marca MWT.ONE en el título, favicon y pantallas del producto"] },
+    { "dot": "emerald", "title": "Base upstream dsh", "items": ["Agent loop, sesiones durables y skills", "Cliente MCP, sandbox de shell y UI web", "Perfil web compuesto con parches por usuario"] },
+    { "dot": "rose", "title": "Seguridad y límites", "items": ["Cookie firmada Secure, HSTS y CSRF de doble envío", "Rate limit de login por cuenta y por IP real de cliente", "El sandbox de shell cae a danger-full-access si bwrap no puede crear namespaces", "El tramo Cloudflare→origen sigue en modo TLS Flexible"] },
+    { "dot": "amber", "title": "Operación y respaldo", "items": ["Heap de 1024 MB y prlimit por proceso dsh", "Respaldo diario 04:30 cifrado AES256 y restauración de prueba los domingos", "Destino externo MinIO en el mismo host; copia off-host en OneDrive", "Si el proxy de memoria falla, el usuario sigue contra DeepSeek directo"] }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "MWT.ONE Harness — ciclo de una petición",
+    "output": ".archify/workflow-peticion-mwt-one-20260929-1930/peticion.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/deepseek-ai/deepseek-harness",
+      "provider": "github",
+      "link_mode": "local-only",
+      "revision": "81a46e91fff827d67b8425294f0e9dc095d1d63c"
+    }
+  },
+  "lanes": [
+    { "id": "edge", "label": "Borde y usuario" },
+    { "id": "gw", "label": "Gateway (nuevo)" },
+    { "id": "dsh", "label": "dsh por usuario" },
+    { "id": "tools", "label": "Herramientas y estado", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "Llegada", "fromCol": 0, "toCol": 0 },
+    { "id": "auth", "label": "Login", "fromCol": 1, "toCol": 2, "variant": "emphasis" },
+    { "id": "boot", "label": "Despacho + arranque", "fromCol": 3, "toCol": 4, "variant": "dashed" },
+    { "id": "run", "label": "Turno del agente", "fromCol": 5, "toCol": 5, "variant": "emphasis" }
+  ],
+  "groups": [],
+  "mainPath": ["visitante", "formulario", "auth", "cookie", "despacho", "spawn", "loop", "mcp_client", "respuesta"],
+  "nodes": [
+    { "id": "visitante", "lane": "edge", "col": 0, "type": "external", "label": "Navegador", "sublabel": "harness.mwt.one", "width": 140, "sources": [{ "path": "README.mwt-one.md", "line": 29, "end_line": 32, "label": "acceso web" }] },
+    { "id": "formulario", "lane": "edge", "col": 1, "type": "frontend", "label": "Formulario /login", "sublabel": "cookie hcsrf", "width": 140, "sources": [{ "path": "gateway/server.mjs", "line": 1253, "label": "GET /login" }] },
+    { "id": "respuesta", "lane": "edge", "col": 5, "type": "frontend", "label": "Respuesta al usuario", "sublabel": "chat + cambios", "width": 140, "sources": [{ "path": "README.mwt-one.md", "line": 315, "label": "navegador como acceso" }] },
+    { "id": "auth", "lane": "gw", "col": 1, "type": "security", "label": "Auth consola", "sublabel": "/api/auth/login/", "tag": "valida credenciales", "width": 140, "sources": [{ "path": "gateway/server.mjs", "line": 4, "label": "validación de login" }] },
+    { "id": "cookie", "lane": "gw", "col": 2, "type": "security", "label": "Cookie firmada", "sublabel": "Secure + HSTS", "width": 140, "sources": [{ "path": "README.mwt-one.md", "line": 300, "end_line": 303, "label": "cookie y límites" }] },
+    { "id": "despacho", "lane": "gw", "col": 3, "type": "backend", "label": "Despachador", "sublabel": "instancia por usuario", "width": 140, "sources": [{ "path": "README.mwt-one.md", "line": 232, "end_line": 234, "label": "respawn transparente" }] },
+    { "id": "spawn", "lane": "gw", "col": 4, "type": "backend", "label": "Arranque dsh(uid)", "sublabel": "prlimit 1024 MB", "width": 140, "sources": [{ "path": "gateway/server.mjs", "line": 1088, "label": "spawn con prlimit" }] },
+    { "id": "loop", "lane": "dsh", "col": 4, "type": "backend", "label": "Agent loop", "sublabel": "plan + tools", "width": 140, "sources": [{ "path": "README.mwt-one.md", "line": 47, "label": "perfil faberloom" }] },
+    { "id": "mcp_client", "lane": "dsh", "col": 5, "type": "backend", "label": "Cliente MCP", "sublabel": "identidad por header", "width": 140, "sources": [{ "path": "gateway/server.mjs", "line": 712, "label": "X-Forwarded-User-Email" }] },
+    { "id": "memoria", "lane": "tools", "col": 4, "type": "database", "label": "Memoria TDAI", "sublabel": "recall / write", "width": 140, "sources": [{ "path": "README.mwt-one.md", "line": 126, "end_line": 131, "label": "memoria de agente" }] },
+    { "id": "sesion", "lane": "tools", "col": 2, "type": "database", "label": "Sesión + workspace", "sublabel": "SQLite / JSONL", "width": 140, "sources": [{ "path": "README.mwt-one.md", "line": 167, "end_line": 169, "label": "persistencia" }] },
+    { "id": "sandbox", "lane": "tools", "col": 3, "type": "security", "label": "Sandbox de shell", "sublabel": "workspace-write | fallback", "width": 140, "sources": [{ "path": "README.mwt-one.md", "line": 149, "end_line": 157, "label": "modo de sandbox" }] },
+    { "id": "mcp_consola", "lane": "tools", "col": 5, "type": "cloud", "label": "MCP consola", "sublabel": "175 tools", "width": 140, "sources": [{ "path": "README.mwt-one.md", "line": 178, "label": "cliente MCP mwt" }] }
+  ],
+  "edges": [
+    { "id": "abrir", "from": "visitante", "to": "formulario", "variant": "default" },
+    { "id": "login", "from": "formulario", "to": "auth", "label": "POST login", "variant": "emphasis" },
+    { "id": "sesion-cookie", "from": "auth", "to": "cookie", "variant": "default" },
+    { "id": "cookie-despacho", "from": "cookie", "to": "despacho", "variant": "default" },
+    { "id": "despacho-spawn", "from": "despacho", "to": "spawn", "variant": "emphasis" },
+    { "id": "spawn-loop", "from": "spawn", "to": "loop", "variant": "emphasis" },
+    { "id": "loop-mcp", "from": "loop", "to": "mcp_client", "label": "tool call", "variant": "default" },
+    { "id": "mcp-respuesta", "from": "mcp_client", "to": "respuesta", "label": "stream SSE", "variant": "emphasis", "role": "return" },
+    { "id": "login-malo", "from": "auth", "to": "formulario", "label": "credenciales inválidas", "variant": "security", "role": "error" },
+    { "id": "loop-sesion", "from": "loop", "to": "sesion", "label": "persiste", "variant": "dashed", "role": "async" },
+    { "id": "loop-memoria", "from": "loop", "to": "memoria", "label": "recall", "variant": "dashed", "role": "branch" },
+    { "id": "loop-sandbox", "from": "loop", "to": "sandbox", "label": "shell", "variant": "security" },
+    { "id": "mcp-consola", "from": "mcp_client", "to": "mcp_consola", "label": "tools/list", "variant": "default", "fromSide": "bottom", "toSide": "top" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Nuevo en el fork", "items": ["Gateway de login y despacho de un dsh por usuario", "MCP de consola, SICOP y FaberLoom, más context-mode por stdio", "Memoria TDAI por usuario y respaldo cifrado"] },
+    { "dot": "emerald", "title": "Base upstream", "items": ["Agent loop, sesiones durables y cliente MCP", "Sandbox de shell y streaming de la respuesta", "Carga de skills y presets de agente"] },
+    { "dot": "rose", "title": "Fallos y fallback", "items": ["Credenciales inválidas vuelven al formulario con `?e=auth`", "El sandbox cae a danger-full-access si bwrap no puede crear namespaces", "Si el proxy de memoria falla, el modelo sigue contra DeepSeek directo", "El despachador re-arranca el dsh si el proceso se perdió"] }
+  ]
+}
