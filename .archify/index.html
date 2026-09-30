@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MWT.ONE Harness — diagramas interactivos</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 56px 24px;
+    font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #e6edf3; background: radial-gradient(1200px 600px at 20% -10%, #14314d 0%, #0d1117 55%) #0d1117;
+  }
+  main { max-width: 900px; margin: 0 auto; }
+  .eyebrow { letter-spacing: .18em; text-transform: uppercase; font-size: 12px; color: #7cb2ff; margin: 0 0 10px; }
+  h1 { font-size: clamp(26px, 4vw, 40px); line-height: 1.15; margin: 0 0 12px; }
+  p.lead { color: #9fb0c3; margin: 0 0 36px; max-width: 62ch; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  a.card {
+    display: block; padding: 20px; border-radius: 14px; text-decoration: none; color: inherit;
+    border: 1px solid #23303f; background: linear-gradient(180deg, #131b26 0%, #0f1620 100%);
+    transition: border-color .15s ease, transform .15s ease;
+  }
+  a.card:hover { border-color: #3b82f6; transform: translateY(-2px); }
+  .tag { display: inline-block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #86efac; margin-bottom: 10px; }
+  .card h2 { font-size: 18px; margin: 0 0 6px; }
+  .card p { margin: 0; color: #9fb0c3; font-size: 14px; }
+  footer { margin-top: 40px; color: #6b7a8d; font-size: 13px; }
+  footer code { color: #c9d1d9; }
+</style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">Archify · MWT.ONE Harness</p>
+  <h1>Diagramas interactivos del sistema</h1>
+  <p class="lead">
+    Mapas explorables del fork <strong>MWT.ONE Harness</strong> generados con Archify. Abre cualquiera,
+    enfoca nodos, sigue rutas y alterna tema con <code>T</code>.
+  </p>
+  <div class="grid">
+    <a class="card" href="architecture-mwt-one-runtime-20260929-1930/mwt-one-runtime.html">
+      <span class="tag">Arquitectura</span>
+      <h2>Ejecución MWT.ONE</h2>
+      <p>Navegador → Cloudflare → nginx → gateway → un dsh por usuario, con MCP consola/SICOP/FaberLoom, memoria TDAI y volumen persistente.</p>
+    </a>
+    <a class="card" href="architecture-dsh-modulos-20260929-1930/dsh-modulos.html">
+      <span class="tag">Arquitectura</span>
+      <h2>Módulos nuevos vs base upstream</h2>
+      <p>Cómo el bundle faberloom-app monta los paquetes FaberLoom sobre el dsh upstream, más skills, agentes, UI y despliegue.</p>
+    </a>
+    <a class="card" href="workflow-peticion-mwt-one-20260929-1930/peticion.html">
+      <span class="tag">Workflow</span>
+      <h2>Ciclo de una petición</h2>
+      <p>Login con CSRF → cookie firmada → despacho → arranque dsh(uid) → agent loop → cliente MCP → stream SSE, con ramas de fallo.</p>
+    </a>
+  </div>
+  <footer>
+    Generado con <code>archify</code> v3.0.1 · validado en navegador real · fuente editable en
+    <code>.archify/&lt;tipo&gt;/candidate.json</code>.
+  </footer>
+</main>
+</body>
+</html>
