@@ -994,18 +994,73 @@ function writeUserInstructions(home) {
   return file
 }
 
-// Siembra una vez los presets de agente compartidos en la raíz de usuario del
-// roster (`<DSH_HOME>/.agent-presets`), de donde `dsh-agent-presets` los
-// descubre; un preset propio del usuario nunca se pisa.
+// Siembra los presets de agente compartidos en la raíz de usuario del roster
+// (`<DSH_HOME>/.agent-presets`), de donde `dsh-agent-presets` los descubre. Un
+// preset propio del usuario (sin marca) nunca se pisa; los que el despliegue
+// sembró (marcados en `.deployment-seeded.json`) se refrescan en cada arranque,
+// de modo que un cambio en `agents-shared/` llega también a los usuarios que ya
+// existían. El paso de adopción marca como sembrado un preset idéntico al origen
+// creado antes de existir la marca, sin tocar uno editado por el usuario.
+const PRESET_MARKER = '.deployment-seeded.json'
+
+/** Igualdad recursiva de dos árboles: mismos archivos, mismos bytes. */
+function sameTree(source, dest) {
+  let entries
+  try { entries = fs.readdirSync(source, { withFileTypes: true }) } catch { return false }
+  let destEntries
+  try { destEntries = fs.readdirSync(dest, { withFileTypes: true }) } catch { return false }
+  if (entries.length !== destEntries.length) return false
+  for (const entry of entries) {
+    const from = path.join(source, entry.name)
+    const to = path.join(dest, entry.name)
+    if (entry.isDirectory()) {
+      if (!sameTree(from, to)) return false
+      continue
+    }
+    if (!entry.isFile()) return false
+    try {
+      if (!fs.readFileSync(from).equals(fs.readFileSync(to))) return false
+    } catch { return false }
+  }
+  return true
+}
+
+/** Nombres de los presets ya sembrados por el despliegue, según la marca del home. */
+function readSeededPresets(root) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(root, PRESET_MARKER), 'utf8'))
+    return new Set(Array.isArray(parsed) ? parsed.filter(name => typeof name === 'string') : [])
+  } catch { return new Set() }
+}
+
 function writeUserPresets(home) {
   if (!fs.existsSync(cfg.agentsSharedRoot)) return
   const root = path.join(home, '.agent-presets')
   fs.mkdirSync(root, { recursive: true })
+  const seeded = readSeededPresets(root)
+  let markerChanged = false
   for (const entry of fs.readdirSync(cfg.agentsSharedRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
+    const source = path.join(cfg.agentsSharedRoot, entry.name)
     const dest = path.join(root, entry.name)
-    if (fs.existsSync(dest)) continue
-    try { fs.cpSync(path.join(cfg.agentsSharedRoot, entry.name), dest, { recursive: true }) } catch { /* el preset se reintenta en el próximo arranque */ }
+    if (fs.existsSync(dest) && !seeded.has(entry.name)) {
+      if (!sameTree(source, dest)) continue
+      seeded.add(entry.name)
+      markerChanged = true
+    }
+    try {
+      fs.rmSync(dest, { recursive: true, force: true })
+      fs.cpSync(source, dest, { recursive: true })
+      if (!seeded.has(entry.name)) {
+        seeded.add(entry.name)
+        markerChanged = true
+      }
+    } catch { /* el preset se reintenta en el próximo arranque */ }
+  }
+  if (markerChanged) {
+    try {
+      fs.writeFileSync(path.join(root, PRESET_MARKER), JSON.stringify([...seeded].sort(), null, 2), 'utf8')
+    } catch { /* la marca se reescribe en el próximo arranque */ }
   }
 }
 
