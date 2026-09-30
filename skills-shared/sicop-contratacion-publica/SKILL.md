@@ -162,4 +162,4 @@ Resume: la entidad consultada (proveedor por cédula, producto por `codigo_cl`, 
 
 ## Referencia profunda
 
-Para **extraer, descargar y parsear** los ZIP del Observatorio (esquema de los 25 CSV, joins, defectos de la fuente, automatización), usa la skill `sicop-extraccion` cuando esté disponible. Esta skill es para **consultar y responder** por el MCP.
+Para **extraer, descargar y parsear** los ZIP del Observatorio (esquema de los 25 CSV, joins, defectos de la fuente, automatización), usa la skill `sicop-extraccion`. Esta skill es para **consultar y responder** por el MCP.
