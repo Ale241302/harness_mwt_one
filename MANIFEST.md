@@ -1,8 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
 **Tag de despliegue:** `deploy-2026-09-15` (commit `e2a61d4`, incluye E7-bis memoria Tencent + E8 respaldo)
-**Imagen desplegada actual:** build de `main` @ `fce5a9a2862ef6b992172d5913c37571bcabfb22` (skill SICOP mixta `sicop-contratacion-publica` + activación por defecto antes de `mcp__sicop__*` desde el `AGENTS.md` del workspace y desde la persona del preset "Analista SICOP"; catálogo de skills como artefacto verificado: gate `verify-skills-catalog` en la suite + triggers de enrutado "Úsala cuando"; Spaces↔Workspace; multi-empresa; deploy caliente ~6 min).
-**Verificado en el VPS:** 30 de septiembre de 2026 (17:35 UTC).
+**Imagen desplegada actual:** build de `main` @ `893f2bbd4184f8e7517bddf4cef5fb9774d45b89` (skill SICOP mixta `sicop-contratacion-publica` + activación por defecto antes de `mcp__sicop__*` desde el `AGENTS.md` del workspace y desde la persona del preset "Analista SICOP"; skill de extracción `sicop-extraccion` movida a `skills-shared/`; el gateway refresca los presets sembrados sin pisar los propios; catálogo verificado por `verify-skills-catalog`; Spaces↔Workspace; multi-empresa; deploy caliente ~6 min).
+**Verificado en el VPS:** 30 de septiembre de 2026 (18:10 UTC).
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:13110918f58a…` (`main` @ `fce5a9a286`, build del 30 sep 17:33 UTC) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:62be664e5b2a…` (`main` @ `893f2bbd`, build del 30 sep 18:09 UTC) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
