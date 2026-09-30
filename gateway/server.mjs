@@ -944,6 +944,16 @@ const FABERLOOM_INSTRUCTIONS = `# FaberLoom · reglas del espacio de trabajo
   algo que no está en el MCP (por ejemplo el clima), dilo y ofrece lo que sí está.
 - Si el MCP no tiene el dato, **no lo inventes**: pídelo al usuario o propone la tool que falte.
 
+## Contratación pública de Costa Rica (MCP de SICOP)
+
+- Si la pregunta trata de licitaciones, carteles, ofertas, adjudicaciones, contratos, órdenes de
+  pedido, proveedores, precios o mercado de contratación pública de Costa Rica, o si vas a usar
+  cualquier tool \`mcp__sicop__*\`, **carga primero la skill \`sicop-contratacion-publica\`**
+  (tool \`skill\`) y sigue sus reglas. Es obligatoria, no opcional.
+- Esa skill fija el sobre que debe acompañar toda cifra: \`nivel_medicion\`, \`cobertura_cruce\`,
+  \`moneda\` y \`caveats\`. Una cifra sin su sobre es una respuesta incorrecta.
+- No respondas de memoria: los datos salen del MCP \`sicop\`. Si el MCP no lo devuelve, dilo.
+
 ## Cómo trabajar
 
 - Antes de operar sobre un módulo, usa la **skill** del módulo y la acción (por ejemplo

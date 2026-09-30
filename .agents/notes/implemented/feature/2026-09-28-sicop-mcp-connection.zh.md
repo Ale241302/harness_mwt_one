@@ -13,7 +13,8 @@ Status: implemented
 - 网关配置新增 `sicopUrl`，取自 `SICOP_MCP_URL`，默认 `https://sicop.vlinte.work/mcp`。`renderPatch` 为每个用户插入 `mcp-sicop` 条目（`serverName: sicop`，streamable-http，无请求头），因此 SICOP 默认对任何智能体或技能可用。将 `SICOP_MCP_URL` 置空则不再插入该条目。`GET /healthz` 报告 `sicopConfigured`。
 - 仅当至少存在一个请求头时，`renderEntry` 才输出 `headers:` 块，因为空的 `headers:` 会被解析为 `null`，而 MCP 客户端 schema 期望一个字典。
 - 智能体目录新增 `sicopMcp`（默认 `true`），贯穿持久化记录、服务类型、`createAgent`/`saveAgent`/`agentDetail` 远程方法以及 Agents 面板复选框，与 `mwtMcp` 保持一致。复选框文案在西班牙语、英语和中文中由 locale 拥有。
-- 共享技能 `skills-shared/sicop-contratacion-publica/SKILL.md` 说明 SICOP 的工具集、计量层级与货币规则，以及响应信封（`nivel_medicion`、`cobertura_cruce`、`moneda`、`caveats`）。由于网关在角色目录旁挂载 `SKILLS_SHARED_ROOT`，它覆盖所有角色。
+- 共享技能 `skills-shared/sicop-contratacion-publica/SKILL.md` 说明 SICOP 的工具集、计量层级、覆盖率与货币规则、已知的 MCP 服务端缺陷，以及响应信封（`nivel_medicion`、`cobertura_cruce`、`moneda`、`caveats`）。它吸收了抽取技能（`skills-catalog/sicop/SKILL.md`，`sicop-extraccion`）中与查询相关的规则；后者保留为解析 Observatorio ZIP 的深入参考，并反向链接到它。由于网关在角色目录旁挂载 `SKILLS_SHARED_ROOT`，它覆盖所有角色。
+- 网关的工作区指令（`gateway/server.mjs` 中的 `FABERLOOM_INSTRUCTIONS`）要求每个智能体在使用任何 `mcp__sicop__*` 工具之前先加载 `sicop-contratacion-publica`，因此该技能默认激活，而不再只在模型匹配到目录描述时才激活。
 - 共享智能体预设 `agents-shared/sicop-analyst/`（`preset.yml` + `agent.cordis.yml`，含 persona、文件/搜索/web/skill 行）播种一个“Analista SICOP”智能体。`PRESET_CURATION` 为它分配 `sicop-contratacion-publica` 技能。`seedSharedAgents` 在每次实例启动时重新同步共享预设，因此该智能体也能到达由更早部署配置的 owner，而不仅是新 owner。
 - `docs/endpoints.md`（及其中文配对）列出公开的 SICOP 端点。
 
