@@ -1,0 +1,9 @@
+# Archify verification receipts and capture evidence: local proof of the last
+# finalize/visual-check run, machine-specific, never published. The tracked
+# deliverables are the diagrams (*.html), their sources (candidate.json), the
+# PNG previews, the PDF, and README.md.
+*.browser-check.json
+*.delivery.json
+*.finalize.json
+*.finalize-summary.json
+visual-check/
