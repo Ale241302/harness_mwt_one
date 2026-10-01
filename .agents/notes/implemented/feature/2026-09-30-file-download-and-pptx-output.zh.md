@@ -19,7 +19,7 @@ Status: implemented
 - 文件工具行也获得同一动作：`ToolRow` 接受可选的 `onDownloadFile(path)`，`read`/`read_image`/`edit`/`write` 把它绑定到 `downloadWorkspaceFile(cwd, path)`，并由 `conversation` 字典中的 `row.download` 键为路径链接旁的控件提供标签。
 - `SearchBlock` 接受可选的 `onDownload`，在每个文件头（`grep`）和路径行（`glob`）上渲染一个按结果保存的控件；`grep`/`glob` 行提供它，标签来自 `search.download`。
 - 共享的图片灯箱（消息、轨迹与工具图库三条臂）增加一个指向原图 URL 的保存链接，标签来自 `image.download`，因此工具返回的图片可以从图库下载。
-- `skills-shared/pptx-deck/` 随附一个共享技能和 `scripts/build_pptx.py`——一个仅用标准库的 OOXML 写入器（标题与项目符号幻灯片、可选的 PNG/JPEG/GIF 图片、16:9）。它让模型无需 `python-pptx` 或光栅化工具就能得到真正的 `.pptx`；对于更丰富的演示（备注、表格），技能在可导入时指向 `python-pptx`，在需要时把 HTML 演示交给 `frontend-slides`。每张幻灯片都带有 `slideLayout` 关系，包内带有 `docProps/core.xml` 与 `docProps/app.xml`，与 PowerPoint 生成的文件一致：Office 16 会对一个通过 schema 校验、却缺少 slide→layout 关系的包提示修复，而 Open XML SDK 校验器不会标记该问题。
+- `skills-shared/pptx-deck/` 随附一个共享技能和 `scripts/build_pptx.py`——一个仅用标准库的 OOXML 写入器（带样式的幻灯片、可选的 PNG/JPEG/GIF 图片、16:9）。它让模型无需 `python-pptx` 或光栅化工具就能得到真正的 `.pptx`；对于更丰富的演示（备注、表格），技能在可导入时指向 `python-pptx`，在需要时把 HTML 演示交给 `frontend-slides`。演示采用一套既定视觉体系——深海军蓝封面配强调色条与侧栏，浅色内容页配大写 kicker、24pt 标题、细线、页脚编号、蓝色方块项目符号、KPI 卡片与带底色提示框——图片按比例适配到右栏。每张幻灯片都带有 `slideLayout` 关系，包内带有 `docProps/core.xml` 与 `docProps/app.xml`，与 PowerPoint 生成的文件一致：Office 16 会对一个通过 schema 校验、却缺少 slide→layout 关系的包提示修复，而 Open XML SDK 校验器不会标记该问题。
 
 ## Alternatives considered
 

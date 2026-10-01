@@ -55,21 +55,48 @@ HTML deck, a web page, or a PDF export. Use this skill whenever "PowerPoint",
 ```json
 {
   "title": "Título de la portada",
-  "subtitle": "Subtítulo opcional",
+  "subtitle": "Subtítulo de la portada",
+  "kicker": "CONFIDENCIAL · ELABORADO PARA …",
+  "brand": "marca del pie de página",
+  "lead": ["Viñeta de portada"],
+  "footer": ["Línea 1 del pie de portada", "Línea 2"],
   "slides": [
-    { "title": "Primera lámina", "bullets": ["Punto uno", "Punto dos"] },
-    { "title": "Con subnivel", "bullets": ["Nivel uno", { "text": "Nivel dos", "level": 1 }] },
-    { "title": "Con imagen", "bullets": ["Dato"], "image": "grafico.png" }
+    { "kicker": "LÁMINA 03 · TU POSICIÓN", "title": "Lámina", "lead": "Entradilla de una línea",
+      "bullets": ["Punto", { "text": "Subpunto", "level": 1 }], "image": "grafico.png",
+      "kpis": [{ "value": "15,4×", "label": "facturado / ganado", "note": "2020-2026", "tone": "blue" }],
+      "callout": { "tone": "warn", "title": "Advertencia:", "text": "2026 está parcial." } }
   ]
 }
 ```
 
-- A non-empty `title` adds a cover slide.
-- `bullets` accepts strings or `{ "text": ..., "level": 0..4 }` objects.
-- `image` is optional and must be a **PNG, JPEG, or GIF** file that already
-  exists on disk (relative to where you run the command, or absolute). It is
-  placed on the right half of its slide.
+- A non-empty `title` adds the cover slide; `kicker`, `lead`, and `footer` style it.
+- `bullets` accepts strings or `{ "text": …, "level": 0..2 }` objects.
+- `image` is optional and must be a **PNG, JPEG, or GIF** that already exists on
+  disk (relative to where you run the command, or absolute). It is fitted,
+  aspect-preserved, into the right column.
+- `kpis` (up to 4) draws a row of value cards; `callout` draws one tinted note.
+  `tone` is `blue`, `red`, `green`, `amber`, or `navy` (default `blue`).
+- `section` is a shorter alternative to `kicker`; when neither is given the
+  kicker is `LÁMINA NN`. The footer-right index is added automatically.
 - The output is a 16:9 deck.
+
+## Design
+
+The generator ships one intentional visual system (the SONDEL V2 language), so
+decks look designed without a template:
+
+- **Cover**: full-bleed navy, a blue top bar, a side panel, a small uppercase
+  kicker, a large white title, a short blue rule, the subtitle, optional lead
+  bullets, and a hairline footer.
+- **Content slides**: a thin navy top rule, the uppercase blue kicker, a 24pt
+  navy title, a hairline, an optional grey lead, styled bullets (blue square
+  markers), and a footer with the brand on the left and `LÁMINA NN / NN` on the
+  right.
+- **KPI cards** and **callouts** reuse the same palette and accent rules.
+- The palette is navy `#101A26`, blue `#0F5C8C`, body grey `#3D4756`, with
+  `red`/`green`/`amber` tones for status. Text uses Arial.
+
+Keep one idea per slide and 4–6 bullets; the design is dense, not decorative.
 
 ## Charts and diagrams
 
@@ -81,22 +108,22 @@ The generator embeds raster images only. When a slide needs a chart:
 3. If you have an SVG/HTML chart, you need a rasterizer first. Check for one
    (`rsvg-convert`, `inkscape`, `convert` from ImageMagick, or `python3 -c
    "import cairosvg"`). Convert to PNG, then reference it. Do **not** promise a
-   chart you cannot rasterize; fall back to bullets.
+   chart you cannot rasterize; fall back to bullets or KPI cards.
 
 ## Richer decks (optional)
 
 If `python-pptx` is importable (`python3 -c "import pptx"`), you may use it
-instead for tables, speaker notes, and theme access. Do not attempt to
-`pip install` it: the runtime image has no package manager and may be offline.
-When `python-pptx` is unavailable, stay with `build_pptx.py`; it always produces
-a valid file.
+instead for tables and speaker notes. Do not attempt to `pip install` it: the
+runtime image has no package manager and may be offline. When `python-pptx` is
+unavailable, stay with `build_pptx.py`; it always produces a valid file.
 
 ## Limits of this generator
 
 - No speaker notes and no tables (use `python-pptx` when available).
 - Images must be raster (PNG/JPEG/GIF); SVG is not embedded.
-- One flat master/layout: titles, bullets, images only. This is deliberate —
-  it keeps the deck portable and the generator dependency-free.
+- One visual system, no template files: the design is code, not a `.potx`.
+- Every slide must carry a `slideLayout` relationship and the package carries
+  `docProps`; both are required or PowerPoint offers to repair the file.
 
 ## Known failure modes to avoid
 
