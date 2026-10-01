@@ -28,6 +28,7 @@ import json
 import os
 import sys
 import zipfile
+from datetime import datetime, timezone
 from xml.sax.saxutils import escape
 
 EMU_PER_INCH = 914400
@@ -40,6 +41,9 @@ P = "http://schemas.openxmlformats.org/presentationml/2006/main"
 CT = "http://schemas.openxmlformats.org/package/2006/content-types"
 PR = "http://schemas.openxmlformats.org/package/2006/relationships"
 XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+
+# Relationship type for the package core properties (docProps/core.xml).
+CORE_PROPERTIES = "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties"
 
 IMAGE_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif"}
 
@@ -195,11 +199,43 @@ def rels(items: list[tuple[str, str, str]]) -> str:
     return f'{XML_DECL}<Relationships xmlns="{PR}">{body}</Relationships>'
 
 
+def core_properties_xml(title: str) -> str:
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return (
+        f'{XML_DECL}<cp:coreProperties '
+        'xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+        'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+        'xmlns:dcterms="http://purl.org/dc/terms/" '
+        'xmlns:dcmitype="http://purl.org/dc/dcmitype/" '
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+        f"<dc:title>{escape(title)}</dc:title>"
+        "<dc:creator>dsh pptx-deck</dc:creator>"
+        "<cp:lastModifiedBy>dsh pptx-deck</cp:lastModifiedBy><cp:revision>1</cp:revision>"
+        f'<dcterms:created xsi:type="dcterms:W3CDTF">{now}</dcterms:created>'
+        f'<dcterms:modified xsi:type="dcterms:W3CDTF">{now}</dcterms:modified>'
+        "</cp:coreProperties>"
+    )
+
+
+def app_properties_xml(slide_count: int) -> str:
+    return (
+        f'{XML_DECL}<Properties '
+        'xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" '
+        'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
+        "<Application>dsh pptx-deck</Application>"
+        f"<Slides>{slide_count}</Slides><Paragraphs>0</Paragraphs><Words>0</Words>"
+        "<PresentationFormat>Widescreen</PresentationFormat>"
+        "<Company></Company></Properties>"
+    )
+
+
 def content_types(slide_count: int, media_extensions: list[str]) -> str:
     defaults = "".join(
         f'<Default Extension="{ext}" ContentType="{IMAGE_TYPES[ext]}"/>' for ext in sorted(set(media_extensions))
     )
     overrides = [
+        '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>',
+        '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>',
         '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>',
         '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>',
         '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>',
@@ -275,7 +311,12 @@ def build(spec: dict, out_path: str) -> int:
             children += body_box(shape_id, list(bullets), inch(0.7), inch(1.9), width, inch(4.6))
             shape_id += 1
 
-        slide_rel_items: list[tuple[str, str, str]] = []
+        # Every slide is related to its layout, as PowerPoint-authored files
+        # are; a slide with no slideLayout relationship makes PowerPoint offer
+        # to repair the presentation even though the schema allows it.
+        slide_rel_items: list[tuple[str, str, str]] = [
+            ("rId1", f"{R}/slideLayout", "../slideLayouts/slideLayout1.xml"),
+        ]
         if has_image:
             ext = os.path.splitext(image_path)[1].lstrip(".").lower()
             if ext not in IMAGE_TYPES:
@@ -285,13 +326,19 @@ def build(spec: dict, out_path: str) -> int:
             media_name = f"image{len(media) + 1}.{ext}"
             media.append((media_name, data))
             media_extensions.append(ext)
-            slide_rel_items.append(("rIdImage", f"{R}/image", f"../media/{media_name}"))
-            children += picture("rIdImage", shape_id, inch(7.5), inch(1.9), inch(5.2), inch(4.4))
+            slide_rel_items.append(("rId2", f"{R}/image", f"../media/{media_name}"))
+            children += picture("rId2", shape_id, inch(7.5), inch(1.9), inch(5.2), inch(4.4))
 
         slide_entries.append((f"ppt/slides/slide{index}.xml", slide_xml(children), slide_rel_items))
 
     parts["[Content_Types].xml"] = content_types(len(slide_entries), media_extensions)
-    parts["_rels/.rels"] = rels([("rId1", f"{R}/officeDocument", "ppt/presentation.xml")])
+    parts["_rels/.rels"] = rels([
+        ("rId1", f"{R}/officeDocument", "ppt/presentation.xml"),
+        ("rId2", CORE_PROPERTIES, "docProps/core.xml"),
+        ("rId3", f"{R}/extended-properties", "docProps/app.xml"),
+    ])
+    parts["docProps/core.xml"] = core_properties_xml(_title)
+    parts["docProps/app.xml"] = app_properties_xml(len(slide_entries))
 
     presentation_rel_items = [("rId1", f"{R}/slideMaster", "slideMasters/slideMaster1.xml")]
     slide_ids = []
@@ -322,8 +369,7 @@ def build(spec: dict, out_path: str) -> int:
     ])
     for name, xml, rel_items in slide_entries:
         parts[name] = xml
-        if rel_items:
-            parts[f"ppt/slides/_rels/{os.path.basename(name)}.rels"] = rels(rel_items)
+        parts[f"ppt/slides/_rels/{os.path.basename(name)}.rels"] = rels(rel_items)
     for media_name, data in media:
         parts[f"ppt/media/{media_name}"] = data
 
