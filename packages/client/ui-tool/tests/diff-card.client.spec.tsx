@@ -239,6 +239,22 @@ describe('FileMutationRow diff card', () => {
     expect(openFile).toHaveBeenCalledWith('notes/demo.txt')
   })
 
+  it('saves the changed path through the browser without a desktop', () => {
+    const clicks: HTMLAnchorElement[] = []
+    const spy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicks.push(this)
+    })
+    const openFile = vi.fn()
+    const view = render(<FileMutationRow {...{ ...rowProps(settled()), openFile }} />)
+    fireEvent.click(view.getByRole('button', { name: '下载文件' }))
+    // Saving is independent of the Sidebar open path.
+    expect(openFile).not.toHaveBeenCalled()
+    expect(clicks).toHaveLength(1)
+    expect(clicks[0]?.getAttribute('href')).toBe('/api/file?path=%2Fw%2Fapp%2Fnotes%2Fdemo.txt&download=1')
+    expect(clicks[0]?.download).toBe('demo.txt')
+    spy.mockRestore()
+  })
+
   it('registers under write too, rendering a create as an added-only diff', () => {
     const writeArgs = '{"file_path":"notes/new.txt","content":"hello fixture\\n"}'
     const view = render(<FileMutationRow {...rowProps(settled({

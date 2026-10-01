@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { DEFAULT_SEARCH_MAX_LINES, SearchBlock as LocalizedSearchBlock } from '../src/index.ts'
 import type {
   SearchFileGroup, SearchMatchesBlockProps, SearchPathsBlockProps,
@@ -223,5 +223,27 @@ describe('SearchBlock copy', () => {
     const view = render(<SearchBlock kind="paths" truncated={false} total={0} paths={[]} className="x" />)
     expect(view.container.firstElementChild?.classList.contains('x')).toBe(true)
     expect(view.container.firstElementChild?.getAttribute('data-search')).toBe('paths')
+  })
+})
+
+describe('SearchBlock result download', () => {
+  it('offers a save control per file header (matches) and per path row (paths)', () => {
+    const onDownload = vi.fn()
+    const matches = render(<SearchBlock kind="matches" truncated={false} total={2}
+      files={[group('src/a.ts', 1), group('src/b.ts', 1)]} onDownload={onDownload} />)
+    expect(matches.container.querySelectorAll('[class^="_download_"]')).toHaveLength(2)
+    fireEvent.click(within(matches.container).getByRole('button', { name: '下载 src/a.ts' }))
+    expect(onDownload).toHaveBeenLastCalledWith('src/a.ts')
+
+    const paths = render(<SearchBlock kind="paths" truncated={false} total={2}
+      paths={['src/a.ts', 'src/b.ts']} onDownload={onDownload} />)
+    expect(paths.container.querySelectorAll('[class^="_download_"]')).toHaveLength(2)
+    fireEvent.click(within(paths.container).getByRole('button', { name: '下载 src/b.ts' }))
+    expect(onDownload).toHaveBeenLastCalledWith('src/b.ts')
+  })
+
+  it('renders no save control without an owner download action', () => {
+    const view = render(<SearchBlock kind="paths" truncated={false} total={1} paths={['a']} />)
+    expect(view.container.querySelector('[class^="_download_"]')).toBeNull()
   })
 })

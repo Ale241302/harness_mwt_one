@@ -38,6 +38,7 @@ export const searchBlockLabels: SearchBlockLabels = {
   collapseAria: '收起结果',
   expandAria: hidden => `展开其余 ${hidden} 行结果`,
   collapse: '收起', expand: hidden => `… 其余 ${hidden} 行`,
+  download: path => `下载 ${path}`,
 }
 
 export const terminalBlockLabels: TerminalBlockLabels = {

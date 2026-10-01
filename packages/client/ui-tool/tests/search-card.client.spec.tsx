@@ -331,6 +331,20 @@ describe('SearchRow keyed card', () => {
     expect(view.getByText('foo')).toBeTruthy()
   })
 
+  it('saves a result file through the browser without a desktop', () => {
+    const clicks: HTMLAnchorElement[] = []
+    const spy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicks.push(this)
+    })
+    const view = render(<SearchRow {...{ ...rowProps(settledGrep(), 'grep'), cwd: '/w/app' }} />)
+    toggleRow(view)
+    fireEvent.click(view.getByRole('button', { name: '下载 a.ts' }))
+    expect(clicks).toHaveLength(1)
+    expect(clicks[0]?.getAttribute('href')).toBe('/api/file?path=%2Fw%2Fapp%2Fa.ts&download=1')
+    expect(clicks[0]?.download).toBe('a.ts')
+    spy.mockRestore()
+  })
+
   it('registers the one row component under both grep and glob keys', () => {
     const registered: { key: unknown; locale: unknown; component: unknown }[] = []
     const ctx = {

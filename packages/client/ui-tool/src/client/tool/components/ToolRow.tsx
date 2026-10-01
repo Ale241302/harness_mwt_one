@@ -1,8 +1,8 @@
 import { useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  CodeBlock, DiffBlock, DisclosureRow, IconInspectOutline12, ReadBlock, SearchBlock, StateDot, TerminalBlock, WebBlock,
-  diffTotals,
+  CodeBlock, DiffBlock, DisclosureRow, IconDownloadOutline16, IconInspectOutline12, ReadBlock, SearchBlock, StateDot,
+  TerminalBlock, WebBlock, diffTotals,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { OpenFileOptions } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -81,6 +81,12 @@ export interface ToolRowProps {
   /** Open the path (already cwd-resolved), landing on `filePathLine` when given. */
   onOpenFile?: ((path: string, options?: OpenFileOptions) => void) | undefined
   /**
+   * Save the path in the browser, beside the open link. The owner binds the
+   * resolution (raw argument path against the session cwd) so this component
+   * stays cwd-free. Absent = no download affordance.
+   */
+  onDownloadFile?: ((path: string) => void) | undefined
+  /**
    * Jump to this call in the trajectory view: a hover-revealed Inspect pill
    * over the expanded body. Absent = no affordance.
    */
@@ -132,6 +138,7 @@ export function ToolRow({
   filePath,
   filePathLine,
   onOpenFile,
+  onDownloadFile,
   inspect,
 }: ToolRowProps) {
   const [expanded, setExpanded] = useState(false)
@@ -183,6 +190,12 @@ export function ToolRow({
       else onOpenFile(filePath, { line: filePathLine })
     }
     : undefined
+  const downloadFile = filePath !== undefined && onDownloadFile !== undefined && failureLine === null
+    ? (event: MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation()
+      onDownloadFile(filePath)
+    }
+    : undefined
   // Keep Enter/Space on the focused path link from bubbling to the row's
   // keydown handler, which would preventDefault() the key and toggle expand
   // instead of activating the link — the keyboard analogue of openFile's
@@ -228,6 +241,18 @@ export function ToolRow({
               >
                 {summaryText}
               </span>
+            )}
+            {downloadFile !== undefined && (
+              <button
+                type="button"
+                className={css.fileDownload}
+                onClick={downloadFile}
+                onKeyDown={fileLinkKeyDown}
+                aria-label={t('row.download')}
+                title={t('row.download')}
+              >
+                <IconDownloadOutline16 size={13} />
+              </button>
             )}
             {suffix !== null && (
               <span className={clsx(css.summarySuffix, suffix === diffStat && css.diffStat)}>{suffix}</span>
@@ -279,6 +304,7 @@ export function ToolRow({
                             labels={searchLabels}
                             maxLines={CHAT_SEARCH_MAX_LINES}
                             className={css.searchBody}
+                            onDownload={onDownloadFile}
                           />
                           {/* A capped search's recovery locator lives only in the result
                           text; show it below the card so the dropped rows survive. */}

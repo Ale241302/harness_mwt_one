@@ -22,7 +22,7 @@ const labels: MessageImageLabels = {
   openNamed: label => `${label}，点击查看原图`,
   loading: '图片加载中…',
   loadFailed: '图片加载失败，点击重试',
-  lightbox: { dialog: '原图预览', close: '关闭原图预览' },
+  lightbox: { dialog: '原图预览', close: '关闭原图预览', download: '下载图片' },
 }
 
 const attachment = {
@@ -249,6 +249,7 @@ describe('ImageGallery', () => {
         'image.loadFailed': '图片加载失败，点击重试',
         'image.preview': '原图预览',
         'image.closePreview': '关闭原图预览',
+        'image.download': '下载图片',
       }
       if (key === 'image.openOriginalLabel') {
         const label = params?.label

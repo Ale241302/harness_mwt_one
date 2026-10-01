@@ -19,6 +19,7 @@ export const zh = {
   'presented.explorer': '在文件资源管理器中显示',
   'presented.finder': '在 Finder 中显示',
   'presented.defaultApp': '用默认应用打开',
+  'presented.download': '下载',
   'presented.more': '{name} 的更多文件操作',
   'presented.action': '打开',
   'presented.preview': '在侧边栏预览',
@@ -42,6 +43,7 @@ export const zh = {
   'produced.moreOne': '+ 1 个文件',
   'produced.more': '+ {count} 个文件',
   'produced.open': '打开 {name}',
+  'produced.download': '下载 {name}',
 }
 
 /** English dictionary (same key set). */
@@ -60,6 +62,7 @@ export const en: Record<DeliverablesKey, string> = {
   'presented.explorer': 'Show in File Explorer',
   'presented.finder': 'Show in Finder',
   'presented.defaultApp': 'Open in default app',
+  'presented.download': 'Download',
   'presented.more': 'More file actions for {name}',
   'presented.action': 'Open',
   'presented.preview': 'Preview in sidebar',
@@ -83,6 +86,7 @@ export const en: Record<DeliverablesKey, string> = {
   'produced.moreOne': '+ 1 file',
   'produced.more': '+ {count} files',
   'produced.open': 'Open {name}',
+  'produced.download': 'Download {name}',
 }
 
 /** Union of this namespace's dictionary keys. */

@@ -1,7 +1,8 @@
 Third-party content in this directory
 =====================================
 
-Everything under `skills-shared/` except `interview-me/` is vendored from ECC
+Everything under `skills-shared/` except the workspace owner's own skills
+(`interview-me/`, `grill-me-lite/`, `pptx-deck/`) is vendored from ECC
 (https://github.com/affaan-m/ECC), version 2.2.2, by Affaan Mustafa, under the
 MIT License:
 
@@ -13,7 +14,8 @@ crypto, and Apple/mobile stacks) were pruned to keep the catalog to business and
 generalist material. ECC agents are NOT here; they ship as native dsh presets
 under `agents-shared/`.
 
-`interview-me` is the workspace owner's own skill, not from ECC.
+`interview-me`, `grill-me-lite`, and `pptx-deck` are the workspace owner's own
+skills, not from ECC.
 
 MIT License
 

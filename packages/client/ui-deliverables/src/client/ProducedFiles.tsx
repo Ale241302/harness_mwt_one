@@ -1,4 +1,4 @@
-import { LinkIcon, classifyLinkPath } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDownloadOutline16, LinkIcon, classifyLinkPath } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { basename } from './turn-deliverables.ts'
@@ -8,9 +8,11 @@ import css from './ProducedFiles.module.css'
 /** Maximum number of file chips rendered before the remainder counter. */
 const SHOWN_LIMIT = 6
 
-/** Matched paths, the opener, and the locale seat. */
+/** Matched paths, the opener, the browser save, and the locale seat. */
 export type ProducedFilesProps = Pick<TurnTailOwnerProps, 'openFile'> & {
   matched: readonly string[]
+  /** Save one produced file in the browser; needs no Host desktop. */
+  onDownload: (path: string) => void
 } & PropsLocale<typeof NS>
 
 function moreLabel(t: ProducedFilesProps['t'], count: number): string {
@@ -19,30 +21,39 @@ function moreLabel(t: ProducedFilesProps['t'], count: number): string {
 
 /**
  * Render one turn's produced files as openable chips.
- * @param props - selector-matched paths, the chat view's file opener, and the locale seat.
+ * @param props - selector-matched paths, the chat view's file opener, the browser save, and the locale seat.
  * @returns The produced-files row.
  */
-export function ProducedFiles({ matched: paths, openFile, t }: ProducedFilesProps) {
+export function ProducedFiles({ matched: paths, openFile, onDownload, t }: ProducedFilesProps) {
   const shown = paths.slice(0, SHOWN_LIMIT)
   return (
     <div className={css.root}>
       <span className={css.label}>{t('produced.label')}</span>
       <div className={css.lane}>
         <div className={css.row} data-produced-files-row>
-          {shown.map(path => (
-            <button
-              key={path}
-              type="button"
-              className={css.file}
-              // The full path is the disambiguator when two turns produce files
-              // that share a basename; the chip itself stays short.
-              title={path}
-              aria-label={t('produced.open', { name: path })}
-              onClick={() => { openFile(path) }}
-            >
-              <LinkIcon kind={classifyLinkPath(path)} className={css.fileIcon} />
-              <span className={css.fileName}>{basename(path)}</span>
-            </button>
+          {shown.map((path, index) => (
+            <span key={path} className={css.chip} data-index={index + 1}>
+              <button
+                type="button"
+                className={css.file}
+                // The full path is the disambiguator when two turns produce files
+                // that share a basename; the chip itself stays short.
+                title={path}
+                aria-label={t('produced.open', { name: path })}
+                onClick={() => { openFile(path) }}
+              >
+                <LinkIcon kind={classifyLinkPath(path)} className={css.fileIcon} />
+                <span className={css.fileName}>{basename(path)}</span>
+              </button>
+              <button
+                type="button"
+                className={css.download}
+                aria-label={t('produced.download', { name: path })}
+                onClick={() => { onDownload(path) }}
+              >
+                <IconDownloadOutline16 size={13} />
+              </button>
+            </span>
           ))}
           {shown.map((_, index) => {
             const shownCount = index + 1

@@ -61,6 +61,43 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* Rows that carry a save control anchor it to their trailing edge. A file-group
+   header row and a downloadable path row both position the overlay inside
+   their own box. */
+.fileRow,
+.line[data-search-download] {
+  position: relative;
+}
+
+/* Per-result browser save: an overlay at the row's trailing edge, so a search
+   result is saveable without changing the card's line layout. The solid card
+   fill keeps it legible over a long, horizontally scrolled path. */
+.download {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 10px;
+  margin: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.download:hover,
+.download:focus-visible {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+  outline: none;
+}
+
 /* A file group's header: a bold path label plus its match count, the whole row
    the collapse control. */
 .fileHeader {

@@ -1,9 +1,9 @@
-/** File identity and explicit default-app or file-manager actions for one delivery. */
+/** File identity, browser save, and explicit default-app or file-manager actions for one delivery. */
 import { useRef, useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
   Menu, FileTypeIcon, fileExtension, IconRightUpOutline16,
-  IconChevronDownOutline14, IconFolderOpenOutline16,
+  IconChevronDownOutline14, IconFolderOpenOutline16, IconDownloadOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PresentedAction, PresentedHost } from '../presented.ts'
@@ -22,18 +22,23 @@ function cardDescription(description: string | undefined, fallback: string): str
  * @param props - durable file metadata, Sidebar preview, Host capabilities, gesture status, and localized copy.
  * @returns the file card and its anchored action menu.
  */
-export function PresentedFileCard({ file, cwd, phase, host, onPreview, onAction, t }: {
+export function PresentedFileCard({ file, cwd, phase, host, onPreview, onAction, onDownload, t }: {
   file: PresentedPath
   cwd: string | undefined
   phase: PresentedOpenPhase | undefined
   host: PresentedHost | null
   onPreview: () => void
   onAction: (action: PresentedAction) => void
+  /** Save the file in the browser; needs no Host desktop. */
+  onDownload: () => void
 } & PropsLocale<typeof NS>) {
   const [menuOpen, setMenuOpen] = useState(false)
   const previewRef = useRef<HTMLButtonElement>(null)
   const pending = phase === 'opening' || phase === 'revealing'
-  const menuDisabled = pending || host === null || !host.available
+  const nativeReady = host !== null && host.available
+  // Download works without a desktop, so the menu stays available while the
+  // native open/reveal rows wait for one.
+  const menuDisabled = pending
   if (menuDisabled && menuOpen) setMenuOpen(false)
   const reveal = host?.fileManager ?? 'directory'
   const act = (action: PresentedAction) => {
@@ -73,12 +78,29 @@ export function PresentedFileCard({ file, cwd, phase, host, onPreview, onAction,
             <IconChevronDownOutline14 size={11} />
           </button>}
           items={[
-            { id: 'open', icon: <IconRightUpOutline16 size={16} className={css.menuActionIcon} />,
-              label: t('presented.defaultApp') },
-            { id: 'reveal', icon: <IconFolderOpenOutline16 />,
-              label: t(`presented.${reveal}`) },
+            ...nativeReady
+              ? [
+                {
+                  id: 'open', icon: <IconRightUpOutline16 size={16} className={css.menuActionIcon} />,
+                  label: t('presented.defaultApp'),
+                },
+                { id: 'reveal', icon: <IconFolderOpenOutline16 />, label: t(`presented.${reveal}`) },
+              ]
+              : [],
+            {
+              id: 'download', icon: <IconDownloadOutline16 size={16} className={css.menuActionIcon} />,
+              label: t('presented.download'),
+            },
           ]}
-          onSelect={(id) => { act(id === 'reveal' ? 'reveal' : 'open') }} />
+          onSelect={(id) => {
+            if (id !== 'download') {
+              act(id === 'reveal' ? 'reveal' : 'open')
+              return
+            }
+            setMenuOpen(false)
+            previewRef.current?.focus()
+            onDownload()
+          }} />
       </div>
     </div>
   </div>

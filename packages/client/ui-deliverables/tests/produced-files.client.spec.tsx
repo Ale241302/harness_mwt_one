@@ -42,6 +42,7 @@ function openProps(controller = new PresentedOpenController()) {
     usePresentedHost: <T,>(select: (state: ReturnType<typeof controller.host.getSnapshot>) => T): T =>
       select(controller.host.getSnapshot()),
     openPresented: vi.fn((...args: Parameters<PresentedOpenController['open']>) => controller.open(...args)),
+    downloadFile: vi.fn<(path: string, cwd: string | undefined) => void>(),
     usePresentedOpen: <T,>(select: (state: ReturnType<typeof controller.state.getSnapshot>) => T): T =>
       select(controller.state.getSnapshot()),
   }
@@ -427,15 +428,16 @@ describe('produced-file Turn data', () => {
 describe('ProducedFiles row', () => {
   const t = makeTranslate(zh)
 
-  it('renders the bounded chips and opens the file it was clicked for', () => {
+  it('renders the bounded chips and opens or saves the file it was clicked for', () => {
     const paths = ['deep/a.html', 'b.css', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts', 'h.ts']
     const openFile = vi.fn<(path: string) => void>()
+    const onDownload = vi.fn<(path: string) => void>()
 
-    const view = render(<ProducedFiles matched={paths} openFile={openFile} t={t} />)
+    const view = render(<ProducedFiles matched={paths} openFile={openFile} onDownload={onDownload} t={t} />)
     expect(view.getByText('本轮文件改动')).toBeTruthy()
     const row = view.container.querySelector('[data-produced-files-row]')
     if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
-    expect(within(row).getAllByRole('button')).toHaveLength(6)
+    expect(within(row).getAllByRole('button')).toHaveLength(12)
     expect(within(row).getByText('+ 2 个文件')).toBeTruthy()
     const chip = view.getByRole('button', { name: '打开 deep/a.html' })
     expect(chip.textContent).toBe('a.html')
@@ -445,13 +447,16 @@ describe('ProducedFiles row', () => {
     // The row hands over the path it was given; where it opens is the
     // Sidebar's decision, not this row's.
     expect(openFile).toHaveBeenCalledWith('deep/a.html')
+    // The trailing save control carries the same full path, not the shortened name.
+    fireEvent.click(view.getByRole('button', { name: '下载 deep/a.html' }))
+    expect(onDownload).toHaveBeenCalledWith('deep/a.html')
   })
 
   it('renders a remainder counter after every chip but the last when every file fits', () => {
-    const view = render(<ProducedFiles matched={['a.md', 'b.md', 'c.md']} openFile={() => {}} t={t} />)
+    const view = render(<ProducedFiles matched={['a.md', 'b.md', 'c.md']} openFile={() => {}} onDownload={() => {}} t={t} />)
     const row = view.container.querySelector('[data-produced-files-row]')
     if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
-    expect(within(row).getAllByRole('button')).toHaveLength(3)
+    expect(within(row).getAllByRole('button')).toHaveLength(6)
     // One counter per chip that could be the last visible one; the final chip hides nothing.
     expect([...row.querySelectorAll('[data-shown]')].map(node => node.getAttribute('data-shown'))).toEqual(['1', '2'])
   })
@@ -459,7 +464,7 @@ describe('ProducedFiles row', () => {
   it('offers no folder action, because a directory has no preview to open', () => {
     const openFile = vi.fn<(path: string) => void>()
     const overflowing = ['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md']
-    const view = render(<ProducedFiles matched={overflowing} openFile={openFile} t={t} />)
+    const view = render(<ProducedFiles matched={overflowing} openFile={openFile} onDownload={() => {}} t={t} />)
     expect(view.queryByRole('button', { name: '在文件夹中显示' })).toBeNull()
     // Nothing in the row reaches the local machine any more.
     expect(openFile).not.toHaveBeenCalled()
@@ -470,6 +475,7 @@ describe('ProducedFiles row', () => {
       <ProducedFiles
         matched={['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md']}
         openFile={() => {}}
+        onDownload={() => {}}
         t={makeTranslate(en)}
       />,
     )
@@ -572,6 +578,12 @@ describe('plugin registration', () => {
     expect(face.hooks.presentedHost.getSnapshot()).toBeNull()
     await face.openPresented(SessionId('child-session'), 2, 0)
     expect(face.hooks.presentedOpen.getSnapshot()['/api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
+    // The save face is bound here too: it builds the Host download URL and
+    // clicks an anchor, never consulting the desktop.
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    face.downloadFile('out/report.docx', '/work')
+    expect(anchorClick).toHaveBeenCalledOnce()
+    anchorClick.mockRestore()
     // A turn that produced nothing yields no vocabulary at all.
     expect(service?.forClosing(tailOwner(undefined, 2), SessionId('viewed-session'))).toBeUndefined()
 
@@ -634,6 +646,9 @@ describe('presented files', () => {
     fireEvent.click(view.getByRole('button', { name: 'More file actions for report-0.docx' }))
     fireEvent.click(view.getByRole('menuitem', { name: 'Open in default app' }))
     expect(props.openPresented).toHaveBeenCalledWith('child-session', 2, 0, 'open')
+    fireEvent.click(view.getByRole('button', { name: 'More file actions for report-0.docx' }))
+    fireEvent.click(view.getByRole('menuitem', { name: 'Download' }))
+    expect(props.downloadFile).toHaveBeenCalledWith('report-0.docx', undefined)
     fireEvent.click(view.getByRole('button', { name: 'Collapse delivered files' }))
     expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(4)
     expect(view.queryByText('Files changed')).toBeNull()
@@ -680,6 +695,8 @@ it('marks delivery cards that directly follow the produced-files row', () => {
   expect(view.getByText('Files changed')).toBeTruthy()
   expect(view.container.querySelector('[data-presented-files-row]')?.parentElement
     ?.getAttribute('data-after-produced-files')).toBe('true')
+  fireEvent.click(view.getByRole('button', { name: 'Download source.ts' }))
+  expect(shared.downloadFile).toHaveBeenCalledWith('source.ts', undefined)
 })
 
 it('distinguishes PDF, Word, Markdown, and code files with compact decorative card icons', () => {

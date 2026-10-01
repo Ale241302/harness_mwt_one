@@ -15,6 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { PresentedOpenController } from './present-open.ts'
+import { downloadWorkspaceFile } from './download.ts'
 import { PresentRow } from './PresentRow.tsx'
 import { Deliverables, selectDeliverables, type DeliverablesInjected } from './Deliverables.tsx'
 import { en, NS, zh, type DeliverablesKey } from './locales.ts'
@@ -55,6 +56,7 @@ export function apply(ctx: ClientContext): void {
         hooks: { presentedOpen: opener.state, presentedHost: opener.host },
         reloadPresentedHost: () => opener.loadHost(),
         openPresented: (sessionId, seq, index, action) => opener.open(sessionId, seq, index, action),
+        downloadFile: (path, cwd) => { downloadWorkspaceFile(cwd, path) },
       }),
     }, Deliverables),
   )

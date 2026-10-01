@@ -79,6 +79,7 @@ export function searchBlockLabels(t: T): SearchBlockLabels {
     expandAria: count => t('search.expandAria', { count }),
     collapse: t('collapse'),
     expand: count => t('search.expandRest', { count }),
+    download: path => t('search.download', { path }),
   }
 }
 

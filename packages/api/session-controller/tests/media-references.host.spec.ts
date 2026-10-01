@@ -49,6 +49,8 @@ describe('SessionMediaReferences /api/file', () => {
     }
     return {
       call: (path: string, init?: RequestInit) => raw(`http://127.0.0.1/api/file?path=${encodeURIComponent(path)}`, init),
+      saved: (path: string, init?: RequestInit) =>
+        raw(`http://127.0.0.1/api/file?path=${encodeURIComponent(path)}&download=1`, init),
       raw,
       fs: ctx.fs as LocalFileSystem,
       unregister,
@@ -109,6 +111,39 @@ describe('SessionMediaReferences /api/file', () => {
     expect(response.headers.get('x-content-type-options')).toBe('nosniff')
     expect(response.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'")
     expect(await responseBytes(response)).toEqual(PNG_BYTES)
+  })
+
+  it('turns a save request into an attachment while serving the same bytes', async () => {
+    const route = await mount()
+    const path = join(root, 'report.pdf')
+    await writeFile(path, PNG_BYTES)
+    const response = await route.saved(path)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="report.pdf"')
+    expect(await responseBytes(response)).toEqual(PNG_BYTES)
+    const head = await route.saved(path, { method: 'HEAD' })
+    expect(head.status).toBe(200)
+    expect(head.headers.get('content-disposition')).toBe('attachment; filename="report.pdf"')
+    expect(head.body).toBeNull()
+    expect((await route.call(path)).headers.get('content-disposition')).toBeNull()
+  })
+
+  it('sanitizes the attachment filename derived from the resolved path', async () => {
+    const route = await mount()
+    vi.spyOn(route.fs, 'resolve').mockResolvedValue({
+      targetKey: FsTargetKey('opaque-remote-id'), displayPath: '/remote/we"ird\nname.txt',
+    })
+    vi.spyOn(route.fs, 'readBytes').mockResolvedValue(PNG_BYTES)
+    const response = await route.saved('/remote/we"ird\nname.txt')
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="we_ird_name.txt"')
+  })
+
+  it('falls back to a generic attachment filename when the path has no segment', async () => {
+    const route = await mount()
+    vi.spyOn(route.fs, 'resolve').mockResolvedValue({ targetKey: FsTargetKey('opaque-remote-id'), displayPath: '/' })
+    vi.spyOn(route.fs, 'readBytes').mockResolvedValue(PNG_BYTES)
+    const response = await route.saved('/')
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="download"')
   })
 
   it.each(['mp4', 'mp3', 'bin'])('applies the attachment byte cap to .%s files', async (extension) => {

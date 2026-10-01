@@ -33,6 +33,7 @@ const t = ((key: string, params?: Readonly<Record<string, unknown>>): string => 
     'image.original': '原图',
     'image.preview': '原图预览',
     'image.closePreview': '关闭原图预览',
+    'image.download': '下载图片',
     'image.openOriginal': '查看原图',
     'attachment.dropBlocked': '当前无法添加文件或图片',
     'attachment.dropTitle': '文件或图片拖动到此处即可添加',

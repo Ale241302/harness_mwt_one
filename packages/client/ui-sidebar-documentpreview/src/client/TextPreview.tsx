@@ -15,9 +15,10 @@ import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { FileTypeIcon, IconRefreshOutline16, Menu, Tooltip, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
+import { FileTypeIcon, IconDownloadOutline16, IconRefreshOutline16, Menu, Tooltip, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
 import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { TextInjected } from './face.ts'
+import { downloadHostFile } from './download.ts'
 import { failureLine } from './failure-line.ts'
 import { IconNowrapFill16, IconWrapFill16 } from './icons.tsx'
 import { LoadingIndicator } from './LoadingIndicator.tsx'
@@ -121,6 +122,9 @@ export function TextPreview({
   const pathTextRef = useRef<HTMLSpanElement | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const displayPath = meta.value?.absolutePath ?? current?.complete?.absolutePath ?? file.path
+  // Only the Host knows where a relative workspace path resolves; the resource
+  // metadata carries the absolute path the save route needs.
+  const downloadPath = meta.value?.absolutePath ?? current?.complete?.absolutePath
   usePathClipped(pathRef, pathTextRef, displayPath, state !== undefined)
   // Every tab of this type is a `file` resource address, so its params are the
   // `file` type's; the union is narrowed on the one field read, not validated.
@@ -315,6 +319,19 @@ export function TextPreview({
             <IconRefreshOutline16 />
           </button>
         </Tooltip>
+        {downloadPath !== undefined && (
+          <Tooltip label={t('download')} side="bottom" delayMs={500}>
+            <button
+              type="button"
+              className={css.tool}
+              aria-label={t('download')}
+              data-textpreview-tool="download"
+              onClick={() => { downloadHostFile(downloadPath, name) }}
+            >
+              <IconDownloadOutline16 />
+            </button>
+          </Tooltip>
+        )}
       </div>
       <div
         ref={bindBody}

@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
+import { downloadWorkspaceFile } from '../../download.ts'
 import { searchCardModel } from '../models/search-card-model.ts'
 import { toolRowModel } from '../models/tool-call-model.ts'
 import { ToolRow } from '../components/ToolRow.tsx'
@@ -15,7 +16,7 @@ const SEARCH_TITLE_KEYS = {
 } as const
 
 /** Lets users expand grep or glob results and recover capped searches. */
-export function SearchRow({ toolName, block, inspect, t }: SearchRowProps) {
+export function SearchRow({ toolName, block, cwd, inspect, t }: SearchRowProps) {
   const model = toolRowModel(toolName, block)
   const search = searchCardModel(block)
   return (
@@ -34,6 +35,7 @@ export function SearchRow({ toolName, block, inspect, t }: SearchRowProps) {
       errorSummary={model.errorSummary}
       search={search}
       state={model.state}
+      onDownloadFile={(path) => { downloadWorkspaceFile(cwd, path) }}
       inspect={inspect}
     />
   )

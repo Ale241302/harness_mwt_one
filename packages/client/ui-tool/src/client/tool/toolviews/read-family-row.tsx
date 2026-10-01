@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
 import { IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
+import { downloadWorkspaceFile } from '../../download.ts'
 import { toolRowModel } from '../models/tool-call-model.ts'
 import { ToolRow, type ToolRowProps } from '../components/ToolRow.tsx'
 
@@ -54,6 +55,7 @@ export function readFamilyRow(
       state={model.state}
       filePath={model.filePath}
       onOpenFile={openFile}
+      onDownloadFile={(path) => { downloadWorkspaceFile(cwd, path) }}
       inspect={inspect}
     />
   )

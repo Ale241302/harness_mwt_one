@@ -6,9 +6,16 @@ import { ImageLightbox } from '../src/ImageLightbox.tsx'
 
 afterEach(cleanup)
 
-const labels = { dialog: '原图预览', close: '关闭原图预览' }
+const labels = { dialog: '原图预览', close: '关闭原图预览', download: '下载图片' }
 
 describe('ImageLightbox', () => {
+  it('offers a save link carrying the original URL and the image name', () => {
+    const view = render(<ImageLightbox src="blob:original" alt="grafico.png" labels={labels} onClose={vi.fn()} />)
+    const save = view.getByRole('link', { name: '下载图片' })
+    expect(save.getAttribute('href')).toBe('blob:original')
+    expect(save.getAttribute('download')).toBe('grafico.png')
+  })
+
   it('focuses its close control, closes by button and Escape, and restores focus', () => {
     const opener = document.createElement('button')
     document.body.appendChild(opener)

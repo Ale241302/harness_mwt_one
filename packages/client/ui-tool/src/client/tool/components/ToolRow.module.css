@@ -150,6 +150,33 @@
   text-decoration-color: currentColor;
 }
 
+/* Browser save beside a file-tool path: a quiet always-present control, so the
+   file is reachable even on a headless Host where the open link's destination
+   (the Sidebar preview) is the only other way in. Sized to the row's line so it
+   never grows the collapsed row. */
+.fileDownload {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: calc(20px + var(--dsh-content-font-delta, 0px));
+  height: calc(20px + var(--dsh-content-font-delta, 0px));
+  margin-left: 2px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.fileDownload:hover,
+.fileDownload:focus-visible {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+  outline: none;
+}
+
 /* Error row's collapsed summary: the failure's first line in the error color. */
 .errorSummary {
   color: var(--dsw-alias-state-error-primary);

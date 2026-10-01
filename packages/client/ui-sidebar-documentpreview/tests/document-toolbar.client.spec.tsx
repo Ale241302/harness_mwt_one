@@ -229,6 +229,34 @@ describe('document toolbar', () => {
     h.controller.abort()
   })
 
+  it('saves the previewed file to the browser without a Host desktop', async () => {
+    const h = harness({ 1: page(1, ['held'], true) })
+    const clicks: HTMLAnchorElement[] = []
+    const spy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicks.push(this)
+    })
+    const view = render(<TextPreview {...h.props()} />)
+    await settle()
+    const button = view.container.querySelector('[data-textpreview-tool="download"]')
+    expect(button).not.toBeNull()
+    fireEvent.click(button!)
+    expect(clicks).toHaveLength(1)
+    expect(clicks[0]?.download).toBe('notes.md')
+    expect(clicks[0]?.getAttribute('href')).toBe(`/api/file?path=${encodeURIComponent(ABSOLUTE_PATH)}&download=1`)
+    spy.mockRestore()
+    h.controller.abort()
+  })
+
+  it('hides the download control when no absolute path is known', async () => {
+    const h = harness({ 1: page(1, ['held'], false) })
+    const view = render(<TextPreview {...h.props()} />)
+    await settle()
+    h.useResource.mockReturnValue({ status: 'none', value: undefined, failure: undefined })
+    view.rerender(<TextPreview {...h.props()} />)
+    expect(view.container.querySelector('[data-textpreview-tool="download"]')).toBeNull()
+    h.controller.abort()
+  })
+
   it('shows the unsupported empty state for a known binary suffix with no renderer, reading nothing', async () => {
     const h = harness()
     const base = h.props()

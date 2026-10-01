@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { IconEditOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
+import { downloadWorkspaceFile } from '../../download.ts'
 import { diffCardModel } from '../models/diff-card-model.ts'
 import { toolRowModel } from '../models/tool-call-model.ts'
 import { ToolRow } from '../components/ToolRow.tsx'
@@ -29,6 +30,7 @@ export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect,
       state={model.state}
       filePath={model.filePath}
       onOpenFile={openFile}
+      onDownloadFile={(path) => { downloadWorkspaceFile(cwd, path) }}
       inspect={inspect}
     />
   )

@@ -24,6 +24,8 @@ export interface DeliverablesInjected {
   }
   reloadPresentedHost: PresentedOpenController['loadHost']
   openPresented: PresentedOpenController['open']
+  /** Save one workspace file in the browser; needs no Host desktop. */
+  downloadFile: (path: string, cwd: string | undefined) => void
 }
 
 /**
@@ -38,11 +40,11 @@ export function selectDeliverables(owner: TurnTailOwnerProps): DeliverablesMatch
 }
 
 /**
- * Render workspace file actions and default-application buttons for declared files.
- * @param props - matched files, workspace opener, and localized copy.
+ * Render workspace file actions, browser saves, and default-application buttons for declared files.
+ * @param props - matched files, workspace opener, browser save, and localized copy.
  * @returns the closing turn's file rows.
  */
-export function Deliverables({ matched, openFile, t, sessionId, useSessions, openPresented, usePresentedOpen, usePresentedHost, reloadPresentedHost }: Pick<TurnTailOwnerProps, 'openFile'> & {
+export function Deliverables({ matched, openFile, t, sessionId, useSessions, openPresented, usePresentedOpen, usePresentedHost, reloadPresentedHost, downloadFile }: Pick<TurnTailOwnerProps, 'openFile'> & {
   matched: DeliverablesMatch
 } & PropsLocale<typeof NS> & Pick<SessionStandardProps, 'sessionId'> & Pick<GlobalStandardProps, 'useSessions'> & InjectFace<DeliverablesInjected>) {
   const [expanded, setExpanded] = useState(false)
@@ -57,7 +59,8 @@ export function Deliverables({ matched, openFile, t, sessionId, useSessions, ope
     if (matched.presented.length > 0 && host === null) void reloadPresentedHost()
   }, [matched.presented.length, host, reloadPresentedHost])
   return <>
-    {matched.produced.length > 0 && <ProducedFiles matched={matched.produced} openFile={openFile} t={t} />}
+    {matched.produced.length > 0 && <ProducedFiles matched={matched.produced} openFile={openFile} t={t}
+      onDownload={(path) => { downloadFile(path, cwd) }} />}
     {matched.presented.length > 0 && <div
       className={css.root}
       data-after-produced-files={matched.produced.length > 0 || undefined}
@@ -72,7 +75,8 @@ export function Deliverables({ matched, openFile, t, sessionId, useSessions, ope
           phase={states[presentedFileUrl(sessionId, file.seq, file.index)]}
           host={host === 'error' ? null : host} t={t}
           onPreview={() => { openFile(file.path) }}
-          onAction={(action) => { void openPresented(sessionId, file.seq, file.index, action) }} />)}
+          onAction={(action) => { void openPresented(sessionId, file.seq, file.index, action) }}
+          onDownload={() => { downloadFile(file.path, cwd) }} />)}
       </div>
       {collapsible && <button type="button" className={css.toggle}
         aria-expanded={expanded}

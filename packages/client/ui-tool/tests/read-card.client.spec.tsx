@@ -251,6 +251,21 @@ describe('ReadRow keyed toolview', () => {
     expect(openFile).toHaveBeenCalledWith('src/a.ts', { line: 41 })
   })
 
+  it('saves the reported path through the browser without a desktop', () => {
+    const clicks: HTMLAnchorElement[] = []
+    const spy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicks.push(this)
+    })
+    const openFile = vi.fn()
+    const view = render(<ReadRow {...{ ...rowProps(settled()), cwd: '/w/app', openFile }} />)
+    fireEvent.click(view.getByRole('button', { name: '下载文件' }))
+    expect(openFile).not.toHaveBeenCalled()
+    expect(clicks).toHaveLength(1)
+    expect(clicks[0]?.getAttribute('href')).toBe('/api/file?path=%2Fw%2Fapp%2Fsrc%2Fa.ts&download=1')
+    expect(clicks[0]?.download).toBe('a.ts')
+    spy.mockRestore()
+  })
+
   it('a running read renders the summary row alone, and its state', () => {
     const view = render(<ReadRow {...rowProps(running())} />)
     expect(view.container.querySelector('[data-variant="read"]')?.getAttribute('data-state')).toBe('running')

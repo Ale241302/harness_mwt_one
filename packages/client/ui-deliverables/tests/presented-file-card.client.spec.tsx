@@ -14,6 +14,7 @@ const props = () => ({
   phase: undefined,
   onPreview: vi.fn(),
   onAction: vi.fn(),
+  onDownload: vi.fn(),
   t: makeTranslate(en),
 })
 
@@ -55,13 +56,31 @@ it.each(['opening', 'revealing'] as const)('keeps sidebar previews available whi
   expect(p.onAction).not.toHaveBeenCalled()
 })
 
-it('keeps the native menu disabled until a desktop is available', () => {
+it('keeps the save action available while the native rows wait for a desktop', () => {
   const p = props()
   const view = render(<PresentedFileCard {...p} host={null} />)
-  expect((view.getByRole('button', { name: 'More file actions for out/report.pdf' }) as HTMLButtonElement).disabled).toBe(true)
-  expect((view.getByRole('button', { name: 'Open out/report.pdf in sidebar' }) as HTMLButtonElement).disabled).toBe(false)
+  const trigger = view.getByRole('button', { name: 'More file actions for out/report.pdf' })
+  expect((trigger as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.click(trigger)
+  expect(view.queryByRole('menuitem', { name: 'Open in default app' })).toBeNull()
+  expect(view.queryByRole('menuitem', { name: 'Show in Finder' })).toBeNull()
+  fireEvent.click(view.getByRole('menuitem', { name: 'Download' }))
+  expect(p.onDownload).toHaveBeenCalledOnce()
+  expect(p.onAction).not.toHaveBeenCalled()
+  expect(view.queryByRole('menu')).toBeNull()
   view.rerender(<PresentedFileCard {...p} host={{ ...p.host, available: false, fileManager: null }} />)
-  expect((view.getByRole('button', { name: 'More file actions for out/report.pdf' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(view.queryByRole('menuitem')).toBeNull()
+})
+
+it('saves the file from the menu without reaching the Host desktop', () => {
+  const p = props()
+  const view = render(<PresentedFileCard {...p} />)
+  fireEvent.click(view.getByRole('button', { name: 'More file actions for out/report.pdf' }))
+  view.getByRole('menuitem', { name: 'Download' }).focus()
+  fireEvent.click(view.getByRole('menuitem', { name: 'Download' }))
+  expect(p.onDownload).toHaveBeenCalledOnce()
+  expect(p.onAction).not.toHaveBeenCalled()
+  expect(document.activeElement).toBe(view.getByRole('button', { name: 'Open out/report.pdf in sidebar' }))
 })
 
 it('opens the right sidebar from either the card or its primary button', () => {
@@ -89,15 +108,18 @@ it('supports keyboard selection and returns focus to the trigger on Escape', () 
   const trigger = view.getByRole('button', { name: 'More file actions for out/report.pdf' })
   fireEvent.click(trigger)
   const items = view.getAllByRole('menuitem')
+  expect(items).toHaveLength(3)
   expect(document.activeElement).toBe(items[0])
   fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' })
   expect(document.activeElement).toBe(items[1])
+  fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' })
+  expect(document.activeElement).toBe(items[2])
   fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' })
   expect(document.activeElement).toBe(items[0])
   fireEvent.keyDown(document.activeElement!, { key: 'End' })
-  expect(document.activeElement).toBe(items[1])
+  expect(document.activeElement).toBe(items[2])
   fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' })
-  expect(document.activeElement).toBe(items[0])
+  expect(document.activeElement).toBe(items[1])
   fireEvent.keyDown(document.activeElement!, { key: 'Home' })
   expect(document.activeElement).toBe(items[0])
   fireEvent.keyDown(document.activeElement!, { key: 'Escape' })

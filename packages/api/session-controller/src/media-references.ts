@@ -1,7 +1,8 @@
 /**
  * Authenticated GET/HEAD /api/file reads bounded file responses through
  * the composed filesystem provider. Paths and MIME types do not restrict access;
- * the connection service authenticates requests before this handler.
+ * the connection service authenticates requests before this handler. A
+ * `download` query parameter switches the response to a browser save.
  * @module @deepseek-ai/dsh-api-session-controller/media-references
  */
 
@@ -19,10 +20,21 @@ const BASE_HEADERS = {
   'Content-Security-Policy': "sandbox; default-src 'none'",
 }
 
+/** Last path segment, safe to place inside a `Content-Disposition` filename. */
+function attachmentFilename(path: string): string {
+  const name = path.split(/[/\\]/).pop() ?? ''
+  const safe = name.replace(/[\u0000-\u001f\u007f"\\]/g, '_').trim()
+  return safe === '' ? 'download' : safe
+}
+
 async function serveFile(request: Request, fs: FileSystem, maxBytes: number): Promise<Response> {
   const fail = (status: number, text: string): Response =>
     new Response(request.method === 'HEAD' ? null : text, { status, headers: BASE_HEADERS })
-  const path = new URL(request.url).searchParams.get('path')
+  const query = new URL(request.url).searchParams
+  const path = query.get('path')
+  // `download` asks for a browser save instead of an inline response; the bytes
+  // and access checks are identical, only the disposition changes.
+  const asAttachment = query.has('download')
   if (path === null || path.length === 0) return fail(400, 'missing path')
   if (path.includes('\0') || !isAbsolute(path)) return fail(400, 'absolute path required')
   try {
@@ -31,6 +43,7 @@ async function serveFile(request: Request, fs: FileSystem, maxBytes: number): Pr
     const headers: Record<string, string> = {
       ...BASE_HEADERS,
       'Content-Type': mediaType,
+      ...asAttachment ? { 'Content-Disposition': `attachment; filename="${attachmentFilename(target.displayPath)}"` } : {},
     }
     if (request.method === 'HEAD') {
       const info = await fs.stat(target, request.signal)
