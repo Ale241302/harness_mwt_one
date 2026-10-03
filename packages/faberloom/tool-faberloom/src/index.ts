@@ -11,9 +11,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
-import type { FaberLoomSpaceId, FaberLoomSpaces, SpaceActor, SpaceContext, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
+import type { FaberLoomSpaceId, FaberLoomSpaces, SpaceActor, SpaceContext, SpaceReference, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the agents service, read through ctx.get like the spaces service.
-import type { FaberLoomAgentId, FaberLoomAgents, FaberLoomModelId, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
+import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomAgents, FaberLoomModelId, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
+// Type-only: resolves the ctx.subagents declaration used through ctx.get.
+import type {} from '@deepseek-ai/dsh-subagent'
 // Type-only: the board service and its vocabulary, read through ctx.get.
 import type { BoardStatus, FaberLoomBoard, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
@@ -63,6 +65,8 @@ export interface Config {
   anydocOcr?: string
   /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
   anydocApiKey?: string
+  /** Subagent provider the space consultation delegates through; defaults to `spawn`. */
+  askProvider?: string
 }
 
 /** Schemastery configuration for the product tools. */
@@ -77,6 +81,7 @@ export const Config: z<Config> = z.object({
   anydoc: z.boolean().default(false),
   anydocOcr: z.string().default('reject'),
   anydocApiKey: z.string().default(''),
+  askProvider: z.string().default('spawn'),
 })
 
 /** Resolve the mounted board service at call time, or fail loud. */
@@ -385,6 +390,30 @@ function toContext(entries: readonly { key: string; value: string }[] | undefine
   const context: SpaceContext = {}
   for (const entry of entries) context[entry.key] = entry.value
   return context
+}
+
+/**
+ * Build the model-facing brief one space consultation delivers to the
+ * referenced space's responsible agent.
+ * @param reference - the resolved space context, memory, and directives.
+ * @param agent - the responsible agent whose responsibility frames the turn.
+ * @param question - what the asking agent wants to know.
+ * @returns the brief delivered as the child's user message.
+ */
+function askBrief(reference: SpaceReference, agent: FaberLoomAgent, question: string): string {
+  const context = Object.entries(reference.context.resolved).map(([key, value]) => `${key}=${value}`).join(', ') || 'ninguno'
+  const memory = reference.memory.map(entry => entry.text).join(' | ') || 'ninguna'
+  const directives = reference.context.directives.join(' | ') || 'ninguna'
+  return [
+    `Eres ${agent.name}, responsable de: ${agent.responsibility}`,
+    ...agent.skills.length > 0 ? [`Skills asignadas: ${agent.skills.join(', ')}.`] : [],
+    `Trabajas sobre el Space "${reference.space.title}" (${reference.space.id}).`,
+    `Contexto resuelto: ${context}.`,
+    `Memoria del Space: ${memory}.`,
+    `Directivas: ${directives}.`,
+    `Otro agente te consulta: ${question}`,
+    'Responde en el idioma de la pregunta, solo con lo que este contexto permita; si falta información, dilo.',
+  ].join('\n')
 }
 
 /** A tool parameter list of `{ key, value }` context entries, used by update. */
@@ -967,6 +996,75 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Reference product space', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_spaces_ask',
+    description: 'Ask the agent responsible for a product space. Resolves the space context, briefs that space\'s catalog agent with its responsibility and context, runs one delegated turn, and returns the answer. One-shot by default.',
+    parameters: {
+      spaceId: { type: 'string', required: true, description: 'Target space id; resolve it with faberloom_spaces_find first when unknown.' },
+      question: { type: 'string', required: true, description: 'What to ask the responsible agent.' },
+      agentId: { type: 'string', description: 'Override the responsible agent; otherwise the space assigned agent answers.' },
+      continuable: { type: 'boolean', description: 'Reserved; only false (one-shot) is supported in this slice.' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          spaceId: { type: 'string', required: true },
+          agentId: { type: 'string', required: true },
+          answer: { type: 'string', required: true },
+          childSessionId: { type: 'string', required: true },
+          stopReason: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{
+        type: 'text',
+        text: `El agente ${value.agentId} del Space ${value.spaceId} respondió (${value.stopReason}): ${value.answer}`,
+      }],
+    },
+    execute: async (args, exec) => {
+      if (args.continuable === true) {
+        throw new Error('faberloom: continuable consultations are deferred; ask one-shot for now')
+      }
+      const parent = exec.agent
+      if (parent === undefined) throw new Error('faberloom: faberloom_spaces_ask requires a calling agent')
+      const runtime = ctx.get('subagents')
+      if (runtime === undefined) throw new Error('faberloom: the subagents service is not mounted')
+      const provider = config.askProvider ?? 'spawn'
+      if (runtime.getProvider(provider) === undefined) {
+        throw new Error(`faberloom: subagent provider "${provider}" is not registered`)
+      }
+      const reference = await spaces(ctx).reference(actor(config), args.spaceId as FaberLoomSpaceId)
+      const agentId = args.agentId ?? reference.agentId
+      if (agentId === undefined) {
+        throw new Error('faberloom: este Space no tiene un agente responsable; asígnalo en Agentes antes de consultarlo')
+      }
+      const fleet = ctx.get('faberloomAgents')
+      if (fleet === undefined) throw new Error('faberloom: the agents service is not mounted')
+      const agent = await fleet.getAgent(agentId as FaberLoomAgentId)
+      const run = await runtime.start(provider, {
+        label: `Consulta al Space ${reference.space.title}`,
+        prompt: [{ type: 'text', text: askBrief(reference, agent, args.question) }],
+        parent,
+        signal: exec.signal,
+      })
+      try {
+        const result = await run.result
+        const answer = result.output.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+        return {
+          spaceId: reference.space.id,
+          agentId,
+          answer,
+          childSessionId: run.id,
+          stopReason: result.stopReason,
+        }
+      } finally {
+        await run.dispose()
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Ask the space agent', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({

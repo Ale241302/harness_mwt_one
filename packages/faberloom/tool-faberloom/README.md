@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package registers the model-visible product tools that read and write the native product services: spaces, agents, models, routines, executions, board, sources, mail (IMAP search and SMTP send), and the MWT.ONE tenant router. The router — `faberloom_companies`, `faberloom_mwt_call`, `faberloom_mwt_find` — answers "which of the user's companies holds this data" by fanning one read query out to every `legal_entity_ids` tenant, never outside them; each company call goes through the same JSON-RPC client with that tenant in `X-MWT-Client-ID`, and the console still enforces role and permissions on every call. It also exposes the cross-space resolution tools `faberloom_spaces_find` and `faberloom_spaces_reference`, which locate a space by text and return its effective context, memory, and attached-file metadata.
+This package registers the model-visible product tools that read and write the native product services: spaces, agents, models, routines, executions, board, sources, mail (IMAP search and SMTP send), and the MWT.ONE tenant router. The router — `faberloom_companies`, `faberloom_mwt_call`, `faberloom_mwt_find` — answers "which of the user's companies holds this data" by fanning one read query out to every `legal_entity_ids` tenant, never outside them; each company call goes through the same JSON-RPC client with that tenant in `X-MWT-Client-ID`, and the console still enforces role and permissions on every call. It also exposes the cross-space resolution tools `faberloom_spaces_find` and `faberloom_spaces_reference`, which locate a space by text and return its effective context, memory, and attached-file metadata, and `faberloom_spaces_ask`, which consults the agent responsible for a space with one delegated turn.
 
 ## Table of Contents
 
@@ -51,6 +51,7 @@ Adding or removing a tool changes the tool block, which can invalidate reuse fro
 - **The tenant router trusts the console for effects.** `faberloom_mwt_call` and `faberloom_mwt_find` constrain only the tenant (never outside the user's companies); whether a tool reads or writes stays with the MWT.ONE console's RBAC, not with a FaberLoom-side allowlist.
 - **Company names are ids.** The console returns `legal_entity_ids` as opaque ids; a display-name mapping is deferred until the console exposes one.
 - **Lexical space lookup (v1).** `faberloom_spaces_find` ranks by folded terms over a space title, context, and memory; it does not read attached-file contents, and an empty query lists the most recently created readable spaces. `faberloom_spaces_reference` returns file metadata without bytes.
+- **Delegated consultation (v1).** `faberloom_spaces_ask` runs one one-shot delegation through `askProvider` (default `spawn`); `continuable` is rejected, delegation depth applies, and the child inherits the parent's merged tool plane. The child runs in the parent's workspace because `resolveWorkdir` returns an opaque reference, not a path; running in the Space's real workdir is deferred.
 
 <a id="dev-note"></a>
 ### Dev Note

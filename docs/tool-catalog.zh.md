@@ -3042,6 +3042,40 @@ Archive one product space the current user owns.
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_spaces_ask`
+
+咨询负责某个产品空间的 agent。解析该空间的上下文，用其职责与上下文为那个目录 agent 做简报，运行一次委托回合，并返回答案。默认一次性。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "spaceId": {
+      "type": "string",
+      "description": "Target space id; resolve it with faberloom_spaces_find first when unknown."
+    },
+    "question": {
+      "type": "string",
+      "description": "What to ask the responsible agent."
+    },
+    "agentId": {
+      "type": "string",
+      "description": "Override the responsible agent; otherwise the space assigned agent answers."
+    },
+    "continuable": {
+      "type": "boolean",
+      "description": "Reserved; only false (one-shot) is supported in this slice."
+    }
+  },
+  "required": [
+    "spaceId",
+    "question"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_spaces_attach_file`
 
 Attach a small file (up to 1 MiB) to a product space the user manages.
