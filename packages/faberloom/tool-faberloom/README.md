@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package registers the model-visible product tools that read and write the native product services: spaces, agents, models, routines, executions, board, sources, mail (IMAP search and SMTP send), and the MWT.ONE tenant router. The router — `faberloom_companies`, `faberloom_mwt_call`, `faberloom_mwt_find` — answers "which of the user's companies holds this data" by fanning one read query out to every `legal_entity_ids` tenant, never outside them; each company call goes through the same JSON-RPC client with that tenant in `X-MWT-Client-ID`, and the console still enforces role and permissions on every call. It also exposes the cross-space resolution tools `faberloom_spaces_find` and `faberloom_spaces_reference`, which locate a space by text and return its effective context, memory, and attached-file metadata, and `faberloom_spaces_ask`, which consults the agent responsible for a space with one delegated turn. The space-memory and teaching tools are opt-in through `memoryTools`; automatic episodic memory stays with the external memory server.
+This package registers the model-visible `faberloom_*` product tools over the native services: spaces, agents, models, routines, executions, board, sources, mail, the MWT.ONE tenant router, cross-space resolution (`faberloom_spaces_find`, `_reference`, `_ask`), and opt-in space-memory and teaching tools. The router fans one read query out to every `legal_entity_ids` tenant, never outside them, and the console still enforces role and permissions on each call.
 
 ## Table of Contents
 

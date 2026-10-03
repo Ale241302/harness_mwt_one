@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包注册读写原生产品服务的、面向模型的工具：空间、agent、模型、例程、执行、工作台、来源、邮件（IMAP 搜索与 SMTP 发送），以及 MWT.ONE 租户路由器。路由器——`faberloom_companies`、`faberloom_mwt_call`、`faberloom_mwt_find`——通过把同一条读查询扇出到用户 `legal_entity_ids` 中的每个租户（绝不越界）来回答"这份数据在用户的哪家公司"；每次按公司调用都经过同一个 JSON-RPC 客户端，在 `X-MWT-Client-ID` 中携带该租户，且控制台对每次调用仍强制执行角色与权限。它还提供跨空间解析工具 `faberloom_spaces_find` 与 `faberloom_spaces_reference`，按文本定位空间并返回其有效上下文、记忆与附件元数据，以及 `faberloom_spaces_ask`，通过一次委托回合咨询负责某个空间的 agent。空间记忆与 teaching 工具通过 `memoryTools` 可选启用；自动情景记忆仍归外部记忆服务器。
+此包在原生产品服务之上注册面向模型的 `faberloom_*` 工具：空间、agent、模型、例程、执行、工作台、来源、邮件、MWT.ONE 租户路由器、跨空间解析（`faberloom_spaces_find`、`_reference`、`_ask`），以及可选启用的空间记忆与 teaching 工具。路由器把同一条读查询扇出到每个 `legal_entity_ids` 租户（绝不越界），控制台对每次调用仍强制执行角色与权限。
 
 ## 目录
 
