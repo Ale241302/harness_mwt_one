@@ -222,9 +222,41 @@ export interface SpaceReference {
   readonly workspaceId: string | undefined
 }
 
+/**
+ * One candidate a space index ranks. It carries only the fields a ranker may
+ * read, so a provider never touches storage or access control.
+ */
+export interface SpaceIndexEntry {
+  /** Space id. */
+  readonly id: FaberLoomSpaceId
+  /** Display title. */
+  readonly title: string
+  /** The space's own context, resolved by the caller. */
+  readonly context: SpaceContext
+  /** The space's effective memory, joined to one string. */
+  readonly memory: string
+  /** ISO-8601 creation instant, used for the recency tie-break. */
+  readonly createdAt: string
+}
+
+/**
+ * Pluggable ranker over the spaces an actor may read. The built-in lexical
+ * ranker is the default provider; an embeddings or knowledge-hub provider may
+ * replace it without changing the spaces service.
+ */
+export interface SpaceIndex {
+  /**
+   * Rank one query over the actor's readable entries.
+   * @param entries - readable, non-archived candidate entries.
+   * @param query - free-text query; an empty query lists recent spaces.
+   * @param limit - most matches to return.
+   * @returns matches, best score first, then most recent first.
+   */
+  rank(entries: readonly SpaceIndexEntry[], query: string, limit: number): Promise<SpaceMatch[]>
+}
+
 /** The isolated personal scope of one identity, used when no space is assigned. */
-export interface PersonalScope {
-  /** Discriminant marking a personal scope. */
+export interface PersonalScope {  /** Discriminant marking a personal scope. */
   readonly kind: 'personal'
   /** The identity that owns the scope. */
   readonly ownerId: string

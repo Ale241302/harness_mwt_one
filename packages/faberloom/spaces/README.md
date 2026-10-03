@@ -51,6 +51,7 @@ Independent of live requests: the registration never touches a request prefix.
 - **Console-role scoping** — access uses the console role, company, and read-only flag the gateway injects; a member from another company is denied, while a read-only role still creates and manages its own spaces (a space is the user's own container, not company data).
 - **Workspace mirror** — a space may store the id of the harness Workspace it mirrors when a Workspace is adopted as a Space; the service keeps the id only (never a path), and the view resolves it through the workspace registry. A space with no mirror uses the deterministic `<DSH_HOME>/spaces/<ref>` area.
 - **Lexical reference lookup (v1)** — `find` matches a space title, its context values, and its memory text by folded terms; it does not search attached-file contents, and it excludes archived spaces. `reference` returns file metadata without bytes.
+- **Pluggable ranking seam (6.1)** — `find` ranks through `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in lexical ranker; the seam lets an embeddings or knowledge-hub provider replace ranking without touching storage or access control.
 
 <a id="dev-note"></a>
 ### Dev Note

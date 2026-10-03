@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomSpaces from '../src/index.ts'
-import type { FaberLoomSpaceId, SpaceActor } from '../src/index.ts'
+import type { FaberLoomSpaceId, SpaceActor, SpaceIndexEntry } from '../src/index.ts'
 
 /** Boot the real storage/domain composition plus the spaces service. */
 async function harness() {
@@ -88,8 +88,22 @@ describe('FaberLoomSpaces find', () => {
     expect(await spaces.find(SONDEL, 'empate', 1)).toEqual([{ id: newer.id, title: 'Empate', score: 3, reasons: ['title'] }])
   })
 
-  it('resolves memory through a readable member space whose ancestor is unreadable', async () => {
-    const { spaces } = await harness()
+  it('delegates ranking to a mounted space index', async () => {
+    const { ctx, spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'Delegado' })
+    const rank = vi.fn(async (_entries: readonly SpaceIndexEntry[], _query: string, _limit: number) => [
+      { id: space.id, title: 'Delegado', score: 99, reasons: ['index'] },
+    ])
+    ctx.provide('spaceIndex', { rank } as never)
+
+    const results = await spaces.find(SONDEL, 'cualquiera')
+    expect(rank).toHaveBeenCalledTimes(1)
+    const entries = (rank.mock.calls[0] as unknown as [readonly SpaceIndexEntry[]])[0]
+    expect(entries.some(entry => entry.id === space.id)).toBe(true)
+    expect(results).toEqual([{ id: space.id, title: 'Delegado', score: 99, reasons: ['index'] }])
+  })
+
+  it('resolves memory through a readable member space whose ancestor is unreadable', async () => {    const { spaces } = await harness()
     const parent = await spaces.create(SONDEL, { title: 'Padre' })
     const child = await spaces.create(SONDEL, { title: 'Hijo', parentId: parent.id })
     await spaces.update(SONDEL, child.id, { members: [COLLEAGUE.id] })

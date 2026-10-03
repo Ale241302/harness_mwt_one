@@ -26,6 +26,8 @@ import type {
   SpaceFile,
   SpaceFileContent,
   SpaceFileInput,
+  SpaceIndex,
+  SpaceIndexEntry,
   SpaceMatch,
   SpaceReference,
   SpaceSource,
@@ -61,17 +63,20 @@ function normalizeTerms(query: string): string[] {
   return foldText(query).split(/[^\p{L}\p{N}]+/u).filter(token => token.length > 0)
 }
 
+/** The space fields the lexical ranker scores. */
+type SpaceScoreTarget = { title: string; context: SpaceContext }
+
 /**
  * Score one space against the query terms: each term contributes the title
  * weight for a title hit and the context weight for a context or memory hit.
- * @param record - the stored space record.
+ * @param target - the space title and context to score.
  * @param memoryText - the folded text of the space's effective memory.
  * @param tokens - the folded query terms.
  * @returns the total score and the matched field names.
  */
-function scoreSpace(record: SpaceRecord, memoryText: string, tokens: readonly string[]): { score: number; reasons: string[] } {
-  const title = foldText(record.title)
-  const context = foldText(Object.values(record.context).join(' '))
+function scoreSpace(target: SpaceScoreTarget, memoryText: string, tokens: readonly string[]): { score: number; reasons: string[] } {
+  const title = foldText(target.title)
+  const context = foldText(Object.values(target.context).join(' '))
   const memory = foldText(memoryText)
   let score = 0
   const reasons = new Set<string>()
@@ -83,11 +88,36 @@ function scoreSpace(record: SpaceRecord, memoryText: string, tokens: readonly st
   return { score, reasons: [...reasons] }
 }
 
+/**
+ * The built-in lexical ranker, used when no `ctx.spaceIndex` provider is
+ * mounted. It scores each entry and orders by score, then most recent first.
+ * @param entries - readable candidate entries.
+ * @param query - free-text query; an empty query lists recent entries.
+ * @param limit - most matches to return.
+ * @returns matches, best score first, then most recent first.
+ */
+function rankLexically(entries: readonly SpaceIndexEntry[], query: string, limit: number): SpaceMatch[] {
+  const tokens = normalizeTerms(query)
+  const scored: { match: SpaceMatch; createdAt: string }[] = entries.map((entry) => {
+    const { score, reasons } = scoreSpace(entry, entry.memory, tokens)
+    return { match: { id: entry.id, title: entry.title, score, reasons }, createdAt: entry.createdAt }
+  })
+  const matches = tokens.length > 0 ? scored.filter(entry => entry.match.score > 0) : scored
+  matches.sort((left, right) => right.match.score - left.match.score || right.createdAt.localeCompare(left.createdAt))
+  return matches.slice(0, Math.max(0, limit)).map(entry => entry.match)
+}
+
 export type * from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
     faberloomSpaces: FaberLoomSpaces
+    /**
+     * Optional ranker a deployment may mount to replace the built-in lexical
+     * ranking. The spaces service reads it through `ctx.get`; when absent it
+     * falls back to the lexical ranker.
+     */
+    spaceIndex: SpaceIndex
   }
 }
 
@@ -549,27 +579,25 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
-   * Rank the spaces the actor may read by a lexical match on the query. An
-   * empty query returns the actor's readable, non-archived spaces most
-   * recently created first; archived spaces are always excluded.
+   * Rank the actor's readable spaces for a query. It ranks through
+   * `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in
+   * lexical ranker. An empty query returns the actor's readable, non-archived
+   * spaces most recently created first; archived spaces are always excluded.
    * @param actor - the acting identity.
    * @param query - free-text query; an empty query lists the recent spaces.
    * @param limit - most results to return.
    * @returns matched spaces, best score first, then most recent first.
    */
   async find(actor: SpaceActor, query: string, limit = 10): Promise<SpaceMatch[]> {
-    const tokens = normalizeTerms(query)
-    const out: { match: SpaceMatch; createdAt: string }[] = []
+    const entries: SpaceIndexEntry[] = []
     for (const [id, record] of (await this.table()).entries()) {
       if (!canRead(record, actor)) continue
       if (record.archived) continue
-      const memoryText = (await this.effectiveMemory(actor, id)).map(entry => entry.text).join(' ')
-      const { score, reasons } = scoreSpace(record, memoryText, tokens)
-      if (tokens.length > 0 && score === 0) continue
-      out.push({ match: { id, title: record.title, score, reasons }, createdAt: record.createdAt })
+      const memory = (await this.effectiveMemory(actor, id)).map(entry => entry.text).join(' ')
+      entries.push({ id, title: record.title, context: record.context, memory, createdAt: record.createdAt })
     }
-    out.sort((left, right) => right.match.score - left.match.score || right.createdAt.localeCompare(left.createdAt))
-    return out.slice(0, Math.max(0, limit)).map(entry => entry.match)
+    const index = this.ctx.get('spaceIndex')
+    return index === undefined ? rankLexically(entries, query, limit) : index.rank(entries, query, limit)
   }
 
   /**
