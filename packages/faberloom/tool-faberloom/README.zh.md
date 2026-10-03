@@ -50,7 +50,7 @@ kind: "package-reference"
 
 - **租户路由器把副作用交给控制台裁决。** `faberloom_mwt_call` 与 `faberloom_mwt_find` 只约束租户（绝不超出用户的公司）；一个工具是读还是写由 MWT.ONE 控制台的 RBAC 决定，而不是 FaberLoom 侧的允许名单。
 - **公司名即 id。** 控制台返回的 `legal_entity_ids` 是不透明 id；显示名映射推迟到控制台提供为止。
-- **词法空间查找（v1）。** `faberloom_spaces_find` 按折叠词项对空间标题、上下文与记忆排序；它不读取附件内容。`faberloom_spaces_reference` 只返回文件元数据，不含字节。
+- **词法空间查找（v1）。** `faberloom_spaces_find` 按折叠词项对空间标题、上下文与记忆排序；它不读取附件内容，空查询列出最近创建的可读空间。`faberloom_spaces_reference` 只返回文件元数据，不含字节。
 
 <a id="dev-note"></a>
 ### 开发备注

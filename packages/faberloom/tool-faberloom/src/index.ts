@@ -424,7 +424,7 @@ export function apply(ctx: Context, config: Config): void {
     ctx.effect(() => prompt.section({
       name: 'faberloom:spaces',
       order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 2,
-      text: 'Si una tarea necesita el contexto de otro Space y no conoces su id, usa faberloom_spaces_find para localizarlo por texto y faberloom_spaces_reference para extraer su contexto, memoria y archivos; no inventes contexto. Enlaza siempre el Space por el id que devuelve faberloom_spaces_find.',
+      text: 'Si una tarea necesita el contexto de otro Space y no conoces su id, usa faberloom_spaces_find para localizarlo por texto y faberloom_spaces_reference para extraer su contexto, memoria y archivos; no inventes contexto. Por ejemplo, para redactar el reporte de Sondel con los formatos de documentos, busca el Space "formatos de documentos", resuélvelo y usa su plantilla. Una búsqueda vacía lista los Spaces más recientes. Enlaza siempre el Space por el id que devuelve faberloom_spaces_find.',
     }), 'tool-faberloom: spaces prompt')
   }
 
@@ -856,9 +856,9 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_spaces_find',
-    description: 'Find product spaces by text: ranks the spaces this user may read by matching the query against their title, context, and memory. An empty query lists them in creation order.',
+    description: 'Find product spaces by text: ranks the spaces this user may read by matching the query against their title, context, and memory. An empty query lists the most recently created readable spaces first.',
     parameters: {
-      query: { type: 'string', required: true, description: 'Text to look for; an empty string lists the readable spaces.' },
+      query: { type: 'string', required: true, description: 'Text to look for; an empty string lists the most recently created readable spaces.' },
       limit: { type: 'integer', description: 'Most results to return; defaults to 10.' },
     },
     output: {

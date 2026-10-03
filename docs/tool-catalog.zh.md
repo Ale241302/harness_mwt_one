@@ -3125,7 +3125,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_find`
 
-按文本查找产品空间：通过把查询与空间的标题、上下文和记忆匹配，对此用户可读取的空间排序。空查询按创建顺序列出它们。
+按文本查找产品空间：通过把查询与空间的标题、上下文和记忆匹配，对此用户可读取的空间排序。空查询最先列出最近创建的可读空间。
 
 ```json
 {
@@ -3133,7 +3133,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
   "properties": {
     "query": {
       "type": "string",
-      "description": "Text to look for; an empty string lists the readable spaces."
+      "description": "Text to look for; an empty string lists the most recently created readable spaces."
     },
     "limit": {
       "type": "integer",

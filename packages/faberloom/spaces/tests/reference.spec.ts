@@ -29,16 +29,16 @@ async function tick(): Promise<void> {
 }
 
 describe('FaberLoomSpaces find', () => {
-  it('returns readable spaces in creation order for an empty or separator-only query', async () => {
+  it('lists the actor readable spaces most recent first for an empty or separator-only query', async () => {
     const { spaces } = await harness()
     const first = await spaces.create(SONDEL, { title: 'Primero' })
     await tick()
     const second = await spaces.create(SONDEL, { title: 'Segundo' })
 
     const listed = await spaces.find(SONDEL, '')
-    expect(listed.map(entry => entry.id)).toEqual([first.id, second.id])
+    expect(listed.map(entry => entry.id)).toEqual([second.id, first.id])
     expect(listed.every(entry => entry.score === 0 && entry.reasons.length === 0)).toBe(true)
-    expect((await spaces.find(SONDEL, '!!!')).map(entry => entry.id)).toEqual([first.id, second.id])
+    expect((await spaces.find(SONDEL, '!!!')).map(entry => entry.id)).toEqual([second.id, first.id])
   })
 
   it('scores title, context, and memory, and drops a query with no match', async () => {
@@ -74,16 +74,18 @@ describe('FaberLoomSpaces find', () => {
 
     expect((await spaces.find(SONDEL, 'visible')).map(entry => entry.id)).toEqual([visible.id])
     expect((await spaces.find(SONEPAR, 'visible')).map(entry => entry.id)).toEqual([foreign.id])
+    expect((await spaces.find(SONDEL, '')).map(entry => entry.id)).toEqual([visible.id])
+    expect((await spaces.find(SONEPAR, '')).map(entry => entry.id)).toEqual([foreign.id])
   })
 
-  it('applies the limit and breaks a score tie by creation order', async () => {
+  it('applies the limit and breaks a score tie by recency', async () => {
     const { spaces } = await harness()
     const older = await spaces.create(SONDEL, { title: 'Empate' })
     await tick()
     const newer = await spaces.create(SONDEL, { title: 'Empate' })
 
-    expect((await spaces.find(SONDEL, 'empate')).map(entry => entry.id)).toEqual([older.id, newer.id])
-    expect(await spaces.find(SONDEL, 'empate', 1)).toEqual([{ id: older.id, title: 'Empate', score: 3, reasons: ['title'] }])
+    expect((await spaces.find(SONDEL, 'empate')).map(entry => entry.id)).toEqual([newer.id, older.id])
+    expect(await spaces.find(SONDEL, 'empate', 1)).toEqual([{ id: newer.id, title: 'Empate', score: 3, reasons: ['title'] }])
   })
 
   it('resolves memory through a readable member space whose ancestor is unreadable', async () => {

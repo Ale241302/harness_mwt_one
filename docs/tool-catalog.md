@@ -3119,7 +3119,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_find`
 
-Find product spaces by text: ranks the spaces this user may read by matching the query against their title, context, and memory. An empty query lists them in creation order.
+Find product spaces by text: ranks the spaces this user may read by matching the query against their title, context, and memory. An empty query lists the most recently created readable spaces first.
 
 ```json
 {
@@ -3127,7 +3127,7 @@ Find product spaces by text: ranks the spaces this user may read by matching the
   "properties": {
     "query": {
       "type": "string",
-      "description": "Text to look for; an empty string lists the readable spaces."
+      "description": "Text to look for; an empty string lists the most recently created readable spaces."
     },
     "limit": {
       "type": "integer",

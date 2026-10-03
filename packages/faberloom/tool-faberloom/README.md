@@ -50,7 +50,7 @@ Adding or removing a tool changes the tool block, which can invalidate reuse fro
 
 - **The tenant router trusts the console for effects.** `faberloom_mwt_call` and `faberloom_mwt_find` constrain only the tenant (never outside the user's companies); whether a tool reads or writes stays with the MWT.ONE console's RBAC, not with a FaberLoom-side allowlist.
 - **Company names are ids.** The console returns `legal_entity_ids` as opaque ids; a display-name mapping is deferred until the console exposes one.
-- **Lexical space lookup (v1).** `faberloom_spaces_find` ranks by folded terms over a space title, context, and memory; it does not read attached-file contents. `faberloom_spaces_reference` returns file metadata without bytes.
+- **Lexical space lookup (v1).** `faberloom_spaces_find` ranks by folded terms over a space title, context, and memory; it does not read attached-file contents, and an empty query lists the most recently created readable spaces. `faberloom_spaces_reference` returns file metadata without bytes.
 
 <a id="dev-note"></a>
 ### Dev Note

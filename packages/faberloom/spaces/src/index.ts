@@ -550,11 +550,12 @@ export class FaberLoomSpaces extends Service {
 
   /**
    * Rank the spaces the actor may read by a lexical match on the query. An
-   * empty query returns them in creation order; archived spaces are excluded.
+   * empty query returns the actor's readable, non-archived spaces most
+   * recently created first; archived spaces are always excluded.
    * @param actor - the acting identity.
-   * @param query - free-text query; an empty query lists readable spaces.
+   * @param query - free-text query; an empty query lists the recent spaces.
    * @param limit - most results to return.
-   * @returns matched spaces, best score first.
+   * @returns matched spaces, best score first, then most recent first.
    */
   async find(actor: SpaceActor, query: string, limit = 10): Promise<SpaceMatch[]> {
     const tokens = normalizeTerms(query)
@@ -567,7 +568,7 @@ export class FaberLoomSpaces extends Service {
       if (tokens.length > 0 && score === 0) continue
       out.push({ match: { id, title: record.title, score, reasons }, createdAt: record.createdAt })
     }
-    out.sort((left, right) => right.match.score - left.match.score || left.createdAt.localeCompare(right.createdAt))
+    out.sort((left, right) => right.match.score - left.match.score || right.createdAt.localeCompare(left.createdAt))
     return out.slice(0, Math.max(0, limit)).map(entry => entry.match)
   }
 
