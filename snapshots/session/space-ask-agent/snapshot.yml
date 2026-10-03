@@ -1,0 +1,11 @@
+version: 1
+scenario: space-ask-agent
+profile: headless
+composition: space-ask-agent
+recording: authored
+platform: posix
+header:
+  class: space-ask-agent
+  pin: true
+  systemPromptSource: space-cross-reference
+  toolSchemasSource: space-cross-reference
