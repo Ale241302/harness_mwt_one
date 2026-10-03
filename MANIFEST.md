@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-03` (commit `27d0e5105c`: contexto entre Spaces — `faberloom_spaces_find`/`_reference`/`_ask`, inferencia implícita y directiva reforzada; tools de memoria/teachings opt-in; seam `ctx.spaceIndex`; lint, duplicación y catálogo en verde).
-**Imagen desplegada actual:** build de `main` @ `27d0e5105c` (resolución de contexto entre Spaces y tools de memoria; gates de lint/duplicación/catálogo cerrados; deploy caliente ~6 min).
+**Tag de despliegue:** `deploy-2026-10-03` (commit `17e152693fbf5996d594989468409899091f054f`: contexto entre Spaces — `faberloom_spaces_find`/`_reference`/`_ask`, inferencia implícita y directiva reforzada; tools de memoria/teachings opt-in; seam `ctx.spaceIndex`; lint, duplicación y catálogo en verde; lockfile regenerado).
+**Imagen desplegada actual:** build de `main` @ `17e152693fbf5996d594989468409899091f054f` (resolución de contexto entre Spaces y tools de memoria; gates de lint/duplicación/catálogo cerrados; deploy caliente ~6 min).
 **Verificado en el VPS:** 3 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
