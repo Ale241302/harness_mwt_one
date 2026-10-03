@@ -251,6 +251,21 @@ export function apply(ctx: ClientContext): void {
       tickRoutine: routineId => ctx.remote.faberloomView.tickRoutine(routineId),
       reconcileExecution: id => ctx.remote.faberloomView.reconcileExecution(id),
       cancelExecutionEffect: (id, stepId) => ctx.remote.faberloomView.cancelExecutionEffect(id, stepId),
+      workflows: {
+        overview: () => ctx.remote.faberloomView.workflowOverview(),
+        detail: id => ctx.remote.faberloomView.workflowDetail(id),
+        create: name => ctx.remote.faberloomView.createWorkflow(name),
+        save: (id, name) => ctx.remote.faberloomView.saveWorkflow(id, name),
+        addNode: (id, kind, title, configJson, nodeId) => ctx.remote.faberloomView.addNode(id, kind, title, configJson, nodeId),
+        updateNode: (id, nodeId, title, kind, configJson) => ctx.remote.faberloomView.updateNode(id, nodeId, title, kind, configJson),
+        removeNode: (id, nodeId) => ctx.remote.faberloomView.removeNode(id, nodeId),
+        connect: (id, from, to, condition) => ctx.remote.faberloomView.connect(id, from, to, condition),
+        disconnect: (id, edgeId) => ctx.remote.faberloomView.disconnect(id, edgeId),
+        setStatus: (id, status) => ctx.remote.faberloomView.setWorkflowStatus(id, status),
+        runs: id => ctx.remote.faberloomView.workflowRuns(id),
+        topology: () => ctx.remote.faberloomView.spaceTopology(),
+        exportFlow: (id, format) => ctx.remote.faberloomView.exportWorkflow(id, format),
+      },
     }
   }
 

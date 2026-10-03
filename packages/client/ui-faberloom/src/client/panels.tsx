@@ -5,7 +5,7 @@
  * overview and expose their own row actions. The Conversar panel hands the user
  * to the harness conversation, which owns the composer.
  */
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: declares the sidebar shell's `sidebar.panellist` owner props.
@@ -33,8 +33,10 @@ import type {
   FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
+  FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomSpaceMap,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
+import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusColor } from './workflow-logic.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -247,6 +249,22 @@ export interface FaberloomPanelInjected {
   reconcileExecution: (id: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
   /** Cancel one step's recorded effect. */
   cancelExecutionEffect: (id: string, stepId: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
+  /** The Work Flow editor surface: graph CRUD, runs, topology, and export. */
+  workflows: {
+    overview: () => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    detail: (id: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    create: (name: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    save: (id: string, name: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    addNode: (id: string, kind: string, title: string, configJson: string, nodeId?: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    updateNode: (id: string, nodeId: string, title: string, kind: string, configJson: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    removeNode: (id: string, nodeId: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    connect: (id: string, from: string, to: string, condition?: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    disconnect: (id: string, edgeId: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    setStatus: (id: string, status: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    runs: (id: string) => Promise<Result<readonly FaberLoomWorkflowRunRow[]>>
+    topology: () => Promise<Result<FaberLoomSpaceMap>>
+    exportFlow: (id: string, format: string) => Promise<Result<FaberLoomWorkflowExport>>
+  }
 }
 
 /** Binds one glyph to the sidebar panellist owner props. */
@@ -1202,7 +1220,7 @@ function emailScreen() {
                   {mailBody.value.attachments.map((attachment, index) => (
                     <button className={styles.rowAction} type="button" key={`${attachment.name}-${String(index)}`}
                       onClick={() => { downloadAttachment(selected ?? '', index, attachment.name) }}>
-                      {`${attachment.name} · ${String(attachment.size)} B`}
+                      {`${attachment.name} · ${String(attachment.size)}`}{' B'}
                     </button>
                   ))}
                 </div>
@@ -2594,6 +2612,9 @@ function MwtBlock(props: {
   )
 }
 
+/** The MCP endpoint path the panel shows for token setup; a wire path, not product copy. */
+const MCP_ENDPOINT_PATH = '/mcp'
+
 /** The tools a token may be scoped to, in catalogue order. */
 const MCP_TOOL_NAMES = [
   'faberloom_overview',
@@ -2708,7 +2729,7 @@ function McpBlock(props: {
         <DataTable columns={columns} rows={tableRows} selectedId={null} onSelect={() => {}}
           emptyTitle={t('mcp.empty')} emptyText={t('mcp.emptyText')} labels={tableLabels(t)} />
         <Inspector title={t('mcp.detail')}>
-          <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{`${typeof window === 'undefined' ? '' : window.location.origin}/mcp`}</span></Field>
+          <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{`${typeof window === 'undefined' ? '' : window.location.origin}${MCP_ENDPOINT_PATH}`}</span></Field>
           <Field label={t('mcp.how')} hint={t('mcp.howHint')}><span className={styles.cellMuted}>{t('mcp.howText')}</span></Field>
           <div className={styles.steps}>
             {rows.filter(row => row.revokedAt === null).map(row => (
@@ -2936,6 +2957,214 @@ export interface FaberloomSection {
   Page: FaberloomPanelBody
 }
 
+/** Every node kind the Work Flow inspector offers. */
+const WORKFLOW_KINDS = [
+  'trigger.manual', 'trigger.schedule', 'trigger.email', 'trigger.event', 'trigger.board',
+  'agent', 'skill', 'mcp.call', 'imap.action', 'smtp.send', 'memory.remember', 'memory.teach',
+  'board.create', 'space.reference', 'routine.invoke', 'condition', 'transform', 'wait', 'notify', 'deadletter',
+] as const
+
+/** Open a read-only export in a new tab. */
+function openWorkflowExport(value: FaberLoomWorkflowExport): void {
+  const blob = new Blob([value.content], { type: value.format === 'json' ? 'application/json' : 'text/html' })
+  window.open(URL.createObjectURL(blob), '_blank')
+}
+
+/** Work Flows: the SVG graph canvas, the node inspector, run history, Space map, and export. */
+function workflowsScreen() {
+  return function FaberloomWorkflows(props: ScreenProps) {
+    const { t, workflows } = props
+    const [flows, setFlows] = useState<readonly FaberLoomWorkflowRow[]>([])
+    const [selected, setSelected] = useState<string | null>(null)
+    const [detail, setDetail] = useState<FaberLoomWorkflowDetail | null>(null)
+    const [runs, setRuns] = useState<readonly FaberLoomWorkflowRunRow[]>([])
+    const [topology, setTopology] = useState<FaberLoomSpaceMap | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
+    const [nodeId, setNodeId] = useState<string | null>(null)
+    const [connectFrom, setConnectFrom] = useState<string | null>(null)
+    const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
+    const [kind, setKind] = useState('agent')
+    const [title, setTitle] = useState('')
+    const [configJson, setConfigJson] = useState('{}')
+    const [flowName, setFlowName] = useState('')
+    const dragging = useRef<string | null>(null)
+
+    const accept = (result: Result<FaberLoomWorkflowDetail>): void => {
+      if (result.ok) { setDetail(result.value); setMessage(null) } else { setMessage(result.error.message) }
+    }
+
+    useEffect(() => {
+      void workflows.overview().then((result) => { if (result.ok) setFlows(result.value) }).catch(() => undefined)
+      void workflows.topology().then((result) => { if (result.ok) setTopology(result.value) }).catch(() => undefined)
+    }, [])
+    useEffect(() => {
+      if (selected === null) { setDetail(null); setRuns([]); return }
+      void workflows.detail(selected).then(accept)
+      void workflows.runs(selected).then((result) => { if (result.ok) setRuns(result.value) })
+    }, [selected])
+    useEffect(() => {
+      if (detail === null) { setPositions({}); return }
+      const laid = layoutNodes(detail.nodesList.map(node => ({ id: node.id, kind: node.kind, title: node.title, x: node.x, y: node.y })))
+      const next: Record<string, { x: number; y: number }> = {}
+      for (const node of laid) next[node.id] = { x: node.x, y: node.y }
+      setPositions(next)
+      setNodeId(null)
+    }, [detail])
+    useEffect(() => {
+      const onKey = (event: KeyboardEvent): void => {
+        if (event.key === 'Delete' && selected !== null && nodeId !== null) void workflows.removeNode(selected, nodeId).then(accept)
+      }
+      window.addEventListener('keydown', onKey)
+      return () => { window.removeEventListener('keydown', onKey) }
+    })
+
+    const base = detail === null
+      ? []
+      : layoutNodes(detail.nodesList.map(node => ({ id: node.id, kind: node.kind, title: node.title, x: node.x, y: node.y })))
+    const nodes = base.map(node => ({ ...node, ...(positions[node.id] ?? {}) }))
+    const byId = new Map(nodes.map(node => [node.id, node]))
+    const agentOptions = topology?.agents ?? []
+    const connectionOptions = topology?.connections ?? []
+
+    const pick = (id: string): void => {
+      if (connectFrom !== null && connectFrom !== id) {
+        if (selected !== null) void workflows.connect(selected, connectFrom, id).then(accept)
+        setConnectFrom(null)
+        return
+      }
+      setNodeId(id)
+      const node = detail?.nodesList.find(entry => entry.id === id)
+      if (node !== undefined) { setKind(node.kind); setTitle(node.title); setConfigJson(JSON.stringify(node.config, null, 2)) }
+    }
+
+    const act = (run: () => Promise<Result<FaberLoomWorkflowDetail>>): void => {
+      void run().then(accept).catch((error: unknown) => { setMessage(String(error)) })
+    }
+    /** Append a node of the inspector's kind. */
+    const addNode = (flowId: string): void => {
+      act(() => workflows.addNode(flowId, kind, title.length === 0 ? kind : title, JSON.stringify(defaultConfigFor(kind))))
+    }
+    /** Persist the inspector's edit onto the picked node. */
+    const saveNode = (flowId: string, id: string): void => {
+      act(() => workflows.updateNode(flowId, id, title, kind, configJson))
+    }
+    /** Drop the picked node and its edges. */
+    const deleteNode = (flowId: string, id: string): void => {
+      act(() => workflows.removeNode(flowId, id))
+    }
+    /** Remove one edge by id. */
+    const dropEdge = (flowId: string, edgeId: string): void => {
+      act(() => workflows.disconnect(flowId, edgeId))
+    }
+    /** Point the picked agent node at one agent. */
+    const setAgent = (flowId: string, id: string, agentId: string): void => {
+      act(() => workflows.updateNode(flowId, id, title, kind, JSON.stringify({ agentId })))
+    }
+    /** Point the picked mail node at one connection. */
+    const setConnection = (flowId: string, id: string, connectionId: string): void => {
+      act(() => workflows.updateNode(flowId, id, title, kind, JSON.stringify({ connectionId })))
+    }
+
+    return (
+      <div style={{ display: 'flex', gap: 16, padding: 16, height: '100%', boxSizing: 'border-box' }}>
+        <aside style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'auto' }}>
+          <h3 style={{ margin: 0 }}>{t('wf.title')}</h3>
+          <input value={flowName} placeholder={t('wf.namePlaceholder')} onChange={(event) => { setFlowName(event.target.value) }} style={{ padding: 6 }} />
+          <button type="button" className={styles.primary} onClick={() => {
+            if (flowName.trim().length === 0) return
+            void workflows.create(flowName.trim()).then((result) => { if (result.ok) { setFlows(result.value); setFlowName(''); setMessage(null) } else setMessage(result.error.message) })
+          }}>{t('wf.create')}</button>
+          {flows.length === 0 ? <span style={{ color: '#80868b' }}>{t('wf.empty')}</span> : null}
+          {flows.map(flow => (
+            <button key={flow.id} type="button" style={{ textAlign: 'left', padding: 6 }} onClick={() => { setSelected(flow.id) }}>
+              {flow.name} · {flow.status} · {flow.nodes}/{flow.edges}
+            </button>
+          ))}
+        </aside>
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, overflow: 'auto' }}>
+          {message !== null ? <div style={{ color: '#d93025' }}>{message}</div> : null}
+          {selected === null ? <span>{t('wf.select')}</span> : (
+            <>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" className={styles.primary} onClick={() => { act(() => workflows.setStatus(selected, 'active')) }}>{t('wf.activate')}</button>
+                <button type="button" onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
+                <button type="button" onClick={() => { void workflows.exportFlow(selected, 'json').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportJson')}</button>
+                <button type="button" onClick={() => { void workflows.exportFlow(selected, 'archify').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportArchify')}</button>
+              </div>
+              <svg width="100%" height="320" viewBox="0 0 900 320" style={{ background: '#fafbfc', border: '1px solid #dadce0', borderRadius: 8 }} onPointerMove={(event) => {
+                const id = dragging.current
+                if (id === null) return
+                const rect = (event.currentTarget).getBoundingClientRect()
+                const x = ((event.clientX - rect.left) / rect.width) * 900
+                const y = ((event.clientY - rect.top) / rect.height) * 320
+                setPositions(current => ({ ...current, [id]: { x: x - NODE_WIDTH / 2, y: y - NODE_HEIGHT / 2 } }))
+              }} onPointerUp={() => { dragging.current = null }}>
+                {detail?.edgesList.map((edge) => {
+                  const from = byId.get(edge.from)
+                  const to = byId.get(edge.to)
+                  if (from === undefined || to === undefined) return null
+                  const line = edgeLine(from, to)
+                  return <line key={edge.id} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke={edge.condition === null ? '#9aa0a6' : '#1a73e8'} strokeWidth={1.5} />
+                })}
+                {nodes.map(node => (
+                  <g key={node.id} transform={`translate(${String(node.x)}, ${String(node.y)})`} onPointerDown={() => { dragging.current = node.id }} onClick={() => { pick(node.id) }} style={{ cursor: 'grab' }}>
+                    <rect width={NODE_WIDTH} height={NODE_HEIGHT} rx={10} fill={nodeId === node.id ? '#e8f0fe' : '#ffffff'} stroke={kindIsTrigger(node.kind) ? '#188038' : '#5b6470'} />
+                    <text x={12} y={24} fontSize={12} fill="#202124">{node.title}</text>
+                    <text x={12} y={42} fontSize={10} fill="#5f6368">{node.kind}</text>
+                  </g>
+                ))}
+              </svg>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select value={kind} onChange={(event) => { setKind(event.target.value) }} aria-label={t('wf.kind')}>
+                  {WORKFLOW_KINDS.map(value => <option key={value} value={value}>{value}</option>)}
+                </select>
+                <input value={title} placeholder={t('wf.nodeTitle')} onChange={(event) => { setTitle(event.target.value) }} style={{ padding: 6 }} />
+                <textarea value={configJson} onChange={(event) => { setConfigJson(event.target.value) }} aria-label={t('wf.config')} style={{ minWidth: 200, minHeight: 56 }} />
+                {kind === 'agent' ? (
+                  <select aria-label={t('wf.agent')} value="" onChange={(event) => { if (nodeId !== null) setAgent(selected, nodeId, event.target.value) }}>
+                    <option value="">—</option>
+                    {agentOptions.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                  </select>
+                ) : null}
+                {kind === 'imap.action' || kind === 'smtp.send' ? (
+                  <select aria-label={t('wf.connection')} value="" onChange={(event) => { if (nodeId !== null) setConnection(selected, nodeId, event.target.value) }}>
+                    <option value="">—</option>
+                    {connectionOptions.map(connection => <option key={connection.id} value={connection.id}>{connection.label}</option>)}
+                  </select>
+                ) : null}
+                <button type="button" onClick={() => { addNode(selected) }}>{t('wf.addNode')}</button>
+                <button type="button" onClick={() => { if (nodeId !== null) saveNode(selected, nodeId) }}>{t('wf.save')}</button>
+                <button type="button" disabled={nodeId === null} onClick={() => { setConnectFrom(nodeId) }}>{t('wf.connect')}</button>
+                <button type="button" onClick={() => { if (nodeId !== null) deleteNode(selected, nodeId) }}>{t('wf.removeNode')}</button>
+                {detail?.edgesList.map(edge => (
+                  <button key={edge.id} type="button" onClick={() => { dropEdge(selected, edge.id) }}>
+                    {t('wf.disconnect')} {edge.from}→{edge.to}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 16 }}>
+                <section style={{ flex: 1 }}>
+                  <h4>{t('wf.runs')}</h4>
+                  {runs.length === 0 ? <span style={{ color: '#80868b' }}>{t('wf.noRuns')}</span> : runs.map(run => (
+                    <div key={run.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 5, background: statusColor(run.status), display: 'inline-block' }} />
+                      <span>{run.status}</span><span style={{ color: '#5f6368' }}>{run.createdAt}</span>
+                    </div>
+                  ))}
+                </section>
+                <section style={{ flex: 1 }}>
+                  <h4>{t('wf.spaceMap')}</h4>
+                  {topology?.spaces.map(space => <div key={space.id}>{space.title}</div>)}
+                </section>
+              </div>
+            </>
+          )}
+        </main>
+      </div>
+    )
+  }
+}
+
 /** The FaberLoom sections in sidebar order. */
 export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel() },
@@ -2944,6 +3173,7 @@ export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agents', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsScreen() },
   { id: 'faberloom-skills' as MainPanelId, order: 45, labelKey: 'nav.skills', Icon: panelIcon(IconAgentPresetOutline16), Page: skillsScreen() },
   { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(IconAlarmClockOutline16), Page: routinesScreen() },
+  { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(IconAlarmClockOutline16), Page: workflowsScreen() },
   { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(IconDatabaseOutline16), Page: memoryScreen() },
   { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', Icon: panelIcon(IconApiOutline14), Page: connectionsScreen() },
   { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', Icon: panelIcon(IconSendOutline14), Page: emailScreen() },

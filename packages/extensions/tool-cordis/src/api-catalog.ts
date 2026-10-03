@@ -1787,6 +1787,84 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the connectivity map as plain JSON.',
       },
       {
+        signature: '@Remote(\'workflowOverview\') async workflowOverview(): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'List the owner\'s work flows.',
+        parameters: [],
+        returns: 'one row per flow.',
+      },
+      {
+        signature: '@Remote(\'workflowDetail\') async workflowDetail(id: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Read one work flow with its graph and validation verdict.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
+        returns: 'the flow detail.',
+      },
+      {
+        signature: '@Remote(\'createWorkflow\') async createWorkflow(name: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Create an empty work flow and return the refreshed list.',
+        parameters: [{ name: 'name', description: 'display name.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'saveWorkflow\') async saveWorkflow(id: string, name: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Rename one work flow and return the refreshed list.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'name', description: 'new display name.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'addNode\') async addNode(id: string, kind: string, title: string, configJson: string, nodeId?: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Append one node to a work flow.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'kind', description: 'node kind.' }, { name: 'title', description: 'node title.' }, { name: 'configJson', description: 'node config as a JSON object string; empty for none.' }, { name: 'nodeId', description: 'optional stable node id.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'updateNode\') async updateNode(id: string, nodeId: string, title: string, kind: string, configJson: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Change one node\'s title, kind, or config.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'nodeId', description: 'the node to change.' }, { name: 'title', description: 'new title, or empty to keep it.' }, { name: 'kind', description: 'new kind, or empty to keep it.' }, { name: 'configJson', description: 'config JSON merged over the node, or empty to keep it.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'removeNode\') async removeNode(id: string, nodeId: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Remove one node and its incident edges.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'nodeId', description: 'the node to remove.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'connect\') async connect(id: string, from: string, to: string, condition?: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Connect two nodes.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'from', description: 'source node id.' }, { name: 'to', description: 'target node id.' }, { name: 'condition', description: 'optional branch condition.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'disconnect\') async disconnect(id: string, edgeId: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Remove one edge.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'edgeId', description: 'the edge to remove.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'setWorkflowStatus\') async setWorkflowStatus(id: string, status: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Change one work flow\'s lifecycle.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'status', description: '`active`, `paused`, or `draft`.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'workflowRuns\') async workflowRuns(id: string): Promise<readonly FaberLoomWorkflowRunRow[]>',
+        description: 'List one work flow\'s executions.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
+        returns: 'the run history rows.',
+      },
+      {
+        signature: '@Remote(\'spaceTopology\') async spaceTopology(): Promise<FaberLoomSpaceMap>',
+        description: 'Read the Space connectivity map for the palette and canvas.',
+        parameters: [],
+        returns: 'the connectivity map.',
+      },
+      {
+        signature: '@Remote(\'exportWorkflow\') async exportWorkflow(id: string, format: string): Promise<FaberLoomWorkflowExport>',
+        description: 'Export one work flow as read-only Archify HTML or plain JSON.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'format', description: '`archify` or `json`.' }],
+        returns: 'the export body.',
+      },
+      {
         signature: '@Remote(\'createSpace\') async createSpace(title: string, agentId?: string, parentId?: string, inheritContext?: boolean): Promise<FaberLoomOverview>',
         description: 'Create a space (root or sub-space) for the owner with an optional responsible agent, and register its conversation area as a Workspace so the sidebar and the Espacios panel show the same thing.',
         parameters: [{ name: 'title', description: 'display title.' }, { name: 'agentId', description: 'catalog agent put in charge; the same agent may lead a parent and a sub-space.' }, { name: 'parentId', description: 'parent space id, when this is a sub-space.' }, { name: 'inheritContext', description: 'whether the space inherits its parent\'s context; defaults to true.' }],
@@ -2359,14 +2437,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated work flow.',
       },
       {
-        signature: 'async addNode(actor: WorkFlowActor, id: WorkFlowId, input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }): Promise<WorkFlow>',
+        signature: 'async addNode( actor: WorkFlowActor, id: WorkFlowId, input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>',
         description: 'Append one node to a work flow the actor owns.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'input', description: 'node title, kind, optional config, and optional id.' }],
         returns: 'the updated work flow.',
         throws: ['when the node id repeats an existing node.'],
       },
       {
-        signature: 'async updateNode(actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId, patch: { title?: string | undefined; kind?: WorkFlowNodeKind | undefined; config?: Record<string, unknown> | undefined }): Promise<WorkFlow>',
+        signature: 'async updateNode( actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId, patch: { title?: string | undefined; kind?: WorkFlowNodeKind | undefined; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>',
         description: 'Change one node\'s title, kind, or config values (merged into its config).',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'nodeId', description: 'the node to change.' }, { name: 'patch', description: 'fields to change; `config` merges over the node\'s config.' }],
         returns: 'the updated work flow.',
@@ -2380,7 +2458,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when the node does not exist.'],
       },
       {
-        signature: 'async connect(actor: WorkFlowActor, id: WorkFlowId, input: { from: WorkFlowNodeId; to: WorkFlowNodeId; condition?: string | undefined }): Promise<WorkFlow>',
+        signature: 'async connect( actor: WorkFlowActor, id: WorkFlowId, input: { from: WorkFlowNodeId; to: WorkFlowNodeId; condition?: string | undefined }, ): Promise<WorkFlow>',
         description: 'Add a directed edge between two existing nodes.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'input', description: 'source, target, and optional branch condition.' }],
         returns: 'the updated work flow.',
@@ -2394,7 +2472,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when the edge does not exist.'],
       },
       {
-        signature: 'async setTrigger(actor: WorkFlowActor, id: WorkFlowId, input: { kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }): Promise<WorkFlow>',
+        signature: 'async setTrigger( actor: WorkFlowActor, id: WorkFlowId, input: { kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>',
         description: 'Replace the flow\'s trigger with one new trigger node of the given kind, dropping edges that referenced the removed triggers.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'input', description: 'trigger kind and optional config.' }],
         returns: 'the updated work flow.',
@@ -6251,6 +6329,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
   },
   {
+    name: 'FaberLoomJsonValue',
+    declaration: 'export type FaberLoomJsonValue = string | number | boolean | null | readonly FaberLoomJsonValue[] | {\n    readonly [key: string]: FaberLoomJsonValue;\n};',
+  },
+  {
     name: 'FaberLoomLinkPreview',
     declaration: 'export interface FaberLoomLinkPreview {\n    readonly newlyVisibleTo: readonly string[];\n    readonly sharedContextKeys: readonly string[];\n}',
   },
@@ -6441,6 +6523,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomTeachingRow',
     declaration: 'export interface FaberLoomTeachingRow {\n    readonly id: string;\n    readonly scope: string;\n    readonly spaceId: string | null;\n    readonly agentId: string | null;\n    readonly skill: string | null;\n    readonly task: string | null;\n    readonly text: string;\n    readonly source: string;\n    readonly author: string;\n    readonly status: string;\n    readonly version: number;\n    readonly uses: readonly string[];\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowDetail',
+    declaration: 'export interface FaberLoomWorkflowDetail extends FaberLoomWorkflowRow {\n    readonly valid: boolean;\n    readonly problems: readonly string[];\n    readonly nodesList: readonly FaberLoomWorkflowNodeRow[];\n    readonly edgesList: readonly FaberLoomWorkflowEdgeRow[];\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowEdgeRow',
+    declaration: 'export interface FaberLoomWorkflowEdgeRow {\n    readonly id: string;\n    readonly from: string;\n    readonly to: string;\n    readonly condition: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowExport',
+    declaration: 'export interface FaberLoomWorkflowExport {\n    readonly format: string;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowNodeRow',
+    declaration: 'export interface FaberLoomWorkflowNodeRow {\n    readonly id: string;\n    readonly kind: string;\n    readonly title: string;\n    readonly x: number;\n    readonly y: number;\n    readonly config: Readonly<Record<string, FaberLoomJsonValue>>;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowRow',
+    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowRunRow',
+    declaration: 'export interface FaberLoomWorkflowRunRow {\n    readonly id: string;\n    readonly status: string;\n    readonly routineVersion: number;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomWorkProposal',

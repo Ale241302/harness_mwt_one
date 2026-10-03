@@ -52,12 +52,73 @@ import type {
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
-  FaberLoomSpaceMap, BoardRevisionInput,
-  FaberLoomShareRow, FaberLoomShares,
+  FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
+  FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
+import type {
+  FaberLoomWorkflows,
+  WorkFlow,
+  WorkFlowActor,
+  WorkFlowEdgeId,
+  WorkFlowId,
+  WorkFlowNodeId,
+  WorkFlowNodeKind,
+  WorkFlowStatus,
+} from '@deepseek-ai/dsh-faberloom-workflows'
 
 export type * from './types.ts'
+
+/**
+ * Parse a node config JSON object string; empty or non-object yields `{}`.
+ * @param json - the JSON text.
+ * @returns the parsed object.
+ */
+function parseConfigJson(json: string): Record<string, unknown> {
+  if (json.trim().length === 0) return {}
+  const parsed = JSON.parse(json) as unknown
+  return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+}
+
+/** HTML entity table for the five significant characters. */
+const HTML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+
+/** Escape the five HTML-significant characters. */
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, character => HTML_ENTITIES[character] as string)
+}
+
+/**
+ * Render one work flow as a standalone read-only HTML document with an inline
+ * SVG of its nodes and edges, in the Archify export style.
+ * @param flow - the work flow to render.
+ * @returns the HTML document.
+ */
+function archifyHtml(flow: WorkFlow): string {
+  const positions = new Map<string, { x: number; y: number }>()
+  flow.definition.nodes.forEach((node, index) => {
+    positions.set(node.id, { x: 40 + (index % 4) * 220, y: 48 + Math.floor(index / 4) * 130 })
+  })
+  const edges = flow.definition.edges.map((edge) => {
+    const from = positions.get(edge.from)
+    const to = positions.get(edge.to)
+    return from === undefined || to === undefined
+      ? ''
+      : `<line x1="${String(from.x + 85)}" y1="${String(from.y + 28)}" x2="${String(to.x + 85)}" y2="${String(to.y + 28)}" stroke="#9aa0a6" stroke-width="1.5" marker-end="url(#arrow)" />`
+  }).join('')
+  const nodes = flow.definition.nodes.map((node) => {
+    const at = positions.get(node.id) as { x: number; y: number }
+    return `<g><rect x="${String(at.x)}" y="${String(at.y)}" width="170" height="56" rx="10" fill="#ffffff" stroke="#5b6470" />`
+      + `<text x="${String(at.x + 12)}" y="${String(at.y + 24)}" font-family="system-ui" font-size="12" fill="#202124">${escapeHtml(node.title)}</text>`
+      + `<text x="${String(at.x + 12)}" y="${String(at.y + 42)}" font-family="system-ui" font-size="10" fill="#5f6368">${escapeHtml(node.kind)}</text></g>`
+  }).join('')
+  return '<!doctype html>\n<html lang="es">\n<head><meta charset="utf-8">'
+    + `<title>${escapeHtml(flow.name)}</title></head>\n<body style="margin:0;background:#f6f7f9">\n`
+    + '<svg xmlns="http://www.w3.org/2000/svg" width="920" height="640" viewBox="0 0 920 640">'
+    + '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9aa0a6"/></marker></defs>'
+    + `<text x="40" y="28" font-family="system-ui" font-size="16" fill="#202124">${escapeHtml(flow.name)}</text>`
+    + `${edges}${nodes}</svg>\n</body>\n</html>`
+}
 
 /** Reads one skill root into rows, ignoring anything without a frontmatter name. */
 function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' = 'role'): FaberLoomSkillRow[] {
@@ -553,6 +614,227 @@ export class FaberLoomViewService extends TypertRemoteService {
         title: workspace.title,
       })),
     }
+  }
+
+  /** Resolve the mounted workflows service, or fail loud. */
+  private workflowsService(): FaberLoomWorkflows {
+    const service = this.ctx.get('faberloomWorkflows')
+    if (service === undefined) throw new Error('faberloom: el servicio de Workflows no está montado')
+    return service
+  }
+
+  /** The workflow actor derived from the signed-in identity. */
+  private workflowActor(): WorkFlowActor { return { id: this.actor().id } }
+
+  /** Map one stored flow to its panel row. */
+  private workflowRow(flow: WorkFlow): FaberLoomWorkflowRow {
+    return {
+      id: flow.id,
+      name: flow.name,
+      status: flow.status,
+      version: flow.version,
+      nodes: flow.definition.nodes.length,
+      edges: flow.definition.edges.length,
+      routineId: flow.routineId ?? null,
+    }
+  }
+
+  /** Map one stored flow with its graph and validation verdict. */
+  private async workflowDetailOf(id: string): Promise<FaberLoomWorkflowDetail> {
+    const actor = this.workflowActor()
+    const flow = await this.workflowsService().get(actor, id as WorkFlowId)
+    const verdict = await this.workflowsService().validate(actor, id as WorkFlowId)
+    return {
+      ...this.workflowRow(flow),
+      valid: verdict.ok,
+      problems: [...verdict.problems],
+      nodesList: flow.definition.nodes.map(node => ({
+        id: node.id,
+        kind: node.kind,
+        title: node.title,
+        x: node.position.x,
+        y: node.position.y,
+        config: node.config as Readonly<Record<string, FaberLoomJsonValue>>,
+      })),
+      edgesList: flow.definition.edges.map(edge => ({ id: edge.id, from: edge.from, to: edge.to, condition: edge.condition ?? null })),
+    }
+  }
+
+  /**
+   * List the owner's work flows.
+   * @returns one row per flow.
+   */
+  @Remote('workflowOverview')
+  async workflowOverview(): Promise<readonly FaberLoomWorkflowRow[]> {
+    return (await this.workflowsService().list(this.workflowActor())).map(flow => this.workflowRow(flow))
+  }
+
+  /**
+   * Read one work flow with its graph and validation verdict.
+   * @param id - work flow id.
+   * @returns the flow detail.
+   */
+  @Remote('workflowDetail')
+  async workflowDetail(id: string): Promise<FaberLoomWorkflowDetail> {
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Create an empty work flow and return the refreshed list.
+   * @param name - display name.
+   * @returns the refreshed rows.
+   */
+  @Remote('createWorkflow')
+  async createWorkflow(name: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.workflowsService().create(this.workflowActor(), {
+      name,
+      definition: { intent: name, nodes: [], edges: [], permissions: [], failurePolicy: 'stop' },
+    })
+    return await this.workflowOverview()
+  }
+
+  /**
+   * Rename one work flow and return the refreshed list.
+   * @param id - work flow id.
+   * @param name - new display name.
+   * @returns the refreshed rows.
+   */
+  @Remote('saveWorkflow')
+  async saveWorkflow(id: string, name: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.workflowsService().update(this.workflowActor(), id as WorkFlowId, { name })
+    return await this.workflowOverview()
+  }
+
+  /**
+   * Append one node to a work flow.
+   * @param id - work flow id.
+   * @param kind - node kind.
+   * @param title - node title.
+   * @param configJson - node config as a JSON object string; empty for none.
+   * @param nodeId - optional stable node id.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('addNode')
+  async addNode(id: string, kind: string, title: string, configJson: string, nodeId?: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().addNode(this.workflowActor(), id as WorkFlowId, {
+      kind: kind as WorkFlowNodeKind,
+      title,
+      config: parseConfigJson(configJson),
+      ...nodeId === undefined || nodeId.length === 0 ? {} : { id: nodeId },
+    })
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Change one node's title, kind, or config.
+   * @param id - work flow id.
+   * @param nodeId - the node to change.
+   * @param title - new title, or empty to keep it.
+   * @param kind - new kind, or empty to keep it.
+   * @param configJson - config JSON merged over the node, or empty to keep it.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('updateNode')
+  async updateNode(id: string, nodeId: string, title: string, kind: string, configJson: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().updateNode(this.workflowActor(), id as WorkFlowId, nodeId as WorkFlowNodeId, {
+      ...title.length === 0 ? {} : { title },
+      ...kind.length === 0 ? {} : { kind: kind as WorkFlowNodeKind },
+      ...configJson.trim().length === 0 ? {} : { config: parseConfigJson(configJson) },
+    })
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Remove one node and its incident edges.
+   * @param id - work flow id.
+   * @param nodeId - the node to remove.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('removeNode')
+  async removeNode(id: string, nodeId: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().removeNode(this.workflowActor(), id as WorkFlowId, nodeId as WorkFlowNodeId)
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Connect two nodes.
+   * @param id - work flow id.
+   * @param from - source node id.
+   * @param to - target node id.
+   * @param condition - optional branch condition.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('connect')
+  async connect(id: string, from: string, to: string, condition?: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().connect(this.workflowActor(), id as WorkFlowId, {
+      from: from as WorkFlowNodeId,
+      to: to as WorkFlowNodeId,
+      ...condition === undefined || condition.length === 0 ? {} : { condition },
+    })
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Remove one edge.
+   * @param id - work flow id.
+   * @param edgeId - the edge to remove.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('disconnect')
+  async disconnect(id: string, edgeId: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().disconnect(this.workflowActor(), id as WorkFlowId, edgeId as WorkFlowEdgeId)
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Change one work flow's lifecycle.
+   * @param id - work flow id.
+   * @param status - `active`, `paused`, or `draft`.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('setWorkflowStatus')
+  async setWorkflowStatus(id: string, status: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().setStatus(this.workflowActor(), id as WorkFlowId, status as WorkFlowStatus)
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * List one work flow's executions.
+   * @param id - work flow id.
+   * @returns the run history rows.
+   */
+  @Remote('workflowRuns')
+  async workflowRuns(id: string): Promise<readonly FaberLoomWorkflowRunRow[]> {
+    return (await this.workflowsService().runs(this.workflowActor(), id as WorkFlowId)).map(run => ({
+      id: run.id,
+      status: run.status,
+      routineVersion: run.routineVersion,
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+    }))
+  }
+
+  /**
+   * Read the Space connectivity map for the palette and canvas.
+   * @returns the connectivity map.
+   */
+  @Remote('spaceTopology')
+  async spaceTopology(): Promise<FaberLoomSpaceMap> {
+    return await this.spaceMap()
+  }
+
+  /**
+   * Export one work flow as read-only Archify HTML or plain JSON.
+   * @param id - work flow id.
+   * @param format - `archify` or `json`.
+   * @returns the export body.
+   */
+  @Remote('exportWorkflow')
+  async exportWorkflow(id: string, format: string): Promise<FaberLoomWorkflowExport> {
+    const flow = await this.workflowsService().get(this.workflowActor(), id as WorkFlowId)
+    return format === 'json'
+      ? { format: 'json', content: JSON.stringify(flow, null, 2) }
+      : { format: 'archify', content: archifyHtml(flow) }
   }
 
   /**

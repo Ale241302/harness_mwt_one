@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-view",
-  "description": "Read-only FaberLoom workspace view for the browser: one Remote read of the signed-in owner's spaces, agents, board, and routines",
+  "description": "FaberLoom workspace view for the browser: one Remote read of the signed-in owner's spaces, agents, board, routines, memory, and Work Flow graphs, plus create, rename, graph-edit, run, topology, and export writes",
   "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
@@ -69,6 +69,7 @@
     "@deepseek-ai/dsh-faberloom-mcp-server": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-workflows": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",

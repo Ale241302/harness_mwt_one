@@ -7055,6 +7055,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-spaces':
         specifier: workspace:^
         version: link:../spaces
+      '@deepseek-ai/dsh-faberloom-workflows':
+        specifier: workspace:^
+        version: link:../workflows
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess

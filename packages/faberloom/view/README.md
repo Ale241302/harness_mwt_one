@@ -1,5 +1,5 @@
 ---
-description: "FaberLoom workspace view for the browser: one Remote read of the signed-in owner's spaces, agents, board, routines, and memory, plus create and rename writes; for maintainers of the FaberLoom panels."
+description: "FaberLoom workspace view for the browser: one Remote read of the signed-in owner's spaces, agents, board, routines, memory, and Work Flow graphs, plus create, rename, graph-edit, run, topology, and export writes; for maintainers of the FaberLoom panels."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The workspace view is the one host capability the FaberLoom browser panels use. It exposes `faberloomView.overview()` over the mounted product services and returns plain JSON rows, so the panels render real records instead of placeholders, and it exposes the create and rename writes those panels need. Identity comes from deployment configuration, never from the call: the gateway injects the authenticated owner into this row exactly as it does for `tool-faberloom`, so a browser cannot request another owner's rows. Memory rows come from the agent-memory core under the same deployment identity.
+The workspace view is the one host capability the FaberLoom browser panels use. It exposes `faberloomView.overview()` and returns plain JSON rows, so the panels render real records instead of placeholders, and it exposes the writes those panels need, including the Work Flow graph-edit, run, topology, and export methods. Identity comes from deployment configuration, never from the call: the gateway injects the authenticated owner into this row, as it does for `tool-faberloom`, so a browser cannot request another owner's rows. Memory rows come from the agent-memory core under the same deployment identity.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ The workspace view is the one host capability the FaberLoom browser panels use. 
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row in a composition that already carries `ctx.faberloomSpaces`, `ctx.faberloomAgents`, `ctx.faberloomBoard`, and `ctx.faberloomRoutines`, and configure `ownerId`. Configure `memoryCoreUrl`, `memoryServiceId`, `memoryUserId`, and `memoryGatewayKey` to have the overview carry the owner's memory rows; without them the memory list is empty. The browser side mounts the generated `./remote` contribution in the client API assembly and calls `ctx.remote.faberloomView.overview()`. The connectivity map is a second read: `ctx.remote.faberloomView.spaceMap()` returns every Space with its agent and mirrored workspace, every agent with its skills and MCP access, the owner's mail connections, and the registered Workspaces, feeding the palette and canvas.
+Mount this row in a composition that already carries `ctx.faberloomSpaces`, `ctx.faberloomAgents`, `ctx.faberloomBoard`, and `ctx.faberloomRoutines`, and configure `ownerId`. Configure `memoryCoreUrl`, `memoryServiceId`, `memoryUserId`, and `memoryGatewayKey` to have the overview carry the owner's memory rows; without them the memory list is empty. The browser side mounts the generated `./remote` contribution in the client API assembly and calls `ctx.remote.faberloomView.overview()`. The connectivity map is a second read: `ctx.remote.faberloomView.spaceMap()` returns every Space with its agent and mirrored workspace, every agent with its skills and MCP access, the owner's mail connections, and the registered Workspaces, feeding the palette and canvas. The Work Flow editor reads `workflowOverview()` and `workflowDetail(id)` and mutates through `createWorkflow`, `saveWorkflow`, `addNode`, `updateNode`, `removeNode`, `connect`, `disconnect`, and `setWorkflowStatus`; it lists executions with `workflowRuns(id)`, reads the palette from `spaceTopology()`, and exports with `exportWorkflow(id, 'json' | 'archify')`.
 
 -----
 

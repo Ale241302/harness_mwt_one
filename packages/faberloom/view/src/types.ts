@@ -993,3 +993,92 @@ export interface FaberLoomLinkPreview {
   /** Context keys the space would contribute to the linked material. */
   readonly sharedContextKeys: readonly string[]
 }
+
+/** One work flow row the Workflows panel lists. */
+export interface FaberLoomWorkflowRow {
+  /** Work flow id. */
+  readonly id: string
+  /** Display name. */
+  readonly name: string
+  /** Lifecycle status. */
+  readonly status: string
+  /** Monotonic version. */
+  readonly version: number
+  /** Node count. */
+  readonly nodes: number
+  /** Edge count. */
+  readonly edges: number
+  /** Compiled routine id, or null until activated. */
+  readonly routineId: string | null
+}
+
+/** A JSON value a Remote boundary may carry. */
+export type FaberLoomJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly FaberLoomJsonValue[]
+  | { readonly [key: string]: FaberLoomJsonValue }
+
+/** One node in a work flow detail. */
+export interface FaberLoomWorkflowNodeRow {
+  /** Node id. */
+  readonly id: string
+  /** Node kind. */
+  readonly kind: string
+  /** Display title. */
+  readonly title: string
+  /** Canvas x. */
+  readonly x: number
+  /** Canvas y. */
+  readonly y: number
+  /** Kind-specific configuration. */
+  readonly config: Readonly<Record<string, FaberLoomJsonValue>>
+}
+
+/** One edge in a work flow detail. */
+export interface FaberLoomWorkflowEdgeRow {
+  /** Edge id. */
+  readonly id: string
+  /** Source node id. */
+  readonly from: string
+  /** Target node id. */
+  readonly to: string
+  /** Branch condition, or null. */
+  readonly condition: string | null
+}
+
+/** One work flow with its graph and validation verdict. */
+export interface FaberLoomWorkflowDetail extends FaberLoomWorkflowRow {
+  /** Whether the graph validates. */
+  readonly valid: boolean
+  /** Validation problems. */
+  readonly problems: readonly string[]
+  /** Graph nodes. */
+  readonly nodesList: readonly FaberLoomWorkflowNodeRow[]
+  /** Graph edges. */
+  readonly edgesList: readonly FaberLoomWorkflowEdgeRow[]
+}
+
+/** One execution of a work flow, as the run history shows it. */
+export interface FaberLoomWorkflowRunRow {
+  /** Execution id. */
+  readonly id: string
+  /** Execution status. */
+  readonly status: string
+  /** Routine version the run started with. */
+  readonly routineVersion: number
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+  /** ISO-8601 last mutation instant. */
+  readonly updatedAt: string
+}
+
+/** A read-only export of one work flow. */
+export interface FaberLoomWorkflowExport {
+  /** Export format: `archify` or `json`. */
+  readonly format: string
+  /** Export body: standalone HTML for archify, JSON for json. */
+  readonly content: string
+}

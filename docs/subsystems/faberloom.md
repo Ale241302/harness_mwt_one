@@ -1275,6 +1275,111 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('spaceMap') async spaceMap(): Promise<FaberLoomSpaceMap>
 
 /**
+ * List the owner's work flows.
+ * @returns one row per flow.
+ */
+@Remote('workflowOverview') async workflowOverview(): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
+ * Read one work flow with its graph and validation verdict.
+ * @param id - work flow id.
+ * @returns the flow detail.
+ */
+@Remote('workflowDetail') async workflowDetail(id: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Create an empty work flow and return the refreshed list.
+ * @param name - display name.
+ * @returns the refreshed rows.
+ */
+@Remote('createWorkflow') async createWorkflow(name: string): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
+ * Rename one work flow and return the refreshed list.
+ * @param id - work flow id.
+ * @param name - new display name.
+ * @returns the refreshed rows.
+ */
+@Remote('saveWorkflow') async saveWorkflow(id: string, name: string): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
+ * Append one node to a work flow.
+ * @param id - work flow id.
+ * @param kind - node kind.
+ * @param title - node title.
+ * @param configJson - node config as a JSON object string; empty for none.
+ * @param nodeId - optional stable node id.
+ * @returns the refreshed flow detail.
+ */
+@Remote('addNode') async addNode(id: string, kind: string, title: string, configJson: string, nodeId?: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Change one node's title, kind, or config.
+ * @param id - work flow id.
+ * @param nodeId - the node to change.
+ * @param title - new title, or empty to keep it.
+ * @param kind - new kind, or empty to keep it.
+ * @param configJson - config JSON merged over the node, or empty to keep it.
+ * @returns the refreshed flow detail.
+ */
+@Remote('updateNode') async updateNode(id: string, nodeId: string, title: string, kind: string, configJson: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Remove one node and its incident edges.
+ * @param id - work flow id.
+ * @param nodeId - the node to remove.
+ * @returns the refreshed flow detail.
+ */
+@Remote('removeNode') async removeNode(id: string, nodeId: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Connect two nodes.
+ * @param id - work flow id.
+ * @param from - source node id.
+ * @param to - target node id.
+ * @param condition - optional branch condition.
+ * @returns the refreshed flow detail.
+ */
+@Remote('connect') async connect(id: string, from: string, to: string, condition?: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Remove one edge.
+ * @param id - work flow id.
+ * @param edgeId - the edge to remove.
+ * @returns the refreshed flow detail.
+ */
+@Remote('disconnect') async disconnect(id: string, edgeId: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Change one work flow's lifecycle.
+ * @param id - work flow id.
+ * @param status - `active`, `paused`, or `draft`.
+ * @returns the refreshed flow detail.
+ */
+@Remote('setWorkflowStatus') async setWorkflowStatus(id: string, status: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * List one work flow's executions.
+ * @param id - work flow id.
+ * @returns the run history rows.
+ */
+@Remote('workflowRuns') async workflowRuns(id: string): Promise<readonly FaberLoomWorkflowRunRow[]>
+
+/**
+ * Read the Space connectivity map for the palette and canvas.
+ * @returns the connectivity map.
+ */
+@Remote('spaceTopology') async spaceTopology(): Promise<FaberLoomSpaceMap>
+
+/**
+ * Export one work flow as read-only Archify HTML or plain JSON.
+ * @param id - work flow id.
+ * @param format - `archify` or `json`.
+ * @returns the export body.
+ */
+@Remote('exportWorkflow') async exportWorkflow(id: string, format: string): Promise<FaberLoomWorkflowExport>
+
+/**
  * Create a space (root or sub-space) for the owner with an optional
  * responsible agent, and register its conversation area as a Workspace so
  * the sidebar and the Espacios panel show the same thing.
@@ -2039,7 +2144,7 @@ async update(actor: WorkFlowActor, id: WorkFlowId, patch: UpdateWorkFlowInput): 
  * @returns the updated work flow.
  * @throws when the node id repeats an existing node.
  */
-async addNode(actor: WorkFlowActor, id: WorkFlowId, input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }): Promise<WorkFlow>
+async addNode( actor: WorkFlowActor, id: WorkFlowId, input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>
 
 /**
  * Change one node's title, kind, or config values (merged into its config).
@@ -2050,7 +2155,7 @@ async addNode(actor: WorkFlowActor, id: WorkFlowId, input: { id?: string | undef
  * @returns the updated work flow.
  * @throws when the node does not exist.
  */
-async updateNode(actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId, patch: { title?: string | undefined; kind?: WorkFlowNodeKind | undefined; config?: Record<string, unknown> | undefined }): Promise<WorkFlow>
+async updateNode( actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId, patch: { title?: string | undefined; kind?: WorkFlowNodeKind | undefined; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>
 
 /**
  * Remove one node and every edge incident to it.
@@ -2070,7 +2175,7 @@ async removeNode(actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId): 
  * @returns the updated work flow.
  * @throws when a referenced node does not exist.
  */
-async connect(actor: WorkFlowActor, id: WorkFlowId, input: { from: WorkFlowNodeId; to: WorkFlowNodeId; condition?: string | undefined }): Promise<WorkFlow>
+async connect( actor: WorkFlowActor, id: WorkFlowId, input: { from: WorkFlowNodeId; to: WorkFlowNodeId; condition?: string | undefined }, ): Promise<WorkFlow>
 
 /**
  * Remove one edge.
@@ -2091,7 +2196,7 @@ async disconnect(actor: WorkFlowActor, id: WorkFlowId, edgeId: WorkFlowEdgeId): 
  * @returns the updated work flow.
  * @throws when the kind is not a trigger kind.
  */
-async setTrigger(actor: WorkFlowActor, id: WorkFlowId, input: { kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }): Promise<WorkFlow>
+async setTrigger( actor: WorkFlowActor, id: WorkFlowId, input: { kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>
 
 /**
  * Change one work flow's lifecycle. Activating validates the graph and
