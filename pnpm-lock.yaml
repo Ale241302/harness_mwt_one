@@ -6964,12 +6964,18 @@ importers:
       '@deepseek-ai/dsh-faberloom-inbound':
         specifier: workspace:^
         version: link:../inbound
+      '@deepseek-ai/dsh-faberloom-learning':
+        specifier: workspace:^
+        version: link:../learning
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines
       '@deepseek-ai/dsh-faberloom-spaces':
         specifier: workspace:^
         version: link:../spaces
+      '@deepseek-ai/dsh-subagent':
+        specifier: workspace:^
+        version: link:../../subagent/subagent
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess

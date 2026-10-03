@@ -1,8 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-09-15` (commit `e2a61d4`, incluye E7-bis memoria Tencent + E8 respaldo)
-**Imagen desplegada actual:** build de `main` @ `893f2bbd4184f8e7517bddf4cef5fb9774d45b89` (skill SICOP mixta `sicop-contratacion-publica` + activación por defecto antes de `mcp__sicop__*` desde el `AGENTS.md` del workspace y desde la persona del preset "Analista SICOP"; skill de extracción `sicop-extraccion` movida a `skills-shared/`; el gateway refresca los presets sembrados sin pisar los propios; catálogo verificado por `verify-skills-catalog`; Spaces↔Workspace; multi-empresa; deploy caliente ~6 min).
-**Verificado en el VPS:** 30 de septiembre de 2026 (18:10 UTC).
+**Tag de despliegue:** `deploy-2026-10-03` (commit `27d0e5105c`: contexto entre Spaces — `faberloom_spaces_find`/`_reference`/`_ask`, inferencia implícita y directiva reforzada; tools de memoria/teachings opt-in; seam `ctx.spaceIndex`; lint, duplicación y catálogo en verde).
+**Imagen desplegada actual:** build de `main` @ `27d0e5105c` (resolución de contexto entre Spaces y tools de memoria; gates de lint/duplicación/catálogo cerrados; deploy caliente ~6 min).
+**Verificado en el VPS:** 3 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
