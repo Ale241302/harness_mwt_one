@@ -186,6 +186,42 @@ export interface EffectiveContext {
   readonly directives: readonly string[]
 }
 
+/**
+ * One Space candidate from a lexical lookup. `score` ranks the match and
+ * `reasons` names the fields it matched; a zero score with an empty query is
+ * the recency order.
+ */
+export interface SpaceMatch {
+  /** Matched space id. */
+  readonly id: FaberLoomSpaceId
+  /** Display title. */
+  readonly title: string
+  /** Lexical match score; higher is a better match. */
+  readonly score: number
+  /** Matched fields (`title`, `context`, `memory`). */
+  readonly reasons: readonly string[]
+}
+
+/**
+ * The resolved context of one referenced Space for cross-Space work: the
+ * Space record plus its effective context and memory, its attached-file
+ * metadata, and the responsible agent and mirrored workspace.
+ */
+export interface SpaceReference {
+  /** The resolved Space record. */
+  readonly space: FaberLoomSpace
+  /** The Space's effective context, inherited and conflict-aware. */
+  readonly context: EffectiveContext
+  /** The Space's effective memory, inherited from readable ancestors. */
+  readonly memory: readonly FaberLoomSpaceMemory[]
+  /** Attached-file metadata, never bytes. */
+  readonly files: readonly SpaceFile[]
+  /** The responsible catalog agent, or `undefined` when none is assigned. */
+  readonly agentId: string | undefined
+  /** The mirrored harness Workspace id, or `undefined`. */
+  readonly workspaceId: string | undefined
+}
+
 /** The isolated personal scope of one identity, used when no space is assigned. */
 export interface PersonalScope {
   /** Discriminant marking a personal scope. */

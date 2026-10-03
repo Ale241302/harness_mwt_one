@@ -26,6 +26,8 @@ import type {
   SpaceFile,
   SpaceFileContent,
   SpaceFileInput,
+  SpaceMatch,
+  SpaceReference,
   SpaceSource,
   UpdateSpaceInput,
   WorkdirReference,
@@ -33,6 +35,53 @@ import type {
 
 /** Largest file this slice stores inline in the domain (1 MiB). */
 const MAX_FILE_BYTES = 1_000_000
+
+/** Score added when a query token matches the space title. */
+const TITLE_WEIGHT = 3
+
+/** Score added when a query token matches a space context value or memory entry. */
+const CONTEXT_WEIGHT = 2
+
+/**
+ * Fold one text for language-tolerant comparison: lowercased in Spanish and
+ * stripped of combining diacritics, so `Cartón` and `carton` match.
+ * @param value - the text to fold.
+ * @returns the folded text.
+ */
+function foldText(value: string): string {
+  return value.toLocaleLowerCase('es').normalize('NFD').replace(/\p{Diacritic}/gu, '')
+}
+
+/**
+ * Split a query into folded, non-empty terms.
+ * @param query - the raw query text.
+ * @returns the folded terms.
+ */
+function normalizeTerms(query: string): string[] {
+  return foldText(query).split(/[^\p{L}\p{N}]+/u).filter(token => token.length > 0)
+}
+
+/**
+ * Score one space against the query terms: each term contributes the title
+ * weight for a title hit and the context weight for a context or memory hit.
+ * @param record - the stored space record.
+ * @param memoryText - the folded text of the space's effective memory.
+ * @param tokens - the folded query terms.
+ * @returns the total score and the matched field names.
+ */
+function scoreSpace(record: SpaceRecord, memoryText: string, tokens: readonly string[]): { score: number; reasons: string[] } {
+  const title = foldText(record.title)
+  const context = foldText(Object.values(record.context).join(' '))
+  const memory = foldText(memoryText)
+  let score = 0
+  const reasons = new Set<string>()
+  for (const token of tokens) {
+    if (title.includes(token)) { score += TITLE_WEIGHT; reasons.add('title') }
+    if (context.includes(token)) { score += CONTEXT_WEIGHT; reasons.add('context') }
+    if (memory.includes(token)) { score += CONTEXT_WEIGHT; reasons.add('memory') }
+  }
+  return { score, reasons: [...reasons] }
+}
 
 export type * from './types.ts'
 
@@ -497,6 +546,45 @@ export class FaberLoomSpaces extends Service {
       dataSources,
       directives: dataSources.map(directiveFor),
     }
+  }
+
+  /**
+   * Rank the spaces the actor may read by a lexical match on the query. An
+   * empty query returns them in creation order; archived spaces are excluded.
+   * @param actor - the acting identity.
+   * @param query - free-text query; an empty query lists readable spaces.
+   * @param limit - most results to return.
+   * @returns matched spaces, best score first.
+   */
+  async find(actor: SpaceActor, query: string, limit = 10): Promise<SpaceMatch[]> {
+    const tokens = normalizeTerms(query)
+    const out: { match: SpaceMatch; createdAt: string }[] = []
+    for (const [id, record] of (await this.table()).entries()) {
+      if (!canRead(record, actor)) continue
+      if (record.archived) continue
+      const memoryText = (await this.effectiveMemory(actor, id)).map(entry => entry.text).join(' ')
+      const { score, reasons } = scoreSpace(record, memoryText, tokens)
+      if (tokens.length > 0 && score === 0) continue
+      out.push({ match: { id, title: record.title, score, reasons }, createdAt: record.createdAt })
+    }
+    out.sort((left, right) => right.match.score - left.match.score || left.createdAt.localeCompare(right.createdAt))
+    return out.slice(0, Math.max(0, limit)).map(entry => entry.match)
+  }
+
+  /**
+   * Resolve one referenced Space into its effective context and memory, its
+   * attached-file metadata, and its responsible agent and mirrored workspace.
+   * @param actor - the acting identity.
+   * @param id - space id.
+   * @returns the resolved reference.
+   * @throws when the space is absent or not readable.
+   */
+  async reference(actor: SpaceActor, id: FaberLoomSpaceId): Promise<SpaceReference> {
+    const space = await this.get(actor, id)
+    const context = await this.effectiveContext(actor, id)
+    const memory = await this.effectiveMemory(actor, id)
+    const files = await this.listFiles(actor, id)
+    return { space, context, memory, files, agentId: space.agentId, workspaceId: space.workspaceId }
   }
 
   /**
