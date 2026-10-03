@@ -1,0 +1,9 @@
+version: 1
+scenario: space-cross-reference
+profile: headless
+composition: space-reference
+recording: authored
+platform: posix
+header:
+  class: space-reference
+  pin: true

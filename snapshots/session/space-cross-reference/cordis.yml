@@ -1,0 +1,36 @@
+# Record patch for the cross-space scenario. The scenario is authored, so a
+# POSIX host regenerates its fixture and sidecars with `test:snapshot:refresh`;
+# this live patch only keeps the composition loadable.
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  config:
+    thinking: enabled
+    reasoningEffort: max
+
+- id: agent-default-model
+  name: '@deepseek-ai/dsh-agent-default-model'
+  config:
+    provider: deepseek-official
+    model: deepseek-v4-flash
+
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+
+- insert:
+    - id: space-reference-fixture
+      name: '../../../packages/test-support/session-snapshot/tests/fixtures/space-reference.ts'
+
+    - id: tool-faberloom
+      name: '@deepseek-ai/dsh-tool-faberloom'
+      config:
+        ownerId: snapshot@muitowork.com
+        role: admin
+        companyId: co-snapshot
+        companyIds: [co-snapshot]
+        readOnly: false
+        mcpUrl: http://127.0.0.1:1/mcp
+        mcpGatewayKey: snapshot
