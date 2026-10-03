@@ -34,7 +34,7 @@
 | `@deepseek-ai/dsh-tool-fs` | `edit`、`read`、`read_image`、`write` | `ctx.tools`、`ctx.fs`、`ctx.systemPrompt`、`ctx.attachments (image-tool registration)`、`ctx.llm + an image-capable route (image-tool execution)` | `tool/call`、`fs/write-intent or fs/edit-intent for mutations`、`fs/observed after read presence/absence or successful file operation`、`durable attachment (read_image)`、`tool/result` | - | 先读后写／编辑策略由 `@deepseek-ai/dsh-fs-observation-policy` 添加；它是一个 `fs/*` 事件门禁插件，不会改变 schema。加载这些工具的部署按预期也应加载该插件。没有 `ctx.attachments` 时图片工具不会注册；其 schema 与路由无关，执行时除非确切路由的模型声明图片输入，否则拒绝。 |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`、`grep` | `ctx.tools`、`ctx.subprocess`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。 |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`、`terminal_list`、`terminal_open`、`terminal_read`、`terminal_send`、`terminal_signal` | `ctx.tools`、`ctx.terminals`、`ctx.systemPrompt`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。 |
-| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source` | `ctx.tools`, `ctx.faberloomSpaces` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
+| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source`| `ctx.tools`, `ctx.faberloomSpaces` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list` | `ctx.tools`、`ctx.sessions`、Session 持久化、未来创建的 live 根 Agent | `tool/call`、`schedule/change create or delete`、`tool/result` | - | 仅在选择启用的 Schedule 插件加载后创建的 live 根 Agent scope 内注册。版本 1 接受 after_seconds、显式绝对 at 和有界固定速率 every_seconds，并披露 session-local 交付；管理读取与变更必须通过共享的 Session 持久化 barrier。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
@@ -2257,6 +2257,41 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_email_draft`
+
+准备一封供所有者审阅的邮件草稿，以所有者的口吻撰写。绝不发送：由所有者在邮件面板中批准。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "to": {
+      "type": "string",
+      "description": "Recipient addresses, comma-separated."
+    },
+    "subject": {
+      "type": "string",
+      "description": "Subject line."
+    },
+    "text": {
+      "type": "string",
+      "description": "Plain-text body, in the owner's voice."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space the draft belongs to, when scoped."
+    }
+  },
+  "required": [
+    "to",
+    "subject",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_events_ingest`
 
 Ingest one event for the current user: matching active routines start or dedupe.
@@ -2447,6 +2482,127 @@ Deliver events to waiting executions (persistent dispatcher tick).
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_mail_attachment`
+
+把一封邮件消息的原始附件作为真实文件保存到会话工作区并返回其路径，使用户能下载真实文件（或用业务文档工具上传）。使用 faberloom_mail_search 返回的 uid；传入 name 只保存一个附件。对邮箱只读。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "name": {
+      "type": "string",
+      "description": "Save only the attachment with this exact name; every attachment otherwise."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_attachment_link`
+
+把一封邮件消息的某个附件以登录用户的身份上传到 MWT.ONE 存储并返回供用户下载的链接。使用 faberloom_mail_search 返回的 uid；传入 name 选择附件。控制台 token 不可用时失败，因此回退到 faberloom_mail_attachment（工作区中的真实文件）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "name": {
+      "type": "string",
+      "description": "The attachment name to upload; the first attachment otherwise."
+    },
+    "scope": {
+      "type": "string",
+      "description": "Storage folder, e.g. \"documento/<id>\"; \"correo\" otherwise."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_download`
+
+把邮件正文中的一个 http(s) 链接（faberloom_mail_read 以链接形式返回）下载到会话工作区作为真实文件并返回其路径。用于 Excel/PDF/图片下载链接，然后读取该文件或用业务文档工具上传。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "An http(s) URL from the mail body, as returned by faberloom_mail_read."
+    },
+    "name": {
+      "type": "string",
+      "description": "File name to save as; derived from the URL otherwise."
+    }
+  },
+  "required": [
+    "url"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_mark_read`
+
+把一封邮件消息标记为已读（\Seen）。使用 faberloom_mail_search 返回的 uid。这会写入邮箱：仅在用户要求或某条规则授权时进行。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_read`
+
+按 uid 读取所有者邮箱（在 Conexiones 中配置的 IMAP 连接）中的一封消息：其纯文本正文以及每个附件转换为 Markdown（xlsx、pdf、docx、csv 等），使附带的订单、形式发票或规格可作为文本阅读。只读。使用 faberloom_mail_search 打印的 uid；切勿循环探测 uid。这里返回的是文档文本而非原始文件：当用户索要附件文件本身时，不要用报告工具重建它——原始文件可从邮件面板的附件行下载，引导用户前往那里（或在此读取其内容）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_mail_search`
 
 搜索所有者的邮箱（在 Conexiones 中配置的 IMAP 连接），返回匹配的邮件信封：发件人、主题和日期。只读：从不标记、移动或删除邮件。当用户要求查看或查找邮件时使用。
@@ -2512,6 +2668,35 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
     "to",
     "subject",
     "text"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_trash`
+
+把一封邮件消息移到垃圾箱邮箱。使用 faberloom_mail_search 返回的 uid。这会写入邮箱：用于丢弃垃圾邮件或所有者总是丢弃的邮件，且仅在用户要求或某条规则授权时进行。传入 sender 与 subject，以便记录该丢弃模式。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "sender": {
+      "type": "string",
+      "description": "The sender line, for the learned pattern."
+    },
+    "subject": {
+      "type": "string",
+      "description": "The subject line, for the learned pattern."
+    }
+  },
+  "required": [
+    "uid"
   ]
 }
 ```
@@ -2938,6 +3123,31 @@ Resolve a space effective context: inherited plus local, minus exclusions, with 
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_spaces_find`
+
+按文本查找产品空间：通过把查询与空间的标题、上下文和记忆匹配，对此用户可读取的空间排序。空查询按创建顺序列出它们。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Text to look for; an empty string lists the readable spaces."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Most results to return; defaults to 10."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_spaces_get`
 
 Read one product space by id.
@@ -3029,6 +3239,27 @@ Read one file attached to a product space.
   },
   "required": [
     "fileId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_reference`
+
+按 id 解析一个产品空间：其有效上下文（继承、减去排除项、暴露冲突）、其继承的记忆、其附件元数据、其负责的 agent，以及要遵循的 MWT 指令。用它把另一个空间的上下文拉入当前工作。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
   ]
 }
 ```

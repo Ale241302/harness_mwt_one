@@ -30,7 +30,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-fs` | `edit`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (image-tool registration)`, `ctx.llm + an image-capable route (image-tool execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | `ctx.tools`, `ctx.subprocess`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments. |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
-| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source` | `ctx.tools`, `ctx.faberloomSpaces` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
+| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source` | `ctx.tools`, `ctx.faberloomSpaces` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
@@ -2251,6 +2251,41 @@ List the companies (legal entities) the current user belongs to, marking the act
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_email_draft`
+
+Prepare an email draft for the owner to review, written in the owner's voice. Never sends: the owner approves it in the Email panel.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "to": {
+      "type": "string",
+      "description": "Recipient addresses, comma-separated."
+    },
+    "subject": {
+      "type": "string",
+      "description": "Subject line."
+    },
+    "text": {
+      "type": "string",
+      "description": "Plain-text body, in the owner's voice."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space the draft belongs to, when scoped."
+    }
+  },
+  "required": [
+    "to",
+    "subject",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_events_ingest`
 
 Ingest one event for the current user: matching active routines start or dedupe.
@@ -2441,6 +2476,127 @@ Deliver events to waiting executions (persistent dispatcher tick).
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_mail_attachment`
+
+Save the original attachment(s) of one mailbox message into the session workspace as real files and return their paths, so the user can download the actual file rather than a reconstruction (or you can upload it with the business document tools). Use the uid from faberloom_mail_search; pass name to save one attachment. Read-only for the mailbox.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "name": {
+      "type": "string",
+      "description": "Save only the attachment with this exact name; every attachment otherwise."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_attachment_link`
+
+Upload one attachment of a mailbox message to the MWT.ONE storage as the signed-in user and return a download link for the user. Use the uid from faberloom_mail_search; pass name to pick an attachment. Fails when the console token is unavailable, so fall back to faberloom_mail_attachment (the real file in the workspace).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "name": {
+      "type": "string",
+      "description": "The attachment name to upload; the first attachment otherwise."
+    },
+    "scope": {
+      "type": "string",
+      "description": "Storage folder, e.g. \"documento/<id>\"; \"correo\" otherwise."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_download`
+
+Download one http(s) link found in a mail body (faberloom_mail_read returns them as links) into the session workspace as a real file and return its path. Use it for Excel/PDF/image download links, then read the file or upload it with the business document tools.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "An http(s) URL from the mail body, as returned by faberloom_mail_read."
+    },
+    "name": {
+      "type": "string",
+      "description": "File name to save as; derived from the URL otherwise."
+    }
+  },
+  "required": [
+    "url"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_mark_read`
+
+Mark one mailbox message as read (\Seen). Use the uid from faberloom_mail_search. This writes to the mailbox: only when the user asked or a rule authorizes it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_read`
+
+Read one message from the owner mailbox (the IMAP connection configured in Conexiones) by uid: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Use the uid printed by faberloom_mail_search; never probe uids in a loop. This returns the document text, not the original file: when the user asks for the attached file itself, do not rebuild it with a report tool — the original is downloadable from the Email panel attachment row, so point the user there (or offer to read its contents here).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_mail_search`
 
 Search the owner mailbox (the IMAP connection configured in Conexiones) and return matching message envelopes: from, subject, and date. Read-only: it never marks, moves, or deletes mail. Use it when the user asks to review or find mail.
@@ -2506,6 +2662,35 @@ Send a plain-text email through the owner SMTP connection (configured in Conexio
     "to",
     "subject",
     "text"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_trash`
+
+Move one mailbox message to the Trash mailbox. Use the uid from faberloom_mail_search. This writes to the mailbox: use it to discard spam or mail the owner always discards, and only when the user asked or a rule authorizes it. Pass sender and subject so the discard pattern is recorded.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "sender": {
+      "type": "string",
+      "description": "The sender line, for the learned pattern."
+    },
+    "subject": {
+      "type": "string",
+      "description": "The subject line, for the learned pattern."
+    }
+  },
+  "required": [
+    "uid"
   ]
 }
 ```
@@ -2932,6 +3117,31 @@ Resolve a space effective context: inherited plus local, minus exclusions, with 
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_spaces_find`
+
+Find product spaces by text: ranks the spaces this user may read by matching the query against their title, context, and memory. An empty query lists them in creation order.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Text to look for; an empty string lists the readable spaces."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Most results to return; defaults to 10."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_spaces_get`
 
 Read one product space by id.
@@ -3023,6 +3233,27 @@ Read one file attached to a product space.
   },
   "required": [
     "fileId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_reference`
+
+Resolve one product space by id: its effective context (inherited, minus exclusions, conflicts surfaced), its inherited memory, its attached-file metadata, its responsible agent, and the MWT directives to follow. Use it to pull another space's context into the current work.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
   ]
 }
 ```
