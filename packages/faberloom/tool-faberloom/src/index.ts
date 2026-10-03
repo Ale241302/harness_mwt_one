@@ -419,6 +419,13 @@ export function apply(ctx: Context, config: Config): void {
       order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 1,
       text: 'Un mensaje que empieza con @Nombre se dirige al agente de ese nombre del catálogo: actúa como ese especialista (su responsabilidad, contexto y política de modelo) usando las tools faberloom_agents_*, en vez de responder como generalista. Un mensaje que empieza con /nombre invoca la skill de ese nombre. Si el nombre no existe, dilo y ofrece los disponibles con faberloom_agents_list.',
     }), 'tool-faberloom: mention prompt')
+
+    // The cross-space rule: resolve another Space's context by tool, never invent it.
+    ctx.effect(() => prompt.section({
+      name: 'faberloom:spaces',
+      order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 2,
+      text: 'Si una tarea necesita el contexto de otro Space y no conoces su id, usa faberloom_spaces_find para localizarlo por texto y faberloom_spaces_reference para extraer su contexto, memoria y archivos; no inventes contexto. Enlaza siempre el Space por el id que devuelve faberloom_spaces_find.',
+    }), 'tool-faberloom: spaces prompt')
   }
 
   ctx.tools.register(defineTool({
@@ -845,6 +852,121 @@ export function apply(ctx: Context, config: Config): void {
       return { name: file.name, mediaType: file.mediaType, contentBase64: file.contentBase64 }
     },
     presentCall: args => ({ card: 'generic', title: 'Read space file', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_spaces_find',
+    description: 'Find product spaces by text: ranks the spaces this user may read by matching the query against their title, context, and memory. An empty query lists them in creation order.',
+    parameters: {
+      query: { type: 'string', required: true, description: 'Text to look for; an empty string lists the readable spaces.' },
+      limit: { type: 'integer', description: 'Most results to return; defaults to 10.' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          matches: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                id: { type: 'string', required: true },
+                title: { type: 'string', required: true },
+                score: { type: 'integer', required: true },
+                reasons: { type: 'array', required: true, items: { type: 'string' } },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{
+        type: 'text',
+        text: value.matches.length === 0
+          ? 'No hay ningún Space que coincida con la búsqueda.'
+          : `Spaces que coinciden: ${value.matches.map(match => `${match.title} (${match.id}, score ${String(match.score)})`).join('; ')}.`,
+      }],
+    },
+    execute: async (args) => {
+      const matches = await spaces(ctx).find(actor(config), args.query, args.limit ?? 10)
+      return { matches: matches.map(match => ({ id: match.id, title: match.title, score: match.score, reasons: [...match.reasons] })) }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Find product spaces', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_spaces_reference',
+    description: 'Resolve one product space by id: its effective context (inherited, minus exclusions, conflicts surfaced), its inherited memory, its attached-file metadata, its responsible agent, and the MWT directives to follow. Use it to pull another space\'s context into the current work.',
+    parameters: { id: ID_PARAM },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          title: { type: 'string', required: true },
+          resolved: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                key: { type: 'string', required: true },
+                value: { type: 'string', required: true },
+              },
+            },
+          },
+          conflicts: { type: 'array', required: true, items: { type: 'string' } },
+          memory: { type: 'array', required: true, items: { type: 'string' } },
+          files: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true },
+                mediaType: { type: 'string', required: true },
+                size: { type: 'integer', required: true },
+              },
+            },
+          },
+          agentId: { type: 'string', required: true },
+          workspaceId: { type: 'string', required: true },
+          directives: { type: 'array', required: true, items: { type: 'string' } },
+        },
+      },
+      render: (_args, value) => [{
+        type: 'text',
+        text: [
+          `Space ${value.title} (${value.id}).`,
+          `Contexto: ${value.resolved.map(entry => `${entry.key}=${entry.value}`).join(', ') || 'ninguno'}.`,
+          `Conflictos: ${value.conflicts.join(', ') || 'ninguno'}.`,
+          `Memoria: ${value.memory.join(' | ') || 'ninguna'}.`,
+          `Archivos: ${value.files.map(file => `${file.name} (${file.mediaType}, ${String(file.size)} bytes)`).join(', ') || 'ninguno'}.`,
+          `Agente responsable: ${value.agentId || 'ninguno'}. Workspace: ${value.workspaceId || 'ninguno'}.`,
+          `Directivas: ${value.directives.join(' | ') || 'ninguna'}.`,
+        ].join(' '),
+      }],
+    },
+    execute: async (args) => {
+      const reference = await spaces(ctx).reference(actor(config), args.id as FaberLoomSpaceId)
+      return {
+        id: reference.space.id,
+        title: reference.space.title,
+        resolved: Object.entries(reference.context.resolved).map(([key, value]) => ({ key, value })),
+        conflicts: reference.context.conflicts.map(conflict => conflict.key),
+        memory: reference.memory.map(entry => entry.text),
+        files: reference.files.map(file => ({ name: file.name, mediaType: file.mediaType, size: file.size })),
+        agentId: reference.agentId ?? '',
+        workspaceId: reference.workspaceId ?? '',
+        directives: [...reference.context.directives],
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Reference product space', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({

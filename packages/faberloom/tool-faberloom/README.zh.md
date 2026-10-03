@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包注册读写原生产品服务的、面向模型的工具：空间、agent、模型、例程、执行、工作台、来源、邮件（IMAP 搜索与 SMTP 发送），以及 MWT.ONE 租户路由器。路由器——`faberloom_companies`、`faberloom_mwt_call`、`faberloom_mwt_find`——通过把同一条读查询扇出到用户 `legal_entity_ids` 中的每个租户（绝不越界）来回答"这份数据在用户的哪家公司"；每次按公司调用都经过同一个 JSON-RPC 客户端，在 `X-MWT-Client-ID` 中携带该租户，且控制台对每次调用仍强制执行角色与权限。
+此包注册读写原生产品服务的、面向模型的工具：空间、agent、模型、例程、执行、工作台、来源、邮件（IMAP 搜索与 SMTP 发送），以及 MWT.ONE 租户路由器。路由器——`faberloom_companies`、`faberloom_mwt_call`、`faberloom_mwt_find`——通过把同一条读查询扇出到用户 `legal_entity_ids` 中的每个租户（绝不越界）来回答"这份数据在用户的哪家公司"；每次按公司调用都经过同一个 JSON-RPC 客户端，在 `X-MWT-Client-ID` 中携带该租户，且控制台对每次调用仍强制执行角色与权限。它还提供跨空间解析工具 `faberloom_spaces_find` 与 `faberloom_spaces_reference`，按文本定位空间并返回其有效上下文、记忆与附件元数据。
 
 ## 目录
 
@@ -50,6 +50,7 @@ kind: "package-reference"
 
 - **租户路由器把副作用交给控制台裁决。** `faberloom_mwt_call` 与 `faberloom_mwt_find` 只约束租户（绝不超出用户的公司）；一个工具是读还是写由 MWT.ONE 控制台的 RBAC 决定，而不是 FaberLoom 侧的允许名单。
 - **公司名即 id。** 控制台返回的 `legal_entity_ids` 是不透明 id；显示名映射推迟到控制台提供为止。
+- **词法空间查找（v1）。** `faberloom_spaces_find` 按折叠词项对空间标题、上下文与记忆排序；它不读取附件内容。`faberloom_spaces_reference` 只返回文件元数据，不含字节。
 
 <a id="dev-note"></a>
 ### 开发备注
