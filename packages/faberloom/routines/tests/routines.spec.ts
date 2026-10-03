@@ -316,4 +316,95 @@ describe('FaberLoomRoutines', () => {
     expect(started.execution.steps.s1?.result).toEqual({ mode: 'fast', n: 2 })
     expect(started.execution.steps.s2?.result).toEqual({})
   })
+
+  it('skips gated steps whose condition result does not match and runs the rest', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('decide', () => ({ passed: false }))
+    routines.registerHandler('act', () => 'acted')
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'gate',
+      definition: {
+        intent: 'ramifica',
+        triggers: [],
+        steps: [
+          { id: 'c', instruction: 'decide', handler: 'decide' },
+          { id: 'yes', instruction: 'run', handler: 'act', dependsOn: ['c'], gate: { stepId: 'c', expect: true } },
+          { id: 'no', instruction: 'run', handler: 'act', dependsOn: ['c'], gate: { stepId: 'c', expect: false } },
+          { id: 'ghost', instruction: 'run', handler: 'act', gate: { stepId: 'missing', expect: true } },
+          { id: 'after', instruction: 'run', handler: 'act', dependsOn: ['yes'], gate: { stepId: 'yes', expect: true } },
+        ],
+        expectedResult: 'acted',
+        permissions: [],
+        failurePolicy: 'stop',
+      },
+    })
+    await routines.activateRoutine(OWNER, routine.id)
+    const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'gate-1', channel: 'manual' })
+    expect(started.execution.status).toBe('completed')
+    expect(started.execution.steps.yes).toMatchObject({ status: 'skipped', reason: 'GATED' })
+    expect(started.execution.steps.no).toMatchObject({ status: 'completed', result: 'acted' })
+    expect(started.execution.steps.ghost).toMatchObject({ status: 'completed' })
+    expect(started.execution.steps.after).toMatchObject({ status: 'completed' })
+  })
+
+  it('runs a step whose gate condition passed', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('decide', () => ({ passed: true }))
+    routines.registerHandler('act', () => 'acted')
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'gate-pass',
+      definition: {
+        intent: 'ramifica',
+        triggers: [],
+        steps: [
+          { id: 'c', instruction: 'decide', handler: 'decide' },
+          { id: 'yes', instruction: 'run', handler: 'act', dependsOn: ['c'], gate: { stepId: 'c', expect: true } },
+        ],
+        expectedResult: 'acted',
+        permissions: [],
+        failurePolicy: 'stop',
+      },
+    })
+    await routines.activateRoutine(OWNER, routine.id)
+    const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'gate-2', channel: 'manual' })
+    expect(started.execution.steps.yes).toMatchObject({ status: 'completed', result: 'acted' })
+  })
+
+  it('resumes a timed delay once its deadline passes, not before', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('step', () => 'done')
+    const timed = await routines.createRoutine(OWNER, {
+      name: 'timed',
+      definition: {
+        intent: 'espera',
+        triggers: [],
+        steps: [{ id: 's1', instruction: 'espera', handler: 'step', waitFor: '@delay:60' }],
+        expectedResult: 'done',
+        permissions: [],
+        failurePolicy: 'stop',
+      },
+    })
+    await routines.activateRoutine(OWNER, timed.id)
+    const started = await routines.startExecution({ routineId: timed.id, idempotencyKey: 'delay-1', channel: 'manual' })
+    expect(started.execution).toMatchObject({ status: 'waiting', waitingFor: '@delay:60' })
+
+    const event = await routines.createRoutine(OWNER, {
+      name: 'event',
+      definition: {
+        intent: 'espera evento',
+        triggers: [],
+        steps: [{ id: 's1', instruction: 'espera', handler: 'step', waitFor: 'reply' }],
+        expectedResult: 'done',
+        permissions: [],
+        failurePolicy: 'stop',
+      },
+    })
+    await routines.activateRoutine(OWNER, event.id)
+    await routines.startExecution({ routineId: event.id, idempotencyKey: 'event-1', channel: 'manual' })
+
+    expect((await routines.tick({ events: [], now: new Date().toISOString() })).resumed).toHaveLength(0)
+    const resumed = await routines.tick({ events: [], now: new Date(Date.now() + 120_000).toISOString() })
+    expect(resumed.resumed).toHaveLength(1)
+    expect((await routines.getExecution(started.execution.id)).status).toBe('completed')
+  })
 })

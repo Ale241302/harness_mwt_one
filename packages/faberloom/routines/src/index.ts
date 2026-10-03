@@ -83,6 +83,8 @@ function normalizeDefinition(input: RoutineDefinitionInput): RoutineDefinition {
       handler: step.handler,
       dependsOn: step.dependsOn !== undefined ? [...step.dependsOn] : [],
       config: step.config !== undefined ? { ...step.config } : {},
+      gateStepId: step.gate?.stepId ?? null,
+      gateExpect: step.gate?.expect ?? null,
       waitFor: step.waitFor ?? null,
       effect: step.effect ?? false,
       revalidateKey: step.revalidateKey ?? null,
@@ -105,6 +107,8 @@ function toStoredDefinition(definition: RoutineDefinition): RoutineRecord['defin
       handler: step.handler,
       dependsOn: [...step.dependsOn],
       config: { ...step.config },
+      gateStepId: step.gateStepId,
+      gateExpect: step.gateExpect,
       waitFor: step.waitFor,
       effect: step.effect,
       revalidateKey: step.revalidateKey,
@@ -148,6 +152,11 @@ function validateDefinition(definition: RoutineDefinition, handlers: ReadonlySet
   return problems
 }
 
+/** Whether a gate step's result reported `passed: true`. */
+function gatePassed(result: unknown): boolean {
+  return result !== null && typeof result === 'object' && (result as { passed?: unknown }).passed === true
+}
+
 /** Order steps so every dependency precedes its dependents. */
 function orderSteps(steps: readonly RoutineStep[]): RoutineStep[] {
   const done = new Set<string>()
@@ -163,6 +172,17 @@ function orderSteps(steps: readonly RoutineStep[]): RoutineStep[] {
     remaining = remaining.filter(step => !done.has(step.id))
   }
   return out
+}
+
+/**
+ * Parse a compiled delay wait (`@delay:<seconds>`) into milliseconds, or null
+ * when the pattern is an event key, subject substring, or regex.
+ * @param pattern - the step's wait pattern.
+ * @returns the delay in milliseconds, or null.
+ */
+function delayMsOf(pattern: string): number | null {
+  const match = /^@delay:(\d+(?:\.\d+)?)$/.exec(pattern)
+  return match === null ? null : Number(match[1]) * 1000
 }
 
 /** Whether an event satisfies a wait pattern: `/regex/`, an exact key, or a subject substring. */
@@ -607,6 +627,15 @@ export class FaberLoomRoutines extends Service {
     for (const step of orderSteps(definition.steps)) {
       const state = steps[step.id]
       if (state !== undefined && state.status === 'completed') continue
+      if (step.gateStepId !== null) {
+        const gate = steps[step.gateStepId]
+        if (gate !== undefined && gate.status === 'completed' && gatePassed(gate.result) !== (step.gateExpect === true)) {
+          steps[step.id] = { status: 'skipped', result: null, reason: 'GATED' }
+          record = { ...record, steps, updatedAt: new Date().toISOString() }
+          await this.saveExecution(id, record)
+          continue
+        }
+      }
       if (step.waitFor !== null && (event === undefined || !eventMatches(step.waitFor, event))) {
         steps[step.id] = { status: 'waiting', result: null, reason: null }
         const at = new Date().toISOString()
@@ -615,7 +644,7 @@ export class FaberLoomRoutines extends Service {
           steps,
           status: 'waiting',
           waitingFor: step.waitFor,
-          deadlineAt: new Date(Date.parse(at) + this.waitTimeoutMs()).toISOString(),
+          deadlineAt: new Date(Date.parse(at) + (delayMsOf(step.waitFor) ?? this.waitTimeoutMs())).toISOString(),
           updatedAt: at,
         }
         await this.saveExecution(id, record)
@@ -700,10 +729,20 @@ export class FaberLoomRoutines extends Service {
    */
   async tick(request: TickRequest): Promise<TickResult> {
     const resumed: FaberLoomExecutionId[] = []
+    const events = [...request.events]
+    if (request.now !== undefined) {
+      const now = Date.parse(request.now)
+      for (const [, record] of (await this.executions()).entries()) {
+        if (record.status !== 'waiting' || record.waitingFor === null) continue
+        if (delayMsOf(record.waitingFor) === null) continue
+        if (Date.parse(record.deadlineAt as string) > now) continue
+        events.push({ key: record.waitingFor, type: 'date' })
+      }
+    }
     for (const [rawId, record] of (await this.executions()).entries()) {
       if (record.status !== 'waiting' || record.waitingFor === null) continue
       const waitingFor = record.waitingFor
-      const match = request.events.find(candidate => eventMatches(waitingFor, candidate))
+      const match = events.find(candidate => eventMatches(waitingFor, candidate))
       if (match === undefined) continue
       const definition = await this.getRoutineVersion(record.routineId, record.routineVersion)
       const id = rawId as FaberLoomExecutionId

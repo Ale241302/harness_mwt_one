@@ -7329,11 +7329,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineStep',
-    declaration: 'export interface RoutineStep {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly config: Readonly<Record<string, unknown>>;\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n    readonly revalidateKey: string | null;\n    readonly revalidateExpect: string | null;\n}',
+    declaration: 'export interface RoutineStep {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly config: Readonly<Record<string, unknown>>;\n    readonly gateStepId: string | null;\n    readonly gateExpect: boolean | null;\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n    readonly revalidateKey: string | null;\n    readonly revalidateExpect: string | null;\n}',
   },
   {
     name: 'RoutineStepInput',
-    declaration: 'export interface RoutineStepInput {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn?: readonly string[];\n    readonly config?: Readonly<Record<string, unknown>>;\n    readonly waitFor?: string;\n    readonly effect?: boolean;\n    readonly revalidateKey?: string;\n    readonly revalidateExpect?: string;\n}',
+    declaration: 'export interface RoutineStepInput {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn?: readonly string[];\n    readonly config?: Readonly<Record<string, unknown>>;\n    readonly gate?: {\n        readonly stepId: string;\n        readonly expect: boolean;\n    } | undefined;\n    readonly waitFor?: string;\n    readonly effect?: boolean;\n    readonly revalidateKey?: string;\n    readonly revalidateExpect?: string;\n}',
   },
   {
     name: 'RoutineTrigger',
@@ -8189,7 +8189,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StepState',
-    declaration: 'export interface StepState {\n    readonly status: \'pending\' | \'running\' | \'waiting\' | \'completed\' | \'failed\';\n    readonly result: unknown;\n    readonly reason: string | null;\n}',
+    declaration: 'export interface StepState {\n    readonly status: \'pending\' | \'running\' | \'waiting\' | \'completed\' | \'failed\' | \'skipped\';\n    readonly result: unknown;\n    readonly reason: string | null;\n}',
   },
   {
     name: 'StorageBackend',

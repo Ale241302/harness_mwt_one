@@ -49,7 +49,7 @@ Independent of live requests: the registration never touches a request prefix.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Editing surfaces arrive on later slices** — chat tools, the browser editor, scheduling, sharing, liveness, and templates are Fases 3–9; the compiled runtime, activation, and migration are in place.
-- **No conditional edges yet** — the compiled routine is a dependency graph, so a `condition` node records a boolean but does not gate a branch; both branches' steps run. True branching and loops wait for the v2 graph executor.
+- **Branches are gated, not looped** — an edge from a `condition` node whose branch condition ends in `== true` or `== false` compiles to a step gate: the target step runs only when the condition's `{passed}` result matches, and is skipped otherwise. Loops and richer control flow still wait for the v2 graph executor.
 - **Owner-only access** — per-action permissions and cross-user grants arrive with the sharing slice.
 
 No invariant companion is published because the service owns one durable graph relation, and its unit and integration specs assert it; no observation outside those tests can diverge.

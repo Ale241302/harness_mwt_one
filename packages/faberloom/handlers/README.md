@@ -60,7 +60,7 @@ Each hidden Session keeps its own request prefix; steps of one execution share i
 <a id="known-limitations-and-deferred-work"></a>
 
 - **No conditional edges yet.** `condition` computes a boolean and `transform` a value, but the routines engine executes a dependency graph: both branches' steps run, and true branching and loops wait for the v2 graph executor. Effects a graph should skip are gated by the step results the handlers read.
-- **`delay` sleeps inline**, bounded at 300 seconds, like any long handler; a longer cadence belongs on a schedule trigger.
+- **`delay` waits on the engine clock.** A Work Flow `wait` node with `seconds` compiles to the reserved `@delay:<seconds>` wait: the engine parks the step until its deadline and resumes it, so a pass never sleeps in place. The handler's own bounded inline sleep remains only for a step authored directly with `seconds` and no `waitFor`.
 - **Effect steps need a grant.** `imap`, `smtp`, `board.create`, and `mcp.call` run only under an active grant for the routine's declared action (and `mcp.call` additionally for `mcp:<server>:<tool>`), and the engine ledgers them.
 - **Per-step agent model selection is deferred.** The agent step uses the deployment default model; the catalog agent's identity, skills, and Space context shape the prompt, but its provider/model does not yet override the step.
 - **Hidden Sessions are ordinary Sessions.** They record the deployment working directory — the assembled system prompt reads it — and are marked `origin: "subagent"`, which is the classification the workspace tree filters out of the owner's session list. Reading one means reading the session store by the id the step result carries.

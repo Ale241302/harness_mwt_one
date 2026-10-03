@@ -101,17 +101,50 @@ function triggerFor(node: TriggerNode): RoutineTriggerInput {
 }
 
 /** Compile one action node to a routine step input. */
-function stepFor(node: ActionNode, edges: readonly WorkFlowEdge[], triggerIds: ReadonlySet<WorkFlowNodeId>): RoutineStepInput {
+function stepFor(
+  node: ActionNode,
+  edges: readonly WorkFlowEdge[],
+  triggerIds: ReadonlySet<WorkFlowNodeId>,
+  nodeById: ReadonlyMap<string, WorkFlowNode>,
+): RoutineStepInput {
   const dependsOn = edges.filter(edge => edge.to === node.id && !triggerIds.has(edge.from)).map(edge => edge.from)
+  const gate = gateFor(node, edges, nodeById)
   const step: RoutineStepInput = {
     id: node.id,
     instruction: node.title,
     handler: HANDLER_BY_KIND[node.kind],
     dependsOn,
     config: node.config,
+    ...gate === undefined ? {} : { gate },
     effect: EFFECT_KINDS.has(node.kind),
   }
-  return node.kind === 'wait' && node.config.waitFor !== undefined ? { ...step, waitFor: node.config.waitFor } : step
+  if (node.kind !== 'wait') return step
+  const waitFor = node.config.waitFor ?? (node.config.seconds === undefined ? undefined : `@delay:${String(node.config.seconds)}`)
+  return waitFor === undefined ? step : { ...step, waitFor }
+}
+
+/**
+ * Derive a step's gate from an incoming edge whose source is a condition node
+ * and whose branch condition names `== true` or `== false`.
+ * @param node - the target action node.
+ * @param edges - every declared edge.
+ * @param nodeById - every declared node by id, to read the source kind.
+ * @returns the gate, or undefined when no condition edge gates this step.
+ */
+function gateFor(
+  node: ActionNode,
+  edges: readonly WorkFlowEdge[],
+  nodeById: ReadonlyMap<string, WorkFlowNode>,
+): { readonly stepId: string; readonly expect: boolean } | undefined {
+  for (const edge of edges) {
+    if (edge.to !== node.id || edge.condition === undefined) continue
+    const source = nodeById.get(edge.from)
+    if (source === undefined || source.kind !== 'condition') continue
+    const match = /==\s*(true|false)\s*$/i.exec(edge.condition)
+    if (match === null) continue
+    return { stepId: edge.from, expect: match[1]?.toLowerCase() === 'true' }
+  }
+  return undefined
 }
 
 /** Whether a graph has a directed cycle, via a topological count. */
@@ -198,9 +231,10 @@ export function compileWorkFlow(workflow: WorkFlow): RoutineDefinitionInput {
   const { definition } = workflow
   const triggers = definition.nodes.filter(isTriggerNode).map(triggerFor)
   const triggerIds = new Set(definition.nodes.filter(isTriggerNode).map(node => node.id))
+  const nodeById = new Map<string, WorkFlowNode>(definition.nodes.map(node => [node.id, node]))
   const steps = definition.nodes
     .filter((node): node is ActionNode => !isTriggerNode(node))
-    .map(node => stepFor(node, definition.edges, triggerIds))
+    .map(node => stepFor(node, definition.edges, triggerIds, nodeById))
   return {
     intent: definition.intent,
     triggers,

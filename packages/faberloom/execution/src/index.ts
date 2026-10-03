@@ -131,7 +131,7 @@ export class FaberLoomExecutions extends Service {
     this.running = true
     try {
       const started = await this.startDue(ownerId, now)
-      const { resumed } = await this.ctx.faberloomRoutines.tick({ events: [] })
+      const { resumed } = await this.ctx.faberloomRoutines.tick({ events: [], now: now.toISOString() })
       const reconciled = await this.reconcile()
       const expired = await this.ctx.faberloomRoutines.expireWaits(now)
       return { skipped: null, started, advanced: resumed.map(String), reconciled, expired: expired.map(String) }

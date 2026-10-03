@@ -60,7 +60,7 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **尚无条件边。** `condition` 计算布尔值、`transform` 计算值，但例程引擎执行的是依赖图：两个分支的步骤都会运行，真正的分支与循环要等 v2 图执行器。图应跳过的效果由处理器读取的步骤结果来把关。
-- **`delay` 内联休眠**，上限 300 秒，与任何长处理器一样；更长的节奏应放在 schedule 触发器上。
+- **`delay` 等待引擎时钟。** Work Flow 的 `wait` 节点带 `seconds` 时编译为保留等待 `@delay:<seconds>`：引擎挂起该步骤直到其截止时间再恢复，因此一次 pass 绝不原地休眠。处理器自带有界内联休眠仅用于直接编写、带 `seconds` 且无 `waitFor` 的步骤。
 - **效果步骤需要授权。** `imap`、`smtp`、`board.create` 与 `mcp.call` 仅在例程声明动作存在有效授权时运行（`mcp.call` 额外要求 `mcp:<server>:<tool>`），并由引擎记账。
 - **按步骤选择代理模型留待后续。** agent 步骤使用部署默认模型；目录代理的身份、技能与 Space 上下文塑造提示词，但其 provider/model 尚未覆盖该步骤。
 - **隐藏会话就是普通会话。** 它们记录部署的工作目录 —— 组装后的系统提示词会读取它 —— 并标记为 `origin: "subagent"`，工作区树正是按该分类把 owner 的会话列表过滤掉它们。读取它们只能通过步骤结果携带的 id 去读会话存储。

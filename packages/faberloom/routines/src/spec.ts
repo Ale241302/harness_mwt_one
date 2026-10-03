@@ -20,6 +20,9 @@ const stepRecord = z.object({
   // Kind-specific configuration; defaulted so routine versions written before
   // the field existed keep loading under the same domain version.
   config: z.record(z.string(), z.unknown()).default({}),
+  // Gate fields default so routine versions written before them keep loading.
+  gateStepId: z.string().nullable().default(null),
+  gateExpect: z.boolean().nullable().default(null),
   waitFor: z.string().nullable(),
   effect: z.boolean(),
   revalidateKey: z.string().nullable(),
@@ -70,6 +73,7 @@ export const routineVersionRecord = z.object({
 const stepStateRecord = z.object({
   status: z.union([
     z.literal('pending'), z.literal('running'), z.literal('waiting'), z.literal('completed'), z.literal('failed'),
+    z.literal('skipped'),
   ]),
   result: z.unknown(),
   reason: z.string().nullable(),

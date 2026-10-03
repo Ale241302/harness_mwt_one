@@ -47,6 +47,14 @@ export interface RoutineStep {
   readonly dependsOn: readonly string[]
   /** Kind-specific configuration the compiled routine carries; `{}` when none. */
   readonly config: Readonly<Record<string, unknown>>
+  /**
+   * A gate step whose completed `{passed}` result decides this step: the step
+   * runs only when `passed` equals the gate expectation, and is skipped
+   * otherwise. `null` runs unconditionally.
+   */
+  readonly gateStepId: string | null
+  /** Expected `passed` value of {@link gateStepId}`s result, or `null` with no gate. */
+  readonly gateExpect: boolean | null
   /** Event key or `/regex/` pattern the step waits for, or `null`. */
   readonly waitFor: string | null
   /** Whether the step performs a ledgered external effect. */
@@ -65,6 +73,8 @@ export interface RoutineStepInput {
   readonly dependsOn?: readonly string[]
   /** Kind-specific configuration; defaults to `{}`. */
   readonly config?: Readonly<Record<string, unknown>>
+  /** Gate step and expected `passed` value; omission runs unconditionally. */
+  readonly gate?: { readonly stepId: string; readonly expect: boolean } | undefined
   readonly waitFor?: string
   readonly effect?: boolean
   readonly revalidateKey?: string
@@ -140,7 +150,7 @@ export interface ExecutionEvidence {
 /** Per-step execution state. */
 export interface StepState {
   /** Step status. */
-  readonly status: 'pending' | 'running' | 'waiting' | 'completed' | 'failed'
+  readonly status: 'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'skipped'
   /** Step result. */
   readonly result: unknown
   /** Stable reason code, or `null`. */

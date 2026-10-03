@@ -23,8 +23,8 @@ function node(id: string, kind: WorkFlowNodeKind, config: Record<string, unknown
 }
 
 /** Build one test edge. */
-function edge(id: string, from: string, to: string): WorkFlowEdge {
-  return { id: eid(id), from: nid(from), to: nid(to) }
+function edge(id: string, from: string, to: string, condition?: string): WorkFlowEdge {
+  return { id: eid(id), from: nid(from), to: nid(to), ...condition === undefined ? {} : { condition } }
 }
 
 /** Build one test definition. */
@@ -292,7 +292,7 @@ describe('compileWorkFlow', () => {
       ['a9', 'subroutine', false, undefined],
       ['a10', 'condition', false, undefined],
       ['a11', 'transform', false, undefined],
-      ['a12', 'delay', false, undefined],
+      ['a12', 'delay', false, '@delay:5'],
       ['a13', 'delay', false, 'reply'],
       ['a14', 'notify', false, undefined],
       ['a15', 'deadletter', false, undefined],
@@ -307,5 +307,41 @@ describe('compileWorkFlow', () => {
     const compiled = compileWorkFlow(workflow(fanIn))
     expect(compiled.steps.find(step => step.id === 'c')?.dependsOn).toEqual(['a', 'b'])
     expect(compiled.steps.find(step => step.id === 'a')?.dependsOn).toEqual([])
+  })
+
+  it('gates a step on the condition edge that reaches it', () => {
+    const branched = definition(
+      [
+        node('c', 'condition', { expression: 'spam == true' }),
+        node('yes', 'notify', { kind: 'email' }),
+        node('no', 'deadletter', {}),
+      ],
+      [edge('e1', 'c', 'yes', 'spam == true'), edge('e2', 'c', 'no', 'spam == false')],
+    )
+    const compiled = compileWorkFlow(workflow(branched))
+    expect(compiled.steps.find(step => step.id === 'yes')?.gate).toEqual({ stepId: 'c', expect: true })
+    expect(compiled.steps.find(step => step.id === 'no')?.gate).toEqual({ stepId: 'c', expect: false })
+
+    const ungated = definition(
+      [
+        node('a', 'agent', { agentId: 'a', instruction: 'i' }),
+        node('c', 'condition', { expression: 'x' }),
+        node('t', 'notify', { kind: 'board' }),
+      ],
+      [edge('e1', 'a', 't', 'spam == true'), edge('e2', 'c', 't', 'spam > 2')],
+    )
+    const plain = compileWorkFlow(workflow(ungated))
+    expect(plain.steps.find(step => step.id === 't')?.gate).toBeUndefined()
+  })
+
+  it('compiles a wait node to an event wait, a bounded delay, or neither', () => {
+    const waits = definition(
+      [node('w1', 'wait', { waitFor: 'reply' }), node('w2', 'wait', { seconds: 5 }), node('w3', 'wait', {})],
+      [],
+    )
+    const compiled = compileWorkFlow(workflow(waits))
+    expect(compiled.steps.find(step => step.id === 'w1')?.waitFor).toBe('reply')
+    expect(compiled.steps.find(step => step.id === 'w2')?.waitFor).toBe('@delay:5')
+    expect(compiled.steps.find(step => step.id === 'w3')?.waitFor).toBeUndefined()
   })
 })
