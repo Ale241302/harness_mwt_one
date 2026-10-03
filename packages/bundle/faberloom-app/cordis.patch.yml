@@ -16,6 +16,10 @@
     - id: faberloom-routines
       name: '@deepseek-ai/dsh-faberloom-routines'
 
+    # Grafos de trabajo versionados compilados a rutinas; el motor los ejecuta.
+    - id: faberloom-workflows
+      name: '@deepseek-ai/dsh-faberloom-workflows'
+
     - id: faberloom-execution
       name: '@deepseek-ai/dsh-faberloom-execution'
 
