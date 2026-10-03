@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package registers the model-visible `faberloom_*` product tools over the native services: spaces, agents, models, routines, executions, board, sources, mail, the MWT.ONE tenant router, cross-space resolution (`faberloom_spaces_find`, `_reference`, `_ask`), and opt-in space-memory and teaching tools. The router fans one read query out to every `legal_entity_ids` tenant, never outside them, and the console still enforces role and permissions on each call.
+This package registers the model-visible `faberloom_*` product tools over the native services: spaces, agents, models, routines, executions, board, sources, mail, the MWT.ONE tenant router, cross-space resolution (`faberloom_spaces_find`, `_reference`, `_ask`), and opt-in space-memory, teaching, and Work Flow graph tools. The router fans one read query out to every `legal_entity_ids` tenant, never outside them, and the console still enforces role and permissions on each call.
 
 ## Table of Contents
 
@@ -53,6 +53,7 @@ Adding or removing a tool changes the tool block, which can invalidate reuse fro
 - **Lexical space lookup (v1).** `faberloom_spaces_find` ranks by folded terms over a space title, context, and memory; it does not read attached-file contents, and an empty query lists the most recently created readable spaces. `faberloom_spaces_reference` returns file metadata without bytes.
 - **Delegated consultation (v1).** `faberloom_spaces_ask` runs one one-shot delegation through `askProvider` (default `spawn`); `continuable` is rejected, delegation depth applies, and the child inherits the parent's merged tool plane. The child runs in the parent's workspace because `resolveWorkdir` returns an opaque reference, not a path; running in the Space's real workdir is deferred.
 - **Memory tools are opt-in.** `memoryTools` (default off) registers the space-memory (`faberloom_spaces_remember`/`_memory_list`/`_forget`) and teaching (`faberloom_memory_teach`/`_teachings`/`_revoke`/`_retrieve`) tools; it stays off by default because they add permanent request schema. This explicit, versioned layer is FaberLoom's; automatic episodic memory is distilled by the external memory server (see `MANIFEST.md`), not by these tools.
+- **Work Flow tools are opt-in.** `workflowTools` (default off) registers the graph tools (`faberloom_workflows_list`/`_get`/`_create`/`_add_node`/`_update_node`/`_remove_node`/`_connect`/`_disconnect`/`_set_trigger`/`_validate`/`_activate`/`_pause`/`_run_now`/`_runs`) and the directive to build an automation as a graph and validate before activating. It stays off by default because they add permanent request schema.
 
 No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
 

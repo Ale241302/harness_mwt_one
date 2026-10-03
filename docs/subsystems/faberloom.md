@@ -2032,6 +2032,68 @@ async get(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>
 async update(actor: WorkFlowActor, id: WorkFlowId, patch: UpdateWorkFlowInput): Promise<WorkFlow>
 
 /**
+ * Append one node to a work flow the actor owns.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param input - node title, kind, optional config, and optional id.
+ * @returns the updated work flow.
+ * @throws when the node id repeats an existing node.
+ */
+async addNode(actor: WorkFlowActor, id: WorkFlowId, input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }): Promise<WorkFlow>
+
+/**
+ * Change one node's title, kind, or config values (merged into its config).
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param nodeId - the node to change.
+ * @param patch - fields to change; `config` merges over the node's config.
+ * @returns the updated work flow.
+ * @throws when the node does not exist.
+ */
+async updateNode(actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId, patch: { title?: string | undefined; kind?: WorkFlowNodeKind | undefined; config?: Record<string, unknown> | undefined }): Promise<WorkFlow>
+
+/**
+ * Remove one node and every edge incident to it.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param nodeId - the node to remove.
+ * @returns the updated work flow.
+ * @throws when the node does not exist.
+ */
+async removeNode(actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId): Promise<WorkFlow>
+
+/**
+ * Add a directed edge between two existing nodes.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param input - source, target, and optional branch condition.
+ * @returns the updated work flow.
+ * @throws when a referenced node does not exist.
+ */
+async connect(actor: WorkFlowActor, id: WorkFlowId, input: { from: WorkFlowNodeId; to: WorkFlowNodeId; condition?: string | undefined }): Promise<WorkFlow>
+
+/**
+ * Remove one edge.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param edgeId - the edge to remove.
+ * @returns the updated work flow.
+ * @throws when the edge does not exist.
+ */
+async disconnect(actor: WorkFlowActor, id: WorkFlowId, edgeId: WorkFlowEdgeId): Promise<WorkFlow>
+
+/**
+ * Replace the flow's trigger with one new trigger node of the given kind,
+ * dropping edges that referenced the removed triggers.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param input - trigger kind and optional config.
+ * @returns the updated work flow.
+ * @throws when the kind is not a trigger kind.
+ */
+async setTrigger(actor: WorkFlowActor, id: WorkFlowId, input: { kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }): Promise<WorkFlow>
+
+/**
  * Change one work flow's lifecycle. Activating validates the graph and
  * resolves the compiled routine id; an invalid graph is refused.
  * @param actor - the acting identity.
@@ -2065,6 +2127,23 @@ async compile(actor: WorkFlowActor, id: WorkFlowId): Promise<RoutineDefinitionIn
  * @returns whether the stored record was deleted.
  */
 async remove(actor: WorkFlowActor, id: WorkFlowId): Promise<boolean>
+
+/**
+ * Start one manual execution of an active work flow.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the started execution id and whether the engine deduped it.
+ * @throws when the flow has no activated routine.
+ */
+async runNow(actor: WorkFlowActor, id: WorkFlowId): Promise<{ executionId: string; deduped: boolean }>
+
+/**
+ * List one work flow's executions, oldest first.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the executions, or an empty list when the flow has no routine.
+ */
+async runs(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly Execution[]>
 ```
 
 Source: [`packages/faberloom/workflows/src/index.ts`](../../packages/faberloom/workflows/src/index.ts)

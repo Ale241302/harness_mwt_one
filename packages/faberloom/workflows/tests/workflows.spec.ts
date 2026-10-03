@@ -197,6 +197,52 @@ describe('FaberLoomWorkflows', () => {
     const { fiber } = await harness()
     await fiber.dispose()
   })
+
+  it('F4 · edits a flow node by node and runs it on demand', async () => {
+    const { workflows, routines } = await harness()
+    const flow = await workflows.create(OWNER, { name: 'chat', definition: { intent: 'x', nodes: [], edges: [], permissions: [], failurePolicy: 'stop' } })
+    const withTrigger = await workflows.setTrigger(OWNER, flow.id, { kind: 'trigger.manual' })
+    expect(withTrigger.definition.nodes.filter(node => node.kind === 'trigger.manual')).toHaveLength(1)
+    const triggerId = withTrigger.definition.nodes[0]!.id
+
+    const added = await workflows.addNode(OWNER, flow.id, { id: 'a', title: 'actúa', kind: 'agent', config: { agentId: 'ag', instruction: 'i' } })
+    expect(added.version).toBe(3)
+    await workflows.addNode(OWNER, flow.id, { id: 'b', title: 'sin config', kind: 'deadletter' })
+    await expect(workflows.addNode(OWNER, flow.id, { id: 'a', title: 'x', kind: 'agent' })).rejects.toThrow('already has node')
+
+    const connected = await workflows.connect(OWNER, flow.id, { from: triggerId, to: 'a' as WorkFlowNodeId, condition: 'x == true' })
+    expect(connected.definition.edges[0]?.condition).toBe('x == true')
+    const withoutCondition = await workflows.connect(OWNER, flow.id, { from: triggerId, to: 'a' as WorkFlowNodeId })
+    const toDisconnect = withoutCondition.definition.edges[1]!.id
+    await workflows.connect(OWNER, flow.id, { from: 'a' as WorkFlowNodeId, to: 'b' as WorkFlowNodeId })
+    await workflows.connect(OWNER, flow.id, { from: 'b' as WorkFlowNodeId, to: 'a' as WorkFlowNodeId })
+    await expect(workflows.connect(OWNER, flow.id, { from: triggerId, to: 'ghost' as WorkFlowNodeId })).rejects.toThrow('two existing nodes')
+
+    const retitled = await workflows.updateNode(OWNER, flow.id, 'a' as WorkFlowNodeId, { title: 'actúa v2' })
+    expect(retitled.definition.nodes.find(node => node.id === 'a')?.title).toBe('actúa v2')
+    const rekinded = await workflows.updateNode(OWNER, flow.id, 'a' as WorkFlowNodeId, { kind: 'notify', config: { kind: 'email' } })
+    expect(rekinded.definition.nodes.find(node => node.id === 'a')).toMatchObject({ kind: 'notify', config: { kind: 'email', instruction: 'i' } })
+    await expect(workflows.updateNode(OWNER, flow.id, 'ghost' as WorkFlowNodeId, { title: 'x' })).rejects.toThrow('has no node')
+
+    await workflows.disconnect(OWNER, flow.id, toDisconnect)
+    await expect(workflows.disconnect(OWNER, flow.id, toDisconnect)).rejects.toThrow('has no edge')
+    await workflows.setTrigger(OWNER, flow.id, { kind: 'trigger.manual', config: {} })
+    await expect(workflows.setTrigger(OWNER, flow.id, { kind: 'agent' })).rejects.toThrow('not a trigger kind')
+
+    const removed = await workflows.removeNode(OWNER, flow.id, 'a' as WorkFlowNodeId)
+    expect(removed.definition.nodes.some(node => node.id === 'a')).toBe(false)
+    await expect(workflows.removeNode(OWNER, flow.id, 'ghost' as WorkFlowNodeId)).rejects.toThrow('has no node')
+
+    const runFlow = await workflows.create(OWNER, { name: 'run', definition: simple })
+    await expect(workflows.runNow(OWNER, runFlow.id)).rejects.toThrow('is not active')
+    expect(await workflows.runs(OWNER, runFlow.id)).toEqual([])
+    const active = await workflows.setStatus(OWNER, runFlow.id, 'active')
+    const started = await workflows.runNow(OWNER, active.id)
+    expect(typeof started.executionId).toBe('string')
+    expect(await workflows.runs(OWNER, active.id)).toHaveLength(1)
+    expect((await routines.getExecution(started.executionId as never)).routineId).toBe(active.routineId)
+    await workflows.addNode(OWNER, active.id, { title: 'extra', kind: 'notify', config: { kind: 'board' } })
+  })
 })
 
 describe('workFlowRecord schema', () => {

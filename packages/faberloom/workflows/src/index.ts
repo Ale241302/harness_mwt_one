@@ -12,7 +12,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { workflowsDomainSpec } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
-import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput, FaberLoomRoutineId } from '@deepseek-ai/dsh-faberloom-routines'
+import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput, FaberLoomRoutineId, Execution } from '@deepseek-ai/dsh-faberloom-routines'
 import type {
   CreateWorkFlowInput,
   UpdateWorkFlowInput,
@@ -20,9 +20,11 @@ import type {
   WorkFlowActor,
   WorkFlowDefinition,
   WorkFlowEdge,
+  WorkFlowEdgeId,
   WorkFlowId,
   WorkFlowNode,
   WorkFlowNodeId,
+  WorkFlowNodeKind,
   WorkFlowRecord,
   WorkFlowScope,
   WorkFlowStatus,
@@ -401,6 +403,170 @@ export class FaberLoomWorkflows extends Service {
   }
 
   /**
+   * Persist a new definition for an owned flow, bumping the version and
+   * reconciling an active flow's compiled routine and waiting executions.
+   * @param table - the workflows table handle.
+   * @param id - work flow id.
+   * @param record - the owned record the edit starts from.
+   * @param definition - the graph to store.
+   * @returns the updated work flow.
+   */
+  private async writeDefinition(
+    table: KvTable<WorkFlowId, WorkFlowRecord>,
+    id: WorkFlowId,
+    record: WorkFlowRecord,
+    definition: WorkFlowDefinition,
+  ): Promise<WorkFlow> {
+    let next: WorkFlowRecord = { ...record, definition, updatedAt: new Date().toISOString(), version: record.version + 1 }
+    if (next.status === 'active') next = { ...next, routineId: await this.syncRoutine(id, next) }
+    await table.update(id, () => next)
+    return toWorkFlow(id, next)
+  }
+
+  /**
+   * Append one node to a work flow the actor owns.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param input - node title, kind, optional config, and optional id.
+   * @returns the updated work flow.
+   * @throws when the node id repeats an existing node.
+   */
+  async addNode(
+    actor: WorkFlowActor,
+    id: WorkFlowId,
+    input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined },
+  ): Promise<WorkFlow> {
+    const { table, record } = await this.requireOwned(actor, id)
+    const nodeId = brandString<WorkFlowNodeId>(input.id ?? randomUUID())
+    if (record.definition.nodes.some(node => node.id === nodeId)) {
+      throw new Error(`faberloom: work flow ${id} already has node ${nodeId}`)
+    }
+    const node = { id: nodeId, title: input.title, position: { x: 0, y: 0 }, kind: input.kind, config: input.config ?? {} } as WorkFlowNode
+    return await this.writeDefinition(table, id, record, { ...record.definition, nodes: [...record.definition.nodes, node] })
+  }
+
+  /**
+   * Change one node's title, kind, or config values (merged into its config).
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param nodeId - the node to change.
+   * @param patch - fields to change; `config` merges over the node's config.
+   * @returns the updated work flow.
+   * @throws when the node does not exist.
+   */
+  async updateNode(
+    actor: WorkFlowActor,
+    id: WorkFlowId,
+    nodeId: WorkFlowNodeId,
+    patch: { title?: string | undefined; kind?: WorkFlowNodeKind | undefined; config?: Record<string, unknown> | undefined },
+  ): Promise<WorkFlow> {
+    const { table, record } = await this.requireOwned(actor, id)
+    const index = record.definition.nodes.findIndex(node => node.id === nodeId)
+    if (index < 0) throw new Error(`faberloom: work flow ${id} has no node ${nodeId}`)
+    const current = record.definition.nodes[index] as WorkFlowNode
+    const updated = {
+      ...current,
+      ...patch.title === undefined ? {} : { title: patch.title },
+      ...patch.kind === undefined ? {} : { kind: patch.kind },
+      ...patch.config === undefined ? {} : { config: { ...current.config, ...patch.config } },
+    } as WorkFlowNode
+    const nodes = [...record.definition.nodes]
+    nodes[index] = updated
+    return await this.writeDefinition(table, id, record, { ...record.definition, nodes })
+  }
+
+  /**
+   * Remove one node and every edge incident to it.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param nodeId - the node to remove.
+   * @returns the updated work flow.
+   * @throws when the node does not exist.
+   */
+  async removeNode(actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId): Promise<WorkFlow> {
+    const { table, record } = await this.requireOwned(actor, id)
+    if (!record.definition.nodes.some(node => node.id === nodeId)) throw new Error(`faberloom: work flow ${id} has no node ${nodeId}`)
+    return await this.writeDefinition(table, id, record, {
+      ...record.definition,
+      nodes: record.definition.nodes.filter(node => node.id !== nodeId),
+      edges: record.definition.edges.filter(edge => edge.from !== nodeId && edge.to !== nodeId),
+    })
+  }
+
+  /**
+   * Add a directed edge between two existing nodes.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param input - source, target, and optional branch condition.
+   * @returns the updated work flow.
+   * @throws when a referenced node does not exist.
+   */
+  async connect(
+    actor: WorkFlowActor,
+    id: WorkFlowId,
+    input: { from: WorkFlowNodeId; to: WorkFlowNodeId; condition?: string | undefined },
+  ): Promise<WorkFlow> {
+    const { table, record } = await this.requireOwned(actor, id)
+    const ids = new Set(record.definition.nodes.map(node => node.id))
+    if (!ids.has(input.from) || !ids.has(input.to)) throw new Error(`faberloom: work flow ${id} connect needs two existing nodes`)
+    const edge: WorkFlowEdge = {
+      id: brandString<WorkFlowEdgeId>(randomUUID()),
+      from: input.from,
+      to: input.to,
+      ...input.condition === undefined ? {} : { condition: input.condition },
+    }
+    return await this.writeDefinition(table, id, record, { ...record.definition, edges: [...record.definition.edges, edge] })
+  }
+
+  /**
+   * Remove one edge.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param edgeId - the edge to remove.
+   * @returns the updated work flow.
+   * @throws when the edge does not exist.
+   */
+  async disconnect(actor: WorkFlowActor, id: WorkFlowId, edgeId: WorkFlowEdgeId): Promise<WorkFlow> {
+    const { table, record } = await this.requireOwned(actor, id)
+    if (!record.definition.edges.some(edge => edge.id === edgeId)) {
+      throw new Error(`faberloom: work flow ${id} has no edge ${edgeId}`)
+    }
+    return await this.writeDefinition(table, id, record, {
+      ...record.definition,
+      edges: record.definition.edges.filter(edge => edge.id !== edgeId),
+    })
+  }
+
+  /**
+   * Replace the flow's trigger with one new trigger node of the given kind,
+   * dropping edges that referenced the removed triggers.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param input - trigger kind and optional config.
+   * @returns the updated work flow.
+   * @throws when the kind is not a trigger kind.
+   */
+  async setTrigger(
+    actor: WorkFlowActor,
+    id: WorkFlowId,
+    input: { kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined },
+  ): Promise<WorkFlow> {
+    const { table, record } = await this.requireOwned(actor, id)
+    if (!TRIGGER_KINDS.has(input.kind)) throw new Error(`faberloom: ${input.kind} is not a trigger kind`)
+    const nodes = record.definition.nodes.filter(node => !isTriggerNode(node))
+    const kept = new Set(nodes.map(node => node.id))
+    const edges = record.definition.edges.filter(edge => kept.has(edge.from) && kept.has(edge.to))
+    const trigger = {
+      id: brandString<WorkFlowNodeId>(randomUUID()),
+      title: input.kind,
+      position: { x: 0, y: 0 },
+      kind: input.kind,
+      config: input.config ?? {},
+    } as WorkFlowNode
+    return await this.writeDefinition(table, id, record, { ...record.definition, nodes: [trigger, ...nodes], edges })
+  }
+
+  /**
    * Change one work flow's lifecycle. Activating validates the graph and
    * resolves the compiled routine id; an invalid graph is refused.
    * @param actor - the acting identity.
@@ -454,6 +620,36 @@ export class FaberLoomWorkflows extends Service {
   async remove(actor: WorkFlowActor, id: WorkFlowId): Promise<boolean> {
     const { table } = await this.requireOwned(actor, id)
     return await table.delete(id)
+  }
+
+  /**
+   * Start one manual execution of an active work flow.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @returns the started execution id and whether the engine deduped it.
+   * @throws when the flow has no activated routine.
+   */
+  async runNow(actor: WorkFlowActor, id: WorkFlowId): Promise<{ executionId: string; deduped: boolean }> {
+    const { record } = await this.requireOwned(actor, id)
+    if (record.routineId === null) throw new Error(`faberloom: work flow ${id} is not active`)
+    const started = await this.ctx.faberloomRoutines.startExecution({
+      routineId: brandString<FaberLoomRoutineId>(record.routineId),
+      idempotencyKey: `workflow-manual:${id}:${new Date().toISOString()}`,
+      channel: 'workflow',
+    })
+    return { executionId: started.execution.id, deduped: started.deduped }
+  }
+
+  /**
+   * List one work flow's executions, oldest first.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @returns the executions, or an empty list when the flow has no routine.
+   */
+  async runs(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly Execution[]> {
+    const { record } = await this.requireOwned(actor, id)
+    if (record.routineId === null) return []
+    return await this.ctx.faberloomRoutines.listExecutions({ routineId: brandString<FaberLoomRoutineId>(record.routineId) })
   }
 }
 

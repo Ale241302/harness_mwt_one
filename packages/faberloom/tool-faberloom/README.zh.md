@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包在原生产品服务之上注册面向模型的 `faberloom_*` 工具：空间、agent、模型、例程、执行、工作台、来源、邮件、MWT.ONE 租户路由器、跨空间解析（`faberloom_spaces_find`、`_reference`、`_ask`），以及可选启用的空间记忆与 teaching 工具。路由器把同一条读查询扇出到每个 `legal_entity_ids` 租户（绝不越界），控制台对每次调用仍强制执行角色与权限。
+此包在原生产品服务之上注册面向模型的 `faberloom_*` 工具：空间、agent、模型、例程、执行、工作台、来源、邮件、MWT.ONE 租户路由器、跨空间解析（`faberloom_spaces_find`、`_reference`、`_ask`），以及可选启用的空间记忆、teaching 与 Work Flow 图工具。路由器把同一条读查询扇出到每个 `legal_entity_ids` 租户（绝不越界），控制台对每次调用仍强制执行角色与权限。
 
 ## 目录
 
@@ -53,6 +53,7 @@ kind: "package-reference"
 - **词法空间查找（v1）。** `faberloom_spaces_find` 按折叠词项对空间标题、上下文与记忆排序；它不读取附件内容，空查询列出最近创建的可读空间。`faberloom_spaces_reference` 只返回文件元数据，不含字节。
 - **委托咨询（v1）。** `faberloom_spaces_ask` 通过 `askProvider`（默认 `spawn`）运行一次一次性委托；`continuable` 会被拒绝，委托深度适用，子代理继承父级合并后的工具面。子代理在父级工作区中运行，因为 `resolveWorkdir` 返回的是不透明引用而非路径；在空间真实工作目录中运行推迟到后续。
 - **记忆工具为可选启用。** `memoryTools`（默认关闭）注册空间记忆（`faberloom_spaces_remember`/`_memory_list`/`_forget`）与 teaching（`faberloom_memory_teach`/`_teachings`/`_revoke`/`_retrieve`）工具；默认关闭是因为它们会增加常驻请求 schema。这一显式且带版本的层归 FaberLoom 所有；自动情景记忆由外部记忆服务器蒸馏（见 `MANIFEST.md`），不是这些工具。
+- **Work Flow 工具为可选启用。** `workflowTools`（默认关闭）注册图工具（`faberloom_workflows_list`/`_get`/`_create`/`_add_node`/`_update_node`/`_remove_node`/`_connect`/`_disconnect`/`_set_trigger`/`_validate`/`_activate`/`_pause`/`_run_now`/`_runs`）以及"把自动化编辑为图并在激活前校验"的指令。默认关闭是因为它们会增加常驻请求 schema。
 
 未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
 

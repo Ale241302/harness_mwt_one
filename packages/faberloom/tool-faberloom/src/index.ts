@@ -10,6 +10,7 @@ import { basename, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { registerWorkflowTools } from './workflows.ts'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
 import type { FaberLoomSpaceId, FaberLoomSpaces, SpaceActor, SpaceContext, SpaceReference, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the agents service, read through ctx.get like the spaces service.
@@ -71,6 +72,8 @@ export interface Config {
   askProvider?: string
   /** Register the space-memory and teaching tools; opt-in, because they add request schema. */
   memoryTools?: boolean
+  /** Register the Work Flow graph tools; opt-in, because they add request schema. */
+  workflowTools?: boolean
 }
 
 /** Schemastery configuration for the product tools. */
@@ -87,6 +90,7 @@ export const Config: z<Config> = z.object({
   anydocApiKey: z.string().default(''),
   askProvider: z.string().default('spawn'),
   memoryTools: z.boolean().default(false),
+  workflowTools: z.boolean().default(false),
 })
 
 /** Resolve the mounted board service at call time, or fail loud. */
@@ -1343,6 +1347,17 @@ export function apply(ctx: Context, config: Config): void {
       }),
       presentCall: args => ({ card: 'generic', title: 'Retrieve teachings', kind: 'other', rawInput: args }),
     }))
+  }
+
+  if (config.workflowTools === true) {
+    if (prompt !== undefined) {
+      ctx.effect(() => prompt.section({
+        name: 'faberloom:workflows',
+        order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 3,
+        text: 'Cuando pidan automatizar algo, constrúyelo como un grafo de Work Flow con las tools faberloom_workflows_*: crea el flujo, define el disparador con faberloom_workflows_set_trigger, añade nodos con faberloom_workflows_add_node, conéctalos con faberloom_workflows_connect, y valida con faberloom_workflows_validate antes de faberloom_workflows_activate. Usa faberloom_workflows_run_now para probarlo y faberloom_workflows_runs para leer sus ejecuciones.',
+      }), 'tool-faberloom: workflows prompt')
+    }
+    registerWorkflowTools(ctx, actor(config))
   }
 
   ctx.tools.register(defineTool({

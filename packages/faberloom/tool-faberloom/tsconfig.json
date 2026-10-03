@@ -45,6 +45,9 @@
       "path": "../routines"
     },
     {
+      "path": "../workflows"
+    },
+    {
       "path": "../../subprocess/subprocess"
     }
   ]
