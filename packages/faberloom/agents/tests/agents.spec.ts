@@ -244,7 +244,7 @@ describe('FaberLoomAgents', () => {
     const models = await seedModels(agents)
     const agent = await agents.createAgent({ name: 'Echo', responsibility: 'r', tools: ['echo', 'upper'], policy: { primary: models.mid } })
     const dispose = agents.registerExecutableTool('echo', args => ({ echoed: (args as { text?: string }).text ?? '' }))
-    agents.registerExecutableTool('upper', async args => String((args as { text?: string }).text ?? '').toUpperCase())
+    agents.registerExecutableTool('upper', async args => ((args as { text?: string }).text ?? '').toUpperCase())
     expect(agents.listExecutableTools().sort()).toEqual(['echo', 'upper'])
     expect(await agents.executeTool(agent.id, 'echo', { text: 'hola' })).toEqual({ toolName: 'echo', result: { echoed: 'hola' } })
     expect((await agents.executeTool(agent.id, 'upper', { text: 'hola' })).result).toBe('HOLA')
@@ -259,7 +259,7 @@ describe('FaberLoomAgents', () => {
   it('F35 · runs a temporary subagent inside the parent budget and never catalogues it', async () => {
     const { agents } = await harness()
     const models = await seedModels(agents)
-    agents.registerExecutableTool('upper', args => String((args as { text?: string }).text ?? '').toUpperCase())
+    agents.registerExecutableTool('upper', args => ((args as { text?: string }).text ?? '').toUpperCase())
     const parent = await agents.createAgent({
       name: 'Parent', responsibility: 'r', tools: ['upper'],
       policy: { primary: models.mid, budget: { perExecution: 0.5, currency: 'USD', maxAttempts: 3, maxEscalations: 1 } },
@@ -311,7 +311,7 @@ describe('FaberLoomAgents', () => {
     expect(all.records).toBe(4)
     expect(all.partial).toBe(true)
     expect(all.total).toBeCloseTo(0.06, 6)
-    expect(all.byModel[0]).toMatchObject({ by: 'model', key: models.mid, cost: expect.closeTo(0.05, 6), records: 2, partial: false })
+    expect(all.byModel[0]).toMatchObject({ by: 'model', key: models.mid, cost: expect.closeTo(0.05, 6) as number, records: 2, partial: false })
     expect(all.byModel.some(bucket => bucket.key === 'unknown')).toBe(false)
     expect(all.byAgent.map(bucket => bucket.records)).toEqual([2, 2])
     expect(all.byTask.find(bucket => bucket.key === 'proforma')).toMatchObject({ by: 'task', records: 2 })

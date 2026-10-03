@@ -64,7 +64,7 @@ export class FaberLoomMemory extends Service {
 
   private async teachings(): Promise<KvTable<string, TeachingRecord>> { return (await this.domain()).table('teachings') }
   private async versions(): Promise<KvTable<string, TeachingRecord>> {
-    return (await this.domain()).table('teaching_versions') as unknown as KvTable<string, TeachingRecord>
+    return (await this.domain()).table('teaching_versions')
   }
   private async performanceTable(): Promise<KvTable<string, PerformanceRecord>> { return (await this.domain()).table('performance') }
   private async lateErrors(): Promise<KvTable<string, LateErrorRecord>> { return (await this.domain()).table('late_errors') }

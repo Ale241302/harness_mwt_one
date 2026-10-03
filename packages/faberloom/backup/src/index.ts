@@ -71,7 +71,10 @@ export interface RestoreBackupOptions {
 
 /** Deterministic JSON: object keys sorted at every level, so hashes are stable. */
 function canonicalStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+  if (value === null || typeof value !== 'object') {
+    const serialized = JSON.stringify(value) as string | undefined
+    return serialized ?? 'null'
+  }
   if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(',')}]`
   const record = value as Record<string, unknown>
   const keys = Object.keys(record).sort()
@@ -120,7 +123,7 @@ export class FaberLoomBackup extends Service {
   }
 
   private liveDomain(name: string): LiveDomain | undefined {
-    return this.ctx.storageDomain.get(name) as unknown as LiveDomain | undefined
+    return this.ctx.storageDomain.get(name)
   }
 
   private async requireBackup(ownerId: string, id: string): Promise<BackupRecord> {

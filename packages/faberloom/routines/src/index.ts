@@ -192,7 +192,7 @@ function toEventRecord(event: IngestEvent): EventRecord {
     key: event.key,
     type: event.type,
     subject: event.subject ?? null,
-    data: (event.data ?? null) as EventRecord['data'],
+    data: event.data ?? null,
   }
 }
 
@@ -208,7 +208,7 @@ function toExecution(id: FaberLoomExecutionId, record: ExecutionRecord): Executi
     steps: record.steps,
     evidence: record.evidence,
     event: record.event === null ? null : toEvent(record.event),
-    events: (record.events ?? []).map(toEvent),
+    events: record.events.map(toEvent),
     waitingFor: record.waitingFor,
     deadlineAt: record.deadlineAt ?? null,
     reason: record.reason,
@@ -263,15 +263,15 @@ export class FaberLoomRoutines extends Service {
 
   private async routines(): Promise<KvTable<string, RoutineRecord>> { return (await this.domain()).table('routines') }
   private async versions(): Promise<KvTable<string, { routineId: FaberLoomRoutineId; version: number; definition: RoutineRecord['definition']; createdAt: string }>> {
-    return (await this.domain()).table('routine_versions') as unknown as KvTable<string, { routineId: FaberLoomRoutineId; version: number; definition: RoutineRecord['definition']; createdAt: string }>
+    return (await this.domain()).table('routine_versions')
   }
   private async executions(): Promise<KvTable<string, ExecutionRecord>> { return (await this.domain()).table('executions') }
   private async effects(): Promise<KvTable<string, EffectLedgerRecord>> { return (await this.domain()).table('effects') }
   private async sources(): Promise<KvTable<string, { ownerId: string; kind: 'email' | 'webhook'; label: string; token: string; createdAt: string }>> {
-    return (await this.domain()).table('sources') as unknown as KvTable<string, { ownerId: string; kind: 'email' | 'webhook'; label: string; token: string; createdAt: string }>
+    return (await this.domain()).table('sources')
   }
   private async eventKeys(): Promise<KvTable<string, { ownerId: string; eventKey: string }>> {
-    return (await this.domain()).table('event_keys') as unknown as KvTable<string, { ownerId: string; eventKey: string }>
+    return (await this.domain()).table('event_keys')
   }
 
   // ── Handlers ────────────────────────────────────────────────────────
@@ -449,7 +449,7 @@ export class FaberLoomRoutines extends Service {
   async expireWaits(now: Date = new Date()): Promise<FaberLoomExecutionId[]> {
     const expired: FaberLoomExecutionId[] = []
     for (const [rawId, record] of (await this.executions()).entries()) {
-      if (record.status !== 'waiting' || record.deadlineAt === null || record.deadlineAt === undefined) continue
+      if (record.status !== 'waiting' || record.deadlineAt === null) continue
       if (Date.parse(record.deadlineAt) > now.getTime()) continue
       const steps = { ...record.steps }
       for (const [stepId, state] of Object.entries(steps)) {
@@ -620,7 +620,7 @@ export class FaberLoomRoutines extends Service {
         return record
       }
       if (step.revalidateKey !== null && event !== undefined) {
-        const actual = event.data === undefined ? '' : String(event.data[step.revalidateKey] ?? '')
+        const actual = event.data === undefined ? '' : (event.data[step.revalidateKey] ?? '') as string
         if (actual !== (step.revalidateExpect ?? '')) {
           steps[step.id] = { status: 'failed', result: null, reason: 'REVALIDATION_CHANGED' }
           record = { ...record, steps, status: 'needs_review', deadlineAt: null, reason: 'REVALIDATION_CHANGED', updatedAt: new Date().toISOString() }
@@ -652,8 +652,8 @@ export class FaberLoomRoutines extends Service {
         await this.saveExecution(id, record)
         return record
       }
-      if (event !== undefined && !(record.events ?? []).some(entry => entry.key === event.key)) {
-        record = { ...record, events: [...(record.events ?? []), toEventRecord(event)], updatedAt: new Date().toISOString() }
+      if (event !== undefined && !record.events.some(entry => entry.key === event.key)) {
+        record = { ...record, events: [...record.events, toEventRecord(event)], updatedAt: new Date().toISOString() }
       }
       const results: Record<string, unknown> = {}
       for (const [stepId, state] of Object.entries(steps)) {
@@ -666,7 +666,7 @@ export class FaberLoomRoutines extends Service {
         input,
         event,
         results,
-        events: (record.events ?? []).map(toEvent),
+        events: record.events.map(toEvent),
       }
       try {
         const result = await handler(context)

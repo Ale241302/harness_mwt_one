@@ -135,6 +135,7 @@ export function summarize(agent: Agent, from: number): RoutineStepRun {
   let endReason: string | null = null
   let failure: string | null = null
   const toolCalls: RoutineStepToolCall[] = []
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   for (const event of agent.session.snapshotEvents().slice(from)) {
     if (event.type === 'assistant/message') {
       const joined = event.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')

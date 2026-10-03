@@ -531,7 +531,7 @@ export class FaberLoomSpaces extends Service {
 
     let currentId: FaberLoomSpaceId | undefined = id
     let current: SpaceRecord | undefined = record
-    while (currentId !== undefined && current !== undefined) {
+    while (current !== undefined) {
       for (const excludedId of current.excluded) excluded.add(excludedId)
       if (!excluded.has(currentId)) {
         sources.push(currentId)

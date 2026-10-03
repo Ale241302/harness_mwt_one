@@ -28,7 +28,7 @@ import { markdownFromAttachments, resolveAnyDocBin, type DocumentIngestOptions }
 // Type-only: the subprocess provider that runs the optional document converter.
 import type {} from '@deepseek-ai/dsh-subprocess'
 // Type-only: the system prompt registry, read through ctx.get like the product services.
-import type { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 // Type-only: the routines service and its vocabulary, also read through ctx.get.
 import type {
   ExecutionStatus,
@@ -376,8 +376,8 @@ async function validateSource(facts: McpFacts, source: SpaceSource): Promise<{ v
   if (source.kind === 'mwt-product') {
     try {
       const data = await mcpCall(facts, 'producto_buscar', { q: source.id }) as { productos?: { sku?: string }[] }
-      const productos = Array.isArray(data?.productos) ? data.productos : []
-      const found = productos.some(product => String(product.sku ?? '').toLowerCase() === source.id.toLowerCase())
+      const productos = Array.isArray(data.productos) ? data.productos : []
+      const found = productos.some(product => (product.sku ?? '').toLowerCase() === source.id.toLowerCase())
       return found
         ? { valid: true, detail: `SKU ${source.id} exists in MWT.ONE` }
         : { valid: false, detail: `SKU ${source.id} not found in MWT.ONE` }
@@ -453,7 +453,7 @@ const ID_PARAM = { type: 'string', required: true, description: 'Target space id
 export function apply(ctx: Context, config: Config): void {
   // The mention rules the assistant follows when a message opens with @agent
   // or /skill; additive section, never a persona replacement.
-  const prompt = ctx.get('systemPrompt') as SystemPrompt | undefined
+  const prompt = ctx.get('systemPrompt')
   if (prompt !== undefined) {
     ctx.effect(() => prompt.section({
       name: 'faberloom:mentions',
@@ -798,7 +798,7 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute: async (args) => {
       const facts = mcpFacts(config, actor(config))
-      const verdict = await validateSource(facts, { kind: args.kind as SpaceSource['kind'], id: args.id })
+      const verdict = await validateSource(facts, { kind: args.kind, id: args.id })
       return { valid: verdict.valid, detail: verdict.detail }
     },
     presentCall: args => ({ card: 'generic', title: 'Validate MWT source', kind: 'other', rawInput: args }),
@@ -1435,7 +1435,7 @@ export function apply(ctx: Context, config: Config): void {
       const agent = await agents(ctx).createAgent({
         name: args.name,
         responsibility: args.responsibility,
-        ...args.origin === undefined ? {} : { origin: args.origin as 'scratch' | 'pool' | 'task' },
+        ...args.origin === undefined ? {} : { origin: args.origin },
         ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
         ...args.skills === undefined ? {} : { skills: args.skills },
         ...args.tools === undefined ? {} : { tools: args.tools },
@@ -1672,7 +1672,7 @@ export function apply(ctx: Context, config: Config): void {
         agentId: args.id as FaberLoomAgentId,
         task: args.task,
         modelId: args.modelId as FaberLoomModelId,
-        outcome: args.outcome as 'approved' | 'corrected',
+        outcome: args.outcome,
         ...args.cost === undefined ? {} : { cost: args.cost },
       })
       return { id: outcome.id }
@@ -1990,7 +1990,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Resumed ${String(value.resumed.length)} execution(s).` }],
     },
     execute: async (args) => {
-      const result = await routines(ctx).tick({ events: (args.events as unknown as IngestEvent[]) ?? [] })
+      const result = await routines(ctx).tick({ events: args.events as unknown as IngestEvent[] })
       return { resumed: result.resumed.map(id => String(id)) }
     },
     presentCall: args => ({ card: 'generic', title: 'Tick dispatcher', kind: 'other', rawInput: args }),
@@ -2119,7 +2119,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Source ${value.id} token issued.` }],
     },
     execute: async (args) => {
-      const source = await routines(ctx).registerSource(actor(config).id, args.kind as 'email' | 'webhook', args.label)
+      const source = await routines(ctx).registerSource(actor(config).id, args.kind, args.label)
       return { id: source.id, token: source.token }
     },
     presentCall: args => ({ card: 'generic', title: 'Register event source', kind: 'other', rawInput: args }),
@@ -2230,7 +2230,7 @@ export function apply(ctx: Context, config: Config): void {
     execute: async (args) => {
       await authorize(ctx, config, 'faberloom.board.review', args.id)
       const item = await board(ctx).review(actor(config).id, args.id as FaberLoomBoardItemId, {
-        decision: args.decision as 'approve' | 'reject',
+        decision: args.decision,
         version: args.version,
         ...args.note === undefined ? {} : { note: args.note },
       })
@@ -2741,14 +2741,14 @@ export function apply(ctx: Context, config: Config): void {
           },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: `Companies: ${value.companies.map(company => company.active === true ? `${company.id} (active)` : company.id).join(', ') || 'none'}.` }],
+      render: (_args, value) => [{ type: 'text', text: `Companies: ${value.companies.map(company => company.active ? `${company.id} (active)` : company.id).join(', ') || 'none'}.` }],
     },
-    execute: async () => {
+    execute: () => {
       const identity = actor(config)
       const active = identity.companyId?.toLowerCase()
       const ids = [...(config.companyIds ?? [])]
       if (identity.companyId !== undefined && !ids.some(id => id.toLowerCase() === active)) ids.push(identity.companyId)
-      return { companies: ids.map(id => ({ id, active: active !== undefined && id.toLowerCase() === active })) }
+      return Promise.resolve({ companies: ids.map(id => ({ id, active: active !== undefined && id.toLowerCase() === active })) })
     },
     presentCall: () => ({ card: 'generic', title: 'List companies', kind: 'other', rawInput: {} }),
   }))

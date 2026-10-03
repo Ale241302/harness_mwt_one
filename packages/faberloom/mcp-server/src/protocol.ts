@@ -48,7 +48,7 @@ export interface RpcOutcome {
   /** HTTP status the transport should send. */
   readonly status: number
   /** Response body, or null when the message was a notification. */
-  readonly body: unknown | null
+  readonly body: unknown
 }
 
 /** Build a JSON-RPC error response. */

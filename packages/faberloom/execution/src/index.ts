@@ -158,7 +158,7 @@ export class FaberLoomExecutions extends Service {
           continue
         }
         const result = await this.ctx.faberloomRoutines.startExecution({
-          routineId: routine.id as FaberLoomRoutineId,
+          routineId: routine.id,
           idempotencyKey: occurrence.key,
           channel: trigger.kind,
         })

@@ -227,7 +227,7 @@ export interface StepContext {
 }
 
 /** A registered step handler. */
-export type StepHandler = (context: StepContext) => unknown | Promise<unknown>
+export type StepHandler = (context: StepContext) => unknown
 
 /** Start request for one execution. */
 export interface StartExecutionRequest {

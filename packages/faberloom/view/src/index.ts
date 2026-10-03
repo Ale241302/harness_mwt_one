@@ -558,7 +558,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     // directory this deployment owns under the harness home.
     if (this.isUnderDshHome(dir)) rmSync(dir, { recursive: true, force: true })
     await this.ctx.faberloomSpaces.remove(actor, space.id)
-    if (space.agentId !== undefined && space.agentId !== null) await this.detachAgentIfOrphan(space.agentId)
+    if (space.agentId !== undefined) await this.detachAgentIfOrphan(space.agentId)
     return await this.overview()
   }
 
@@ -1063,7 +1063,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     for (const share of agentShares) {
       const payload = share.payload
-      const skills = Array.isArray(payload.skills) ? [...payload.skills] : []
+      const skills = Array.isArray(payload.skills) ? [...(payload.skills as readonly string[])] : []
       const ref = `share:${share.owner_email}`
       const existing = (await this.ctx.faberloomAgents.listAgents())
         .find(agent => agent.originRef === ref && agent.name === share.name)
@@ -1852,7 +1852,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       inheritContext: space.inheritContext,
       excluded: [...space.excluded],
       members: [...space.members],
-      sources: space.sources.map(source => ({ kind: String(source.kind), ref: source.id })),
+      sources: space.sources.map(source => ({ kind: source.kind, ref: source.id })),
       contextKeys: Object.keys(space.context),
       agentId: space.agentId ?? null,
     }
@@ -2044,8 +2044,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (llm === undefined) return { providers: [] }
     const providers: FaberLoomProviderModels[] = []
     for (const provider of llm.listProviders()) {
-      const models = (await llm.listModels(provider.id)).map(model => String(model.id))
-      providers.push({ id: String(provider.id), models })
+      const models = (await llm.listModels(provider.id)).map(model => model.id)
+      providers.push({ id: provider.id, models })
     }
     return { providers }
   }
@@ -2777,7 +2777,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @returns true for the console's privileged roles.
    */
   private isPrivileged(): boolean {
-    const role = (this.actor().role ?? '').toLowerCase()
+    const role = this.actor().role.toLowerCase()
     return role === 'admin' || role === 'superadmin' || role === 'ceo'
   }
 
@@ -2858,10 +2858,10 @@ export class FaberLoomViewService extends TypertRemoteService {
       const body = await response.json() as { data?: { items?: readonly AtomicItem[] } }
       const items = body.data?.items ?? []
       return items.map(item => ({
-        id: String(item.id ?? ''),
-        kind: String(item.type ?? ''),
-        text: String(item.content ?? ''),
-        at: String(item.updated_at ?? item.created_at ?? ''),
+        id: (item.id ?? '') as string,
+        kind: (item.type ?? '') as string,
+        text: (item.content ?? '') as string,
+        at: (item.updated_at ?? item.created_at ?? '') as string,
       }))
     } catch {
       return []

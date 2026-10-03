@@ -113,7 +113,7 @@ export interface BackupStepOutcome {
  * @param context - the step being executed.
  * @returns the settled outcome.
  */
-async function waitHandler(context: StepContext): Promise<StepOutcome> {
+function waitHandler(context: StepContext): StepOutcome {
   return { handler: 'wait', matched: context.event?.key ?? null }
 }
 

@@ -360,7 +360,7 @@ export class FaberLoomConnections extends Service {
       port: input.port === undefined ? existing?.port ?? null : input.port,
       secure: input.secure === undefined ? existing?.secure ?? null : input.secure,
       starttls: input.starttls === undefined ? existing?.starttls ?? false : input.starttls === true,
-      primary: input.primary === undefined ? existing?.primary ?? false : input.primary === true,
+      primary: input.primary === undefined ? existing?.primary ?? false : input.primary,
       username: input.username === undefined ? existing?.username ?? null : input.username,
       secret: input.secret === undefined || input.secret === null || input.secret.length === 0
         ? existing?.secret ?? null

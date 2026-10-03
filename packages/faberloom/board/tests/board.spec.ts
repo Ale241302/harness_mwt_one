@@ -32,7 +32,7 @@ describe('FaberLoomBoard', () => {
 
     await expect(board.recordEffect(OWNER, item.id, { ref: 'mail:1' })).rejects.toThrow('NO_AUTHORIZATION')
     const effected = await board.recordEffect(OWNER, item.id, { ref: 'mail:1', authorization: 'user-approved-send', detail: 'enviado' })
-    expect(effected.effects).toEqual([{ ref: 'mail:1', detail: 'enviado', authorization: 'user-approved-send', at: expect.any(String) }])
+    expect(effected.effects).toEqual([{ ref: 'mail:1', detail: 'enviado', authorization: 'user-approved-send', at: expect.any(String) as string }])
     expect((await board.complete(OWNER, item.id)).status).toBe('completed')
   })
 

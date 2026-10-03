@@ -93,7 +93,7 @@ function post(port: number, body: unknown, token?: string, accept = 'application
       let text = ''
       res.setEncoding('utf8')
       res.on('data', (chunk: string) => { text += chunk })
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, text }))
+      res.on('end', () => { resolve({ status: res.statusCode ?? 0, text }) })
     })
     req.on('error', reject)
     req.end(payload)
@@ -159,10 +159,10 @@ describe('FaberLoomMcpServer', () => {
     expect(JSON.parse(overviewBody.result.content[0]!.text)).toMatchObject({ executions: 0 })
 
     const teachings = await post(endpoint.port, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'faberloom_teachings', arguments: {} } }, token)
-    expect(JSON.parse(teachings.text).result.content[0].text).toContain('Comprobar el precio')
+    expect((JSON.parse(teachings.text) as { result: { content: { text: string }[] } }).result.content[0]!.text).toContain('Comprobar el precio')
 
     const recorded = await post(endpoint.port, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'faberloom_teaching_record', arguments: { text: 'Pedir el albarán al transportista.', task: 'seguimiento' } } }, token)
-    expect(JSON.parse(recorded.text).result.content[0].text).toContain('active')
+    expect((JSON.parse(recorded.text) as { result: { content: { text: string }[] } }).result.content[0]!.text).toContain('active')
     expect((await memory.listTeachings(OWNER)).length).toBe(2)
 
     // A routine run through MCP obeys the same autonomy guard as the panels.
@@ -180,7 +180,7 @@ describe('FaberLoomMcpServer', () => {
     })
     await routines.activateRoutine(OWNER, routine.id)
     const denied = await post(endpoint.port, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'faberloom_routine_run', arguments: { routineId: String(routine.id), idempotencyKey: 'mcp-1' } } }, token)
-    expect(JSON.parse(denied.text).result.content[0].text).toContain('NOT_AUTHORIZED')
+    expect((JSON.parse(denied.text) as { result: { content: { text: string }[] } }).result.content[0]!.text).toContain('NOT_AUTHORIZED')
   })
 
   it('F04 — a scoped token lists and calls only its tools', async () => {
@@ -193,11 +193,11 @@ describe('FaberLoomMcpServer', () => {
     expect(tools).toEqual(['faberloom_overview'])
 
     const allowed = await post(endpoint.port, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'faberloom_overview', arguments: {} } }, token)
-    expect(JSON.parse(allowed.text).result.isError).toBeUndefined()
+    expect((JSON.parse(allowed.text) as { result: { isError?: boolean } }).result.isError).toBeUndefined()
 
     const refused = await post(endpoint.port, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'faberloom_teaching_record', arguments: { text: 'no debería' } } }, token)
     expect(JSON.parse(refused.text)).toMatchObject({ error: { code: -32602 } })
-    expect(JSON.parse(refused.text).error.message).toContain('faberloom_teaching_record')
+    expect((JSON.parse(refused.text) as { error: { message: string } }).error.message).toContain('faberloom_teaching_record')
 
     const full = await server.mintToken('Completo')
     expect(full.scopes).toBeNull()

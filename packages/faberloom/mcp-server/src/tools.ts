@@ -11,7 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { FaberLoomRoutineId } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type { FaberLoomSpaceId, SpaceActor, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
-import type { AgentPatch, FaberLoomAgentId, FaberLoomModelId } from '@deepseek-ai/dsh-faberloom-agents'
+import type { FaberLoomAgentId, FaberLoomModelId } from '@deepseek-ai/dsh-faberloom-agents'
 import type { BoardStatus, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type { ConnectionKind } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
@@ -429,7 +429,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       if (tools !== undefined) patch.tools = tools
       const lessons = strings(args, 'lessons')
       if (lessons !== undefined) patch.lessons = lessons
-      const agent = await context.faberloomAgents.updateAgent(required(args, 'id') as FaberLoomAgentId, patch as AgentPatch)
+      const agent = await context.faberloomAgents.updateAgent(required(args, 'id') as FaberLoomAgentId, patch)
       return { id: String(agent.id), name: agent.name, version: agent.version }
     },
   },
@@ -454,7 +454,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
     run: async (context, _ownerId, args) => {
       const policy: Record<string, unknown> = {}
       const primary = args['primary']
-      if (primary !== undefined) policy['primary'] = primary === '' || primary === null ? null : String(primary)
+      if (primary !== undefined) policy['primary'] = primary === '' || primary === null ? null : primary
       const exclusive = boolean(args, 'exclusive')
       if (exclusive !== undefined) policy['exclusive'] = exclusive
       const fallbacks = strings(args, 'fallbacks')
@@ -463,7 +463,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       if (escalation !== undefined) policy['escalation'] = escalation
       const budget = object(args, 'budget')
       if (budget !== undefined) policy['budget'] = budget
-      const agent = await context.faberloomAgents.updateAgent(required(args, 'id') as FaberLoomAgentId, { policy } as AgentPatch)
+      const agent = await context.faberloomAgents.updateAgent(required(args, 'id') as FaberLoomAgentId, { policy })
       return { id: String(agent.id), version: agent.version, policy: agent.policy }
     },
   },

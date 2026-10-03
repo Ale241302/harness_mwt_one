@@ -188,7 +188,7 @@ export class FaberLoomAgents extends Service {
   private domainPromise: Promise<Domain<typeof agentsDomainSpec>> | undefined
 
   /** Executable tool handlers registered in this process (not durable). */
-  private readonly executables = new Map<string, (args: unknown) => unknown | Promise<unknown>>()
+  private readonly executables = new Map<string, (args: unknown) => unknown>()
 
   /**
    * @param ctx - Cordis context owning the service fiber.
@@ -350,7 +350,7 @@ export class FaberLoomAgents extends Service {
    * @param handler - sync or async handler over the call arguments.
    * @returns the disposer removing the handler.
    */
-  registerExecutableTool(name: string, handler: (args: unknown) => unknown | Promise<unknown>): () => void {
+  registerExecutableTool(name: string, handler: (args: unknown) => unknown): () => void {
     this.executables.set(name, handler)
     return () => {
       if (this.executables.get(name) === handler) this.executables.delete(name)
