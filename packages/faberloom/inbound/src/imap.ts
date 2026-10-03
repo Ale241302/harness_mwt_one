@@ -100,6 +100,7 @@ class ImapSession {
    * @param socket - the socket to read from.
    * @param timeoutMs - milliseconds before the connection is abandoned.
    */
+  /* jscpd:ignore-start -- the socket connect/fail/close dance mirrors the SMTP session; protocols are independently owned */
   private waitConnected(socket: Socket, timeoutMs: number): Promise<void> {
     this.socket = socket
     const onData = (chunk: Buffer): void => { this.consume(chunk.toString('latin1')) }
@@ -116,6 +117,7 @@ class ImapSession {
       })
     })
   }
+  /* jscpd:ignore-end */
 
   /**
    * Upgrade the plaintext connection with `STARTTLS` and keep using the
@@ -190,6 +192,7 @@ class ImapSession {
     else pending.reject(new ImapError(`el servidor respondió ${exchange.status}: ${lines.at(-1) ?? ''}`))
   }
 
+  /* jscpd:ignore-start -- the fail/close teardown mirrors the SMTP session; protocols are independently owned */
   /** Reject the pending command and stop using the socket. */
   private fail(error: Error): void {
     const pending = this.pending
@@ -202,6 +205,7 @@ class ImapSession {
     this.closed = true
     try { this.socket.destroy() } catch { /* the socket may already be gone */ }
   }
+  /* jscpd:ignore-end */
 }
 
 /** Small delay used by the greeting poll. */

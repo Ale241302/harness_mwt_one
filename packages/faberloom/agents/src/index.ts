@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-llm'
 import type {
   AgentInput,
   AgentPatch,
+  BudgetPolicy,
   CostBucket,
   CostSummary,
   DelegateRequest,
@@ -247,6 +248,31 @@ export class FaberLoomAgents extends Service {
       return { status: 'needs_decision', modelId: undefined, reason: 'MODEL_NOT_IN_LLM', policyVersion, estimatedCost, fallbackOf: undefined }
     }
     return { status: 'selected', modelId, reason, policyVersion, estimatedCost, fallbackOf }
+  }
+
+  /**
+   * Fold the shared per-execution cost checks into one stop result. Unknown cost
+   * under a budget never assumes zero, and a cost that would exceed the remaining
+   * budget stops the attempt.
+   * @param cost - estimated attempt cost, or undefined when no rate is known.
+   * @param spent - budget already spent this execution.
+   * @param budget - the policy's execution budget, when configured.
+   * @param policyVersion - agent policy version the decision uses.
+   * @returns the stop result, or undefined when the attempt may proceed.
+   */
+  private budgetStop(
+    cost: number | undefined,
+    spent: number,
+    budget: BudgetPolicy | undefined,
+    policyVersion: number,
+  ): ResolveResult | undefined {
+    if (budget !== undefined && cost === undefined) {
+      return { status: 'needs_decision', modelId: undefined, reason: 'COST_UNKNOWN', policyVersion, estimatedCost: undefined, fallbackOf: undefined }
+    }
+    if (budget !== undefined && cost !== undefined && spent + cost > budget.perExecution) {
+      return { status: 'needs_decision', modelId: undefined, reason: 'BUDGET_INSUFFICIENT', policyVersion, estimatedCost: cost, fallbackOf: undefined }
+    }
+    return undefined
   }
 
   // ── Model pool ──────────────────────────────────────────────────────
@@ -637,12 +663,8 @@ export class FaberLoomAgents extends Service {
         return { status: 'denied', modelId: undefined, reason: 'FALLBACK_NOT_IN_POOL', policyVersion: agent.version, estimatedCost: undefined, fallbackOf: undefined }
       }
       const cost = estimateAttemptCost(fallback)
-      if (budget !== undefined && cost === undefined) {
-        return { status: 'needs_decision', modelId: undefined, reason: 'COST_UNKNOWN', policyVersion: agent.version, estimatedCost: undefined, fallbackOf: undefined }
-      }
-      if (budget !== undefined && cost !== undefined && spent + cost > budget.perExecution) {
-        return { status: 'needs_decision', modelId: undefined, reason: 'BUDGET_INSUFFICIENT', policyVersion: agent.version, estimatedCost: cost, fallbackOf: undefined }
-      }
+      const stop = this.budgetStop(cost, spent, budget, agent.version)
+      if (stop !== undefined) return stop
       return this.selectResult(agent.version, fallbackId, 'PROVIDER_FALLBACK', cost, policy.primary)
     }
 
@@ -669,12 +691,8 @@ export class FaberLoomAgents extends Service {
         return { status: 'denied', modelId: undefined, reason: 'ESCALATION_MODEL_NOT_IN_POOL', policyVersion: agent.version, estimatedCost: undefined, fallbackOf: undefined }
       }
       const cost = estimateAttemptCost(model)
-      if (budget !== undefined && cost === undefined) {
-        return { status: 'needs_decision', modelId: undefined, reason: 'COST_UNKNOWN', policyVersion: agent.version, estimatedCost: undefined, fallbackOf: undefined }
-      }
-      if (budget !== undefined && cost !== undefined && spent + cost > budget.perExecution) {
-        return { status: 'needs_decision', modelId: undefined, reason: 'BUDGET_INSUFFICIENT', policyVersion: agent.version, estimatedCost: cost, fallbackOf: undefined }
-      }
+      const stop = this.budgetStop(cost, spent, budget, agent.version)
+      if (stop !== undefined) return stop
       return this.selectResult(agent.version, authorized, 'ESCALATED', cost, policy.primary)
     }
 
@@ -683,12 +701,8 @@ export class FaberLoomAgents extends Service {
       return { status: 'denied', modelId: undefined, reason: 'PRIMARY_NOT_IN_POOL', policyVersion: agent.version, estimatedCost: undefined, fallbackOf: undefined }
     }
     const cost = estimateAttemptCost(primary)
-    if (budget !== undefined && cost === undefined) {
-      return { status: 'needs_decision', modelId: undefined, reason: 'COST_UNKNOWN', policyVersion: agent.version, estimatedCost: undefined, fallbackOf: undefined }
-    }
-    if (budget !== undefined && cost !== undefined && spent + cost > budget.perExecution) {
-      return { status: 'needs_decision', modelId: undefined, reason: 'BUDGET_INSUFFICIENT', policyVersion: agent.version, estimatedCost: cost, fallbackOf: undefined }
-    }
+    const stop = this.budgetStop(cost, spent, budget, agent.version)
+    if (stop !== undefined) return stop
     return this.selectResult(agent.version, policy.primary, 'PRIMARY', cost, undefined)
   }
 

@@ -227,22 +227,26 @@ export function SearchBlock(props: SearchBlockProps) {
   // hidden middle.
   const tail = tailHeader === undefined ? naturalTail : naturalTail.slice(1)
 
+  const download = props.onDownload
+  // One save control shared by the flat-path and grouped-file rows: both draw the
+  // same trailing button for the result's path.
+  const downloadControl = (path: string): ReactNode => download === undefined ? null : (
+    <button
+      type="button"
+      className={css.download}
+      aria-label={props.labels.download(path)}
+      title={props.labels.download(path)}
+      onClick={() => { download(path) }}
+    >
+      <IconDownloadOutline16 size={13} />
+    </button>
+  )
+
   const renderRow = (row: SearchRow): ReactNode => {
-    const download = props.onDownload
     if (row.type === 'path') {
       return <div className={css.line} data-search-download={download === undefined ? undefined : ''}>
         {row.path}
-        {download !== undefined && (
-          <button
-            type="button"
-            className={css.download}
-            aria-label={props.labels.download(row.path)}
-            title={props.labels.download(row.path)}
-            onClick={() => { download(row.path) }}
-          >
-            <IconDownloadOutline16 size={13} />
-          </button>
-        )}
+        {downloadControl(row.path)}
       </div>
     }
     if (row.type === 'match') {
@@ -264,17 +268,7 @@ export function SearchBlock(props: SearchBlockProps) {
           <span className={css.filePath}>{row.path}</span>
           <span className={css.fileCount}>{row.count}</span>
         </button>
-        {download !== undefined && (
-          <button
-            type="button"
-            className={css.download}
-            aria-label={props.labels.download(row.path)}
-            title={props.labels.download(row.path)}
-            onClick={() => { download(row.path) }}
-          >
-            <IconDownloadOutline16 size={13} />
-          </button>
-        )}
+        {downloadControl(row.path)}
       </div>
     )
   }

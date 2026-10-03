@@ -129,6 +129,7 @@ export class FaberLoomInbound extends Service {
     if (!Number.isSafeInteger(timeout) || timeout < 1_000 || timeout > MAX_TIMEOUT_MS) {
       throw new Error(`faberloom: inbound timeoutMs must be between 1000 and ${String(MAX_TIMEOUT_MS)} ms`)
     }
+    /* jscpd:ignore-start -- the timer/effect dispatch skeleton mirrors the executions dispatcher; separate cadences and log lines */
     if (this.config.enabled !== true || (this.config.ownerId ?? '').length === 0) return
     this.ctx.effect(() => {
       const timer = setInterval(() => {
@@ -138,6 +139,7 @@ export class FaberLoomInbound extends Service {
       }, interval)
       return () => { clearInterval(timer) }
     }, 'faberloom.inbound.poller')
+    /* jscpd:ignore-end */
   }
 
   /**

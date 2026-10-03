@@ -14,14 +14,14 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: pulls the ctx.tools merge so `ctx.get('tools')` is typed.
 import type {} from '@deepseek-ai/dsh-tools'
 // Type-only: pulls the ctx.faberloomInbound merge for the Email panel's inbox.
-import type {} from '@deepseek-ai/dsh-faberloom-inbound'
+import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
 // Type-only: the LLM service merge and the message frame the drafting call sends.
 import type {} from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
-import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput } from '@deepseek-ai/dsh-faberloom-routines'
+import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
@@ -45,7 +45,8 @@ import type {
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
-  FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
+  FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
+  FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
@@ -1199,11 +1200,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailTrash')
   async emailTrash(uid: string, sender?: string, subject?: string): Promise<{ movedTo: string }> {
-    const actor = this.actor()
-    const inbound = this.ctx.get('faberloomInbound')
-    if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
-    const id = Number(uid)
-    if (!Number.isSafeInteger(id) || id <= 0) throw new Error('faberloom: invalid message id')
+    const { actor, inbound, id } = this.requireInbound(uid)
     const movedTo = await inbound.moveToTrash(actor.id, id)
     try {
       await this.ctx.faberloomMemory.createTeaching(actor.id, {
@@ -1250,11 +1247,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('spaceFromEmail')
   async spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<FaberLoomSpaceFromEmail> {
-    const actor = this.actor()
-    const inbound = this.ctx.get('faberloomInbound')
-    if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
-    const id = Number(uid)
-    if (!Number.isSafeInteger(id) || id <= 0) throw new Error('faberloom: invalid message id')
+    const { actor, inbound, id } = this.requireInbound(uid)
     const title = name.trim().length === 0 ? 'Correo' : name.trim()
     const content = await inbound.readEmail(actor.id, id)
     // Same title means the same space: the email's files and body join the
@@ -1383,12 +1376,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('emailDraftWithAi')
   async emailDraftWithAi(input: EmailDraftAiInput): Promise<FaberLoomEmailDraftRow> {
     const actor = this.actor()
-    const llm = this.ctx.get('llm')
-    if (llm === undefined) throw new Error('faberloom: no model provider is mounted')
-    const provider = llm.listProviders()[0]?.id
-    if (provider === undefined) throw new Error('faberloom: no model provider is available')
-    const model = (await llm.listModels(provider))[0]?.id
-    if (model === undefined) throw new Error('faberloom: no model is available for the provider')
+    const { provider, model } = await this.modelRoute()
 
     // The voice profile: recent email teachings, space-scoped when the draft is.
     const voice = await this.ctx.faberloomMemory.listTeachings(actor.id, {
@@ -1412,23 +1400,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       'What to say:',
       input.instruction,
     ].join('\n')
-    // `createUserMessage` mints the branded message id, but importing that value
-    // from `@deepseek-ai/dsh-llm` would need a reviewed dependency-policy entry.
-    // A locally minted uuid keeps the same wire shape without widening the policy.
-    const messages: Message[] = [{
-      id: randomUUID(),
-      role: 'user',
-      content: [{ type: 'text', text: prompt }],
-      source: { kind: 'plugin', plugin: 'dsh-faberloom-view' },
-    } as unknown as Message]
-
-    let text = ''
-    let failure: string | undefined
-    for await (const chunk of llm.stream({ provider, model, messages, system, maxTokens: 1200 })) {
-      if (chunk.type === 'text-delta') text += chunk.text
-      else if (chunk.type === 'finish' && (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted')) failure = chunk.reason.failure.message
-      else if (chunk.type === 'finish' && chunk.reason.kind === 'max-tokens') failure = 'the model hit its output limit'
-    }
+    const { text, failure } = await this.streamText(provider, model, system, prompt, 1200)
     if (failure !== undefined) throw new Error(`faberloom: the model could not draft the email: ${failure}`)
     if (text.trim().length === 0) throw new Error('faberloom: the model produced no text')
 
@@ -1470,9 +1442,30 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @returns the trimmed model text.
    */
   private async completeModel(system: string, prompt: string, maxTokens: number): Promise<string> {
+    const { provider, model } = await this.modelRoute()
+    const { text, failure } = await this.streamText(provider, model, system, prompt, maxTokens)
+    if (failure !== undefined) throw new Error(`faberloom: the model could not answer: ${failure}`)
+    return text.trim()
+  }
+
+  /**
+   * Stream one mounted provider/model completion, accumulating its text.
+   * @param provider - provider id.
+   * @param model - model id.
+   * @param system - system prompt.
+   * @param prompt - user prompt.
+   * @param maxTokens - output cap.
+   * @returns the accumulated text and the failure message, when the model failed.
+   */
+  private async streamText(
+    provider: string,
+    model: string,
+    system: string,
+    prompt: string,
+    maxTokens: number,
+  ): Promise<{ text: string; failure: string | undefined }> {
     const llm = this.ctx.get('llm')
     if (llm === undefined) throw new Error('faberloom: no model provider is mounted')
-    const { provider, model } = await this.modelRoute()
     // Locally minted uuid keeps the `dsh-llm` wire shape without importing the
     // branded constructor (which would need a reviewed dependency-policy entry).
     const messages: Message[] = [{
@@ -1488,8 +1481,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       else if (chunk.type === 'finish' && (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted')) failure = chunk.reason.failure.message
       else if (chunk.type === 'finish' && chunk.reason.kind === 'max-tokens') failure = 'the model hit its output limit'
     }
-    if (failure !== undefined) throw new Error(`faberloom: the model could not answer: ${failure}`)
-    return text.trim()
+    return { text, failure }
   }
 
   /**
@@ -1605,11 +1597,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('learnFromEmail')
   async learnFromEmail(uid: string): Promise<FaberLoomEmailFacts> {
-    const actor = this.actor()
-    const inbound = this.ctx.get('faberloomInbound')
-    if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
-    const id = Number(uid)
-    if (!Number.isSafeInteger(id) || id <= 0) throw new Error('faberloom: invalid message id')
+    const { actor, inbound, id } = this.requireInbound(uid)
     const content = await inbound.readEmail(actor.id, id)
     const body = content.text.length > 0 ? content.text : content.html ?? ''
     const documents = await this.emailDocuments(actor, content.attachments, [])
@@ -2360,6 +2348,14 @@ export class FaberLoomViewService extends TypertRemoteService {
     const routine = (await this.ctx.faberloomRoutines.listRoutines(ownerId)).find(entry => entry.id === id)
     if (routine === undefined) throw new Error('faberloom: routine not found')
     const current = routine.definition
+    const mapStep = (step: FaberLoomRoutineStepRow): RoutineStepInput => ({
+      id: step.id,
+      instruction: step.instruction,
+      handler: step.handler,
+      dependsOn: [...step.dependsOn],
+      ...step.waitFor === null || step.waitFor.length === 0 ? {} : { waitFor: step.waitFor },
+      effect: step.effect,
+    })
     await this.ctx.faberloomRoutines.updateRoutine(ownerId, id as FaberLoomRoutineId, {
       name: input.name ?? routine.name,
       definition: {
@@ -2375,23 +2371,7 @@ export class FaberLoomViewService extends TypertRemoteService {
               ? {}
               : { match: input.triggerMatch }),
           }],
-        steps: input.steps === undefined
-          ? current.steps.map(step => ({
-            id: step.id,
-            instruction: step.instruction,
-            handler: step.handler,
-            dependsOn: [...step.dependsOn],
-            ...step.waitFor === null || step.waitFor.length === 0 ? {} : { waitFor: step.waitFor },
-            effect: step.effect,
-          }))
-          : input.steps.map(step => ({
-            id: step.id,
-            instruction: step.instruction,
-            handler: step.handler,
-            dependsOn: [...step.dependsOn],
-            ...step.waitFor === null || step.waitFor.length === 0 ? {} : { waitFor: step.waitFor },
-            effect: step.effect,
-          })),
+        steps: input.steps === undefined ? current.steps.map(mapStep) : input.steps.map(mapStep),
         expectedResult: input.expectedResult ?? current.expectedResult,
         permissions: input.permissions === undefined ? [...current.permissions] : [...input.permissions],
         failurePolicy: (input.failurePolicy ?? current.failurePolicy) as 'stop' | 'continue' | 'review',
@@ -2568,6 +2548,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     return home === undefined || home.length === 0 ? join(homedir(), '.dsh') : home
   }
 
+  /* jscpd:ignore-start -- the role skill-directory resolution mirrors the defaults package; the two services keep their own config faces */
   /** The role's skill catalog directory, when the deployment mounted one. */
   private roleSkillsDir(): string | undefined {
     const root = this.config.skillsCatalogRoot
@@ -2575,6 +2556,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (root === undefined || root.length === 0 || role.length === 0) return undefined
     return join(root, role)
   }
+  /* jscpd:ignore-end */
 
   /** The deployment's shared skill catalog directory, when mounted. */
   private sharedSkillsDir(): string | undefined {
@@ -2818,6 +2800,21 @@ export class FaberLoomViewService extends TypertRemoteService {
       companyId: this.config.companyId === undefined || this.config.companyId.length === 0 ? undefined : this.config.companyId,
       readOnly: this.config.readOnly ?? true,
     }
+  }
+
+  /**
+   * Resolve the mounted inbound receiver and parse one message UID for a Remote
+   * call. Every mail action needs both and fails the same way when either is bad.
+   * @param uid - the message UID.
+   * @returns the owner actor, the inbound receiver, and the numeric UID.
+   */
+  private requireInbound(uid: string): { actor: SpaceActor; inbound: FaberLoomInbound; id: number } {
+    const actor = this.actor()
+    const inbound = this.ctx.get('faberloomInbound')
+    if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
+    const id = Number(uid)
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error('faberloom: invalid message id')
+    return { actor, inbound, id }
   }
 
   /** The memory core base URL when the deployment configured the stack. */

@@ -487,6 +487,7 @@ export class FaberLoomConnections extends Service {
    *   (the owner's flagged one, otherwise the first complete row).
    * @returns the credentials, or undefined when the owner has no usable mailbox.
    */
+  /* jscpd:ignore-start -- the IMAP accessor mirrors the SMTP one; the two connection kinds are independently owned */
   async imap(ownerId: string, id?: string): Promise<ImapCredentials | undefined> {
     const rows: { readonly credentials: ImapCredentials; readonly primary: boolean }[] = []
     for (const [key, record] of (await this.table()).entries()) {
@@ -510,6 +511,7 @@ export class FaberLoomConnections extends Service {
     const chosen = rows.find(row => row.primary) ?? rows.at(0)
     return chosen?.credentials
   }
+  /* jscpd:ignore-end */
 }
 
 export default FaberLoomConnections
