@@ -393,6 +393,23 @@ async reopen(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardI
 async complete(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
 
 /**
+ * Permanently remove one item from the work table, regardless of status.
+ * @param ownerId - the acting identity.
+ * @param id - item id.
+ * @returns whether the item existed and was removed.
+ */
+async remove(ownerId: string, id: FaberLoomBoardItemId): Promise<boolean>
+
+/**
+ * Link the item to the routine that will run it, or unlink it with `null`.
+ * @param ownerId - the acting identity.
+ * @param id - item id.
+ * @param routineId - routine id to attach, or null to detach.
+ * @returns the updated item.
+ */
+async setRoutine(ownerId: string, id: FaberLoomBoardItemId, routineId: string | null): Promise<FaberLoomBoardItem>
+
+/**
  * Approve or reject the exact revision. A stale item refuses; a revision that
  * is not current refuses with `STALE_REVISION`.
  * @param ownerId - the acting identity.
@@ -456,6 +473,54 @@ The product connections service: per-user integrations owned by FaberLoom.
 
 ```ts cordis-catalog
 /**
+ * Read the auto-send policy for one owner (and space, when scoped).
+ * @param ownerId - the owning identity.
+ * @param spaceId - the space, or null for the owner-wide policy.
+ * @returns the policy, defaulting to disabled with a threshold of three.
+ */
+async emailPolicy(ownerId: string, spaceId: string | null = null): Promise<EmailAutoPolicy>
+
+/**
+ * Save the auto-send policy, preserving the accumulated clean-send count.
+ * @param ownerId - the owning identity.
+ * @param input - the policy fields.
+ * @returns the stored policy.
+ */
+async saveEmailPolicy(ownerId: string, input: EmailAutoPolicyInput): Promise<EmailAutoPolicy>
+
+/**
+ * List one owner's email drafts, newest first.
+ * @param ownerId - the owning identity.
+ * @returns the drafts.
+ */
+async listDrafts(ownerId: string): Promise<FaberLoomEmailDraft[]>
+
+/**
+ * Create or replace one email draft.
+ * @param ownerId - the owning identity.
+ * @param input - the draft fields.
+ * @returns the stored draft.
+ */
+async saveDraft(ownerId: string, input: EmailDraftInput): Promise<FaberLoomEmailDraft>
+
+/**
+ * Remove one draft the owner may discard.
+ * @param ownerId - the owning identity.
+ * @param id - the draft id.
+ * @returns true when a record was removed.
+ */
+async removeDraft(ownerId: string, id: string): Promise<boolean>
+
+/**
+ * Send one draft through the owner's SMTP connection and mark it sent.
+ * @param ownerId - the owning identity.
+ * @param id - the draft id.
+ * @returns the sent draft.
+ * @throws when the draft is absent, already settled, or the send fails.
+ */
+async sendDraft(ownerId: string, id: string): Promise<FaberLoomEmailDraft>
+
+/**
  * List one owner's connections.
  * @param ownerId - the owning identity.
  * @returns the connections, oldest first.
@@ -479,12 +544,34 @@ async save(ownerId: string, input: ConnectionInput): Promise<FaberLoomConnection
 async remove(ownerId: string, id: string): Promise<boolean>
 
 /**
- * Check one connection for real: an IMAP login, or a writable backup destination.
+ * Check one connection for real: an IMAP or SMTP login, or a writable backup destination.
  * @param ownerId - the owning identity.
  * @param id - connection id.
  * @returns the probe outcome.
  */
 async probe(ownerId: string, id: string): Promise<ConnectionProbe>
+
+/**
+ * Read one of the owner's outgoing-server credentials.
+ *
+ * Like {@link imap}, this accessor returns a stored secret and exists for
+ * host-side consumers that send mail as the owner; the browser never sees it.
+ * @param ownerId - the owning identity.
+ * @param id - a specific connection, or undefined for the primary SMTP row
+ *   (the owner's flagged one, otherwise the first complete row).
+ * @returns the credentials, or undefined when the owner has no usable server.
+ */
+async smtp(ownerId: string, id?: string): Promise<SmtpCredentials | undefined>
+
+/**
+ * Deliver one message through the owner's outgoing server.
+ * @param ownerId - the owning identity.
+ * @param mail - the message to send.
+ * @param connectionId - a specific SMTP connection, or undefined for the
+ *   primary (or first complete) one.
+ * @returns the generated `Message-ID` and the accepted recipients.
+ */
+async sendMail(ownerId: string, mail: OutgoingMail, connectionId?: string): Promise<SentMail>
 
 /**
  * Read one of the owner's mailbox credentials.
@@ -562,6 +649,56 @@ The owner's mailbox as a source of routine events.
  * @returns what the pass read and started.
  */
 async runOnce(now: Date = new Date()): Promise<InboundReport>
+
+/**
+ * List the owner's mailbox envelopes, newest first, without mutating the
+ * mailbox. Read-only: never marks, moves, or deletes mail.
+ * @param ownerId - the owning identity.
+ * @param limit - most envelopes to return.
+ * @returns the envelopes, or an empty list when no mailbox is configured.
+ */
+async listInbox(ownerId: string, limit?: number): Promise<ImapMessage[]>
+
+/**
+ * Read one mailbox message's body, read-only.
+ * @param ownerId - the owning identity.
+ * @param uid - the message UID.
+ * @returns the decoded body, or null when no mailbox is configured or the message has no body.
+ */
+async readEmail(ownerId: string, uid: number): Promise<ImapMessageContent>
+
+/**
+ * Mark one message as read (`\Seen`). Unlike the poller this writes to the
+ * mailbox, so it runs only for an explicit user gesture.
+ * @param ownerId - the owning identity.
+ * @param uid - the message UID.
+ * @returns true when the mailbox accepted the flag update, false without a mailbox.
+ */
+async markSeen(ownerId: string, uid: number): Promise<boolean>
+
+/**
+ * Move one message to the Trash mailbox, trying the configured name and then
+ * the built-in candidates. Writes to the mailbox on an explicit gesture only.
+ * @param ownerId - the owning identity.
+ * @param uid - the message UID.
+ * @returns the mailbox the message moved to.
+ * @throws when every candidate mailbox rejects the move.
+ */
+async moveToTrash(ownerId: string, uid: number): Promise<string>
+
+/**
+ * Search the owner's mailbox envelopes from the chat, newest first.
+ *
+ * Read-only like the poller: it neither advances the receiver's cursor nor
+ * touches the mailbox flags, so searching never hides mail from the triggers.
+ * @param ownerId - the owning identity.
+ * @param query - text to look for; empty returns the newest envelopes.
+ * @param limit - most envelopes returned.
+ * @param connectionId - a specific IMAP connection, or undefined for the
+ *   primary mailbox.
+ * @returns the matching envelopes.
+ */
+async searchMailbox(ownerId: string, query: string, limit: number = 10, connectionId?: string): Promise<readonly ImapMessage[]>
 ```
 
 Source: [`packages/faberloom/inbound/src/index.ts`](../../packages/faberloom/inbound/src/index.ts)
@@ -939,8 +1076,9 @@ The product spaces service. It owns the durable space records, the effective con
 
 ```ts cordis-catalog
 /**
- * Create one space scoped to the actor's company, under an optional parent
- * the actor controls.
+ * Create one space owned by the actor, scoped to its company, under an
+ * optional parent the actor controls. Every identity may create its own
+ * space, including a console read-only role.
  * @param actor - the acting identity.
  * @param input - title and optional parent.
  * @returns the created space.
@@ -981,6 +1119,55 @@ async update(actor: SpaceActor, id: FaberLoomSpaceId, patch: UpdateSpaceInput): 
 async archive(actor: SpaceActor, id: FaberLoomSpaceId): Promise<FaberLoomSpace>
 
 /**
+ * Remove one space the actor may manage, together with every file attached to
+ * it. Deletion is permanent: the caller removes the space's conversation area.
+ * @param actor - the acting identity.
+ * @param id - space id.
+ * @returns `true` when the stored record was deleted.
+ * @throws when the space is absent or not manageable.
+ */
+async remove(actor: SpaceActor, id: FaberLoomSpaceId): Promise<boolean>
+
+/**
+ * Attach one memory entry to one or more spaces the actor may read. A
+ * sub-space with inheritance on later reads its ancestors' entries too.
+ * @param actor - the acting identity.
+ * @param text - the remembered text.
+ * @param spaceIds - the spaces the entry is attached to.
+ * @returns the created entry.
+ */
+async remember(actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[]): Promise<FaberLoomSpaceMemory>
+
+/**
+ * Delete one memory entry the actor owns. Deleting a space deliberately does
+ * not go through here: removing a space keeps its memory, which retains the
+ * space id as the recorded origin of a space that no longer exists.
+ * @param actor - the acting identity.
+ * @param id - memory entry id.
+ * @returns whether the entry existed and was removed.
+ * @throws when the entry belongs to another owner.
+ */
+async forgetMemory(actor: SpaceActor, id: string): Promise<boolean>
+
+/**
+ * List the actor's memory entries, optionally only those attached to one space.
+ * @param actor - the acting identity.
+ * @param spaceId - when set, only entries attached to this space.
+ * @returns entries oldest first.
+ */
+async listMemory(actor: SpaceActor, spaceId?: FaberLoomSpaceId): Promise<FaberLoomSpaceMemory[]>
+
+/**
+ * Resolve the memory one space sees: its own entries plus, while inheritance
+ * is on, each ancestor's entries.
+ * @param actor - the acting identity.
+ * @param spaceId - the space to resolve for.
+ * @returns entries from the inheriting chain, oldest first.
+ * @throws when the space is absent or not readable.
+ */
+async effectiveMemory(actor: SpaceActor, spaceId: FaberLoomSpaceId): Promise<FaberLoomSpaceMemory[]>
+
+/**
  * The isolated personal scope of one identity, used when no space is assigned.
  * @param ownerId - the owning identity.
  * @returns the personal scope descriptor (never a shared space).
@@ -1012,6 +1199,28 @@ async previewLink(actor: SpaceActor, id: FaberLoomSpaceId): Promise<LinkPreview>
  * @returns resolved values, conflicts, contributing sources, and exclusions.
  */
 async effectiveContext(actor: SpaceActor, id: FaberLoomSpaceId): Promise<EffectiveContext>
+
+/**
+ * Rank the actor's readable spaces for a query. It ranks through
+ * `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in
+ * lexical ranker. An empty query returns the actor's readable, non-archived
+ * spaces most recently created first; archived spaces are always excluded.
+ * @param actor - the acting identity.
+ * @param query - free-text query; an empty query lists the recent spaces.
+ * @param limit - most results to return.
+ * @returns matched spaces, best score first, then most recent first.
+ */
+async find(actor: SpaceActor, query: string, limit: number = 10): Promise<SpaceMatch[]>
+
+/**
+ * Resolve one referenced Space into its effective context and memory, its
+ * attached-file metadata, and its responsible agent and mirrored workspace.
+ * @param actor - the acting identity.
+ * @param id - space id.
+ * @returns the resolved reference.
+ * @throws when the space is absent or not readable.
+ */
+async reference(actor: SpaceActor, id: FaberLoomSpaceId): Promise<SpaceReference>
 
 /**
  * Attach one file to a space the actor may manage. Bytes are stored inline
@@ -1056,11 +1265,25 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('overview') async overview(): Promise<FaberLoomOverview>
 
 /**
- * Create a root space for the owner.
+ * Create a space (root or sub-space) for the owner with an optional
+ * responsible agent, and register its conversation area as a Workspace so
+ * the sidebar and the Espacios panel show the same thing.
  * @param title - display title.
+ * @param agentId - catalog agent put in charge; the same agent may lead a parent and a sub-space.
+ * @param parentId - parent space id, when this is a sub-space.
+ * @param inheritContext - whether the space inherits its parent's context; defaults to true.
  * @returns the refreshed overview.
  */
-@Remote('createSpace') async createSpace(title: string): Promise<FaberLoomOverview>
+@Remote('createSpace') async createSpace(title: string, agentId?: string, parentId?: string, inheritContext?: boolean): Promise<FaberLoomOverview>
+
+/**
+ * Remove a space permanently: drop its Workspace registration, delete its
+ * conversation directory, and delete the space record with its attached
+ * files.
+ * @param id - space id.
+ * @returns the refreshed overview.
+ */
+@Remote('deleteSpace') async deleteSpace(id: string): Promise<FaberLoomOverview>
 
 /**
  * Rename one of the owner's spaces.
@@ -1074,9 +1297,17 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * Create an agent in the catalog.
  * @param name - display name.
  * @param responsibility - the agent's responsibility statement.
+ * @param provider - model provider id, when set.
+ * @param model - provider model id, when set.
+ * @param apiKey - provider API key, when set.
+ * @param webAccess - whether the agent may browse the open web.
+ * @param mwtMcp - whether the agent may query the MWT.ONE MCP.
+ * @param sicopMcp - whether the agent may query the SICOP MCP.
+ * @param mailConnectionIds - mail connection ids the agent may use.
+ * @param subagentIds - agent ids this agent may communicate with.
  * @returns the refreshed overview.
  */
-@Remote('createAgent') async createAgent(name: string, responsibility: string): Promise<FaberLoomOverview>
+@Remote('createAgent') async createAgent( name: string, responsibility: string, provider?: string, model?: string, apiKey?: string, webAccess?: boolean, mwtMcp?: boolean, sicopMcp?: boolean, mailConnectionIds?: readonly string[], subagentIds?: readonly string[], ): Promise<FaberLoomOverview>
 
 /**
  * Rename one catalog agent.
@@ -1151,6 +1382,47 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('saveConnection') async saveConnection(input: ConnectionInput): Promise<readonly FaberLoomConnection[]>
 
 /**
+ * List what the owner publishes and what others share with them.
+ * @returns the share rows; unconfigured and empty when the console is not wired.
+ */
+@Remote('shares') async shares(): Promise<FaberLoomShares>
+
+/**
+ * Share one agent the actor manages, with named emails or with the whole
+ * company. The provider API key never travels: it belongs to the owner's
+ * account and is not portable.
+ * @param id - agent id.
+ * @param emails - exact emails to share with.
+ * @param allUsers - also offer it to every user of the owner's company.
+ * @returns the refreshed share rows.
+ */
+@Remote('shareAgent') async shareAgent(id: string, emails: readonly string[], allUsers: boolean): Promise<FaberLoomShares>
+
+/**
+ * Share one skill the owner uploaded, with named emails or with the whole
+ * company. A skill someone shared with the owner is not re-shareable.
+ * @param name - skill name (its directory).
+ * @param emails - exact emails to share with.
+ * @param allUsers - also offer it to every user of the owner's company.
+ * @returns the refreshed share rows.
+ */
+@Remote('shareSkill') async shareSkill(name: string, emails: readonly string[], allUsers: boolean): Promise<FaberLoomShares>
+
+/**
+ * Stop sharing one resource the owner published.
+ * @param shareId - console-side share id.
+ * @returns the refreshed share rows.
+ */
+@Remote('unshareShare') async unshareShare(shareId: string): Promise<FaberLoomShares>
+
+/**
+ * Pull the resources others shared with the owner and return the refreshed
+ * overview.
+ * @returns the refreshed overview.
+ */
+@Remote('syncShared') async syncShared(): Promise<FaberLoomOverview>
+
+/**
  * Remove one of the owner's connections.
  * @param id - connection id.
  * @returns the refreshed connection list.
@@ -1163,6 +1435,147 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns the probe outcome.
  */
 @Remote('probeConnection') async probeConnection(id: string): Promise<ConnectionProbe>
+
+/**
+ * List the owner's mailbox envelopes, newest first. Read-only.
+ * @returns one row per envelope, or an empty list without a mailbox.
+ */
+@Remote('emailInbox') async emailInbox(): Promise<readonly FaberLoomInboxRow[]>
+
+/**
+ * Read one mailbox message's body, read-only.
+ * @param uid - the message UID.
+ * @returns the decoded body, or null.
+ */
+@Remote('emailRead') async emailRead(uid: string): Promise<FaberLoomEmailContent>
+
+/**
+ * Mark one mailbox message as read.
+ * @param uid - the message UID.
+ * @returns true when the mailbox accepted the flag update.
+ */
+@Remote('emailMarkSeen') async emailMarkSeen(uid: string): Promise<boolean>
+
+/**
+ * Move one mailbox message to Trash, then remember the deletion so the live
+ * agent learns which mail the owner discards. A capture failure never fails
+ * the move.
+ * @param uid - the message UID.
+ * @param sender - sender line, for the learned pattern.
+ * @param subject - subject line, for the learned pattern.
+ * @returns the mailbox the message moved to.
+ */
+@Remote('emailTrash') async emailTrash(uid: string, sender?: string, subject?: string): Promise<{ movedTo: string }>
+
+/**
+ * Read one attachment's bytes for download.
+ * @param uid - the message UID.
+ * @param index - the attachment index in the message.
+ * @returns the attachment bytes as base64, or undefined.
+ */
+@Remote('emailAttachment') async emailAttachment(uid: string, index: number): Promise<FaberLoomEmailAttachmentContent | undefined>
+
+/**
+ * Turn one email into a Space: reuse the space with the same title when it
+ * already exists, otherwise create it with its agent and Workspace, store the
+ * email as the space's memory, and attach every file it carried.
+ * @param uid - the message UID.
+ * @param name - the space title (usually the subject).
+ * @param agentId - the agent put in charge, when chosen and the space is new.
+ * @param from - the sender line the browser already holds, for the seeded context.
+ * @returns the space, its Workspace id, and the email as a first-message seed.
+ */
+@Remote('spaceFromEmail') async spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<FaberLoomSpaceFromEmail>
+
+/**
+ * List the owner's email drafts, newest first.
+ * @returns one row per draft.
+ */
+@Remote('emailDrafts') async emailDrafts(): Promise<readonly FaberLoomEmailDraftRow[]>
+
+/**
+ * Create or replace one email draft.
+ * @param input - the draft fields.
+ * @returns the stored draft.
+ */
+@Remote('saveEmailDraft') async saveEmailDraft(input: EmailDraftSaveInput): Promise<FaberLoomEmailDraftRow>
+
+/**
+ * Discard one email draft.
+ * @param id - the draft id.
+ * @returns true when a draft was removed.
+ */
+@Remote('deleteEmailDraft') async deleteEmailDraft(id: string): Promise<boolean>
+
+/**
+ * Send one email draft through the owner's SMTP connection. The sent text is
+ * remembered as an email teaching so the owner's voice profile grows from the
+ * messages they actually approved; a capture failure never fails the send.
+ * @param id - the draft id.
+ * @returns the sent draft.
+ */
+@Remote('sendEmailDraft') async sendEmailDraft(id: string): Promise<FaberLoomEmailDraftRow>
+
+/**
+ * Read the owner's email voice profile: the teachings captured from sent mail,
+ * optionally resolved for one space.
+ * @param spaceId - restrict to one space's teachings.
+ * @returns the email teachings, oldest first.
+ */
+@Remote('emailVoice') async emailVoice(spaceId?: string): Promise<readonly FaberLoomTeachingRow[]>
+
+/**
+ * Draft one email with the model, in the owner's voice, and enqueue it as a
+ * draft. Never sends. Uses the first mounted provider/model route.
+ * @param input - recipients, subject, instruction, and optional email being answered.
+ * @returns the stored draft.
+ */
+@Remote('emailDraftWithAi') async emailDraftWithAi(input: EmailDraftAiInput): Promise<FaberLoomEmailDraftRow>
+
+/**
+ * Answer one message in the routine-designer chat, grounded in the email and
+ * the owner's space memory. Never creates anything.
+ * @param uid - the message UID used as context.
+ * @param messages - the chat so far.
+ * @param subject - the subject, when the caller already has it.
+ * @param from - the sender, when the caller already has it.
+ * @returns the assistant reply.
+ */
+@Remote('routineChat') async routineChat(uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string): Promise<string>
+
+/**
+ * Turn a described workflow into a real routine: the model returns a JSON
+ * definition, which is validated and stored as a draft routine.
+ * @param uid - the message UID used as context.
+ * @param name - the routine name.
+ * @param instruction - the workflow description.
+ * @param subject - the subject, when the caller already has it.
+ * @param from - the sender, when the caller already has it.
+ * @returns the created routine.
+ */
+@Remote('routineFromEmail') async routineFromEmail( uid: string, name: string, instruction: string, subject?: string, from?: string, ): Promise<FaberLoomRoutineCreated>
+
+/**
+ * Learn the expediente facts from one email and store them as Space memory,
+ * so a routine can later create or update the record without intervention.
+ * @param uid - the message UID.
+ * @returns the extracted facts.
+ */
+@Remote('learnFromEmail') async learnFromEmail(uid: string): Promise<FaberLoomEmailFacts>
+
+/**
+ * Read the owner's auto-send policy.
+ * @param spaceId - the space, or absent for the owner-wide policy.
+ * @returns the policy.
+ */
+@Remote('emailPolicy') async emailPolicy(spaceId?: string): Promise<FaberLoomEmailPolicy>
+
+/**
+ * Save the owner's auto-send policy.
+ * @param input - the policy fields.
+ * @returns the stored policy.
+ */
+@Remote('saveEmailPolicy') async saveEmailPolicy(input: EmailPolicySaveInput): Promise<FaberLoomEmailPolicy>
 
 /**
  * List the owner's knowledge backups, newest first.
@@ -1249,6 +1662,24 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('spaceDetail') async spaceDetail(id: string): Promise<FaberLoomSpaceDetail | undefined>
 
 /**
+ * Read a space's conversation area: the workspace registered for its
+ * workdir, if any, with its live session count. Read-only: it never creates
+ * the directory nor registers the workspace.
+ * @param id - space id.
+ * @returns the workspace projection.
+ */
+@Remote('spaceWorkspace') async spaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace>
+
+/**
+ * Open a space's conversation area: create the workdir when needed, register
+ * it as a workspace titled after the space, and return its id so the browser
+ * can start a session in it.
+ * @param id - space id.
+ * @returns the registered workspace projection.
+ */
+@Remote('openSpaceWorkspace') async openSpaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace>
+
+/**
  * Save one space's editable configuration.
  * @param id - space id.
  * @param input - title, inheritance, and members.
@@ -1261,6 +1692,14 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns one row per registered model.
  */
 @Remote('models') async models(): Promise<readonly FaberLoomModelRow[]>
+
+/**
+ * List the model providers and models the harness currently mounts, read live
+ * from `ctx.llm`, so the panels offer exactly what this deployment can run and
+ * new models appear as soon as the provider exposes them.
+ * @returns one entry per mounted provider with its current model ids.
+ */
+@Remote('modelCatalog') async modelCatalog(): Promise<FaberLoomModelCatalog>
 
 /**
  * Ask the recommender which model suits one agent's work.
@@ -1301,6 +1740,16 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns the refreshed teaching list.
  */
 @Remote('revokeTeaching') async revokeTeaching(id: string): Promise<readonly FaberLoomTeachingRow[]>
+
+/**
+ * Report the owner's MWT.ONE access: identity, active company, and the
+ * external MCP servers the harness is connected to as a client, with the
+ * tool names each one published (grouped from the `mcp__<server>__<tool>`
+ * registrations). An empty server list means the deployment mounted no MCP
+ * client for this identity.
+ * @returns the status the Connections panel renders.
+ */
+@Remote('mwtStatus') mwtStatus(): FaberLoomMwtStatus
 
 /**
  * List the MCP client tokens this owner minted.
@@ -1424,6 +1873,14 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('boardDetail') async boardDetail(id: string): Promise<FaberLoomBoardDetail | undefined>
 
 /**
+ * Link one board item to the routine that runs it, or unlink it.
+ * @param id - board item id.
+ * @param routineId - routine id to attach, or null to detach.
+ * @returns the refreshed overview.
+ */
+@Remote('setBoardRoutine') async setBoardRoutine(id: string, routineId: string | null): Promise<FaberLoomOverview>
+
+/**
  * Replace one catalog agent's responsibility.
  * @param id - agent id.
  * @param responsibility - the new responsibility statement.
@@ -1442,9 +1899,10 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * Approve or reject the current revision of one board item.
  * @param id - board item id.
  * @param approve - true approves, false rejects.
+ * @param note - optional review note.
  * @returns the refreshed overview.
  */
-@Remote('reviewBoardItem') async reviewBoardItem(id: string, approve: boolean): Promise<FaberLoomOverview>
+@Remote('reviewBoardItem') async reviewBoardItem(id: string, approve: boolean, note?: string): Promise<FaberLoomOverview>
 
 /**
  * Reopen one reviewed board item so it can be corrected.
@@ -1452,6 +1910,29 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns the refreshed overview.
  */
 @Remote('reopenBoardItem') async reopenBoardItem(id: string): Promise<FaberLoomOverview>
+
+/**
+ * Submit a prepared result as a new revision awaiting review.
+ * @param id - board item id.
+ * @param input - summary and evidence of the prepared result.
+ * @returns the refreshed overview.
+ */
+@Remote('submitBoardRevision') async submitBoardRevision(id: string, input: BoardRevisionInput): Promise<FaberLoomOverview>
+
+/**
+ * Move a board item into an exception state: request_data, fail, or complete.
+ * @param id - board item id.
+ * @param action - the exception action.
+ * @returns the refreshed overview.
+ */
+@Remote('boardException') async boardException(id: string, action: 'request_data' | 'fail' | 'complete'): Promise<FaberLoomOverview>
+
+/**
+ * Permanently remove one board item from the work table.
+ * @param id - board item id.
+ * @returns the refreshed overview.
+ */
+@Remote('deleteBoardItem') async deleteBoardItem(id: string): Promise<FaberLoomOverview>
 
 /**
  * Create one draft routine the owner can then activate.
@@ -1470,13 +1951,50 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('setRoutineActive') async setRoutineActive(id: string, active: boolean): Promise<FaberLoomOverview>
 
 /**
- * Record one owner statement on the agent-memory server. The server distils
- * L0 into L1 asynchronously, so the new row may appear after the next read.
+ * Remember one statement, attached to a space or to no space. The entry is
+ * durable and space-scoped, so a sub-space with inheritance sees it.
  * @param text - the statement to remember.
+ * @param spaceId - the space to attach it to, when one is chosen.
  * @returns the refreshed overview.
  */
-@Remote('remember') async remember(text: string): Promise<FaberLoomOverview>
+@Remote('remember') async remember(text: string, spaceId?: string): Promise<FaberLoomOverview>
+
+/**
+ * Read the space-scoped memory, optionally resolved for one space (own plus
+ * inherited ancestors' entries).
+ * @param spaceId - the space to resolve for; absent lists every entry.
+ * @returns memory rows oldest first.
+ */
+@Remote('spaceMemory') async spaceMemory(spaceId?: string): Promise<readonly FaberLoomSpaceMemoryRow[]>
+
+/**
+ * Delete one space-memory entry the owner controls and return the refreshed
+ * list. Deleting a space never deletes its memory; this is the only path that
+ * removes an entry, and it is explicit.
+ * @param id - memory entry id.
+ * @returns the remaining memory rows, oldest first.
+ */
+@Remote('deleteSpaceMemory') async deleteSpaceMemory(id: string): Promise<readonly FaberLoomSpaceMemoryRow[]>
 ```
 
 Source: [`packages/faberloom/view/src/index.ts`](../../packages/faberloom/view/src/index.ts)
+
+<a id="ctxspaceindex--spaceindex"></a>
+
+### `ctx.spaceIndex` — `SpaceIndex`
+
+Pluggable ranker over the spaces an actor may read. The built-in lexical ranker is the default provider; an embeddings or knowledge-hub provider may replace it without changing the spaces service.
+
+```ts cordis-catalog
+/**
+ * Rank one query over the actor's readable entries.
+ * @param entries - readable, non-archived candidate entries.
+ * @param query - free-text query; an empty query lists recent spaces.
+ * @param limit - most matches to return.
+ * @returns matches, best score first, then most recent first.
+ */
+rank(entries: readonly SpaceIndexEntry[], query: string, limit: number): Promise<SpaceMatch[]>
+```
+
+Source: [`packages/faberloom/spaces/src/types.ts`](../../packages/faberloom/spaces/src/types.ts)
 <!-- END GENERATED cordis-surface -->

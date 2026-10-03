@@ -1159,6 +1159,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated item.',
       },
       {
+        signature: 'async remove(ownerId: string, id: FaberLoomBoardItemId): Promise<boolean>',
+        description: 'Permanently remove one item from the work table, regardless of status.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        returns: 'whether the item existed and was removed.',
+      },
+      {
+        signature: 'async setRoutine(ownerId: string, id: FaberLoomBoardItemId, routineId: string | null): Promise<FaberLoomBoardItem>',
+        description: 'Link the item to the routine that will run it, or unlink it with `null`.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'routineId', description: 'routine id to attach, or null to detach.' }],
+        returns: 'the updated item.',
+      },
+      {
         signature: 'async review(ownerId: string, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem>',
         description: 'Approve or reject the exact revision. A stale item refuses; a revision that is not current refuses with `STALE_REVISION`.',
         parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'decision, exact revision, and optional note.' }],
@@ -1202,6 +1214,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The product connections service: per-user integrations owned by FaberLoom.',
     methods: [
       {
+        signature: 'async emailPolicy(ownerId: string, spaceId: string | null = null): Promise<EmailAutoPolicy>',
+        description: 'Read the auto-send policy for one owner (and space, when scoped).',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'spaceId', description: 'the space, or null for the owner-wide policy.' }],
+        returns: 'the policy, defaulting to disabled with a threshold of three.',
+      },
+      {
+        signature: 'async saveEmailPolicy(ownerId: string, input: EmailAutoPolicyInput): Promise<EmailAutoPolicy>',
+        description: 'Save the auto-send policy, preserving the accumulated clean-send count.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'the policy fields.' }],
+        returns: 'the stored policy.',
+      },
+      {
+        signature: 'async listDrafts(ownerId: string): Promise<FaberLoomEmailDraft[]>',
+        description: 'List one owner\'s email drafts, newest first.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the drafts.',
+      },
+      {
+        signature: 'async saveDraft(ownerId: string, input: EmailDraftInput): Promise<FaberLoomEmailDraft>',
+        description: 'Create or replace one email draft.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'the draft fields.' }],
+        returns: 'the stored draft.',
+      },
+      {
+        signature: 'async removeDraft(ownerId: string, id: string): Promise<boolean>',
+        description: 'Remove one draft the owner may discard.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'the draft id.' }],
+        returns: 'true when a record was removed.',
+      },
+      {
+        signature: 'async sendDraft(ownerId: string, id: string): Promise<FaberLoomEmailDraft>',
+        description: 'Send one draft through the owner\'s SMTP connection and mark it sent.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'the draft id.' }],
+        returns: 'the sent draft.',
+        throws: ['when the draft is absent, already settled, or the send fails.'],
+      },
+      {
         signature: 'async list(ownerId: string): Promise<FaberLoomConnection[]>',
         description: 'List one owner\'s connections.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
@@ -1221,9 +1270,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async probe(ownerId: string, id: string): Promise<ConnectionProbe>',
-        description: 'Check one connection for real: an IMAP login, or a writable backup destination.',
+        description: 'Check one connection for real: an IMAP or SMTP login, or a writable backup destination.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'connection id.' }],
         returns: 'the probe outcome.',
+      },
+      {
+        signature: 'async smtp(ownerId: string, id?: string): Promise<SmtpCredentials | undefined>',
+        description: 'Read one of the owner\'s outgoing-server credentials.\n\nLike imap, this accessor returns a stored secret and exists for host-side consumers that send mail as the owner; the browser never sees it.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'a specific connection, or undefined for the primary SMTP row (the owner\'s flagged one, otherwise the first complete row).' }],
+        returns: 'the credentials, or undefined when the owner has no usable server.',
+      },
+      {
+        signature: 'async sendMail(ownerId: string, mail: OutgoingMail, connectionId?: string): Promise<SentMail>',
+        description: 'Deliver one message through the owner\'s outgoing server.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'mail', description: 'the message to send.' }, { name: 'connectionId', description: 'a specific SMTP connection, or undefined for the primary (or first complete) one.' }],
+        returns: 'the generated `Message-ID` and the accepted recipients.',
       },
       {
         signature: 'async imap(ownerId: string, id?: string): Promise<ImapCredentials | undefined>',
@@ -1275,6 +1336,37 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Poll the owner\'s mailbox once.',
         parameters: [{ name: 'now', description: 'the instant this pass considers current.' }],
         returns: 'what the pass read and started.',
+      },
+      {
+        signature: 'async listInbox(ownerId: string, limit?: number): Promise<ImapMessage[]>',
+        description: 'List the owner\'s mailbox envelopes, newest first, without mutating the mailbox. Read-only: never marks, moves, or deletes mail.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'limit', description: 'most envelopes to return.' }],
+        returns: 'the envelopes, or an empty list when no mailbox is configured.',
+      },
+      {
+        signature: 'async readEmail(ownerId: string, uid: number): Promise<ImapMessageContent>',
+        description: 'Read one mailbox message\'s body, read-only.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }],
+        returns: 'the decoded body, or null when no mailbox is configured or the message has no body.',
+      },
+      {
+        signature: 'async markSeen(ownerId: string, uid: number): Promise<boolean>',
+        description: 'Mark one message as read (`\\Seen`). Unlike the poller this writes to the mailbox, so it runs only for an explicit user gesture.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }],
+        returns: 'true when the mailbox accepted the flag update, false without a mailbox.',
+      },
+      {
+        signature: 'async moveToTrash(ownerId: string, uid: number): Promise<string>',
+        description: 'Move one message to the Trash mailbox, trying the configured name and then the built-in candidates. Writes to the mailbox on an explicit gesture only.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }],
+        returns: 'the mailbox the message moved to.',
+        throws: ['when every candidate mailbox rejects the move.'],
+      },
+      {
+        signature: 'async searchMailbox(ownerId: string, query: string, limit: number = 10, connectionId?: string): Promise<readonly ImapMessage[]>',
+        description: 'Search the owner\'s mailbox envelopes from the chat, newest first.\n\nRead-only like the poller: it neither advances the receiver\'s cursor nor touches the mailbox flags, so searching never hides mail from the triggers.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'query', description: 'text to look for; empty returns the newest envelopes.' }, { name: 'limit', description: 'most envelopes returned.' }, { name: 'connectionId', description: 'a specific IMAP connection, or undefined for the primary mailbox.' }],
+        returns: 'the matching envelopes.',
       },
     ],
   },
@@ -1558,7 +1650,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async create(actor: SpaceActor, input: CreateSpaceInput): Promise<FaberLoomSpace>',
-        description: 'Create one space scoped to the actor\'s company, under an optional parent the actor controls.',
+        description: 'Create one space owned by the actor, scoped to its company, under an optional parent the actor controls. Every identity may create its own space, including a console read-only role.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'input', description: 'title and optional parent.' }],
         returns: 'the created space.',
       },
@@ -1588,6 +1680,39 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the archived space.',
       },
       {
+        signature: 'async remove(actor: SpaceActor, id: FaberLoomSpaceId): Promise<boolean>',
+        description: 'Remove one space the actor may manage, together with every file attached to it. Deletion is permanent: the caller removes the space\'s conversation area.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }],
+        returns: '`true` when the stored record was deleted.',
+        throws: ['when the space is absent or not manageable.'],
+      },
+      {
+        signature: 'async remember(actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[]): Promise<FaberLoomSpaceMemory>',
+        description: 'Attach one memory entry to one or more spaces the actor may read. A sub-space with inheritance on later reads its ancestors\' entries too.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'text', description: 'the remembered text.' }, { name: 'spaceIds', description: 'the spaces the entry is attached to.' }],
+        returns: 'the created entry.',
+      },
+      {
+        signature: 'async forgetMemory(actor: SpaceActor, id: string): Promise<boolean>',
+        description: 'Delete one memory entry the actor owns. Deleting a space deliberately does not go through here: removing a space keeps its memory, which retains the space id as the recorded origin of a space that no longer exists.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'memory entry id.' }],
+        returns: 'whether the entry existed and was removed.',
+        throws: ['when the entry belongs to another owner.'],
+      },
+      {
+        signature: 'async listMemory(actor: SpaceActor, spaceId?: FaberLoomSpaceId): Promise<FaberLoomSpaceMemory[]>',
+        description: 'List the actor\'s memory entries, optionally only those attached to one space.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'when set, only entries attached to this space.' }],
+        returns: 'entries oldest first.',
+      },
+      {
+        signature: 'async effectiveMemory(actor: SpaceActor, spaceId: FaberLoomSpaceId): Promise<FaberLoomSpaceMemory[]>',
+        description: 'Resolve the memory one space sees: its own entries plus, while inheritance is on, each ancestor\'s entries.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the space to resolve for.' }],
+        returns: 'entries from the inheriting chain, oldest first.',
+        throws: ['when the space is absent or not readable.'],
+      },
+      {
         signature: 'personalScope(ownerId: string): PersonalScope',
         description: 'The isolated personal scope of one identity, used when no space is assigned.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
@@ -1610,6 +1735,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Resolve the effective context of one space: the space\'s own context plus, when it inherits, its ancestors\' context, minus explicit exclusions, with unresolved key conflicts surfaced instead of silently prioritized.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }],
         returns: 'resolved values, conflicts, contributing sources, and exclusions.',
+      },
+      {
+        signature: 'async find(actor: SpaceActor, query: string, limit: number = 10): Promise<SpaceMatch[]>',
+        description: 'Rank the actor\'s readable spaces for a query. It ranks through `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in lexical ranker. An empty query returns the actor\'s readable, non-archived spaces most recently created first; archived spaces are always excluded.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'query', description: 'free-text query; an empty query lists the recent spaces.' }, { name: 'limit', description: 'most results to return.' }],
+        returns: 'matched spaces, best score first, then most recent first.',
+      },
+      {
+        signature: 'async reference(actor: SpaceActor, id: FaberLoomSpaceId): Promise<SpaceReference>',
+        description: 'Resolve one referenced Space into its effective context and memory, its attached-file metadata, and its responsible agent and mirrored workspace.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }],
+        returns: 'the resolved reference.',
+        throws: ['when the space is absent or not readable.'],
       },
       {
         signature: 'async attachFile(actor: SpaceActor, spaceId: FaberLoomSpaceId, input: SpaceFileInput): Promise<SpaceFile>',
@@ -1643,9 +1781,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'spaces, agents, board items, routines, and memory rows as plain JSON.',
       },
       {
-        signature: '@Remote(\'createSpace\') async createSpace(title: string): Promise<FaberLoomOverview>',
-        description: 'Create a root space for the owner.',
-        parameters: [{ name: 'title', description: 'display title.' }],
+        signature: '@Remote(\'createSpace\') async createSpace(title: string, agentId?: string, parentId?: string, inheritContext?: boolean): Promise<FaberLoomOverview>',
+        description: 'Create a space (root or sub-space) for the owner with an optional responsible agent, and register its conversation area as a Workspace so the sidebar and the Espacios panel show the same thing.',
+        parameters: [{ name: 'title', description: 'display title.' }, { name: 'agentId', description: 'catalog agent put in charge; the same agent may lead a parent and a sub-space.' }, { name: 'parentId', description: 'parent space id, when this is a sub-space.' }, { name: 'inheritContext', description: 'whether the space inherits its parent\'s context; defaults to true.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'deleteSpace\') async deleteSpace(id: string): Promise<FaberLoomOverview>',
+        description: 'Remove a space permanently: drop its Workspace registration, delete its conversation directory, and delete the space record with its attached files.',
+        parameters: [{ name: 'id', description: 'space id.' }],
         returns: 'the refreshed overview.',
       },
       {
@@ -1655,9 +1799,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed overview.',
       },
       {
-        signature: '@Remote(\'createAgent\') async createAgent(name: string, responsibility: string): Promise<FaberLoomOverview>',
+        signature: '@Remote(\'createAgent\') async createAgent( name: string, responsibility: string, provider?: string, model?: string, apiKey?: string, webAccess?: boolean, mwtMcp?: boolean, sicopMcp?: boolean, mailConnectionIds?: readonly string[], subagentIds?: readonly string[], ): Promise<FaberLoomOverview>',
         description: 'Create an agent in the catalog.',
-        parameters: [{ name: 'name', description: 'display name.' }, { name: 'responsibility', description: 'the agent\'s responsibility statement.' }],
+        parameters: [{ name: 'name', description: 'display name.' }, { name: 'responsibility', description: 'the agent\'s responsibility statement.' }, { name: 'provider', description: 'model provider id, when set.' }, { name: 'model', description: 'provider model id, when set.' }, { name: 'apiKey', description: 'provider API key, when set.' }, { name: 'webAccess', description: 'whether the agent may browse the open web.' }, { name: 'mwtMcp', description: 'whether the agent may query the MWT.ONE MCP.' }, { name: 'sicopMcp', description: 'whether the agent may query the SICOP MCP.' }, { name: 'mailConnectionIds', description: 'mail connection ids the agent may use.' }, { name: 'subagentIds', description: 'agent ids this agent may communicate with.' }],
         returns: 'the refreshed overview.',
       },
       {
@@ -1721,6 +1865,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed connection list.',
       },
       {
+        signature: '@Remote(\'shares\') async shares(): Promise<FaberLoomShares>',
+        description: 'List what the owner publishes and what others share with them.',
+        parameters: [],
+        returns: 'the share rows; unconfigured and empty when the console is not wired.',
+      },
+      {
+        signature: '@Remote(\'shareAgent\') async shareAgent(id: string, emails: readonly string[], allUsers: boolean): Promise<FaberLoomShares>',
+        description: 'Share one agent the actor manages, with named emails or with the whole company. The provider API key never travels: it belongs to the owner\'s account and is not portable.',
+        parameters: [{ name: 'id', description: 'agent id.' }, { name: 'emails', description: 'exact emails to share with.' }, { name: 'allUsers', description: 'also offer it to every user of the owner\'s company.' }],
+        returns: 'the refreshed share rows.',
+      },
+      {
+        signature: '@Remote(\'shareSkill\') async shareSkill(name: string, emails: readonly string[], allUsers: boolean): Promise<FaberLoomShares>',
+        description: 'Share one skill the owner uploaded, with named emails or with the whole company. A skill someone shared with the owner is not re-shareable.',
+        parameters: [{ name: 'name', description: 'skill name (its directory).' }, { name: 'emails', description: 'exact emails to share with.' }, { name: 'allUsers', description: 'also offer it to every user of the owner\'s company.' }],
+        returns: 'the refreshed share rows.',
+      },
+      {
+        signature: '@Remote(\'unshareShare\') async unshareShare(shareId: string): Promise<FaberLoomShares>',
+        description: 'Stop sharing one resource the owner published.',
+        parameters: [{ name: 'shareId', description: 'console-side share id.' }],
+        returns: 'the refreshed share rows.',
+      },
+      {
+        signature: '@Remote(\'syncShared\') async syncShared(): Promise<FaberLoomOverview>',
+        description: 'Pull the resources others shared with the owner and return the refreshed overview.',
+        parameters: [],
+        returns: 'the refreshed overview.',
+      },
+      {
         signature: '@Remote(\'removeConnection\') async removeConnection(id: string): Promise<readonly FaberLoomConnection[]>',
         description: 'Remove one of the owner\'s connections.',
         parameters: [{ name: 'id', description: 'connection id.' }],
@@ -1731,6 +1905,108 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Check one of the owner\'s connections for real (IMAP login or writable destination).',
         parameters: [{ name: 'id', description: 'connection id.' }],
         returns: 'the probe outcome.',
+      },
+      {
+        signature: '@Remote(\'emailInbox\') async emailInbox(): Promise<readonly FaberLoomInboxRow[]>',
+        description: 'List the owner\'s mailbox envelopes, newest first. Read-only.',
+        parameters: [],
+        returns: 'one row per envelope, or an empty list without a mailbox.',
+      },
+      {
+        signature: '@Remote(\'emailRead\') async emailRead(uid: string): Promise<FaberLoomEmailContent>',
+        description: 'Read one mailbox message\'s body, read-only.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }],
+        returns: 'the decoded body, or null.',
+      },
+      {
+        signature: '@Remote(\'emailMarkSeen\') async emailMarkSeen(uid: string): Promise<boolean>',
+        description: 'Mark one mailbox message as read.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }],
+        returns: 'true when the mailbox accepted the flag update.',
+      },
+      {
+        signature: '@Remote(\'emailTrash\') async emailTrash(uid: string, sender?: string, subject?: string): Promise<{ movedTo: string }>',
+        description: 'Move one mailbox message to Trash, then remember the deletion so the live agent learns which mail the owner discards. A capture failure never fails the move.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'sender', description: 'sender line, for the learned pattern.' }, { name: 'subject', description: 'subject line, for the learned pattern.' }],
+        returns: 'the mailbox the message moved to.',
+      },
+      {
+        signature: '@Remote(\'emailAttachment\') async emailAttachment(uid: string, index: number): Promise<FaberLoomEmailAttachmentContent | undefined>',
+        description: 'Read one attachment\'s bytes for download.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'index', description: 'the attachment index in the message.' }],
+        returns: 'the attachment bytes as base64, or undefined.',
+      },
+      {
+        signature: '@Remote(\'spaceFromEmail\') async spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<FaberLoomSpaceFromEmail>',
+        description: 'Turn one email into a Space: reuse the space with the same title when it already exists, otherwise create it with its agent and Workspace, store the email as the space\'s memory, and attach every file it carried.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'name', description: 'the space title (usually the subject).' }, { name: 'agentId', description: 'the agent put in charge, when chosen and the space is new.' }, { name: 'from', description: 'the sender line the browser already holds, for the seeded context.' }],
+        returns: 'the space, its Workspace id, and the email as a first-message seed.',
+      },
+      {
+        signature: '@Remote(\'emailDrafts\') async emailDrafts(): Promise<readonly FaberLoomEmailDraftRow[]>',
+        description: 'List the owner\'s email drafts, newest first.',
+        parameters: [],
+        returns: 'one row per draft.',
+      },
+      {
+        signature: '@Remote(\'saveEmailDraft\') async saveEmailDraft(input: EmailDraftSaveInput): Promise<FaberLoomEmailDraftRow>',
+        description: 'Create or replace one email draft.',
+        parameters: [{ name: 'input', description: 'the draft fields.' }],
+        returns: 'the stored draft.',
+      },
+      {
+        signature: '@Remote(\'deleteEmailDraft\') async deleteEmailDraft(id: string): Promise<boolean>',
+        description: 'Discard one email draft.',
+        parameters: [{ name: 'id', description: 'the draft id.' }],
+        returns: 'true when a draft was removed.',
+      },
+      {
+        signature: '@Remote(\'sendEmailDraft\') async sendEmailDraft(id: string): Promise<FaberLoomEmailDraftRow>',
+        description: 'Send one email draft through the owner\'s SMTP connection. The sent text is remembered as an email teaching so the owner\'s voice profile grows from the messages they actually approved; a capture failure never fails the send.',
+        parameters: [{ name: 'id', description: 'the draft id.' }],
+        returns: 'the sent draft.',
+      },
+      {
+        signature: '@Remote(\'emailVoice\') async emailVoice(spaceId?: string): Promise<readonly FaberLoomTeachingRow[]>',
+        description: 'Read the owner\'s email voice profile: the teachings captured from sent mail, optionally resolved for one space.',
+        parameters: [{ name: 'spaceId', description: 'restrict to one space\'s teachings.' }],
+        returns: 'the email teachings, oldest first.',
+      },
+      {
+        signature: '@Remote(\'emailDraftWithAi\') async emailDraftWithAi(input: EmailDraftAiInput): Promise<FaberLoomEmailDraftRow>',
+        description: 'Draft one email with the model, in the owner\'s voice, and enqueue it as a draft. Never sends. Uses the first mounted provider/model route.',
+        parameters: [{ name: 'input', description: 'recipients, subject, instruction, and optional email being answered.' }],
+        returns: 'the stored draft.',
+      },
+      {
+        signature: '@Remote(\'routineChat\') async routineChat(uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string): Promise<string>',
+        description: 'Answer one message in the routine-designer chat, grounded in the email and the owner\'s space memory. Never creates anything.',
+        parameters: [{ name: 'uid', description: 'the message UID used as context.' }, { name: 'messages', description: 'the chat so far.' }, { name: 'subject', description: 'the subject, when the caller already has it.' }, { name: 'from', description: 'the sender, when the caller already has it.' }],
+        returns: 'the assistant reply.',
+      },
+      {
+        signature: '@Remote(\'routineFromEmail\') async routineFromEmail( uid: string, name: string, instruction: string, subject?: string, from?: string, ): Promise<FaberLoomRoutineCreated>',
+        description: 'Turn a described workflow into a real routine: the model returns a JSON definition, which is validated and stored as a draft routine.',
+        parameters: [{ name: 'uid', description: 'the message UID used as context.' }, { name: 'name', description: 'the routine name.' }, { name: 'instruction', description: 'the workflow description.' }, { name: 'subject', description: 'the subject, when the caller already has it.' }, { name: 'from', description: 'the sender, when the caller already has it.' }],
+        returns: 'the created routine.',
+      },
+      {
+        signature: '@Remote(\'learnFromEmail\') async learnFromEmail(uid: string): Promise<FaberLoomEmailFacts>',
+        description: 'Learn the expediente facts from one email and store them as Space memory, so a routine can later create or update the record without intervention.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }],
+        returns: 'the extracted facts.',
+      },
+      {
+        signature: '@Remote(\'emailPolicy\') async emailPolicy(spaceId?: string): Promise<FaberLoomEmailPolicy>',
+        description: 'Read the owner\'s auto-send policy.',
+        parameters: [{ name: 'spaceId', description: 'the space, or absent for the owner-wide policy.' }],
+        returns: 'the policy.',
+      },
+      {
+        signature: '@Remote(\'saveEmailPolicy\') async saveEmailPolicy(input: EmailPolicySaveInput): Promise<FaberLoomEmailPolicy>',
+        description: 'Save the owner\'s auto-send policy.',
+        parameters: [{ name: 'input', description: 'the policy fields.' }],
+        returns: 'the stored policy.',
       },
       {
         signature: '@Remote(\'backups\') async backups(): Promise<readonly FaberLoomBackupRow[]>',
@@ -1799,6 +2075,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the space detail, or undefined when it is gone.',
       },
       {
+        signature: '@Remote(\'spaceWorkspace\') async spaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace>',
+        description: 'Read a space\'s conversation area: the workspace registered for its workdir, if any, with its live session count. Read-only: it never creates the directory nor registers the workspace.',
+        parameters: [{ name: 'id', description: 'space id.' }],
+        returns: 'the workspace projection.',
+      },
+      {
+        signature: '@Remote(\'openSpaceWorkspace\') async openSpaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace>',
+        description: 'Open a space\'s conversation area: create the workdir when needed, register it as a workspace titled after the space, and return its id so the browser can start a session in it.',
+        parameters: [{ name: 'id', description: 'space id.' }],
+        returns: 'the registered workspace projection.',
+      },
+      {
         signature: '@Remote(\'saveSpace\') async saveSpace(id: string, input: SpaceSaveInput): Promise<FaberLoomOverview>',
         description: 'Save one space\'s editable configuration.',
         parameters: [{ name: 'id', description: 'space id.' }, { name: 'input', description: 'title, inheritance, and members.' }],
@@ -1809,6 +2097,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List the model pool the panels assign from.',
         parameters: [],
         returns: 'one row per registered model.',
+      },
+      {
+        signature: '@Remote(\'modelCatalog\') async modelCatalog(): Promise<FaberLoomModelCatalog>',
+        description: 'List the model providers and models the harness currently mounts, read live from `ctx.llm`, so the panels offer exactly what this deployment can run and new models appear as soon as the provider exposes them.',
+        parameters: [],
+        returns: 'one entry per mounted provider with its current model ids.',
       },
       {
         signature: '@Remote(\'recommendModel\') async recommendModel(agentId: string, task?: string): Promise<FaberLoomModelRecommendation | undefined>',
@@ -1839,6 +2133,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Revoke one teaching so no later decision recovers it.',
         parameters: [{ name: 'id', description: 'teaching id.' }],
         returns: 'the refreshed teaching list.',
+      },
+      {
+        signature: '@Remote(\'mwtStatus\') mwtStatus(): FaberLoomMwtStatus',
+        description: 'Report the owner\'s MWT.ONE access: identity, active company, and the external MCP servers the harness is connected to as a client, with the tool names each one published (grouped from the `mcp__<server>__<tool>` registrations). An empty server list means the deployment mounted no MCP client for this identity.',
+        parameters: [],
+        returns: 'the status the Connections panel renders.',
       },
       {
         signature: '@Remote(\'mcpTokens\') async mcpTokens(): Promise<readonly FaberLoomMcpTokenRow[]>',
@@ -1943,6 +2243,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the board detail, or undefined when it is gone.',
       },
       {
+        signature: '@Remote(\'setBoardRoutine\') async setBoardRoutine(id: string, routineId: string | null): Promise<FaberLoomOverview>',
+        description: 'Link one board item to the routine that runs it, or unlink it.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'routineId', description: 'routine id to attach, or null to detach.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
         signature: '@Remote(\'setAgentResponsibility\') async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview>',
         description: 'Replace one catalog agent\'s responsibility.',
         parameters: [{ name: 'id', description: 'agent id.' }, { name: 'responsibility', description: 'the new responsibility statement.' }],
@@ -1955,14 +2261,32 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed overview.',
       },
       {
-        signature: '@Remote(\'reviewBoardItem\') async reviewBoardItem(id: string, approve: boolean): Promise<FaberLoomOverview>',
+        signature: '@Remote(\'reviewBoardItem\') async reviewBoardItem(id: string, approve: boolean, note?: string): Promise<FaberLoomOverview>',
         description: 'Approve or reject the current revision of one board item.',
-        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'approve', description: 'true approves, false rejects.' }],
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'approve', description: 'true approves, false rejects.' }, { name: 'note', description: 'optional review note.' }],
         returns: 'the refreshed overview.',
       },
       {
         signature: '@Remote(\'reopenBoardItem\') async reopenBoardItem(id: string): Promise<FaberLoomOverview>',
         description: 'Reopen one reviewed board item so it can be corrected.',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'submitBoardRevision\') async submitBoardRevision(id: string, input: BoardRevisionInput): Promise<FaberLoomOverview>',
+        description: 'Submit a prepared result as a new revision awaiting review.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'summary and evidence of the prepared result.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'boardException\') async boardException(id: string, action: \'request_data\' | \'fail\' | \'complete\'): Promise<FaberLoomOverview>',
+        description: 'Move a board item into an exception state: request_data, fail, or complete.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'action', description: 'the exception action.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'deleteBoardItem\') async deleteBoardItem(id: string): Promise<FaberLoomOverview>',
+        description: 'Permanently remove one board item from the work table.',
         parameters: [{ name: 'id', description: 'board item id.' }],
         returns: 'the refreshed overview.',
       },
@@ -1979,10 +2303,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed overview.',
       },
       {
-        signature: '@Remote(\'remember\') async remember(text: string): Promise<FaberLoomOverview>',
-        description: 'Record one owner statement on the agent-memory server. The server distils L0 into L1 asynchronously, so the new row may appear after the next read.',
-        parameters: [{ name: 'text', description: 'the statement to remember.' }],
+        signature: '@Remote(\'remember\') async remember(text: string, spaceId?: string): Promise<FaberLoomOverview>',
+        description: 'Remember one statement, attached to a space or to no space. The entry is durable and space-scoped, so a sub-space with inheritance sees it.',
+        parameters: [{ name: 'text', description: 'the statement to remember.' }, { name: 'spaceId', description: 'the space to attach it to, when one is chosen.' }],
         returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'spaceMemory\') async spaceMemory(spaceId?: string): Promise<readonly FaberLoomSpaceMemoryRow[]>',
+        description: 'Read the space-scoped memory, optionally resolved for one space (own plus inherited ancestors\' entries).',
+        parameters: [{ name: 'spaceId', description: 'the space to resolve for; absent lists every entry.' }],
+        returns: 'memory rows oldest first.',
+      },
+      {
+        signature: '@Remote(\'deleteSpaceMemory\') async deleteSpaceMemory(id: string): Promise<readonly FaberLoomSpaceMemoryRow[]>',
+        description: 'Delete one space-memory entry the owner controls and return the refreshed list. Deleting a space never deletes its memory; this is the only path that removes an entry, and it is explicit.',
+        parameters: [{ name: 'id', description: 'memory entry id.' }],
+        returns: 'the remaining memory rows, oldest first.',
       },
     ],
   },
@@ -2660,6 +2996,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the new Session identity.',
       },
       {
+        signature: '@Remote(\'delete\') delete(request: SessionDeleteRequest): Promise<SessionDeleteValue>',
+        description: 'Permanently delete one Session and every Session forked from it.\n\nA live Session this deployment owns is cancelled and disposed first, so deleting an open conversation neither races it nor requires a separate close.',
+        parameters: [{ name: 'request', description: 'the Session to delete.' }],
+        returns: 'the ids removed, children before their parent.',
+      },
+      {
+        signature: '@Remote(\'deleteOrphans\') deleteOrphans(): Promise<SessionDeleteOrphansValue>',
+        description: 'Permanently delete every stored Session that belongs to no Workspace.',
+        parameters: [],
+        returns: 'the ids removed, in listing order.',
+      },
+      {
         signature: '@Remote(\'prompt\') prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue>',
         description: 'Admit one prompt after explicitly resuming its Session.',
         parameters: [{ name: 'request', description: 'Session identity, prompt content, source metadata, and delivery mode.' }, { name: 'signal', description: 'caller cancellation before prompt admission begins.' }],
@@ -2766,6 +3114,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List every stored session visible to this process, in no promised order.',
         parameters: [{ name: 'options', description: 'optional cancellation.' }],
         returns: 'one snapshot per stored session.',
+      },
+      {
+        signature: 'delete(id: SessionId): Promise<boolean>',
+        description: 'Permanently remove one stored session and its log artifacts, so the id returns to "never existed" for `stat`, `list`, and `open`.\n\nDeletion is irreversible and disjoint from the append-only event contract: it removes whole generation artifacts rather than rewriting them. A backend that cannot delete refuses rather than reporting success.',
+        parameters: [{ name: 'id', description: 'the stored session to delete.' }],
+        returns: '`true` when a stored session was removed, `false` when none existed.',
       },
     ],
   },
@@ -3347,6 +3701,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Load and validate the winning candidate, passing its opaque discovery locator back to the provider. Cancellation is rechecked after selection, including cache hits, and raced against loading so an uncooperative provider cannot hang the caller.',
         parameters: [{ name: 'name', description: 'kebab-case skill name.' }, { name: 'options', description: 'view options; `scope` selects the viewing agent\'s layers, `cwd` selects workspace-sensitive skills, and `signal` cancels work.' }],
         returns: 'the full skill, including body content, or `undefined`.',
+      },
+    ],
+  },
+  {
+    key: 'spaceIndex',
+    summary: 'Pluggable ranker over the spaces an actor may read.',
+    description: 'Pluggable ranker over the spaces an actor may read. The built-in lexical ranker is the default provider; an embeddings or knowledge-hub provider may replace it without changing the spaces service.',
+    methods: [
+      {
+        signature: 'rank(entries: readonly SpaceIndexEntry[], query: string, limit: number): Promise<SpaceMatch[]>',
+        description: 'Rank one query over the actor\'s readable entries.',
+        parameters: [{ name: 'entries', description: 'readable, non-archived candidate entries.' }, { name: 'query', description: 'free-text query; an empty query lists recent spaces.' }, { name: 'limit', description: 'most matches to return.' }],
+        returns: 'matches, best score first, then most recent first.',
       },
     ],
   },
@@ -4257,6 +4624,17 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution after durability.',
       },
       {
+        signature: 'async archiveSessionsUnder(path: string): Promise<number>',
+        description: 'Archive every known session whose recorded working directory is `path`, so removing the workspace that held them does not drop its conversations into the ungrouped bucket.',
+        parameters: [{ name: 'path', description: 'canonical workspace directory.' }],
+        returns: 'how many sessions were archived.',
+      },
+      {
+        signature: 'forgetSession(sessionId: SessionId): void',
+        description: 'Drop one session from the in-memory index after its storage is deleted, so the board stops listing it without waiting for a re-index. The durable archive set is left untouched: a deleted id can never resolve again.',
+        parameters: [{ name: 'sessionId', description: 'The deleted session to forget.' }],
+      },
+      {
         signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
         description: 'Unarchive one session durably by dropping it from the registry-global archive set; the accounting slot was never touched, so the session returns to its recorded position. Unarchiving runs no session-existence check because removing an id cannot introduce an unknown one, so an entry whose session is gone still resolves. An id that is not archived resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to unarchive.' }],
@@ -4826,6 +5204,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     description: 'A workflow run started — the script\'s meta block validated, the body about to execute. Paired with Events[\'workflow/end\'].',
     parameters: [{ name: 'info', description: 'the run\'s identity snapshot (id + meta).' }],
   },
+  {
+    name: 'workspace/removed',
+    mode: 'emit',
+    signature: '\'workspace/removed\'(workspaceId: WorkspaceId, path: string): void',
+    summary: 'A workspace record was deleted from the durable registry.',
+    description: 'A workspace record was deleted from the durable registry. Consumers that mirror a workspace — a product Space, for example — drop their record too.',
+    parameters: [{ name: 'workspaceId', description: 'the removed workspace.' }, { name: 'path', description: 'the removed workspace\'s filesystem path.' }],
+  },
 ]
 
 /** Shapes of every exported type the Service and Event signatures reference (transitively), sorted by name. */
@@ -4864,7 +5250,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentInput',
-    declaration: 'export interface AgentInput {\n    readonly name: string;\n    readonly responsibility: string;\n    readonly origin?: \'scratch\' | \'pool\' | \'task\';\n    readonly originRef?: string;\n    readonly spaceId?: string;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly policy?: PolicyPatch;\n}',
+    declaration: 'export interface AgentInput {\n    readonly name: string;\n    readonly responsibility: string;\n    readonly origin?: \'scratch\' | \'pool\' | \'task\';\n    readonly ownerId?: string;\n    readonly seeded?: boolean;\n    readonly originRef?: string;\n    readonly spaceId?: string;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly provider?: string;\n    readonly model?: string;\n    readonly apiKey?: string;\n    readonly webAccess?: boolean;\n    readonly mwtMcp?: boolean;\n    readonly sicopMcp?: boolean;\n    readonly mailConnectionIds?: readonly string[];\n    readonly policy?: PolicyPatch;\n}',
   },
   {
     name: 'AgentOptions',
@@ -4872,7 +5258,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPatch',
-    declaration: 'export interface AgentPatch {\n    readonly name?: string;\n    readonly responsibility?: string;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly subagents?: readonly {\n        readonly name: string;\n        readonly agentId: FaberLoomAgentId;\n    }[];\n    readonly lessons?: readonly string[];\n    readonly policy?: PolicyPatch;\n}',
+    declaration: 'export interface AgentPatch {\n    readonly name?: string;\n    readonly responsibility?: string;\n    readonly spaceId?: string | null;\n    readonly detached?: boolean;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly subagents?: readonly {\n        readonly name: string;\n        readonly agentId: FaberLoomAgentId;\n    }[];\n    readonly provider?: string | null;\n    readonly model?: string | null;\n    readonly apiKey?: string | null;\n    readonly webAccess?: boolean;\n    readonly mwtMcp?: boolean;\n    readonly sicopMcp?: boolean;\n    readonly mailConnectionIds?: readonly string[];\n    readonly lessons?: readonly string[];\n    readonly policy?: PolicyPatch;\n}',
   },
   {
     name: 'AgentPreset',
@@ -4908,7 +5294,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentSaveInput',
-    declaration: 'export interface AgentSaveInput {\n    readonly name?: string;\n    readonly responsibility?: string;\n    readonly skills?: readonly string[];\n    readonly primaryModelId?: string | null;\n    readonly exclusive?: boolean;\n    readonly fallbacks?: readonly string[];\n    readonly escalation?: AgentEscalationInput | null;\n    readonly budget?: AgentBudgetInput | null;\n}',
+    declaration: 'export interface AgentSaveInput {\n    readonly name?: string;\n    readonly responsibility?: string;\n    readonly skills?: readonly string[];\n    readonly primaryModelId?: string | null;\n    readonly exclusive?: boolean;\n    readonly fallbacks?: readonly string[];\n    readonly escalation?: AgentEscalationInput | null;\n    readonly budget?: AgentBudgetInput | null;\n    readonly provider?: string | null;\n    readonly model?: string | null;\n    readonly apiKey?: string;\n    readonly webAccess?: boolean;\n    readonly mwtMcp?: boolean;\n    readonly sicopMcp?: boolean;\n    readonly mailConnectionIds?: readonly string[];\n    readonly subagentIds?: readonly string[];\n}',
   },
   {
     name: 'AgentSetup',
@@ -5088,7 +5474,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardCreateInput',
-    declaration: 'export interface BoardCreateInput extends BoardSubmitInput {\n    readonly title: string;\n    readonly spaceId?: string;\n    readonly executionId?: string;\n}',
+    declaration: 'export interface BoardCreateInput extends BoardSubmitInput {\n    readonly title: string;\n    readonly spaceId?: string;\n    readonly routineId?: string;\n    readonly executionId?: string;\n}',
   },
   {
     name: 'BoardEffect',
@@ -5109,6 +5495,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BoardRevision',
     declaration: 'export interface BoardRevision {\n    readonly version: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly documentRef: string | null;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'BoardRevisionInput',
+    declaration: 'export interface BoardRevisionInput {\n    readonly summary: string;\n    readonly evidence: readonly string[];\n}',
   },
   {
     name: 'BoardStatus',
@@ -5220,7 +5610,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectionKind',
-    declaration: 'export type ConnectionKind = \'imap\' | \'backup\';',
+    declaration: 'export type ConnectionKind = \'imap\' | \'smtp\' | \'backup\';',
   },
   {
     name: 'ConnectionProbe',
@@ -5360,7 +5750,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateSpaceInput',
-    declaration: 'export interface CreateSpaceInput {\n    readonly title: string;\n    readonly parentId?: FaberLoomSpaceId;\n}',
+    declaration: 'export interface CreateSpaceInput {\n    readonly title: string;\n    readonly parentId?: FaberLoomSpaceId;\n    readonly agentId?: string;\n    readonly workspaceId?: string;\n    readonly inheritContext?: boolean;\n}',
   },
   {
     name: 'CreateTeamTaskRequest',
@@ -5539,6 +5929,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EffectiveContextConflict {\n    readonly key: string;\n    readonly candidates: readonly {\n        readonly spaceId: FaberLoomSpaceId;\n        readonly value: string;\n    }[];\n}',
   },
   {
+    name: 'EmailAutoPolicy',
+    declaration: 'export interface EmailAutoPolicy {\n    readonly enabled: boolean;\n    readonly threshold: number;\n    readonly cleanSends: number;\n}',
+  },
+  {
+    name: 'EmailAutoPolicyInput',
+    declaration: 'export interface EmailAutoPolicyInput {\n    readonly spaceId?: string | null;\n    readonly enabled: boolean;\n    readonly threshold: number;\n}',
+  },
+  {
+    name: 'EmailDraftAiInput',
+    declaration: 'export interface EmailDraftAiInput {\n    readonly to: readonly string[];\n    readonly subject: string;\n    readonly instruction: string;\n    readonly replyToBody?: string | null;\n    readonly spaceId?: string | null;\n}',
+  },
+  {
+    name: 'EmailDraftInput',
+    declaration: 'export interface EmailDraftInput {\n    readonly id?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly aiText?: string | null;\n    readonly inReplyTo?: string | null;\n    readonly spaceId?: string | null;\n}',
+  },
+  {
+    name: 'EmailDraftSaveInput',
+    declaration: 'export interface EmailDraftSaveInput {\n    readonly id?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly aiText?: string | null;\n    readonly inReplyTo?: string | null;\n    readonly spaceId?: string | null;\n}',
+  },
+  {
+    name: 'EmailDraftStatus',
+    declaration: 'export type EmailDraftStatus = \'draft\' | \'sent\' | \'rejected\';',
+  },
+  {
+    name: 'EmailPolicySaveInput',
+    declaration: 'export interface EmailPolicySaveInput {\n    readonly spaceId?: string | null;\n    readonly enabled: boolean;\n    readonly threshold: number;\n}',
+  },
+  {
     name: 'EncodedFileAttachment',
     declaration: 'export interface EncodedFileAttachment {\n    data: string;\n    name?: string;\n}',
   },
@@ -5568,7 +5986,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Execution',
-    declaration: 'export interface Execution {\n    readonly id: FaberLoomExecutionId;\n    readonly routineId: FaberLoomRoutineId;\n    readonly routineVersion: number;\n    readonly ownerId: string;\n    readonly status: ExecutionStatus;\n    readonly idempotencyKey: string;\n    readonly steps: Record<string, StepState>;\n    readonly evidence: readonly ExecutionEvidence[];\n    readonly event: IngestEvent | null;\n    readonly waitingFor: string | null;\n    readonly deadlineAt: string | null;\n    readonly reason: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface Execution {\n    readonly id: FaberLoomExecutionId;\n    readonly routineId: FaberLoomRoutineId;\n    readonly routineVersion: number;\n    readonly ownerId: string;\n    readonly status: ExecutionStatus;\n    readonly idempotencyKey: string;\n    readonly steps: Record<string, StepState>;\n    readonly evidence: readonly ExecutionEvidence[];\n    readonly event: IngestEvent | null;\n    readonly events: readonly IngestEvent[];\n    readonly waitingFor: string | null;\n    readonly deadlineAt: string | null;\n    readonly reason: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'ExecutionEvidence',
@@ -5580,11 +5998,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomAgent',
-    declaration: 'export interface FaberLoomAgent {\n    readonly id: FaberLoomAgentId;\n    readonly name: string;\n    readonly responsibility: string;\n    readonly spaceId: string | undefined;\n    readonly origin: \'scratch\' | \'pool\' | \'task\';\n    readonly originRef: string | undefined;\n    readonly baseAgentId: FaberLoomAgentId | undefined;\n    readonly skills: readonly string[];\n    readonly tools: readonly string[];\n    readonly subagents: readonly {\n        readonly name: string;\n        readonly agentId: FaberLoomAgentId;\n    }[];\n    readonly policy: ModelPolicy;\n    readonly lessons: readonly string[];\n    readonly active: boolean;\n    readonly version: number;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface FaberLoomAgent {\n    readonly id: FaberLoomAgentId;\n    readonly name: string;\n    readonly responsibility: string;\n    readonly spaceId: string | undefined;\n    readonly detached: boolean;\n    readonly ownerId: string;\n    readonly seeded: boolean;\n    readonly origin: \'scratch\' | \'pool\' | \'task\';\n    readonly originRef: string | undefined;\n    readonly baseAgentId: FaberLoomAgentId | undefined;\n    readonly skills: readonly string[];\n    readonly tools: readonly string[];\n    readonly subagents: readonly {\n        readonly name: string;\n        readonly agentId: FaberLoomAgentId;\n    }[];\n    readonly provider: string | undefined;\n    readonly model: string | undefined;\n    readonly webAccess: boolean;\n    readonly mwtMcp: boolean;\n    readonly sicopMcp: boolean;\n    readonly hasApiKey: boolean;\n    readonly apiKeyTail?: string;\n    readonly mailConnectionIds: readonly string[];\n    readonly policy: ModelPolicy;\n    readonly lessons: readonly string[];\n    readonly active: boolean;\n    readonly version: number;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomAgentDetail',
-    declaration: 'export interface FaberLoomAgentDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly responsibility: string;\n    readonly skills: readonly string[];\n    readonly tools: readonly string[];\n    readonly active: boolean;\n    readonly spaceId: string | null;\n    readonly primaryModelId: string | null;\n    readonly exclusive: boolean;\n    readonly fallbacks: readonly string[];\n    readonly escalation: AgentEscalationInput | null;\n    readonly budget: AgentBudgetInput | null;\n}',
+    declaration: 'export interface FaberLoomAgentDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly responsibility: string;\n    readonly skills: readonly string[];\n    readonly tools: readonly string[];\n    readonly active: boolean;\n    readonly spaceId: string | null;\n    readonly primaryModelId: string | null;\n    readonly exclusive: boolean;\n    readonly fallbacks: readonly string[];\n    readonly escalation: AgentEscalationInput | null;\n    readonly budget: AgentBudgetInput | null;\n    readonly provider: string | null;\n    readonly model: string | null;\n    readonly hasApiKey: boolean;\n    readonly apiKeyTail?: string;\n    readonly webAccess: boolean;\n    readonly mwtMcp: boolean;\n    readonly sicopMcp: boolean;\n    readonly mailConnectionIds: readonly string[];\n    readonly subagentIds: readonly string[];\n}',
   },
   {
     name: 'FaberLoomAgentId',
@@ -5592,7 +6010,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomAgentRow',
-    declaration: 'export interface FaberLoomAgentRow {\n    readonly id: string;\n    readonly name: string;\n    readonly spaceId: string | null;\n    readonly active: boolean;\n}',
+    declaration: 'export interface FaberLoomAgentRow {\n    readonly id: string;\n    readonly name: string;\n    readonly spaceIds: readonly string[];\n    readonly detached: boolean;\n    readonly active: boolean;\n    readonly editable: boolean;\n    readonly sharedBy?: string;\n}',
   },
   {
     name: 'FaberLoomBackupDomainDigest',
@@ -5628,11 +6046,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomBoardDetail',
-    declaration: 'export interface FaberLoomBoardDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly version: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly effects: readonly {\n        readonly ref: string;\n        readonly detail: string | null;\n        readonly at: string;\n    }[];\n}',
+    declaration: 'export interface FaberLoomBoardDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly version: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly effects: readonly {\n        readonly ref: string;\n        readonly detail: string | null;\n        readonly at: string;\n    }[];\n    readonly routineId: string | null;\n}',
   },
   {
     name: 'FaberLoomBoardItem',
-    declaration: 'export interface FaberLoomBoardItem {\n    readonly id: FaberLoomBoardItemId;\n    readonly ownerId: string;\n    readonly spaceId: string | null;\n    readonly title: string;\n    readonly status: BoardStatus;\n    readonly version: number;\n    readonly revisions: readonly BoardRevision[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly effects: readonly BoardEffect[];\n    readonly reviews: readonly BoardReview[];\n    readonly executionId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface FaberLoomBoardItem {\n    readonly id: FaberLoomBoardItemId;\n    readonly ownerId: string;\n    readonly spaceId: string | null;\n    readonly routineId: string | null;\n    readonly title: string;\n    readonly status: BoardStatus;\n    readonly version: number;\n    readonly revisions: readonly BoardRevision[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly effects: readonly BoardEffect[];\n    readonly reviews: readonly BoardReview[];\n    readonly executionId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomBoardItemId',
@@ -5640,7 +6058,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomBoardRow',
-    declaration: 'export interface FaberLoomBoardRow {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n}',
+    declaration: 'export interface FaberLoomBoardRow {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly routineId: string | null;\n}',
   },
   {
     name: 'FaberLoomConnection',
@@ -5657,6 +6075,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomDataMigration',
     declaration: 'export interface FaberLoomDataMigration {\n    readonly id: string;\n    readonly domain: string;\n    readonly table: string;\n    readonly describe: string;\n    readonly apply: (record: Record<string, unknown>) => Record<string, unknown> | null;\n}',
+  },
+  {
+    name: 'FaberLoomEmailAttachment',
+    declaration: 'export interface FaberLoomEmailAttachment {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly size: number;\n}',
+  },
+  {
+    name: 'FaberLoomEmailAttachmentContent',
+    declaration: 'export interface FaberLoomEmailAttachmentContent {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly contentBase64: string;\n}',
+  },
+  {
+    name: 'FaberLoomEmailContent',
+    declaration: 'export interface FaberLoomEmailContent {\n    readonly text: string;\n    readonly html: string | null;\n    readonly attachments: readonly FaberLoomEmailAttachment[];\n}',
+  },
+  {
+    name: 'FaberLoomEmailDraft',
+    declaration: 'export interface FaberLoomEmailDraft {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly status: EmailDraftStatus;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomEmailDraftRow',
+    declaration: 'export interface FaberLoomEmailDraftRow {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly status: string;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomEmailFacts',
+    declaration: 'export interface FaberLoomEmailFacts {\n    readonly oc: string;\n    readonly po: string;\n    readonly cliente: string;\n    readonly sku: string;\n    readonly tallas: string;\n    readonly cantidad: string;\n    readonly precio: string;\n    readonly resumen: string;\n}',
+  },
+  {
+    name: 'FaberLoomEmailPolicy',
+    declaration: 'export interface FaberLoomEmailPolicy {\n    readonly enabled: boolean;\n    readonly threshold: number;\n    readonly cleanSends: number;\n}',
   },
   {
     name: 'FaberLoomExecutionId',
@@ -5679,8 +6125,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomGrantRow {\n    readonly id: string;\n    readonly action: string;\n    readonly agentId: string | null;\n    readonly context: string | null;\n    readonly note: string | null;\n    readonly expiresAt: string | null;\n    readonly revoked: boolean;\n}',
   },
   {
+    name: 'FaberLoomInboxRow',
+    declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
+  },
+  {
     name: 'FaberLoomLinkPreview',
     declaration: 'export interface FaberLoomLinkPreview {\n    readonly newlyVisibleTo: readonly string[];\n    readonly sharedContextKeys: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomMcpClientStatus',
+    declaration: 'export interface FaberLoomMcpClientStatus {\n    readonly name: string;\n    readonly tools: readonly string[];\n}',
   },
   {
     name: 'FaberLoomMcpToken',
@@ -5711,6 +6165,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomModelCandidate {\n    readonly modelId: string;\n    readonly estimatedCost: number | null;\n    readonly uses: number;\n    readonly provisional: boolean;\n    readonly reasons: readonly string[];\n}',
   },
   {
+    name: 'FaberLoomModelCatalog',
+    declaration: 'export interface FaberLoomModelCatalog {\n    readonly providers: readonly FaberLoomProviderModels[];\n}',
+  },
+  {
     name: 'FaberLoomModelId',
     declaration: 'export type FaberLoomModelId = Branded<\'FaberLoomModelId\'>;',
   },
@@ -5723,6 +6181,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomModelRow {\n    readonly id: string;\n    readonly provider: string;\n    readonly model: string;\n    readonly capabilities: readonly string[];\n    readonly contextWindow: number | null;\n    readonly maxOutput: number | null;\n    readonly inputPerMillion: number | null;\n    readonly outputPerMillion: number | null;\n    readonly currency: string | null;\n    readonly available: boolean;\n}',
   },
   {
+    name: 'FaberLoomMwtStatus',
+    declaration: 'export interface FaberLoomMwtStatus {\n    readonly ownerId: string;\n    readonly role: string;\n    readonly companyId: string | null;\n    readonly companyIds: readonly string[];\n    readonly companies: readonly {\n        readonly id: string;\n        readonly name: string | null;\n    }[];\n    readonly servers: readonly FaberLoomMcpClientStatus[];\n}',
+  },
+  {
     name: 'FaberLoomOverview',
     declaration: 'export interface FaberLoomOverview {\n    readonly spaces: readonly FaberLoomSpaceRow[];\n    readonly agents: readonly FaberLoomAgentRow[];\n    readonly board: readonly FaberLoomBoardRow[];\n    readonly routines: readonly FaberLoomRoutineRow[];\n    readonly memory: readonly FaberLoomMemoryRow[];\n    readonly canWrite: boolean;\n}',
   },
@@ -5733,6 +6195,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomProposalAgent',
     declaration: 'export interface FaberLoomProposalAgent {\n    readonly id: string;\n    readonly name: string;\n}',
+  },
+  {
+    name: 'FaberLoomProviderModels',
+    declaration: 'export interface FaberLoomProviderModels {\n    readonly id: string;\n    readonly models: readonly string[];\n}',
   },
   {
     name: 'FaberLoomRestoreResult',
@@ -5751,6 +6217,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomRoutine {\n    readonly id: FaberLoomRoutineId;\n    readonly ownerId: string;\n    readonly name: string;\n    readonly status: RoutineStatus;\n    readonly version: number;\n    readonly definition: RoutineDefinition;\n    readonly versions: readonly number[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
+    name: 'FaberLoomRoutineChatMessage',
+    declaration: 'export interface FaberLoomRoutineChatMessage {\n    readonly role: string;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'FaberLoomRoutineCreated',
+    declaration: 'export interface FaberLoomRoutineCreated {\n    readonly id: string;\n    readonly name: string;\n}',
+  },
+  {
     name: 'FaberLoomRoutineDetail',
     declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n}',
   },
@@ -5767,24 +6241,52 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomRoutineStepRow {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n}',
   },
   {
+    name: 'FaberLoomSharePayload',
+    declaration: 'export interface FaberLoomSharePayload {\n    readonly responsibility?: string;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly markdown?: string;\n    readonly provider?: string | null;\n    readonly model?: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomShareRow',
+    declaration: 'export interface FaberLoomShareRow {\n    readonly id: string;\n    readonly kind: \'agent\' | \'skill\';\n    readonly owner_email: string;\n    readonly name: string;\n    readonly payload: FaberLoomSharePayload;\n    readonly share_all: boolean;\n    readonly shared_emails: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomShares',
+    declaration: 'export interface FaberLoomShares {\n    readonly configured: boolean;\n    readonly outgoing: readonly FaberLoomShareRow[];\n    readonly incoming: readonly FaberLoomShareRow[];\n}',
+  },
+  {
     name: 'FaberLoomSkillRow',
-    declaration: 'export interface FaberLoomSkillRow {\n    readonly name: string;\n    readonly description: string;\n    readonly module: string | null;\n    readonly action: string | null;\n    readonly origin: \'role\' | \'owner\';\n    readonly assignedTo: readonly string[];\n}',
+    declaration: 'export interface FaberLoomSkillRow {\n    readonly name: string;\n    readonly description: string;\n    readonly module: string | null;\n    readonly action: string | null;\n    readonly origin: \'role\' | \'owner\' | \'shared\' | \'incoming\';\n    readonly assignedTo: readonly string[];\n    readonly sharedBy?: string;\n}',
   },
   {
     name: 'FaberLoomSpace',
-    declaration: 'export interface FaberLoomSpace {\n    readonly id: FaberLoomSpaceId;\n    readonly ownerId: string;\n    readonly companyId: string | undefined;\n    readonly title: string;\n    readonly parentId: FaberLoomSpaceId | undefined;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly FaberLoomSpaceId[];\n    readonly members: readonly string[];\n    readonly context: SpaceContext;\n    readonly sources: readonly SpaceSource[];\n    readonly archived: boolean;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly version: number;\n}',
+    declaration: 'export interface FaberLoomSpace {\n    readonly id: FaberLoomSpaceId;\n    readonly ownerId: string;\n    readonly companyId: string | undefined;\n    readonly title: string;\n    readonly parentId: FaberLoomSpaceId | undefined;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly FaberLoomSpaceId[];\n    readonly members: readonly string[];\n    readonly context: SpaceContext;\n    readonly sources: readonly SpaceSource[];\n    readonly agentId: string | undefined;\n    readonly workspaceId: string | undefined;\n    readonly archived: boolean;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly version: number;\n}',
   },
   {
     name: 'FaberLoomSpaceDetail',
-    declaration: 'export interface FaberLoomSpaceDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly string[];\n    readonly members: readonly string[];\n    readonly sources: readonly {\n        readonly kind: string;\n        readonly ref: string;\n    }[];\n    readonly contextKeys: readonly string[];\n}',
+    declaration: 'export interface FaberLoomSpaceDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly string[];\n    readonly members: readonly string[];\n    readonly sources: readonly {\n        readonly kind: string;\n        readonly ref: string;\n    }[];\n    readonly contextKeys: readonly string[];\n    readonly agentId: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomSpaceFromEmail',
+    declaration: 'export interface FaberLoomSpaceFromEmail {\n    readonly spaceId: string;\n    readonly workspaceId: string | null;\n    readonly context: string;\n}',
   },
   {
     name: 'FaberLoomSpaceId',
     declaration: 'export type FaberLoomSpaceId = Branded<\'FaberLoomSpaceId\'>;',
   },
   {
+    name: 'FaberLoomSpaceMemory',
+    declaration: 'export interface FaberLoomSpaceMemory {\n    readonly id: string;\n    readonly spaceIds: readonly FaberLoomSpaceId[];\n    readonly text: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomSpaceMemoryRow',
+    declaration: 'export interface FaberLoomSpaceMemoryRow {\n    readonly id: string;\n    readonly text: string;\n    readonly spaceIds: readonly string[];\n    readonly createdAt: string;\n}',
+  },
+  {
     name: 'FaberLoomSpaceRow',
-    declaration: 'export interface FaberLoomSpaceRow {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n}',
+    declaration: 'export interface FaberLoomSpaceRow {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly agentId: string | null;\n    readonly agentName: string | null;\n    readonly workspaceId: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomSpaceWorkspace',
+    declaration: 'export interface FaberLoomSpaceWorkspace {\n    readonly registered: boolean;\n    readonly workspaceId: string | null;\n    readonly title: string | null;\n    readonly sessions: number;\n}',
   },
   {
     name: 'FaberLoomTeaching',
@@ -5983,8 +6485,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ImageVariantId = Branded<\'ImageVariantId\'>;',
   },
   {
+    name: 'ImapAttachment',
+    declaration: 'export interface ImapAttachment {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly size: number;\n    readonly contentBase64: string;\n    readonly contentId?: string;\n}',
+  },
+  {
     name: 'ImapCredentials',
     declaration: 'export interface ImapCredentials {\n    readonly id: string;\n    readonly label: string;\n    readonly host: string;\n    readonly port: number;\n    readonly secure: boolean;\n    readonly starttls: boolean;\n    readonly username: string;\n    readonly password: string;\n}',
+  },
+  {
+    name: 'ImapMessage',
+    declaration: 'export interface ImapMessage {\n    readonly uid: number;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
+  },
+  {
+    name: 'ImapMessageContent',
+    declaration: 'export interface ImapMessageContent {\n    readonly text: string;\n    readonly html: string | null;\n    readonly attachments: readonly ImapAttachment[];\n}',
   },
   {
     name: 'InboundReport',
@@ -6415,6 +6929,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OutcomeInput {\n    readonly agentId: FaberLoomAgentId;\n    readonly task: string;\n    readonly modelId: FaberLoomModelId;\n    readonly outcome: \'approved\' | \'corrected\';\n    readonly cost?: number;\n}',
   },
   {
+    name: 'OutgoingMail',
+    declaration: 'export interface OutgoingMail {\n    readonly from?: string;\n    readonly to: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n}',
+  },
+  {
     name: 'PerformanceCause',
     declaration: 'export type PerformanceCause = \'error\' | \'preference\' | \'requirement-change\';',
   },
@@ -6839,6 +7357,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SendTeamMessageResult {\n    readonly messageId: TeamMessageId;\n    readonly status: \'accepted\' | \'queued\';\n}',
   },
   {
+    name: 'SentMail',
+    declaration: 'export interface SentMail {\n    readonly messageId: string;\n    readonly accepted: readonly string[];\n    readonly via: string;\n}',
+  },
+  {
     name: 'Session',
     declaration: 'export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    readonly inheritedEventCount: SessionLogOffset;\n    get id(): SessionId;\n    readonly firstLiveSeq: SessionLogOffset;\n    static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader, inheritedEventCount?: SessionLogOffset, projections?: readonly SessionMessageProjection[]): Session;\n    static fromRestore(id: SessionId, seed: readonly SessionEvent[], header: SessionHeader, inheritedEventCount: SessionLogOffset, eventState: SessionSeedEventState, projections?: readonly SessionMessageProjection[]): Session;\n    eventAt(seq: SessionSeq): SessionEvent | undefined;\n    snapshotEvents(fromSeq: SessionLogOffset = SessionLogOffset(0), toSeqExclusive: SessionLogOffset = this.seq): readonly SessionEvent[];\n    ownEvents(): readonly SessionEvent[];\n    isOwnSeq(seq: SessionSeq): boolean;\n    get seq(): SessionLogOffset;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [\n        opts: SurfaceIntent<T>\n    ] : [\n    ]): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}',
   },
@@ -6897,6 +7419,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionCreateValue',
     declaration: 'export interface SessionCreateValue {\n    readonly sessionId: SessionId;\n    readonly agentPreset?: string;\n}',
+  },
+  {
+    name: 'SessionDeleteOrphansValue',
+    declaration: 'export interface SessionDeleteOrphansValue {\n    readonly deleted: readonly SessionId[];\n}',
+  },
+  {
+    name: 'SessionDeleteRequest',
+    declaration: 'export interface SessionDeleteRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'SessionDeleteValue',
+    declaration: 'export interface SessionDeleteValue {\n    readonly deleted: readonly SessionId[];\n}',
   },
   {
     name: 'SessionEvent',
@@ -7479,6 +8013,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
   },
   {
+    name: 'SmtpCredentials',
+    declaration: 'export interface SmtpCredentials {\n    readonly id: string;\n    readonly label: string;\n    readonly host: string;\n    readonly port: number;\n    readonly secure: boolean;\n    readonly starttls: boolean;\n    readonly username: string;\n    readonly password: string;\n}',
+  },
+  {
     name: 'SpaceActor',
     declaration: 'export interface SpaceActor {\n    readonly id: string;\n    readonly role: string;\n    readonly companyId: string | undefined;\n    readonly readOnly: boolean;\n}',
   },
@@ -7499,8 +8037,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SpaceFileInput {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly contentBase64: string;\n}',
   },
   {
+    name: 'SpaceIndexEntry',
+    declaration: 'export interface SpaceIndexEntry {\n    readonly id: FaberLoomSpaceId;\n    readonly title: string;\n    readonly context: SpaceContext;\n    readonly memory: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'SpaceMatch',
+    declaration: 'export interface SpaceMatch {\n    readonly id: FaberLoomSpaceId;\n    readonly title: string;\n    readonly score: number;\n    readonly reasons: readonly string[];\n}',
+  },
+  {
+    name: 'SpaceReference',
+    declaration: 'export interface SpaceReference {\n    readonly space: FaberLoomSpace;\n    readonly context: EffectiveContext;\n    readonly memory: readonly FaberLoomSpaceMemory[];\n    readonly files: readonly SpaceFile[];\n    readonly agentId: string | undefined;\n    readonly workspaceId: string | undefined;\n}',
+  },
+  {
     name: 'SpaceSaveInput',
-    declaration: 'export interface SpaceSaveInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly members?: readonly string[];\n}',
+    declaration: 'export interface SpaceSaveInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly members?: readonly string[];\n    readonly agentId?: string | null;\n}',
   },
   {
     name: 'SpaceSource',
@@ -7544,7 +8094,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StepContext',
-    declaration: 'export interface StepContext {\n    readonly executionId: string;\n    readonly routineId: FaberLoomRoutineId;\n    readonly stepId: string;\n    readonly input: unknown;\n    readonly event: IngestEvent | undefined;\n}',
+    declaration: 'export interface StepContext {\n    readonly executionId: string;\n    readonly routineId: FaberLoomRoutineId;\n    readonly stepId: string;\n    readonly input: unknown;\n    readonly event: IngestEvent | undefined;\n    readonly results: Readonly<Record<string, unknown>>;\n    readonly events: readonly IngestEvent[];\n}',
   },
   {
     name: 'StepHandler',
@@ -8168,7 +8718,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'UpdateSpaceInput',
-    declaration: 'export interface UpdateSpaceInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly excluded?: readonly FaberLoomSpaceId[];\n    readonly members?: readonly string[];\n    readonly context?: SpaceContext;\n    readonly sources?: readonly SpaceSource[];\n}',
+    declaration: 'export interface UpdateSpaceInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly excluded?: readonly FaberLoomSpaceId[];\n    readonly members?: readonly string[];\n    readonly context?: SpaceContext;\n    readonly sources?: readonly SpaceSource[];\n    readonly agentId?: string | null;\n    readonly workspaceId?: string | null;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',

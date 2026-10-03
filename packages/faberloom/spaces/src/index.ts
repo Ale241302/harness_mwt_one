@@ -588,7 +588,7 @@ export class FaberLoomSpaces extends Service {
    * @param limit - most results to return.
    * @returns matched spaces, best score first, then most recent first.
    */
-  async find(actor: SpaceActor, query: string, limit = 10): Promise<SpaceMatch[]> {
+  async find(actor: SpaceActor, query: string, limit: number = 10): Promise<SpaceMatch[]> {
     const entries: SpaceIndexEntry[] = []
     for (const [id, record] of (await this.table()).entries()) {
       if (!canRead(record, actor)) continue

@@ -362,7 +362,7 @@ export class FaberLoomInbound extends Service {
    *   primary mailbox.
    * @returns the matching envelopes.
    */
-  async searchMailbox(ownerId: string, query: string, limit = 10, connectionId?: string): Promise<readonly ImapMessage[]> {
+  async searchMailbox(ownerId: string, query: string, limit: number = 10, connectionId?: string): Promise<readonly ImapMessage[]> {
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
     const credentials = await connections.imap(ownerId, connectionId)

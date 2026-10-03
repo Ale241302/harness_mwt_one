@@ -845,6 +845,22 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
 @Remote('fork') fork(request: SessionForkRequest): Promise<SessionForkValue>
 
 /**
+ * Permanently delete one Session and every Session forked from it.
+ *
+ * A live Session this deployment owns is cancelled and disposed first, so
+ * deleting an open conversation neither races it nor requires a separate close.
+ * @param request - the Session to delete.
+ * @returns the ids removed, children before their parent.
+ */
+@Remote('delete') delete(request: SessionDeleteRequest): Promise<SessionDeleteValue>
+
+/**
+ * Permanently delete every stored Session that belongs to no Workspace.
+ * @returns the ids removed, in listing order.
+ */
+@Remote('deleteOrphans') deleteOrphans(): Promise<SessionDeleteOrphansValue>
+
+/**
  * Admit one prompt after explicitly resuming its Session.
  * @param request - Session identity, prompt content, source metadata, and delivery mode.
  * @param signal - caller cancellation before prompt admission begins.

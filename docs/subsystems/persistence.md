@@ -408,6 +408,18 @@ abstract stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<S
  * @returns one snapshot per stored session.
  */
 abstract list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]>
+
+/**
+ * Permanently remove one stored session and its log artifacts, so the id
+ * returns to "never existed" for `stat`, `list`, and `open`.
+ *
+ * Deletion is irreversible and disjoint from the append-only event contract:
+ * it removes whole generation artifacts rather than rewriting them. A
+ * backend that cannot delete refuses rather than reporting success.
+ * @param id - the stored session to delete.
+ * @returns `true` when a stored session was removed, `false` when none existed.
+ */
+delete(id: SessionId): Promise<boolean>
 ```
 
 Types: [SessionId](core.md)

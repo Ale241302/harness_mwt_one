@@ -483,6 +483,23 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
 archiveSession(sessionId: SessionId): Promise<void>
 
 /**
+ * Archive every known session whose recorded working directory is `path`, so
+ * removing the workspace that held them does not drop its conversations into
+ * the ungrouped bucket.
+ * @param path - canonical workspace directory.
+ * @returns how many sessions were archived.
+ */
+async archiveSessionsUnder(path: string): Promise<number>
+
+/**
+ * Drop one session from the in-memory index after its storage is deleted, so
+ * the board stops listing it without waiting for a re-index. The durable
+ * archive set is left untouched: a deleted id can never resolve again.
+ * @param sessionId - The deleted session to forget.
+ */
+forgetSession(sessionId: SessionId): void
+
+/**
  * Unarchive one session durably by dropping it from the registry-global
  * archive set; the accounting slot was never touched, so the session
  * returns to its recorded position. Unarchiving runs no session-existence
@@ -505,6 +522,29 @@ async resolveByPath(path: string): Promise<Workspace | undefined>
 ```
 
 Types: [SessionId](core.zh.md)
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
+
+<a id="workspace-events"></a>
+
+### `workspace/*` events
+
+<a id="workspaceremoved--emit"></a>
+
+#### `workspace/removed` — emit
+
+A workspace record was deleted from the durable registry. Consumers that mirror a workspace — a product Space, for example — drop their record too.
+
+```ts cordis-catalog
+/**
+ * A workspace record was deleted from the durable registry. Consumers that
+ * mirror a workspace — a product Space, for example — drop their record too.
+ * @param workspaceId - the removed workspace.
+ * @param path - the removed workspace's filesystem path.
+ * @mode emit
+ */
+'workspace/removed'(workspaceId: WorkspaceId, path: string): void
+```
 
 Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
 <!-- END GENERATED cordis-surface -->

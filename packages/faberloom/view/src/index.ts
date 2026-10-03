@@ -578,6 +578,14 @@ export class FaberLoomViewService extends TypertRemoteService {
    * Create an agent in the catalog.
    * @param name - display name.
    * @param responsibility - the agent's responsibility statement.
+   * @param provider - model provider id, when set.
+   * @param model - provider model id, when set.
+   * @param apiKey - provider API key, when set.
+   * @param webAccess - whether the agent may browse the open web.
+   * @param mwtMcp - whether the agent may query the MWT.ONE MCP.
+   * @param sicopMcp - whether the agent may query the SICOP MCP.
+   * @param mailConnectionIds - mail connection ids the agent may use.
+   * @param subagentIds - agent ids this agent may communicate with.
    * @returns the refreshed overview.
    */
   @Remote('createAgent')
@@ -2604,6 +2612,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    * Approve or reject the current revision of one board item.
    * @param id - board item id.
    * @param approve - true approves, false rejects.
+   * @param note - optional review note.
    * @returns the refreshed overview.
    */
   @Remote('reviewBoardItem')
