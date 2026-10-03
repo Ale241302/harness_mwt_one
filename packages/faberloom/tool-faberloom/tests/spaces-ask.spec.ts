@@ -138,7 +138,7 @@ describe('faberloom_spaces_ask', () => {
 
   it('fails loud when the configured provider is not registered', async () => {
     const subs = { getProvider: vi.fn(() => undefined), start: vi.fn() }
-    const tools = harness({ ...CONFIG, askProvider: 'acp' }, { faberloomSpaces: SPACES, faberloomAgents: AGENTS, subagents: subs })
+    const tools = harness(Object.assign({}, CONFIG, { askProvider: 'acp' }), { faberloomSpaces: SPACES, faberloomAgents: AGENTS, subagents: subs })
     const exec = { agent: { id: 'parent-agent' }, signal: new AbortController().signal }
     await expect(tools.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-formats', question: 'x' } as never, exec as never))
       .rejects.toThrow('"acp" is not registered')

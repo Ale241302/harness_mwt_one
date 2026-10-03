@@ -1091,10 +1091,10 @@ export function apply(ctx: Context, config: Config): void {
       task: { type: 'string', description: 'Filter by task label.' },
     } as const
     const teachingRows = (list: readonly FaberLoomTeaching[]) => list.map(entry => ({
-      id: entry.id as string,
-      scope: entry.scope as string,
+      id: entry.id,
+      scope: entry.scope,
       text: entry.text,
-      status: entry.status as string,
+      status: entry.status,
       version: entry.version,
       updatedAt: entry.updatedAt,
     }))
@@ -1256,7 +1256,7 @@ export function apply(ctx: Context, config: Config): void {
       },
       execute: async (args) => {
         const teaching = await memory(ctx).createTeaching(actor(config).id, {
-          scope: args.scope as TeachingScope,
+          scope: args.scope,
           text: args.text,
           source: args.source,
           author: actor(config).id,
@@ -1266,7 +1266,7 @@ export function apply(ctx: Context, config: Config): void {
           ...args.skill === undefined ? {} : { skill: args.skill },
           ...args.task === undefined ? {} : { task: args.task },
         })
-        return { id: teaching.id as string, status: teaching.status as string, version: teaching.version }
+        return { id: teaching.id, status: teaching.status, version: teaching.version }
       },
       presentCall: args => ({ card: 'generic', title: 'Record teaching', kind: 'other', rawInput: args }),
     }))
@@ -1290,7 +1290,7 @@ export function apply(ctx: Context, config: Config): void {
       },
       execute: async (args) => {
         const teaching = await memory(ctx).revokeTeaching(actor(config).id, args.id as FaberLoomTeachingId)
-        return { id: teaching.id as string, status: teaching.status as string }
+        return { id: teaching.id, status: teaching.status }
       },
       presentCall: args => ({ card: 'generic', title: 'Revoke teaching', kind: 'other', rawInput: args }),
     }))

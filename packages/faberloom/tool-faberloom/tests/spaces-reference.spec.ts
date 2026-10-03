@@ -151,7 +151,7 @@ describe('faberloom spaces reference tools', () => {
   })
 
   it('fails loud without an authenticated identity', async () => {
-    const tools = harness({} as Config, { faberloomSpaces: fakeSpaces().service })
+    const tools = harness({}, { faberloomSpaces: fakeSpaces().service })
     await expect(tools.get('faberloom_spaces_find')!.execute({ query: 'x' } as never))
       .rejects.toThrow('no authenticated identity')
   })

@@ -44,7 +44,8 @@ function fakeMemory() {
 
 describe('faberloom memory tools', () => {
   it('does not register the memory tools unless memoryTools is enabled', () => {
-    const tools = harness({ ...CONFIG, memoryTools: false }, { faberloomSpaces: fakeSpaces(), faberloomMemory: fakeMemory() })
+    const disabled: Config = Object.assign({}, CONFIG, { memoryTools: false })
+    const tools = harness(disabled, { faberloomSpaces: fakeSpaces(), faberloomMemory: fakeMemory() })
     expect(tools.get('faberloom_spaces_remember')).toBeUndefined()
     expect(tools.get('faberloom_memory_teach')).toBeUndefined()
   })
