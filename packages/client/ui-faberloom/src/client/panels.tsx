@@ -36,7 +36,7 @@ import type {
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomSpaceMap,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
-import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusColor } from './workflow-logic.ts'
+import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -3064,34 +3064,41 @@ function workflowsScreen() {
     const setConnection = (flowId: string, id: string, connectionId: string): void => {
       act(() => workflows.updateNode(flowId, id, title, kind, JSON.stringify({ connectionId })))
     }
+    const STATUS_CLASSES: Readonly<Record<ReturnType<typeof statusTone>, string | undefined>> = {
+      running: styles.workflowStatusRunning,
+      waiting: styles.workflowStatusWaiting,
+      completed: styles.workflowStatusCompleted,
+      failed: styles.workflowStatusFailed,
+      idle: styles.workflowStatusIdle,
+    }
 
     return (
-      <div style={{ display: 'flex', gap: 16, padding: 16, height: '100%', boxSizing: 'border-box' }}>
-        <aside style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'auto' }}>
-          <h3 style={{ margin: 0 }}>{t('wf.title')}</h3>
-          <input value={flowName} placeholder={t('wf.namePlaceholder')} onChange={(event) => { setFlowName(event.target.value) }} style={{ padding: 6 }} />
+      <div className={styles.workflowScreen}>
+        <aside className={styles.workflowSidebar}>
+          <h3 className={styles.h2}>{t('wf.title')}</h3>
+          <input value={flowName} placeholder={t('wf.namePlaceholder')} onChange={(event) => { setFlowName(event.target.value) }} />
           <button type="button" className={styles.primary} onClick={() => {
             if (flowName.trim().length === 0) return
             void workflows.create(flowName.trim()).then((result) => { if (result.ok) { setFlows(result.value); setFlowName(''); setMessage(null) } else setMessage(result.error.message) })
           }}>{t('wf.create')}</button>
-          {flows.length === 0 ? <span style={{ color: '#80868b' }}>{t('wf.empty')}</span> : null}
+          {flows.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.empty')}</span> : null}
           {flows.map(flow => (
-            <button key={flow.id} type="button" style={{ textAlign: 'left', padding: 6 }} onClick={() => { setSelected(flow.id) }}>
+            <button key={flow.id} type="button" className={styles.workflowFlowButton} onClick={() => { setSelected(flow.id) }}>
               {flow.name} · {flow.status} · {flow.nodes}/{flow.edges}
             </button>
           ))}
         </aside>
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, overflow: 'auto' }}>
-          {message !== null ? <div style={{ color: '#d93025' }}>{message}</div> : null}
+        <main className={styles.workflowMain}>
+          {message !== null ? <div className={styles.workflowMessage}>{message}</div> : null}
           {selected === null ? <span>{t('wf.select')}</span> : (
             <>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div className={styles.workflowToolbar}>
                 <button type="button" className={styles.primary} onClick={() => { act(() => workflows.setStatus(selected, 'active')) }}>{t('wf.activate')}</button>
                 <button type="button" onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
                 <button type="button" onClick={() => { void workflows.exportFlow(selected, 'json').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportJson')}</button>
                 <button type="button" onClick={() => { void workflows.exportFlow(selected, 'archify').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportArchify')}</button>
               </div>
-              <svg width="100%" height="320" viewBox="0 0 900 320" style={{ background: '#fafbfc', border: '1px solid #dadce0', borderRadius: 8 }} onPointerMove={(event) => {
+              <svg className={styles.workflowCanvas} viewBox="0 0 900 320" onPointerMove={(event) => {
                 const id = dragging.current
                 if (id === null) return
                 const rect = (event.currentTarget).getBoundingClientRect()
@@ -3104,22 +3111,25 @@ function workflowsScreen() {
                   const to = byId.get(edge.to)
                   if (from === undefined || to === undefined) return null
                   const line = edgeLine(from, to)
-                  return <line key={edge.id} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke={edge.condition === null ? '#9aa0a6' : '#1a73e8'} strokeWidth={1.5} />
+                  return (
+                    <line key={edge.id} className={edge.condition === null ? styles.workflowEdge : styles.workflowEdgeConditional}
+                      x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} />
+                  )
                 })}
                 {nodes.map(node => (
-                  <g key={node.id} transform={`translate(${String(node.x)}, ${String(node.y)})`} onPointerDown={() => { dragging.current = node.id }} onClick={() => { pick(node.id) }} style={{ cursor: 'grab' }}>
-                    <rect width={NODE_WIDTH} height={NODE_HEIGHT} rx={10} fill={nodeId === node.id ? '#e8f0fe' : '#ffffff'} stroke={kindIsTrigger(node.kind) ? '#188038' : '#5b6470'} />
-                    <text x={12} y={24} fontSize={12} fill="#202124">{node.title}</text>
-                    <text x={12} y={42} fontSize={10} fill="#5f6368">{node.kind}</text>
+                  <g key={node.id} className={styles.workflowNode} transform={`translate(${String(node.x)}, ${String(node.y)})`} onPointerDown={() => { dragging.current = node.id }} onClick={() => { pick(node.id) }}>
+                    <rect className={`${styles.workflowNodeBody} ${kindIsTrigger(node.kind) ? styles.workflowNodeBodyTrigger : ''} ${nodeId === node.id ? styles.workflowNodeBodySelected : ''}`} width={NODE_WIDTH} height={NODE_HEIGHT} rx={10} />
+                    <text className={styles.workflowNodeTitle} x={12} y={24}>{node.title}</text>
+                    <text className={styles.workflowNodeKind} x={12} y={42}>{node.kind}</text>
                   </g>
                 ))}
               </svg>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div className={styles.workflowInspector}>
                 <select value={kind} onChange={(event) => { setKind(event.target.value) }} aria-label={t('wf.kind')}>
                   {WORKFLOW_KINDS.map(value => <option key={value} value={value}>{value}</option>)}
                 </select>
-                <input value={title} placeholder={t('wf.nodeTitle')} onChange={(event) => { setTitle(event.target.value) }} style={{ padding: 6 }} />
-                <textarea value={configJson} onChange={(event) => { setConfigJson(event.target.value) }} aria-label={t('wf.config')} style={{ minWidth: 200, minHeight: 56 }} />
+                <input value={title} placeholder={t('wf.nodeTitle')} onChange={(event) => { setTitle(event.target.value) }} />
+                <textarea value={configJson} onChange={(event) => { setConfigJson(event.target.value) }} aria-label={t('wf.config')} />
                 {kind === 'agent' ? (
                   <select aria-label={t('wf.agent')} value="" onChange={(event) => { if (nodeId !== null) setAgent(selected, nodeId, event.target.value) }}>
                     <option value="">—</option>
@@ -3142,17 +3152,17 @@ function workflowsScreen() {
                   </button>
                 ))}
               </div>
-              <div style={{ display: 'flex', gap: 16 }}>
-                <section style={{ flex: 1 }}>
+              <div className={styles.workflowRuns}>
+                <section className={styles.workflowSection}>
                   <h4>{t('wf.runs')}</h4>
-                  {runs.length === 0 ? <span style={{ color: '#80868b' }}>{t('wf.noRuns')}</span> : runs.map(run => (
-                    <div key={run.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <span style={{ width: 10, height: 10, borderRadius: 5, background: statusColor(run.status), display: 'inline-block' }} />
-                      <span>{run.status}</span><span style={{ color: '#5f6368' }}>{run.createdAt}</span>
+                  {runs.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.noRuns')}</span> : runs.map(run => (
+                    <div key={run.id} className={styles.workflowRunRow}>
+                      <span className={`${styles.workflowStatusDot} ${STATUS_CLASSES[statusTone(run.status)]}`} />
+                      <span>{run.status}</span><span className={styles.workflowRunWhen}>{run.createdAt}</span>
                     </div>
                   ))}
                 </section>
-                <section style={{ flex: 1 }}>
+                <section className={styles.workflowSection}>
                   <h4>{t('wf.spaceMap')}</h4>
                   {topology?.spaces.map(space => <div key={space.id}>{space.title}</div>)}
                 </section>

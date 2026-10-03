@@ -60,7 +60,7 @@
   gap: 12px;
   min-width: 0;
   padding: 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
 }
@@ -94,7 +94,7 @@
 .search input {
   width: 220px;
   padding: 8px 11px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -138,7 +138,7 @@
   gap: 12px;
   flex-wrap: wrap;
   padding: 8px 12px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
   font-size: 12px;
 }
@@ -152,7 +152,7 @@
 
 .pagerSize select {
   padding: 4px 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
@@ -172,7 +172,7 @@
 
 .pagerButton {
   padding: 5px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -195,13 +195,13 @@
   max-height: 220px;
   overflow-y: auto;
   padding: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-base);
 }
 
 .tableCard {
-  border: 1px solid var(--dsw-alias-border-l1, var(--dsw-alias-border-l2));
+  border: 0.5px solid var(--dsw-alias-border-l1, var(--dsw-alias-border-l2));
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
@@ -215,7 +215,7 @@
 
 .table thead th {
   padding: 10px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-caption);
   font-size: 11px;
@@ -227,7 +227,7 @@
 
 .table tbody td {
   padding: 11px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   vertical-align: middle;
 }
 
@@ -260,18 +260,23 @@
 
 .emailModalContent {
   overflow-y: auto;
+  /* The modal is an elevated surface, so its scrollbar rebinds to the l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .emailBody {
   min-height: 220px;
   max-height: 50vh;
   overflow-y: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .emailHtml {
   width: 100%;
   height: 55vh;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-base);
 }
@@ -332,8 +337,9 @@
 
 .chip {
   padding: 2px 7px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
   font-family: var(--dsw-font-family);
@@ -357,6 +363,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
@@ -375,7 +382,7 @@
   gap: 14px;
   min-width: 0;
   padding: 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
 }
@@ -399,7 +406,7 @@
   justify-content: space-between;
   gap: 8px;
   padding-top: 12px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 /* ── fields ──────────────────────────────────────────────────────────── */
@@ -426,7 +433,7 @@
   width: 100%;
   box-sizing: border-box;
   padding: 9px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
@@ -488,7 +495,7 @@
 
 .secondary {
   padding: 9px 13px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -509,7 +516,7 @@
 
 .danger {
   padding: 8px 11px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-state-error-text, #c0392b);
@@ -520,7 +527,7 @@
 
 .rowAction {
   padding: 4px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
@@ -544,7 +551,7 @@
   flex-direction: column;
   gap: 4px;
   padding: 12px 14px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
   font-size: 12px;
@@ -568,7 +575,7 @@
   gap: 8px;
   flex-wrap: wrap;
   padding: 10px 12px;
-  border: 1px solid var(--dsw-alias-state-error-border, var(--dsw-alias-border-l2));
+  border: 1px solid var(--dsw-alias-state-error-primary);
   border-radius: 9px;
   font-size: 12px;
 }
@@ -589,7 +596,7 @@
 .pane {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
@@ -601,14 +608,14 @@
   justify-content: space-between;
   gap: 6px;
   padding: 7px 9px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
 }
 
 .paneSearch {
   width: 100px;
   padding: 3px 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
@@ -723,7 +730,7 @@
 .runText {
   margin: 0;
   padding: 6px 8px;
-  border-left: 2px solid var(--dsw-alias-border-l2);
+  border-left: 0.5px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-secondary);
   font-family: var(--dsw-font-family);
   font-size: 12px;
@@ -736,7 +743,7 @@
 .stepRow input[type='text'] {
   min-width: 0;
   padding: 6px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
@@ -780,8 +787,173 @@
 
 .infoRow {
   padding: 11px 13px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
   font-size: 13px;
+}
+
+/* ── work-flow editor ────────────────────────────────────────────────── */
+
+.workflowScreen {
+  display: flex;
+  gap: 16px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+}
+
+.workflowSidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 240px;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.workflowMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.workflowFlowButton {
+  padding: 6px;
+  text-align: left;
+}
+
+.workflowEmpty {
+  color: var(--dsw-alias-label-caption);
+}
+
+.workflowMessage {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.workflowToolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workflowCanvas {
+  width: 100%;
+  height: 320px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.workflowEdge {
+  stroke: var(--dsw-alias-border-l2);
+  stroke-width: 1.5;
+}
+
+.workflowEdgeConditional {
+  stroke: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  stroke-width: 1.5;
+}
+
+.workflowNode {
+  cursor: grab;
+}
+
+.workflowNodeBody {
+  fill: var(--dsw-alias-bg-layer-1);
+  stroke: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+}
+
+.workflowNodeBodyTrigger {
+  stroke: var(--dsw-alias-state-success-primary);
+}
+
+.workflowNodeBodySelected {
+  fill: var(--dsw-alias-bg-layer-2);
+}
+
+.workflowNodeTitle {
+  font-size: 12px;
+  fill: var(--dsw-alias-label-primary);
+}
+
+.workflowNodeKind {
+  font-size: 10px;
+  fill: var(--dsw-alias-label-caption);
+}
+
+.workflowSidebar input,
+.workflowInspector input,
+.workflowInspector select,
+.workflowInspector textarea {
+  padding: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.workflowInspector {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.workflowInspector textarea {
+  min-width: 200px;
+  min-height: 56px;
+}
+
+.workflowRuns {
+  display: flex;
+  gap: 16px;
+}
+
+.workflowSection {
+  flex: 1;
+}
+
+.workflowRunRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.workflowRunWhen {
+  color: var(--dsw-alias-label-caption);
+}
+
+.workflowStatusDot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-label-caption);
+}
+
+.workflowStatusRunning {
+  background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+.workflowStatusCompleted {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.workflowStatusFailed {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.workflowStatusWaiting {
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+.workflowStatusIdle {
+  background: var(--dsw-alias-label-caption);
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, nodeAnchor, statusColor } from '../src/client/workflow-logic.ts'
+import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, nodeAnchor, statusTone } from '../src/client/workflow-logic.ts'
 
 describe('workflow canvas logic', () => {
   it('classifies trigger kinds', () => {
@@ -20,13 +20,13 @@ describe('workflow canvas logic', () => {
     })
   })
 
-  it('paints a color per execution status, neutral for unknown', () => {
-    expect(statusColor('completed')).toBe('#188038')
-    expect(statusColor('running')).toBe('#1a73e8')
-    expect(statusColor('waiting')).toBe('#f9ab00')
-    expect(statusColor('failed')).toBe('#d93025')
-    expect(statusColor('needs_review')).toBe('#e37400')
-    expect(statusColor('ghost')).toBe('#80868b')
+  it('maps an execution status to a run-history tone, neutral for unknown', () => {
+    expect(statusTone('completed')).toBe('completed')
+    expect(statusTone('running')).toBe('running')
+    expect(statusTone('waiting')).toBe('waiting')
+    expect(statusTone('failed')).toBe('failed')
+    expect(statusTone('needs_review')).toBe('waiting')
+    expect(statusTone('ghost')).toBe('idle')
   })
 
   it('seeds a default config per node kind', () => {

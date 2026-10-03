@@ -134,9 +134,13 @@ describe('Presented workspace file native open route', () => {
     await writeFile(outside, 'outside')
     const source = join(cwd, file.path)
     await unlink(source)
-    await symlink(outside, source)
-    expect((await open()).status).toBe(404)
-    expect(opener).not.toHaveBeenCalled()
+    // Windows without Developer Mode (or an elevated process) refuses to create
+    // a symlink with EPERM; the Linux and macOS lanes hold the final-symlink case.
+    const symlinked = await symlink(outside, source).then(() => true, () => false)
+    if (symlinked) {
+      expect((await open()).status).toBe(404)
+      expect(opener).not.toHaveBeenCalled()
+    }
     for (const path of ['../outside.txt', outside]) {
       file.path = path
       expect((await open()).status).toBe(204)

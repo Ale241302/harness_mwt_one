@@ -89,22 +89,23 @@ export function edgeLine(from: CanvasNode, to: CanvasNode): CanvasLine {
   return { x1: start.x, y1: start.y, x2: end.x, y2: end.y }
 }
 
-/** The status palette the run history uses, keyed by execution status. */
-const STATUS_COLORS: Readonly<Record<string, string>> = {
-  running: '#1a73e8',
-  waiting: '#f9ab00',
-  completed: '#188038',
-  failed: '#d93025',
-  needs_review: '#e37400',
-}
+/** The run-history tone one execution status maps to. */
+export type WorkflowStatusTone = 'running' | 'waiting' | 'completed' | 'failed' | 'idle'
 
 /**
- * The color one execution status paints, defaulting to neutral gray.
+ * The tone the run history paints one execution status.
  * @param status - execution status.
- * @returns the CSS color.
+ * @returns the tone the status classes cover.
  */
-export function statusColor(status: string): string {
-  return STATUS_COLORS[status] ?? '#80868b'
+export function statusTone(status: string): WorkflowStatusTone {
+  switch (status) {
+    case 'running': return 'running'
+    case 'waiting': return 'waiting'
+    case 'completed': return 'completed'
+    case 'failed': return 'failed'
+    case 'needs_review': return 'waiting'
+    default: return 'idle'
+  }
 }
 
 /**
