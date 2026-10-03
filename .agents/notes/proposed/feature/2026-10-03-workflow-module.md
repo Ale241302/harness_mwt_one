@@ -111,3 +111,8 @@ async revokeShare(actor, grantId): Promise<ShareGrant>
 ## Risks
 
 A compiled graph inherits the routines engine's limits: control flow is a dependency graph with waits, so rich loops and joins may force the deferred executor. Real effects (delete, send, MCP calls) touch a user's mailbox and accounts, so every effect node needs an explicit permission, idempotency, and a dry-run, and the effect ledger must survive a crash. Cross-user sharing depends on the MWT.ONE console contract and introduces retention and residency obligations the deployment, not the harness, must own. The knowledge hub and the enterprise schema assume one tenant per console company, so a shared graph must never leak across tenants. Finally, adding tools to the request changes its schema and invalidates KV reuse, so the editing tools are opt-in and the editor itself never touches a prompt.
+
+## Implementation status
+
+- Fase 0 — design and contracts (this note, `packages/faberloom/workflows/README.md`, and the knowledge-hub specs `SPEC_WORKFLOW_ANTI_SPAM_v1` and `SPEC_WORKFLOW_GLOSARIO_v1`): done.
+- Fase 1 — model and storage: done. `@deepseek-ai/dsh-faberloom-workflows` ships the branded types, the discriminated node catalog, the `faberloom_workflows` domain, owner-scoped CRUD with version bumping, DAG validation, and `compileWorkFlow`; the anti-spam graph validates and compiles deterministically, with per-file 100% coverage. `SPEC_WORKFLOW_MODEL_v1` records the model. Activation through the routines engine, node handlers, connectivity nodes, chat tools, the editor, scheduling, sharing, liveness, and templates remain Fases 2–9.

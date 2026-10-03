@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包承载原生 Work Flow 模块：一个带版本的节点与边有向图，按 Space 或个人范围划分，其事实来源是图，其运行时是由图编译出的 Routine。主机服务 `ctx.faberloomWorkflows` 拥有图记录；模型工具位于 `dsh-tool-faberloom`，浏览器编辑器是 `dsh-client-ui-faberloom` 中的一个面板。
+此包承载原生 Work Flow 模块：一个带版本的节点与边有向图，按 Space 或个人范围划分，其事实来源是图，其运行时是由图编译出的 Routine。主机服务 `ctx.faberloomWorkflows` 拥有持久图记录——创建、列出、读取、更新、设置状态、校验、编译与删除——并带 DAG 校验与 `compileWorkFlow`。模型工具位于 `dsh-tool-faberloom`，浏览器编辑器是 `dsh-client-ui-faberloom` 中的一个面板。
 
 ## 目录
 
@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-在存在 `ctx.storageDomain`、`ctx.faberloomRoutines` 与 `ctx.faberloomSpaces` 处挂载此行。该服务是调用插件 fiber 上的副作用，释放该 fiber 即移除。
+在存在 `ctx.storageDomain` 处挂载此行。该服务在首次使用时惰性打开 `faberloom_workflows` 域，并随调用插件的 fiber 一起关闭，因此释放该 fiber 即移除。每个操作都携带已认证执行者；本切片仅允许所有者读取或管理其流程。
 
 -----
 
@@ -48,7 +48,10 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **仅骨架** — 此包目前只暴露设计与模块表面；持久图域、编译为 Routine、节点处理器、聊天工具与浏览器编辑器在后续切片到来。
+- **运行时与编辑在后续切片到来** — 节点处理器、经 `ctx.faberloomRoutines` 的激活、连接节点、聊天工具、浏览器编辑器、调度、共享、存活检测与模板属于 Fases 2–9。`setStatus('active')` 校验图并由工作流 id 解析出编译后的 routine id；它尚未经 routines 引擎创建 routine。
+- **仅所有者访问** — 按操作权限与跨用户授权随共享切片到来。
+
+未发布 invariant companion，因为该服务只拥有一个持久图关系，且其单元与集成测试已断言它；这些测试之外不存在会分叉的观测。
 
 <a id="dev-note"></a>
 ### 开发备注

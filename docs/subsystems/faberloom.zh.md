@@ -107,7 +107,7 @@ async syncPool(): Promise<{ checked: number; available: number }>
  * @param handler - sync or async handler over the call arguments.
  * @returns the disposer removing the handler.
  */
-registerExecutableTool(name: string, handler: (args: unknown) => unknown | Promise<unknown>): () => void
+registerExecutableTool(name: string, handler: (args: unknown) => unknown): () => void
 
 /**
  * List the executable tools registered in this process.
@@ -1978,6 +1978,86 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 ```
 
 Source: [`packages/faberloom/view/src/index.ts`](../../packages/faberloom/view/src/index.ts)
+
+<a id="ctxfaberloomworkflows--faberloomworkflows"></a>
+
+### `ctx.faberloomWorkflows` — `FaberLoomWorkflows`
+
+The work flows service. It owns the durable versioned graph records, the graph validation, and the compilation to a routine; every operation carries the authenticated actor.
+
+```ts cordis-catalog
+/**
+ * Create one work flow owned by the actor. The definition is stored as given;
+ * validation is explicit and activation requires a valid graph.
+ * @param actor - the acting identity.
+ * @param input - name, optional scope, and the initial definition.
+ * @returns the created work flow.
+ */
+async create(actor: WorkFlowActor, input: CreateWorkFlowInput): Promise<WorkFlow>
+
+/**
+ * List the actor's work flows, optionally only one scope, oldest first.
+ * @param actor - the acting identity.
+ * @param scope - when set, only flows in this scope.
+ * @returns the actor's work flows.
+ */
+async list(actor: WorkFlowActor, scope?: WorkFlowScope): Promise<WorkFlow[]>
+
+/**
+ * Read one work flow the actor owns.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the work flow.
+ * @throws when the flow is absent or owned by another identity.
+ */
+async get(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>
+
+/**
+ * Apply a mutable patch to one work flow the actor owns, bumping the version.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param patch - fields to change.
+ * @returns the updated work flow.
+ */
+async update(actor: WorkFlowActor, id: WorkFlowId, patch: UpdateWorkFlowInput): Promise<WorkFlow>
+
+/**
+ * Change one work flow's lifecycle. Activating validates the graph and
+ * resolves the compiled routine id; an invalid graph is refused.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param status - the new status.
+ * @returns the updated work flow.
+ * @throws when the graph is invalid and the target status is `active`.
+ */
+async setStatus(actor: WorkFlowActor, id: WorkFlowId, status: WorkFlowStatus): Promise<WorkFlow>
+
+/**
+ * Validate one work flow's graph without mutating it.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the verdict.
+ */
+async validate(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlowValidation>
+
+/**
+ * Compile one work flow to a routine definition without mutating it.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the routine definition input.
+ */
+async compile(actor: WorkFlowActor, id: WorkFlowId): Promise<RoutineDefinitionInput>
+
+/**
+ * Remove one work flow the actor owns.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns whether the stored record was deleted.
+ */
+async remove(actor: WorkFlowActor, id: WorkFlowId): Promise<boolean>
+```
+
+Source: [`packages/faberloom/workflows/src/index.ts`](../../packages/faberloom/workflows/src/index.ts)
 
 <a id="ctxspaceindex--spaceindex"></a>
 

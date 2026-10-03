@@ -111,3 +111,8 @@ async revokeShare(actor, grantId): Promise<ShareGrant>
 ## 风险
 
 编译图继承了 routines 引擎的限制：控制流是带等待的依赖图，因此丰富的循环与汇聚可能迫使启用被推迟的执行器。真实效果（删除、发送、MCP 调用）会触及用户邮箱与账户，因此每个效果节点都需要显式权限、幂等与 dry-run，且效果账本必须在崩溃后存活。跨用户共享依赖 MWT.ONE 控制台契约，并引入由部署而非 harness 承担的数据保留与驻留义务。知识中枢与企业 schema 假定每个控制台公司一个租户，因此共享图绝不能跨租户泄漏。最后，向请求增加工具会改变其 schema 并使 KV 复用失效，因此编辑工具可选启用，而编辑器本身绝不触碰提示。
+
+## 实施状态
+
+- Fase 0 —— 设计与契约（本 note、`packages/faberloom/workflows/README.md`，以及知识库规格 `SPEC_WORKFLOW_ANTI_SPAM_v1` 与 `SPEC_WORKFLOW_GLOSARIO_v1`）：已完成。
+- Fase 1 —— 模型与存储：已完成。`@deepseek-ai/dsh-faberloom-workflows` 交付带 brand 的类型、判别节点目录、`faberloom_workflows` 域、带版本递增的所有者限定 CRUD、DAG 校验与 `compileWorkFlow`；anti-spam 图可确定性校验并编译，且每个文件 100% 覆盖率。`SPEC_WORKFLOW_MODEL_v1` 记录该模型。经 routines 引擎的激活、节点处理器、连接节点、聊天工具、编辑器、调度、共享、存活检测与模板仍属 Fases 2–9。

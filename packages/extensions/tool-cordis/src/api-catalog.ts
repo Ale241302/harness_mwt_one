@@ -947,7 +947,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'how many entries were checked and how many are now available.',
       },
       {
-        signature: 'registerExecutableTool(name: string, handler: (args: unknown) => unknown | Promise<unknown>): () => void',
+        signature: 'registerExecutableTool(name: string, handler: (args: unknown) => unknown): () => void',
         description: 'Register one executable tool handler in this process.',
         parameters: [{ name: 'name', description: 'tool name referenced by an agent\'s `tools` list.' }, { name: 'handler', description: 'sync or async handler over the call arguments.' }],
         returns: 'the disposer removing the handler.',
@@ -2319,6 +2319,63 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Delete one space-memory entry the owner controls and return the refreshed list. Deleting a space never deletes its memory; this is the only path that removes an entry, and it is explicit.',
         parameters: [{ name: 'id', description: 'memory entry id.' }],
         returns: 'the remaining memory rows, oldest first.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomWorkflows',
+    summary: 'The work flows service.',
+    description: 'The work flows service. It owns the durable versioned graph records, the graph validation, and the compilation to a routine; every operation carries the authenticated actor.',
+    methods: [
+      {
+        signature: 'async create(actor: WorkFlowActor, input: CreateWorkFlowInput): Promise<WorkFlow>',
+        description: 'Create one work flow owned by the actor. The definition is stored as given; validation is explicit and activation requires a valid graph.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'input', description: 'name, optional scope, and the initial definition.' }],
+        returns: 'the created work flow.',
+      },
+      {
+        signature: 'async list(actor: WorkFlowActor, scope?: WorkFlowScope): Promise<WorkFlow[]>',
+        description: 'List the actor\'s work flows, optionally only one scope, oldest first.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'scope', description: 'when set, only flows in this scope.' }],
+        returns: 'the actor\'s work flows.',
+      },
+      {
+        signature: 'async get(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>',
+        description: 'Read one work flow the actor owns.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the work flow.',
+        throws: ['when the flow is absent or owned by another identity.'],
+      },
+      {
+        signature: 'async update(actor: WorkFlowActor, id: WorkFlowId, patch: UpdateWorkFlowInput): Promise<WorkFlow>',
+        description: 'Apply a mutable patch to one work flow the actor owns, bumping the version.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'patch', description: 'fields to change.' }],
+        returns: 'the updated work flow.',
+      },
+      {
+        signature: 'async setStatus(actor: WorkFlowActor, id: WorkFlowId, status: WorkFlowStatus): Promise<WorkFlow>',
+        description: 'Change one work flow\'s lifecycle. Activating validates the graph and resolves the compiled routine id; an invalid graph is refused.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'status', description: 'the new status.' }],
+        returns: 'the updated work flow.',
+        throws: ['when the graph is invalid and the target status is `active`.'],
+      },
+      {
+        signature: 'async validate(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlowValidation>',
+        description: 'Validate one work flow\'s graph without mutating it.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the verdict.',
+      },
+      {
+        signature: 'async compile(actor: WorkFlowActor, id: WorkFlowId): Promise<RoutineDefinitionInput>',
+        description: 'Compile one work flow to a routine definition without mutating it.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the routine definition input.',
+      },
+      {
+        signature: 'async remove(actor: WorkFlowActor, id: WorkFlowId): Promise<boolean>',
+        description: 'Remove one work flow the actor owns.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'whether the stored record was deleted.',
       },
     ],
   },
@@ -5757,6 +5814,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateTeamTaskRequest {\n    readonly subject: string;\n    readonly description: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n}',
   },
   {
+    name: 'CreateWorkFlowInput',
+    declaration: 'export interface CreateWorkFlowInput {\n    readonly name: string;\n    readonly scope?: WorkFlowScope | undefined;\n    readonly definition: WorkFlowDefinition;\n}',
+  },
+  {
     name: 'CredentialInfo',
     declaration: 'export interface CredentialInfo {\n    configured: boolean;\n    source?: string;\n    writable: boolean;\n}',
   },
@@ -8098,7 +8159,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StepHandler',
-    declaration: 'export type StepHandler = (context: StepContext) => unknown | Promise<unknown>;',
+    declaration: 'export type StepHandler = (context: StepContext) => unknown;',
   },
   {
     name: 'StepState',
@@ -8725,6 +8786,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
   },
   {
+    name: 'UpdateWorkFlowInput',
+    declaration: 'export interface UpdateWorkFlowInput {\n    readonly name?: string | undefined;\n    readonly scope?: WorkFlowScope | undefined;\n    readonly definition?: WorkFlowDefinition | undefined;\n}',
+  },
+  {
     name: 'UserMessage',
     declaration: 'export interface UserMessage extends Message {\n    readonly role: \'user\';\n}',
   },
@@ -8853,6 +8918,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkdirReference {\n    readonly kind: \'opaque\';\n    readonly ref: string;\n}',
   },
   {
+    name: 'WorkFlow',
+    declaration: 'export interface WorkFlow {\n    readonly id: WorkFlowId;\n    readonly ownerId: string;\n    readonly scope: WorkFlowScope;\n    readonly name: string;\n    readonly status: WorkFlowStatus;\n    readonly version: number;\n    readonly definition: WorkFlowDefinition;\n    readonly routineId: string | undefined;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'WorkFlowActor',
+    declaration: 'export interface WorkFlowActor {\n    readonly id: string;\n}',
+  },
+  {
     name: 'WorkflowAgentEndInfo',
     declaration: 'export interface WorkflowAgentEndInfo extends WorkflowAgentInfo {\n    outcome: WorkflowAgentOutcome;\n}',
   },
@@ -8865,8 +8938,48 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type WorkflowAgentOutcome = \'completed\' | \'failed\' | \'cancelled\';',
   },
   {
+    name: 'WorkFlowDefinition',
+    declaration: 'export interface WorkFlowDefinition {\n    readonly intent: string;\n    readonly nodes: readonly WorkFlowNode[];\n    readonly edges: readonly WorkFlowEdge[];\n    readonly permissions: readonly string[];\n    readonly failurePolicy: WorkFlowFailurePolicy;\n}',
+  },
+  {
+    name: 'WorkFlowEdge',
+    declaration: 'export interface WorkFlowEdge {\n    readonly id: WorkFlowEdgeId;\n    readonly from: WorkFlowNodeId;\n    readonly to: WorkFlowNodeId;\n    readonly condition?: string | undefined;\n}',
+  },
+  {
+    name: 'WorkFlowEdgeId',
+    declaration: 'export type WorkFlowEdgeId = Branded<\'WorkFlowEdgeId\'>;',
+  },
+  {
+    name: 'WorkFlowFailurePolicy',
+    declaration: 'export type WorkFlowFailurePolicy = \'stop\' | \'continue\' | \'review\';',
+  },
+  {
+    name: 'WorkFlowId',
+    declaration: 'export type WorkFlowId = Branded<\'WorkFlowId\'>;',
+  },
+  {
     name: 'WorkflowMeta',
     declaration: 'export interface WorkflowMeta {\n    name: string;\n    description: string;\n    whenToUse?: string;\n    phases?: WorkflowPhase[];\n}',
+  },
+  {
+    name: 'WorkFlowNode',
+    declaration: 'export type WorkFlowNode = WorkFlowNodeBase & {\n    [K in WorkFlowNodeKind]: {\n        readonly kind: K;\n        readonly config: WorkFlowNodeConfigMap[K];\n    };\n}[WorkFlowNodeKind];',
+  },
+  {
+    name: 'WorkFlowNodeBase',
+    declaration: 'export interface WorkFlowNodeBase {\n    readonly id: WorkFlowNodeId;\n    readonly title: string;\n    readonly position: {\n        readonly x: number;\n        readonly y: number;\n    };\n}',
+  },
+  {
+    name: 'WorkFlowNodeConfigMap',
+    declaration: 'export interface WorkFlowNodeConfigMap {\n    \'trigger.manual\': Record<string, never>;\n    \'trigger.schedule\': {\n        readonly recurrence: string;\n        readonly timezone?: string | undefined;\n    };\n    \'trigger.email\': {\n        readonly connectionId?: string | undefined;\n        readonly mailbox?: string | undefined;\n        readonly match?: string | undefined;\n        readonly unseenOnly?: boolean | undefined;\n    };\n    \'trigger.event\': {\n        readonly sourceId?: string | undefined;\n        readonly match?: string | undefined;\n    };\n    \'trigger.board\': {\n        readonly itemId?: string | undefined;\n        readonly status?: string | undefined;\n    };\n    \'agent\': {\n        readonly agentId: string;\n        readonly instruction: string;\n        readonly useSpaceContext?: boolean | undefined;\n    };\n    \'skill\': {\n        readonly skillName: string;\n        readonly arguments?: string | undefined;\n    };\n    \'mcp.call\': {\n        readonly server: string;\n        readonly tool: string;\n        readonly arguments?: Record<string, unknown> | undefined;\n    };\n    \'imap.action\': {\n        readonly connectionId?: string | undefined;\n        readonly op: \'search\' | \'read\' | \'mark\' | \'move\' | \'delete\' | \'flag\';\n        readonly query?: string | undefined;\n        readonly folder?: string | undefined;\n    };\n    \'smtp.send\': {\n        readonly connectionId?: string | undefined;\n        readonly to: readonly string[];\n        readonly subject: string;\n        readonly tem /* …truncated — full shape in source */',
+  },
+  {
+    name: 'WorkFlowNodeId',
+    declaration: 'export type WorkFlowNodeId = Branded<\'WorkFlowNodeId\'>;',
+  },
+  {
+    name: 'WorkFlowNodeKind',
+    declaration: 'export type WorkFlowNodeKind = keyof WorkFlowNodeConfigMap;',
   },
   {
     name: 'WorkflowPhase',
@@ -8893,12 +9006,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkflowRunInfo {\n    id: WorkflowRunId;\n    meta: WorkflowMeta;\n}',
   },
   {
+    name: 'WorkFlowScope',
+    declaration: 'export type WorkFlowScope = {\n    readonly kind: \'personal\';\n} | {\n    readonly kind: \'space\';\n    readonly spaceId: string;\n};',
+  },
+  {
     name: 'WorkflowStartRequest',
     declaration: 'export interface WorkflowStartRequest {\n    script: string;\n    meta: WorkflowMeta;\n    args?: unknown;\n    subagentProvider?: string;\n    maxTotalAgents?: number;\n    parent: Agent;\n    signal?: AbortSignal;\n}',
   },
   {
+    name: 'WorkFlowStatus',
+    declaration: 'export type WorkFlowStatus = \'draft\' | \'active\' | \'paused\';',
+  },
+  {
     name: 'WorkflowStopReason',
     declaration: 'export type WorkflowStopReason = \'completed\' | \'cancelled\' | \'error\';',
+  },
+  {
+    name: 'WorkFlowValidation',
+    declaration: 'export interface WorkFlowValidation {\n    readonly ok: boolean;\n    readonly problems: readonly string[];\n}',
   },
   {
     name: 'Workspace',
