@@ -1800,6 +1800,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-view':
         specifier: workspace:^
         version: link:../../faberloom/view
+      '@deepseek-ai/dsh-faberloom-workflows':
+        specifier: workspace:^
+        version: link:../../faberloom/workflows
       '@deepseek-ai/dsh-tool-faberloom':
         specifier: workspace:^
         version: link:../../faberloom/tool-faberloom
@@ -6805,15 +6808,24 @@ importers:
       '@deepseek-ai/dsh-faberloom-backup':
         specifier: workspace:^
         version: link:../backup
+      '@deepseek-ai/dsh-faberloom-board':
+        specifier: workspace:^
+        version: link:../board
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../connections
       '@deepseek-ai/dsh-faberloom-inbound':
         specifier: workspace:^
         version: link:../inbound
+      '@deepseek-ai/dsh-faberloom-learning':
+        specifier: workspace:^
+        version: link:../learning
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines
+      '@deepseek-ai/dsh-faberloom-spaces':
+        specifier: workspace:^
+        version: link:../spaces
       '@deepseek-ai/dsh-fs':
         specifier: workspace:^
         version: link:../../fs/fs

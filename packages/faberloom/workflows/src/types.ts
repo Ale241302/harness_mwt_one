@@ -67,6 +67,8 @@ export interface WorkFlowNodeConfigMap {
   'routine.invoke': { readonly routineId: string }
   /** Branches on an expression. */
   'condition': { readonly expression: string }
+  /** Computes a value from an expression over prior results and the event. */
+  'transform': { readonly expression: string }
   /** Parks the run for a time or an event. */
   'wait': { readonly seconds?: number | undefined; readonly waitFor?: string | undefined }
   /** Notifies the owner. */

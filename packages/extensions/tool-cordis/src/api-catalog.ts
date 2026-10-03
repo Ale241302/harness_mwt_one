@@ -7303,11 +7303,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineStep',
-    declaration: 'export interface RoutineStep {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n    readonly revalidateKey: string | null;\n    readonly revalidateExpect: string | null;\n}',
+    declaration: 'export interface RoutineStep {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly config: Readonly<Record<string, unknown>>;\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n    readonly revalidateKey: string | null;\n    readonly revalidateExpect: string | null;\n}',
   },
   {
     name: 'RoutineStepInput',
-    declaration: 'export interface RoutineStepInput {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn?: readonly string[];\n    readonly waitFor?: string;\n    readonly effect?: boolean;\n    readonly revalidateKey?: string;\n    readonly revalidateExpect?: string;\n}',
+    declaration: 'export interface RoutineStepInput {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn?: readonly string[];\n    readonly config?: Readonly<Record<string, unknown>>;\n    readonly waitFor?: string;\n    readonly effect?: boolean;\n    readonly revalidateKey?: string;\n    readonly revalidateExpect?: string;\n}',
   },
   {
     name: 'RoutineTrigger',
@@ -8155,7 +8155,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StepContext',
-    declaration: 'export interface StepContext {\n    readonly executionId: string;\n    readonly routineId: FaberLoomRoutineId;\n    readonly stepId: string;\n    readonly input: unknown;\n    readonly event: IngestEvent | undefined;\n    readonly results: Readonly<Record<string, unknown>>;\n    readonly events: readonly IngestEvent[];\n}',
+    declaration: 'export interface StepContext {\n    readonly executionId: string;\n    readonly routineId: FaberLoomRoutineId;\n    readonly stepId: string;\n    readonly input: unknown;\n    readonly event: IngestEvent | undefined;\n    readonly config: Readonly<Record<string, unknown>>;\n    readonly results: Readonly<Record<string, unknown>>;\n    readonly events: readonly IngestEvent[];\n}',
   },
   {
     name: 'StepHandler',

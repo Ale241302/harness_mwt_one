@@ -115,4 +115,5 @@ async revokeShare(actor, grantId): Promise<ShareGrant>
 ## 实施状态
 
 - Fase 0 —— 设计与契约（本 note、`packages/faberloom/workflows/README.md`，以及知识库规格 `SPEC_WORKFLOW_ANTI_SPAM_v1` 与 `SPEC_WORKFLOW_GLOSARIO_v1`）：已完成。
-- Fase 1 —— 模型与存储：已完成。`@deepseek-ai/dsh-faberloom-workflows` 交付带 brand 的类型、判别节点目录、`faberloom_workflows` 域、带版本递增的所有者限定 CRUD、DAG 校验与 `compileWorkFlow`；anti-spam 图可确定性校验并编译，且每个文件 100% 覆盖率。`SPEC_WORKFLOW_MODEL_v1` 记录该模型。经 routines 引擎的激活、节点处理器、连接节点、聊天工具、编辑器、调度、共享、存活检测与模板仍属 Fases 2–9。
+- Fase 1 —— 模型与存储：已完成。`@deepseek-ai/dsh-faberloom-workflows` 交付带 brand 的类型、判别节点目录、`faberloom_workflows` 域、带版本递增的所有者限定 CRUD、DAG 校验与 `compileWorkFlow`；anti-spam 图可确定性校验并编译，且每个文件 100% 覆盖率。`SPEC_WORKFLOW_MODEL_v1` 记录该模型。
+- Fase 2 —— 持久执行：已完成。编译出的 routine 携带每个节点的 `config`；激活流程会经 `ctx.faberloomRoutines` 创建并激活 routine，编辑活动流程会为其生成新版本并迁移等待中的执行，`faberloom-handlers` 包注册配置驱动的处理器（`condition`、`transform`、`delay`、`imap`、`smtp`、`memory.remember`、`memory.teach`、`board.create`、`reference`、`subroutine`、`notify`、`deadletter`）以及 agent 的 Space 上下文。一个无密钥端到端用例在没有用户连接的情况下，用假 IMAP 与 SMTP 服务器驱动 anti-spam 图，并在重启后不重复运行。`faberloom` bundle 挂载 workflows 行，网关按用户保持调度器与 inbound 轮询开启。聊天工具、编辑器、调度、共享、存活检测与模板仍属 Fases 3–9。

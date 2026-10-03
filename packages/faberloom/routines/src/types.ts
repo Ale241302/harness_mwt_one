@@ -45,6 +45,8 @@ export interface RoutineStep {
   readonly handler: string
   /** Steps that must complete first. */
   readonly dependsOn: readonly string[]
+  /** Kind-specific configuration the compiled routine carries; `{}` when none. */
+  readonly config: Readonly<Record<string, unknown>>
   /** Event key or `/regex/` pattern the step waits for, or `null`. */
   readonly waitFor: string | null
   /** Whether the step performs a ledgered external effect. */
@@ -61,6 +63,8 @@ export interface RoutineStepInput {
   readonly instruction: string
   readonly handler: string
   readonly dependsOn?: readonly string[]
+  /** Kind-specific configuration; defaults to `{}`. */
+  readonly config?: Readonly<Record<string, unknown>>
   readonly waitFor?: string
   readonly effect?: boolean
   readonly revalidateKey?: string
@@ -220,6 +224,8 @@ export interface StepContext {
   readonly input: unknown
   /** The event that resumed the step, when any. */
   readonly event: IngestEvent | undefined
+  /** The running step's kind-specific configuration. */
+  readonly config: Readonly<Record<string, unknown>>
   /** Results of completed steps, keyed by step id. */
   readonly results: Readonly<Record<string, unknown>>
   /** Every event the execution has received, oldest first. */

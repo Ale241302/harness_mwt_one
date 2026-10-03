@@ -293,4 +293,27 @@ describe('FaberLoomRoutines', () => {
     routines.releaseLock()
     expect(routines.acquireLock()).toBe(true)
   })
+
+  it('carries each step config to its handler and defaults it to empty', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('echo', context => context.config)
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'con config',
+      definition: {
+        intent: 'eco',
+        triggers: [],
+        steps: [
+          { id: 's1', instruction: 'eco', handler: 'echo', config: { mode: 'fast', n: 2 } },
+          { id: 's2', instruction: 'eco', handler: 'echo', dependsOn: ['s1'] },
+        ],
+        expectedResult: 'eco',
+        permissions: [],
+        failurePolicy: 'stop',
+      },
+    })
+    await routines.activateRoutine(OWNER, routine.id)
+    const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'cfg', channel: 'manual' })
+    expect(started.execution.steps.s1?.result).toEqual({ mode: 'fast', n: 2 })
+    expect(started.execution.steps.s2?.result).toEqual({})
+  })
 })

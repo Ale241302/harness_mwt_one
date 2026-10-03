@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package carries the native Work Flow module: a versioned directed graph of nodes and edges, scoped to a Space or the personal scope, whose source of truth is the graph and whose runtime is a Routine compiled from it. The host service `ctx.faberloomWorkflows` owns the durable graph records — create, list, get, update, set status, validate, compile, and remove — with DAG validation and `compileWorkFlow`. The model tools live in `dsh-tool-faberloom` and the browser editor is a panel in `dsh-client-ui-faberloom`.
+This package carries the native Work Flow module: a versioned graph of nodes and edges scoped to a Space or the personal scope, whose runtime is a Routine compiled from it. `ctx.faberloomWorkflows` owns the durable records (create, list, get, update, status, validate, compile, remove) with DAG validation and `compileWorkFlow`. Activating a flow creates and activates its routine; editing one versions the routine and migrates its waiting executions. Model tools live in `dsh-tool-faberloom`.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ This package carries the native Work Flow module: a versioned directed graph of 
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row where `ctx.storageDomain` is present. The service opens the `faberloom_workflows` domain lazily on first use and closes it with the calling plugin's fiber, so disposing that fiber removes it. Every operation carries the authenticated actor; this slice treats the owner as the only identity that may read or manage a flow.
+Mount this row where `ctx.storageDomain` and `ctx.faberloomRoutines` are present. The service opens the `faberloom_workflows` domain lazily on first use and closes it with the calling plugin's fiber, so disposing that fiber removes it. Every operation carries the authenticated actor; this slice treats the owner as the only identity that may read or manage a flow. Activation refuses an invalid graph and refuses a graph whose handler names the mounted handlers do not register.
 
 -----
 
@@ -48,7 +48,8 @@ Independent of live requests: the registration never touches a request prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Runtime and editing arrive on later slices** — node handlers, activation through `ctx.faberloomRoutines`, connectivity nodes, chat tools, the browser editor, scheduling, sharing, liveness, and templates are Fases 2–9. `setStatus('active')` validates the graph and resolves the compiled routine id from the work-flow id; it does not yet create the routine through the routines engine.
+- **Editing surfaces arrive on later slices** — chat tools, the browser editor, scheduling, sharing, liveness, and templates are Fases 3–9; the compiled runtime, activation, and migration are in place.
+- **No conditional edges yet** — the compiled routine is a dependency graph, so a `condition` node records a boolean but does not gate a branch; both branches' steps run. True branching and loops wait for the v2 graph executor.
 - **Owner-only access** — per-action permissions and cross-user grants arrive with the sharing slice.
 
 No invariant companion is published because the service owns one durable graph relation, and its unit and integration specs assert it; no observation outside those tests can diverge.

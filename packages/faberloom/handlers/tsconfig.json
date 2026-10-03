@@ -24,6 +24,15 @@
       "path": "../inbound"
     },
     {
+      "path": "../spaces"
+    },
+    {
+      "path": "../learning"
+    },
+    {
+      "path": "../board"
+    },
+    {
       "path": "../../core/agent"
     },
     {

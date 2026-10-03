@@ -17,6 +17,9 @@ const stepRecord = z.object({
   instruction: z.string(),
   handler: z.string(),
   dependsOn: z.array(z.string()),
+  // Kind-specific configuration; defaulted so routine versions written before
+  // the field existed keep loading under the same domain version.
+  config: z.record(z.string(), z.unknown()).default({}),
   waitFor: z.string().nullable(),
   effect: z.boolean(),
   revalidateKey: z.string().nullable(),

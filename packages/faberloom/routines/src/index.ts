@@ -82,6 +82,7 @@ function normalizeDefinition(input: RoutineDefinitionInput): RoutineDefinition {
       instruction: step.instruction,
       handler: step.handler,
       dependsOn: step.dependsOn !== undefined ? [...step.dependsOn] : [],
+      config: step.config !== undefined ? { ...step.config } : {},
       waitFor: step.waitFor ?? null,
       effect: step.effect ?? false,
       revalidateKey: step.revalidateKey ?? null,
@@ -103,6 +104,7 @@ function toStoredDefinition(definition: RoutineDefinition): RoutineRecord['defin
       instruction: step.instruction,
       handler: step.handler,
       dependsOn: [...step.dependsOn],
+      config: { ...step.config },
       waitFor: step.waitFor,
       effect: step.effect,
       revalidateKey: step.revalidateKey,
@@ -665,6 +667,7 @@ export class FaberLoomRoutines extends Service {
         stepId: step.id,
         input,
         event,
+        config: step.config,
         results,
         events: record.events.map(toEvent),
       }

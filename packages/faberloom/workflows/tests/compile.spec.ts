@@ -144,6 +144,9 @@ describe('compileWorkFlow', () => {
         ],
         "steps": [
           {
+            "config": {
+              "expression": "category === "spam"",
+            },
             "dependsOn": [],
             "effect": false,
             "handler": "condition",
@@ -151,6 +154,10 @@ describe('compileWorkFlow', () => {
             "instruction": "n2",
           },
           {
+            "config": {
+              "agentId": "antispam",
+              "instruction": "clasificar el correo",
+            },
             "dependsOn": [
               "n2",
             ],
@@ -160,6 +167,10 @@ describe('compileWorkFlow', () => {
             "instruction": "n3",
           },
           {
+            "config": {
+              "folder": "Spam",
+              "op": "move",
+            },
             "dependsOn": [
               "n3",
             ],
@@ -169,15 +180,23 @@ describe('compileWorkFlow', () => {
             "instruction": "n4",
           },
           {
+            "config": {
+              "spaceId": "sp-antispam",
+              "text": "remitente bloqueado",
+            },
             "dependsOn": [
               "n4",
             ],
             "effect": false,
-            "handler": "memory",
+            "handler": "memory.remember",
             "id": "n5",
             "instruction": "n5",
           },
           {
+            "config": {
+              "kind": "email",
+              "text": "spam detectado",
+            },
             "dependsOn": [
               "n5",
             ],
@@ -187,6 +206,9 @@ describe('compileWorkFlow', () => {
             "instruction": "n6",
           },
           {
+            "config": {
+              "reason": "no clasificable",
+            },
             "dependsOn": [
               "n3",
             ],
@@ -249,6 +271,7 @@ describe('compileWorkFlow', () => {
       ['space.reference', { spaceId: 'sp' }],
       ['routine.invoke', { routineId: 'r' }],
       ['condition', { expression: 'true' }],
+      ['transform', { expression: 'toUpperCase()' }],
       ['wait', { seconds: 5 }],
       ['wait', { waitFor: 'reply' }],
       ['notify', { kind: 'board' }],
@@ -262,16 +285,17 @@ describe('compileWorkFlow', () => {
       ['a2', 'mcp', true, undefined],
       ['a3', 'imap', true, undefined],
       ['a4', 'smtp', true, undefined],
-      ['a5', 'memory', false, undefined],
-      ['a6', 'memory', false, undefined],
-      ['a7', 'board', true, undefined],
+      ['a5', 'memory.remember', false, undefined],
+      ['a6', 'memory.teach', false, undefined],
+      ['a7', 'board.create', true, undefined],
       ['a8', 'reference', false, undefined],
-      ['a9', 'routine', false, undefined],
+      ['a9', 'subroutine', false, undefined],
       ['a10', 'condition', false, undefined],
-      ['a11', 'wait', false, undefined],
-      ['a12', 'wait', false, 'reply'],
-      ['a13', 'notify', false, undefined],
-      ['a14', 'deadletter', false, undefined],
+      ['a11', 'transform', false, undefined],
+      ['a12', 'delay', false, undefined],
+      ['a13', 'delay', false, 'reply'],
+      ['a14', 'notify', false, undefined],
+      ['a15', 'deadletter', false, undefined],
     ])
   })
 

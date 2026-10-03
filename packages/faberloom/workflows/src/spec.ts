@@ -37,6 +37,7 @@ const workFlowNode = z.discriminatedUnion('kind', [
   z.object({ ...nodeBase, kind: z.literal('space.reference'), config: z.object({ spaceId: z.string() }) }),
   z.object({ ...nodeBase, kind: z.literal('routine.invoke'), config: z.object({ routineId: z.string() }) }),
   z.object({ ...nodeBase, kind: z.literal('condition'), config: z.object({ expression: z.string() }) }),
+  z.object({ ...nodeBase, kind: z.literal('transform'), config: z.object({ expression: z.string() }) }),
   z.object({ ...nodeBase, kind: z.literal('wait'), config: z.object({ seconds: z.number().optional(), waitFor: z.string().optional() }) }),
   z.object({ ...nodeBase, kind: z.literal('notify'), config: z.object({ kind: z.enum(['email', 'board']), text: z.string().optional() }) }),
   z.object({ ...nodeBase, kind: z.literal('deadletter'), config: z.object({ destination: z.string().optional(), reason: z.string().optional() }) }),

@@ -3,6 +3,8 @@ import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
+import FaberLoomAccess from '../../access/src/index.ts'
+import FaberLoomRoutines from '../../routines/src/index.ts'
 import FaberLoomWorkflows from '../src/index.ts'
 import { workFlowRecord } from '../src/spec.ts'
 import type { WorkFlowDefinition, WorkFlowEdge, WorkFlowEdgeId, WorkFlowId, WorkFlowNode, WorkFlowNodeId, WorkFlowNodeKind } from '../src/index.ts'
@@ -57,7 +59,7 @@ const antispam: WorkFlowDefinition = {
   failurePolicy: 'review',
 }
 
-/** Boot the storage/domain composition plus the workflows service over one pool. */
+/** Boot the storage/domain composition plus access, routines, and workflows over one pool. */
 async function harness(pool = new MemoryMediaPool()) {
   const ctx = new Context()
   await ctx.plugin(Storage)
@@ -65,8 +67,14 @@ async function harness(pool = new MemoryMediaPool()) {
   const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
+  await ctx.plugin(FaberLoomAccess)
+  await ctx.plugin(FaberLoomRoutines)
   const fiber = await ctx.plugin(FaberLoomWorkflows)
-  return { ctx, workflows: ctx.faberloomWorkflows, fiber, pool, facility }
+  const routines = ctx.faberloomRoutines
+  for (const name of ['agent', 'mcp', 'imap', 'smtp', 'memory.remember', 'memory.teach', 'board.create', 'reference', 'subroutine', 'condition', 'transform', 'delay', 'notify', 'deadletter']) {
+    routines.registerHandler(name, () => 'ok')
+  }
+  return { ctx, workflows: ctx.faberloomWorkflows, routines, fiber, pool, facility }
 }
 
 const OWNER = { id: 'compras2@sondelsa.com' }
@@ -108,21 +116,52 @@ describe('FaberLoomWorkflows', () => {
     await expect(workflows.update(OWNER, 'missing' as WorkFlowId, { name: 'x' })).rejects.toThrow('not found')
   })
 
-  it('F1 · activates only a valid graph and resolves the compiled routine id', async () => {
-    const { workflows } = await harness()
+  it('F2 · activation creates and activates the compiled routine, then pauses it', async () => {
+    const { workflows, routines } = await harness()
     const flow = await workflows.create(OWNER, { name: 'antispam', definition: antispam })
     const active = await workflows.setStatus(OWNER, flow.id, 'active')
-    expect(active).toMatchObject({ status: 'active', routineId: flow.id })
+    expect(active.status).toBe('active')
+    expect(active.routineId).toBeTypeOf('string')
+    expect((await routines.getRoutine(active.routineId as never)).status).toBe('active')
+
     const reactivated = await workflows.setStatus(OWNER, flow.id, 'active')
-    expect(reactivated.routineId).toBe(flow.id)
+    expect(reactivated.routineId).toBe(active.routineId)
+    expect((await routines.getRoutine(active.routineId as never)).version).toBe(2)
+
     const paused = await workflows.setStatus(OWNER, flow.id, 'paused')
-    expect(paused).toMatchObject({ status: 'paused', routineId: flow.id })
+    expect(paused.status).toBe('paused')
+    expect((await routines.getRoutine(active.routineId as never)).status).toBe('paused')
 
     const broken = await workflows.create(OWNER, { name: 'roto', definition: invalid })
     await expect(workflows.setStatus(OWNER, broken.id, 'active')).rejects.toThrow('cannot activate')
     expect((await workflows.setStatus(OWNER, broken.id, 'draft')).status).toBe('draft')
+    expect((await workflows.setStatus(OWNER, broken.id, 'paused')).status).toBe('paused')
     await expect(workflows.setStatus(OTHER, flow.id, 'paused')).rejects.toThrow('access denied')
     await expect(workflows.setStatus(OWNER, 'missing' as WorkFlowId, 'draft')).rejects.toThrow('not found')
+  })
+
+  it('F2 · editing an active flow versions the routine and migrates waiting executions', async () => {
+    const { workflows, routines } = await harness()
+    const waiting: WorkFlowDefinition = {
+      intent: 'espera la respuesta',
+      nodes: [node('t', 'trigger.manual', {}), node('d', 'wait', { waitFor: 'reply' })],
+      edges: [edge('e1', 't', 'd')],
+      permissions: [],
+      failurePolicy: 'stop',
+    }
+    const flow = await workflows.create(OWNER, { name: 'espera', definition: waiting })
+    const active = await workflows.setStatus(OWNER, flow.id, 'active')
+    const started = await routines.startExecution({ routineId: active.routineId as never, idempotencyKey: 'caso-1', channel: 'manual' })
+    expect(started.execution.status).toBe('waiting')
+
+    const rescoped = await workflows.update(OWNER, flow.id, { scope: { kind: 'space', spaceId: 'sp-1' } })
+    expect(rescoped.routineId).toBe(active.routineId)
+
+    const edited = await workflows.update(OWNER, flow.id, { definition: waiting })
+    expect(edited.routineId).toBe(active.routineId)
+    const migrated = await routines.getExecution(started.execution.id)
+    expect(migrated.routineVersion).toBe(2)
+    expect(migrated.steps.d).toMatchObject({ status: 'waiting' })
   })
 
   it('F1 · validates and compiles a stored flow', async () => {

@@ -12,7 +12,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { workflowsDomainSpec } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
-import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
+import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput, FaberLoomRoutineId } from '@deepseek-ai/dsh-faberloom-routines'
 import type {
   CreateWorkFlowInput,
   UpdateWorkFlowInput,
@@ -69,13 +69,14 @@ const HANDLER_BY_KIND: Record<ActionNode['kind'], string> = {
   'mcp.call': 'mcp',
   'imap.action': 'imap',
   'smtp.send': 'smtp',
-  'memory.remember': 'memory',
-  'memory.teach': 'memory',
-  'board.create': 'board',
+  'memory.remember': 'memory.remember',
+  'memory.teach': 'memory.teach',
+  'board.create': 'board.create',
   'space.reference': 'reference',
-  'routine.invoke': 'routine',
+  'routine.invoke': 'subroutine',
   'condition': 'condition',
-  'wait': 'wait',
+  'transform': 'transform',
+  'wait': 'delay',
   'notify': 'notify',
   'deadletter': 'deadletter',
 }
@@ -107,6 +108,7 @@ function stepFor(node: ActionNode, edges: readonly WorkFlowEdge[], triggerIds: R
     instruction: node.title,
     handler: HANDLER_BY_KIND[node.kind],
     dependsOn,
+    config: node.config,
     effect: EFFECT_KINDS.has(node.kind),
   }
   return node.kind === 'wait' && node.config.waitFor !== undefined ? { ...step, waitFor: node.config.waitFor } : step
@@ -221,7 +223,7 @@ function sameScope(left: WorkFlowScope, right: WorkFlowScope): boolean {
  * the authenticated actor.
  */
 export class FaberLoomWorkflows extends Service {
-  static inject = ['storageDomain']
+  static inject = ['storageDomain', 'faberloomRoutines']
 
   private domainPromise: Promise<Domain<typeof workflowsDomainSpec>> | undefined
 
@@ -260,6 +262,29 @@ export class FaberLoomWorkflows extends Service {
     if (record === undefined) throw new Error(`faberloom: work flow ${id} not found`)
     if (record.ownerId !== actor.id) throw new Error('faberloom: work flow access denied')
     return { table, record }
+  }
+
+  /**
+   * Compile the record and reconcile it with the routines engine: create and
+   * activate the compiled routine the first time, or version it and migrate its
+   * waiting executions on a later edit. Returns the routine id to store.
+   */
+  private async syncRoutine(id: WorkFlowId, record: WorkFlowRecord): Promise<string> {
+    const routines = this.ctx.faberloomRoutines
+    const definition = compileWorkFlow(toWorkFlow(id, record))
+    if (record.routineId === null) {
+      const created = await routines.createRoutine(record.ownerId, { name: record.name, definition })
+      await routines.activateRoutine(record.ownerId, created.id)
+      return created.id
+    }
+    const routineId = brandString<FaberLoomRoutineId>(record.routineId)
+    const updated = await routines.updateRoutine(record.ownerId, routineId, { name: record.name, definition })
+    await routines.activateRoutine(record.ownerId, routineId)
+    for (const execution of await routines.listExecutions({ routineId, status: 'waiting' })) {
+      await routines.previewMigration(execution.id, updated.version)
+      await routines.migrate(execution.id, updated.version)
+    }
+    return record.routineId
   }
 
   /**
@@ -326,13 +351,16 @@ export class FaberLoomWorkflows extends Service {
    */
   async update(actor: WorkFlowActor, id: WorkFlowId, patch: UpdateWorkFlowInput): Promise<WorkFlow> {
     const { table, record } = await this.requireOwned(actor, id)
-    const next: WorkFlowRecord = {
+    let next: WorkFlowRecord = {
       ...record,
       name: patch.name ?? record.name,
       scope: patch.scope ?? record.scope,
       definition: patch.definition ?? record.definition,
       updatedAt: new Date().toISOString(),
       version: record.version + 1,
+    }
+    if (next.status === 'active' && (patch.definition !== undefined || patch.name !== undefined)) {
+      next = { ...next, routineId: await this.syncRoutine(id, next) }
     }
     await table.update(id, () => next)
     return toWorkFlow(id, next)
@@ -353,7 +381,9 @@ export class FaberLoomWorkflows extends Service {
     if (status === 'active') {
       const verdict = validateWorkFlow(record.definition)
       if (!verdict.ok) throw new Error(`faberloom: work flow ${id} cannot activate: ${verdict.problems.join('; ')}`)
-      routineId = routineId ?? id
+      routineId = await this.syncRoutine(id, record)
+    } else if (routineId !== null) {
+      await this.ctx.faberloomRoutines.pauseRoutine(record.ownerId, brandString<FaberLoomRoutineId>(routineId))
     }
     const next: WorkFlowRecord = { ...record, status, routineId, updatedAt: new Date().toISOString(), version: record.version + 1 }
     await table.update(id, () => next)

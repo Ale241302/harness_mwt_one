@@ -11,12 +11,18 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type { FaberLoomExecutionId, StepContext, StepHandler } from '@deepseek-ai/dsh-faberloom-routines'
+import type { FaberLoomSpaceId } from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
 // Type-only: pulls the ctx.faberloomConnections and ctx.faberloomInbound merges.
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-inbound'
 import { RoutineStepSessions, type RoutineStepToolCall } from './step-agent.ts'
+import { createWorkflowHandlers } from './steps.ts'
+
+export type * from './step-agent.ts'
+export * from './steps.ts'
 
 export type * from './step-agent.ts'
 
@@ -132,8 +138,28 @@ async function runAgentStep(
   handler: 'agent' | 'mcp',
 ): Promise<StepOutcome> {
   const instruction = await stepInstruction(ctx, context)
-  const run = await sessions.run(context.executionId, stepPrompt(handler, context, instruction))
+  const spaceContext = await spaceContextFor(ctx, context)
+  const run = await sessions.run(context.executionId, stepPrompt(handler, context, instruction, spaceContext))
   return { handler, ...run }
+}
+
+/**
+ * Resolve the Space context a step opted into: the effective context of the
+ * configured Space, when the node set `useSpaceContext`. Empty when the node did
+ * not opt in or the spaces service is not mounted, so the prompt is unchanged.
+ * @param ctx - context carrying the spaces service.
+ * @param context - the step being executed.
+ * @returns the rendered context block, or an empty string.
+ */
+export async function spaceContextFor(ctx: Context, context: StepContext): Promise<string> {  if (context.config['useSpaceContext'] !== true) return ''
+  const spaces = ctx.get('faberloomSpaces')
+  if (spaces === undefined) return ''
+  const spaceId = context.config['spaceId']
+  if (typeof spaceId !== 'string' || spaceId.length === 0) return ''
+  const owner = await executionOwner(ctx, context)
+  const actor = { id: owner, role: 'admin', companyId: undefined, readOnly: false }
+  const effective = await spaces.effectiveContext(actor, brandString<FaberLoomSpaceId>(spaceId))
+  return Object.entries(effective.resolved).map(([key, value]) => `${key}: ${value}`).join('\n')
 }
 
 /**
@@ -160,9 +186,10 @@ const CASE_CONTEXT_LIMIT = 4000
  * @param handler - which handler asked for the run.
  * @param context - the step being executed.
  * @param instruction - the step's recorded instruction.
+ * @param spaceContext - the effective Space context block, or an empty string.
  * @returns the prompt delivered to the hidden Session.
  */
-export function stepPrompt(handler: 'agent' | 'mcp', context: StepContext, instruction: string): string {
+export function stepPrompt(handler: 'agent' | 'mcp', context: StepContext, instruction: string, spaceContext = ''): string {
   const rendered = JSON.stringify({ input: context.input ?? null, event: context.event ?? null })
   const lines = [
     `Paso "${context.stepId}" de la rutina en curso.`,
@@ -172,6 +199,7 @@ export function stepPrompt(handler: 'agent' | 'mcp', context: StepContext, instr
     'Contexto del caso:',
     rendered.length > CASE_CONTEXT_LIMIT ? `${rendered.slice(0, CASE_CONTEXT_LIMIT)}…` : rendered,
   ]
+  if (spaceContext.length > 0) lines.push('', 'Contexto del Space:', spaceContext)
   if (handler === 'mcp') {
     lines.push('', 'Ejecuta la operación con las herramientas MCP disponibles y devuelve el resultado.')
   }
@@ -317,6 +345,9 @@ export class FaberLoomHandlers extends Service {
       'email.followup': context => emailFollowupHandler(ctx, context),
     }
     for (const [name, handler] of Object.entries(handlers)) {
+      this.ctx.effect(() => ctx.faberloomRoutines.registerHandler(name, handler), `faberloom.handlers.${name}`)
+    }
+    for (const [name, handler] of Object.entries(createWorkflowHandlers(ctx))) {
       this.ctx.effect(() => ctx.faberloomRoutines.registerHandler(name, handler), `faberloom.handlers.${name}`)
     }
     this.ctx.effect(() => () => sessions.dispose(), 'faberloom.handlers.sessions')
