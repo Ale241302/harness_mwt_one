@@ -23,7 +23,7 @@ The workspace view is the one host capability the FaberLoom browser panels use. 
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row in a composition that already carries `ctx.faberloomSpaces`, `ctx.faberloomAgents`, `ctx.faberloomBoard`, and `ctx.faberloomRoutines`, and configure `ownerId`. Configure `memoryCoreUrl`, `memoryServiceId`, `memoryUserId`, and `memoryGatewayKey` to have the overview carry the owner's memory rows; without them the memory list is empty. The browser side mounts the generated `./remote` contribution in the client API assembly and calls `ctx.remote.faberloomView.overview()`.
+Mount this row in a composition that already carries `ctx.faberloomSpaces`, `ctx.faberloomAgents`, `ctx.faberloomBoard`, and `ctx.faberloomRoutines`, and configure `ownerId`. Configure `memoryCoreUrl`, `memoryServiceId`, `memoryUserId`, and `memoryGatewayKey` to have the overview carry the owner's memory rows; without them the memory list is empty. The browser side mounts the generated `./remote` contribution in the client API assembly and calls `ctx.remote.faberloomView.overview()`. The connectivity map is a second read: `ctx.remote.faberloomView.spaceMap()` returns every Space with its agent and mirrored workspace, every agent with its skills and MCP access, the owner's mail connections, and the registered Workspaces, feeding the palette and canvas.
 
 -----
 
@@ -50,7 +50,8 @@ Independent of live requests: the service never touches a request prefix.
 
 - **Writes cover the panel actions, not every product operation.** The namespace creates and renames spaces and agents, deactivates agents, creates and reviews board items, creates and toggles routines, and records memory statements; board revision submission, model policy, and routine step editing stay out until their screens land.
 - **Memory writes go through the pipeline.** `remember` appends one statement to the agent-memory conversation inlet; the server distils L0 into L1 asynchronously, so the new row can appear after the next read. Reads stay read-only.
-- **No change event of its own.** The browser refreshes on the harness's forwarded session-activity event, on mount, and after every write; a dedicated change event waits for a forwarded-event allowlist entry.
+- **Change events.** The browser refreshes on the harness's forwarded session-activity event, on mount, and after every write; a dedicated change event waits for a forwarded-event allowlist entry.
+- **The connectivity map is read-only.** `spaceMap` reports links; it does not create or mutate Spaces, agents, connections, or workspaces.
 
 <a id="dev-note"></a>
 ### Dev Note

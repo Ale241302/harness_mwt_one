@@ -1781,6 +1781,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'spaces, agents, board items, routines, and memory rows as plain JSON.',
       },
       {
+        signature: '@Remote(\'spaceMap\') async spaceMap(): Promise<FaberLoomSpaceMap>',
+        description: 'Read the Space connectivity map the palette and canvas consume: every Space with its agent and mirrored workspace, every agent with its skills and MCP access, the owner\'s mail connections, and the registered Workspaces. Connections and Workspaces are optional, so a deployment that mounts neither still gets the map.',
+        parameters: [],
+        returns: 'the connectivity map as plain JSON.',
+      },
+      {
         signature: '@Remote(\'createSpace\') async createSpace(title: string, agentId?: string, parentId?: string, inheritContext?: boolean): Promise<FaberLoomOverview>',
         description: 'Create a space (root or sub-space) for the owner with an optional responsible agent, and register its conversation area as a Workspace so the sidebar and the Espacios panel show the same thing.',
         parameters: [{ name: 'title', description: 'display title.' }, { name: 'agentId', description: 'catalog agent put in charge; the same agent may lead a parent and a sub-space.' }, { name: 'parentId', description: 'parent space id, when this is a sub-space.' }, { name: 'inheritContext', description: 'whether the space inherits its parent\'s context; defaults to true.' }],
@@ -6332,6 +6338,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomSpaceId',
     declaration: 'export type FaberLoomSpaceId = Branded<\'FaberLoomSpaceId\'>;',
+  },
+  {
+    name: 'FaberLoomSpaceMap',
+    declaration: 'export interface FaberLoomSpaceMap {\n    readonly spaces: readonly FaberLoomSpaceMapSpace[];\n    readonly agents: readonly FaberLoomSpaceMapAgent[];\n    readonly connections: readonly FaberLoomSpaceMapConnection[];\n    readonly workspaces: readonly FaberLoomSpaceMapWorkspace[];\n}',
+  },
+  {
+    name: 'FaberLoomSpaceMapAgent',
+    declaration: 'export interface FaberLoomSpaceMapAgent {\n    readonly id: string;\n    readonly name: string;\n    readonly spaceId: string | null;\n    readonly skills: readonly string[];\n    readonly mcp: {\n        readonly mwt: boolean;\n        readonly sicop: boolean;\n    };\n    readonly webAccess: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomSpaceMapConnection',
+    declaration: 'export interface FaberLoomSpaceMapConnection {\n    readonly id: string;\n    readonly kind: string;\n    readonly label: string;\n}',
+  },
+  {
+    name: 'FaberLoomSpaceMapSpace',
+    declaration: 'export interface FaberLoomSpaceMapSpace {\n    readonly id: string;\n    readonly title: string;\n    readonly agentId: string | null;\n    readonly workspaceId: string | null;\n    readonly context: Readonly<Record<string, string>>;\n}',
+  },
+  {
+    name: 'FaberLoomSpaceMapWorkspace',
+    declaration: 'export interface FaberLoomSpaceMapWorkspace {\n    readonly id: string;\n    readonly path: string;\n    readonly title: string;\n}',
   },
   {
     name: 'FaberLoomSpaceMemory',

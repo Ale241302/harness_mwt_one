@@ -20,9 +20,70 @@ export interface FaberLoomSpaceRow {
   readonly workspaceId: string | null
 }
 
-/** One catalog agent as the Agentes panel renders it. */
-export interface FaberLoomAgentRow {
+/** One Space in the connectivity map: its responsible agent and mirrored workspace. */
+export interface FaberLoomSpaceMapSpace {
+  /** Space id. */
+  readonly id: string
+  /** Display title. */
+  readonly title: string
+  /** Responsible agent id, or null. */
+  readonly agentId: string | null
+  /** Mirrored Workspace id, or null. */
+  readonly workspaceId: string | null
+  /** The Space's own context key/values. */
+  readonly context: Readonly<Record<string, string>>
+}
+
+/** One agent in the connectivity map, with its skills and MCP access. */
+export interface FaberLoomSpaceMapAgent {
   /** Agent id. */
+  readonly id: string
+  /** Display name. */
+  readonly name: string
+  /** Owning Space id, or null. */
+  readonly spaceId: string | null
+  /** Skill names the agent declares. */
+  readonly skills: readonly string[]
+  /** Which MCP servers the agent may query. */
+  readonly mcp: { readonly mwt: boolean; readonly sicop: boolean }
+  /** Whether the agent may browse the open web. */
+  readonly webAccess: boolean
+}
+
+/** One mail connection in the connectivity map. */
+export interface FaberLoomSpaceMapConnection {
+  /** Connection id. */
+  readonly id: string
+  /** Connection kind (`imap` or `smtp`). */
+  readonly kind: string
+  /** Display label. */
+  readonly label: string
+}
+
+/** One registered Workspace in the connectivity map. */
+export interface FaberLoomSpaceMapWorkspace {
+  /** Workspace id. */
+  readonly id: string
+  /** Filesystem path. */
+  readonly path: string
+  /** Display title. */
+  readonly title: string
+}
+
+/** The Space connectivity map the palette and canvas read. */
+export interface FaberLoomSpaceMap {
+  /** Spaces with their agent and workspace links. */
+  readonly spaces: readonly FaberLoomSpaceMapSpace[]
+  /** Catalog agents with their skills and MCP access. */
+  readonly agents: readonly FaberLoomSpaceMapAgent[]
+  /** The owner's mail connections. */
+  readonly connections: readonly FaberLoomSpaceMapConnection[]
+  /** The registered Workspaces. */
+  readonly workspaces: readonly FaberLoomSpaceMapWorkspace[]
+}
+
+/** One catalog agent as the Agentes panel renders it. */
+export interface FaberLoomAgentRow {  /** Agent id. */
   readonly id: string
   /** Display name. */
   readonly name: string

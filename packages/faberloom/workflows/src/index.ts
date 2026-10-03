@@ -66,7 +66,7 @@ type ActionNode = Exclude<WorkFlowNode, TriggerNode>
 const HANDLER_BY_KIND: Record<ActionNode['kind'], string> = {
   'agent': 'agent',
   'skill': 'agent',
-  'mcp.call': 'mcp',
+  'mcp.call': 'mcp.call',
   'imap.action': 'imap',
   'smtp.send': 'smtp',
   'memory.remember': 'memory.remember',

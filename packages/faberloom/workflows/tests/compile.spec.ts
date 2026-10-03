@@ -282,7 +282,7 @@ describe('compileWorkFlow', () => {
     expect(compiled.steps.map(step => [step.id, step.handler, step.effect, step.waitFor])).toEqual([
       ['a0', 'agent', false, undefined],
       ['a1', 'agent', false, undefined],
-      ['a2', 'mcp', true, undefined],
+      ['a2', 'mcp.call', true, undefined],
       ['a3', 'imap', true, undefined],
       ['a4', 'smtp', true, undefined],
       ['a5', 'memory.remember', false, undefined],

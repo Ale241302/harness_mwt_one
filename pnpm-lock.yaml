@@ -6805,6 +6805,12 @@ importers:
       '@deepseek-ai/dsh-agent-default-model':
         specifier: workspace:^
         version: link:../../core/agent-default-model
+      '@deepseek-ai/dsh-faberloom-access':
+        specifier: workspace:^
+        version: link:../access
+      '@deepseek-ai/dsh-faberloom-agents':
+        specifier: workspace:^
+        version: link:../agents
       '@deepseek-ai/dsh-faberloom-backup':
         specifier: workspace:^
         version: link:../backup
@@ -6835,6 +6841,15 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-skill':
+        specifier: workspace:^
+        version: link:../../skill/skill
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
+      '@deepseek-ai/dsh-workspace':
+        specifier: workspace:^
+        version: link:../../workspace/workspace
 
   packages/faberloom/inbound:
     dependencies:

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-10-03-workflow-module.md
-2026-10-03-workflow-module.md: 86cb8cf603915b23da8bebe92fbb23fd0cbe2149
-2026-10-03-workflow-module.zh.md: 66dde7b55c9f96af1671a2a576ce86fff72206d1
+2026-10-03-workflow-module.md: d25b81896968b07e5dcc688e089c859299a28256
+2026-10-03-workflow-module.zh.md: 5fdf5eb4c9c58f58b3e5f7e846ab03c21893ab44

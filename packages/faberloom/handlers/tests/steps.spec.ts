@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { StepContext } from '@deepseek-ai/dsh-faberloom-routines'
-import { spaceContextFor, stepPrompt } from '../src/index.ts'
+import { agentRuntimeFor, stepPrompt } from '../src/index.ts'
 import { createWorkflowHandlers, evaluateCondition, MAX_DELAY_SECONDS, renderTemplate, resolvePath, stringValue } from '../src/steps.ts'
 
 const OWNER = 'compras2@sondelsa.com'
@@ -83,13 +83,44 @@ describe('steps helpers', () => {
     expect(stepPrompt('agent', base, 'hazlo', 'catalog: eguisa')).toContain('Contexto del Space:\ncatalog: eguisa')
   })
 
-  it('resolves the Space context a step opted into', async () => {
-    const spaces = { effectiveContext: vi.fn(async () => ({ resolved: { catalog: 'eguisa' }, sources: ['sp-1'] })) }
-    const ctx = context({ faberloomRoutines: routines(), faberloomSpaces: spaces })
-    expect(await spaceContextFor(ctx, step({}))).toBe('')
-    expect(await spaceContextFor(context({ faberloomRoutines: routines() }), step({ useSpaceContext: true, spaceId: 'sp-1' }))).toBe('')
-    expect(await spaceContextFor(ctx, step({ useSpaceContext: true }))).toBe('')
-    expect(await spaceContextFor(ctx, step({ useSpaceContext: true, spaceId: 'sp-1' }))).toBe('catalog: eguisa')
+  it('resolves the Space, agent, and skill context an agent step carries', async () => {
+    const spaces = {
+      reference: vi.fn(async () => ({ context: { resolved: { catalog: 'eguisa' } }, memory: [{ text: 'recuerda X' }], workspaceId: 'ws-1' })),
+    }
+    const agents = { getAgent: vi.fn(async () => ({ name: 'Formatos', responsibility: 'redacta', skills: ['docx'] })) }
+    const skills = { get: vi.fn(async () => ({ name: 'docx', content: 'cuerpo de la skill' })) }
+    const registry = { get: vi.fn(() => ({ id: 'ws-1', path: 'C:/work/sicop', title: 'SICOP' })) }
+    const ctx = context({
+      faberloomRoutines: routines(),
+      faberloomSpaces: spaces,
+      faberloomAgents: agents,
+      skills,
+      workspaceRegistry: registry,
+    })
+    const runtime = await agentRuntimeFor(ctx, step({ spaceId: 'sp-1', agentId: 'ag-1', skillName: 'docx' }))
+    expect(runtime.block).toContain('Contexto del Space:\n- catalog: eguisa')
+    expect(runtime.block).toContain('Memoria del Space:\n- recuerda X')
+    expect(runtime.block).toContain('Agente: Formatos — redacta')
+    expect(runtime.block).toContain('Skills del agente: docx')
+    expect(runtime.block).toContain('Skill "docx":\ncuerpo de la skill')
+    expect(runtime.block).toContain('faberloom_spaces_ask')
+    expect(runtime.cwd).toBe('C:/work/sicop')
+  })
+
+  it('degrades cleanly when the Space, agent, and skill services are absent or empty', async () => {
+    const bare = await agentRuntimeFor(context({ faberloomRoutines: routines() }), step({ spaceId: 'sp', agentId: 'a', skillName: 's' }))
+    expect(bare.cwd).toBeUndefined()
+    expect(bare.block).not.toContain('Contexto del Space')
+    const empty = {
+      reference: vi.fn(async () => ({ context: { resolved: {} }, memory: [], workspaceId: undefined })),
+    }
+    const sparse = await agentRuntimeFor(
+      context({ faberloomRoutines: routines(), faberloomSpaces: empty, faberloomAgents: { getAgent: vi.fn(async () => ({ name: 'A', responsibility: 'r', skills: [] })) }, skills: { get: vi.fn(async () => undefined) } }),
+      step({ spaceId: 'sp', agentId: 'a', skillName: 's' }),
+    )
+    expect(sparse.cwd).toBeUndefined()
+    expect(sparse.block).toContain('Agente: A — r')
+    expect(sparse.block).not.toContain('Skill "')
   })
 })
 
@@ -194,6 +225,29 @@ describe('workflow handlers', () => {
     const handlers = createWorkflowHandlers(context({ faberloomRoutines: routines() }))
     expect(await handlers['subroutine']?.(step({ routineId: 'other' }))).toMatchObject({ handler: 'subroutine', executionId: 'child-1' })
     await expect(handlers['subroutine']?.(step({}))).rejects.toThrow('needs a routineId')
+  })
+
+  it('mcp.call enforces the allowlist and calls the schema-driven tool', async () => {
+    const execute = vi.fn(async () => ({ isError: false }))
+    const allowed = vi.fn(async () => ({ allowed: true, reason: 'OK' }))
+    const handlers = createWorkflowHandlers(context({
+      faberloomRoutines: routines(),
+      faberloomAccess: { check: allowed },
+      tools: { execute },
+    }))
+    expect(await handlers['mcp.call']?.(step({ server: 'mwt', tool: 'get', arguments: { id: 1 } }))).toMatchObject({ handler: 'mcp.call', server: 'mwt', tool: 'get', isError: false })
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'mcp__mwt__get', arguments: { id: 1 } }))
+    expect(allowed).toHaveBeenCalledWith(expect.objectContaining({ action: 'mcp:mwt:get', ownerId: OWNER }))
+
+    const denied = createWorkflowHandlers(context({ faberloomRoutines: routines(), faberloomAccess: { check: vi.fn(async () => ({ allowed: false, reason: 'NO_GRANT' })) }, tools: { execute } }))
+    await expect(denied['mcp.call']?.(step({ server: 'mwt', tool: 'get' }))).rejects.toThrow('is not allowed (NO_GRANT)')
+    await expect(denied['mcp.call']?.(step({}))).rejects.toThrow('needs a server and a tool')
+
+    const open = createWorkflowHandlers(context({ faberloomRoutines: routines(), tools: { execute } }))
+    expect(await open['mcp.call']?.(step({ server: 'mwt', tool: 'get', arguments: 'raw' }))).toMatchObject({ isError: false })
+    expect(execute).toHaveBeenLastCalledWith(expect.objectContaining({ arguments: {} }))
+
+    await expect(createWorkflowHandlers(context({ faberloomRoutines: routines() }))['mcp.call']?.(step({ server: 'mwt', tool: 'get' }))).rejects.toThrow('tools service is not mounted')
   })
 
   it('notify reaches the owner by email or the board', async () => {

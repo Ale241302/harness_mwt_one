@@ -12,12 +12,18 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { FaberLoomExecutionId, FaberLoomRoutineId, StepContext, StepHandler } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
 import type { TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
+import type {} from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-inbound'
+import type {} from '@deepseek-ai/dsh-tools'
+
+/** Longest one direct MCP tool call may take before it is abandoned. */
+export const MCP_CALL_TIMEOUT_MS = 120_000
 
 /** Longest an inline `delay` handler waits, so a misconfigured node cannot stall a pass indefinitely. */
 export const MAX_DELAY_SECONDS = 300
@@ -230,6 +236,27 @@ export function createWorkflowHandlers(ctx: Context): Record<string, StepHandler
         channel: 'subroutine',
       })
       return { handler: 'subroutine', executionId: String(started.execution.id), deduped: started.deduped }
+    },
+    'mcp.call': async (context) => {
+      const server = configString(context.config['server'])
+      const tool = configString(context.config['tool'])
+      if (server.length === 0 || tool.length === 0) throw new Error('faberloom: mcp.call needs a server and a tool')
+      const owner = await ownerOf(ctx, context)
+      const access = ctx.get('faberloomAccess')
+      if (access !== undefined) {
+        const decision = await access.check({ ownerId: owner, action: `mcp:${server}:${tool}`, context: String(context.routineId) })
+        if (!decision.allowed) throw new Error(`faberloom: mcp.call ${server}:${tool} is not allowed (${decision.reason})`)
+      }
+      const tools = ctx.get('tools')
+      if (tools === undefined) throw new Error('faberloom: the tools service is not mounted')
+      const raw = context.config['arguments']
+      const result = await tools.execute({
+        callId: ToolCallId(`routine-${context.executionId}-${context.stepId}`),
+        name: `mcp__${server}__${tool}`,
+        arguments: raw !== null && typeof raw === 'object' ? raw : {},
+        signal: AbortSignal.timeout(MCP_CALL_TIMEOUT_MS),
+      })
+      return { handler: 'mcp.call', server, tool, isError: result.isError }
     },
     notify: async (context) => {
       const text = renderTemplate(configString(context.config['text']), context)

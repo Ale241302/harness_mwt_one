@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在已包含 `ctx.faberloomSpaces`、`ctx.faberloomAgents`、`ctx.faberloomBoard` 与 `ctx.faberloomRoutines` 的组合中挂载本行，并配置 `ownerId`。配置 `memoryCoreUrl`、`memoryServiceId`、`memoryUserId` 与 `memoryGatewayKey` 后，总览会带上该 owner 的记忆行；未配置时记忆列表为空。浏览器侧在客户端 API 组装中挂载生成的 `./remote` 贡献并调用 `ctx.remote.faberloomView.overview()`。
+在已包含 `ctx.faberloomSpaces`、`ctx.faberloomAgents`、`ctx.faberloomBoard` 与 `ctx.faberloomRoutines` 的组合中挂载本行，并配置 `ownerId`。配置 `memoryCoreUrl`、`memoryServiceId`、`memoryUserId` 与 `memoryGatewayKey` 后，总览会带上该 owner 的记忆行；未配置时记忆列表为空。浏览器侧在客户端 API 组装中挂载生成的 `./remote` 贡献并调用 `ctx.remote.faberloomView.overview()`。连通性地图是第二个读取：`ctx.remote.faberloomView.spaceMap()` 返回每个 Space 及其负责代理与镜像工作区、每个代理及其技能与 MCP 访问、该 owner 的邮件连接，以及已注册的工作区，供调色板与画布使用。
 
 -----
 
@@ -50,6 +50,7 @@ kind: "package-reference"
 - **写入覆盖面板动作，而非全部产品操作。** 该命名空间创建并重命名空间与代理、停用代理、创建与审查看板项、创建并启停例程、并记录记忆语句；看板修订提交、模型策略与例程步骤编辑在其界面落地前不在此列。
 - **记忆写入走流水线。** `remember` 把一条语句追加到 agent-memory 的会话入口；服务端异步把 L0 蒸馏为 L1，因此新行可能在下次读取后才出现。读取仍为只读。
 - **自身没有变更事件。** 浏览器在 harness 转发会话活动事件时、挂载时以及每次写入后刷新；专用变更事件需要事件转发允许清单条目。
+- **连通性地图为只读。** `spaceMap` 只报告关联；它不创建或修改 Space、代理、连接或工作区。
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -14,7 +14,12 @@ afterEach(() => {
 })
 
 /** The minimal service graph the workspace and board remotes touch. */
-function harness(options: { readOnly?: boolean; registry?: boolean; role?: string } = {}) {
+function harness(options: {
+  readOnly?: boolean
+  registry?: boolean
+  role?: string
+  connections?: readonly { id: string; kind: string; label: string }[]
+} = {}) {
   const board = {
     list: vi.fn(async () => []),
     get: vi.fn(async () => ({ id: 'b1', version: 3 })),
@@ -109,7 +114,11 @@ function harness(options: { readOnly?: boolean; registry?: boolean; role?: strin
     effect: (run: () => unknown) => { run(); return () => {} },
     on: vi.fn(() => () => {}),
     logger: { warn: vi.fn(), info: vi.fn() },
-    get: (name: string) => (name === 'workspaceRegistry' && options.registry !== false ? registry : undefined),
+    get: (name: string) => {
+      if (name === 'workspaceRegistry') return options.registry === false ? undefined : registry
+      if (name === 'faberloomConnections' && options.connections !== undefined) return { list: vi.fn(async () => options.connections) }
+      return undefined
+    },
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, {
     ownerId: 'owner@muitowork.com',
@@ -171,6 +180,28 @@ describe('FaberLoomViewService space workspace', () => {
 
     const after = await view.spaceWorkspace('sp1')
     expect(after).toMatchObject({ registered: true, workspaceId: 'ws-1', title: 'Eguisa' })
+  })
+
+  it('builds the Space connectivity map from spaces, agents, connections, and workspaces', async () => {
+    const { view, spaces, agents, entities } = harness()
+    spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Formatos', parentId: null, agentId: 'a1', workspaceId: 'ws-1', context: { catalog: 'eguisa' } }])
+    agents.listAgents.mockResolvedValue([{
+      id: 'a1', name: 'Formatos', spaceId: 'sp1', detached: false, active: true,
+      skills: ['docx'], mwtMcp: true, sicopMcp: false, webAccess: false,
+    }] as never)
+    entities.push({ id: 'ws-1', path: 'C:/work/sicop', title: 'SICOP', sessionIds: [] })
+
+    const map = await view.spaceMap()
+    expect(map.spaces).toEqual([{ id: 'sp1', title: 'Formatos', agentId: 'a1', workspaceId: 'ws-1', context: { catalog: 'eguisa' } }])
+    expect(map.agents).toEqual([{ id: 'a1', name: 'Formatos', spaceId: 'sp1', skills: ['docx'], mcp: { mwt: true, sicop: false }, webAccess: false }])
+    expect(map.connections).toEqual([])
+    expect(map.workspaces).toEqual([{ id: 'ws-1', path: 'C:/work/sicop', title: 'SICOP' }])
+
+    const linked = harness({ registry: false, connections: [{ id: 'c1', kind: 'imap', label: 'Correo' }] })
+    linked.spaces.list.mockResolvedValue([])
+    const linkedMap = await linked.view.spaceMap()
+    expect(linkedMap.connections).toEqual([{ id: 'c1', kind: 'imap', label: 'Correo' }])
+    expect(linkedMap.workspaces).toEqual([])
   })
 })
 

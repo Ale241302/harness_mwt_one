@@ -1265,6 +1265,16 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('overview') async overview(): Promise<FaberLoomOverview>
 
 /**
+ * Read the Space connectivity map the palette and canvas consume: every
+ * Space with its agent and mirrored workspace, every agent with its skills
+ * and MCP access, the owner's mail connections, and the registered
+ * Workspaces. Connections and Workspaces are optional, so a deployment that
+ * mounts neither still gets the map.
+ * @returns the connectivity map as plain JSON.
+ */
+@Remote('spaceMap') async spaceMap(): Promise<FaberLoomSpaceMap>
+
+/**
  * Create a space (root or sub-space) for the owner with an optional
  * responsible agent, and register its conversation area as a Workspace so
  * the sidebar and the Espacios panel show the same thing.

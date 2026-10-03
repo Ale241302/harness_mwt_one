@@ -14,6 +14,9 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { FaberLoomExecutionId, StepContext, StepHandler } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomSpaceId } from '@deepseek-ai/dsh-faberloom-spaces'
+import type { FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
+import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
 // Type-only: pulls the ctx.faberloomConnections and ctx.faberloomInbound merges.
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
@@ -138,28 +141,61 @@ async function runAgentStep(
   handler: 'agent' | 'mcp',
 ): Promise<StepOutcome> {
   const instruction = await stepInstruction(ctx, context)
-  const spaceContext = await spaceContextFor(ctx, context)
-  const run = await sessions.run(context.executionId, stepPrompt(handler, context, instruction, spaceContext))
+  const runtime = await agentRuntimeFor(ctx, context)
+  const run = await sessions.run(context.executionId, stepPrompt(handler, context, instruction, runtime.block), { cwd: runtime.cwd })
   return { handler, ...run }
 }
 
 /**
- * Resolve the Space context a step opted into: the effective context of the
- * configured Space, when the node set `useSpaceContext`. Empty when the node did
- * not opt in or the spaces service is not mounted, so the prompt is unchanged.
- * @param ctx - context carrying the spaces service.
+ * Resolve everything an agent step of a Space brings to its turn: the Space's
+ * effective context and memory, the responsible agent's identity and skills, an
+ * invoked skill's body, the delegation directive, and the Space's real mirrored
+ * workspace directory. Empty when the node names no Space, agent, or skill.
+ * @param ctx - context carrying the spaces, agents, skills, and workspace services.
  * @param context - the step being executed.
- * @returns the rendered context block, or an empty string.
+ * @returns the rendered context block and the working directory to run in.
  */
-export async function spaceContextFor(ctx: Context, context: StepContext): Promise<string> {  if (context.config['useSpaceContext'] !== true) return ''
-  const spaces = ctx.get('faberloomSpaces')
-  if (spaces === undefined) return ''
-  const spaceId = context.config['spaceId']
-  if (typeof spaceId !== 'string' || spaceId.length === 0) return ''
+export async function agentRuntimeFor(ctx: Context, context: StepContext): Promise<{ block: string; cwd: string | undefined }> {
   const owner = await executionOwner(ctx, context)
-  const actor = { id: owner, role: 'admin', companyId: undefined, readOnly: false }
-  const effective = await spaces.effectiveContext(actor, brandString<FaberLoomSpaceId>(spaceId))
-  return Object.entries(effective.resolved).map(([key, value]) => `${key}: ${value}`).join('\n')
+  const lines: string[] = []
+  let cwd: string | undefined
+  const spaceId = context.config['spaceId']
+  if (typeof spaceId === 'string' && spaceId.length > 0) {
+    const spaces = ctx.get('faberloomSpaces')
+    if (spaces !== undefined) {
+      const actor = { id: owner, role: 'admin', companyId: undefined, readOnly: false }
+      const reference = await spaces.reference(actor, brandString<FaberLoomSpaceId>(spaceId))
+      const entries = Object.entries(reference.context.resolved)
+      if (entries.length > 0) lines.push('Contexto del Space:', ...entries.map(([key, value]) => `- ${key}: ${value}`))
+      if (reference.memory.length > 0) lines.push('', 'Memoria del Space:', ...reference.memory.map(entry => `- ${entry.text}`))
+      cwd = spaceWorkdir(ctx, reference.workspaceId)
+    }
+  }
+  const agentId = context.config['agentId']
+  if (typeof agentId === 'string' && agentId.length > 0) {
+    const agents = ctx.get('faberloomAgents')
+    if (agents !== undefined) {
+      const agent = await agents.getAgent(brandString<FaberLoomAgentId>(agentId))
+      lines.push('', `Agente: ${agent.name} — ${agent.responsibility}`)
+      if (agent.skills.length > 0) lines.push(`Skills del agente: ${agent.skills.join(', ')}`)
+    }
+  }
+  const skillName = context.config['skillName']
+  if (typeof skillName === 'string' && skillName.length > 0) {
+    const skills = ctx.get('skills')
+    if (skills !== undefined) {
+      const skill = await skills.get(skillName)
+      if (skill !== undefined) lines.push('', `Skill "${skill.name}":`, skill.content)
+    }
+  }
+  lines.push('', 'Delegación: usa faberloom_spaces_reference para traer el contexto de otro Space y faberloom_spaces_ask para consultarlo.')
+  return { block: lines.join('\n'), cwd }
+}
+
+/** Resolve a Space's mirrored harness workspace to its real directory path. */
+function spaceWorkdir(ctx: Context, workspaceId: string | undefined): string | undefined {
+  if (workspaceId === undefined) return undefined
+  return ctx.get('workspaceRegistry')?.get(brandString<WorkspaceId>(workspaceId))?.path
 }
 
 /**

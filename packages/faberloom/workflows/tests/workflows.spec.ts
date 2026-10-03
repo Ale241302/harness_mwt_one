@@ -71,7 +71,7 @@ async function harness(pool = new MemoryMediaPool()) {
   await ctx.plugin(FaberLoomRoutines)
   const fiber = await ctx.plugin(FaberLoomWorkflows)
   const routines = ctx.faberloomRoutines
-  for (const name of ['agent', 'mcp', 'imap', 'smtp', 'memory.remember', 'memory.teach', 'board.create', 'reference', 'subroutine', 'condition', 'transform', 'delay', 'notify', 'deadletter']) {
+  for (const name of ['agent', 'mcp', 'mcp.call', 'imap', 'smtp', 'memory.remember', 'memory.teach', 'board.create', 'reference', 'subroutine', 'condition', 'transform', 'delay', 'notify', 'deadletter']) {
     routines.registerHandler(name, () => 'ok')
   }
   return { ctx, workflows: ctx.faberloomWorkflows, routines, fiber, pool, facility }

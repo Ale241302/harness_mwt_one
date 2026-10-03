@@ -51,7 +51,8 @@ import type {
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
-  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow, BoardRevisionInput,
+  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
+  FaberLoomSpaceMap, BoardRevisionInput,
   FaberLoomShareRow, FaberLoomShares,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
@@ -510,6 +511,47 @@ export class FaberLoomViewService extends TypertRemoteService {
       routines: routines.map(routine => ({ id: routine.id, name: routine.name, status: routine.status })),
       memory,
       canWrite: !actor.readOnly,
+    }
+  }
+
+  /**
+   * Read the Space connectivity map the palette and canvas consume: every
+   * Space with its agent and mirrored workspace, every agent with its skills
+   * and MCP access, the owner's mail connections, and the registered
+   * Workspaces. Connections and Workspaces are optional, so a deployment that
+   * mounts neither still gets the map.
+   * @returns the connectivity map as plain JSON.
+   */
+  @Remote('spaceMap')
+  async spaceMap(): Promise<FaberLoomSpaceMap> {
+    const actor = this.actor()
+    const [spaces, agents, connections] = await Promise.all([
+      this.ctx.faberloomSpaces.list(actor),
+      this.ctx.faberloomAgents.listAgents(),
+      this.ctx.get('faberloomConnections')?.list(actor.id) ?? Promise.resolve([]),
+    ])
+    return {
+      spaces: spaces.map(space => ({
+        id: space.id,
+        title: space.title,
+        agentId: space.agentId ?? null,
+        workspaceId: space.workspaceId ?? null,
+        context: space.context,
+      })),
+      agents: agents.map(agent => ({
+        id: agent.id,
+        name: agent.name,
+        spaceId: agent.spaceId ?? null,
+        skills: agent.skills,
+        mcp: { mwt: agent.mwtMcp, sicop: agent.sicopMcp },
+        webAccess: agent.webAccess,
+      })),
+      connections: connections.map(connection => ({ id: connection.id, kind: connection.kind, label: connection.label })),
+      workspaces: (this.workspaceRegistryOrUndefined()?.list() ?? []).map(workspace => ({
+        id: String(workspace.id),
+        path: workspace.path,
+        title: workspace.title,
+      })),
     }
   }
 

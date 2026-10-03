@@ -188,4 +188,31 @@ describe('FaberLoomHandlers agent steps', () => {
     expect(second.sessionId).toBe(first.sessionId)
     expect(promptsOf(ctx, first.sessionId)).toHaveLength(2)
   })
+
+  it('F3 — an agent step carries its Space context, memory, and mirrored workdir', async () => {
+    const { ctx, routines } = await harness(new ScriptedAdapter([textResponse('Formato listo.')]))
+    ctx.provide('faberloomSpaces', {
+      reference: async () => ({
+        context: { resolved: { formato: 'docx' } },
+        memory: [{ text: 'usa la plantilla corporativa' }],
+        workspaceId: 'ws-1',
+      }),
+    } as never)
+    ctx.provide('workspaceRegistry', { get: () => ({ id: 'ws-1', path: '/work/formatos', title: 'Formatos' }) } as never)
+
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'Formatos',
+      definition: definition([{ id: 's1', instruction: 'redacta el documento', handler: 'agent', config: { spaceId: 'sp-1' } }]),
+    })
+    await routines.activateRoutine(OWNER, routine.id)
+    const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'caso-f3', channel: 'ui' })
+    expect(started.execution.status).toBe('completed')
+    const outcome = started.execution.steps.s1?.result as AgentStepOutcome
+    const prompt = promptsOf(ctx, outcome.sessionId).join('\n')
+    expect(prompt).toContain('Contexto del Space:')
+    expect(prompt).toContain('formato: docx')
+    expect(prompt).toContain('Memoria del Space:')
+    expect(prompt).toContain('usa la plantilla corporativa')
+    expect(prompt).toContain('faberloom_spaces_ask')
+  })
 })
