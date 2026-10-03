@@ -136,7 +136,11 @@ describe('FaberLoomHandlers agent steps', () => {
     expect(session?.session.header.cwd).toBe(process.cwd())
     expect(session?.session.header.origin).toBe('subagent')
     expect(promptsOf(ctx, outcome.sessionId)).toEqual([
-      ['Paso "s1" de la rutina en curso.', '', 'confirma el pedido con el cliente', '', 'Contexto del caso:', '{"input":null,"event":null}'].join('\n'),
+      [
+        'Paso "s1" de la rutina en curso.', '', 'confirma el pedido con el cliente', '', 'Contexto del caso:',
+        '{"input":null,"event":null}', '', 'Contexto del Space:', '',
+        'Delegación: usa faberloom_spaces_reference para traer el contexto de otro Space y faberloom_spaces_ask para consultarlo.',
+      ].join('\n'),
     ])
   })
 
