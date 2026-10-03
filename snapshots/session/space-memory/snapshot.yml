@@ -1,0 +1,10 @@
+version: 1
+scenario: space-memory
+profile: headless
+composition: space-memory
+recording: authored
+platform: posix
+header:
+  class: space-memory
+  pin: true
+  systemPromptSource: space-cross-reference

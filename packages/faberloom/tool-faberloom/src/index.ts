@@ -16,6 +16,8 @@ import type { FaberLoomSpaceId, FaberLoomSpaces, SpaceActor, SpaceContext, Space
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomAgents, FaberLoomModelId, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 // Type-only: resolves the ctx.subagents declaration used through ctx.get.
 import type {} from '@deepseek-ai/dsh-subagent'
+// Type-only: the product memory service and its teaching vocabulary, read through ctx.get.
+import type { FaberLoomMemory, FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 // Type-only: the board service and its vocabulary, read through ctx.get.
 import type { BoardStatus, FaberLoomBoard, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
@@ -67,6 +69,8 @@ export interface Config {
   anydocApiKey?: string
   /** Subagent provider the space consultation delegates through; defaults to `spawn`. */
   askProvider?: string
+  /** Register the space-memory and teaching tools; opt-in, because they add request schema. */
+  memoryTools?: boolean
 }
 
 /** Schemastery configuration for the product tools. */
@@ -82,6 +86,7 @@ export const Config: z<Config> = z.object({
   anydocOcr: z.string().default('reject'),
   anydocApiKey: z.string().default(''),
   askProvider: z.string().default('spawn'),
+  memoryTools: z.boolean().default(false),
 })
 
 /** Resolve the mounted board service at call time, or fail loud. */
@@ -225,6 +230,13 @@ const POLICY_PARAMS = {  primary: { type: 'string' as const, description: 'Prima
 function spaces(ctx: Context): FaberLoomSpaces {
   const service = ctx.get('faberloomSpaces')
   if (service === undefined) throw new Error('faberloom: the spaces service is not mounted')
+  return service
+}
+
+/** Resolve the mounted memory service at call time, or fail loud. */
+function memory(ctx: Context): FaberLoomMemory {
+  const service = ctx.get('faberloomMemory')
+  if (service === undefined) throw new Error('faberloom: the memory service is not mounted')
   return service
 }
 
@@ -1066,6 +1078,266 @@ export function apply(ctx: Context, config: Config): void {
     },
     presentCall: args => ({ card: 'generic', title: 'Ask the space agent', kind: 'other', rawInput: args }),
   }))
+
+  // The explicit, versioned memory layer is opt-in: it adds permanent request
+  // schema, and automatic episodic memory belongs to the external memory server.
+  if (config.memoryTools === true) {
+    const scopeParam = { type: 'string', enum: ['case', 'space', 'agent', 'skill', 'global'], description: 'Application scope.' } as const
+    const filterParams = {
+      scope: scopeParam,
+      spaceId: { type: 'string', description: 'Filter by owning space id.' },
+      agentId: { type: 'string', description: 'Filter by owning agent id.' },
+      skill: { type: 'string', description: 'Filter by skill name.' },
+      task: { type: 'string', description: 'Filter by task label.' },
+    } as const
+    const teachingRows = (list: readonly FaberLoomTeaching[]) => list.map(entry => ({
+      id: entry.id as string,
+      scope: entry.scope as string,
+      text: entry.text,
+      status: entry.status as string,
+      version: entry.version,
+      updatedAt: entry.updatedAt,
+    }))
+    const renderTeachingsText = (list: readonly { scope: string; text: string; status: string }[]): string =>
+      list.length === 0 ? 'No teachings.' : list.map(entry => `${entry.scope}: ${entry.text} [${entry.status}]`).join(' | ')
+    const filterOf = (args: {
+      scope?: string
+      spaceId?: string
+      agentId?: string
+      skill?: string
+      task?: string
+    }): { scope?: TeachingScope; spaceId?: string; agentId?: string; skill?: string; task?: string } => ({
+      ...args.scope === undefined ? {} : { scope: args.scope as TeachingScope },
+      ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
+      ...args.agentId === undefined ? {} : { agentId: args.agentId },
+      ...args.skill === undefined ? {} : { skill: args.skill },
+      ...args.task === undefined ? {} : { task: args.task },
+    })
+
+    ctx.tools.register(defineTool({
+      name: 'faberloom_spaces_remember',
+      description: 'Attach one memory entry to a product space. A sub-space with inheritance reads it too.',
+      parameters: {
+        id: { type: 'string', required: true, description: 'Target space id.' },
+        text: { type: 'string', required: true, description: 'The remembered text.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string', required: true },
+            text: { type: 'string', required: true },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: `Remembered on ${value.id}: ${value.text}` }],
+      },
+      execute: async (args) => {
+        const entry = await spaces(ctx).remember(actor(config), args.text, [args.id as FaberLoomSpaceId])
+        return { id: entry.id, text: entry.text }
+      },
+      presentCall: args => ({ card: 'generic', title: 'Remember on space', kind: 'other', rawInput: args }),
+    }))
+
+    ctx.tools.register(defineTool({
+      name: 'faberloom_spaces_memory_list',
+      description: 'List the space memory the user owns: one space\'s effective memory when id is given, otherwise every owned entry.',
+      parameters: {
+        id: { type: 'string', description: 'Space id; omit to list every owned entry.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            entries: {
+              type: 'array',
+              required: true,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  id: { type: 'string', required: true },
+                  text: { type: 'string', required: true },
+                  spaceIds: { type: 'array', required: true, items: { type: 'string' } },
+                },
+              },
+            },
+          },
+        },
+        render: (_args, value) => [{
+          type: 'text',
+          text: `Memory: ${value.entries.map(entry => entry.text).join(' | ') || 'none'}.`,
+        }],
+      },
+      execute: async (args) => {
+        const entries = args.id === undefined
+          ? await spaces(ctx).listMemory(actor(config))
+          : await spaces(ctx).effectiveMemory(actor(config), args.id as FaberLoomSpaceId)
+        return { entries: entries.map(entry => ({ id: entry.id, text: entry.text, spaceIds: [...entry.spaceIds] })) }
+      },
+      presentCall: args => ({ card: 'generic', title: 'List space memory', kind: 'other', rawInput: args }),
+    }))
+
+    ctx.tools.register(defineTool({
+      name: 'faberloom_spaces_forget',
+      description: 'Delete one space memory entry the user owns.',
+      parameters: {
+        memoryId: { type: 'string', required: true, description: 'Memory entry id.' },
+      },
+      output: {
+        schema: { type: 'object', additionalProperties: false, properties: { removed: { type: 'boolean', required: true } } },
+        render: (_args, value) => [{ type: 'text', text: value.removed ? 'Memory entry removed.' : 'Memory entry not found.' }],
+      },
+      execute: async (args) => {
+        const removed = await spaces(ctx).forgetMemory(actor(config), args.memoryId)
+        return { removed }
+      },
+      presentCall: args => ({ card: 'generic', title: 'Forget space memory', kind: 'other', rawInput: args }),
+    }))
+
+    ctx.tools.register(defineTool({
+      name: 'faberloom_memory_teachings',
+      description: 'List the user\'s versioned teachings, optionally filtered by scope, space, agent, skill, or task.',
+      parameters: filterParams,
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            teachings: {
+              type: 'array',
+              required: true,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  id: { type: 'string', required: true },
+                  scope: { type: 'string', required: true },
+                  text: { type: 'string', required: true },
+                  status: { type: 'string', required: true },
+                  version: { type: 'integer', required: true },
+                  updatedAt: { type: 'string', required: true },
+                },
+              },
+            },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: renderTeachingsText(value.teachings) }],
+      },
+      execute: async args => ({ teachings: teachingRows(await memory(ctx).listTeachings(actor(config).id, filterOf(args))) }),
+      presentCall: args => ({ card: 'generic', title: 'List teachings', kind: 'other', rawInput: args }),
+    }))
+
+    ctx.tools.register(defineTool({
+      name: 'faberloom_memory_teach',
+      description: 'Record a teaching. An explicit instruction is remembered active; an inferred one stays a candidate and needs confirmation.',
+      parameters: {
+        scope: { type: 'string', required: true, enum: ['case', 'space', 'agent', 'skill', 'global'], description: 'Application scope.' },
+        text: { type: 'string', required: true, description: 'The teaching text.' },
+        source: { type: 'string', required: true, description: 'Where it came from: a case reference, the user, or a document.' },
+        active: { type: 'boolean', description: 'True only for an explicit instruction; otherwise it stays a candidate.' },
+        spaceId: { type: 'string', description: 'Owning space, when scoped.' },
+        agentId: { type: 'string', description: 'Owning agent, when scoped.' },
+        skill: { type: 'string', description: 'Owning skill, when scoped.' },
+        task: { type: 'string', description: 'Task label, when scoped.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string', required: true },
+            status: { type: 'string', required: true },
+            version: { type: 'integer', required: true },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: `Teaching ${value.id} (${value.status}, v${String(value.version)}).` }],
+      },
+      execute: async (args) => {
+        const teaching = await memory(ctx).createTeaching(actor(config).id, {
+          scope: args.scope as TeachingScope,
+          text: args.text,
+          source: args.source,
+          author: actor(config).id,
+          ...args.active === undefined ? {} : { active: args.active },
+          ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
+          ...args.agentId === undefined ? {} : { agentId: args.agentId },
+          ...args.skill === undefined ? {} : { skill: args.skill },
+          ...args.task === undefined ? {} : { task: args.task },
+        })
+        return { id: teaching.id as string, status: teaching.status as string, version: teaching.version }
+      },
+      presentCall: args => ({ card: 'generic', title: 'Record teaching', kind: 'other', rawInput: args }),
+    }))
+
+    ctx.tools.register(defineTool({
+      name: 'faberloom_memory_revoke',
+      description: 'Revoke one teaching so no later decision recovers it; its history stays.',
+      parameters: {
+        id: { type: 'string', required: true, description: 'Teaching id.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string', required: true },
+            status: { type: 'string', required: true },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: `Teaching ${value.id} is now ${value.status}.` }],
+      },
+      execute: async (args) => {
+        const teaching = await memory(ctx).revokeTeaching(actor(config).id, args.id as FaberLoomTeachingId)
+        return { id: teaching.id as string, status: teaching.status as string }
+      },
+      presentCall: args => ({ card: 'generic', title: 'Revoke teaching', kind: 'other', rawInput: args }),
+    }))
+
+    ctx.tools.register(defineTool({
+      name: 'faberloom_memory_retrieve',
+      description: 'Recover the active teachings that apply to a context. A case reference records the use and returns the current version.',
+      parameters: {
+        ...filterParams,
+        caseRef: { type: 'string', description: 'Case reference recorded as a use when the teachings are recovered.' },
+        includeCandidates: { type: 'boolean', description: 'Include unconfirmed candidates too.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            teachings: {
+              type: 'array',
+              required: true,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  id: { type: 'string', required: true },
+                  scope: { type: 'string', required: true },
+                  text: { type: 'string', required: true },
+                  status: { type: 'string', required: true },
+                  version: { type: 'integer', required: true },
+                  updatedAt: { type: 'string', required: true },
+                },
+              },
+            },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: renderTeachingsText(value.teachings) }],
+      },
+      execute: async args => ({
+        teachings: teachingRows(await memory(ctx).retrieve(actor(config).id, {
+          ...filterOf(args),
+          ...args.caseRef === undefined ? {} : { caseRef: args.caseRef },
+          ...args.includeCandidates === undefined ? {} : { includeCandidates: args.includeCandidates },
+        })),
+      }),
+      presentCall: args => ({ card: 'generic', title: 'Retrieve teachings', kind: 'other', rawInput: args }),
+    }))
+  }
 
   ctx.tools.register(defineTool({
     name: 'faberloom_models_register',
