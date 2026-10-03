@@ -87,7 +87,7 @@ describe('steps helpers', () => {
     const spaces = {
       reference: vi.fn(async () => ({ context: { resolved: { catalog: 'eguisa' } }, memory: [{ text: 'recuerda X' }], workspaceId: 'ws-1' })),
     }
-    const agents = { getAgent: vi.fn(async () => ({ name: 'Formatos', responsibility: 'redacta', skills: ['docx'] })) }
+    const agents = { getAgent: vi.fn(async () => ({ name: 'Formatos', responsibility: 'redacta', skills: ['docx'], provider: 'deepseek', model: 'v4-pro' })) }
     const skills = { get: vi.fn(async () => ({ name: 'docx', content: 'cuerpo de la skill' })) }
     const registry = { get: vi.fn(() => ({ id: 'ws-1', path: 'C:/work/sicop', title: 'SICOP' })) }
     const ctx = context({
@@ -105,6 +105,7 @@ describe('steps helpers', () => {
     expect(runtime.block).toContain('Skill "docx":\ncuerpo de la skill')
     expect(runtime.block).toContain('faberloom_spaces_ask')
     expect(runtime.cwd).toBe('C:/work/sicop')
+    expect(runtime.agentOptions).toEqual({ provider: 'deepseek', model: 'v4-pro' })
   })
 
   it('degrades cleanly when the Space, agent, and skill services are absent or empty', async () => {

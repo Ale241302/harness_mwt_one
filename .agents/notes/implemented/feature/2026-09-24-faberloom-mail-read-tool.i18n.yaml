@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-24-faberloom-mail-read-tool.md
-2026-09-24-faberloom-mail-read-tool.md: c6529f3852cee18a57d932ad5aa14b36c495036b
-2026-09-24-faberloom-mail-read-tool.zh.md: 0a02b6d92691cfc855be0b04ee59a330bd6214b9
+2026-09-24-faberloom-mail-read-tool.md: 741609759f2b565c2584ebcee37fee4c807b7516
+2026-09-24-faberloom-mail-read-tool.zh.md: 3474bfe084967f55993c304e18f5fc06e03a8da0

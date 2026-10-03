@@ -140,8 +140,8 @@ class MultimodalWorkflowTests(unittest.TestCase):
             self.assertIn("genre_numbers", artifact)
             self.assertIn("modalities", artifact)
             self.assertFalse(artifact["provider_execution"])
-            self.assertTrue(artifact["provenance"])
-            for source in artifact["provenance"]:
+            self.assertTrue(artifact["origin"])
+            for source in artifact["origin"]:
                 self.assertTrue(source["reference_path"])
                 self.assertEqual(len(source["reference_sha256"]), 64)
                 self.assertIn("reference_times", source)
@@ -296,9 +296,9 @@ class MultimodalWorkflowTests(unittest.TestCase):
                 else:
                     artifact = next(
                         item for item in receipt["evidence_artifacts"]
-                        if item["provenance"][0]["time_basis"] == "media_seconds"
+                        if item["origin"][0]["time_basis"] == "media_seconds"
                     )
-                    artifact["provenance"][0]["reference_times"] = [6.1]
+                    artifact["origin"][0]["reference_times"] = [6.1]
                 digest_payload = dict(receipt)
                 digest_payload.pop("receipt_sha256")
                 receipt["receipt_sha256"] = hashlib.sha256(

@@ -142,7 +142,11 @@ async function runAgentStep(
 ): Promise<StepOutcome> {
   const instruction = await stepInstruction(ctx, context)
   const runtime = await agentRuntimeFor(ctx, context)
-  const run = await sessions.run(context.executionId, stepPrompt(handler, context, instruction, runtime.block), { cwd: runtime.cwd })
+  const run = await sessions.run(
+    context.executionId,
+    stepPrompt(handler, context, instruction, runtime.block),
+    { cwd: runtime.cwd, agentOptions: runtime.agentOptions },
+  )
   return { handler, ...run }
 }
 
@@ -153,12 +157,18 @@ async function runAgentStep(
  * workspace directory. Empty when the node names no Space, agent, or skill.
  * @param ctx - context carrying the spaces, agents, skills, and workspace services.
  * @param context - the step being executed.
- * @returns the rendered context block and the working directory to run in.
+ * @returns the rendered context block, the working directory to run in, and
+ *   the catalog agent's model selection when it names one.
  */
-export async function agentRuntimeFor(ctx: Context, context: StepContext): Promise<{ block: string; cwd: string | undefined }> {
+export async function agentRuntimeFor(ctx: Context, context: StepContext): Promise<{
+  block: string
+  cwd: string | undefined
+  agentOptions: { provider: string; model: string } | undefined
+}> {
   const owner = await executionOwner(ctx, context)
   const lines: string[] = []
   let cwd: string | undefined
+  let agentOptions: { provider: string; model: string } | undefined
   const spaceId = context.config['spaceId']
   if (typeof spaceId === 'string' && spaceId.length > 0) {
     const spaces = ctx.get('faberloomSpaces')
@@ -178,6 +188,7 @@ export async function agentRuntimeFor(ctx: Context, context: StepContext): Promi
       const agent = await agents.getAgent(brandString<FaberLoomAgentId>(agentId))
       lines.push('', `Agente: ${agent.name} — ${agent.responsibility}`)
       if (agent.skills.length > 0) lines.push(`Skills del agente: ${agent.skills.join(', ')}`)
+      if (agent.provider !== undefined && agent.model !== undefined) agentOptions = { provider: agent.provider, model: agent.model }
     }
   }
   const skillName = context.config['skillName']
@@ -189,7 +200,7 @@ export async function agentRuntimeFor(ctx: Context, context: StepContext): Promi
     }
   }
   lines.push('', 'Delegación: usa faberloom_spaces_reference para traer el contexto de otro Space y faberloom_spaces_ask para consultarlo.')
-  return { block: lines.join('\n'), cwd }
+  return { block: lines.join('\n'), cwd, agentOptions }
 }
 
 /** Resolve a Space's mirrored harness workspace to its real directory path. */

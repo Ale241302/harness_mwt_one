@@ -255,11 +255,11 @@ def validate_effect_recipe(
             raise ContractError(f"effect {event.get('effect')} lacks placement constraints")
 
 
-def validate_provenance(payload: dict[str, Any]) -> None:
+def validate_origin(payload: dict[str, Any]) -> None:
     """Require every declared rule to cite immutable, timestamped evidence."""
     rules = payload.get("rules")
     if not isinstance(rules, list) or not rules:
-        raise ContractError("provenance must contain derived rules")
+        raise ContractError("origin must contain derived rules")
     for rule in rules:
         evidence = rule.get("evidence")
         if not isinstance(evidence, list) or not evidence:
@@ -305,7 +305,7 @@ def validate_manifests(manifests_dir: str | Path) -> None:
 
 
 def validate_artifact_receipt(out_dir: str | Path, receipt: dict[str, Any]) -> None:
-    """Verify that the receipt binds every emitted artifact and its provenance."""
+    """Verify that the receipt binds every emitted artifact and its origin."""
     out_dir = Path(out_dir).resolve()
     entries = receipt.get("evidence_artifacts")
     if not isinstance(entries, list):
@@ -403,25 +403,25 @@ def validate_artifact_receipt(out_dir: str | Path, receipt: dict[str, Any]) -> N
             raise ContractError(f"artifact {relative} byte size does not match receipt")
         if entry.get("sha256") != _sha256(path):
             raise ContractError(f"artifact {relative} SHA-256 does not match receipt")
-        provenance = entry.get("provenance")
-        if not isinstance(provenance, list) or not provenance:
-            raise ContractError(f"artifact {relative} lacks exact reference/time provenance")
-        for source in provenance:
+        origin = entry.get("origin")
+        if not isinstance(origin, list) or not origin:
+            raise ContractError(f"artifact {relative} lacks exact reference/time origin")
+        for source in origin:
             if not isinstance(source.get("reference_path"), str) or not source["reference_path"]:
                 raise ContractError(f"artifact {relative} has invalid reference path")
             digest = source.get("reference_sha256")
             if not isinstance(digest, str) or len(digest) != 64:
                 raise ContractError(f"artifact {relative} has invalid reference SHA-256")
             if (source["reference_path"], digest) not in known_sources:
-                raise ContractError(f"artifact {relative} cites an unknown provenance source")
+                raise ContractError(f"artifact {relative} cites an unknown origin source")
             times = source.get("reference_times")
             basis = source.get("time_basis")
             if not isinstance(times, list) or basis not in {"media_seconds", "whole_file"}:
-                raise ContractError(f"artifact {relative} has invalid reference/time provenance")
+                raise ContractError(f"artifact {relative} has invalid reference/time origin")
             if basis == "media_seconds" and not times:
                 raise ContractError(f"artifact {relative} lacks media reference times")
             if basis == "whole_file" and times:
-                raise ContractError(f"artifact {relative} whole-file provenance must not invent times")
+                raise ContractError(f"artifact {relative} whole-file origin must not invent times")
             if basis == "media_seconds":
                 expected_duration = source_durations.get((source["reference_path"], digest))
                 if expected_duration is None or source.get("source_duration") != expected_duration:
@@ -450,10 +450,10 @@ def validate_bundle(out_dir: str | Path) -> None:
     validate_genre_specs(specs)
 
     validate_manifests(out_dir / "manifests")
-    provenance_path = out_dir / "provenance.json"
-    if not provenance_path.is_file():
-        raise ContractError("missing provenance")
-    validate_provenance(json.loads(provenance_path.read_text(encoding="utf-8")))
+    origin_path = out_dir / "origin.json"
+    if not origin_path.is_file():
+        raise ContractError("missing origin")
+    validate_origin(json.loads(origin_path.read_text(encoding="utf-8")))
 
     receipt_path = out_dir / "receipt.json"
     if not receipt_path.is_file():

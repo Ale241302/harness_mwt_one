@@ -52,6 +52,8 @@ kind: "package-reference"
 - **尚无界面或定时入口。** `ctx.faberloomBackup` 是主机服务：`createBackup`、`listBackups`、`verifyBackup` 与 `restoreBackup` 由主机消费者调用。接上 Conexiones 界面与周期运行属于后续切片。
 - **恢复为 upsert。** 恢复通过 `put` 写回记录；它不会对已对外部系统产生的效果做核对，也不会为目标域做版本管理。
 
+未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
+
 <a id="dev-note"></a>
 ### 开发备注
 

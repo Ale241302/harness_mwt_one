@@ -42,6 +42,8 @@ Independent: the patch layer itself never touches a request prefix.
 
 - **Mounts the skeleton rows** — the product services carry their surface only until the domain slices land.
 
+No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
+
 <a id="dev-note"></a>
 ### Dev Note
 

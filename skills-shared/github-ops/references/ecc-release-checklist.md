@@ -1,7 +1,7 @@
 # ECC Signed Patch Release Checklist
 
 Use this when releasing `affaan-m/ECC`, especially for `ECC-031` or any follow-up
-where the Git tag identity, npm provenance, GitHub Release, and announcement
+where the Git tag identity, npm attestation, GitHub Release, and announcement
 evidence all need to align.
 
 ## Milestone And Contract
@@ -164,7 +164,7 @@ The tag push should trigger `.github/workflows/release.yml`, which must:
 3. run IOC and payload checks;
 4. pack one archive and record its SHA-256;
 5. verify that exact archive on Linux, macOS, and Windows;
-6. publish to npm under `staged` with provenance;
+6. publish to npm under `staged` with attestation;
 7. read back `dist.integrity` and compare it to the tested archive;
 8. promote the verified version to `latest`;
 9. create the GitHub Release from reviewed notes.

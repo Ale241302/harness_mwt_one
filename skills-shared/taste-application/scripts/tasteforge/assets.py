@@ -1,6 +1,6 @@
 """Hash existing local assets into an exclusive receipt without provider execution.
 
-Config paths are relative to the config file. Provider provenance is a supplied
+Config paths are relative to the config file. Provider origin is a supplied
 claim bound to local evidence, not independent verification of a remote service.
 Image/video hashes prove byte identity, not decodability; downstream media tools
 must probe their format before use. GLB containers receive a header check here.
@@ -103,19 +103,19 @@ def _assets(value: Any) -> list[dict[str, Any]]:
     return value
 
 
-def _provenance(asset: dict[str, Any], base: Path, verify: bool) -> dict[str, Any] | None:
-    source = asset.get('provider_provenance')
+def _origin(asset: dict[str, Any], base: Path, verify: bool) -> dict[str, Any] | None:
+    source = asset.get('provider_origin')
     if asset['origin'] != 'external_result':
         if source is not None:
-            raise ValueError('Provider provenance requires external_result origin')
+            raise ValueError('Provider origin requires external_result origin')
         return None
     if not isinstance(source, dict):
-        raise ValueError('external_result requires provider provenance and local evidence')
+        raise ValueError('external_result requires provider origin and local evidence')
     provider = _text(source.get('provider'), 'provider')
     identifiers = {key: _text(source[key], key) for key in ('request_id', 'workflow_id')
                    if key in source}
     if not identifiers:
-        raise ValueError('Provider provenance requires request_id or workflow_id')
+        raise ValueError('Provider origin requires request_id or workflow_id')
     if verify:
         evidence = _verify_binding(source.get('evidence'), base)
     else:
@@ -178,7 +178,7 @@ def _taste(asset: dict[str, Any], requests: dict[Any, Any], verify: bool) -> dic
 
 
 def ingest_assets(config_path: str | Path, out_receipt: str | Path) -> dict[str, Any]:
-    """Bind local assets/provenance/lineage; write a new receipt, never overwrite."""
+    """Bind local assets/origin/lineage; write a new receipt, never overwrite."""
     config_file = _path(config_path, Path.cwd())
     config = _load(config_file)
     base = config_file.parent
@@ -192,9 +192,9 @@ def ingest_assets(config_path: str | Path, out_receipt: str | Path) -> dict[str,
         record = {key: asset[key] for key in ('id', 'modality', 'origin')}
         record.update(_taste(asset, requests, False))
         record.update(_fingerprint(_path(asset.get('path'), base), asset['modality']))
-        provenance = _provenance(asset, base, False)
-        if provenance is not None:
-            record['provider_provenance'] = provenance
+        origin = _origin(asset, base, False)
+        if origin is not None:
+            record['provider_origin'] = origin
         records.append(record)
     inputs = config.get('input_artifacts', [])
     if not isinstance(inputs, list):
@@ -230,9 +230,9 @@ def validate_assets(receipt_path: str | Path) -> dict[str, Any]:
     for asset in _assets(receipt.get('assets')):
         _taste(asset, requests, True)
         _verify_binding(asset, path.parent, asset['modality'])
-        provenance = _provenance(asset, path.parent, True)
-        if provenance is not None and provenance != asset['provider_provenance']:
-            raise ValueError('Invalid supplied provenance declaration')
+        origin = _origin(asset, path.parent, True)
+        if origin is not None and origin != asset['provider_origin']:
+            raise ValueError('Invalid supplied origin declaration')
     inputs = receipt.get('input_artifacts')
     if not isinstance(inputs, list):
         raise ValueError('input_artifacts must be a list')

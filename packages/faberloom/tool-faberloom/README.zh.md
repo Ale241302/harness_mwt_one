@@ -54,6 +54,8 @@ kind: "package-reference"
 - **委托咨询（v1）。** `faberloom_spaces_ask` 通过 `askProvider`（默认 `spawn`）运行一次一次性委托；`continuable` 会被拒绝，委托深度适用，子代理继承父级合并后的工具面。子代理在父级工作区中运行，因为 `resolveWorkdir` 返回的是不透明引用而非路径；在空间真实工作目录中运行推迟到后续。
 - **记忆工具为可选启用。** `memoryTools`（默认关闭）注册空间记忆（`faberloom_spaces_remember`/`_memory_list`/`_forget`）与 teaching（`faberloom_memory_teach`/`_teachings`/`_revoke`/`_retrieve`）工具；默认关闭是因为它们会增加常驻请求 schema。这一显式且带版本的层归 FaberLoom 所有；自动情景记忆由外部记忆服务器蒸馏（见 `MANIFEST.md`），不是这些工具。
 
+未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
+
 <a id="dev-note"></a>
 ### 开发备注
 

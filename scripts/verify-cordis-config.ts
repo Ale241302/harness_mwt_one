@@ -10,7 +10,7 @@
  * Loader fixtures resolve from their package manifest.
  */
 
-import { globSync, readFileSync } from 'node:fs'
+import { existsSync, globSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { Script } from 'node:vm'
 import ts from 'typescript'
@@ -57,11 +57,28 @@ const CHOOSER_BACKEND_PACKAGES = [
 const errors: string[] = []
 const pluginReferences: PluginReference[] = []
 
+/**
+ * Read one Loader config. A checkout that materialized a symlinked config as a
+ * one-line relative path (Windows without symlink support) is followed to its
+ * target, so the gate reads the composition the index records.
+ * @param file - repository-relative config path.
+ * @returns the config text.
+ */
+function readConfig(file: string): string {
+  const text = readFileSync(resolve(root, file), 'utf8')
+  const target = text.trim()
+  if (!target.includes('\n') && (target.startsWith('./') || target.startsWith('../'))) {
+    const resolved = resolve(root, dirname(file), target)
+    if (existsSync(resolved)) return readFileSync(resolved, 'utf8')
+  }
+  return text
+}
+
 if (import.meta.main) {
   const files = cordisConfigFiles(root)
 
   for (const file of files) {
-    const document = loadCordisYaml(readFileSync(resolve(root, file), 'utf8'))
+    const document = loadCordisYaml(readConfig(file))
     if (!isUnknownArray(document)) {
       errors.push(`${file}: root must be a Loader entry array`)
       continue
@@ -162,7 +179,7 @@ function validatePresetPlaneSeparation(): string[] {
 
 /** Every entry of one config file, or an empty list when it is not an entry array. */
 function loadEntries(file: string): unknown[] {
-  const document = loadCordisYaml(readFileSync(resolve(root, file), 'utf8'))
+  const document = loadCordisYaml(readConfig(file))
   return isUnknownArray(document) ? document : []
 }
 

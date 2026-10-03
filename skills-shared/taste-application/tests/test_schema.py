@@ -77,7 +77,7 @@ class ExportedSchemasTests(unittest.TestCase):
         "SPEC_SCHEMA",
         "TIMELINE_EVENT_SCHEMA",
         "APPLICATION_REPORT_SCHEMA",
-        "PROVENANCE_SCHEMA",
+        "ORIGIN_SCHEMA",
     ]
 
     def test_all_exported_schemas_exist_and_are_objects(self):

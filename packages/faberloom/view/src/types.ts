@@ -807,7 +807,9 @@ export interface FaberLoomModelCatalog {
   readonly providers: readonly FaberLoomProviderModels[]
 }
 
-export interface FaberLoomModelRow {  /** Pool id used by every policy field. */
+/** One row of the live provider/model catalog, as the model panels render it. */
+export interface FaberLoomModelRow {
+  /** Pool id used by every policy field. */
   readonly id: string
   /** Provider name. */
   readonly provider: string

@@ -561,7 +561,7 @@ def run_workflow(config_path: str | Path, out_dir: str | Path, *, probe: Probe |
         }
         for modality in _MODALITIES
     }
-    provenance_rules: list[dict[str, Any]] = []
+    origin_rules: list[dict[str, Any]] = []
     evidence_files: list[dict[str, Any]] = []
     for raw_path in config.get("evidence_files", []):
         path = resolve_input(raw_path)
@@ -678,7 +678,7 @@ def run_workflow(config_path: str | Path, out_dir: str | Path, *, probe: Probe |
             for ref in genre_refs
         ]
         for axis, values in genre["signature"].items():
-            provenance_rules.append({
+            origin_rules.append({
                 "rule_id": f"genre-{genre['number']}-{axis}",
                 "genre_number": genre["number"],
                 "axis": axis,
@@ -730,10 +730,10 @@ def run_workflow(config_path: str | Path, out_dir: str | Path, *, probe: Probe |
         output.write_json(f"manifests/{modality}.json", manifest)
     output.write_json("references.json", references)
     output.write_json("evidence_files.json", evidence_files)
-    output.write_json("provenance.json", {
+    output.write_json("origin.json", {
         "schema_version": 1,
         "run_id": config["run_id"],
-        "rules": provenance_rules,
+        "rules": origin_rules,
     })
     effect_recipe = _build_effect_recipe(config, specs, references)
     output.write_json("resolve/effect_recipe.json", effect_recipe)
@@ -746,7 +746,7 @@ def run_workflow(config_path: str | Path, out_dir: str | Path, *, probe: Probe |
             *[float(sample["time"]) for sample in probe_payload.get("style_samples", [])],
         })
 
-    def reference_provenance(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def reference_origin(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [{
             "reference_path": ref["path"],
             "reference_sha256": ref["sha256"],
@@ -755,7 +755,7 @@ def run_workflow(config_path: str | Path, out_dir: str | Path, *, probe: Probe |
             "time_basis": "media_seconds",
         } for ref in selected]
 
-    whole_file_provenance = [{
+    whole_file_origin = [{
         "reference_path": item["path"],
         "reference_sha256": item["sha256"],
         "reference_times": [],
@@ -769,20 +769,20 @@ def run_workflow(config_path: str | Path, out_dir: str | Path, *, probe: Probe |
         artifact_path = Path(relative)
         genre_numbers = list(all_genres)
         modalities = list(all_modalities)
-        sources = reference_provenance(references)
+        sources = reference_origin(references)
         if relative.startswith("genres/"):
             genre_number = int(artifact_path.name.split("-", 1)[0])
             genre_numbers = [genre_number]
-            sources = reference_provenance([
+            sources = reference_origin([
                 ref for ref in references if ref["genre_number"] == genre_number
             ])
         elif relative.startswith("manifests/"):
             modality = artifact_path.stem
             modalities = [modality]
-        elif relative == "evidence_files.json" and whole_file_provenance:
+        elif relative == "evidence_files.json" and whole_file_origin:
             genre_numbers = []
             modalities = []
-            sources = whole_file_provenance
+            sources = whole_file_origin
         elif relative == "resolve/effect_recipe.json":
             modalities = ["video"]
             source_by_digest = {ref["sha256"]: ref for ref in references}
@@ -805,7 +805,7 @@ def run_workflow(config_path: str | Path, out_dir: str | Path, *, probe: Probe |
             "genre_numbers": genre_numbers,
             "modalities": modalities,
             "provider_execution": False,
-            "provenance": sources,
+            "origin": sources,
         })
 
     receipt = {
@@ -823,7 +823,7 @@ def run_workflow(config_path: str | Path, out_dir: str | Path, *, probe: Probe |
         "artifacts": {
             "genres": len(specs),
             "manifests": list(_MODALITIES),
-            "provenance_rules": len(provenance_rules),
+            "origin_rules": len(origin_rules),
             "evidence_artifacts": len(evidence_artifacts),
         },
     }

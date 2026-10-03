@@ -1,4 +1,4 @@
-"""Local asset handoff rejects unsupported provenance and changed files."""
+"""Local asset handoff rejects unsupported origin and changed files."""
 import json
 import struct
 import tempfile
@@ -37,10 +37,10 @@ class AssetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ingest()
         (self.root / 'provider.json').write_text('{"status":"completed"}')
-        self.asset['provider_provenance'] = dict(provider='fal', request_id='abc',
+        self.asset['provider_origin'] = dict(provider='fal', request_id='abc',
                                                 evidence_path='provider.json')
         result = self.ingest()
-        self.assertEqual(result['assets'][0]['provider_provenance']['request_id'], 'abc')
+        self.assertEqual(result['assets'][0]['provider_origin']['request_id'], 'abc')
         self.assertFalse(result['provider_execution'])
         (self.root / 'provider.json').write_text('{}')
         with self.assertRaises(ValueError):
@@ -49,7 +49,7 @@ class AssetTests(unittest.TestCase):
     def test_recovered_does_not_infer_provider(self):
         self.asset['origin'] = 'recovered_unverified'
         result = self.ingest()
-        self.assertNotIn('provider_provenance', result['assets'][0])
+        self.assertNotIn('provider_origin', result['assets'][0])
 
     def test_changed_media_and_lineage_rejected(self):
         self.ingest()
@@ -130,17 +130,17 @@ class AssetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_assets(self.receipt)
 
-    def test_invalid_provenance_and_lineage_shapes(self):
-        for provenance in [None, {}, dict(provider='fal', evidence_path='clip.mp4'),
+    def test_invalid_origin_and_lineage_shapes(self):
+        for origin in [None, {}, dict(provider='fal', evidence_path='clip.mp4'),
                            dict(provider='fal', request_id='', evidence_path='clip.mp4'),
                            dict(provider='fal', request_id='id', evidence_path='missing.json')]:
             with self.assertRaises(ValueError):
                 self.ingest([{**self.asset, 'origin': 'external_result',
-                              'provider_provenance': provenance}])
+                              'provider_origin': origin}])
         with self.assertRaises(ValueError):
             self.ingest(input_artifacts='clip.mp4')
         with self.assertRaises(ValueError):
-            self.ingest([{**self.asset, 'provider_provenance': {'provider': 'fal'}}])
+            self.ingest([{**self.asset, 'provider_origin': {'provider': 'fal'}}])
         with self.assertRaises(ValueError):
             self.ingest([{**self.asset, 'genre_slug': 'invented'}])
 

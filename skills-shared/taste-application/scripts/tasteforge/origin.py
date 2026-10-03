@@ -1,4 +1,4 @@
-"""Exact provenance of the recovered TasteForge sources, as data.
+"""Exact origin of the recovered TasteForge sources, as data.
 
 Rules encoded here:
 

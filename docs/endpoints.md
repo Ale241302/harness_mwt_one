@@ -6,15 +6,9 @@ Verificado en el VPS el 14 de septiembre de 2026.
 
 ## Principio de identidad (decidido)
 
-Quien inicia sesión en el harness obtiene **sus roles y permisos** de la consola
-y con ellos interactúa con el MCP de MWT.ONE. **Cualquier usuario de la consola
-puede conectarse por defecto**, con el alcance que su rol permita; el MCP filtra
-las herramientas por rol (RBAC). Un rol `client_b2b` ve un subconjunto distinto
-al de `admin`.
+Quien inicia sesión en el harness obtiene **sus roles y permisos** de la consola y con ellos interactúa con el MCP de MWT.ONE. **Cualquier usuario de la consola puede conectarse por defecto**, con el alcance que su rol permita; el MCP filtra las herramientas por rol (RBAC). Un rol `client_b2b` ve un subconjunto distinto al de `admin`.
 
-El gateway **no guarda el JWT** del usuario: propaga su identidad por cabeceras y
-el MCP resuelve rol/permisos. No se usa una credencial administrativa compartida
-como sustituto de la identidad.
+El gateway **no guarda el JWT** del usuario: propaga su identidad por cabeceras y el MCP resuelve rol/permisos. No se usa una credencial administrativa compartida como sustituto de la identidad.
 
 ## Topología
 
@@ -52,39 +46,22 @@ Clientes externos (Claude/Cowork)
 
 ## Decisión de camino canónico
 
-- **Identidad del harness:** camino interno `consola-mwt-one-mcp:8765` con
-  identidad por cabecera (email → rol resuelto por el MCP). Operativo hoy.
-- **Canónico de producto** para clientes externos: `https://mcp.mwt.one`
-  (Authentik + ContextForge), que ya propaga tenant (`X-MWT-Client-ID`).
-- **Convergencia prevista (E2):** que el gateway obtenga/renueve token OAuth por
-  usuario para usar `mcp.mwt.one` también desde el harness, sin cambiar el
-  principio de identidad. Hasta entonces no se mezclan ambos caminos sin
-  registrar cuál usó cada llamada.
+- **Identidad del harness:** camino interno `consola-mwt-one-mcp:8765` con identidad por cabecera (email → rol resuelto por el MCP). Operativo hoy.
+- **Canónico de producto** para clientes externos: `https://mcp.mwt.one` (Authentik + ContextForge), que ya propaga tenant (`X-MWT-Client-ID`).
+- **Convergencia prevista (E2):** que el gateway obtenga/renueve token OAuth por usuario para usar `mcp.mwt.one` también desde el harness, sin cambiar el principio de identidad. Hasta entonces no se mezclan ambos caminos sin registrar cuál usó cada llamada.
 
 ## Flujo de login y obtención de empresas/rol/permisos
 
 Verificado el 14 sep 2026:
 
 1. El usuario entra en `https://harness.mwt.one/login`.
-2. El gateway hace `POST https://consola.mwt.one/api/auth/login/` y recibe
-   `user{ id, email, full_name, role, role_name, permissions, is_active, is_staff,
-   legal_entity_ids }` + `access`/`refresh`.
+2. El gateway hace `POST https://consola.mwt.one/api/auth/login/` y recibe `user{ id, email, full_name, role, role_name, permissions, is_active, is_staff, legal_entity_ids }` + `access`/`refresh`.
 3. El gateway abre un `dsh` por usuario e inyecta la **identidad** (email) en el MCP.
-4. En cada petición, el MCP resuelve empresas, rol y permisos por esa identidad y
-   filtra las herramientas. Evidencia: `mwt_whoami` devuelve `role`, `role_name`,
-   `permissions` y `legal_entity_ids`.
+4. En cada petición, el MCP resuelve empresas, rol y permisos por esa identidad y filtra las herramientas. Evidencia: `mwt_whoami` devuelve `role`, `role_name`, `permissions` y `legal_entity_ids`.
 
-El stack `mcp-gateway` (Authentik + ContextForge) es **parte del proyecto
-consola-mwt-one** (vive en `/opt/consola-mwt-one/mcp-gateway`) y sirve la ruta
-externa `https://mcp.mwt.one` (OAuth) para clientes como Claude/Cowork; por debajo
-usa el mismo servidor MCP (`consola-mwt-one-mcp:8765`).
+El stack `mcp-gateway` (Authentik + ContextForge) es **parte del proyecto consola-mwt-one** (vive en `/opt/consola-mwt-one/mcp-gateway`) y sirve la ruta externa `https://mcp.mwt.one` (OAuth) para clientes como Claude/Cowork; por debajo usa el mismo servidor MCP (`consola-mwt-one-mcp:8765`).
 
-**Tenant (E2):** el gateway fija `X-MWT-Client-ID` con la empresa del usuario
-**cuando tiene una sola** (`legal_entity_ids`). Con varias empresas no envía el
-header (no hay una única correcta y el MCP rechazaría). El MCP valida que el
-valor esté entre las empresas del usuario (`verify_tenant`) y deniega con
-`TENANT_MISMATCH` si no. Evidencia: `compras2` (Sondel) con tenant SONEPAR →
-denegado; con Sondel → permitido.
+**Tenant (E2):** el gateway fija `X-MWT-Client-ID` con la empresa del usuario **cuando tiene una sola** (`legal_entity_ids`). Con varias empresas no envía el header (no hay una única correcta y el MCP rechazaría). El MCP valida que el valor esté entre las empresas del usuario (`verify_tenant`) y deniega con `TENANT_MISMATCH` si no. Evidencia: `compras2` (Sondel) con tenant SONEPAR → denegado; con Sondel → permitido.
 
 ## Puertos publicados en el host (stack consola)
 
@@ -95,9 +72,7 @@ denegado; con Sondel → permitido.
 | `consola-mwt-one-postgres` | 5434 → 5432 |
 | `consola-mwt-one-redis` | 6380 → 6379 |
 
-Nota: el gateway del harness reparte puertos `dsh` desde `3100` **dentro de su
-contenedor** (no publicados al host). No hay conflicto real con el `3101` del
-frontend, pero conviene mover el rango base de `dsh` para evitar confusión.
+Nota: el gateway del harness reparte puertos `dsh` desde `3100` **dentro de su contenedor** (no publicados al host). No hay conflicto real con el `3101` del frontend, pero conviene mover el rango base de `dsh` para evitar confusión.
 
 ## Datos de identidad
 
@@ -129,18 +104,11 @@ Las cuatro cuentas inician sesión correctamente. Las contraseñas no se guardan
 | `alejandro@muitowork.com` (admin) | **175** |
 | `compras2@sondelsa.com` (client_b2b) | **44** |
 
-El filtrado por rol funciona de punta a punta: misma puerta, distinto conjunto
-según la identidad del login. `client_b2b` no recibe las herramientas de gestión.
+El filtrado por rol funciona de punta a punta: misma puerta, distinto conjunto según la identidad del login. `client_b2b` no recibe las herramientas de gestión.
 
 ## Notas
 
-- El tenant (`X-MWT-Client-ID`) se fija **solo si el usuario tiene una sola
-  empresa** (E2). Con varias (p. ej. un admin) queda en modo global dentro de su
-  alcance.
-- `core.users.tenant_uuid` existe pero está NULL: la fuente real de empresas es
-  `user.legal_entity_ids` de la respuesta del login.
-- **Caché del MCP (corregido, 15 sep 2026):** la caché de tokens del MCP era por
-  email y podía saltarse `verify_tenant`; ahora la clave incluye el `client_id`.
-  Con token global cacheado, un tenant ajeno se deniega.
-- Antes de cualquier escritura de negocio, probar que un usuario sin permiso
-  recibe denegación efectiva (no solo ocultamiento visual).
+- El tenant (`X-MWT-Client-ID`) se fija **solo si el usuario tiene una sola empresa** (E2). Con varias (p. ej. un admin) queda en modo global dentro de su alcance.
+- `core.users.tenant_uuid` existe pero está NULL: la fuente real de empresas es `user.legal_entity_ids` de la respuesta del login.
+- **Caché del MCP (corregido, 15 sep 2026):** la caché de tokens del MCP era por email y podía saltarse `verify_tenant`; ahora la clave incluye el `client_id`. Con token global cacheado, un tenant ajeno se deniega.
+- Antes de cualquier escritura de negocio, probar que un usuario sin permiso recibe denegación efectiva (no solo ocultamiento visual).

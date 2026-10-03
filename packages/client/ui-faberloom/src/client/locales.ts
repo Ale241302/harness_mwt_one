@@ -784,7 +784,7 @@ export const en: Record<FaberloomKey, string> = {
   'teachings.reason': 'Reason for the change',
   'teachings.reasonHint': 'It stays in the version history.',
   'teachings.reasonDefault': 'user correction',
-  'teachings.source': 'Provenance',
+  'teachings.source': 'Origin',
   'teachings.uses': 'Later uses',
   'teachings.scopeSpace': 'Space',
   'teachings.scopeAgent': 'Agent',

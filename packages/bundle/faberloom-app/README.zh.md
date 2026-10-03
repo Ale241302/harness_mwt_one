@@ -42,6 +42,8 @@ kind: "package-bundle"
 
 - **挂载骨架行** — 在领域切片落地前，产品服务只承载其服务面。
 
+未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
+
 <a id="dev-note"></a>
 ### 开发备注
 

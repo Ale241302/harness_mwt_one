@@ -2,9 +2,7 @@
 
 English | [中文](faberloom-e2e-checklist.zh.md)
 
-Complementa el plan §17. Cada caso tiene su verificación automatizada (spec del
-paquete) o su recorrido manual en el VPS (dos usuarios de prueba, datos
-autorizados, sin comunicaciones externas). El piloto es navegador.
+Complementa el plan §17. Cada caso tiene su verificación automatizada (spec del paquete) o su recorrido manual en el VPS (dos usuarios de prueba, datos autorizados, sin comunicaciones externas). El piloto es navegador.
 
 Prioridad de ejecución: **F08, F10, F16, F17, F18, F23, F28** (marcadas ★).
 

@@ -53,6 +53,8 @@ Independent of live requests: the registration never touches a request prefix.
 - **Lexical reference lookup (v1)** — `find` matches a space title, its context values, and its memory text by folded terms; it does not search attached-file contents, and it excludes archived spaces. `reference` returns file metadata without bytes.
 - **Pluggable ranking seam (6.1)** — `find` ranks through `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in lexical ranker; the seam lets an embeddings or knowledge-hub provider replace ranking without touching storage or access control.
 
+No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
+
 <a id="dev-note"></a>
 ### Dev Note
 

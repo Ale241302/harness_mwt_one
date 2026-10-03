@@ -8,7 +8,7 @@ con **identidad por usuario**.
 > Estado: desplegado y verificado en el VPS. El contenedor **construye y ejecuta
 > nuestro fork** de DeepSeek Harness (`0.1.6-alpha.1`, rama `feat/faberloom-native`)
 > y arranca `dsh --profile faberloom` por usuario.
-> (commit fuente `c291e79`).
+> (rama `feat/faberloom-native`, versión `0.1.6-alpha.1`).
 
 ## Por qué hace falta este gateway
 

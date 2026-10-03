@@ -327,7 +327,7 @@ def _rewrite_prompt(base: str, hits: dict[str, list[str]], spec: dict) -> str:
 def describe(image_urls: list[str], grounding: str = "") -> tuple[dict, dict]:
     """Ask the VLM for the style spec, repairing once if it does not parse.
 
-    Returns ``(spec, provenance)``.
+    Returns ``(spec, origin)``.
     """
     attempts: list[dict] = []
     base = (grounding + BASE_PROMPT) if grounding else BASE_PROMPT
@@ -428,14 +428,14 @@ def distill(
     grounding = build_grounding(sp)
     if grounding:
         print(f"  grounding VLM with {len(grounding.splitlines())} measured facts")
-    spec, provenance = describe(urls, grounding=grounding)
+    spec, origin = describe(urls, grounding=grounding)
 
     spec["source"] = {
         "pack": genre,
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "stills": [p.name for p in chosen],
         "dry_run": falapi.is_dry_run(),
-        **provenance,
+        **origin,
     }
     sp.write_json(sp.spec_path, spec)
     print(f"  spec           : {sp.spec_path}")

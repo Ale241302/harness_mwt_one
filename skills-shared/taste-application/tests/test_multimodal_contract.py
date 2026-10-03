@@ -10,7 +10,7 @@ from tasteforge.contract import (
     validate_effect_recipe,
     validate_genre_specs,
     validate_manifests,
-    validate_provenance,
+    validate_origin,
 )
 
 
@@ -311,7 +311,7 @@ class ResolveRecipeContractTests(unittest.TestCase):
         }
 
 
-class ProvenanceContractTests(unittest.TestCase):
+class OriginContractTests(unittest.TestCase):
     def test_reference_evidence_times_must_be_finite_and_within_source_duration(self):
         for field, unsafe in (
             ("times", [float("nan")]),
@@ -335,7 +335,7 @@ class ProvenanceContractTests(unittest.TestCase):
                     "evidence": [evidence],
                 }]}
                 with self.assertRaisesRegex(ContractError, "time evidence|source duration"):
-                    validate_provenance(payload)
+                    validate_origin(payload)
 
     def test_rule_without_reference_time_evidence_is_rejected(self):
         payload = {
@@ -346,7 +346,7 @@ class ProvenanceContractTests(unittest.TestCase):
             }],
         }
         with self.assertRaisesRegex(ContractError, "time evidence"):
-            validate_provenance(payload)
+            validate_origin(payload)
 
 
 class ManifestContractTests(unittest.TestCase):
@@ -440,7 +440,7 @@ class ArtifactReceiptContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ContractError, "unbound emitted artifact"):
                 validate_artifact_receipt(root, {"evidence_artifacts": []})
 
-    def test_provider_execution_or_missing_provenance_is_rejected(self):
+    def test_provider_execution_or_missing_origin_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             artifact = root / "artifact.json"
@@ -452,7 +452,7 @@ class ArtifactReceiptContractTests(unittest.TestCase):
                 "genre_numbers": [],
                 "modalities": [],
                 "provider_execution": True,
-                "provenance": [],
+                "origin": [],
             }
             with self.assertRaisesRegex(ContractError, "provider execution"):
                 validate_artifact_receipt(root, {"evidence_artifacts": [entry]})
@@ -469,7 +469,7 @@ class ArtifactReceiptContractTests(unittest.TestCase):
                 "genre_numbers": [1],
                 "modalities": ["image"],
                 "provider_execution": False,
-                "provenance": [{
+                "origin": [{
                     "reference_path": "/reference.mov",
                     "reference_sha256": "b" * 64,
                     "reference_times": [0.5],
@@ -479,7 +479,7 @@ class ArtifactReceiptContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ContractError, "SHA-256"):
                 validate_artifact_receipt(root, {"evidence_artifacts": [entry]})
 
-    def test_unknown_provenance_source_is_rejected(self):
+    def test_unknown_origin_source_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             artifact = root / "artifact.json"
@@ -495,7 +495,7 @@ class ArtifactReceiptContractTests(unittest.TestCase):
                     "genre_numbers": [1],
                     "modalities": ["image"],
                     "provider_execution": False,
-                    "provenance": [{
+                    "origin": [{
                         "reference_path": "/unknown.mov",
                         "reference_sha256": "b" * 64,
                         "reference_times": [0.5],
@@ -503,7 +503,7 @@ class ArtifactReceiptContractTests(unittest.TestCase):
                     }],
                 }],
             }
-            with self.assertRaisesRegex(ContractError, "unknown provenance source"):
+            with self.assertRaisesRegex(ContractError, "unknown origin source"):
                 validate_artifact_receipt(root, receipt)
 
     def test_receipt_digest_mismatch_is_rejected(self):

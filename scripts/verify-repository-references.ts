@@ -10,7 +10,12 @@ const root = resolve(import.meta.dirname, '..')
 const organization = ['deepseek', 'harness'].join('-')
 const organizationUrl = new RegExp(`\\bgithub\\.com/${organization}(?![a-z0-9-])`)
 const commitCandidate = /(?<![a-z0-9])[\da-f]{7,40}(?![a-z0-9])/gi
-const excludedPrefixes = ['vendor/', '.agents/notes/archived/']
+// Frozen history, vendored sources, and generated local diagram output carry
+// revisions that are not maintained prose.
+const excludedPrefixes = ['vendor/', '.agents/notes/archived/', '.archify/']
+// The fork's deploy manifest intentionally records the exact built fork SHA for
+// the container's `manifestDrift` check; it is an operational record, not prose.
+const excludedFiles = new Set(['MANIFEST.md'])
 const gitOutputLimit = 64 * 1024 * 1024
 
 /** One prohibited reference in a maintained source file. */
@@ -24,7 +29,7 @@ export interface RepositoryReference {
 }
 
 function isMaintained(file: string): boolean {
-  return !excludedPrefixes.some(prefix => file.startsWith(prefix))
+  return !excludedPrefixes.some(prefix => file.startsWith(prefix)) && !excludedFiles.has(file)
 }
 
 /**

@@ -54,6 +54,8 @@ Adding or removing a tool changes the tool block, which can invalidate reuse fro
 - **Delegated consultation (v1).** `faberloom_spaces_ask` runs one one-shot delegation through `askProvider` (default `spawn`); `continuable` is rejected, delegation depth applies, and the child inherits the parent's merged tool plane. The child runs in the parent's workspace because `resolveWorkdir` returns an opaque reference, not a path; running in the Space's real workdir is deferred.
 - **Memory tools are opt-in.** `memoryTools` (default off) registers the space-memory (`faberloom_spaces_remember`/`_memory_list`/`_forget`) and teaching (`faberloom_memory_teach`/`_teachings`/`_revoke`/`_retrieve`) tools; it stays off by default because they add permanent request schema. This explicit, versioned layer is FaberLoom's; automatic episodic memory is distilled by the external memory server (see `MANIFEST.md`), not by these tools.
 
+No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
+
 <a id="dev-note"></a>
 ### Dev Note
 

@@ -21,7 +21,7 @@ from . import distill as distill_mod
 from . import export as export_mod
 from . import interview as interview_mod
 from . import pack as pack_mod
-from . import provenance
+from . import origin
 from . import workflow as workflow_mod
 
 EXIT_OK = 0
@@ -33,8 +33,8 @@ def _print_json(payload) -> None:
     print(json.dumps(payload, indent=2))
 
 
-def cmd_provenance(args: argparse.Namespace) -> int:
-    _print_json(provenance.lineage_report())
+def cmd_origin(args: argparse.Namespace) -> int:
+    _print_json(origin.lineage_report())
     return EXIT_OK
 
 
@@ -145,9 +145,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = ap.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("provenance", help="print the recovered-source lineage")
+    p = sub.add_parser("origin", help="print the recovered-source lineage")
     p.add_argument("--json", action="store_true", help="(output is always JSON)")
-    p.set_defaults(func=cmd_provenance)
+    p.set_defaults(func=cmd_origin)
 
     p = sub.add_parser("inspect", help="inspect and validate a style pack")
     p.add_argument("pack", help="pack directory containing pack.json")

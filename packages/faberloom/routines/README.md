@@ -52,6 +52,8 @@ Independent of live requests: the registration never touches a request prefix.
 - **An effectful step needs a grant.** Before running a step whose definition records an effect, the engine asks `ctx.faberloomAccess` whether the owner authorized the routine's first declared permission (or `faberloom.effect.<stepId>`), scoped to the routine. Without it the step fails with `NOT_AUTHORIZED` and the case goes to review, so a revocation stops the next effect.
 - **Removing a routine keeps its history.** `removeRoutine` deletes the definition and its stored versions; the executions it produced and the effect ledger stay, so a case that already ran keeps its record.
 
+No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
+
 <a id="dev-note"></a>
 ### Dev Note
 

@@ -20,7 +20,7 @@ the libraries listed in the skill instructions.
 ## CLI
 
 ```bash
-python3 -m tasteforge provenance                     # recovered-source lineage as JSON
+python3 -m tasteforge origin                     # recovered-source lineage as JSON
 python3 -m tasteforge inspect <pack-dir>             # validate + summarize a style pack
 python3 -m tasteforge validate <pack-dir>            # exit 0 valid / 1 invalid
 python3 -m tasteforge interview --answers a.json --genre NAME [--out profile.json]
@@ -55,7 +55,7 @@ Outputs:
   request manifests, a seeded aperiodic Resolve effect recipe, and a receipt
   that binds every emitted artifact by relative path, byte size, SHA-256,
   genre, modality, `provider_execution: false`, and exact reference/time
-  provenance. It requires local `ffprobe` and `ffmpeg` for measured media
+  origin. It requires local `ffprobe` and `ffmpeg` for measured media
   features and never submits a request.
 
 ### Real-footage application
@@ -114,7 +114,7 @@ python3 -m tasteforge inspect tasteforge/fixtures/flashethereal
 ## Library
 
 ```python
-from tasteforge import pack, interview, distill, apply, export, provenance, schema
+from tasteforge import pack, interview, distill, apply, export, origin, schema
 
 sp = pack.load("tasteforge/fixtures/flashethereal")
 report = apply.apply_local(sp, [{"path": "a.mov", "duration": 5.0}])
@@ -264,7 +264,7 @@ python3 -m compileall -q skills/taste-application/scripts/tasteforge        # sy
 
 - No network calls, no credentials, no provider account access — ever.
 - A local Fal reference never means a provider workflow was saved; see
-  `provenance.provider_reference()`.
+  `origin.provider_reference()`.
 - Raw recovered sources (videos, LUTs, stills, meshes) stay out of Git; the
   fixture is metadata-only and documented in the skill's `SOURCE.md`.
 
