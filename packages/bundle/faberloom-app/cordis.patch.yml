@@ -24,6 +24,10 @@
     - id: faberloom-shares
       name: '@deepseek-ai/dsh-faberloom-shares'
 
+    # Contexto del Workspace/Space: versionado y con aprobación del dueño.
+    - id: faberloom-context
+      name: '@deepseek-ai/dsh-faberloom-context'
+
     - id: faberloom-execution
       name: '@deepseek-ai/dsh-faberloom-execution'
 

@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-04-space` (commit `dd055ffeeb1b56219d764e36fbcc6c51ce29dc58`: Work Flow Fases 0–9 — plantillas, export/import portátil, galería, salud/reintentos/dead-letter, compartir con permisos y programación; icono de Workflows y auto-selección del flujo nuevo; lint, duplicación, `test:docs` y `test:gui` en verde).
-**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `dd055ffeeb1b56219d764e36fbcc6c51ce29dc58` (Work Flow completo hasta Fase 9; deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-04-context` (commit `e1c831a3e4cbf35f4b6d448bfd4e89212ad2d2cf`: Work Flow Fases 0–9 — plantillas, export/import portátil, galería, salud/reintentos/dead-letter, compartir con permisos y programación; icono de Workflows y auto-selección del flujo nuevo; lint, duplicación, `test:docs` y `test:gui` en verde).
+**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `e1c831a3e4cbf35f4b6d448bfd4e89212ad2d2cf` (Work Flow completo hasta Fase 9; deploy caliente).
 **Verificado en el VPS:** 3 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
