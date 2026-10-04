@@ -491,6 +491,41 @@ describe('faberloom work-flow canvas', () => {
     await waitFor(() => { expect(svg.textContent).toContain('correo') })
   })
 
+  it('auto-selects a flow created from a template so its graph appears', async () => {
+    const {
+      runtime, view, workflowOverview, workflowDetail, workflowTemplates, createWorkflowFromTemplate,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [] })
+    workflowTemplates.mockResolvedValue({
+      ok: true,
+      value: [{ id: 'anti-spam', name: 'Anti-spam', description: 'clasifica', nodes: 1, edges: 0 }],
+    })
+    createWorkflowFromTemplate.mockResolvedValue({
+      ok: true,
+      value: [{ id: 'wf2', name: 'Anti-spam', status: 'draft', version: 1, nodes: 1, edges: 0, routineId: null }],
+    })
+    workflowDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'wf2', name: 'Anti-spam', status: 'draft', version: 1, routineId: null,
+        valid: true, problems: [], maxConcurrency: null,
+        nodesList: [{ id: 'n1', kind: 'trigger.email', title: 'correo', x: 0, y: 0, config: {} }],
+        edgesList: [],
+      },
+    })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    await view.findByRole('option', { name: 'Anti-spam' })
+    fireEvent.change(view.getByRole('combobox', { name: 'Templates' }), { target: { value: 'anti-spam' } })
+    await waitFor(() => {
+      expect((view.getByRole('combobox', { name: 'Templates' }) as HTMLSelectElement).value).toBe('anti-spam')
+    })
+    fireEvent.click(view.getByRole('button', { name: 'Use template' }))
+
+    await waitFor(() => { expect(workflowDetail).toHaveBeenCalledWith('wf2') })
+    expect(await view.findByText('correo')).toBeTruthy()
+  })
+
   it('creates, activates, exports, and points nodes at an agent and a connection', async () => {
     const {
       runtime, view, workflowOverview, workflowDetail, createWorkflow,

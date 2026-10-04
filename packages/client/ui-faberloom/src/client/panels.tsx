@@ -14,6 +14,7 @@ import {
   IconAgentPresetOutline16,
   IconAlarmClockOutline16,
   IconApiOutline14,
+  IconBranchOutline16,
   IconChecklistOutline14,
   IconSendOutline14,
   IconDatabaseOutline16,
@@ -3033,6 +3034,16 @@ function workflowsScreen() {
       } else setMessage(result.error.message)
     }
 
+    // Refresh the list and select the flow that was just added, so its graph is
+    // on screen instead of the "Select a flow" placeholder.
+    const acceptFlows = (result: Result<readonly FaberLoomWorkflowRow[]>): void => {
+      if (!result.ok) { setMessage(result.error.message); return }
+      const created = result.value.find(flow => !flows.some(previous => previous.id === flow.id))
+      setFlows(result.value)
+      setMessage(null)
+      if (created !== undefined) setSelected(created.id)
+    }
+
     useEffect(() => {
       void workflows.overview().then((result) => { if (result.ok) setFlows(result.value) }).catch(() => undefined)
       void workflows.topology().then((result) => { if (result.ok) setTopology(result.value) }).catch(() => undefined)
@@ -3155,7 +3166,8 @@ function workflowsScreen() {
     const useTemplate = (): void => {
       if (templateId.length === 0) return
       void workflows.createFromTemplate(templateId).then((result) => {
-        if (result.ok) { setFlows(result.value); setTemplateId(''); setMessage(null) } else setMessage(result.error.message)
+        if (result.ok) setTemplateId('')
+        acceptFlows(result)
       })
     }
     /** Toggle one permission in the Compartir form. */
@@ -3200,7 +3212,7 @@ function workflowsScreen() {
           <input value={flowName} placeholder={t('wf.namePlaceholder')} onChange={(event) => { setFlowName(event.target.value) }} />
           <button type="button" className={styles.primary} onClick={() => {
             if (flowName.trim().length === 0) return
-            void workflows.create(flowName.trim()).then((result) => { if (result.ok) { setFlows(result.value); setFlowName(''); setMessage(null) } else setMessage(result.error.message) })
+            void workflows.create(flowName.trim()).then((result) => { acceptFlows(result); if (result.ok) setFlowName('') })
           }}>{t('wf.create')}</button>
           <div className={styles.workflowTemplates}>
             <span>{t('wf.templates')}</span>
@@ -3214,9 +3226,7 @@ function workflowsScreen() {
               <input type="file" accept="application/json,.json" onChange={(event) => {
                 const file = event.target.files?.[0]
                 if (file === undefined) return
-                void file.text().then(text => workflows.importFlow(text)).then((result) => {
-                  if (result.ok) { setFlows(result.value); setMessage(null) } else setMessage(result.error.message)
-                })
+                void file.text().then(text => workflows.importFlow(text)).then((result) => { acceptFlows(result) })
                 event.target.value = ''
               }} />
             </label>
@@ -3389,7 +3399,7 @@ export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agents', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsScreen() },
   { id: 'faberloom-skills' as MainPanelId, order: 45, labelKey: 'nav.skills', Icon: panelIcon(IconAgentPresetOutline16), Page: skillsScreen() },
   { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(IconAlarmClockOutline16), Page: routinesScreen() },
-  { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(IconAlarmClockOutline16), Page: workflowsScreen() },
+  { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(IconBranchOutline16), Page: workflowsScreen() },
   { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(IconDatabaseOutline16), Page: memoryScreen() },
   { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', Icon: panelIcon(IconApiOutline14), Page: connectionsScreen() },
   { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', Icon: panelIcon(IconSendOutline14), Page: emailScreen() },
