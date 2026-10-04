@@ -100,6 +100,7 @@ async function bench(
   const saveSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const saveRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const connections = vi.fn(async () => ({ ok: true, value: [] }))
+  const skills = vi.fn(async () => ({ ok: true, value: [] }))
   const saveConnection = vi.fn(async () => ({ ok: true, value: [] }))
   const removeConnection = vi.fn(async () => ({ ok: true, value: [] }))
   const probeConnection = vi.fn(async () => ({ ok: true, value: { ok: true, detail: 'ok' } }))
@@ -142,6 +143,7 @@ async function bench(
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
+    skills,
     spaceMemory, deleteSpaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connect: connectNode, disconnect: disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
@@ -461,12 +463,14 @@ describe('faberloom work-flow canvas', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
     fireEvent.click(await view.findByText(/Anti-spam/))
     expect(await view.findByText('correo')).toBeTruthy()
-    expect(view.getByText('completed')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Logs' }))
+    expect(await view.findByText('completed')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Close' }))
 
     fireEvent.click(view.getByText('correo'))
     fireEvent.change(view.getByPlaceholderText('Title'), { target: { value: 'nuevo' } })
     fireEvent.click(view.getByRole('button', { name: 'Save' }))
-    await waitFor(() => { expect(updateNode).toHaveBeenCalledWith('wf1', 'n1', 'nuevo', 'trigger.email', '{}') })
+    await waitFor(() => { expect(updateNode).toHaveBeenCalledWith('wf1', 'n1', 'nuevo', 'trigger.email', '{"match":""}') })
 
     fireEvent.change(view.getByRole('combobox', { name: 'Node kind' }), { target: { value: 'imap.action' } })
     fireEvent.click(view.getByRole('button', { name: 'Add node' }))
@@ -728,13 +732,14 @@ describe('faberloom work-flow canvas', () => {
 
     act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
     fireEvent.click(await view.findByText(/Anti-spam/))
+    fireEvent.click(view.getByRole('button', { name: 'Share' }))
     expect(await view.findByText('guest@proveedor.com')).toBeTruthy()
 
     fireEvent.click(view.getByRole('button', { name: 'Revoke' }))
     await waitFor(() => { expect(revokeShareGrant).toHaveBeenCalledWith('g1') })
 
     fireEvent.change(view.getByRole('textbox', { name: 'Guest email' }), { target: { value: 'nuevo@proveedor.com' } })
-    fireEvent.click(view.getByRole('button', { name: 'Share' }))
+    fireEvent.click(view.getByRole('button', { name: 'Send invite' }))
     await waitFor(() => { expect(shareWorkflow).toHaveBeenCalledWith('wf1', ['nuevo@proveedor.com'], ['view']) })
     expect(await view.findByText('nuevo@proveedor.com')).toBeTruthy()
   })
