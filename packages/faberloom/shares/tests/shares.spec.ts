@@ -11,7 +11,7 @@ const GUEST = 'proveedor@sonepar.com'
 const OTHER = 'otro@sonepar.com'
 
 /** Boot the storage/domain composition plus the shares service and a fake mail transport. */
-async function harness(config: Config = {}) {
+async function harness(config: Config = {}, withConnections = true) {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
@@ -19,9 +19,9 @@ async function harness(config: Config = {}) {
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
   const sendMail = vi.fn(async (_ownerId: string, _message: { to: readonly string[]; subject: string; text: string }) => ({ messageId: 'm-1' }))
-  ctx.provide('faberloomConnections', { sendMail } as never)
-  await ctx.plugin(FaberLoomShares, config)
-  return { ctx, shares: ctx.faberloomShares, sendMail }
+  if (withConnections) ctx.provide('faberloomConnections', { sendMail } as never)
+  const fiber = await ctx.plugin(FaberLoomShares, config)
+  return { ctx, shares: ctx.faberloomShares, sendMail, fiber }
 }
 
 describe('FaberLoomShares', () => {
@@ -144,5 +144,103 @@ describe('FaberLoomShares', () => {
       .rejects.toThrow('at least one permission')
     await expect(shares.accept(GUEST, 'missing')).rejects.toThrow('not found')
     await expect(shares.revoke(OWNER, 'missing')).rejects.toThrow('not found')
+  })
+
+  it('skips the email when no mail transport is mounted, and resolves effective permissions', async () => {
+    const { shares, sendMail, fiber } = await harness({}, false)
+    const grant = await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view', 'run'] })
+    expect(sendMail).not.toHaveBeenCalled()
+    expect(await shares.permissionsFor(GUEST, { kind: 'space', id: 'sp-1' })).toEqual([])
+    await shares.accept(GUEST, grant.id)
+    expect(await shares.permissionsFor(GUEST, { kind: 'space', id: 'sp-1' })).toEqual(['view', 'run'])
+    expect(await shares.permissionsFor(GUEST, { kind: 'space', id: 'sp-9' })).toEqual([])
+    // A sync without a console is a no-op, and disposing the fiber closes the domain.
+    await shares.sync(GUEST)
+    await fiber.dispose()
+  })
+
+  it('falls back to the environment console and fails loud when it rejects', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    process.env['CONSOLA_API_BASE'] = 'http://env-console'
+    process.env['CONSOLA_TOKEN'] = 'env-token'
+    try {
+      const { shares } = await harness()
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })
+      await expect(shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view'] }))
+        .rejects.toThrow('la consola rechazó')
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({}) })
+      const grant = await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view'] })
+      expect(grant.status).toBe('pending')
+      expect(fetchMock).toHaveBeenCalledWith('http://env-console/harness/shares/', expect.anything())
+    } finally {
+      delete process.env['CONSOLA_API_BASE']
+      delete process.env['CONSOLA_TOKEN']
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('revokes locally even when the console mirror delete fails', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const { shares } = await harness({ consoleBase: 'http://console', consoleToken: 't' })
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'c1' }) })
+      const grant = await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view'] })
+      fetchMock.mockRejectedValueOnce(new Error('down'))
+      await shares.revoke(OWNER, grant.id)
+      expect((await shares.list(OWNER)).outgoing[0]?.status).toBe('revoked')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('imports a partial console row, skips other kinds, and prunes by grantee', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const { shares } = await harness({ consoleBase: 'http://console', consoleToken: 't' })
+      // A partial space row imports; an agent row of another kind is skipped.
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          incoming: [
+            { id: 'c9', kind: 'space', owner_email: OWNER, name: 'SinId', status: 'pending' },
+            { id: 'c10', kind: 'agent', owner_email: OWNER, name: 'Agente' },
+          ],
+        }),
+      })
+      await shares.sync(GUEST)
+      const incoming = (await shares.list(GUEST)).incoming
+      expect(incoming).toHaveLength(1)
+      expect(incoming[0]?.resource.id).toBe('SinId')
+      expect(incoming[0]?.permissions).toEqual(['view'])
+      expect(incoming[0]?.status).toBe('pending')
+      // Syncing another grantee leaves the guest's grant alone.
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ incoming: [] }) })
+      await shares.sync(OTHER)
+      expect((await shares.list(GUEST)).incoming).toHaveLength(1)
+      // A response with no `incoming` prunes the stale guest grant.
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) })
+      await shares.sync(GUEST)
+      expect((await shares.list(GUEST)).incoming).toEqual([])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('sorts multiple outgoing and incoming grants', async () => {
+    const { shares } = await harness()
+    await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view'] })
+    await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-2' }, resourceName: 'B', granteeEmail: OTHER, permissions: ['view'] })
+    await shares.create(OTHER, { resource: { kind: 'space', id: 'sp-3' }, resourceName: 'C', granteeEmail: GUEST, permissions: ['view'] })
+    expect((await shares.list(OWNER)).outgoing).toHaveLength(2)
+    expect((await shares.list(GUEST)).incoming).toHaveLength(2)
+  })
+
+  it('closes cleanly when no domain was ever opened', async () => {
+    const { fiber } = await harness()
+    await fiber.dispose()
   })
 })

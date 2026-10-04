@@ -80,15 +80,18 @@ export class FaberLoomShares extends Service {
    */
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomShares')
+    this.ctx.effect(() => () => this.closeDomain(), 'faberloom.sharesDomainClose')
+  }
+
+  /** Close the lazily opened domain, if any, when the service fiber unloads. */
+  private async closeDomain(): Promise<void> {
+    if (this.domainPromise === undefined) return
+    await (await this.domainPromise).close()
   }
 
   /** Open the shares domain once and keep its handle. */
   private domain(): Promise<Domain<typeof sharesDomainSpec>> {
-    this.domainPromise ??= (async () => {
-      const domain = await this.ctx.storageDomain.open(sharesDomainSpec)
-      this.ctx.effect(() => () => domain.close(), 'faberloom.sharesDomainClose')
-      return domain
-    })()
+    this.domainPromise ??= this.ctx.storageDomain.open(sharesDomainSpec)
     return this.domainPromise
   }
 
@@ -260,13 +263,11 @@ export class FaberLoomShares extends Service {
    */
   async permissionsFor(granteeEmail: string, resource: FaberLoomShareResource): Promise<readonly FaberLoomSharePermission[]> {
     const email = granteeEmail.trim().toLowerCase()
-    const held = new Set<FaberLoomSharePermission>()
+    const held = new Set<string>()
     for (const [, record] of (await this.grants()).entries()) {
       if (record.status !== 'active' || record.granteeEmail !== email) continue
       if (!sameResource({ kind: record.resourceKind, id: record.resourceId }, resource)) continue
-      for (const permission of record.permissions) {
-        if (KNOWN_PERMISSIONS.has(permission)) held.add(permission as FaberLoomSharePermission)
-      }
+      for (const permission of record.permissions) held.add(permission)
     }
     return SHARE_PERMISSIONS.filter(permission => held.has(permission))
   }
