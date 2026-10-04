@@ -15,6 +15,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { FaberLoomExecutionId, FaberLoomRoutineId, StepContext, StepHandler } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
+import type { WorkFlowId } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
@@ -236,6 +237,19 @@ export function createWorkflowHandlers(ctx: Context): Record<string, StepHandler
         channel: 'subroutine',
       })
       return { handler: 'subroutine', executionId: String(started.execution.id), deduped: started.deduped }
+    },
+    workflow: async (context) => {
+      const workflowId = configString(context.config['workflowId'])
+      if (workflowId.length === 0) throw new Error('faberloom: workflow.invoke needs a workflowId')
+      const workflows = ctx.get('faberloomWorkflows')
+      if (workflows === undefined) throw new Error('faberloom: the workflows service is not mounted')
+      const owner = await ownerOf(ctx, context)
+      const started = await workflows.invoke(
+        { id: owner },
+        brandString<WorkFlowId>(workflowId),
+        { idempotencyKey: `${context.executionId}:${context.stepId}` },
+      )
+      return { handler: 'workflow', executionId: started.executionId, deduped: started.deduped }
     },
     'mcp.call': async (context) => {
       const server = configString(context.config['server'])

@@ -33,7 +33,8 @@ import type {
   FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
-  FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomSpaceMap,
+  FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
+  FaberLoomJsonValue,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
@@ -261,8 +262,10 @@ export interface FaberloomPanelInjected {
     connect: (id: string, from: string, to: string, condition?: string) => Promise<Result<FaberLoomWorkflowDetail>>
     disconnect: (id: string, edgeId: string) => Promise<Result<FaberLoomWorkflowDetail>>
     setStatus: (id: string, status: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    setConcurrency: (id: string, maxConcurrency: number | null) => Promise<Result<FaberLoomWorkflowDetail>>
     runs: (id: string) => Promise<Result<readonly FaberLoomWorkflowRunRow[]>>
     topology: () => Promise<Result<FaberLoomSpaceMap>>
+    links: () => Promise<Result<readonly FaberLoomWorkflowLink[]>>
     exportFlow: (id: string, format: string) => Promise<Result<FaberLoomWorkflowExport>>
   }
 }
@@ -2987,20 +2990,34 @@ function workflowsScreen() {
     const [title, setTitle] = useState('')
     const [configJson, setConfigJson] = useState('{}')
     const [flowName, setFlowName] = useState('')
+    const [scheduleRecurrence, setScheduleRecurrence] = useState('')
+    const [scheduleTimezone, setScheduleTimezone] = useState('')
+    const [scheduleFrom, setScheduleFrom] = useState('')
+    const [scheduleTo, setScheduleTo] = useState('')
+    const [scheduleDays, setScheduleDays] = useState('')
+    const [scheduleBusinessDays, setScheduleBusinessDays] = useState(false)
+    const [concurrency, setConcurrency] = useState('')
+    const [links, setLinks] = useState<readonly FaberLoomWorkflowLink[]>([])
     const dragging = useRef<string | null>(null)
 
     const accept = (result: Result<FaberLoomWorkflowDetail>): void => {
-      if (result.ok) { setDetail(result.value); setMessage(null) } else { setMessage(result.error.message) }
+      if (result.ok) {
+        setDetail(result.value)
+        setMessage(null)
+        setConcurrency(result.value.maxConcurrency === null ? '' : String(result.value.maxConcurrency))
+      } else setMessage(result.error.message)
     }
 
     useEffect(() => {
       void workflows.overview().then((result) => { if (result.ok) setFlows(result.value) }).catch(() => undefined)
       void workflows.topology().then((result) => { if (result.ok) setTopology(result.value) }).catch(() => undefined)
+      void workflows.links().then((result) => { if (result.ok) setLinks(result.value) }).catch(() => undefined)
     }, [])
     useEffect(() => {
       if (selected === null) { setDetail(null); setRuns([]); return }
       void workflows.detail(selected).then(accept)
       void workflows.runs(selected).then((result) => { if (result.ok) setRuns(result.value) })
+      void workflows.links().then((result) => { if (result.ok) setLinks(result.value) })
     }, [selected])
     useEffect(() => {
       if (detail === null) { setPositions({}); return }
@@ -3034,7 +3051,23 @@ function workflowsScreen() {
       }
       setNodeId(id)
       const node = detail?.nodesList.find(entry => entry.id === id)
-      if (node !== undefined) { setKind(node.kind); setTitle(node.title); setConfigJson(JSON.stringify(node.config, null, 2)) }
+      if (node !== undefined) {
+        setKind(node.kind)
+        setTitle(node.title)
+        setConfigJson(JSON.stringify(node.config, null, 2))
+        const config = node.config
+        setScheduleRecurrence(typeof config['recurrence'] === 'string' ? config['recurrence'] : '')
+        setScheduleTimezone(typeof config['timezone'] === 'string' ? config['timezone'] : '')
+        const window = config['window']
+        const windowObject = window !== null && typeof window === 'object' && !Array.isArray(window)
+          ? window as Readonly<Record<string, FaberLoomJsonValue>>
+          : undefined
+        setScheduleFrom(windowObject !== undefined && typeof windowObject['from'] === 'number' ? String(windowObject['from']) : '')
+        setScheduleTo(windowObject !== undefined && typeof windowObject['to'] === 'number' ? String(windowObject['to']) : '')
+        const days = config['days']
+        setScheduleDays(Array.isArray(days) ? days.filter((value): value is number => typeof value === 'number').join(', ') : '')
+        setScheduleBusinessDays(config['businessDays'] === true)
+      }
     }
 
     const act = (run: () => Promise<Result<FaberLoomWorkflowDetail>>): void => {
@@ -3063,6 +3096,29 @@ function workflowsScreen() {
     /** Point the picked mail node at one connection. */
     const setConnection = (flowId: string, id: string, connectionId: string): void => {
       act(() => workflows.updateNode(flowId, id, title, kind, JSON.stringify({ connectionId })))
+    }
+    /** Persist the schedule sub-form onto the picked trigger node. */
+    const saveSchedule = (flowId: string, id: string): void => {
+      const days = scheduleDays.split(',').map(part => Number(part.trim())).filter(value => Number.isInteger(value) && value >= 0 && value <= 6)
+      const from = scheduleFrom.trim().length === 0 ? undefined : Number(scheduleFrom)
+      const to = scheduleTo.trim().length === 0 ? undefined : Number(scheduleTo)
+      const config: Record<string, unknown> = { recurrence: scheduleRecurrence.trim().length === 0 ? '1h' : scheduleRecurrence.trim() }
+      const timezone = scheduleTimezone.trim()
+      if (timezone.length > 0) config['timezone'] = timezone
+      if (from !== undefined && to !== undefined && !Number.isNaN(from) && !Number.isNaN(to)) config['window'] = { from, to }
+      if (days.length > 0) config['days'] = days
+      if (scheduleBusinessDays) config['businessDays'] = true
+      act(() => workflows.updateNode(flowId, id, title, kind, JSON.stringify(config)))
+    }
+    /** Persist the flow's concurrency cap. */
+    const saveConcurrency = (flowId: string): void => {
+      const trimmed = concurrency.trim()
+      const value = trimmed.length === 0 ? null : Number(trimmed)
+      if (value !== null && (!Number.isSafeInteger(value) || value < 1)) {
+        setMessage(t('wf.concurrency.invalid'))
+        return
+      }
+      act(() => workflows.setConcurrency(flowId, value))
     }
     const STATUS_CLASSES: Readonly<Record<ReturnType<typeof statusTone>, string | undefined>> = {
       running: styles.workflowStatusRunning,
@@ -3097,6 +3153,9 @@ function workflowsScreen() {
                 <button type="button" onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
                 <button type="button" onClick={() => { void workflows.exportFlow(selected, 'json').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportJson')}</button>
                 <button type="button" onClick={() => { void workflows.exportFlow(selected, 'archify').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportArchify')}</button>
+                <input aria-label={t('wf.concurrency')} placeholder={t('wf.concurrency')} value={concurrency}
+                  onChange={(event) => { setConcurrency(event.target.value) }} />
+                <button type="button" onClick={() => { saveConcurrency(selected) }}>{t('wf.concurrency.save')}</button>
               </div>
               <svg className={styles.workflowCanvas} viewBox="0 0 900 320" onPointerMove={(event) => {
                 const id = dragging.current
@@ -3142,6 +3201,26 @@ function workflowsScreen() {
                     {connectionOptions.map(connection => <option key={connection.id} value={connection.id}>{connection.label}</option>)}
                   </select>
                 ) : null}
+                {kind === 'trigger.schedule' ? (
+                  <>
+                    <input aria-label={t('wf.schedule.recurrence')} placeholder={t('wf.schedule.recurrence')} value={scheduleRecurrence}
+                      onChange={(event) => { setScheduleRecurrence(event.target.value) }} />
+                    <input aria-label={t('wf.schedule.timezone')} placeholder={t('wf.schedule.timezone')} value={scheduleTimezone}
+                      onChange={(event) => { setScheduleTimezone(event.target.value) }} />
+                    <input aria-label={t('wf.schedule.from')} placeholder={t('wf.schedule.from')} value={scheduleFrom}
+                      onChange={(event) => { setScheduleFrom(event.target.value) }} />
+                    <input aria-label={t('wf.schedule.to')} placeholder={t('wf.schedule.to')} value={scheduleTo}
+                      onChange={(event) => { setScheduleTo(event.target.value) }} />
+                    <input aria-label={t('wf.schedule.days')} placeholder={t('wf.schedule.days')} value={scheduleDays}
+                      onChange={(event) => { setScheduleDays(event.target.value) }} />
+                    <label>
+                      <input type="checkbox" checked={scheduleBusinessDays}
+                        onChange={(event) => { setScheduleBusinessDays(event.target.checked) }} />
+                      {t('wf.schedule.businessDays')}
+                    </label>
+                    <button type="button" onClick={() => { if (nodeId !== null) saveSchedule(selected, nodeId) }}>{t('wf.schedule.save')}</button>
+                  </>
+                ) : null}
                 <button type="button" onClick={() => { addNode(selected) }}>{t('wf.addNode')}</button>
                 <button type="button" onClick={() => { if (nodeId !== null) saveNode(selected, nodeId) }}>{t('wf.save')}</button>
                 <button type="button" disabled={nodeId === null} onClick={() => { setConnectFrom(nodeId) }}>{t('wf.connect')}</button>
@@ -3165,6 +3244,16 @@ function workflowsScreen() {
                 <section className={styles.workflowSection}>
                   <h4>{t('wf.spaceMap')}</h4>
                   {topology?.spaces.map(space => <div key={space.id}>{space.title}</div>)}
+                </section>
+                <section className={styles.workflowSection}>
+                  <h4>{t('wf.links')}</h4>
+                  {links.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.links.empty')}</span> : links.map(link => (
+                    <div key={`${link.direction}:${link.routineId}:${link.workflowId}`}>
+                      {link.direction === 'routine-to-workflow'
+                        ? `${link.routineName} → ${link.workflowName}`
+                        : `${link.workflowName} → ${link.routineName}`}
+                    </div>
+                  ))}
                 </section>
               </div>
             </>

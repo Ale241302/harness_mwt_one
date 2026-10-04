@@ -95,7 +95,14 @@ function isTriggerNode(node: WorkFlowNode): node is TriggerNode {
 function triggerFor(node: TriggerNode): RoutineTriggerInput {
   switch (node.kind) {
     case 'trigger.manual': return { kind: 'manual' }
-    case 'trigger.schedule': return { kind: 'recurrence', match: node.config.recurrence }
+    case 'trigger.schedule': return {
+      kind: 'recurrence',
+      match: node.config.recurrence,
+      ...node.config.timezone === undefined ? {} : { timezone: node.config.timezone },
+      ...node.config.days === undefined ? {} : { days: node.config.days },
+      ...node.config.window === undefined ? {} : { window: node.config.window },
+      ...node.config.businessDays === undefined ? {} : { businessDays: node.config.businessDays },
+    }
     case 'trigger.email': return node.config.match === undefined ? { kind: 'email' } : { kind: 'email', match: node.config.match }
     case 'trigger.event': return node.config.match === undefined ? { kind: 'event' } : { kind: 'event', match: node.config.match }
     case 'trigger.board': return { kind: 'event', match: `${node.config.itemId ?? ''}@${node.config.status ?? ''}` }
@@ -244,6 +251,7 @@ export function compileWorkFlow(workflow: WorkFlow): RoutineDefinitionInput {
     expectedResult: definition.intent,
     permissions: [...definition.permissions],
     failurePolicy: definition.failurePolicy,
+    ...definition.maxConcurrency === undefined ? {} : { maxConcurrency: definition.maxConcurrency },
   }
 }
 
@@ -412,6 +420,24 @@ export class FaberLoomWorkflows extends Service {
    * @returns the updated work flow.
    */
   private async writeDefinition(
+    table: KvTable<WorkFlowId, WorkFlowRecord>,
+    id: WorkFlowId,
+    record: WorkFlowRecord,
+    definition: WorkFlowDefinition,
+  ): Promise<WorkFlow> {
+    return await this.persistDefinition(table, id, record, definition)
+  }
+
+  /**
+   * Store an edited definition, bumping the version, recompiling an active
+   * flow's routine, and returning the refreshed work flow.
+   * @param table - the workflows table handle.
+   * @param id - work flow id.
+   * @param record - the owned record the edit starts from.
+   * @param definition - the definition to store.
+   * @returns the updated work flow.
+   */
+  private async persistDefinition(
     table: KvTable<WorkFlowId, WorkFlowRecord>,
     id: WorkFlowId,
     record: WorkFlowRecord,
@@ -591,6 +617,20 @@ export class FaberLoomWorkflows extends Service {
   }
 
   /**
+   * Set or clear one work flow's concurrency cap, recompiling an active flow so
+   * the dispatcher sees the new limit.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param maxConcurrency - the cap, or null to clear it.
+   * @returns the updated work flow.
+   */
+  async setConcurrency(actor: WorkFlowActor, id: WorkFlowId, maxConcurrency: number | null): Promise<WorkFlow> {
+    const { table, record } = await this.requireOwned(actor, id)
+    const definition: WorkFlowDefinition = { ...record.definition, maxConcurrency: maxConcurrency ?? undefined }
+    return await this.persistDefinition(table, id, record, definition)
+  }
+
+  /**
    * Validate one work flow's graph without mutating it.
    * @param actor - the acting identity.
    * @param id - work flow id.
@@ -638,6 +678,30 @@ export class FaberLoomWorkflows extends Service {
       channel: 'workflow',
     })
     return { executionId: started.execution.id, deduped: started.deduped }
+  }
+
+  /**
+   * Start one run of an active work flow on behalf of a collaborator — a
+   * routine step that invokes this flow — deduping by the caller's key.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param request - the caller's idempotency key.
+   * @returns the started execution id and whether the engine deduped it.
+   * @throws when the flow has no activated routine.
+   */
+  async invoke(
+    actor: WorkFlowActor,
+    id: WorkFlowId,
+    request: { idempotencyKey: string },
+  ): Promise<{ executionId: string; deduped: boolean }> {
+    const { record } = await this.requireOwned(actor, id)
+    if (record.routineId === null) throw new Error(`faberloom: work flow ${id} is not active`)
+    const started = await this.ctx.faberloomRoutines.startExecution({
+      routineId: brandString<FaberLoomRoutineId>(record.routineId),
+      idempotencyKey: `workflow-invoke:${id}:${request.idempotencyKey}`,
+      channel: 'workflow',
+    })
+    return { executionId: String(started.execution.id), deduped: started.deduped }
   }
 
   /**

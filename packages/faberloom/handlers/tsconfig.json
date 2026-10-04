@@ -39,6 +39,9 @@
       "path": "../agents"
     },
     {
+      "path": "../workflows"
+    },
+    {
       "path": "../../core/tools"
     },
     {

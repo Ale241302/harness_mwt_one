@@ -76,7 +76,15 @@ export const MIN_WAIT_TIMEOUT_MS = 60_000
 function normalizeDefinition(input: RoutineDefinitionInput): RoutineDefinition {
   return {
     intent: input.intent,
-    triggers: input.triggers.map(trigger => ({ kind: trigger.kind, match: trigger.match ?? null })),
+    triggers: input.triggers.map(trigger => ({
+      kind: trigger.kind,
+      match: trigger.match ?? null,
+      timezone: trigger.timezone ?? null,
+      days: trigger.days !== undefined ? [...trigger.days] : [],
+      windowFrom: trigger.window?.from ?? null,
+      windowTo: trigger.window?.to ?? null,
+      businessDays: trigger.businessDays ?? false,
+    })),
     steps: input.steps.map(step => ({
       id: step.id,
       instruction: step.instruction,
@@ -93,6 +101,7 @@ function normalizeDefinition(input: RoutineDefinitionInput): RoutineDefinition {
     expectedResult: input.expectedResult,
     permissions: [...input.permissions],
     failurePolicy: input.failurePolicy,
+    maxConcurrency: input.maxConcurrency ?? null,
   }
 }
 
@@ -100,7 +109,15 @@ function normalizeDefinition(input: RoutineDefinitionInput): RoutineDefinition {
 function toStoredDefinition(definition: RoutineDefinition): RoutineRecord['definition'] {
   return {
     intent: definition.intent,
-    triggers: definition.triggers.map(trigger => ({ kind: trigger.kind, match: trigger.match })),
+    triggers: definition.triggers.map(trigger => ({
+      kind: trigger.kind,
+      match: trigger.match,
+      timezone: trigger.timezone,
+      days: [...trigger.days],
+      windowFrom: trigger.windowFrom,
+      windowTo: trigger.windowTo,
+      businessDays: trigger.businessDays,
+    })),
     steps: definition.steps.map(step => ({
       id: step.id,
       instruction: step.instruction,
@@ -117,12 +134,16 @@ function toStoredDefinition(definition: RoutineDefinition): RoutineRecord['defin
     expectedResult: definition.expectedResult,
     permissions: [...definition.permissions],
     failurePolicy: definition.failurePolicy,
+    maxConcurrency: definition.maxConcurrency,
   }
 }
 
 /** Validate a routine definition against the registered handlers. */
 function validateDefinition(definition: RoutineDefinition, handlers: ReadonlySet<string>): string[] {
   const problems: string[] = []
+  if (definition.maxConcurrency !== null && (!Number.isSafeInteger(definition.maxConcurrency) || definition.maxConcurrency < 1)) {
+    problems.push(`BAD_MAX_CONCURRENCY:${String(definition.maxConcurrency)}`)
+  }
   const known = new Set(definition.steps.map(step => step.id))
   for (const step of definition.steps) {
     if (!handlers.has(step.handler)) problems.push(`MISSING_HANDLER:${step.id}:${step.handler}`)

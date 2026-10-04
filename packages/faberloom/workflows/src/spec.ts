@@ -22,7 +22,7 @@ const nodeBase = { id: nodeId, title: z.string(), position }
 /** The discriminated node union: one member per kind. */
 const workFlowNode = z.discriminatedUnion('kind', [
   z.object({ ...nodeBase, kind: z.literal('trigger.manual'), config: z.object({}) }),
-  z.object({ ...nodeBase, kind: z.literal('trigger.schedule'), config: z.object({ recurrence: z.string(), timezone: z.string().optional() }) }),
+  z.object({ ...nodeBase, kind: z.literal('trigger.schedule'), config: z.object({ recurrence: z.string(), timezone: z.string().optional(), days: z.array(z.number()).optional(), window: z.object({ from: z.number(), to: z.number() }).optional(), businessDays: z.boolean().optional() }) }),
   z.object({ ...nodeBase, kind: z.literal('trigger.email'), config: z.object({ connectionId: z.string().optional(), mailbox: z.string().optional(), match: z.string().optional(), unseenOnly: z.boolean().optional() }) }),
   z.object({ ...nodeBase, kind: z.literal('trigger.event'), config: z.object({ sourceId: z.string().optional(), match: z.string().optional() }) }),
   z.object({ ...nodeBase, kind: z.literal('trigger.board'), config: z.object({ itemId: z.string().optional(), status: z.string().optional() }) }),
@@ -58,6 +58,7 @@ const workFlowDefinition = z.object({
   edges: z.array(workFlowEdge),
   permissions: z.array(z.string()),
   failurePolicy: z.enum(['stop', 'continue', 'review']),
+  maxConcurrency: z.number().optional(),
 })
 
 /** Personal or Space scope. */

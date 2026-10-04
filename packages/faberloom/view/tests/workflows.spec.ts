@@ -10,7 +10,7 @@ function flow(nodes: unknown[], edges: unknown[], overrides: Record<string, unkn
     status: 'draft',
     version: 1,
     definition: { intent: '', nodes, edges, permissions: [], failurePolicy: 'stop' },
-    routineId: null,
+    routineId: undefined,
     ...overrides,
   }
 }
@@ -29,6 +29,7 @@ function fakeWorkflows(detail = flow([], [])) {
     connect: vi.fn(async () => {}),
     disconnect: vi.fn(async () => {}),
     setStatus: vi.fn(async () => {}),
+    setConcurrency: vi.fn(async () => {}),
     runs: vi.fn(async () => [{ id: 'ex1', status: 'completed', routineVersion: 1, createdAt: 'c', updatedAt: 'u' }]),
   }
 }
@@ -36,9 +37,11 @@ function fakeWorkflows(detail = flow([], [])) {
 /** Boot the view service over a minimal hand-built context. */
 function harness(detail = flow([], [])) {
   const workflows = fakeWorkflows(detail)
+  const routines = { listRoutines: vi.fn(async () => [] as unknown[]) }
   const ctx = {
     faberloomSpaces: { list: vi.fn(async () => []) },
     faberloomAgents: { listAgents: vi.fn(async () => []) },
+    faberloomRoutines: routines,
     get: (name: string) => name === 'faberloomWorkflows' ? workflows : undefined,
     provide: () => {},
     reflect: { provide: () => {} },
@@ -47,7 +50,7 @@ function harness(detail = flow([], [])) {
     logger: { warn: vi.fn(), info: vi.fn() },
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
-  return { view, workflows }
+  return { view, workflows, routines }
 }
 
 describe('FaberLoomViewService workflows', () => {
@@ -137,5 +140,71 @@ describe('FaberLoomViewService workflows', () => {
       logger: { warn: vi.fn(), info: vi.fn() },
     } as unknown as Context, { ownerId: 'owner@x', role: 'admin', readOnly: false })
     await expect(bare.workflowOverview()).rejects.toThrow('Workflows no está montado')
+  })
+
+  it('sets and clears one flow concurrency cap', async () => {
+    const { view, workflows } = harness()
+    await view.setWorkflowConcurrency('wf1', 3)
+    expect(workflows.setConcurrency).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'wf1', 3)
+    await view.setWorkflowConcurrency('wf1', null)
+    expect(workflows.setConcurrency).toHaveBeenLastCalledWith(expect.anything(), 'wf1', null)
+  })
+
+  it('reports the concurrency cap in the flow detail', async () => {
+    const detail = flow([], [], {
+      routineId: 'r1',
+      definition: { intent: '', nodes: [], edges: [], permissions: [], failurePolicy: 'stop', maxConcurrency: 4 },
+    })
+    const { view } = harness(detail)
+    expect((await view.workflowDetail('wf1')).maxConcurrency).toBe(4)
+  })
+
+  it('maps a routine schedule trigger into its detail', async () => {
+    const { view, routines } = harness()
+    routines.listRoutines.mockResolvedValue([
+      {
+        id: 'r1', name: 'Correo 12h', status: 'active', version: 1, versions: [1],
+        definition: {
+          intent: 'revisar correo', expectedResult: '', permissions: [], failurePolicy: 'stop', maxConcurrency: 2,
+          triggers: [{ kind: 'recurrence', match: 'every:12h', timezone: 'Europe/Madrid', days: [1, 2], windowFrom: 8, windowTo: 18, businessDays: true }],
+          steps: [{ id: 's1', instruction: 'hazlo', handler: 'workflow', dependsOn: [], waitFor: null, effect: false, config: { workflowId: 'wf2' } }],
+        },
+      },
+    ])
+    expect(await view.routineDetail('r1')).toMatchObject({
+      triggerKind: 'recurrence',
+      triggerMatch: 'every:12h',
+      triggerTimezone: 'Europe/Madrid',
+      triggerDays: [1, 2],
+      triggerWindowFrom: 8,
+      triggerWindowTo: 18,
+      triggerBusinessDays: true,
+      maxConcurrency: 2,
+    })
+  })
+
+  it('lists routine ↔ flow links in both directions', async () => {
+    const { view, workflows, routines } = harness()
+    workflows.list.mockResolvedValue([
+      flow([], [], { id: 'wf1', name: 'Anti-spam', routineId: 'r1' }),
+      flow([], [], { id: 'wf2', name: 'Informe' }),
+    ])
+    routines.listRoutines.mockResolvedValue([
+      {
+        id: 'r1', name: 'Vigía', status: 'active', version: 1, versions: [1],
+        definition: {
+          intent: '', expectedResult: '', permissions: [], failurePolicy: 'stop', maxConcurrency: null,
+          triggers: [],
+          steps: [
+            { id: 's1', instruction: 'invoca', handler: 'workflow', dependsOn: [], waitFor: null, effect: false, config: { workflowId: 'wf2' } },
+            { id: 's2', instruction: 'nada', handler: 'step', dependsOn: [], waitFor: null, effect: false, config: {} },
+          ],
+        },
+      },
+    ])
+    expect(await view.routineWorkflowLinks()).toEqual([
+      { routineId: 'r1', routineName: 'Vigía', workflowId: 'wf2', workflowName: 'Informe', direction: 'routine-to-workflow' },
+      { routineId: 'r1', routineName: 'Vigía', workflowId: 'wf1', workflowName: 'Anti-spam', direction: 'workflow-to-routine' },
+    ])
   })
 })

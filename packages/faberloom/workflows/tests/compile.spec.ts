@@ -258,6 +258,34 @@ describe('compileWorkFlow', () => {
     ])
   })
 
+  it('F6 — compiles a schedule trigger with timezone, window, days, and business days', () => {
+    const flow = workflow(definition(
+      [node('t1', 'trigger.schedule', {
+        recurrence: '0 7 * * 1-5',
+        timezone: 'Europe/Madrid',
+        days: [1, 2, 3, 4, 5],
+        window: { from: 8, to: 18 },
+        businessDays: true,
+      })],
+      [],
+    ))
+    expect(compileWorkFlow(flow).triggers).toEqual([{
+      kind: 'recurrence',
+      match: '0 7 * * 1-5',
+      timezone: 'Europe/Madrid',
+      days: [1, 2, 3, 4, 5],
+      window: { from: 8, to: 18 },
+      businessDays: true,
+    }])
+  })
+
+  it('F6 — carries the flow concurrency cap into the compiled routine', () => {
+    const capped = definition([node('a0', 'notify', { kind: 'board' })], [], { maxConcurrency: 2 })
+    expect(compileWorkFlow(workflow(capped)).maxConcurrency).toBe(2)
+    const uncapped = definition([node('a0', 'notify', { kind: 'board' })], [])
+    expect(compileWorkFlow(workflow(uncapped)).maxConcurrency).toBeUndefined()
+  })
+
   it('maps every action kind to its handler and effect flag', () => {
     const actions: [WorkFlowNodeKind, Record<string, unknown>][] = [
       ['agent', { agentId: 'a', instruction: 'i' }],

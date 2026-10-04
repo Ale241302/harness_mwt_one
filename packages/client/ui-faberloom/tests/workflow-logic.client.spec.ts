@@ -44,7 +44,7 @@ describe('workflow canvas logic', () => {
     expect(defaultConfigFor('transform')).toEqual({ expression: '' })
     expect(defaultConfigFor('wait')).toEqual({ seconds: 0 })
     expect(defaultConfigFor('notify')).toEqual({ kind: 'board' })
-    expect(defaultConfigFor('trigger.schedule')).toEqual({ recurrence: '1h' })
+    expect(defaultConfigFor('trigger.schedule')).toEqual({ recurrence: '1h', timezone: 'UTC', businessDays: false })
     expect(defaultConfigFor('trigger.email')).toEqual({ match: '' })
     expect(defaultConfigFor('unknown.kind')).toEqual({})
   })

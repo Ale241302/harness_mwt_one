@@ -262,8 +262,10 @@ export function apply(ctx: ClientContext): void {
         connect: (id, from, to, condition) => ctx.remote.faberloomView.connect(id, from, to, condition),
         disconnect: (id, edgeId) => ctx.remote.faberloomView.disconnect(id, edgeId),
         setStatus: (id, status) => ctx.remote.faberloomView.setWorkflowStatus(id, status),
+        setConcurrency: (id, maxConcurrency) => ctx.remote.faberloomView.setWorkflowConcurrency(id, maxConcurrency),
         runs: id => ctx.remote.faberloomView.workflowRuns(id),
         topology: () => ctx.remote.faberloomView.spaceTopology(),
+        links: () => ctx.remote.faberloomView.routineWorkflowLinks(),
         exportFlow: (id, format) => ctx.remote.faberloomView.exportWorkflow(id, format),
       },
     }

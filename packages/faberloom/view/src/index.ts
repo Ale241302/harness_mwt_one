@@ -21,7 +21,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
-import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput } from '@deepseek-ai/dsh-faberloom-routines'
+import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
@@ -54,6 +54,7 @@ import type {
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
+  FaberLoomWorkflowLink,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -382,6 +383,50 @@ function teachingRow(teaching: FaberLoomTeaching): FaberLoomTeachingRow {
 }
 
 /**
+ * Rebuild a stored routine trigger's authoring input, preserving every schedule
+ * field so a save that touches nothing else keeps the cadence intact.
+ * @param trigger - the stored trigger.
+ * @returns the authoring input.
+ */
+function triggerToInput(trigger: RoutineTrigger): RoutineTriggerInput {
+  return {
+    kind: trigger.kind,
+    ...trigger.match === null || trigger.match.length === 0 ? {} : { match: trigger.match },
+    ...trigger.timezone === null ? {} : { timezone: trigger.timezone },
+    ...trigger.days.length === 0 ? {} : { days: [...trigger.days] },
+    ...trigger.windowFrom === null && trigger.windowTo === null
+      ? {}
+      : { window: { from: trigger.windowFrom ?? 0, to: trigger.windowTo ?? 24 } },
+    ...trigger.businessDays ? { businessDays: true } : {},
+  }
+}
+
+/**
+ * Build one routine trigger from the caller's fields, keeping the stored
+ * trigger's schedule values for every field the caller left absent.
+ * @param input - the caller's routine save input.
+ * @param base - the stored trigger being replaced, when any.
+ * @returns the authoring input.
+ */
+function triggerFromSave(input: RoutineSaveInput, base: RoutineTrigger | undefined): RoutineTriggerInput {
+  const timezone = input.triggerTimezone !== undefined ? input.triggerTimezone : base?.timezone ?? null
+  const days = input.triggerDays !== undefined ? input.triggerDays : base?.days ?? []
+  const from = input.triggerWindow !== undefined ? input.triggerWindow?.from ?? null : base?.windowFrom ?? null
+  const to = input.triggerWindow !== undefined ? input.triggerWindow?.to ?? null : base?.windowTo ?? null
+  const businessDays = input.triggerBusinessDays !== undefined ? input.triggerBusinessDays : base?.businessDays ?? false
+  return {
+    kind: (input.triggerKind ?? base?.kind ?? 'manual') as RoutineTriggerInput['kind'],
+    ...input.triggerMatch === undefined || input.triggerMatch === null || input.triggerMatch.length === 0
+      ? {}
+      : { match: input.triggerMatch },
+    ...timezone === null || timezone.length === 0 ? {} : { timezone },
+    ...days.length === 0 ? {} : { days: [...days] },
+    ...from === null && to === null ? {} : { window: { from: from ?? 0, to: to ?? 24 } },
+    ...businessDays ? { businessDays: true } : {},
+  }
+}
+
+/**
  * Workspace view (`ctx.faberloomView`) over the mounted product services and the
  * agent-memory core. Reads and writes both return the fresh overview so the
  * panels refresh from one value instead of recomputing.
@@ -648,6 +693,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...this.workflowRow(flow),
       valid: verdict.ok,
       problems: [...verdict.problems],
+      maxConcurrency: flow.definition.maxConcurrency ?? null,
       nodesList: flow.definition.nodes.map(node => ({
         id: node.id,
         kind: node.kind,
@@ -799,6 +845,18 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Set or clear one work flow's concurrency cap.
+   * @param id - work flow id.
+   * @param maxConcurrency - the cap, or null to clear it.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('setWorkflowConcurrency')
+  async setWorkflowConcurrency(id: string, maxConcurrency: number | null): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().setConcurrency(this.workflowActor(), id as WorkFlowId, maxConcurrency)
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
    * List one work flow's executions.
    * @param id - work flow id.
    * @returns the run history rows.
@@ -812,6 +870,49 @@ export class FaberLoomViewService extends TypertRemoteService {
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,
     }))
+  }
+
+  /**
+   * List every routine ↔ work flow link the owner holds, in both directions:
+   * a routine step with handler `workflow` invoking a flow, and the compiled
+   * routine an active flow drives.
+   * @returns the links, routines first.
+   */
+  @Remote('routineWorkflowLinks')
+  async routineWorkflowLinks(): Promise<readonly FaberLoomWorkflowLink[]> {
+    const actor = this.workflowActor()
+    const [flows, routines] = await Promise.all([
+      this.workflowsService().list(actor),
+      this.ctx.faberloomRoutines.listRoutines(actor.id),
+    ])
+    const routineNameById = new Map(routines.map(routine => [String(routine.id), routine.name]))
+    const flowNameById = new Map(flows.map(flow => [String(flow.id), flow.name]))
+    const links: FaberLoomWorkflowLink[] = []
+    for (const routine of routines) {
+      for (const step of routine.definition.steps) {
+        if (step.handler !== 'workflow') continue
+        const workflowId = step.config['workflowId']
+        if (typeof workflowId !== 'string' || workflowId.length === 0) continue
+        links.push({
+          routineId: String(routine.id),
+          routineName: routine.name,
+          workflowId,
+          workflowName: flowNameById.get(workflowId) ?? '',
+          direction: 'routine-to-workflow',
+        })
+      }
+    }
+    for (const flow of flows) {
+      if (flow.routineId === undefined) continue
+      links.push({
+        routineId: flow.routineId,
+        routineName: routineNameById.get(flow.routineId) ?? '',
+        workflowId: String(flow.id),
+        workflowName: flow.name,
+        direction: 'workflow-to-routine',
+      })
+    }
+    return links
   }
 
   /**
@@ -2645,6 +2746,12 @@ export class FaberLoomViewService extends TypertRemoteService {
       intent: routine.definition.intent,
       triggerKind: trigger?.kind ?? 'manual',
       triggerMatch: trigger?.match ?? null,
+      triggerTimezone: trigger?.timezone ?? null,
+      triggerDays: trigger === undefined ? [] : [...trigger.days],
+      triggerWindowFrom: trigger?.windowFrom ?? null,
+      triggerWindowTo: trigger?.windowTo ?? null,
+      triggerBusinessDays: trigger?.businessDays ?? false,
+      maxConcurrency: routine.definition.maxConcurrency,
       steps: routine.definition.steps.map(step => ({
         id: step.id,
         instruction: step.instruction,
@@ -2685,20 +2792,15 @@ export class FaberLoomViewService extends TypertRemoteService {
       definition: {
         intent: input.intent ?? current.intent,
         triggers: input.triggerKind === undefined && input.triggerMatch === undefined
-          ? current.triggers.map(trigger => ({
-            kind: trigger.kind,
-            ...trigger.match === null || trigger.match.length === 0 ? {} : { match: trigger.match },
-          }))
-          : [{
-            kind: (input.triggerKind ?? current.triggers[0]?.kind ?? 'manual') as 'manual' | 'event' | 'email' | 'date' | 'recurrence',
-            ...(input.triggerMatch === undefined || input.triggerMatch === null || input.triggerMatch.length === 0
-              ? {}
-              : { match: input.triggerMatch }),
-          }],
+          ? current.triggers.map(triggerToInput)
+          : [triggerFromSave(input, current.triggers[0])],
         steps: input.steps === undefined ? current.steps.map(mapStep) : input.steps.map(mapStep),
         expectedResult: input.expectedResult ?? current.expectedResult,
         permissions: input.permissions === undefined ? [...current.permissions] : [...input.permissions],
         failurePolicy: (input.failurePolicy ?? current.failurePolicy) as 'stop' | 'continue' | 'review',
+        ...(input.maxConcurrency === undefined
+          ? current.maxConcurrency === null ? {} : { maxConcurrency: current.maxConcurrency }
+          : input.maxConcurrency === null ? {} : { maxConcurrency: input.maxConcurrency }),
       },
     })
     return await this.overview()

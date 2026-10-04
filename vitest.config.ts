@@ -33,6 +33,9 @@ const windowsUnsupportedPackages = process.platform === 'win32'
       'packages/terminal/terminal-bash',
       'packages/experimental/ptc-runtime-python',
       'packages/sandbox/sandbox-local',
+      // The stagehand-native worker fixture loads a native addon through a
+      // customization hook that throws on Windows; the Linux lanes hold it.
+      'packages/experimental/browser-use-stagehand-native',
       // OpenSSH multiplexing and Unix-socket helper streams require POSIX endpoints.
       'packages/ssh/*',
     ]

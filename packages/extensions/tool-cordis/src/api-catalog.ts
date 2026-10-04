@@ -1847,10 +1847,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed flow detail.',
       },
       {
+        signature: '@Remote(\'setWorkflowConcurrency\') async setWorkflowConcurrency(id: string, maxConcurrency: number | null): Promise<FaberLoomWorkflowDetail>',
+        description: 'Set or clear one work flow\'s concurrency cap.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'maxConcurrency', description: 'the cap, or null to clear it.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
         signature: '@Remote(\'workflowRuns\') async workflowRuns(id: string): Promise<readonly FaberLoomWorkflowRunRow[]>',
         description: 'List one work flow\'s executions.',
         parameters: [{ name: 'id', description: 'work flow id.' }],
         returns: 'the run history rows.',
+      },
+      {
+        signature: '@Remote(\'routineWorkflowLinks\') async routineWorkflowLinks(): Promise<readonly FaberLoomWorkflowLink[]>',
+        description: 'List every routine ↔ work flow link the owner holds, in both directions: a routine step with handler `workflow` invoking a flow, and the compiled routine an active flow drives.',
+        parameters: [],
+        returns: 'the links, routines first.',
       },
       {
         signature: '@Remote(\'spaceTopology\') async spaceTopology(): Promise<FaberLoomSpaceMap>',
@@ -2486,6 +2498,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when the graph is invalid and the target status is `active`.'],
       },
       {
+        signature: 'async setConcurrency(actor: WorkFlowActor, id: WorkFlowId, maxConcurrency: number | null): Promise<WorkFlow>',
+        description: 'Set or clear one work flow\'s concurrency cap, recompiling an active flow so the dispatcher sees the new limit.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'maxConcurrency', description: 'the cap, or null to clear it.' }],
+        returns: 'the updated work flow.',
+      },
+      {
         signature: 'async validate(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlowValidation>',
         description: 'Validate one work flow\'s graph without mutating it.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
@@ -2507,6 +2525,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'async runNow(actor: WorkFlowActor, id: WorkFlowId): Promise<{ executionId: string; deduped: boolean }>',
         description: 'Start one manual execution of an active work flow.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the started execution id and whether the engine deduped it.',
+        throws: ['when the flow has no activated routine.'],
+      },
+      {
+        signature: 'async invoke( actor: WorkFlowActor, id: WorkFlowId, request: { idempotencyKey: string }, ): Promise<{ executionId: string; deduped: boolean }>',
+        description: 'Start one run of an active work flow on behalf of a collaborator — a routine step that invokes this flow — deduping by the caller\'s key.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'request', description: 'the caller\'s idempotency key.' }],
         returns: 'the started execution id and whether the engine deduped it.',
         throws: ['when the flow has no activated routine.'],
       },
@@ -6430,7 +6455,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutineDetail',
-    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n}',
+    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly triggerTimezone: string | null;\n    readonly triggerDays: readonly number[];\n    readonly triggerWindowFrom: number | null;\n    readonly triggerWindowTo: number | null;\n    readonly triggerBusinessDays: boolean;\n    readonly maxConcurrency: number | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n}',
   },
   {
     name: 'FaberLoomRoutineId',
@@ -6526,7 +6551,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomWorkflowDetail',
-    declaration: 'export interface FaberLoomWorkflowDetail extends FaberLoomWorkflowRow {\n    readonly valid: boolean;\n    readonly problems: readonly string[];\n    readonly nodesList: readonly FaberLoomWorkflowNodeRow[];\n    readonly edgesList: readonly FaberLoomWorkflowEdgeRow[];\n}',
+    declaration: 'export interface FaberLoomWorkflowDetail extends FaberLoomWorkflowRow {\n    readonly valid: boolean;\n    readonly problems: readonly string[];\n    readonly maxConcurrency: number | null;\n    readonly nodesList: readonly FaberLoomWorkflowNodeRow[];\n    readonly edgesList: readonly FaberLoomWorkflowEdgeRow[];\n}',
   },
   {
     name: 'FaberLoomWorkflowEdgeRow',
@@ -6535,6 +6560,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomWorkflowExport',
     declaration: 'export interface FaberLoomWorkflowExport {\n    readonly format: string;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowLink',
+    declaration: 'export interface FaberLoomWorkflowLink {\n    readonly routineId: string;\n    readonly routineName: string;\n    readonly workflowId: string;\n    readonly workflowName: string;\n    readonly direction: \'routine-to-workflow\' | \'workflow-to-routine\';\n}',
   },
   {
     name: 'FaberLoomWorkflowNodeRow',
@@ -7470,11 +7499,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineDefinition',
-    declaration: 'export interface RoutineDefinition {\n    readonly intent: string;\n    readonly triggers: readonly RoutineTrigger[];\n    readonly steps: readonly RoutineStep[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: \'stop\' | \'continue\' | \'review\';\n}',
+    declaration: 'export interface RoutineDefinition {\n    readonly intent: string;\n    readonly triggers: readonly RoutineTrigger[];\n    readonly steps: readonly RoutineStep[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: \'stop\' | \'continue\' | \'review\';\n    readonly maxConcurrency: number | null;\n}',
   },
   {
     name: 'RoutineDefinitionInput',
-    declaration: 'export interface RoutineDefinitionInput {\n    readonly intent: string;\n    readonly triggers: readonly RoutineTriggerInput[];\n    readonly steps: readonly RoutineStepInput[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: \'stop\' | \'continue\' | \'review\';\n}',
+    declaration: 'export interface RoutineDefinitionInput {\n    readonly intent: string;\n    readonly triggers: readonly RoutineTriggerInput[];\n    readonly steps: readonly RoutineStepInput[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: \'stop\' | \'continue\' | \'review\';\n    readonly maxConcurrency?: number;\n}',
   },
   {
     name: 'RoutineInput',
@@ -7482,7 +7511,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineSaveInput',
-    declaration: 'export interface RoutineSaveInput {\n    readonly name?: string;\n    readonly intent?: string;\n    readonly triggerKind?: string;\n    readonly triggerMatch?: string | null;\n    readonly steps?: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult?: string;\n    readonly permissions?: readonly string[];\n    readonly failurePolicy?: string;\n}',
+    declaration: 'export interface RoutineSaveInput {\n    readonly name?: string;\n    readonly intent?: string;\n    readonly triggerKind?: string;\n    readonly triggerMatch?: string | null;\n    readonly triggerTimezone?: string | null;\n    readonly triggerDays?: readonly number[];\n    readonly triggerWindow?: {\n        readonly from: number;\n        readonly to: number;\n    } | null;\n    readonly triggerBusinessDays?: boolean;\n    readonly maxConcurrency?: number | null;\n    readonly steps?: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult?: string;\n    readonly permissions?: readonly string[];\n    readonly failurePolicy?: string;\n}',
   },
   {
     name: 'RoutineStatus',
@@ -7498,11 +7527,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineTrigger',
-    declaration: 'export interface RoutineTrigger {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match: string | null;\n}',
+    declaration: 'export interface RoutineTrigger {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match: string | null;\n    readonly timezone: string | null;\n    readonly days: readonly number[];\n    readonly windowFrom: number | null;\n    readonly windowTo: number | null;\n    readonly businessDays: boolean;\n}',
   },
   {
     name: 'RoutineTriggerInput',
-    declaration: 'export interface RoutineTriggerInput {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match?: string;\n}',
+    declaration: 'export interface RoutineTriggerInput {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match?: string;\n    readonly timezone?: string;\n    readonly days?: readonly number[];\n    readonly window?: {\n        readonly from: number;\n        readonly to: number;\n    };\n    readonly businessDays?: boolean;\n}',
   },
   {
     name: 'RunnerFailureRule',
@@ -9126,7 +9155,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkFlowDefinition',
-    declaration: 'export interface WorkFlowDefinition {\n    readonly intent: string;\n    readonly nodes: readonly WorkFlowNode[];\n    readonly edges: readonly WorkFlowEdge[];\n    readonly permissions: readonly string[];\n    readonly failurePolicy: WorkFlowFailurePolicy;\n}',
+    declaration: 'export interface WorkFlowDefinition {\n    readonly intent: string;\n    readonly nodes: readonly WorkFlowNode[];\n    readonly edges: readonly WorkFlowEdge[];\n    readonly permissions: readonly string[];\n    readonly failurePolicy: WorkFlowFailurePolicy;\n    readonly maxConcurrency?: number | undefined;\n}',
   },
   {
     name: 'WorkFlowEdge',
@@ -9158,7 +9187,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkFlowNodeConfigMap',
-    declaration: 'export interface WorkFlowNodeConfigMap {\n    \'trigger.manual\': Record<string, never>;\n    \'trigger.schedule\': {\n        readonly recurrence: string;\n        readonly timezone?: string | undefined;\n    };\n    \'trigger.email\': {\n        readonly connectionId?: string | undefined;\n        readonly mailbox?: string | undefined;\n        readonly match?: string | undefined;\n        readonly unseenOnly?: boolean | undefined;\n    };\n    \'trigger.event\': {\n        readonly sourceId?: string | undefined;\n        readonly match?: string | undefined;\n    };\n    \'trigger.board\': {\n        readonly itemId?: string | undefined;\n        readonly status?: string | undefined;\n    };\n    \'agent\': {\n        readonly agentId: string;\n        readonly instruction: string;\n        readonly useSpaceContext?: boolean | undefined;\n    };\n    \'skill\': {\n        readonly skillName: string;\n        readonly arguments?: string | undefined;\n    };\n    \'mcp.call\': {\n        readonly server: string;\n        readonly tool: string;\n        readonly arguments?: Record<string, unknown> | undefined;\n    };\n    \'imap.action\': {\n        readonly connectionId?: string | undefined;\n        readonly op: \'search\' | \'read\' | \'mark\' | \'move\' | \'delete\' | \'flag\';\n        readonly query?: string | undefined;\n        readonly folder?: string | undefined;\n    };\n    \'smtp.send\': {\n        readonly connectionId?: string | undefined;\n        readonly to: readonly string[];\n        readonly subject: string;\n        readonly tem /* …truncated — full shape in source */',
+    declaration: 'export interface WorkFlowNodeConfigMap {\n    \'trigger.manual\': Record<string, never>;\n    \'trigger.schedule\': {\n        readonly recurrence: string;\n        readonly timezone?: string | undefined;\n        readonly days?: readonly number[] | undefined;\n        readonly window?: {\n            readonly from: number;\n            readonly to: number;\n        } | undefined;\n        readonly businessDays?: boolean | undefined;\n    };\n    \'trigger.email\': {\n        readonly connectionId?: string | undefined;\n        readonly mailbox?: string | undefined;\n        readonly match?: string | undefined;\n        readonly unseenOnly?: boolean | undefined;\n    };\n    \'trigger.event\': {\n        readonly sourceId?: string | undefined;\n        readonly match?: string | undefined;\n    };\n    \'trigger.board\': {\n        readonly itemId?: string | undefined;\n        readonly status?: string | undefined;\n    };\n    \'agent\': {\n        readonly agentId: string;\n        readonly instruction: string;\n        readonly useSpaceContext?: boolean | undefined;\n    };\n    \'skill\': {\n        readonly skillName: string;\n        readonly arguments?: string | undefined;\n    };\n    \'mcp.call\': {\n        readonly server: string;\n        readonly tool: string;\n        readonly arguments?: Record<string, unknown> | undefined;\n    };\n    \'imap.action\': {\n        readonly connectionId?: string | undefined;\n        readonly op: \'search\' | \'read\' | \'mark\' | \'move\' | \'delete\' | \'flag\';\n        readonly query?: string | un /* …truncated — full shape in source */',
   },
   {
     name: 'WorkFlowNodeId',

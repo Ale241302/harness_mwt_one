@@ -38,7 +38,17 @@ export interface WorkFlowNodeConfigMap {
   /** Starts the flow by hand. */
   'trigger.manual': Record<string, never>
   /** Starts the flow on a recurrence or calendar cadence. */
-  'trigger.schedule': { readonly recurrence: string; readonly timezone?: string | undefined }
+  'trigger.schedule': {
+    readonly recurrence: string
+    /** IANA timezone the cadence is evaluated in; omitted means UTC. */
+    readonly timezone?: string | undefined
+    /** Allowed local weekdays (0 = Sunday … 6 = Saturday); omitted allows every day. */
+    readonly days?: readonly number[] | undefined
+    /** Allowed local hour window; omitted allows the whole day. */
+    readonly window?: { readonly from: number; readonly to: number } | undefined
+    /** When true, local Saturday and Sunday are skipped. */
+    readonly businessDays?: boolean | undefined
+  }
   /** Starts the flow for a new mailbox message. */
   'trigger.email': { readonly connectionId?: string | undefined; readonly mailbox?: string | undefined; readonly match?: string | undefined; readonly unseenOnly?: boolean | undefined }
   /** Starts the flow for a delivered event. */
@@ -119,6 +129,11 @@ export interface WorkFlowDefinition {
   readonly permissions: readonly string[]
   /** What to do when a node fails. */
   readonly failurePolicy: WorkFlowFailurePolicy
+  /**
+   * Most executions of the compiled routine the dispatcher lets run or wait at
+   * the same time, or `undefined` for no limit.
+   */
+  readonly maxConcurrency?: number | undefined
 }
 
 /** One versioned work flow as consumers read it. */

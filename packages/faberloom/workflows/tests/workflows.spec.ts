@@ -140,6 +140,31 @@ describe('FaberLoomWorkflows', () => {
     await expect(workflows.setStatus(OWNER, 'missing' as WorkFlowId, 'draft')).rejects.toThrow('not found')
   })
 
+  it('F6 · sets and clears the concurrency cap, recompiling an active flow', async () => {
+    const { workflows, routines } = await harness()
+    const flow = await workflows.create(OWNER, { name: 'cap', definition: simple })
+    expect((await workflows.setConcurrency(OWNER, flow.id, 2)).definition.maxConcurrency).toBe(2)
+    const active = await workflows.setStatus(OWNER, flow.id, 'active')
+    const recompiled = await workflows.setConcurrency(OWNER, flow.id, 3)
+    expect(recompiled.definition.maxConcurrency).toBe(3)
+    expect((await routines.getRoutine(active.routineId as never)).definition.maxConcurrency).toBe(3)
+    expect((await workflows.setConcurrency(OWNER, flow.id, null)).definition.maxConcurrency).toBeUndefined()
+    await expect(workflows.setConcurrency(OTHER, flow.id, 1)).rejects.toThrow('access denied')
+  })
+
+  it('F6 · invokes an active flow from a collaborator and refuses an inactive one', async () => {
+    const { workflows, routines } = await harness()
+    const flow = await workflows.create(OWNER, { name: 'puente', definition: simple })
+    await expect(workflows.invoke(OWNER, flow.id, { idempotencyKey: 'x' })).rejects.toThrow('is not active')
+    const active = await workflows.setStatus(OWNER, flow.id, 'active')
+    const started = await workflows.invoke(OWNER, flow.id, { idempotencyKey: 'paso-1' })
+    expect(started.deduped).toBe(false)
+    expect(String((await routines.getExecution(started.executionId as never)).routineId)).toBe(active.routineId)
+    const again = await workflows.invoke(OWNER, flow.id, { idempotencyKey: 'paso-1' })
+    expect(again).toMatchObject({ deduped: true, executionId: started.executionId })
+    await expect(workflows.invoke(OTHER, flow.id, { idempotencyKey: 'x' })).rejects.toThrow('access denied')
+  })
+
   it('F2 · editing an active flow versions the routine and migrates waiting executions', async () => {
     const { workflows, routines } = await harness()
     const waiting: WorkFlowDefinition = {

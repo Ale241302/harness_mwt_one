@@ -1359,11 +1359,27 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('setWorkflowStatus') async setWorkflowStatus(id: string, status: string): Promise<FaberLoomWorkflowDetail>
 
 /**
+ * Set or clear one work flow's concurrency cap.
+ * @param id - work flow id.
+ * @param maxConcurrency - the cap, or null to clear it.
+ * @returns the refreshed flow detail.
+ */
+@Remote('setWorkflowConcurrency') async setWorkflowConcurrency(id: string, maxConcurrency: number | null): Promise<FaberLoomWorkflowDetail>
+
+/**
  * List one work flow's executions.
  * @param id - work flow id.
  * @returns the run history rows.
  */
 @Remote('workflowRuns') async workflowRuns(id: string): Promise<readonly FaberLoomWorkflowRunRow[]>
+
+/**
+ * List every routine ↔ work flow link the owner holds, in both directions:
+ * a routine step with handler `workflow` invoking a flow, and the compiled
+ * routine an active flow drives.
+ * @returns the links, routines first.
+ */
+@Remote('routineWorkflowLinks') async routineWorkflowLinks(): Promise<readonly FaberLoomWorkflowLink[]>
 
 /**
  * Read the Space connectivity map for the palette and canvas.
@@ -2210,6 +2226,16 @@ async setTrigger( actor: WorkFlowActor, id: WorkFlowId, input: { kind: WorkFlowN
 async setStatus(actor: WorkFlowActor, id: WorkFlowId, status: WorkFlowStatus): Promise<WorkFlow>
 
 /**
+ * Set or clear one work flow's concurrency cap, recompiling an active flow so
+ * the dispatcher sees the new limit.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param maxConcurrency - the cap, or null to clear it.
+ * @returns the updated work flow.
+ */
+async setConcurrency(actor: WorkFlowActor, id: WorkFlowId, maxConcurrency: number | null): Promise<WorkFlow>
+
+/**
  * Validate one work flow's graph without mutating it.
  * @param actor - the acting identity.
  * @param id - work flow id.
@@ -2241,6 +2267,17 @@ async remove(actor: WorkFlowActor, id: WorkFlowId): Promise<boolean>
  * @throws when the flow has no activated routine.
  */
 async runNow(actor: WorkFlowActor, id: WorkFlowId): Promise<{ executionId: string; deduped: boolean }>
+
+/**
+ * Start one run of an active work flow on behalf of a collaborator — a
+ * routine step that invokes this flow — deduping by the caller's key.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param request - the caller's idempotency key.
+ * @returns the started execution id and whether the engine deduped it.
+ * @throws when the flow has no activated routine.
+ */
+async invoke( actor: WorkFlowActor, id: WorkFlowId, request: { idempotencyKey: string }, ): Promise<{ executionId: string; deduped: boolean }>
 
 /**
  * List one work flow's executions, oldest first.

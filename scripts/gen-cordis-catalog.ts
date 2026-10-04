@@ -445,6 +445,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FaberLoomWorkflowEdgeRow: 'faberloom.md',
   FaberLoomWorkflowRunRow: 'faberloom.md',
   FaberLoomWorkflowExport: 'faberloom.md',
+  FaberLoomWorkflowLink: 'faberloom.md',
   FaberLoomJsonValue: 'faberloom.md',
   Agent: 'core.md',
   AgentCancelCause: 'core.md',

@@ -25,14 +25,35 @@ export type ExecutionStatus = 'running' | 'waiting' | 'completed' | 'failed' | '
 export interface RoutineTrigger {
   /** Trigger kind. */
   readonly kind: 'manual' | 'event' | 'email' | 'date' | 'recurrence'
-  /** Case-insensitive subject pattern, or `null`. */
+  /** Case-insensitive subject pattern, cadence, cron expression, or `null`. */
   readonly match: string | null
+  /**
+   * IANA timezone the recurrence and cron cadence are evaluated in, or `null`
+   * for UTC. A `date` trigger keeps UTC.
+   */
+  readonly timezone: string | null
+  /** Allowed local weekdays (0 = Sunday … 6 = Saturday); empty allows every day. */
+  readonly days: readonly number[]
+  /** First local hour (inclusive, 0..24) the trigger may fire, or `null` for 00:00. */
+  readonly windowFrom: number | null
+  /** Last local hour (exclusive, 0..24) the trigger may fire, or `null` for 24. */
+  readonly windowTo: number | null
+  /** When true, local Saturday and Sunday are skipped. */
+  readonly businessDays: boolean
 }
 
 /** Trigger authoring input. */
 export interface RoutineTriggerInput {
   readonly kind: 'manual' | 'event' | 'email' | 'date' | 'recurrence'
   readonly match?: string
+  /** IANA timezone the cadence is evaluated in; omitted means UTC. */
+  readonly timezone?: string
+  /** Allowed local weekdays (0 = Sunday … 6 = Saturday); omitted allows every day. */
+  readonly days?: readonly number[]
+  /** Allowed local hour window; omitted allows the whole day. */
+  readonly window?: { readonly from: number; readonly to: number }
+  /** When true, local Saturday and Sunday are skipped. */
+  readonly businessDays?: boolean
 }
 
 /** One declared step of a routine (stored shape). */
@@ -95,6 +116,12 @@ export interface RoutineDefinition {
   readonly permissions: readonly string[]
   /** What to do when a step fails. */
   readonly failurePolicy: 'stop' | 'continue' | 'review'
+  /**
+   * Most executions of this routine the dispatcher lets run (or wait at the
+   * same time; a scheduled slot is skipped while the limit is reached), or
+   * `null` for no limit.
+   */
+  readonly maxConcurrency: number | null
 }
 
 /** Definition authoring input. */
@@ -105,6 +132,8 @@ export interface RoutineDefinitionInput {
   readonly expectedResult: string
   readonly permissions: readonly string[]
   readonly failurePolicy: 'stop' | 'continue' | 'review'
+  /** Concurrency cap; omitted means no limit. */
+  readonly maxConcurrency?: number
 }
 
 /** One versioned routine as consumers read it. */

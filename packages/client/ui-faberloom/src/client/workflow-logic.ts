@@ -130,7 +130,7 @@ export function defaultConfigFor(kind: string): Record<string, unknown> {
     case 'transform': return { expression: '' }
     case 'wait': return { seconds: 0 }
     case 'notify': return { kind: 'board' }
-    case 'trigger.schedule': return { recurrence: '1h' }
+    case 'trigger.schedule': return { recurrence: '1h', timezone: 'UTC', businessDays: false }
     case 'trigger.email': return { match: '' }
     default: return {}
   }

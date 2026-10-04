@@ -119,6 +119,8 @@ async function bench(
     value: { spaces: [], agents: [], connections: [], workspaces: [] },
   }))
   const exportWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { format: 'json', content: '{}' } }))
+  const routineWorkflowLinks = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const setWorkflowConcurrency = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
@@ -129,6 +131,7 @@ async function bench(
     spaceMemory, deleteSpaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connect: connectNode, disconnect: disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
+    routineWorkflowLinks, setWorkflowConcurrency,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -169,6 +172,7 @@ async function bench(
     deleteSpaceMemory, remember, spaceMemory, surface, view,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connectNode, disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
+    routineWorkflowLinks, setWorkflowConcurrency,
   }
 }
 
@@ -579,5 +583,45 @@ describe('faberloom work-flow canvas', () => {
     spaceTopology.mockRejectedValueOnce(new Error('down'))
     act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
     expect(await view.findByText('No flows yet')).toBeTruthy()
+  })
+
+  it('edits a schedule trigger, the concurrency cap, and shows routine links', async () => {
+    const {
+      runtime, view, workflowOverview, workflowDetail, updateNode,
+      setWorkflowConcurrency, routineWorkflowLinks,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    const detail = {
+      ...row, valid: true, problems: [], maxConcurrency: 2, edgesList: [],
+      nodesList: [{
+        id: 'n1', kind: 'trigger.schedule', title: 'cada 12 h', x: 0, y: 0,
+        config: { recurrence: 'every:12h', timezone: 'Europe/Madrid', window: { from: 8, to: 18 }, days: [1, 2, 3], businessDays: true },
+      }],
+    }
+    const refreshed = { ok: true, value: detail }
+    workflowDetail.mockResolvedValue(refreshed)
+    updateNode.mockResolvedValue(refreshed)
+    setWorkflowConcurrency.mockResolvedValue(refreshed)
+    routineWorkflowLinks.mockResolvedValue({
+      ok: true,
+      value: [{ routineId: 'r1', routineName: 'Vigía', workflowId: 'wf1', workflowName: 'Anti-spam', direction: 'routine-to-workflow' }],
+    })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(await view.findByText(/Anti-spam/))
+    expect(await view.findByText('Vigía → Anti-spam')).toBeTruthy()
+
+    const concurrencyBox = view.getByRole('textbox', { name: 'Max concurrency' }) as HTMLInputElement
+    expect(concurrencyBox.value).toBe('2')
+    fireEvent.change(concurrencyBox, { target: { value: '3' } })
+    fireEvent.click(view.getByRole('button', { name: 'Save concurrency' }))
+    await waitFor(() => { expect(setWorkflowConcurrency).toHaveBeenCalledWith('wf1', 3) })
+
+    fireEvent.click(view.getByText('cada 12 h'))
+    fireEvent.change(view.getByRole('textbox', { name: 'Cadence or cron' }), { target: { value: '0 7 * * *' } })
+    fireEvent.click(view.getByRole('button', { name: 'Save schedule' }))
+    await waitFor(() => {
+      expect(updateNode).toHaveBeenCalledWith('wf1', 'n1', 'cada 12 h', 'trigger.schedule', expect.stringContaining('0 7 * * *'))
+    })
   })
 })

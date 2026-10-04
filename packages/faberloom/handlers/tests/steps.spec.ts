@@ -228,6 +228,17 @@ describe('workflow handlers', () => {
     await expect(handlers['subroutine']?.(step({}))).rejects.toThrow('needs a routineId')
   })
 
+  it('workflow invokes another flow through the workflows service', async () => {
+    const invoke = vi.fn(async () => ({ executionId: 'flow-run-1', deduped: false }))
+    const handlers = createWorkflowHandlers(context({ faberloomRoutines: routines(), faberloomWorkflows: { invoke } }))
+    expect(await handlers['workflow']?.(step({ workflowId: 'wf9' })))
+      .toEqual({ handler: 'workflow', executionId: 'flow-run-1', deduped: false })
+    expect(invoke).toHaveBeenCalledWith({ id: OWNER }, 'wf9', { idempotencyKey: 'e1:s1' })
+    await expect(handlers['workflow']?.(step({}))).rejects.toThrow('needs a workflowId')
+    await expect(createWorkflowHandlers(context({ faberloomRoutines: routines() }))['workflow']?.(step({ workflowId: 'wf9' })))
+      .rejects.toThrow('workflows service is not mounted')
+  })
+
   it('mcp.call enforces the allowlist and calls the schema-driven tool', async () => {
     const execute = vi.fn(async () => ({ isError: false }))
     const allowed = vi.fn(async () => ({ allowed: true, reason: 'OK' }))

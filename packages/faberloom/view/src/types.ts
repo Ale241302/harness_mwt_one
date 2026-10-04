@@ -399,6 +399,18 @@ export interface FaberLoomRoutineDetail {
   readonly triggerKind: string
   /** Trigger match, when the kind needs one. */
   readonly triggerMatch: string | null
+  /** IANA timezone the cadence is evaluated in, or null for UTC. */
+  readonly triggerTimezone: string | null
+  /** Allowed local weekdays (0 = Sunday), empty for every day. */
+  readonly triggerDays: readonly number[]
+  /** First local hour (inclusive) the trigger may fire, or null. */
+  readonly triggerWindowFrom: number | null
+  /** Last local hour (exclusive) the trigger may fire, or null. */
+  readonly triggerWindowTo: number | null
+  /** Whether local weekends are skipped. */
+  readonly triggerBusinessDays: boolean
+  /** Most concurrent executions the dispatcher allows, or null. */
+  readonly maxConcurrency: number | null
   /** The steps in order. */
   readonly steps: readonly FaberLoomRoutineStepRow[]
   /** Expected result. */
@@ -419,6 +431,16 @@ export interface RoutineSaveInput {
   readonly triggerKind?: string
   /** Trigger match, or null. */
   readonly triggerMatch?: string | null
+  /** IANA timezone for the cadence, or null to clear. */
+  readonly triggerTimezone?: string | null
+  /** Allowed local weekdays (0 = Sunday). */
+  readonly triggerDays?: readonly number[]
+  /** Local hour window, or null to clear. */
+  readonly triggerWindow?: { readonly from: number; readonly to: number } | null
+  /** Whether local weekends are skipped. */
+  readonly triggerBusinessDays?: boolean
+  /** Concurrency cap, or null to clear. */
+  readonly maxConcurrency?: number | null
   /** Replacement steps, in order. */
   readonly steps?: readonly FaberLoomRoutineStepRow[]
   /** Expected result. */
@@ -427,6 +449,20 @@ export interface RoutineSaveInput {
   readonly permissions?: readonly string[]
   /** Failure policy. */
   readonly failurePolicy?: string
+}
+
+/** One link between a routine and a work flow, in either direction. */
+export interface FaberLoomWorkflowLink {
+  /** Routine id. */
+  readonly routineId: string
+  /** Routine display name, or empty when the routine was removed. */
+  readonly routineName: string
+  /** Work flow id. */
+  readonly workflowId: string
+  /** Work flow display name, or empty when the flow was removed. */
+  readonly workflowName: string
+  /** Which side invokes the other. */
+  readonly direction: 'routine-to-workflow' | 'workflow-to-routine'
 }
 
 /** One space with its full editable configuration. */
@@ -1055,6 +1091,8 @@ export interface FaberLoomWorkflowDetail extends FaberLoomWorkflowRow {
   readonly valid: boolean
   /** Validation problems. */
   readonly problems: readonly string[]
+  /** Concurrency cap, or null when unlimited. */
+  readonly maxConcurrency: number | null
   /** Graph nodes. */
   readonly nodesList: readonly FaberLoomWorkflowNodeRow[]
   /** Graph edges. */

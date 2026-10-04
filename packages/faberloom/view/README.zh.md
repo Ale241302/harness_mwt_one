@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在已包含 `ctx.faberloomSpaces`、`ctx.faberloomAgents`、`ctx.faberloomBoard` 与 `ctx.faberloomRoutines` 的组合中挂载本行，并配置 `ownerId`。配置 `memoryCoreUrl`、`memoryServiceId`、`memoryUserId` 与 `memoryGatewayKey` 后，总览会带上该 owner 的记忆行；未配置时记忆列表为空。浏览器侧在客户端 API 组装中挂载生成的 `./remote` 贡献并调用 `ctx.remote.faberloomView.overview()`。连通性地图是第二个读取：`ctx.remote.faberloomView.spaceMap()` 返回每个 Space 及其负责代理与镜像工作区、每个代理及其技能与 MCP 访问、该 owner 的邮件连接，以及已注册的工作区，供调色板与画布使用。工作流编辑器读取 `workflowOverview()` 与 `workflowDetail(id)`，并通过 `createWorkflow`、`saveWorkflow`、`addNode`、`updateNode`、`removeNode`、`connect`、`disconnect` 与 `setWorkflowStatus` 修改；它用 `workflowRuns(id)` 列出执行、用 `spaceTopology()` 读取调色板，并用 `exportWorkflow(id, 'json' | 'archify')` 导出。
+在已包含 `ctx.faberloomSpaces`、`ctx.faberloomAgents`、`ctx.faberloomBoard` 与 `ctx.faberloomRoutines` 的组合中挂载本行，并配置 `ownerId`。配置 `memoryCoreUrl`、`memoryServiceId`、`memoryUserId` 与 `memoryGatewayKey` 后，总览会带上该 owner 的记忆行；未配置时记忆列表为空。浏览器侧在客户端 API 组装中挂载生成的 `./remote` 贡献并调用 `ctx.remote.faberloomView.overview()`。连通性地图是第二个读取：`ctx.remote.faberloomView.spaceMap()` 返回每个 Space 及其负责代理与镜像工作区、每个代理及其技能与 MCP 访问、该 owner 的邮件连接，以及已注册的工作区，供调色板与画布使用。工作流编辑器读取 `workflowOverview()` 与 `workflowDetail(id)`，并通过 `createWorkflow`、`saveWorkflow`、`addNode`、`updateNode`、`removeNode`、`connect`、`disconnect` 与 `setWorkflowStatus` 修改；它用 `workflowRuns(id)` 列出执行、用 `spaceTopology()` 读取调色板，并用 `exportWorkflow(id, 'json' | 'archify')` 导出。它还读取 `routineWorkflowLinks()` 提供例程 ↔ 工作流视图，并写入 `setWorkflowConcurrency(id, cap | null)`；`trigger.schedule` 节点在其 config 中携带周期、时区、窗口、星期与工作日跳过。
 
 -----
 

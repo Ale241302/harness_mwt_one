@@ -35,6 +35,12 @@ const triggerRecord = z.object({
     z.literal('manual'), z.literal('event'), z.literal('email'), z.literal('date'), z.literal('recurrence'),
   ]),
   match: z.string().nullable(),
+  // Schedule fields default so routine versions written before them keep loading.
+  timezone: z.string().nullable().default(null),
+  days: z.array(z.number()).default([]),
+  windowFrom: z.number().nullable().default(null),
+  windowTo: z.number().nullable().default(null),
+  businessDays: z.boolean().default(false),
 })
 
 /** Durable routine definition. */
@@ -45,6 +51,8 @@ const definitionRecord = z.object({
   expectedResult: z.string(),
   permissions: z.array(z.string()),
   failurePolicy: z.union([z.literal('stop'), z.literal('continue'), z.literal('review')]),
+  // Concurrency cap; null is unlimited. Defaulted for pre-field records.
+  maxConcurrency: z.number().nullable().default(null),
 })
 
 /** Durable routine record. */
