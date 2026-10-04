@@ -39,10 +39,17 @@ export const contextVersionRecord = z.object({
 /** One stored version, inferred from {@link contextVersionRecord}. */
 export type ContextVersionRecord = z.infer<typeof contextVersionRecord>
 
-/** The context domain spec: an `entries` table and its `versions` table. */
+/**
+ * The context domain spec: an `entries` table and its `versions` table.
+ *
+ * The domain version stays 1 on purpose: the `origin` and `consoleId` fields
+ * added later are optional-with-default, and the store reads a missing field as
+ * its default, while raising the version makes every existing store reject at
+ * open, which the storage layer never migrates.
+ */
 export const contextDomainSpec = defineDomain({
   name: 'faberloom_context',
-  version: 2,
+  version: 1,
   tables: {
     entries: domainTable<string, ContextEntryRecord>(contextEntryRecord),
     versions: domainTable<string, ContextVersionRecord>(contextVersionRecord),

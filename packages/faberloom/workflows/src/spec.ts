@@ -118,10 +118,15 @@ export const pendingWorkFlowRecord: z.ZodType<WorkFlowPendingRecord> = z.object(
  * The work flows domain spec: a `workflows` table keyed by {@link WorkFlowId},
  * its append-only `versions` table, and one `pending` staged revision per flow.
  * The service opens this through `ctx.storageDomain`.
+ *
+ * The domain version stays 1 on purpose: a table added to an existing domain is
+ * compatible — the `single` store reads a missing table as empty — while raising
+ * the version makes every existing store reject at open, which the storage
+ * layer never migrates.
  */
 export const workflowsDomainSpec = defineDomain({
   name: 'faberloom_workflows',
-  version: 3,
+  version: 1,
   tables: {
     workflows: domainTable<WorkFlowId, WorkFlowRecord>(workFlowRecord),
     versions: domainTable<string, WorkFlowVersionRecord>(workFlowVersionRecord),

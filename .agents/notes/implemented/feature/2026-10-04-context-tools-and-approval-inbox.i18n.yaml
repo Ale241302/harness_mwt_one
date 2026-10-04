@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-04-context-tools-and-approval-inbox.md
-2026-10-04-context-tools-and-approval-inbox.md: 386238271d2cbc2a32a31e7273049bd4aa2c2e08
-2026-10-04-context-tools-and-approval-inbox.zh.md: a4a7758a10a61d30ad7a807d77e01d3d833e55b9
+2026-10-04-context-tools-and-approval-inbox.md: a970682cb50862ae4ffa196a631332b2d7c7a2e4
+2026-10-04-context-tools-and-approval-inbox.zh.md: 09f3041ab3dec88f27b8722197b68cd72b67e579
