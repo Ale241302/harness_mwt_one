@@ -31,6 +31,12 @@ function fakeWorkflows(detail = flow([], [])) {
     setStatus: vi.fn(async () => {}),
     setConcurrency: vi.fn(async () => {}),
     runs: vi.fn(async () => [{ id: 'ex1', status: 'completed', routineVersion: 1, createdAt: 'c', updatedAt: 'u' }]),
+    templates: vi.fn(() => [
+      { id: 'anti-spam', name: 'Anti-spam', description: 'clasifica', definition: { intent: '', nodes: [], edges: [], permissions: [], failurePolicy: 'stop' } },
+    ]),
+    createFromTemplate: vi.fn(async () => {}),
+    exportFlow: vi.fn(async () => '{"format":"faberloom-workflow","version":1,"name":"Anti-spam","definition":{"intent":"","nodes":[],"edges":[],"permissions":[],"failurePolicy":"stop"}}'),
+    importFlow: vi.fn(async () => {}),
   }
 }
 
@@ -133,7 +139,7 @@ describe('FaberLoomViewService workflows', () => {
 
     const json = await view.exportWorkflow('wf1', 'json')
     expect(json.format).toBe('json')
-    expect(json.content).toContain('"wf1"')
+    expect(json.content).toContain('faberloom-workflow')
     const archify = await view.exportWorkflow('wf1', 'archify')
     expect(archify.format).toBe('archify')
     expect(archify.content).toContain('<svg')
@@ -290,5 +296,33 @@ describe('FaberLoomViewService workflows', () => {
       logger: { warn: vi.fn(), info: vi.fn() },
     } as unknown as Context, { ownerId: 'owner@x', role: 'admin', readOnly: false })
     expect(await bare.executionHealth()).toMatchObject({ ownerId: 'owner@x', routines: [], totals: { runs: 0 } })
+  })
+
+  it('lists the built-in templates and creates a flow from one', async () => {
+    const { view, workflows } = harness()
+    const templates = await view.workflowTemplates()
+    expect(templates[0]).toMatchObject({ id: 'anti-spam', name: 'Anti-spam', nodes: 0, edges: 0 })
+
+    await view.createWorkflowFromTemplate('anti-spam', 'Mi flujo')
+    expect(workflows.createFromTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'owner@muitowork.com' }),
+      'anti-spam',
+      'Mi flujo',
+    )
+  })
+
+  it('imports portable JSON and exports it through the service', async () => {
+    const { view, workflows } = harness()
+    await view.importWorkflow('{"format":"faberloom-workflow"}', 'Copia')
+    expect(workflows.importFlow).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'owner@muitowork.com' }),
+      '{"format":"faberloom-workflow"}',
+      'Copia',
+    )
+
+    const exported = await view.exportWorkflow('wf1', 'json')
+    expect(exported.format).toBe('json')
+    expect(exported.content).toContain('faberloom-workflow')
+    expect(workflows.exportFlow).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'wf1')
   })
 })

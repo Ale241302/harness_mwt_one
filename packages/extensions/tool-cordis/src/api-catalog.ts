@@ -1964,6 +1964,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the export body.',
       },
       {
+        signature: '@Remote(\'workflowTemplates\') workflowTemplates(): Promise<readonly FaberLoomWorkflowTemplateRow[]>',
+        description: 'The built-in Work Flow templates the gallery lists.',
+        parameters: [],
+        returns: 'one row per template.',
+      },
+      {
+        signature: '@Remote(\'createWorkflowFromTemplate\') async createWorkflowFromTemplate(templateId: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Create one work flow from a built-in template and return the refreshed list.',
+        parameters: [{ name: 'templateId', description: 'template id.' }, { name: 'name', description: 'optional display name.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'importWorkflow\') async importWorkflow(json: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Import portable Work Flow JSON as a new work flow and return the refreshed list; the graph is validated before it is stored.',
+        parameters: [{ name: 'json', description: 'the portable JSON text.' }, { name: 'name', description: 'optional display name.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
         signature: '@Remote(\'createSpace\') async createSpace(title: string, agentId?: string, parentId?: string, inheritContext?: boolean): Promise<FaberLoomOverview>',
         description: 'Create a space (root or sub-space) for the owner with an optional responsible agent, and register its conversation area as a Workspace so the sidebar and the Espacios panel show the same thing.',
         parameters: [{ name: 'title', description: 'display title.' }, { name: 'agentId', description: 'catalog agent put in charge; the same agent may lead a parent and a sub-space.' }, { name: 'parentId', description: 'parent space id, when this is a sub-space.' }, { name: 'inheritContext', description: 'whether the space inherits its parent\'s context; defaults to true.' }],
@@ -2607,6 +2625,32 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Compile one work flow to a routine definition without mutating it.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
         returns: 'the routine definition input.',
+      },
+      {
+        signature: 'templates(): readonly WorkFlowTemplate[]',
+        description: 'The built-in templates a user can start from.',
+        parameters: [],
+        returns: 'the template catalog, in gallery order.',
+      },
+      {
+        signature: 'async createFromTemplate(actor: WorkFlowActor, templateId: string, name?: string): Promise<WorkFlow>',
+        description: 'Create one owned work flow from a built-in template.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'templateId', description: 'the template id.' }, { name: 'name', description: 'optional display name; the template\'s name is used otherwise.' }],
+        returns: 'the created work flow.',
+        throws: ['when the template id is unknown.'],
+      },
+      {
+        signature: 'async exportFlow(actor: WorkFlowActor, id: WorkFlowId): Promise<string>',
+        description: 'Export one work flow as portable JSON the gallery, the knowledge hub, and another deployment can import.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the JSON text.',
+      },
+      {
+        signature: 'async importFlow(actor: WorkFlowActor, json: string, name?: string): Promise<WorkFlow>',
+        description: 'Import portable Work Flow JSON as a new owned work flow; the graph is validated before it is stored.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'json', description: 'the JSON text.' }, { name: 'name', description: 'optional display name overriding the export\'s.' }],
+        returns: 'the created work flow.',
+        throws: ['when the JSON is malformed, mislabelled, or its graph is invalid.'],
       },
       {
         signature: 'async remove(actor: WorkFlowActor, id: WorkFlowId): Promise<boolean>',
@@ -6695,6 +6739,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomWorkflowRunRow {\n    readonly id: string;\n    readonly status: string;\n    readonly routineVersion: number;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
+    name: 'FaberLoomWorkflowTemplateRow',
+    declaration: 'export interface FaberLoomWorkflowTemplateRow {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly nodes: number;\n    readonly edges: number;\n}',
+  },
+  {
     name: 'FaberLoomWorkProposal',
     declaration: 'export interface FaberLoomWorkProposal {\n    readonly title: string;\n    readonly spaceId: string | null;\n    readonly suggestedAgents: readonly FaberLoomProposalAgent[];\n    readonly suggestedSteps: readonly string[];\n}',
   },
@@ -9353,6 +9401,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkflowStopReason',
     declaration: 'export type WorkflowStopReason = \'completed\' | \'cancelled\' | \'error\';',
+  },
+  {
+    name: 'WorkFlowTemplate',
+    declaration: 'export interface WorkFlowTemplate {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly definition: WorkFlowDefinition;\n}',
   },
   {
     name: 'WorkFlowValidation',

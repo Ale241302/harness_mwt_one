@@ -55,6 +55,7 @@ import type {
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
+  FaberLoomWorkflowTemplateRow,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -1037,8 +1038,48 @@ export class FaberLoomViewService extends TypertRemoteService {
   async exportWorkflow(id: string, format: string): Promise<FaberLoomWorkflowExport> {
     const flow = await this.workflowsService().get(this.workflowActor(), id as WorkFlowId)
     return format === 'json'
-      ? { format: 'json', content: JSON.stringify(flow, null, 2) }
+      ? { format: 'json', content: await this.workflowsService().exportFlow(this.workflowActor(), id as WorkFlowId) }
       : { format: 'archify', content: archifyHtml(flow) }
+  }
+
+  /**
+   * The built-in Work Flow templates the gallery lists.
+   * @returns one row per template.
+   */
+  @Remote('workflowTemplates')
+  workflowTemplates(): Promise<readonly FaberLoomWorkflowTemplateRow[]> {
+    return Promise.resolve(this.workflowsService().templates().map(template => ({
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      nodes: template.definition.nodes.length,
+      edges: template.definition.edges.length,
+    })))
+  }
+
+  /**
+   * Create one work flow from a built-in template and return the refreshed list.
+   * @param templateId - template id.
+   * @param name - optional display name.
+   * @returns the refreshed rows.
+   */
+  @Remote('createWorkflowFromTemplate')
+  async createWorkflowFromTemplate(templateId: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.workflowsService().createFromTemplate(this.workflowActor(), templateId, name)
+    return await this.workflowOverview()
+  }
+
+  /**
+   * Import portable Work Flow JSON as a new work flow and return the refreshed
+   * list; the graph is validated before it is stored.
+   * @param json - the portable JSON text.
+   * @param name - optional display name.
+   * @returns the refreshed rows.
+   */
+  @Remote('importWorkflow')
+  async importWorkflow(json: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.workflowsService().importFlow(this.workflowActor(), json, name)
+    return await this.workflowOverview()
   }
 
   /**

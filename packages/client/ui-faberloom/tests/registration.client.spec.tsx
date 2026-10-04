@@ -126,6 +126,9 @@ async function bench(
   const resourceShares = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const revokeShareGrant = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const executionHealth = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { ownerId: '', routines: [], totals: { runs: 0, failures: 0, needsReview: 0, waiting: 0, retries: 0, deadLettered: 0, alerts: 0 } } }))
+  const workflowTemplates = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const createWorkflowFromTemplate = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const importWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
@@ -138,6 +141,7 @@ async function bench(
     connect: connectNode, disconnect: disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,
     shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
+    workflowTemplates, createWorkflowFromTemplate, importWorkflow,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -180,6 +184,7 @@ async function bench(
     connectNode, disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,
     shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
+    workflowTemplates, createWorkflowFromTemplate, importWorkflow,
   }
 }
 
@@ -582,6 +587,37 @@ describe('faberloom work-flow canvas', () => {
 
     fireEvent.click(view.getByRole('button', { name: 'Export JSON' }))
     await waitFor(() => { expect(exportWorkflow).toHaveBeenCalledWith('wf1', 'json') })
+  })
+
+  it('creates a flow from the template gallery and imports a JSON export', async () => {
+    const {
+      runtime, view, workflowOverview, workflowTemplates, createWorkflowFromTemplate, importWorkflow,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    workflowTemplates.mockResolvedValue({
+      ok: true,
+      value: [{ id: 'anti-spam', name: 'Anti-spam', description: 'clasifica', nodes: 5, edges: 5 }],
+    })
+    createWorkflowFromTemplate.mockResolvedValue({ ok: true, value: [row] })
+    importWorkflow.mockResolvedValue({ ok: true, value: [row] })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    await waitFor(() => { expect(workflowTemplates).toHaveBeenCalled() })
+
+    // Using the gallery without picking a template does nothing.
+    fireEvent.click(view.getByRole('button', { name: 'Use template' }))
+    expect(createWorkflowFromTemplate).not.toHaveBeenCalled()
+    await view.findByRole('option', { name: 'Anti-spam' })
+    fireEvent.change(view.getByRole('combobox', { name: 'Templates' }), { target: { value: 'anti-spam' } })
+    await waitFor(() => {
+      expect((view.getByRole('combobox', { name: 'Templates' }) as HTMLSelectElement).value).toBe('anti-spam')
+    })
+    fireEvent.click(view.getByRole('button', { name: 'Use template' }))
+    await waitFor(() => { expect(createWorkflowFromTemplate).toHaveBeenCalledWith('anti-spam', undefined) })
+
+    const file = { text: async () => '{"format":"faberloom-workflow"}' } as unknown as File
+    fireEvent.change(view.getByLabelText('Import JSON'), { target: { files: [file] } })
+    await waitFor(() => { expect(importWorkflow).toHaveBeenCalledWith('{"format":"faberloom-workflow"}', undefined) })
   })
 
   it('stays usable when the overview and topology reads fail', async () => {

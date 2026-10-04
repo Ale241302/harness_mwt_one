@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { workflowsDomainSpec } from './spec.ts'
+import { getTemplate, WORKFLOW_TEMPLATES, type WorkFlowTemplate } from './templates.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput, FaberLoomRoutineId, Execution } from '@deepseek-ai/dsh-faberloom-routines'
 // Type-only: pulls the shares service's Context merge and the permission union.
@@ -34,6 +35,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export * from './templates.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -255,6 +257,64 @@ export function compileWorkFlow(workflow: WorkFlow): RoutineDefinitionInput {
     failurePolicy: definition.failurePolicy,
     ...definition.maxConcurrency === undefined ? {} : { maxConcurrency: definition.maxConcurrency },
   }
+}
+
+/** The `format` field every portable Work Flow JSON carries. */
+export const WORKFLOW_EXPORT_FORMAT = 'faberloom-workflow'
+
+/** The portable JSON version this build writes. */
+export const WORKFLOW_EXPORT_VERSION = 1
+
+/** The parsed content of a portable Work Flow JSON. */
+export interface ParsedWorkFlow {
+  /** Display name the export carried. */
+  readonly name: string
+  /** The graph to store. */
+  readonly definition: WorkFlowDefinition
+}
+
+/**
+ * Serialize one work flow as portable JSON: the same shape the gallery and the
+ * knowledge hub store, independent of the owner and the compiled routine.
+ * @param flow - the work flow to serialize.
+ * @returns the JSON text.
+ */
+export function serializeWorkFlow(flow: WorkFlow): string {
+  return JSON.stringify({
+    format: WORKFLOW_EXPORT_FORMAT,
+    version: WORKFLOW_EXPORT_VERSION,
+    name: flow.name,
+    definition: flow.definition,
+  }, null, 2)
+}
+
+/**
+ * Parse portable Work Flow JSON and validate its graph.
+ * @param json - the JSON text.
+ * @returns the name and the validated graph.
+ * @throws when the JSON is malformed, is not a Work Flow export, or its graph is invalid.
+ */
+export function parseWorkFlow(json: string): ParsedWorkFlow {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch {
+    throw new Error('faberloom: el JSON exportado no es válido')
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('faberloom: el JSON exportado debe ser un objeto')
+  }
+  const value = parsed as Record<string, unknown>
+  if (value['format'] !== WORKFLOW_EXPORT_FORMAT) {
+    throw new Error(`faberloom: el JSON exportado debe llevar format "${WORKFLOW_EXPORT_FORMAT}"`)
+  }
+  const definition = value['definition']
+  if (definition === null || typeof definition !== 'object') throw new Error('faberloom: el JSON exportado no lleva definition')
+  const candidate = definition as WorkFlowDefinition
+  const verdict = validateWorkFlow(candidate)
+  if (!verdict.ok) throw new Error(`faberloom: el grafo importado no es válido: ${verdict.problems.join('; ')}`)
+  const name = typeof value['name'] === 'string' && value['name'].length > 0 ? value['name'] : 'Flujo importado'
+  return { name, definition: candidate }
 }
 
 /** Whether two scopes name the same target. */
@@ -680,6 +740,57 @@ export class FaberLoomWorkflows extends Service {
    */
   async compile(actor: WorkFlowActor, id: WorkFlowId): Promise<RoutineDefinitionInput> {
     return compileWorkFlow(await this.get(actor, id))
+  }
+
+  /**
+   * The built-in templates a user can start from.
+   * @returns the template catalog, in gallery order.
+   */
+  templates(): readonly WorkFlowTemplate[] { return WORKFLOW_TEMPLATES }
+
+  /**
+   * Create one owned work flow from a built-in template.
+   * @param actor - the acting identity.
+   * @param templateId - the template id.
+   * @param name - optional display name; the template's name is used otherwise.
+   * @returns the created work flow.
+   * @throws when the template id is unknown.
+   */
+  async createFromTemplate(actor: WorkFlowActor, templateId: string, name?: string): Promise<WorkFlow> {
+    const template = getTemplate(templateId)
+    if (template === undefined) throw new Error(`faberloom: work flow template ${templateId} not found`)
+    return await this.create(actor, {
+      name: name === undefined || name.length === 0 ? template.name : name,
+      definition: template.definition,
+    })
+  }
+
+  /**
+   * Export one work flow as portable JSON the gallery, the knowledge hub, and
+   * another deployment can import.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @returns the JSON text.
+   */
+  async exportFlow(actor: WorkFlowActor, id: WorkFlowId): Promise<string> {
+    return serializeWorkFlow(await this.get(actor, id))
+  }
+
+  /**
+   * Import portable Work Flow JSON as a new owned work flow; the graph is
+   * validated before it is stored.
+   * @param actor - the acting identity.
+   * @param json - the JSON text.
+   * @param name - optional display name overriding the export's.
+   * @returns the created work flow.
+   * @throws when the JSON is malformed, mislabelled, or its graph is invalid.
+   */
+  async importFlow(actor: WorkFlowActor, json: string, name?: string): Promise<WorkFlow> {
+    const parsed = parseWorkFlow(json)
+    return await this.create(actor, {
+      name: name === undefined || name.length === 0 ? parsed.name : name,
+      definition: parsed.definition,
+    })
   }
 
   /**

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包承载原生 Work Flow 模块：一个按 Space 或个人范围划分的版本化节点与边图，其运行时是由图编译出的 Routine。`ctx.faberloomWorkflows` 拥有持久记录（创建、列出、读取、更新、状态、校验、编译、删除），并带 DAG 校验与 `compileWorkFlow`。激活流程会创建并激活其 routine；编辑流程会生成新版本并迁移等待中的执行。模型工具位于 `dsh-tool-faberloom`。
+此包承载原生 Work Flow 模块：一个按 Space 或个人范围划分的版本化节点与边图，其运行时是由图编译出的 Routine。`ctx.faberloomWorkflows` 拥有持久记录（创建、列出、读取、更新、状态、校验、编译、删除），并带 DAG 校验与 `compileWorkFlow`。激活流程会创建并激活其 routine；编辑流程会生成新版本并迁移等待中的执行。内置模板目录（`templates()`、`createFromTemplate()`）与可移植 JSON（`exportFlow()`、`importFlow()`）让用户从已校验的图起步并在部署间搬运流程；同一 JSON 存于知识中枢，并在 `graphify-out/templates/` 建立图。模型工具位于 `dsh-tool-faberloom`。
 
 ## 目录
 
@@ -48,9 +48,9 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **编辑面在后续切片到来** — 聊天工具、浏览器编辑器、调度、共享、存活检测与模板属于 Fases 3–9；编译运行时、激活与迁移已就位。
-- **分支是被门控的，而非循环的** — 来自 `condition` 节点、分支条件以 `== true` 或 `== false` 结尾的边会编译为步骤 gate：目标步骤仅在条件的 `{passed}` 结果匹配时运行，否则被跳过。循环与更丰富的控制流仍要等 v2 图执行器。
-- **仅所有者访问** — 按操作权限与跨用户授权随共享切片到来。
+- **控制流是被门控的，而非循环的** — 来自 `condition` 节点、分支条件以 `== true` 或 `== false` 结尾的边会编译为步骤 gate：目标步骤仅在条件的 `{passed}` 结果匹配时运行，否则被跳过。循环与更丰富的控制流仍要等 v2 图执行器；聊天工具、浏览器编辑器、调度、共享、存活检测与本模板目录均已就位。
+- **模板只提出图，绝不携带凭据** — 模板带有节点、边与权限，但不含邮箱、Space 或代理绑定；所有者在激活时选择这些，导入会在存储前校验图。
+- **访问是按操作的，而非仅所有者** — 读取与编辑会查询 `ctx.faberloomShares`；共享授权以 `pending` 起始，只有 `active` 授权才放行，跨用户授权镜像到 MWT.ONE 控制台。
 
 未发布 invariant companion，因为该服务只拥有一个持久图关系，且其单元与集成测试已断言它；这些测试之外不存在会分叉的观测。
 

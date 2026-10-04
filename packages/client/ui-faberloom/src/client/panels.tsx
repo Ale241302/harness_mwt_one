@@ -34,7 +34,7 @@ import type {
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
-  FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth,
+  FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomWorkflowTemplateRow,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
@@ -280,6 +280,9 @@ export interface FaberloomPanelInjected {
     revokeShareGrant: (grantId: string) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
     health: () => Promise<Result<FaberLoomHealth>>
     exportFlow: (id: string, format: string) => Promise<Result<FaberLoomWorkflowExport>>
+    templates: () => Promise<Result<readonly FaberLoomWorkflowTemplateRow[]>>
+    createFromTemplate: (templateId: string, name?: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    importFlow: (json: string, name?: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
   }
 }
 
@@ -3016,6 +3019,8 @@ function workflowsScreen() {
     const [links, setLinks] = useState<readonly FaberLoomWorkflowLink[]>([])
     const [grants, setGrants] = useState<readonly FaberLoomShareGrantRow[]>([])
     const [health, setHealth] = useState<FaberLoomHealth | null>(null)
+    const [templates, setTemplates] = useState<readonly FaberLoomWorkflowTemplateRow[]>([])
+    const [templateId, setTemplateId] = useState('')
     const [shareEmail, setShareEmail] = useState('')
     const [sharePermissions, setSharePermissions] = useState<readonly string[]>(['view'])
     const dragging = useRef<string | null>(null)
@@ -3033,6 +3038,7 @@ function workflowsScreen() {
       void workflows.topology().then((result) => { if (result.ok) setTopology(result.value) }).catch(() => undefined)
       void workflows.links().then((result) => { if (result.ok) setLinks(result.value) }).catch(() => undefined)
       void workflows.health().then((result) => { if (result.ok) setHealth(result.value) }).catch(() => undefined)
+      void workflows.templates().then((result) => { if (result.ok) setTemplates(result.value) }).catch(() => undefined)
     }, [])
     useEffect(() => {
       if (selected === null) { setDetail(null); setRuns([]); return }
@@ -3145,6 +3151,13 @@ function workflowsScreen() {
       }
       act(() => workflows.setConcurrency(flowId, value))
     }
+    /** Create a flow from the selected gallery template. */
+    const useTemplate = (): void => {
+      if (templateId.length === 0) return
+      void workflows.createFromTemplate(templateId).then((result) => {
+        if (result.ok) { setFlows(result.value); setTemplateId(''); setMessage(null) } else setMessage(result.error.message)
+      })
+    }
     /** Toggle one permission in the Compartir form. */
     const togglePermission = (permission: string): void => {
       setSharePermissions(current => current.includes(permission)
@@ -3189,6 +3202,25 @@ function workflowsScreen() {
             if (flowName.trim().length === 0) return
             void workflows.create(flowName.trim()).then((result) => { if (result.ok) { setFlows(result.value); setFlowName(''); setMessage(null) } else setMessage(result.error.message) })
           }}>{t('wf.create')}</button>
+          <div className={styles.workflowTemplates}>
+            <span>{t('wf.templates')}</span>
+            <select aria-label={t('wf.templates')} value={templateId} onChange={(event) => { setTemplateId(event.target.value) }}>
+              <option value="">{t('wf.templates.pick')}</option>
+              {templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
+            </select>
+            <button type="button" onClick={() => { useTemplate() }}>{t('wf.templates.use')}</button>
+            <label className={styles.workflowImport}>
+              {t('wf.import')}
+              <input type="file" accept="application/json,.json" onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file === undefined) return
+                void file.text().then(text => workflows.importFlow(text)).then((result) => {
+                  if (result.ok) { setFlows(result.value); setMessage(null) } else setMessage(result.error.message)
+                })
+                event.target.value = ''
+              }} />
+            </label>
+          </div>
           {flows.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.empty')}</span> : null}
           {flows.map(flow => (
             <button key={flow.id} type="button" className={styles.workflowFlowButton} onClick={() => { setSelected(flow.id) }}>

@@ -55,6 +55,15 @@ function fakeWorkflows() {
     setStatus: vi.fn(async () => fakeFlow(2, 1)),
     runNow: vi.fn(async () => ({ executionId: 'ex1', deduped: false })),
     runs: vi.fn(async () => [{ id: 'ex1', status: 'completed', routineVersion: 1 }]),
+    templates: vi.fn(() => [{
+      id: 'anti-spam',
+      name: 'Anti-spam',
+      description: 'clasifica',
+      definition: { intent: '', nodes: [{}, {}, {}, {}, {}], edges: [{}, {}, {}, {}, {}], permissions: [], failurePolicy: 'review' },
+    }]),
+    createFromTemplate: vi.fn(async () => fakeFlow(5, 5)),
+    exportFlow: vi.fn(async () => '{"format":"faberloom-workflow","version":1,"name":"flujo","definition":{"intent":"","nodes":[],"edges":[],"permissions":[],"failurePolicy":"stop"}}'),
+    importFlow: vi.fn(async () => fakeFlow(2, 1)),
   }
 }
 
@@ -78,6 +87,23 @@ describe('faberloom workflow tools', () => {
     const got = await tools.get('faberloom_workflows_get')!.execute({ workflowId: 'wf1' } as never)
     expect(service.get).toHaveBeenCalledWith(expect.objectContaining({ id: 'compras2@sondelsa.com' }), 'wf1')
     expect(render(tools.get('faberloom_workflows_get')!, got as Record<string, unknown>)).toContain('"flujo" draft v1 (2 nodes, 1 edges)')
+  })
+
+  it('lists templates, creates from one, and exports or imports portable JSON', async () => {
+    const service = fakeWorkflows()
+    const tools = harness(CONFIG, { faberloomWorkflows: service })
+    const listed = await tools.get('faberloom_workflows_templates')!.execute({} as never)
+    expect(listed).toMatchObject({ templates: [{ id: 'anti-spam', name: 'Anti-spam', nodes: 5, edges: 5 }] })
+
+    await tools.get('faberloom_workflows_from_template')!.execute({ templateId: 'anti-spam', name: 'Mío' } as never)
+    expect(service.createFromTemplate).toHaveBeenCalledWith(expect.anything(), 'anti-spam', 'Mío')
+    await tools.get('faberloom_workflows_from_template')!.execute({ templateId: 'anti-spam' } as never)
+    expect(service.createFromTemplate).toHaveBeenLastCalledWith(expect.anything(), 'anti-spam', undefined)
+
+    const exported = await tools.get('faberloom_workflows_export')!.execute({ workflowId: 'wf1' } as never)
+    expect(exported).toMatchObject({ format: 'faberloom-workflow' })
+    await tools.get('faberloom_workflows_import')!.execute({ json: '{"format":"faberloom-workflow"}' } as never)
+    expect(service.importFlow).toHaveBeenCalledWith(expect.anything(), '{"format":"faberloom-workflow"}', undefined)
   })
 
   it('creates a personal or space-scoped flow', async () => {

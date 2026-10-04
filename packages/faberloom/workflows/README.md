@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package carries the native Work Flow module: a versioned graph of nodes and edges scoped to a Space or the personal scope, whose runtime is a Routine compiled from it. `ctx.faberloomWorkflows` owns the durable records (create, list, get, update, status, validate, compile, remove) with DAG validation and `compileWorkFlow`. Activating a flow creates and activates its routine; editing one versions the routine and migrates its waiting executions. Model tools live in `dsh-tool-faberloom`.
+This package carries the native Work Flow module: a versioned graph of nodes and edges scoped to a Space or the personal scope, whose runtime is a Routine compiled from it. `ctx.faberloomWorkflows` owns the durable records (create, list, get, update, status, validate, compile, remove) with DAG validation and `compileWorkFlow`. Activating a flow creates and activates its routine; editing one versions the routine and migrates its waiting executions. The built-in template catalog (`templates()`, `createFromTemplate()`) and portable JSON (`exportFlow()`, `importFlow()`) start from a validated graph and move it between deployments; the hub stores that JSON. Model tools live in `dsh-tool-faberloom`.
 
 ## Table of Contents
 
@@ -48,9 +48,9 @@ Independent of live requests: the registration never touches a request prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Editing surfaces arrive on later slices** — chat tools, the browser editor, scheduling, sharing, liveness, and templates are Fases 3–9; the compiled runtime, activation, and migration are in place.
-- **Branches are gated, not looped** — an edge from a `condition` node whose branch condition ends in `== true` or `== false` compiles to a step gate: the target step runs only when the condition's `{passed}` result matches, and is skipped otherwise. Loops and richer control flow still wait for the v2 graph executor.
-- **Owner-only access** — per-action permissions and cross-user grants arrive with the sharing slice.
+- **Control flow is gated, not looped** — an edge from a `condition` node whose branch condition ends in `== true` or `== false` compiles to a step gate: the target step runs only when the condition's `{passed}` result matches, and is skipped otherwise. Loops and richer control flow still wait for the v2 graph executor; the chat tools, browser editor, scheduling, sharing, liveness, and this template catalog are in place.
+- **Templates propose a graph, never credentials** — a template carries nodes, edges, and permissions but no mailbox, Space, or agent binding; the owner picks those on activation, and import validates the graph before it is stored.
+- **Access is per-action, not owner-only** — reads and edits consult `ctx.faberloomShares`; a shared grant starts `pending` and only an `active` grant authorizes, with cross-user grants mirrored to the MWT.ONE console.
 
 No invariant companion is published because the service owns one durable graph relation, and its unit and integration specs assert it; no observation outside those tests can diverge.
 

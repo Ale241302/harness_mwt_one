@@ -1147,6 +1147,22 @@ export interface FaberLoomWorkflowExport {
 }
 
 /**
+ * One built-in Work Flow template the gallery lists.
+ */
+export interface FaberLoomWorkflowTemplateRow {
+  /** Template id. */
+  readonly id: string
+  /** Display name. */
+  readonly name: string
+  /** One-sentence description. */
+  readonly description: string
+  /** Node count. */
+  readonly nodes: number
+  /** Edge count. */
+  readonly edges: number
+}
+
+/**
  * One routine's liveness as the Ejecución panel renders it. The view drops the
  * `waiting` count the dispatcher reports; the panel shows failures and review.
  */

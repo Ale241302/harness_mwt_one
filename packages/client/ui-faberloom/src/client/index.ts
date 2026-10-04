@@ -272,6 +272,9 @@ export function apply(ctx: ClientContext): void {
         revokeShareGrant: grantId => ctx.remote.faberloomView.revokeShareGrant(grantId),
         health: () => ctx.remote.faberloomView.executionHealth(),
         exportFlow: (id, format) => ctx.remote.faberloomView.exportWorkflow(id, format),
+        templates: () => ctx.remote.faberloomView.workflowTemplates(),
+        createFromTemplate: (templateId, name) => ctx.remote.faberloomView.createWorkflowFromTemplate(templateId, name),
+        importFlow: (json, name) => ctx.remote.faberloomView.importWorkflow(json, name),
       },
     }
   }

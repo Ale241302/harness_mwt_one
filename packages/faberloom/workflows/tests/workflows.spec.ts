@@ -6,6 +6,7 @@ import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-
 import FaberLoomAccess from '../../access/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
 import FaberLoomWorkflows from '../src/index.ts'
+import { getTemplate } from '../src/index.ts'
 import { workFlowRecord } from '../src/spec.ts'
 import type { WorkFlowDefinition, WorkFlowEdge, WorkFlowEdgeId, WorkFlowId, WorkFlowNode, WorkFlowNodeId, WorkFlowNodeKind } from '../src/index.ts'
 
@@ -312,5 +313,60 @@ describe('workFlowRecord schema', () => {
       createdAt: 'c',
       updatedAt: 'u',
     })).toThrow()
+  })
+})
+
+describe('FaberLoomWorkflows templates, export, and import', () => {
+  it('F9 · every built-in template validates and compiles', async () => {
+    const { workflows } = await harness()
+    const templates = workflows.templates()
+    expect(templates.length).toBeGreaterThan(0)
+    expect(templates.map(template => template.id)).toContain('anti-spam')
+    for (const template of templates) {
+      const flow = await workflows.createFromTemplate(OWNER, template.id)
+      expect(flow.definition.nodes).toHaveLength(template.definition.nodes.length)
+      await expect(workflows.compile(OWNER, flow.id)).resolves.toBeTruthy()
+    }
+  })
+
+  it('F9 · createFromTemplate uses the template name and accepts an override', async () => {
+    const { workflows } = await harness()
+    const named = await workflows.createFromTemplate(OWNER, 'anti-spam')
+    expect(named.name).toBe(getTemplate('anti-spam')?.name)
+    const overridden = await workflows.createFromTemplate(OWNER, 'anti-spam', 'Mi anti-spam')
+    expect(overridden.name).toBe('Mi anti-spam')
+    await expect(workflows.createFromTemplate(OWNER, 'nope')).rejects.toThrow('work flow template nope not found')
+  })
+
+  it('F9 · exports portable JSON and imports it back as a new flow', async () => {
+    const { workflows } = await harness()
+    const source = await workflows.createFromTemplate(OWNER, 'inbox-digest', 'Origen')
+    const json = await workflows.exportFlow(OWNER, source.id)
+    const parsed = JSON.parse(json) as { format: string; version: number; name: string }
+    expect(parsed.format).toBe('faberloom-workflow')
+    expect(parsed.version).toBe(1)
+    expect(parsed.name).toBe('Origen')
+
+    const imported = await workflows.importFlow(OWNER, json, 'Copia')
+    expect(imported.name).toBe('Copia')
+    expect(imported.id).not.toBe(source.id)
+    expect(imported.status).toBe('draft')
+    expect(imported.definition.nodes.map(node => node.kind)).toEqual(source.definition.nodes.map(node => node.kind))
+
+    // Without an override the export's name survives a round trip.
+    const again = await workflows.importFlow(OWNER, json)
+    expect(again.name).toBe('Origen')
+  })
+
+  it('F9 · rejects malformed, mislabelled, and invalid imports', async () => {
+    const { workflows } = await harness()
+    await expect(workflows.importFlow(OWNER, 'not json')).rejects.toThrow('no es válido')
+    await expect(workflows.importFlow(OWNER, '[]')).rejects.toThrow('debe ser un objeto')
+    await expect(workflows.importFlow(OWNER, JSON.stringify({ format: 'otro', definition: simple }))).rejects.toThrow('format')
+    await expect(workflows.importFlow(OWNER, JSON.stringify({ format: 'faberloom-workflow' }))).rejects.toThrow('definition')
+
+    const broken = await workflows.create(OWNER, { name: 'roto', definition: invalid })
+    const brokenJson = await workflows.exportFlow(OWNER, broken.id)
+    await expect(workflows.importFlow(OWNER, brokenJson)).rejects.toThrow('no es válido')
   })
 })

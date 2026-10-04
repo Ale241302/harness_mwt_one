@@ -1521,6 +1521,29 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('exportWorkflow') async exportWorkflow(id: string, format: string): Promise<FaberLoomWorkflowExport>
 
 /**
+ * The built-in Work Flow templates the gallery lists.
+ * @returns one row per template.
+ */
+@Remote('workflowTemplates') workflowTemplates(): Promise<readonly FaberLoomWorkflowTemplateRow[]>
+
+/**
+ * Create one work flow from a built-in template and return the refreshed list.
+ * @param templateId - template id.
+ * @param name - optional display name.
+ * @returns the refreshed rows.
+ */
+@Remote('createWorkflowFromTemplate') async createWorkflowFromTemplate(templateId: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
+ * Import portable Work Flow JSON as a new work flow and return the refreshed
+ * list; the graph is validated before it is stored.
+ * @param json - the portable JSON text.
+ * @param name - optional display name.
+ * @returns the refreshed rows.
+ */
+@Remote('importWorkflow') async importWorkflow(json: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
  * Create a space (root or sub-space) for the owner with an optional
  * responsible agent, and register its conversation area as a Workspace so
  * the sidebar and the Espacios panel show the same thing.
@@ -2382,6 +2405,42 @@ async validate(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlowValidation
  * @returns the routine definition input.
  */
 async compile(actor: WorkFlowActor, id: WorkFlowId): Promise<RoutineDefinitionInput>
+
+/**
+ * The built-in templates a user can start from.
+ * @returns the template catalog, in gallery order.
+ */
+templates(): readonly WorkFlowTemplate[]
+
+/**
+ * Create one owned work flow from a built-in template.
+ * @param actor - the acting identity.
+ * @param templateId - the template id.
+ * @param name - optional display name; the template's name is used otherwise.
+ * @returns the created work flow.
+ * @throws when the template id is unknown.
+ */
+async createFromTemplate(actor: WorkFlowActor, templateId: string, name?: string): Promise<WorkFlow>
+
+/**
+ * Export one work flow as portable JSON the gallery, the knowledge hub, and
+ * another deployment can import.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the JSON text.
+ */
+async exportFlow(actor: WorkFlowActor, id: WorkFlowId): Promise<string>
+
+/**
+ * Import portable Work Flow JSON as a new owned work flow; the graph is
+ * validated before it is stored.
+ * @param actor - the acting identity.
+ * @param json - the JSON text.
+ * @param name - optional display name overriding the export's.
+ * @returns the created work flow.
+ * @throws when the JSON is malformed, mislabelled, or its graph is invalid.
+ */
+async importFlow(actor: WorkFlowActor, json: string, name?: string): Promise<WorkFlow>
 
 /**
  * Remove one work flow the actor owns.

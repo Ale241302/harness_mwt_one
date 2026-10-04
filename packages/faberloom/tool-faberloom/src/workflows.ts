@@ -134,6 +134,52 @@ const WORKFLOW_TOOLS: readonly WorkflowTool[] = [
     },
   },
   {
+    name: 'faberloom_workflows_templates',
+    description: 'List the built-in Work Flow templates: id, name, description, and graph size.',
+    parameters: {},
+    run: service => Promise.resolve({
+      templates: service.templates().map(template => ({
+        id: template.id,
+        name: template.name,
+        description: template.description,
+        nodes: template.definition.nodes.length,
+        edges: template.definition.edges.length,
+      })),
+    }),
+  },
+  {
+    name: 'faberloom_workflows_from_template',
+    description: 'Create a work flow from a built-in template; list the templates first.',
+    parameters: {
+      templateId: { type: 'string', required: true, description: 'Template id from faberloom_workflows_templates.' },
+      name: { type: 'string', description: 'Optional display name.' },
+    },
+    run: async (service, actor, args) => summarize(await service.createFromTemplate(
+      actor,
+      String(args.templateId),
+      typeof args.name === 'string' ? args.name : undefined,
+    )),
+  },
+  {
+    name: 'faberloom_workflows_export',
+    description: 'Export one work flow as portable JSON (format "faberloom-workflow") for the gallery or another deployment.',
+    parameters: { workflowId: WORKFLOW_ID },
+    run: async (service, actor, args) => ({ format: 'faberloom-workflow', json: await service.exportFlow(actor, args.workflowId as WorkFlowId) }),
+  },
+  {
+    name: 'faberloom_workflows_import',
+    description: 'Import portable Work Flow JSON as a new work flow; the graph is validated before it is stored.',
+    parameters: {
+      json: { type: 'string', required: true, description: 'Portable JSON text.' },
+      name: { type: 'string', description: 'Optional display name.' },
+    },
+    run: async (service, actor, args) => summarize(await service.importFlow(
+      actor,
+      String(args.json),
+      typeof args.name === 'string' ? args.name : undefined,
+    )),
+  },
+  {
     name: 'faberloom_workflows_add_node',
     description: 'Append one node to a work flow graph.',
     parameters: { workflowId: WORKFLOW_ID, kind: NODE_KIND, title: { type: 'string', required: true, description: 'Node title.' }, config: NODE_CONFIG, id: { type: 'string', description: 'Optional stable node id to connect against.' } },

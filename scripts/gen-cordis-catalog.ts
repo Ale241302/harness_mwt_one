@@ -457,6 +457,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FaberLoomHealthRow: 'faberloom.md',
   ExecutionReview: 'faberloom.md',
   RoutineHealth: 'faberloom.md',
+  FaberLoomWorkflowTemplateRow: 'faberloom.md',
+  WorkFlowTemplate: 'faberloom.md',
   FaberLoomJsonValue: 'faberloom.md',
   Agent: 'core.md',
   AgentCancelCause: 'core.md',
