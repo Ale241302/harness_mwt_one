@@ -39,6 +39,7 @@ import type {
   FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomWorkflowTemplateRow,
   FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
+  FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
@@ -307,6 +308,14 @@ export interface FaberloomPanelInjected {
     list: (spaceId: string) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
     content: (spaceId: string, ownerId: string, sessionId: string) => Promise<Result<FaberLoomSharedSessionContentRow>>
     remove: (spaceId: string, ownerId: string, sessionId: string) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
+  }
+  /** The approval inbox surface. */
+  approvals: {
+    contextEntries: () => Promise<Result<readonly FaberLoomContextRow[]>>
+    syncContext: () => Promise<Result<readonly FaberLoomContextRow[]>>
+    workflowChanges: () => Promise<Result<readonly FaberLoomWorkflowPendingRow[]>>
+    acceptWorkflow: (id: string) => Promise<Result<readonly FaberLoomWorkflowPendingRow[]>>
+    rejectWorkflow: (id: string) => Promise<Result<readonly FaberLoomWorkflowPendingRow[]>>
   }
 }
 
@@ -4001,6 +4010,117 @@ function contextScreen() {
   }
 }
 
+/** One line of the work-flow approval diff. */
+interface WorkflowDiffLine {
+  readonly id: string
+  readonly op: string
+  readonly labelKey: 'approvals.nodeAdd' | 'approvals.nodeRemove' | 'approvals.nodeChange' | 'approvals.edgeAdd' | 'approvals.edgeRemove'
+  readonly text: string
+}
+
+/** Compare a work-flow proposal against its base as labelled diff lines. */
+function workflowDiffLines(base: FaberLoomWorkflowGraph, proposed: FaberLoomWorkflowGraph): readonly WorkflowDiffLine[] {
+  const lines: WorkflowDiffLine[] = []
+  const baseNodes = new Map(base.nodes.map(node => [node.id, node]))
+  const proposedNodes = new Map(proposed.nodes.map(node => [node.id, node]))
+  for (const node of proposed.nodes) {
+    const before = baseNodes.get(node.id)
+    if (before === undefined) {
+      lines.push({ id: `+n${node.id}`, op: '+', labelKey: 'approvals.nodeAdd', text: `${node.title} (${node.kind})` })
+      continue
+    }
+    if (before.title !== node.title || before.kind !== node.kind) {
+      lines.push({ id: `~n${node.id}`, op: '~', labelKey: 'approvals.nodeChange', text: `${node.id}: ${before.title}/${before.kind} → ${node.title}/${node.kind}` })
+    }
+  }
+  for (const node of base.nodes) {
+    if (!proposedNodes.has(node.id)) lines.push({ id: `-n${node.id}`, op: '-', labelKey: 'approvals.nodeRemove', text: `${node.title} (${node.kind})` })
+  }
+  const edgeKey = (edge: { readonly from: string; readonly to: string }): string => `${edge.from} → ${edge.to}`
+  const baseEdges = new Set(base.edges.map(edgeKey))
+  const proposedEdges = new Set(proposed.edges.map(edgeKey))
+  for (const edge of proposed.edges) {
+    if (!baseEdges.has(edgeKey(edge))) lines.push({ id: `+e${edge.id}`, op: '+', labelKey: 'approvals.edgeAdd', text: edgeKey(edge) })
+  }
+  for (const edge of base.edges) {
+    if (!proposedEdges.has(edgeKey(edge))) lines.push({ id: `-e${edge.id}`, op: '-', labelKey: 'approvals.edgeRemove', text: edgeKey(edge) })
+  }
+  return lines
+}
+
+/** Aprobaciones: the owner's pending context and staged work-flow changes. */
+function approvalsScreen() {
+  return function FaberloomApprovals(props: ScreenProps) {
+    const { t, context, approvals } = props
+    const [contextRows, setContextRows] = useState<readonly FaberLoomContextRow[]>([])
+    const [changes, setChanges] = useState<readonly FaberLoomWorkflowPendingRow[]>([])
+    const [message, setMessage] = useState<string | null>(null)
+
+    useEffect(() => {
+      void approvals.contextEntries().then((result) => { if (result.ok) setContextRows(result.value) })
+      void approvals.workflowChanges().then((result) => { if (result.ok) setChanges(result.value) })
+    }, [approvals])
+
+    const pendingContext = contextRows.filter(row => row.visibility === 'pending')
+
+    return (
+      <Screen title={t('approvals.title')} subtitle={t('approvals.subtitle')} trailing={<Feedback t={t} message={message} />}>
+        <section className={styles.workflowSection}>
+          <h4>{t('approvals.context')}</h4>
+          <span className={styles.tools}>
+            <button className={styles.secondary} type="button" onClick={() => {
+              void approvals.syncContext().then((result) => {
+                if (result.ok) setContextRows(result.value)
+                else setMessage(result.error.message)
+              })
+            }}>{t('approvals.sync')}</button>
+          </span>
+          {pendingContext.length === 0
+            ? <span className={styles.workflowEmpty}>{t('approvals.noContext')}</span>
+            : pendingContext.map(row => (
+              <div key={row.id} className={styles.workflowRunRow}>
+                <span className={styles.cellMuted}>{row.title} · {row.authorId}</span>
+                <span className={styles.tools}>
+                  <button className={styles.primary} type="button" onClick={() => {
+                    void context.approve(row.id).then((result) => { if (result.ok) setContextRows(result.value) })
+                  }}>{t('approvals.accept')}</button>
+                  <button className={styles.ghost} type="button" onClick={() => {
+                    void context.reject(row.id).then((result) => { if (result.ok) setContextRows(result.value) })
+                  }}>{t('approvals.reject')}</button>
+                </span>
+              </div>
+            ))}
+        </section>
+        <section className={styles.workflowSection}>
+          <h4>{t('approvals.workflows')}</h4>
+          {changes.length === 0
+            ? <span className={styles.workflowEmpty}>{t('approvals.noWorkflows')}</span>
+            : changes.map(change => (
+              <div key={change.workflowId} className={styles.workflowSection}>
+                <div className={styles.workflowRunRow}>
+                  <span className={styles.cellName}>{change.name} · {t('approvals.proposedBy')} {change.proposerId} · {String(change.baseVersion)}</span>
+                  <span className={styles.tools}>
+                    <button className={styles.primary} type="button" onClick={() => {
+                      void approvals.acceptWorkflow(change.workflowId).then((result) => { if (result.ok) setChanges(result.value) })
+                    }}>{t('approvals.accept')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => {
+                      void approvals.rejectWorkflow(change.workflowId).then((result) => { if (result.ok) setChanges(result.value) })
+                    }}>{t('approvals.reject')}</button>
+                  </span>
+                </div>
+                {workflowDiffLines(change.base, change.proposed).map(line => (
+                  <div key={line.id} className={styles.workflowRunRow}>
+                    <span className={styles.cellMuted}>{line.op} {t(line.labelKey)}: {line.text}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+        </section>
+      </Screen>
+    )
+  }
+}
+
 /** The FaberLoom sections in sidebar order. */
 export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel() },
   { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', Icon: panelIcon(IconChecklistOutline14), Page: boardScreen() },
@@ -4011,6 +4131,7 @@ export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [  { id: 'faberlo
   { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(IconBranchOutline16), Page: workflowsScreen() },
   { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(IconDatabaseOutline16), Page: memoryScreen() },
   { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', Icon: panelIcon(IconContextInjectionOutline16), Page: contextScreen() },
+  { id: 'faberloom-approvals' as MainPanelId, order: 64, labelKey: 'nav.approvals', Icon: panelIcon(IconChecklistOutline14), Page: approvalsScreen() },
   { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', Icon: panelIcon(IconApiOutline14), Page: connectionsScreen() },
   { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', Icon: panelIcon(IconSendOutline14), Page: emailScreen() },
 ]

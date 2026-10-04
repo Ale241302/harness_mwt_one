@@ -7,7 +7,7 @@
 
 import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
-import type { WorkFlowEdgeId, WorkFlowId, WorkFlowNodeId, WorkFlowRecord, WorkFlowVersionRecord } from './types.ts'
+import type { WorkFlowEdgeId, WorkFlowId, WorkFlowNodeId, WorkFlowRecord, WorkFlowVersionRecord, WorkFlowPendingRecord } from './types.ts'
 
 /** Branded ids have no runtime representation; the boundary only types them. */
 const nodeId = z.string().transform(value => value as WorkFlowNodeId)
@@ -99,15 +99,32 @@ export const workFlowVersionRecord: z.ZodType<WorkFlowVersionRecord> = z.object(
 })
 
 /**
- * The work flows domain spec: a `workflows` table keyed by {@link WorkFlowId}
- * and its append-only `versions` table. The service opens this through
- * `ctx.storageDomain`.
+ * One staged revision of a work flow: a member's proposed name and graph waiting
+ * for the owner to accept or reject it. One row per work flow; a later proposal
+ * replaces an earlier one.
+ */
+export const pendingWorkFlowRecord: z.ZodType<WorkFlowPendingRecord> = z.object({
+  workflowId: z.string(),
+  ownerId: z.string(),
+  proposerId: z.string(),
+  name: z.string(),
+  scope: workFlowScope,
+  definition: workFlowDefinition,
+  baseVersion: z.number(),
+  createdAt: z.string(),
+})
+
+/**
+ * The work flows domain spec: a `workflows` table keyed by {@link WorkFlowId},
+ * its append-only `versions` table, and one `pending` staged revision per flow.
+ * The service opens this through `ctx.storageDomain`.
  */
 export const workflowsDomainSpec = defineDomain({
   name: 'faberloom_workflows',
-  version: 2,
+  version: 3,
   tables: {
     workflows: domainTable<WorkFlowId, WorkFlowRecord>(workFlowRecord),
     versions: domainTable<string, WorkFlowVersionRecord>(workFlowVersionRecord),
+    pending: domainTable<WorkFlowId, WorkFlowPendingRecord>(pendingWorkFlowRecord),
   },
 })

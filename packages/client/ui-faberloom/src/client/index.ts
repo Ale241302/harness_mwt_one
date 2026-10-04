@@ -295,6 +295,13 @@ export function apply(ctx: ClientContext): void {
         content: (spaceId, ownerId, sessionId) => ctx.remote.faberloomView.spaceSessionContent(spaceId, ownerId, sessionId),
         remove: (spaceId, ownerId, sessionId) => ctx.remote.faberloomView.removeSpaceSession(spaceId, ownerId, sessionId),
       },
+      approvals: {
+        contextEntries: () => ctx.remote.faberloomView.contextEntries(),
+        syncContext: () => ctx.remote.faberloomView.syncContext(),
+        workflowChanges: () => ctx.remote.faberloomView.workflowPendingChanges(),
+        acceptWorkflow: id => ctx.remote.faberloomView.acceptWorkflowChange(id),
+        rejectWorkflow: id => ctx.remote.faberloomView.rejectWorkflowChange(id),
+      },
     }
   }
 

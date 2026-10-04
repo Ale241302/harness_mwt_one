@@ -106,6 +106,38 @@ describe('faberloom workflow tools', () => {
     expect(service.importFlow).toHaveBeenCalledWith(expect.anything(), '{"format":"faberloom-workflow"}', undefined)
   })
 
+  it('proposes a draft from an ordered step list and never activates it', async () => {
+    const service = fakeWorkflows()
+    const tools = harness(CONFIG, { faberloomWorkflows: service })
+    const proposed = await tools.get('faberloom_workflows_propose')!.execute({
+      name: 'Recepción',
+      intent: 'clasificar correo',
+      scope: 'space',
+      spaceId: 'sp-1',
+      steps: [
+        { kind: 'trigger.email', config: { match: 'x' } },
+        { kind: 'agent', title: 'clasifica', config: { agentId: 'a' } },
+      ],
+    } as never)
+    expect(service.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ name: 'Recepción', scope: { kind: 'space', spaceId: 'sp-1' } }))
+    expect(service.setTrigger).toHaveBeenCalledWith(expect.anything(), 'wf1', expect.objectContaining({ kind: 'trigger.email' }))
+    expect(service.addNode).toHaveBeenCalledWith(expect.anything(), 'wf1', expect.objectContaining({ kind: 'agent', title: 'clasifica' }))
+    expect(service.connect).toHaveBeenCalled()
+    expect(service.setStatus).not.toHaveBeenCalled()
+    expect(proposed).toMatchObject({ valid: true })
+    expect(render(tools.get('faberloom_workflows_propose')!, proposed as Record<string, unknown>)).toContain('wait for confirmation')
+  })
+
+  it('proposes a bare manual draft and reports an invalid one', async () => {
+    const service = fakeWorkflows()
+    service.validate.mockResolvedValueOnce({ ok: false, problems: ['sin disparador'] })
+    const tools = harness(CONFIG, { faberloomWorkflows: service })
+    const invalid = await tools.get('faberloom_workflows_propose')!.execute({ name: 'Solo nombre', steps: [] } as never)
+    expect(service.setTrigger).toHaveBeenCalledWith(expect.anything(), 'wf1', { kind: 'trigger.manual' })
+    expect(invalid).toMatchObject({ valid: false, problems: ['sin disparador'] })
+    expect(render(tools.get('faberloom_workflows_propose')!, invalid as Record<string, unknown>)).toContain('needs work')
+  })
+
   it('creates a personal or space-scoped flow', async () => {
     const service = fakeWorkflows()
     const tools = harness(CONFIG, { faberloomWorkflows: service })

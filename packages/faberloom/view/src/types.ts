@@ -1299,3 +1299,51 @@ export interface FaberLoomSharedSessionRef {
   /** Display title the panel already holds. */
   readonly title: string
 }
+
+/** One node in a work flow's proposed/base graph, as the approval diff reads it. */
+export interface FaberLoomWorkflowGraphNode {
+  /** Node id. */
+  readonly id: string
+  /** Node title. */
+  readonly title: string
+  /** Node kind. */
+  readonly kind: string
+}
+
+/** One edge in a work flow's proposed/base graph. */
+export interface FaberLoomWorkflowGraphEdge {
+  /** Edge id. */
+  readonly id: string
+  /** Source node id. */
+  readonly from: string
+  /** Target node id. */
+  readonly to: string
+}
+
+/** The node/edge view of one work flow graph for the approval diff. */
+export interface FaberLoomWorkflowGraph {
+  /** Nodes in stored order. */
+  readonly nodes: readonly FaberLoomWorkflowGraphNode[]
+  /** Edges in stored order. */
+  readonly edges: readonly FaberLoomWorkflowGraphEdge[]
+}
+
+/** One staged work flow revision as the Aprobaciones panel renders it. */
+export interface FaberLoomWorkflowPendingRow {
+  /** Work flow the proposal targets. */
+  readonly workflowId: string
+  /** Owner who decides. */
+  readonly ownerId: string
+  /** Member who proposed the change. */
+  readonly proposerId: string
+  /** Proposed display name. */
+  readonly name: string
+  /** Version the proposal was based on. */
+  readonly baseVersion: number
+  /** ISO-8601 instant the proposal was staged. */
+  readonly createdAt: string
+  /** The live graph the proposal is compared against. */
+  readonly base: FaberLoomWorkflowGraph
+  /** The proposed graph. */
+  readonly proposed: FaberLoomWorkflowGraph
+}

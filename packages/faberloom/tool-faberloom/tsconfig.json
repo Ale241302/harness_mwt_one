@@ -51,6 +51,9 @@
       "path": "../shares"
     },
     {
+      "path": "../context"
+    },
+    {
       "path": "../../subprocess/subprocess"
     }
   ]

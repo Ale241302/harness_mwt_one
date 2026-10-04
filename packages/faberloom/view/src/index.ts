@@ -57,16 +57,19 @@ import type {
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
   FaberLoomWorkflowTemplateRow, FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
+  FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
   FaberLoomWorkflows,
   WorkFlow,
   WorkFlowActor,
+  WorkFlowDefinition,
   WorkFlowEdgeId,
   WorkFlowId,
   WorkFlowNodeId,
   WorkFlowNodeKind,
+  WorkFlowPendingChange,
   WorkFlowStatus,
 } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant } from '@deepseek-ai/dsh-faberloom-shares'
@@ -756,6 +759,28 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
   }
 
+  /** Project one work flow definition to the node/edge graph the diff reads. */
+  private workflowGraph(definition: WorkFlowDefinition): FaberLoomWorkflowGraph {
+    return {
+      nodes: definition.nodes.map(node => ({ id: String(node.id), title: node.title, kind: node.kind })),
+      edges: definition.edges.map(edge => ({ id: String(edge.id), from: String(edge.from), to: String(edge.to) })),
+    }
+  }
+
+  /** Map one staged work flow revision to its approval row. */
+  private workflowPendingRow(change: WorkFlowPendingChange): FaberLoomWorkflowPendingRow {
+    return {
+      workflowId: change.workflowId,
+      ownerId: change.ownerId,
+      proposerId: change.proposerId,
+      name: change.name,
+      baseVersion: change.baseVersion,
+      createdAt: change.createdAt,
+      base: this.workflowGraph(change.base),
+      proposed: this.workflowGraph(change.proposed),
+    }
+  }
+
   /**
    * Read one local Session's portable snapshot through the query service. An
    * absent query service yields an empty artifact, so a bare composition still
@@ -1235,6 +1260,38 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * List the staged work flow revisions awaiting this owner's decision, with
+   * each proposal's base and proposed graph for the diff.
+   * @returns the staged revisions.
+   */
+  @Remote('workflowPendingChanges')
+  async workflowPendingChanges(): Promise<readonly FaberLoomWorkflowPendingRow[]> {
+    return (await this.workflowsService().pendingChanges(this.workflowActor())).map(change => this.workflowPendingRow(change))
+  }
+
+  /**
+   * Accept one staged work flow revision and return the refreshed inbox.
+   * @param id - work flow id.
+   * @returns the staged revisions.
+   */
+  @Remote('acceptWorkflowChange')
+  async acceptWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]> {
+    await this.workflowsService().acceptPending(this.workflowActor(), id as WorkFlowId)
+    return await this.workflowPendingChanges()
+  }
+
+  /**
+   * Reject one staged work flow revision and return the refreshed inbox.
+   * @param id - work flow id.
+   * @returns the staged revisions.
+   */
+  @Remote('rejectWorkflowChange')
+  async rejectWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]> {
+    await this.workflowsService().rejectPending(this.workflowActor(), id as WorkFlowId)
+    return await this.workflowPendingChanges()
+  }
+
+  /**
    * List the context entries the actor may see, newest first.
    * @returns the visible context rows.
    */
@@ -1328,6 +1385,17 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('removeContext')
   async removeContext(id: string): Promise<readonly FaberLoomContextRow[]> {
     await this.contextService().remove({ id: this.actor().id }, id)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Import the console's shared context for this owner and return the refreshed
+   * entries, so a member's Space contribution shows up for approval.
+   * @returns the visible context rows.
+   */
+  @Remote('syncContext')
+  async syncContext(): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().sync(this.actor().id)
     return await this.contextEntries()
   }
 

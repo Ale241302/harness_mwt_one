@@ -61,13 +61,14 @@ const antispam: WorkFlowDefinition = {
 }
 
 /** Boot the storage/domain composition plus access, routines, and workflows over one pool. */
-async function harness(pool = new MemoryMediaPool()) {
+async function harness(pool = new MemoryMediaPool(), granted = false) {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
   const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
+  ctx.provide('faberloomShares', { can: async () => granted } as never)
   await ctx.plugin(FaberLoomAccess)
   await ctx.plugin(FaberLoomRoutines)
   const fiber = await ctx.plugin(FaberLoomWorkflows)
@@ -381,5 +382,51 @@ describe('FaberLoomWorkflows versions', () => {
     expect(restored.name).toBe('v1')
     expect(restored.version).toBe(3)
     await expect(workflows.restore(OWNER, flow.id, 99)).rejects.toThrow('version 99 not found')
+  })
+})
+
+describe('FaberLoomWorkflows pending approval', () => {
+  it('F11 · a member edit stages a revision the owner accepts', async () => {
+    const { workflows } = await harness(undefined, true)
+    const flow = await workflows.create(OWNER, { name: 'flujo', definition: simple })
+    const staged = await workflows.update(OTHER, flow.id, { name: 'propuesta' })
+    expect(staged.name).toBe('flujo')
+    expect((await workflows.get(OWNER, flow.id)).version).toBe(1)
+    const pending = await workflows.pendingChanges(OWNER)
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({ workflowId: flow.id, ownerId: OWNER.id, proposerId: OTHER.id, name: 'propuesta', baseVersion: 1 })
+    expect(pending[0]?.base.nodes).toHaveLength(2)
+    const accepted = await workflows.acceptPending(OWNER, flow.id)
+    expect(accepted).toMatchObject({ name: 'propuesta', version: 2 })
+    expect(await workflows.pendingChanges(OWNER)).toEqual([])
+  })
+
+  it('F11 · a member graph edit stages and the owner rejects it', async () => {
+    const { workflows } = await harness(undefined, true)
+    const flow = await workflows.create(OWNER, { name: 'flujo', definition: simple })
+    await workflows.addNode(OTHER, flow.id, { kind: 'agent', title: 'nuevo', config: {} })
+    expect((await workflows.pendingChanges(OWNER))[0]?.proposed.nodes).toHaveLength(3)
+    // A later proposal replaces the earlier one (one stage per flow).
+    await workflows.restore(OTHER, flow.id, 1)
+    await workflows.setConcurrency(OTHER, flow.id, 3)
+    const pending = await workflows.pendingChanges(OWNER)
+    expect(pending[0]?.proposed.nodes).toHaveLength(2)
+    expect(pending[0]?.proposed.maxConcurrency).toBe(3)
+    const rejected = await workflows.rejectPending(OWNER, flow.id)
+    expect(rejected.version).toBe(1)
+    expect((await workflows.get(OWNER, flow.id)).definition.nodes).toHaveLength(2)
+    expect(await workflows.pendingChanges(OWNER)).toEqual([])
+  })
+
+  it('F11 · only the owner decides and a missing stage fails loud', async () => {
+    const { workflows } = await harness(undefined, true)
+    const flow = await workflows.create(OWNER, { name: 'flujo', definition: simple })
+    await expect(workflows.acceptPending(OWNER, flow.id)).rejects.toThrow('no staged change')
+    await expect(workflows.rejectPending(OWNER, flow.id)).rejects.toThrow('no staged change')
+    await workflows.update(OTHER, flow.id, { name: 'x' })
+    await expect(workflows.acceptPending(OTHER, flow.id)).rejects.toThrow('only the owner')
+    await expect(workflows.rejectPending(OTHER, flow.id)).rejects.toThrow('only the owner')
+    // A personal flow has no owner-visible stage for another identity.
+    expect(await workflows.pendingChanges(OTHER)).toEqual([])
   })
 })

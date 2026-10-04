@@ -593,7 +593,7 @@ Source: [`packages/faberloom/connections/src/index.ts`](../../packages/faberloom
 
 ### `ctx.faberloomContext` — `FaberLoomContext`
 
-The Workspace/Space Context service: versioned entries with an owner approval gate.
+The Workspace/Space Context service: versioned entries with an owner approval gate and console transport.
 
 ```ts cordis-catalog
 /**
@@ -669,6 +669,14 @@ async reject(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContext
  * @returns true when removed.
  */
 async remove(actor: FaberLoomContextActor, id: string): Promise<boolean>
+
+/**
+ * Import the console's shared context for one owner and prune the imported
+ * rows the console no longer carries. Each imported row lands `pending` so the
+ * owner decides whether to index it. A no-op when the console is not wired.
+ * @param readerId - the Space owner importing its members' context.
+ */
+async sync(readerId: string): Promise<void>
 ```
 
 Source: [`packages/faberloom/context/src/index.ts`](../../packages/faberloom/context/src/index.ts)
@@ -1710,6 +1718,27 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('restoreWorkflow') async restoreWorkflow(id: string, version: number): Promise<FaberLoomWorkflowDetail>
 
 /**
+ * List the staged work flow revisions awaiting this owner's decision, with
+ * each proposal's base and proposed graph for the diff.
+ * @returns the staged revisions.
+ */
+@Remote('workflowPendingChanges') async workflowPendingChanges(): Promise<readonly FaberLoomWorkflowPendingRow[]>
+
+/**
+ * Accept one staged work flow revision and return the refreshed inbox.
+ * @param id - work flow id.
+ * @returns the staged revisions.
+ */
+@Remote('acceptWorkflowChange') async acceptWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]>
+
+/**
+ * Reject one staged work flow revision and return the refreshed inbox.
+ * @param id - work flow id.
+ * @returns the staged revisions.
+ */
+@Remote('rejectWorkflowChange') async rejectWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]>
+
+/**
  * List the context entries the actor may see, newest first.
  * @returns the visible context rows.
  */
@@ -1768,6 +1797,13 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns the refreshed rows.
  */
 @Remote('removeContext') async removeContext(id: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Import the console's shared context for this owner and return the refreshed
+ * entries, so a member's Space contribution shows up for approval.
+ * @returns the visible context rows.
+ */
+@Remote('syncContext') async syncContext(): Promise<readonly FaberLoomContextRow[]>
 
 /**
  * Capture the panel's local Sessions into one Space and return the refreshed
@@ -2585,6 +2621,32 @@ async versions(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly WorkFlowV
  * @returns the restored work flow.
  */
 async restore(actor: WorkFlowActor, id: WorkFlowId, version: number): Promise<WorkFlow>
+
+/**
+ * List the staged revisions on the work flows the actor owns, newest first,
+ * each with its base and proposed graph for the approval diff.
+ * @param actor - the acting identity.
+ * @returns the staged revisions.
+ */
+async pendingChanges(actor: WorkFlowActor): Promise<readonly WorkFlowPendingChange[]>
+
+/**
+ * Accept one staged revision: apply it to the live flow, bump the version,
+ * reconcile an active flow's routine, and clear the stage. Owner only.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the updated work flow.
+ */
+async acceptPending(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>
+
+/**
+ * Reject one staged revision: drop it, leaving the live flow unchanged.
+ * Owner only.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the unchanged work flow.
+ */
+async rejectPending(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>
 
 /**
  * Append one node to a work flow the actor owns.

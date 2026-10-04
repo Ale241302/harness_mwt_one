@@ -1296,8 +1296,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'faberloomContext',
-    summary: 'The Workspace/Space Context service: versioned entries with an owner approval gate.',
-    description: 'The Workspace/Space Context service: versioned entries with an owner approval gate.',
+    summary: 'The Workspace/Space Context service: versioned entries with an owner approval gate and console transport.',
+    description: 'The Workspace/Space Context service: versioned entries with an owner approval gate and console transport.',
     methods: [
       {
         signature: 'async create(actor: FaberLoomContextActor, input: FaberLoomContextInput): Promise<FaberLoomContextEntry>',
@@ -1352,6 +1352,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one entry and its history (author or owner).',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
         returns: 'true when removed.',
+      },
+      {
+        signature: 'async sync(readerId: string): Promise<void>',
+        description: 'Import the console\'s shared context for one owner and prune the imported rows the console no longer carries. Each imported row lands `pending` so the owner decides whether to index it. A no-op when the console is not wired.',
+        parameters: [{ name: 'readerId', description: 'the Space owner importing its members\' context.' }],
       },
     ],
   },
@@ -2097,6 +2102,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed detail.',
       },
       {
+        signature: '@Remote(\'workflowPendingChanges\') async workflowPendingChanges(): Promise<readonly FaberLoomWorkflowPendingRow[]>',
+        description: 'List the staged work flow revisions awaiting this owner\'s decision, with each proposal\'s base and proposed graph for the diff.',
+        parameters: [],
+        returns: 'the staged revisions.',
+      },
+      {
+        signature: '@Remote(\'acceptWorkflowChange\') async acceptWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]>',
+        description: 'Accept one staged work flow revision and return the refreshed inbox.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
+        returns: 'the staged revisions.',
+      },
+      {
+        signature: '@Remote(\'rejectWorkflowChange\') async rejectWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]>',
+        description: 'Reject one staged work flow revision and return the refreshed inbox.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
+        returns: 'the staged revisions.',
+      },
+      {
         signature: '@Remote(\'contextEntries\') async contextEntries(): Promise<readonly FaberLoomContextRow[]>',
         description: 'List the context entries the actor may see, newest first.',
         parameters: [],
@@ -2143,6 +2166,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one context entry and its history.',
         parameters: [{ name: 'id', description: 'entry id.' }],
         returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'syncContext\') async syncContext(): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Import the console\'s shared context for this owner and return the refreshed entries, so a member\'s Space contribution shows up for approval.',
+        parameters: [],
+        returns: 'the visible context rows.',
       },
       {
         signature: '@Remote(\'captureSpaceSessions\') async captureSpaceSessions( spaceId: string, sessions: readonly FaberLoomSharedSessionRef[], ): Promise<readonly FaberLoomSharedSessionRow[]>',
@@ -2757,6 +2786,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Restore one work flow to an earlier version, bumping the version and reconciling an active flow\'s compiled routine.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'version', description: 'the version to restore.' }],
         returns: 'the restored work flow.',
+      },
+      {
+        signature: 'async pendingChanges(actor: WorkFlowActor): Promise<readonly WorkFlowPendingChange[]>',
+        description: 'List the staged revisions on the work flows the actor owns, newest first, each with its base and proposed graph for the approval diff.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }],
+        returns: 'the staged revisions.',
+      },
+      {
+        signature: 'async acceptPending(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>',
+        description: 'Accept one staged revision: apply it to the live flow, bump the version, reconcile an active flow\'s routine, and clear the stage. Owner only.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the updated work flow.',
+      },
+      {
+        signature: 'async rejectPending(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>',
+        description: 'Reject one staged revision: drop it, leaving the live flow unchanged. Owner only.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the unchanged work flow.',
       },
       {
         signature: 'async addNode( actor: WorkFlowActor, id: WorkFlowId, input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>',
@@ -6994,12 +7041,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomWorkflowExport {\n    readonly format: string;\n    readonly content: string;\n}',
   },
   {
+    name: 'FaberLoomWorkflowGraph',
+    declaration: 'export interface FaberLoomWorkflowGraph {\n    readonly nodes: readonly FaberLoomWorkflowGraphNode[];\n    readonly edges: readonly FaberLoomWorkflowGraphEdge[];\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowGraphEdge',
+    declaration: 'export interface FaberLoomWorkflowGraphEdge {\n    readonly id: string;\n    readonly from: string;\n    readonly to: string;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowGraphNode',
+    declaration: 'export interface FaberLoomWorkflowGraphNode {\n    readonly id: string;\n    readonly title: string;\n    readonly kind: string;\n}',
+  },
+  {
     name: 'FaberLoomWorkflowLink',
     declaration: 'export interface FaberLoomWorkflowLink {\n    readonly routineId: string;\n    readonly routineName: string;\n    readonly workflowId: string;\n    readonly workflowName: string;\n    readonly direction: \'routine-to-workflow\' | \'workflow-to-routine\';\n}',
   },
   {
     name: 'FaberLoomWorkflowNodeRow',
     declaration: 'export interface FaberLoomWorkflowNodeRow {\n    readonly id: string;\n    readonly kind: string;\n    readonly title: string;\n    readonly x: number;\n    readonly y: number;\n    readonly config: Readonly<Record<string, FaberLoomJsonValue>>;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowPendingRow',
+    declaration: 'export interface FaberLoomWorkflowPendingRow {\n    readonly workflowId: string;\n    readonly ownerId: string;\n    readonly proposerId: string;\n    readonly name: string;\n    readonly baseVersion: number;\n    readonly createdAt: string;\n    readonly base: FaberLoomWorkflowGraph;\n    readonly proposed: FaberLoomWorkflowGraph;\n}',
   },
   {
     name: 'FaberLoomWorkflowRow',
@@ -9636,6 +9699,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkFlowNodeKind',
     declaration: 'export type WorkFlowNodeKind = keyof WorkFlowNodeConfigMap;',
+  },
+  {
+    name: 'WorkFlowPendingChange',
+    declaration: 'export interface WorkFlowPendingChange {\n    readonly workflowId: string;\n    readonly ownerId: string;\n    readonly proposerId: string;\n    readonly name: string;\n    readonly scope: WorkFlowScope;\n    readonly baseVersion: number;\n    readonly createdAt: string;\n    readonly base: WorkFlowDefinition;\n    readonly proposed: WorkFlowDefinition;\n}',
   },
   {
     name: 'WorkflowPhase',

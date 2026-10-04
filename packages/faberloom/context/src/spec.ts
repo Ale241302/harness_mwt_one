@@ -19,6 +19,8 @@ export const contextEntryRecord = z.object({
   ownerId: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  origin: z.union([z.literal('local'), z.literal('console')]).default('local'),
+  consoleId: z.string().nullable().default(null),
 })
 
 /** One stored entry, inferred from {@link contextEntryRecord}. */
@@ -40,7 +42,7 @@ export type ContextVersionRecord = z.infer<typeof contextVersionRecord>
 /** The context domain spec: an `entries` table and its `versions` table. */
 export const contextDomainSpec = defineDomain({
   name: 'faberloom_context',
-  version: 1,
+  version: 2,
   tables: {
     entries: domainTable<string, ContextEntryRecord>(contextEntryRecord),
     versions: domainTable<string, ContextVersionRecord>(contextVersionRecord),

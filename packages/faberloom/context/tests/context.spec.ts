@@ -8,8 +8,19 @@ import FaberLoomContext from '../src/index.ts'
 const OWNER = { id: 'duenio@sondelsa.com' }
 const MEMBER = { id: 'miembro@sondelsa.com' }
 
+/** One console context row used by the import tests. */
+interface ConsoleRow {
+  id: string
+  space_id: string
+  author_email: string
+  title?: string
+  body?: string
+  version?: number
+  status?: string
+}
+
 /** Boot the storage/domain composition plus the context service, with fakes. */
-async function harness(options: { spaceOwner?: string; canIndex?: boolean } = {}) {
+async function harness(options: { spaceOwner?: string; canIndex?: boolean; console?: boolean } = {}) {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
@@ -20,7 +31,7 @@ async function harness(options: { spaceOwner?: string; canIndex?: boolean } = {}
     ctx.provide('faberloomSpaces', { get: vi.fn(async () => ({ id: 'sp-1', ownerId: options.spaceOwner })) } as never)
   }
   ctx.provide('faberloomShares', { can: vi.fn(async () => options.canIndex === true) } as never)
-  const fiber = await ctx.plugin(FaberLoomContext)
+  const fiber = await ctx.plugin(FaberLoomContext, options.console === true ? { consoleBase: 'https://console.test', consoleToken: 'tok' } : {})
   return { ctx, context: ctx.faberloomContext, fiber }
 }
 
@@ -75,5 +86,86 @@ describe('FaberLoomContext', () => {
     await context.remove(MEMBER, pending.id)
     expect(await context.list(MEMBER)).toEqual([])
     await expect(context.get(MEMBER, pending.id)).rejects.toThrow('not found')
+  })
+})
+
+describe('FaberLoomContext console transport', () => {
+  it('F11 · publishes a member Space entry and retracts it on removal', async () => {
+    const calls: { url: string; method: string }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: { method?: string }) => {
+      calls.push({ url, method: init?.method ?? 'GET' })
+      return { ok: true, status: 200, json: async () => ({ id: 'c1' }) }
+    }))
+    const { context } = await harness({ spaceOwner: OWNER.id, console: true })
+    const entry = await context.create(MEMBER, { title: 'Aporta', body: 'x', spaceId: 'sp-1' })
+    expect(calls[0]).toEqual({ url: 'https://console.test/harness/context/', method: 'POST' })
+    // The owner's own entry never crosses hosts.
+    await context.create(OWNER, { title: 'Propio', body: 'y', spaceId: 'sp-1' })
+    expect(calls).toHaveLength(1)
+    await context.approve(OWNER, entry.id)
+    expect(calls.at(-1)?.url).toBe('https://console.test/harness/context/c1/')
+    await context.remove(OWNER, entry.id)
+    expect(calls.at(-1)).toEqual({ url: 'https://console.test/harness/context/c1/', method: 'DELETE' })
+  })
+
+  it('F11 · sync imports the console context as pending and prunes it', async () => {
+    const incoming: ConsoleRow[] = [
+      { id: 'c2', space_id: 'sp-1', author_email: MEMBER.id, title: 'Del invitado', body: 'y', version: 2, status: 'pending' },
+      { id: 'c3', space_id: 'sp-1', author_email: MEMBER.id, title: 'Ya compartido', body: 'z', status: 'shared' },
+    ]
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ incoming }) })))
+    const { context } = await harness({ spaceOwner: OWNER.id, console: true })
+    await context.sync(OWNER.id)
+    const rows = await context.list(OWNER)
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: 'Del invitado', visibility: 'pending', authorId: MEMBER.id, spaceId: 'sp-1', version: 2 }),
+      expect.objectContaining({ title: 'Ya compartido', visibility: 'shared', version: 1 }),
+    ]))
+    const pendingEntry = rows.find(entry => entry.title === 'Del invitado')!
+    expect((await context.approve(OWNER, pendingEntry.id)).visibility).toBe('shared')
+    incoming.length = 0
+    await context.sync(OWNER.id)
+    expect(await context.list(OWNER)).toEqual([])
+  })
+
+  it('F11 · a bare context has no console and a console failure is loud', async () => {
+    const bare = await harness({ spaceOwner: OWNER.id })
+    await expect(bare.context.sync(OWNER.id)).resolves.toBeUndefined()
+    const entry = await bare.context.create(MEMBER, { title: 'x', body: 'y', spaceId: 'sp-1' })
+    expect(entry.visibility).toBe('pending')
+
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })))
+    const wired = await harness({ spaceOwner: OWNER.id, console: true })
+    await expect(wired.context.create(MEMBER, { title: 'x', body: 'y', spaceId: 'sp-1' })).rejects.toThrow('la consola rechazó')
+  })
+
+  it('F11 · reads the console from the environment, defaults a row, and keeps createdAt across syncs', async () => {
+    vi.stubEnv('CONSOLA_API_BASE', 'https://console.test')
+    vi.stubEnv('CONSOLA_TOKEN', 'tok')
+    const answers: unknown[] = [
+      { ok: true, status: 204 },
+      { ok: true, status: 200, json: async () => ({ incoming: [
+        { id: 'c4', space_id: 'sp-1', author_email: MEMBER.id, status: 'local' },
+      ] }) },
+      { ok: true, status: 200, json: async () => ({ incoming: [
+        { id: 'c4', space_id: 'sp-1', author_email: MEMBER.id, title: 'Luego', status: 'pending' },
+      ] }) },
+    ]
+    vi.stubGlobal('fetch', vi.fn(async () => answers.shift() ?? { ok: true, status: 200, json: async () => ({}) }))
+    // No config: the environment carries the console, and a 204 publish leaves no console id.
+    const { context } = await harness({ spaceOwner: OWNER.id })
+    const created = await context.create(MEMBER, { title: 'x', body: 'y', spaceId: 'sp-1' })
+    expect(created.visibility).toBe('pending')
+
+    await context.sync(OWNER.id)
+    const imported = (await context.list(OWNER)).find(row => row.authorId === MEMBER.id && row.spaceId === 'sp-1')!
+    expect(imported.visibility).toBe('local')
+    expect(imported.title).toBe('')
+
+    await context.sync(OWNER.id)
+    const updated = (await context.list(OWNER)).find(row => row.authorId === MEMBER.id && row.spaceId === 'sp-1')!
+    expect(updated.title).toBe('Luego')
+    expect(updated.createdAt).toBe(imported.createdAt)
+    vi.unstubAllEnvs()
   })
 })

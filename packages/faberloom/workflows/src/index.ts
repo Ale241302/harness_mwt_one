@@ -30,6 +30,8 @@ import type {
   WorkFlowNodeKind,
   WorkFlowRecord,
   WorkFlowVersionRecord,
+  WorkFlowPendingChange,
+  WorkFlowPendingRecord,
   WorkFlowScope,
   WorkFlowStatus,
   WorkFlowValidation,
@@ -364,6 +366,31 @@ export class FaberLoomWorkflows extends Service {
     return (await this.domain()).table('versions')
   }
 
+  /** The staged-revision table handle, one row per work flow. */
+  private async pendingTable(): Promise<KvTable<WorkFlowId, WorkFlowPendingRecord>> {
+    return (await this.domain()).table('pending')
+  }
+
+  /** Stage one member's proposed name, scope, and graph for the owner to decide. */
+  private async stage(
+    actor: WorkFlowActor,
+    id: WorkFlowId,
+    record: WorkFlowRecord,
+    proposal: { name: string; scope: WorkFlowScope; definition: WorkFlowDefinition },
+  ): Promise<void> {
+    const pending: WorkFlowPendingRecord = {
+      workflowId: id,
+      ownerId: record.ownerId,
+      proposerId: actor.id,
+      name: proposal.name,
+      scope: proposal.scope,
+      definition: proposal.definition,
+      baseVersion: record.version,
+      createdAt: new Date().toISOString(),
+    }
+    await (await this.pendingTable()).put(id, pending)
+  }
+
   /** Append one immutable version row for a flow record. */
   private async recordVersion(id: WorkFlowId, record: WorkFlowRecord): Promise<void> {
     await (await this.versionsTable()).put(`${id}:${String(record.version)}`, {
@@ -505,6 +532,14 @@ export class FaberLoomWorkflows extends Service {
    */
   async update(actor: WorkFlowActor, id: WorkFlowId, patch: UpdateWorkFlowInput): Promise<WorkFlow> {
     const { table, record } = await this.requireAccess(actor, id, 'edit-graph')
+    if (record.ownerId !== actor.id) {
+      await this.stage(actor, id, record, {
+        name: patch.name ?? record.name,
+        scope: patch.scope ?? record.scope,
+        definition: patch.definition ?? record.definition,
+      })
+      return toWorkFlow(id, record)
+    }
     let next: WorkFlowRecord = {
       ...record,
       name: patch.name ?? record.name,
@@ -548,6 +583,10 @@ export class FaberLoomWorkflows extends Service {
     const { table, record } = await this.requireAccess(actor, id, 'edit-graph')
     const target = (await this.versionsTable()).get(`${id}:${String(version)}`)
     if (target === undefined) throw new Error(`faberloom: work flow version ${String(version)} not found`)
+    if (record.ownerId !== actor.id) {
+      await this.stage(actor, id, record, { name: target.name, scope: target.scope, definition: target.definition })
+      return toWorkFlow(id, record)
+    }
     let next: WorkFlowRecord = {
       ...record,
       name: target.name,
@@ -563,6 +602,80 @@ export class FaberLoomWorkflows extends Service {
   }
 
   /**
+   * List the staged revisions on the work flows the actor owns, newest first,
+   * each with its base and proposed graph for the approval diff.
+   * @param actor - the acting identity.
+   * @returns the staged revisions.
+   */
+  async pendingChanges(actor: WorkFlowActor): Promise<readonly WorkFlowPendingChange[]> {
+    const table = await this.table()
+    const out: WorkFlowPendingChange[] = []
+    for (const [id, pending] of (await this.pendingTable()).entries()) {
+      if (pending.ownerId !== actor.id) continue
+      const live = table.get(id)
+      if (live === undefined) continue
+      out.push({
+        workflowId: id,
+        ownerId: pending.ownerId,
+        proposerId: pending.proposerId,
+        name: pending.name,
+        scope: pending.scope,
+        baseVersion: pending.baseVersion,
+        createdAt: pending.createdAt,
+        base: live.definition,
+        proposed: pending.definition,
+      })
+    }
+    return out.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+  }
+
+  /**
+   * Accept one staged revision: apply it to the live flow, bump the version,
+   * reconcile an active flow's routine, and clear the stage. Owner only.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @returns the updated work flow.
+   */
+  async acceptPending(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow> {
+    const { table, record } = await this.requireAccess(actor, id, 'view')
+    if (record.ownerId !== actor.id) throw new Error('faberloom: only the owner can accept a staged change')
+    const pending = (await this.pendingTable()).get(id)
+    if (pending === undefined) throw new Error(`faberloom: work flow ${id} has no staged change`)
+    /* jscpd:ignore-start -- mirrors restore's apply tail: build the next record,
+       reconcile an active flow's routine, store, and record the version. */
+    let next: WorkFlowRecord = {
+      ...record,
+      name: pending.name,
+      scope: pending.scope,
+      definition: pending.definition,
+      updatedAt: new Date().toISOString(),
+      version: record.version + 1,
+    }
+    if (next.status === 'active') next = { ...next, routineId: await this.syncRoutine(id, next) }
+    await table.update(id, () => next)
+    await this.recordVersion(id, next)
+    /* jscpd:ignore-end */
+    await (await this.pendingTable()).delete(id)
+    return toWorkFlow(id, next)
+  }
+
+  /**
+   * Reject one staged revision: drop it, leaving the live flow unchanged.
+   * Owner only.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @returns the unchanged work flow.
+   */
+  async rejectPending(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow> {
+    const { record } = await this.requireAccess(actor, id, 'view')
+    if (record.ownerId !== actor.id) throw new Error('faberloom: only the owner can reject a staged change')
+    const pending = (await this.pendingTable()).get(id)
+    if (pending === undefined) throw new Error(`faberloom: work flow ${id} has no staged change`)
+    await (await this.pendingTable()).delete(id)
+    return toWorkFlow(id, record)
+  }
+
+  /**
    * Persist a new definition for an owned flow, bumping the version and
    * reconciling an active flow's compiled routine and waiting executions.
    * @param table - the workflows table handle.
@@ -572,29 +685,37 @@ export class FaberLoomWorkflows extends Service {
    * @returns the updated work flow.
    */
   private async writeDefinition(
+    actor: WorkFlowActor,
     table: KvTable<WorkFlowId, WorkFlowRecord>,
     id: WorkFlowId,
     record: WorkFlowRecord,
     definition: WorkFlowDefinition,
   ): Promise<WorkFlow> {
-    return await this.persistDefinition(table, id, record, definition)
+    return await this.persistDefinition(actor, table, id, record, definition)
   }
 
   /**
-   * Store an edited definition, bumping the version, recompiling an active
-   * flow's routine, and returning the refreshed work flow.
+   * Store an edited definition. A member's edit stages a proposed revision for
+   * the owner to accept; the owner's edit bumps the version, recompiles an
+   * active flow's routine, and returns the refreshed work flow.
+   * @param actor - the acting identity.
    * @param table - the workflows table handle.
    * @param id - work flow id.
-   * @param record - the owned record the edit starts from.
+   * @param record - the record the edit starts from.
    * @param definition - the definition to store.
-   * @returns the updated work flow.
+   * @returns the updated work flow (unchanged while a member's change is staged).
    */
   private async persistDefinition(
+    actor: WorkFlowActor,
     table: KvTable<WorkFlowId, WorkFlowRecord>,
     id: WorkFlowId,
     record: WorkFlowRecord,
     definition: WorkFlowDefinition,
   ): Promise<WorkFlow> {
+    if (record.ownerId !== actor.id) {
+      await this.stage(actor, id, record, { name: record.name, scope: record.scope, definition })
+      return toWorkFlow(id, record)
+    }
     let next: WorkFlowRecord = { ...record, definition, updatedAt: new Date().toISOString(), version: record.version + 1 }
     if (next.status === 'active') next = { ...next, routineId: await this.syncRoutine(id, next) }
     await table.update(id, () => next)
@@ -621,7 +742,7 @@ export class FaberLoomWorkflows extends Service {
       throw new Error(`faberloom: work flow ${id} already has node ${nodeId}`)
     }
     const node = { id: nodeId, title: input.title, position: { x: 0, y: 0 }, kind: input.kind, config: input.config ?? {} } as WorkFlowNode
-    return await this.writeDefinition(table, id, record, { ...record.definition, nodes: [...record.definition.nodes, node] })
+    return await this.writeDefinition(actor, table, id, record, { ...record.definition, nodes: [...record.definition.nodes, node] })
   }
 
   /**
@@ -651,7 +772,7 @@ export class FaberLoomWorkflows extends Service {
     } as WorkFlowNode
     const nodes = [...record.definition.nodes]
     nodes[index] = updated
-    return await this.writeDefinition(table, id, record, { ...record.definition, nodes })
+    return await this.writeDefinition(actor, table, id, record, { ...record.definition, nodes })
   }
 
   /**
@@ -665,7 +786,7 @@ export class FaberLoomWorkflows extends Service {
   async removeNode(actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId): Promise<WorkFlow> {
     const { table, record } = await this.requireAccess(actor, id, 'remove-nodes')
     if (!record.definition.nodes.some(node => node.id === nodeId)) throw new Error(`faberloom: work flow ${id} has no node ${nodeId}`)
-    return await this.writeDefinition(table, id, record, {
+    return await this.writeDefinition(actor, table, id, record, {
       ...record.definition,
       nodes: record.definition.nodes.filter(node => node.id !== nodeId),
       edges: record.definition.edges.filter(edge => edge.from !== nodeId && edge.to !== nodeId),
@@ -694,7 +815,7 @@ export class FaberLoomWorkflows extends Service {
       to: input.to,
       ...input.condition === undefined ? {} : { condition: input.condition },
     }
-    return await this.writeDefinition(table, id, record, { ...record.definition, edges: [...record.definition.edges, edge] })
+    return await this.writeDefinition(actor, table, id, record, { ...record.definition, edges: [...record.definition.edges, edge] })
   }
 
   /**
@@ -710,7 +831,7 @@ export class FaberLoomWorkflows extends Service {
     if (!record.definition.edges.some(edge => edge.id === edgeId)) {
       throw new Error(`faberloom: work flow ${id} has no edge ${edgeId}`)
     }
-    return await this.writeDefinition(table, id, record, {
+    return await this.writeDefinition(actor, table, id, record, {
       ...record.definition,
       edges: record.definition.edges.filter(edge => edge.id !== edgeId),
     })
@@ -742,7 +863,7 @@ export class FaberLoomWorkflows extends Service {
       kind: input.kind,
       config: input.config ?? {},
     } as WorkFlowNode
-    return await this.writeDefinition(table, id, record, { ...record.definition, nodes: [trigger, ...nodes], edges })
+    return await this.writeDefinition(actor, table, id, record, { ...record.definition, nodes: [trigger, ...nodes], edges })
   }
 
   /**
@@ -780,7 +901,7 @@ export class FaberLoomWorkflows extends Service {
   async setConcurrency(actor: WorkFlowActor, id: WorkFlowId, maxConcurrency: number | null): Promise<WorkFlow> {
     const { table, record } = await this.requireAccess(actor, id, 'edit-graph')
     const definition: WorkFlowDefinition = { ...record.definition, maxConcurrency: maxConcurrency ?? undefined }
-    return await this.persistDefinition(table, id, record, definition)
+    return await this.persistDefinition(actor, table, id, record, definition)
   }
 
   /**

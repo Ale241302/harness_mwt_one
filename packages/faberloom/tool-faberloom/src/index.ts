@@ -11,6 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { registerWorkflowTools } from './workflows.ts'
+import { registerContextTools } from './context.ts'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
 import type { FaberLoomSpaceId, FaberLoomSpaces, SpaceActor, SpaceContext, SpaceReference, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the agents service, read through ctx.get like the spaces service.
@@ -74,6 +75,8 @@ export interface Config {
   memoryTools?: boolean
   /** Register the Work Flow graph tools; opt-in, because they add request schema. */
   workflowTools?: boolean
+  /** Register the Context tools; opt-in, because they add request schema. */
+  contextTools?: boolean
 }
 
 /** Schemastery configuration for the product tools. */
@@ -91,6 +94,7 @@ export const Config: z<Config> = z.object({
   askProvider: z.string().default('spawn'),
   memoryTools: z.boolean().default(false),
   workflowTools: z.boolean().default(false),
+  contextTools: z.boolean().default(false),
 })
 
 /** Resolve the mounted board service at call time, or fail loud. */
@@ -1354,10 +1358,21 @@ export function apply(ctx: Context, config: Config): void {
       ctx.effect(() => prompt.section({
         name: 'faberloom:workflows',
         order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 3,
-        text: 'Cuando pidan automatizar algo, constrúyelo como un grafo de Work Flow con las tools faberloom_workflows_*: crea el flujo, define el disparador con faberloom_workflows_set_trigger, añade nodos con faberloom_workflows_add_node, conéctalos con faberloom_workflows_connect, y valida con faberloom_workflows_validate antes de faberloom_workflows_activate. Usa faberloom_workflows_run_now para probarlo y faberloom_workflows_runs para leer sus ejecuciones.',
+        text: 'Cuando pidan automatizar algo, constrúyelo como un grafo de Work Flow con las tools faberloom_workflows_*: crea el flujo, define el disparador con faberloom_workflows_set_trigger, añade nodos con faberloom_workflows_add_node, conéctalos con faberloom_workflows_connect, y valida con faberloom_workflows_validate antes de faberloom_workflows_activate. Usa faberloom_workflows_run_now para probarlo y faberloom_workflows_runs para leer sus ejecuciones. Además, sin que el usuario lo pida: cuando la conversación revele un flujo repetible que se pueda automatizar, propón un borrador con faberloom_workflows_propose (nombre, intent y una lista ordenada de pasos) y pídele al usuario que lo confirme; nunca actives un flujo por tu cuenta.',
       }), 'tool-faberloom: workflows prompt')
     }
     registerWorkflowTools(ctx, actor(config))
+  }
+
+  if (config.contextTools === true) {
+    if (prompt !== undefined) {
+      ctx.effect(() => prompt.section({
+        name: 'faberloom:context',
+        order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 4,
+        text: 'El contexto de un Workspace/Space es la memoria curada de hechos y reglas, aparte de la memoria episódica. Cuando una conversación fije un hecho, una regla o un documento que el Space deba recordar, guárdalo con faberloom_context_create (título, cuerpo y spaceId si aplica) sin que el usuario lo pida; consulta faberloom_context_list antes de duplicar, edita con faberloom_context_update, y revisa o restaura versiones con faberloom_context_versions y faberloom_context_restore. Como dueño del Space, indexa o deja privada una entrada pendiente con faberloom_context_approve o faberloom_context_reject.',
+      }), 'tool-faberloom: context prompt')
+    }
+    registerContextTools(ctx, actor(config))
   }
 
   ctx.tools.register(defineTool({

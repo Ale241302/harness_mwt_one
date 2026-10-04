@@ -143,6 +143,10 @@ async function bench(
     value: { sessionId: 's1', ownerId: 'o@x', spaceId: 'sp', title: 't', workspaceId: null, createdAt: 'c', updatedAt: 'u', messageCount: 0, origin: 'owner', content: '' },
   }))
   const removeSpaceSession = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const syncContext = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const workflowPendingChanges = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const acceptWorkflowChange = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const rejectWorkflowChange = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
@@ -158,6 +162,7 @@ async function bench(
     shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
     workflowTemplates, createWorkflowFromTemplate, importWorkflow,
     captureSpaceSessions, spaceSessions, spaceSessionContent, removeSpaceSession,
+    syncContext, workflowPendingChanges, acceptWorkflowChange, rejectWorkflowChange,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -222,6 +227,7 @@ describe('faberloom surface', () => {
       'faberloom-workflows',
       'faberloom-memory',
       'faberloom-context',
+      'faberloom-approvals',
       'faberloom-connections',
       'faberloom-email',
     ])
@@ -235,6 +241,7 @@ describe('faberloom surface', () => {
       'faberloom-workflows',
       'faberloom-memory',
       'faberloom-context',
+      'faberloom-approvals',
       'faberloom-connections',
       'faberloom-email',
     ])

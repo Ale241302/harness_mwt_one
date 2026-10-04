@@ -36,25 +36,42 @@ function renderWorkflow(value: Record<string, unknown>): string {
   return `Flow ${String(value['id'])} "${String(value['name'])}" ${String(value['status'])} v${String(value['version'])} (${String(value['nodes'])} nodes, ${String(value['edges'])} edges).`
 }
 
+/** The summary schema every workflow tool output shares. */
+const WORKFLOW_SUMMARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string' },
+    name: { type: 'string' },
+    status: { type: 'string' },
+    version: { type: 'number' },
+    nodes: { type: 'number' },
+    edges: { type: 'number' },
+    valid: { type: 'boolean' },
+    problems: { type: 'array', items: { type: 'string' } },
+    executionId: { type: 'string' },
+    deduped: { type: 'boolean' },
+    runs: { type: 'array', items: { type: 'object', additionalProperties: true } },
+  },
+} as const
+
+/** Output for the propose tool: a draft summary plus its confirmation hint. */
+const PROPOSE_OUTPUT = {
+  schema: WORKFLOW_SUMMARY_SCHEMA,
+  render: (_args: unknown, value: Record<string, unknown>) => {
+    const problems = Array.isArray(value['problems']) ? (value['problems'] as readonly string[]) : []
+    return [{
+      type: 'text' as const,
+      text: value['valid'] === true
+        ? `Draft flow "${String(value['name'])}" (${String(value['id'])}) has ${String(value['nodes'])} node(s) and is valid. Show it to the user and wait for confirmation before activating.`
+        : `Draft flow "${String(value['name'])}" (${String(value['id'])}) is saved but needs work: ${problems.join('; ')}. Tell the user and refine it.`,
+    }]
+  },
+} as const
+
 /** Shared output: every workflow tool renders its summary line. */
 const WORKFLOW_OUTPUT = {
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      id: { type: 'string' },
-      name: { type: 'string' },
-      status: { type: 'string' },
-      version: { type: 'number' },
-      nodes: { type: 'number' },
-      edges: { type: 'number' },
-      valid: { type: 'boolean' },
-      problems: { type: 'array', items: { type: 'string' } },
-      executionId: { type: 'string' },
-      deduped: { type: 'boolean' },
-      runs: { type: 'array', items: { type: 'object', additionalProperties: true } },
-    },
-  },
+  schema: WORKFLOW_SUMMARY_SCHEMA,
   render: (_args: unknown, value: Record<string, unknown>) => [{ type: 'text' as const, text: renderWorkflow(value) }],
 } as const
 
@@ -90,6 +107,8 @@ interface WorkflowTool {
   readonly description: string
   readonly parameters: ParameterSchemaSpec
   readonly run: (service: FaberLoomWorkflows, actor: SpaceActor, args: WorkflowArgs) => Promise<Record<string, unknown>>
+  /** Overrides the shared workflow output for a tool whose summary differs. */
+  readonly output?: typeof WORKFLOW_OUTPUT
 }
 
 /** Summary of one stored work flow. */
@@ -131,6 +150,63 @@ const WORKFLOW_TOOLS: readonly WorkflowTool[] = [
         ? { kind: 'space' as const, spaceId: typeof args.spaceId === 'string' ? args.spaceId : '' }
         : undefined
       return summarize(await service.create(actor, { name: String(args.name), ...scope === undefined ? {} : { scope }, definition: { intent: String(args.name), nodes: [], edges: [], permissions: [], failurePolicy: 'stop' } }))
+    },
+  },
+  {
+    name: 'faberloom_workflows_propose',
+    description: 'Propose a draft Work Flow from a repeatable flow noticed in the conversation. Give it a name, a one-line intent, and an ordered list of steps; the graph is created as a draft (never activated) so the user can review and confirm it. Call this on your own initiative when a conversation exposes an automatable flow, then ask the user to confirm.',
+    parameters: {
+      name: { type: 'string', required: true, description: 'Human-readable flow name.' },
+      intent: { type: 'string', description: 'One-line intent the flow automates.' },
+      scope: { type: 'string', description: '`personal` (default) or `space`.' },
+      spaceId: { type: 'string', description: 'Space id when scope is `space`.' },
+      steps: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+        description: 'Ordered steps `{ kind, title, config? }`. A step whose kind starts with `trigger.` becomes the trigger (otherwise `trigger.manual`); the rest chain in order with directed edges. Kinds match faberloom_workflows_add_node.',
+      },
+    },
+    output: PROPOSE_OUTPUT,
+    run: async (service, actor, args) => {
+      const rawSteps = Array.isArray(args.steps) ? args.steps as readonly Record<string, unknown>[] : []
+      const scope = args.scope === 'space'
+        ? { kind: 'space' as const, spaceId: typeof args.spaceId === 'string' ? args.spaceId : '' }
+        : undefined
+      const isTrigger = (step: Record<string, unknown>): boolean => typeof step['kind'] === 'string' && step['kind'].startsWith('trigger.')
+      const trigger = rawSteps.find(isTrigger)
+      const body = rawSteps.filter(step => step !== trigger && !isTrigger(step))
+      let flow = await service.create(actor, {
+        name: String(args.name),
+        ...scope === undefined ? {} : { scope },
+        definition: { intent: typeof args.intent === 'string' ? args.intent : String(args.name), nodes: [], edges: [], permissions: [], failurePolicy: 'stop' },
+      })
+      flow = await service.setTrigger(actor, flow.id, {
+        kind: (trigger === undefined ? 'trigger.manual' : String(trigger['kind'])) as WorkFlowNodeKind,
+        ...trigger?.['config'] === undefined ? {} : { config: trigger['config'] as Record<string, unknown> },
+      })
+      let previous = flow.definition.nodes[0]?.id as WorkFlowNodeId
+      for (const step of body) {
+        const kind = typeof step['kind'] === 'string' ? step['kind'] : ''
+        const title = typeof step['title'] === 'string' ? step['title'] : kind.length > 0 ? kind : 'Paso'
+        flow = await service.addNode(actor, flow.id, {
+          kind: kind as WorkFlowNodeKind,
+          title,
+          ...step['config'] === undefined ? {} : { config: step['config'] as Record<string, unknown> },
+        })
+        const added = flow.definition.nodes[flow.definition.nodes.length - 1]?.id as WorkFlowNodeId
+        flow = await service.connect(actor, flow.id, { from: previous, to: added })
+        previous = added
+      }
+      const verdict = await service.validate(actor, flow.id)
+      return {
+        id: flow.id,
+        name: flow.name,
+        status: flow.status,
+        nodes: flow.definition.nodes.length,
+        edges: flow.definition.edges.length,
+        valid: verdict.ok,
+        problems: [...verdict.problems],
+      }
     },
   },
   {
@@ -301,7 +377,7 @@ export function registerWorkflowTools(ctx: Context, actor: SpaceActor): void {
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
-      output: WORKFLOW_OUTPUT,
+      output: tool.output ?? WORKFLOW_OUTPUT,
       execute: async (args: WorkflowArgs) => {
         const service = ctx.get('faberloomWorkflows')
         if (service === undefined) throw new Error('faberloom: the workflows service is not mounted')

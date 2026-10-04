@@ -202,6 +202,48 @@ export interface WorkFlowVersionRecord {
   readonly createdAt: string
 }
 
+/** One staged work flow revision as stored. */
+export interface WorkFlowPendingRecord {
+  /** Work flow the proposal targets. */
+  readonly workflowId: string
+  /** Owner who decides. */
+  readonly ownerId: string
+  /** Member who proposed the change. */
+  readonly proposerId: string
+  /** Proposed display name. */
+  readonly name: string
+  /** Proposed scope. */
+  readonly scope: WorkFlowScope
+  /** Proposed graph. */
+  readonly definition: WorkFlowDefinition
+  /** Version the proposal was based on. */
+  readonly baseVersion: number
+  /** ISO-8601 instant the proposal was staged. */
+  readonly createdAt: string
+}
+
+/** One staged work flow revision awaiting the owner's accept or reject. */
+export interface WorkFlowPendingChange {
+  /** Work flow the proposal targets. */
+  readonly workflowId: string
+  /** Owner who decides. */
+  readonly ownerId: string
+  /** Member who proposed the change. */
+  readonly proposerId: string
+  /** Proposed display name. */
+  readonly name: string
+  /** Proposed scope. */
+  readonly scope: WorkFlowScope
+  /** Version the proposal was based on. */
+  readonly baseVersion: number
+  /** ISO-8601 instant the proposal was staged. */
+  readonly createdAt: string
+  /** The live graph the proposal is compared against. */
+  readonly base: WorkFlowDefinition
+  /** The proposed graph. */
+  readonly proposed: WorkFlowDefinition
+}
+
 /** Input accepted when creating one work flow; the actor supplies ownership. */
 export interface CreateWorkFlowInput {
   /** Display name. */
