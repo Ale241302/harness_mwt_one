@@ -2990,6 +2990,27 @@ const SHARE_PERMISSION_OPTIONS = ['view', 'run', 'edit-graph', 'add-nodes', 'rem
 /** The IMAP operations the mail node offers. */
 const WORKFLOW_IMAP_OPS = ['search', 'move', 'delete', 'markRead'] as const
 
+/**
+ * The colour category one node kind paints its left accent with, so the canvas
+ * tells triggers, control steps, agents, and effects apart at a glance.
+ * @param kind - node kind.
+ * @returns the tone key.
+ */
+function workflowKindTone(kind: string): 'trigger' | 'control' | 'agent' | 'effect' {
+  if (kind.startsWith('trigger.')) return 'trigger'
+  if (kind === 'condition' || kind === 'transform' || kind === 'wait') return 'control'
+  if (kind === 'agent' || kind === 'skill' || kind === 'routine.invoke' || kind === 'mcp.call') return 'agent'
+  return 'effect'
+}
+
+/** The accent colour class each node tone paints its left bar with. */
+const WORKFLOW_ACCENT_CLASSES: Readonly<Record<ReturnType<typeof workflowKindTone>, string | undefined>> = {
+  trigger: styles.workflowAccentTrigger,
+  control: styles.workflowAccentControl,
+  agent: styles.workflowAccentAgent,
+  effect: styles.workflowAccentEffect,
+}
+
 /** Open a read-only export in a new tab. */
 function openWorkflowExport(value: FaberLoomWorkflowExport): void {
   const blob = new Blob([value.content], { type: value.format === 'json' ? 'application/json' : 'text/html' })
@@ -3100,6 +3121,8 @@ function workflowsScreen() {
     const [nodeId, setNodeId] = useState<string | null>(null)
     const [connectFrom, setConnectFrom] = useState<string | null>(null)
     const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
+    const [view, setView] = useState({ x: 0, y: 0, k: 1 })
+    const panning = useRef<{ x: number; y: number } | null>(null)
     const [kind, setKind] = useState('agent')
     const [title, setTitle] = useState('')
     const [flowName, setFlowName] = useState('')
@@ -3401,43 +3424,79 @@ function workflowsScreen() {
                   {selectedHealth.deadlineAt === null ? null : <span>{t('wf.health.deadline')}: {selectedHealth.deadlineAt}</span>}
                 </div>
               )}
-              <svg className={styles.workflowCanvas} viewBox="0 0 900 320" onPointerMove={(event) => {
-                const id = dragging.current
-                if (id === null) return
-                dragged.current = true
-                const rect = (event.currentTarget).getBoundingClientRect()
-                const x = ((event.clientX - rect.left) / rect.width) * 900
-                const y = ((event.clientY - rect.top) / rect.height) * 320
-                setPositions(current => ({ ...current, [id]: { x: x - NODE_WIDTH / 2, y: y - NODE_HEIGHT / 2 } }))
-              }} onPointerUp={() => { dragging.current = null }}>
-                <defs>
-                  <marker id="wf-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                    <path d="M 0 0 L 10 5 L 0 10 z" className={styles.workflowArrowHead} />
-                  </marker>
-                </defs>
-                {detail?.edgesList.map((edge) => {
-                  const from = byId.get(edge.from)
-                  const to = byId.get(edge.to)
-                  if (from === undefined || to === undefined) return null
-                  const line = edgeLine(from, to)
-                  return (
-                    <line key={edge.id} className={edge.condition === null ? styles.workflowEdge : styles.workflowEdgeConditional}
-                      markerEnd="url(#wf-arrow)" x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} />
-                  )
-                })}
-                {nodes.map(node => (
-                  <g key={node.id} className={styles.workflowNode} transform={`translate(${String(node.x)}, ${String(node.y)})`} onPointerDown={() => { dragging.current = node.id; dragged.current = false }} onClick={() => { pick(node.id) }}>
-                    <rect className={`${styles.workflowNodeBody} ${kindIsTrigger(node.kind) ? styles.workflowNodeBodyTrigger : ''} ${nodeId === node.id ? styles.workflowNodeBodySelected : ''} ${connectFrom === node.id ? styles.workflowNodeBodyConnecting : ''}`} width={NODE_WIDTH} height={NODE_HEIGHT} rx={10} />
-                    {kindIsTrigger(node.kind) ? <rect className={styles.workflowNodeAccent} width={4} height={NODE_HEIGHT} rx={2} /> : null}
-                    <text className={styles.workflowNodeTitle} x={12} y={24}>{node.title}</text>
-                    <text className={styles.workflowNodeKind} x={12} y={42}>{node.kind}</text>
-                    <g className={styles.workflowNodeEdit} role="button" aria-label={t('wf.editNode')} transform={`translate(${String(NODE_WIDTH - 28)}, 6)`} onPointerDown={(event) => { event.stopPropagation() }} onClick={(event) => { event.stopPropagation(); openNode(node.id) }}>
-                      <rect className={styles.workflowNodeEditBg} width={20} height={18} rx={5} />
-                      <path className={styles.workflowNodeEditGlyph} d="M5 12 L5 14.5 L7.5 14.5 L13.5 8.5 L11 6 Z" />
-                    </g>
+              <div className={styles.workflowCanvasWrap}>
+                <svg className={styles.workflowCanvas} viewBox="0 0 900 320"
+                  onPointerDown={(event) => { panning.current = { x: event.clientX, y: event.clientY } }}
+                  onPointerMove={(event) => {
+                    const id = dragging.current
+                    if (id !== null) {
+                      dragged.current = true
+                      const rect = (event.currentTarget).getBoundingClientRect()
+                      const x = ((event.clientX - rect.left) / rect.width) * 900
+                      const y = ((event.clientY - rect.top) / rect.height) * 320
+                      setPositions(current => ({ ...current, [id]: { x: x - NODE_WIDTH / 2, y: y - NODE_HEIGHT / 2 } }))
+                      return
+                    }
+                    const start = panning.current
+                    if (start === null) return
+                    const dx = event.clientX - start.x
+                    const dy = event.clientY - start.y
+                    panning.current = { x: event.clientX, y: event.clientY }
+                    setView(current => ({ ...current, x: current.x + dx, y: current.y + dy }))
+                  }}
+                  onPointerUp={() => { dragging.current = null; panning.current = null }}
+                  onPointerLeave={() => { dragging.current = null; panning.current = null }}
+                  onWheel={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect()
+                    const px = ((event.clientX - rect.left) / rect.width) * 900
+                    const py = ((event.clientY - rect.top) / rect.height) * 320
+                    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1
+                    setView((current) => {
+                      const k = Math.min(3, Math.max(0.3, current.k * factor))
+                      const scale = k / current.k
+                      return { k, x: px - (px - current.x) * scale, y: py - (py - current.y) * scale }
+                    })
+                  }}>
+                  <defs>
+                    <marker id="wf-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                      <path d="M 0 0 L 10 5 L 0 10 z" className={styles.workflowArrowHead} />
+                    </marker>
+                    <marker id="wf-arrow-cond" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                      <path d="M 0 0 L 10 5 L 0 10 z" className={styles.workflowArrowHeadConditional} />
+                    </marker>
+                  </defs>
+                  <g transform={`translate(${String(view.x)}, ${String(view.y)}) scale(${String(view.k)})`}>
+                    {detail?.edgesList.map((edge) => {
+                      const from = byId.get(edge.from)
+                      const to = byId.get(edge.to)
+                      if (from === undefined || to === undefined) return null
+                      const line = edgeLine(from, to)
+                      return (
+                        <line key={edge.id} className={edge.condition === null ? styles.workflowEdge : styles.workflowEdgeConditional}
+                          markerEnd={edge.condition === null ? 'url(#wf-arrow)' : 'url(#wf-arrow-cond)'} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} />
+                      )
+                    })}
+                    {nodes.map(node => (
+                      <g key={node.id} className={styles.workflowNode} transform={`translate(${String(node.x)}, ${String(node.y)})`} onPointerDown={(event) => { event.stopPropagation(); dragging.current = node.id; dragged.current = false }} onClick={() => { pick(node.id) }}>
+                        <rect className={`${styles.workflowNodeBody} ${kindIsTrigger(node.kind) ? styles.workflowNodeBodyTrigger : ''} ${nodeId === node.id ? styles.workflowNodeBodySelected : ''} ${connectFrom === node.id ? styles.workflowNodeBodyConnecting : ''}`} width={NODE_WIDTH} height={NODE_HEIGHT} rx={10} />
+                        <rect className={`${styles.workflowNodeAccent} ${WORKFLOW_ACCENT_CLASSES[workflowKindTone(node.kind)] ?? ''}`} width={4} height={NODE_HEIGHT} rx={2} />
+                        <text className={styles.workflowNodeTitle} x={12} y={24}>{node.title}</text>
+                        <text className={styles.workflowNodeKind} x={12} y={42}>{node.kind}</text>
+                        <g className={styles.workflowNodeEdit} role="button" aria-label={t('wf.editNode')} transform={`translate(${String(NODE_WIDTH - 28)}, 6)`} onPointerDown={(event) => { event.stopPropagation() }} onClick={(event) => { event.stopPropagation(); openNode(node.id) }}>
+                          <rect className={styles.workflowNodeEditBg} width={20} height={18} rx={5} />
+                          <path className={styles.workflowNodeEditGlyph} d="M5 12 L5 14.5 L7.5 14.5 L13.5 8.5 L11 6 Z" />
+                        </g>
+                      </g>
+                    ))}
                   </g>
-                ))}
-              </svg>
+                </svg>
+                <div className={styles.workflowZoom}>
+                  <button type="button" aria-label={t('wf.zoomOut')} onClick={() => { setView(current => ({ ...current, k: Math.max(0.3, current.k / 1.2) })) }}>{'-'}</button>
+                  <span>{`${String(Math.round(view.k * 100))}%`}</span>
+                  <button type="button" aria-label={t('wf.zoomIn')} onClick={() => { setView(current => ({ ...current, k: Math.min(3, current.k * 1.2) })) }}>{'+'}</button>
+                  <button type="button" onClick={() => { setView({ x: 0, y: 0, k: 1 }) }}>{t('wf.zoomReset')}</button>
+                </div>
+              </div>
               <Modal open={nodeOpen} onClose={() => { setNodeOpen(false) }} title={t('wf.node')} closeLabel={t('action.close')} className={styles.workflowModal ?? ''} contentClassName={styles.workflowModalContent ?? ''}>
                 <div className={styles.workflowTabs}>
                   <button type="button" className={nodeTab === 'node' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('node') }}>{t('wf.tabNode')}</button>

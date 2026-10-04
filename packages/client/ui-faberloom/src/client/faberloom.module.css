@@ -857,6 +857,13 @@
   color: var(--dsw-alias-label-caption);
 }
 
+.workflowCanvasWrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 480px;
+}
+
 .workflowCanvas {
   flex: 1;
   width: 100%;
@@ -864,6 +871,24 @@
   background: var(--dsw-alias-bg-layer-1);
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
+  touch-action: none;
+}
+
+.workflowZoom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.workflowArrowHeadConditional {
+  fill: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
 .workflowModal.workflowModal {
@@ -959,7 +984,23 @@
 }
 
 .workflowNodeAccent {
+  fill: var(--dsw-alias-border-l2);
+}
+
+.workflowAccentTrigger {
   fill: var(--dsw-alias-state-success-primary);
+}
+
+.workflowAccentControl {
+  fill: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+.workflowAccentAgent {
+  fill: var(--dsw-alias-label-primary);
+}
+
+.workflowAccentEffect {
+  fill: var(--dsw-alias-border-l2);
 }
 
 .workflowArrowHead {
