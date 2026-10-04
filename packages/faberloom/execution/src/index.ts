@@ -337,11 +337,7 @@ export class FaberLoomExecutions extends Service {
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomExecutions')
     this.ctx.effect(
-      () => this.ctx.faberloomRoutines.registerReviewListener((review) => {
-        void this.onReview(review).catch((error: unknown) => {
-          this.ctx.logger.warn(`faberloom: review handling failed: ${String(error)}`)
-        })
-      }),
+      () => this.ctx.faberloomRoutines.registerReviewListener((review) => { void this.onReview(review) }),
       'faberloom.executions.review',
     )
     const interval = this.config.intervalMs ?? 60_000

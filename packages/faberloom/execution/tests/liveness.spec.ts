@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -129,5 +129,57 @@ describe('FaberLoomExecutions liveness', () => {
     expect(calls).toBe(1)
     expect(started.execution.steps['s1']?.attempts).toBe(1)
     expect((await dispatcher.health()).totals.retries).toBe(0)
+  })
+
+  it('F8 — a board or mail failure is warned, not thrown, and never loses the case', async () => {
+    const { routines, dispatcher, createBoard, sendMail } = await harness()
+    createBoard.mockRejectedValueOnce(new Error('board down'))
+    sendMail.mockRejectedValueOnce(new Error('smtp down'))
+    routines.registerHandler('boom', () => { throw new Error('explota') })
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'sin salida',
+      definition: {
+        intent: 'x',
+        triggers: [{ kind: 'manual' }],
+        steps: [{ id: 's1', instruction: 'x', handler: 'boom' }],
+        expectedResult: '',
+        permissions: [],
+        failurePolicy: 'continue',
+      },
+    })
+    await routines.activateRoutine(OWNER, routine.id)
+    const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'd', channel: 'ui' })
+    expect(started.execution.status).toBe('needs_review')
+    await vi.waitFor(() => { expect(createBoard).toHaveBeenCalledTimes(1) })
+    await vi.waitFor(() => { expect(sendMail).toHaveBeenCalledTimes(1) })
+    // The case is still in review; only the counters stay at zero.
+    expect(await dispatcher.health()).toMatchObject({
+      totals: { needsReview: 1, deadLettered: 0, alerts: 0 },
+    })
+  })
+
+  it('F8 — health reports a routine that never ran', async () => {
+    const { routines, dispatcher } = await harness()
+    await routines.createRoutine(OWNER, {
+      name: 'nunca',
+      definition: { intent: '', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop' },
+    })
+    const health = await dispatcher.health()
+    expect(health.routines[0]).toMatchObject({ name: 'nunca', lastStatus: null, lastAt: null, runs: 0, retries: 0, deadlineAt: null })
+  })
+
+  it('F8 — a metrics write failure is warned, not thrown', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'faberloom-metrics-bad-'))
+    const blocker = join(dir, 'blocker')
+    writeFileSync(blocker, 'x')
+    const previous = process.env['DSH_HOME']
+    process.env['DSH_HOME'] = join(blocker, 'home')
+    try {
+      const { dispatcher } = await harness()
+      await expect(dispatcher.runOnce(new Date('2026-09-18T10:00:00.000Z'))).resolves.toBeDefined()
+    } finally {
+      if (previous === undefined) delete process.env['DSH_HOME']
+      else process.env['DSH_HOME'] = previous
+    }
   })
 })
