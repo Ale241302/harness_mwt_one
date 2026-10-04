@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-04-shared-sessions` (commit `07fbcc94f12d1765a31c9297f76e95b895ca88b0`: sesiones compartidas por Space — capturadas en cada host, publicadas/importadas por la consola, con visor de solo lectura en Espacios; más Compartir Workspace y sync de renombrado; lint, duplicación, `test:docs` y `test:gui` en verde).
-**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `07fbcc94f12d1765a31c9297f76e95b895ca88b0` (Fase 10 + Compartir Workspace + Sesiones compartidas; deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-04-tools-approvals` (commit `8f89e301325a34f5511073cadcbdb2bef6c34d54`: herramientas de chat de Contexto `faberloom_context_*`, auto-propuesta de Work Flows `faberloom_workflows_propose`, aprobación pendiente de workflows con diff y panel **Aprobaciones**, y transporte a consola del contexto compartido; lint, duplicación, `test:docs` y `test:gui` en verde).
+**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `8f89e301325a34f5511073cadcbdb2bef6c34d54` (Contexto + Sesiones compartidas + Aprobaciones; deploy caliente).
 **Verificado en el VPS:** 4 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
