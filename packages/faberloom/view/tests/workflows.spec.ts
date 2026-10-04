@@ -58,8 +58,12 @@ function harness(detail = flow([], [])) {
       totals: { runs: 0, failures: 0, needsReview: 0, waiting: 0, retries: 0, deadLettered: 0, alerts: 0 },
     })),
   }
+  const spaces = {
+    list: vi.fn(async (): Promise<{ id: string; title: string; workspaceId?: string; ownerId?: string }[]> => []),
+    get: vi.fn(async () => ({ id: 'sp-1', title: 'Marluvas', ownerId: 'owner@muitowork.com' })),
+  }
   const ctx = {
-    faberloomSpaces: { list: vi.fn(async () => []), get: vi.fn(async () => ({ id: 'sp-1', title: 'Marluvas', ownerId: 'owner@muitowork.com' })) },
+    faberloomSpaces: spaces,
     faberloomAgents: { listAgents: vi.fn(async () => []) },
     faberloomRoutines: routines,
     faberloomShares: shares,
@@ -71,7 +75,7 @@ function harness(detail = flow([], [])) {
     logger: { warn: vi.fn(), info: vi.fn() },
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
-  return { view, workflows, routines, shares, executions }
+  return { view, workflows, routines, shares, executions, spaces }
 }
 
 describe('FaberLoomViewService workflows', () => {
@@ -272,6 +276,23 @@ describe('FaberLoomViewService workflows', () => {
       resource: { kind: 'space', id: 'sp-1' },
       resourceName: 'Marluvas',
     }))
+  })
+
+  it('shares the Space that mirrors a Workspace by its workspace id', async () => {
+    const { view, shares, spaces } = harness()
+    spaces.list.mockResolvedValue([{ id: 'sp-9', title: 'SICOP', workspaceId: 'ws-9' }])
+    spaces.get.mockResolvedValue({ id: 'sp-9', title: 'SICOP', ownerId: 'owner@muitowork.com' })
+    await view.shareSpaceByWorkspace('ws-9', ['guest@x'], ['view'])
+    expect(shares.create).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({
+      resource: { kind: 'space', id: 'sp-9' },
+      resourceName: 'SICOP',
+    }))
+  })
+
+  it('refuses to share a Workspace that mirrors no Space', async () => {
+    const { view, spaces } = harness()
+    spaces.list.mockResolvedValue([{ id: 'sp-other', title: 'Otra', workspaceId: 'ws-other' }])
+    await expect(view.shareSpaceByWorkspace('ws-none', ['guest@x'], ['view'])).rejects.toThrow('no hay un espacio para esta área de conversación')
   })
 
   it('reads the dispatcher health and reports an empty one without a dispatcher', async () => {

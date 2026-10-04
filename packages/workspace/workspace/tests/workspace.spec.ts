@@ -601,6 +601,16 @@ describe('WorkspaceRegistry create and lookup', () => {
     const internals = registry as unknown as { requireTable(): unknown }
     expect(() => internals.requireTable()).toThrow(/not started/)
   })
+
+  it('emits workspace/renamed when the stored title changes', async () => {
+    const dir = await makeDir('renamed')
+    const result = await harness()
+    const seen: { id: string; title: string }[] = []
+    result.ctx.on('workspace/renamed', (id, title) => { seen.push({ id: String(id), title }) })
+    const workspace = await result.registry.create(dir, 'Original')
+    await workspace.setTitle('Renombrado')
+    expect(seen).toEqual([{ id: String(workspace.id), title: 'Renombrado' }])
+  })
 })
 
 describe('Workspace registry ordering', () => {

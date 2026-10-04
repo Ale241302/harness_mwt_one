@@ -333,8 +333,29 @@ describe('workspace browser rows', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('workspace hover card shows its details and copies the full directory path', async () => {
-    vi.useFakeTimers()
+  it('renders a contributed menu row above Rename and closes the menu on click', () => {
+    const onShare = vi.fn()
+    const group: GroupNode = {
+      key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
+      sessionCount: 0, expanded: false, containsCurrent: false, sessions: [],
+    }
+    render(<ProjectRowItem
+      group={group} onToggle={vi.fn()} onCreate={vi.fn()}
+      actions={{ rename: vi.fn(), delete: vi.fn() }}
+      renderMenu={({ workspaceId, title, close }) => (
+        <button type="button" role="menuitem" onClick={() => { close(); onShare({ workspaceId, title }) }}>Share</button>
+      )}
+      t={t}
+    />)
+    fireEvent.click(screen.getByRole('button', { name: '工作区“Project”的操作' }))
+    // The contributed row leads the menu, ahead of the owner's Rename/Delete.
+    expect(screen.getAllByRole('menuitem')[0]!.textContent).toBe('Share')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Share' }))
+    expect(onShare).toHaveBeenCalledWith({ workspaceId: wid('project'), title: 'Project' })
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('workspace hover card shows its details and copies the full directory path', async () => {    vi.useFakeTimers()
     const writeText = vi.fn(async () => {})
     const restoreClipboard = installClipboard(writeText)
     try {

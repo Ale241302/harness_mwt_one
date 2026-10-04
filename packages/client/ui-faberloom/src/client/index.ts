@@ -26,6 +26,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { FaberloomBrandName, FaberloomBrandMark, FABERLOOM_SECTIONS, type FaberloomPanelInjected } from './panels.tsx'
+import { WorkspaceShareDialog, WorkspaceShareMenuItem, createWorkspaceShareStore, type WorkspaceShareInjected } from './workspace-share.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
 import { runTaskChat } from './task-chat.ts'
@@ -326,6 +327,31 @@ export function apply(ctx: ClientContext): void {
       inject: () => ({}),
     }, section.Icon))
   }
+
+  // Share a Workspace's mirrored Space from the sidebar row menu. The overlay
+  // host owns the dialog so it outlives the dropdown; both registrations share
+  // one store handle.
+  const workspaceShare = createWorkspaceShareStore()
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'faberloom-workspace-share',
+    store: workspaceShare,
+    locale: NS,
+    inject: (): WorkspaceShareInjected => ({
+      share: async (workspaceId, emails, permissions) => {
+        const result = await ctx.remote.faberloomView.shareSpaceByWorkspace(workspaceId, emails, permissions)
+        return result.ok ? { ok: true, message: '' } : { ok: false, message: result.error.message }
+      },
+    }),
+  }, WorkspaceShareDialog))
+  ctx.slots.inject('sidebar.workspaces.rowMenu', () => ctx.slots.register({
+    name: 'sidebar.workspaces.rowMenu',
+    id: 'faberloom-share',
+    order: -100,
+    store: workspaceShare,
+    locale: NS,
+    inject: () => ({}),
+  }, WorkspaceShareMenuItem))
 
   // Event-driven refresh: the harness forwards session activity, so a space or
   // agent created during a conversation appears without a reload. Throttled so a

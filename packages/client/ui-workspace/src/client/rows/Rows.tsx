@@ -5,7 +5,7 @@
  * except workspace Rename/Delete and session Rename/Fork/Archive; the session
  * and workspace hover cards are suppressed while a menu is open.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   HoverCard, IconAlarmClockOutline16, IconArchiveOutline20, IconBranchOutline16,
@@ -15,7 +15,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
-import type { WorkspaceBrowserProps } from '../contract/slots.ts'
+import type { WorkspaceBrowserProps, WorkspaceRowMenuOwnerProps } from '../contract/slots.ts'
 import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
 import css from './Rows.module.css'
 
@@ -109,7 +109,7 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteOrphans, drag, home, t }: {
+export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteOrphans, drag, home, t, renderMenu }: {
   group: GroupNode
   onToggle: () => void
   onCreate: () => void
@@ -121,6 +121,8 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteOrp
   drag?: WorkspaceRowDragProps | undefined
   /** Host account home; POSIX home-rooted hover paths display as `~`. */
   home?: string | undefined
+  /** Contributed rows rendered above Rename in a real Workspace's menu. */
+  renderMenu?: ((owner: WorkspaceRowMenuOwnerProps) => ReactNode) | undefined
   t: RowTranslate
 }) {
   const row = group
@@ -132,6 +134,12 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteOrp
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'delete', label: t('delete.workspace'), icon: <IconTrashOutline16 />, danger: true },
   ]
+  const contributedMenu = (() => {
+    if (actions === undefined || renderMenu === undefined) return undefined
+    /* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
+    if (row.workspaceId === undefined) return undefined
+    return renderMenu({ workspaceId: row.workspaceId, title: label, close: () => { setMenuOpen(false) } })
+  })()
   const ownRow = (
     <div
       className={clsx(css.projectRow, menuOpen && css.menuOpen)}
@@ -163,6 +171,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteOrp
             open={menuOpen}
             onClose={() => { setMenuOpen(false) }}
             items={workspaceMenuItems}
+            leading={contributedMenu}
             onSelect={(id) => {
               setMenuOpen(false)
               // Unknown ids leave before the dispatch: a future menu row must

@@ -78,18 +78,22 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * scroll/resize; return null to skip placement for that frame.
  * @param props.footer - rows pinned below the scrolling items area, separated
  * by a hairline; they stay visible while the items above scroll.
+ * @param props.leading - extra rows rendered above the items inside the same
+ * list card; the owner supplies them (for example a contributed row-menu slot)
+ * and is responsible for their roles and dismissal.
  * @param props.selection - how a selected row is marked: a trailing check
  * (`'check'`, default — figma .Menu_cell) or the hover fill held on the row
  * with no check (`'fill'`, for icon-labelled rows where a trailing glyph
  * crowds the cell).
  * @returns anchor wrapper with the conditional list.
  */
-export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, footer, className }: {
+export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, footer, leading, className }: {
   open: boolean
   autoFocus?: boolean
   anchor: ReactNode
   items: readonly MenuEntry[]
   footer?: readonly MenuEntry[]
+  leading?: ReactNode
   selectedId?: string | undefined
   selectedIds?: readonly string[] | undefined
   onSelect: (id: string) => void
@@ -297,6 +301,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       onClick={(e) => { e.stopPropagation() }}
     >
       <div className={css.viewport} role="presentation">
+        {leading}
         {items.map(renderEntry)}
       </div>
       {footer !== undefined && footer.length > 0 && (

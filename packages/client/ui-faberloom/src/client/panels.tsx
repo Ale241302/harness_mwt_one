@@ -2999,8 +2999,8 @@ const WORKFLOW_KINDS = [
   'board.create', 'space.reference', 'routine.invoke', 'condition', 'transform', 'wait', 'notify', 'deadletter',
 ] as const
 
-/** Permission checkboxes the Compartir form offers. */
-const SHARE_PERMISSION_OPTIONS = ['view', 'run', 'edit-graph', 'add-nodes', 'remove-nodes', 'edit-agents', 'manage-triggers', 'share'] as const
+/** Permission checkboxes the Compartir form offers (Work Flow share modal and the Workspace row share dialog). */
+export const SHARE_PERMISSION_OPTIONS = ['view', 'run', 'edit-graph', 'add-nodes', 'remove-nodes', 'edit-agents', 'manage-triggers', 'share'] as const
 
 /** The IMAP operations the mail node offers. */
 const WORKFLOW_IMAP_OPS = ['search', 'move', 'delete', 'markRead'] as const

@@ -77,6 +77,15 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'workspace/removed'(workspaceId: WorkspaceId, path: string): void
+
+    /**
+     * A workspace record's display title changed durably. Consumers that mirror
+     * a workspace — a product Space, for example — adopt the new name.
+     * @param workspaceId - the renamed workspace.
+     * @param title - the new display title.
+     * @mode emit
+     */
+    'workspace/renamed'(workspaceId: WorkspaceId, title: string): void
   }
 }
 
@@ -118,6 +127,9 @@ export class WorkspaceRegistry extends Service {
     rememberSessionPath: (id, path) => {
       this.sessionPaths.set(id, path)
       this.invalidSessionPaths.delete(id)
+    },
+    renamed: (id, title) => {
+      this.ctx.emit('workspace/renamed', id, title)
     },
   }
 

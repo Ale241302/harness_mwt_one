@@ -497,6 +497,13 @@ export class FaberLoomViewService extends TypertRemoteService {
         ctx.logger.warn(`faberloom: could not drop the space for a removed workspace: ${String(error)}`)
       })
     }), 'faberloom.view.workspace-removed')
+    // The Space and its registered Workspace share one display name; renaming
+    // the sidebar Workspace must show through the Espacios module too.
+    ctx.effect(() => ctx.on('workspace/renamed', (workspaceId, title) => {
+      void this.adoptWorkspaceTitle(String(workspaceId), title).catch((error: unknown) => {
+        ctx.logger.warn(`faberloom: could not rename the space of a renamed workspace: ${String(error)}`)
+      })
+    }), 'faberloom.view.workspace-renamed')
   }
 
   /**
@@ -521,6 +528,34 @@ export class FaberLoomViewService extends TypertRemoteService {
       if (agentId !== null) await this.detachAgentIfOrphan(agentId)
       return
     }
+  }
+
+  /**
+   * Adopt a renamed Workspace's title into the Space that mirrors it, so the
+   * Espacios module and the sidebar agree on the name.
+   * @param workspaceId - the renamed Workspace's id.
+   * @param title - the new display title.
+   */
+  private async adoptWorkspaceTitle(workspaceId: string, title: string): Promise<void> {
+    const actor = this.actor()
+    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
+      if (space.workspaceId !== workspaceId || space.title === title) continue
+      await this.ctx.faberloomSpaces.update(actor, space.id, { title })
+      return
+    }
+  }
+
+  /**
+   * Resolve the product Space mirrored by one registered Workspace.
+   * @param workspaceId - the Workspace id.
+   * @returns the mirrored Space, or `undefined` when none exists yet.
+   */
+  private async spaceForWorkspace(workspaceId: string): Promise<FaberLoomSpace | undefined> {
+    const actor = this.actor()
+    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
+      if (space.workspaceId === workspaceId) return space
+    }
+    return undefined
   }
 
   /**
@@ -999,6 +1034,23 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Share the Space that mirrors one registered Workspace, resolving the Space
+   * from the sidebar Workspace the caller addresses.
+   * @param workspaceId - the Workspace whose mirrored Space is shared.
+   * @param emails - the grantees.
+   * @param permissions - the permission subset each grantee receives.
+   * @returns the Space's outgoing grant rows.
+   */
+  @Remote('shareSpaceByWorkspace')
+  async shareSpaceByWorkspace(
+    workspaceId: string, emails: readonly string[], permissions: readonly string[],
+  ): Promise<readonly FaberLoomShareGrantRow[]> {
+    const space = await this.spaceForWorkspace(workspaceId)
+    if (space === undefined) throw new Error('faberloom: no hay un espacio para esta área de conversación')
+    return await this.shareSpace(space.id, emails, permissions)
+  }
+
+  /**
    * Share one Work Flow the owner manages — or that the actor holds `share` on —
    * with named emails.
    * @param id - work flow id.
@@ -1290,7 +1342,13 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('renameSpace')
   async renameSpace(id: string, title: string): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomSpaces.update(this.actor(), id as FaberLoomSpaceId, { title })
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.update(actor, id as FaberLoomSpaceId, { title })
+    // The mirrored Workspace carries the same display name in the sidebar.
+    if (space.workspaceId !== undefined) {
+      const workspace = this.workspaceRegistryOrUndefined()?.get(space.workspaceId as WorkspaceId)
+      if (workspace !== undefined && workspace.title !== title) await workspace.setTitle(title)
+    }
     return await this.overview()
   }
 

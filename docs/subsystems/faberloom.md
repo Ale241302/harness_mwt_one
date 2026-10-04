@@ -1566,6 +1566,16 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('shareSpace') async shareSpace(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>
 
 /**
+ * Share the Space that mirrors one registered Workspace, resolving the Space
+ * from the sidebar Workspace the caller addresses.
+ * @param workspaceId - the Workspace whose mirrored Space is shared.
+ * @param emails - the grantees.
+ * @param permissions - the permission subset each grantee receives.
+ * @returns the Space's outgoing grant rows.
+ */
+@Remote('shareSpaceByWorkspace') async shareSpaceByWorkspace(workspaceId: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>
+
+/**
  * Share one Work Flow the owner manages — or that the actor holds `share` on —
  * with named emails.
  * @param id - work flow id.

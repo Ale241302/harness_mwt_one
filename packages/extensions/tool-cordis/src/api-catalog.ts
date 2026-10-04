@@ -1995,6 +1995,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the resource\'s outgoing grant rows.',
       },
       {
+        signature: '@Remote(\'shareSpaceByWorkspace\') async shareSpaceByWorkspace(workspaceId: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'Share the Space that mirrors one registered Workspace, resolving the Space from the sidebar Workspace the caller addresses.',
+        parameters: [{ name: 'workspaceId', description: 'the Workspace whose mirrored Space is shared.' }, { name: 'emails', description: 'the grantees.' }, { name: 'permissions', description: 'the permission subset each grantee receives.' }],
+        returns: 'the Space\'s outgoing grant rows.',
+      },
+      {
         signature: '@Remote(\'shareWorkflow\') async shareWorkflow(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>',
         description: 'Share one Work Flow the owner manages — or that the actor holds `share` on — with named emails.',
         parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'emails', description: 'the grantees.' }, { name: 'permissions', description: 'the permission subset each grantee receives.' }],
@@ -5702,6 +5708,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'A workspace record was deleted from the durable registry.',
     description: 'A workspace record was deleted from the durable registry. Consumers that mirror a workspace — a product Space, for example — drop their record too.',
     parameters: [{ name: 'workspaceId', description: 'the removed workspace.' }, { name: 'path', description: 'the removed workspace\'s filesystem path.' }],
+  },
+  {
+    name: 'workspace/renamed',
+    mode: 'emit',
+    signature: '\'workspace/renamed\'(workspaceId: WorkspaceId, title: string): void',
+    summary: 'A workspace record\'s display title changed durably.',
+    description: 'A workspace record\'s display title changed durably. Consumers that mirror a workspace — a product Space, for example — adopt the new name.',
+    parameters: [{ name: 'workspaceId', description: 'the renamed workspace.' }, { name: 'title', description: 'the new display title.' }],
   },
 ]
 
