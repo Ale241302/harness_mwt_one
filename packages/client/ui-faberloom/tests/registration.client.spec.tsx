@@ -482,7 +482,7 @@ describe('faberloom work-flow canvas', () => {
     fireEvent.keyDown(window, { key: 'Enter' })
     await waitFor(() => { expect(removeNode).toHaveBeenCalledTimes(2) })
 
-    fireEvent.click(view.getByRole('button', { name: 'Logs' }))
+    fireEvent.click(view.getByRole('button', { name: 'Connections' }))
     fireEvent.click(view.getByRole('button', { name: /Disconnect/ }))
     await waitFor(() => { expect(disconnectNode).toHaveBeenCalledWith('wf1', 'e1') })
 
@@ -603,7 +603,7 @@ describe('faberloom work-flow canvas', () => {
       await waitFor(() => {
         expect(updateNode).toHaveBeenCalledWith('wf1', 'n2', 'borra', 'imap.action', JSON.stringify({ connectionId: 'c1' }))
       })
-      fireEvent.click(view.getByRole('button', { name: 'Logs' }))
+      fireEvent.click(view.getByRole('button', { name: 'Space' }))
       expect(view.getByText('Marluvas')).toBeTruthy()
     } finally {
       window.open = originalOpen
@@ -700,9 +700,9 @@ describe('faberloom work-flow canvas', () => {
 
     act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
     fireEvent.click(await view.findByRole('button', { name: /Anti-spam · draft/ }))
-    fireEvent.click(view.getByRole('button', { name: 'Logs' }))
+    fireEvent.click(await view.findByText('cada 12 h'))
+    fireEvent.click(view.getByRole('button', { name: 'Routines' }))
     expect(await view.findByText('Vigía → Anti-spam')).toBeTruthy()
-    fireEvent.click(view.getByRole('button', { name: 'Close' }))
 
     const concurrencyBox = view.getByRole('textbox', { name: 'Max concurrency' }) as HTMLInputElement
     expect(concurrencyBox.value).toBe('2')

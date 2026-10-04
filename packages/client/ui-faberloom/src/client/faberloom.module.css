@@ -867,12 +867,46 @@
 }
 
 .workflowModal.workflowModal {
-  width: min(1100px, 95vw);
+  width: min(1200px, 95vw);
+  height: min(880px, 92vh);
 }
 
 .workflowModalContent {
-  max-height: 72vh;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
+}
+
+.workflowTabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.workflowTab,
+.workflowTabActive {
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-caption);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.workflowTabActive {
+  color: var(--dsw-alias-label-primary);
+  border-bottom-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+.workflowTabPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 2px 0;
 }
 
 .workflowNodeEdit {

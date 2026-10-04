@@ -3121,6 +3121,7 @@ function workflowsScreen() {
     const [logsOpen, setLogsOpen] = useState(false)
     const [shareOpen, setShareOpen] = useState(false)
     const [nodeOpen, setNodeOpen] = useState(false)
+    const [nodeTab, setNodeTab] = useState<'node' | 'connections' | 'space' | 'routines'>('node')
     const dragging = useRef<string | null>(null)
     const dragged = useRef(false)
 
@@ -3216,12 +3217,13 @@ function workflowsScreen() {
         setScheduleDays(Array.isArray(days) ? days.filter((value): value is number => typeof value === 'number').join(', ') : '')
         setScheduleBusinessDays(config['businessDays'] === true)
       }
-      if (!dragged.current) setNodeOpen(true)
+      if (!dragged.current) { setNodeTab('node'); setNodeOpen(true) }
     }
 
     /** Open the node editor modal for one node. */
     const openNode = (id: string): void => {
       pick(id)
+      setNodeTab('node')
       setNodeOpen(true)
     }
 
@@ -3240,6 +3242,7 @@ function workflowsScreen() {
           setTitle(added.title)
           setKind(added.kind)
           setFields(workflowFields(added.kind, added.config))
+          setNodeTab('node')
           setNodeOpen(true)
         }
       }).catch((error: unknown) => { setMessage(String(error)) })
@@ -3436,148 +3439,186 @@ function workflowsScreen() {
                 ))}
               </svg>
               <Modal open={nodeOpen} onClose={() => { setNodeOpen(false) }} title={t('wf.node')} closeLabel={t('action.close')} className={styles.workflowModal ?? ''} contentClassName={styles.workflowModalContent ?? ''}>
-                <Field label={t('wf.kind')}>
-                  <select aria-label={t('wf.kind')} value={kind} onChange={(event) => { if (nodeId !== null) changeKind(selected, nodeId, event.target.value); else setKind(event.target.value) }}>
-                    {WORKFLOW_KINDS.map(value => <option key={value} value={value}>{value}</option>)}
-                  </select>
-                </Field>
-                <Field label={t('wf.nodeTitle')}>
-                  <input value={title} placeholder={t('wf.nodeTitle')} onChange={(event) => { setTitle(event.target.value) }} />
-                </Field>
-                {kind === 'agent' ? (
-                  <>
-                    <RelationSelect label={t('wf.agent')} value={field('agentId')} options={agentOptions.map(agent => ({ id: agent.id, label: agent.name }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'agentId', value) }} />
-                    <Field label={t('wf.instruction')}>
-                      <textarea aria-label={t('wf.instruction')} value={field('instruction')} onChange={(event) => { setField('instruction', event.target.value) }} />
-                    </Field>
-                    <label className={styles.workflowCheck}>
-                      <input type="checkbox" checked={field('useSpaceContext') !== ''} onChange={(event) => { setField('useSpaceContext', event.target.checked ? 'true' : '') }} />
-                      {t('wf.useSpaceContext')}
-                    </label>
-                  </>
-                ) : null}
-                {kind === 'skill' ? (
-                  <>
-                    <RelationSelect label={t('wf.skill')} value={field('skillName')} options={skillOptions.map(skill => ({ id: skill.name, label: skill.name }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'skillName', value) }} />
-                    <Field label={t('wf.instruction')}>
-                      <textarea aria-label={t('wf.instruction')} value={field('instruction')} onChange={(event) => { setField('instruction', event.target.value) }} />
-                    </Field>
-                  </>
-                ) : null}
-                {kind === 'routine.invoke' ? (
-                  <>
-                    <RelationSelect label={t('wf.routine')} value={field('routineId')} options={routineOptions.map(routine => ({ id: routine.id, label: routine.name }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'routineId', value) }} />
-                    <Field label={t('wf.input')}>
-                      <input aria-label={t('wf.input')} value={field('input')} onChange={(event) => { setField('input', event.target.value) }} />
-                    </Field>
-                  </>
-                ) : null}
-                {kind === 'imap.action' ? (
-                  <>
-                    <RelationSelect label={t('wf.connection')} value={field('connectionId')} options={connectionOptions.map(connection => ({ id: connection.id, label: connection.label }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'connectionId', value) }} />
-                    <Field label={t('wf.op')}>
-                      <select aria-label={t('wf.op')} value={field('op') === '' ? 'search' : field('op')} onChange={(event) => { setField('op', event.target.value) }}>
-                        {WORKFLOW_IMAP_OPS.map(op => <option key={op} value={op}>{op}</option>)}
+                <div className={styles.workflowTabs}>
+                  <button type="button" className={nodeTab === 'node' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('node') }}>{t('wf.tabNode')}</button>
+                  <button type="button" className={nodeTab === 'connections' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('connections') }}>{t('wf.tabConnections')}</button>
+                  <button type="button" className={nodeTab === 'space' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('space') }}>{t('wf.tabSpace')}</button>
+                  <button type="button" className={nodeTab === 'routines' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('routines') }}>{t('wf.tabRoutines')}</button>
+                </div>
+                {nodeTab === 'node' ? (
+                  <div className={styles.workflowTabPanel}>
+                    <Field label={t('wf.kind')}>
+                      <select aria-label={t('wf.kind')} value={kind} onChange={(event) => { if (nodeId !== null) changeKind(selected, nodeId, event.target.value); else setKind(event.target.value) }}>
+                        {WORKFLOW_KINDS.map(value => <option key={value} value={value}>{value}</option>)}
                       </select>
                     </Field>
-                    <Field label={t('wf.folder')}>
-                      <input aria-label={t('wf.folder')} value={field('folder')} onChange={(event) => { setField('folder', event.target.value) }} />
-                    </Field>
-                  </>
-                ) : null}
-                {kind === 'smtp.send' || kind === 'notify' ? (
-                  <>
-                    <RelationSelect label={t('wf.connection')} value={field('connectionId')} options={connectionOptions.map(connection => ({ id: connection.id, label: connection.label }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'connectionId', value) }} />
-                    <Field label={t('wf.text')}>
-                      <textarea aria-label={t('wf.text')} value={kind === 'smtp.send' ? field('subject') : field('text')} onChange={(event) => { setField(kind === 'smtp.send' ? 'subject' : 'text', event.target.value) }} />
-                    </Field>
-                  </>
-                ) : null}
-                {kind === 'memory.remember' || kind === 'memory.teach' || kind === 'space.reference' ? (
-                  <>
-                    <RelationSelect label={t('wf.space')} value={field('spaceId')} options={spaceOptions.map(space => ({ id: space.id, label: space.title }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'spaceId', value) }} />
-                    {kind === 'space.reference' ? null : (
-                      <Field label={t('wf.text')}>
-                        <textarea aria-label={t('wf.text')} value={field('text')} onChange={(event) => { setField('text', event.target.value) }} />
-                      </Field>
-                    )}
-                  </>
-                ) : null}
-                {kind === 'mcp.call' ? (
-                  <>
-                    <Field label={t('wf.server')}>
-                      <input aria-label={t('wf.server')} value={field('server')} onChange={(event) => { setField('server', event.target.value) }} />
-                    </Field>
-                    <Field label={t('wf.tool')}>
-                      <input aria-label={t('wf.tool')} value={field('tool')} onChange={(event) => { setField('tool', event.target.value) }} />
-                    </Field>
-                  </>
-                ) : null}
-                {kind === 'board.create' ? (
-                  <>
                     <Field label={t('wf.nodeTitle')}>
-                      <input aria-label={t('wf.boardTitle')} value={field('title')} onChange={(event) => { setField('title', event.target.value) }} />
+                      <input value={title} placeholder={t('wf.nodeTitle')} onChange={(event) => { setTitle(event.target.value) }} />
                     </Field>
-                    <Field label={t('wf.summary')}>
-                      <textarea aria-label={t('wf.summary')} value={field('summary')} onChange={(event) => { setField('summary', event.target.value) }} />
-                    </Field>
-                  </>
+                    {kind === 'agent' ? (
+                      <>
+                        <RelationSelect label={t('wf.agent')} value={field('agentId')} options={agentOptions.map(agent => ({ id: agent.id, label: agent.name }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'agentId', value) }} />
+                        <Field label={t('wf.instruction')}>
+                          <textarea aria-label={t('wf.instruction')} value={field('instruction')} onChange={(event) => { setField('instruction', event.target.value) }} />
+                        </Field>
+                        <label className={styles.workflowCheck}>
+                          <input type="checkbox" checked={field('useSpaceContext') !== ''} onChange={(event) => { setField('useSpaceContext', event.target.checked ? 'true' : '') }} />
+                          {t('wf.useSpaceContext')}
+                        </label>
+                      </>
+                    ) : null}
+                    {kind === 'skill' ? (
+                      <>
+                        <RelationSelect label={t('wf.skill')} value={field('skillName')} options={skillOptions.map(skill => ({ id: skill.name, label: skill.name }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'skillName', value) }} />
+                        <Field label={t('wf.instruction')}>
+                          <textarea aria-label={t('wf.instruction')} value={field('instruction')} onChange={(event) => { setField('instruction', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'routine.invoke' ? (
+                      <>
+                        <RelationSelect label={t('wf.routine')} value={field('routineId')} options={routineOptions.map(routine => ({ id: routine.id, label: routine.name }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'routineId', value) }} />
+                        <Field label={t('wf.input')}>
+                          <input aria-label={t('wf.input')} value={field('input')} onChange={(event) => { setField('input', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'imap.action' ? (
+                      <>
+                        <RelationSelect label={t('wf.connection')} value={field('connectionId')} options={connectionOptions.map(connection => ({ id: connection.id, label: connection.label }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'connectionId', value) }} />
+                        <Field label={t('wf.op')}>
+                          <select aria-label={t('wf.op')} value={field('op') === '' ? 'search' : field('op')} onChange={(event) => { setField('op', event.target.value) }}>
+                            {WORKFLOW_IMAP_OPS.map(op => <option key={op} value={op}>{op}</option>)}
+                          </select>
+                        </Field>
+                        <Field label={t('wf.folder')}>
+                          <input aria-label={t('wf.folder')} value={field('folder')} onChange={(event) => { setField('folder', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'smtp.send' || kind === 'notify' ? (
+                      <>
+                        <RelationSelect label={t('wf.connection')} value={field('connectionId')} options={connectionOptions.map(connection => ({ id: connection.id, label: connection.label }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'connectionId', value) }} />
+                        <Field label={t('wf.text')}>
+                          <textarea aria-label={t('wf.text')} value={kind === 'smtp.send' ? field('subject') : field('text')} onChange={(event) => { setField(kind === 'smtp.send' ? 'subject' : 'text', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'memory.remember' || kind === 'memory.teach' || kind === 'space.reference' ? (
+                      <>
+                        <RelationSelect label={t('wf.space')} value={field('spaceId')} options={spaceOptions.map(space => ({ id: space.id, label: space.title }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'spaceId', value) }} />
+                        {kind === 'space.reference' ? null : (
+                          <Field label={t('wf.text')}>
+                            <textarea aria-label={t('wf.text')} value={field('text')} onChange={(event) => { setField('text', event.target.value) }} />
+                          </Field>
+                        )}
+                      </>
+                    ) : null}
+                    {kind === 'mcp.call' ? (
+                      <>
+                        <Field label={t('wf.server')}>
+                          <input aria-label={t('wf.server')} value={field('server')} onChange={(event) => { setField('server', event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.tool')}>
+                          <input aria-label={t('wf.tool')} value={field('tool')} onChange={(event) => { setField('tool', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'board.create' ? (
+                      <>
+                        <Field label={t('wf.nodeTitle')}>
+                          <input aria-label={t('wf.boardTitle')} value={field('title')} onChange={(event) => { setField('title', event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.summary')}>
+                          <textarea aria-label={t('wf.summary')} value={field('summary')} onChange={(event) => { setField('summary', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'condition' || kind === 'transform' ? (
+                      <Field label={t('wf.expression')}>
+                        <input aria-label={t('wf.expression')} value={field('expression')} onChange={(event) => { setField('expression', event.target.value) }} />
+                      </Field>
+                    ) : null}
+                    {kind === 'wait' ? (
+                      <Field label={t('wf.seconds')}>
+                        <input aria-label={t('wf.seconds')} inputMode="numeric" value={field('seconds')} onChange={(event) => { setField('seconds', event.target.value) }} />
+                      </Field>
+                    ) : null}
+                    {kind === 'trigger.email' ? (
+                      <Field label={t('wf.match')}>
+                        <input aria-label={t('wf.match')} value={field('match')} onChange={(event) => { setField('match', event.target.value) }} />
+                      </Field>
+                    ) : null}
+                    {kind === 'trigger.schedule' ? (
+                      <>
+                        <Field label={t('wf.schedule.recurrence')}>
+                          <input aria-label={t('wf.schedule.recurrence')} placeholder={t('wf.schedule.recurrence')} value={scheduleRecurrence}
+                            onChange={(event) => { setScheduleRecurrence(event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.schedule.timezone')}>
+                          <input aria-label={t('wf.schedule.timezone')} placeholder={t('wf.schedule.timezone')} value={scheduleTimezone}
+                            onChange={(event) => { setScheduleTimezone(event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.schedule.from')}>
+                          <input aria-label={t('wf.schedule.from')} placeholder={t('wf.schedule.from')} value={scheduleFrom}
+                            onChange={(event) => { setScheduleFrom(event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.schedule.to')}>
+                          <input aria-label={t('wf.schedule.to')} placeholder={t('wf.schedule.to')} value={scheduleTo}
+                            onChange={(event) => { setScheduleTo(event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.schedule.days')}>
+                          <input aria-label={t('wf.schedule.days')} placeholder={t('wf.schedule.days')} value={scheduleDays}
+                            onChange={(event) => { setScheduleDays(event.target.value) }} />
+                        </Field>
+                        <label className={styles.workflowCheck}>
+                          <input type="checkbox" checked={scheduleBusinessDays}
+                            onChange={(event) => { setScheduleBusinessDays(event.target.checked) }} />
+                          {t('wf.schedule.businessDays')}
+                        </label>
+                      </>
+                    ) : null}
+                    <div className={styles.workflowActions}>
+                      <button type="button" className={styles.primary} disabled={nodeId === null} onClick={() => { if (nodeId !== null) saveNode(selected, nodeId) }}>{t('wf.save')}</button>
+                      {kind === 'trigger.schedule' ? (
+                        <button type="button" disabled={nodeId === null} onClick={() => { if (nodeId !== null) saveSchedule(selected, nodeId) }}>{t('wf.schedule.save')}</button>
+                      ) : null}
+                      <button type="button" disabled={nodeId === null} onClick={() => { setConnectFrom(nodeId) }}>{t('wf.connect')}</button>
+                      <button type="button" disabled={nodeId === null} onClick={() => { if (nodeId !== null) deleteNode(selected, nodeId) }}>{t('wf.removeNode')}</button>
+                    </div>
+                    <span className={styles.workflowHint}>
+                      {connectFrom === null ? t('wf.hintEdit') : t('wf.hintConnect')}
+                    </span>
+                  </div>
                 ) : null}
-                {kind === 'condition' || kind === 'transform' ? (
-                  <Field label={t('wf.expression')}>
-                    <input aria-label={t('wf.expression')} value={field('expression')} onChange={(event) => { setField('expression', event.target.value) }} />
-                  </Field>
+                {nodeTab === 'connections' ? (
+                  <div className={styles.workflowTabPanel}>
+                    {detail !== null && detail.edgesList.length > 0 ? detail.edgesList.map(edge => (
+                      <div key={edge.id} className={styles.workflowRunRow}>
+                        <span>{edge.from} → {edge.to}{edge.condition === null ? '' : ` · ${edge.condition}`}</span>
+                        <button type="button" onClick={() => { dropEdge(selected, edge.id) }}>{t('wf.disconnect')}</button>
+                      </div>
+                    )) : <span className={styles.workflowEmpty}>{t('wf.noConnections')}</span>}
+                  </div>
                 ) : null}
-                {kind === 'wait' ? (
-                  <Field label={t('wf.seconds')}>
-                    <input aria-label={t('wf.seconds')} inputMode="numeric" value={field('seconds')} onChange={(event) => { setField('seconds', event.target.value) }} />
-                  </Field>
+                {nodeTab === 'space' ? (
+                  <div className={styles.workflowTabPanel}>
+                    {topology === null || topology.spaces.length === 0
+                      ? <span className={styles.workflowEmpty}>{t('wf.noConnections')}</span>
+                      : topology.spaces.map(space => <div key={space.id}>{space.title}</div>)}
+                  </div>
                 ) : null}
-                {kind === 'trigger.email' ? (
-                  <Field label={t('wf.match')}>
-                    <input aria-label={t('wf.match')} value={field('match')} onChange={(event) => { setField('match', event.target.value) }} />
-                  </Field>
+                {nodeTab === 'routines' ? (
+                  <div className={styles.workflowTabPanel}>
+                    {links.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.links.empty')}</span> : links.map(link => (
+                      <div key={`${link.direction}:${link.routineId}:${link.workflowId}`}>
+                        {link.direction === 'routine-to-workflow'
+                          ? `${link.routineName} → ${link.workflowName}`
+                          : `${link.workflowName} → ${link.routineName}`}
+                      </div>
+                    ))}
+                  </div>
                 ) : null}
-                {kind === 'trigger.schedule' ? (
-                  <>
-                    <Field label={t('wf.schedule.recurrence')}>
-                      <input aria-label={t('wf.schedule.recurrence')} placeholder={t('wf.schedule.recurrence')} value={scheduleRecurrence}
-                        onChange={(event) => { setScheduleRecurrence(event.target.value) }} />
-                    </Field>
-                    <Field label={t('wf.schedule.timezone')}>
-                      <input aria-label={t('wf.schedule.timezone')} placeholder={t('wf.schedule.timezone')} value={scheduleTimezone}
-                        onChange={(event) => { setScheduleTimezone(event.target.value) }} />
-                    </Field>
-                    <Field label={t('wf.schedule.from')}>
-                      <input aria-label={t('wf.schedule.from')} placeholder={t('wf.schedule.from')} value={scheduleFrom}
-                        onChange={(event) => { setScheduleFrom(event.target.value) }} />
-                    </Field>
-                    <Field label={t('wf.schedule.to')}>
-                      <input aria-label={t('wf.schedule.to')} placeholder={t('wf.schedule.to')} value={scheduleTo}
-                        onChange={(event) => { setScheduleTo(event.target.value) }} />
-                    </Field>
-                    <Field label={t('wf.schedule.days')}>
-                      <input aria-label={t('wf.schedule.days')} placeholder={t('wf.schedule.days')} value={scheduleDays}
-                        onChange={(event) => { setScheduleDays(event.target.value) }} />
-                    </Field>
-                    <label className={styles.workflowCheck}>
-                      <input type="checkbox" checked={scheduleBusinessDays}
-                        onChange={(event) => { setScheduleBusinessDays(event.target.checked) }} />
-                      {t('wf.schedule.businessDays')}
-                    </label>
-                  </>
-                ) : null}
-                <div className={styles.workflowActions}>
-                  <button type="button" className={styles.primary} disabled={nodeId === null} onClick={() => { if (nodeId !== null) saveNode(selected, nodeId) }}>{t('wf.save')}</button>
-                  {kind === 'trigger.schedule' ? (
-                    <button type="button" disabled={nodeId === null} onClick={() => { if (nodeId !== null) saveSchedule(selected, nodeId) }}>{t('wf.schedule.save')}</button>
-                  ) : null}
-                  <button type="button" disabled={nodeId === null} onClick={() => { setConnectFrom(nodeId) }}>{t('wf.connect')}</button>
-                  <button type="button" disabled={nodeId === null} onClick={() => { if (nodeId !== null) deleteNode(selected, nodeId) }}>{t('wf.removeNode')}</button>
-                </div>
-                <span className={styles.workflowHint}>
-                  {connectFrom === null ? t('wf.hintEdit') : t('wf.hintConnect')}
-                </span>
               </Modal>
               {/* Connections, the Space map, and the routine links live in the Logs modal. */}
               <Modal open={logsOpen} onClose={() => { setLogsOpen(false) }} title={t('wf.runs')} closeLabel={t('action.close')}>
@@ -3596,33 +3637,6 @@ function workflowsScreen() {
                     <span>{run.status}</span><span className={styles.workflowRunWhen}>{run.createdAt}</span>
                   </div>
                 ))}
-                {detail !== null && detail.edgesList.length > 0 ? (
-                  <section className={styles.workflowSection}>
-                    <h4>{t('wf.connections')}</h4>
-                    {detail.edgesList.map(edge => (
-                      <div key={edge.id} className={styles.workflowRunRow}>
-                        <span>{edge.from} → {edge.to}{edge.condition === null ? '' : ` · ${edge.condition}`}</span>
-                        <button type="button" onClick={() => { dropEdge(selected, edge.id) }}>{t('wf.disconnect')}</button>
-                      </div>
-                    ))}
-                  </section>
-                ) : null}
-                <div className={styles.workflowRuns}>
-                  <section className={styles.workflowSection}>
-                    <h4>{t('wf.spaceMap')}</h4>
-                    {topology?.spaces.map(space => <div key={space.id}>{space.title}</div>)}
-                  </section>
-                  <section className={styles.workflowSection}>
-                    <h4>{t('wf.links')}</h4>
-                    {links.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.links.empty')}</span> : links.map(link => (
-                      <div key={`${link.direction}:${link.routineId}:${link.workflowId}`}>
-                        {link.direction === 'routine-to-workflow'
-                          ? `${link.routineName} → ${link.workflowName}`
-                          : `${link.workflowName} → ${link.routineName}`}
-                      </div>
-                    ))}
-                  </section>
-                </div>
               </Modal>
               <Modal open={shareOpen} onClose={() => { setShareOpen(false) }} title={t('wf.share')} closeLabel={t('action.close')}>
                 <div className={styles.workflowForm}>
