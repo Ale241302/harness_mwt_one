@@ -1046,6 +1046,8 @@ export interface FaberLoomWorkflowRow {
   readonly edges: number
   /** Compiled routine id, or null until activated. */
   readonly routineId: string | null
+  /** Space the flow belongs to, or null for the personal scope. */
+  readonly spaceId: string | null
 }
 
 /** A JSON value a Remote boundary may carry. */

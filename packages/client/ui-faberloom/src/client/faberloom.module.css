@@ -891,6 +891,12 @@
   fill: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
+.workflowSpaceLabel {
+  align-self: center;
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+}
+
 .workflowModal.workflowModal {
   width: min(1200px, 95vw);
   height: min(880px, 92vh);

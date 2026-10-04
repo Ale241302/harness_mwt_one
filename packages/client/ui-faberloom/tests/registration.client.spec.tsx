@@ -432,7 +432,7 @@ describe('faberloom work-flow canvas', () => {
     }
   })
 
-  const row = { id: 'wf1', name: 'Anti-spam', status: 'draft', version: 1, nodes: 2, edges: 1, routineId: null }
+  const row = { id: 'wf1', name: 'Anti-spam', status: 'draft', version: 1, nodes: 2, edges: 1, routineId: null, spaceId: 's1' }
 
   it('lists, selects, edits, connects, drags, and removes graph nodes', async () => {
     const {
@@ -603,8 +603,7 @@ describe('faberloom work-flow canvas', () => {
       await waitFor(() => {
         expect(updateNode).toHaveBeenCalledWith('wf1', 'n2', 'borra', 'imap.action', JSON.stringify({ connectionId: 'c1' }))
       })
-      fireEvent.click(view.getByRole('button', { name: 'Space' }))
-      expect(view.getByText('Marluvas')).toBeTruthy()
+      expect(view.getByText(/Marluvas/)).toBeTruthy()
     } finally {
       window.open = originalOpen
       if (originalCreate === undefined) delete urlAny.createObjectURL

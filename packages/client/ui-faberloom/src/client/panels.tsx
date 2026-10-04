@@ -3144,7 +3144,8 @@ function workflowsScreen() {
     const [logsOpen, setLogsOpen] = useState(false)
     const [shareOpen, setShareOpen] = useState(false)
     const [nodeOpen, setNodeOpen] = useState(false)
-    const [nodeTab, setNodeTab] = useState<'node' | 'connections' | 'space' | 'routines'>('node')
+    const [nodeTab, setNodeTab] = useState<'node' | 'connections' | 'routines'>('node')
+    const [routinePick, setRoutinePick] = useState('')
     const dragging = useRef<string | null>(null)
     const dragged = useRef(false)
 
@@ -3214,6 +3215,10 @@ function workflowsScreen() {
     const selectedHealth = detail?.routineId === undefined || health === null
       ? null
       : health.routines.find(row => row.routineId === detail.routineId) ?? null
+    const selectedSpaceId = flows.find(flow => flow.id === selected)?.spaceId ?? null
+    const selectedSpaceName = selectedSpaceId === null
+      ? null
+      : topology?.spaces.find(space => space.id === selectedSpaceId)?.title ?? selectedSpaceId
 
     const pick = (id: string): void => {
       if (connectFrom !== null && connectFrom !== id) {
@@ -3268,6 +3273,23 @@ function workflowsScreen() {
           setNodeTab('node')
           setNodeOpen(true)
         }
+      }).catch((error: unknown) => { setMessage(String(error)) })
+    }
+    /** Append a routine.invoke node bound to one existing routine. */
+    const addRoutineNode = (flowId: string, routineId: string): void => {
+      const routine = routineOptions.find(entry => entry.id === routineId)
+      const before = new Set((detail?.nodesList ?? []).map(node => node.id))
+      void workflows.addNode(flowId, 'routine.invoke', routine?.name ?? 'routine.invoke', JSON.stringify({ routineId, input: '' })).then((result) => {
+        accept(result)
+        if (!result.ok) return
+        const added = result.value.nodesList.find(node => !before.has(node.id))
+        if (added === undefined) return
+        setNodeId(added.id)
+        setTitle(added.title)
+        setKind(added.kind)
+        setFields(workflowFields(added.kind, added.config))
+        setNodeTab('node')
+        setNodeOpen(true)
       }).catch((error: unknown) => { setMessage(String(error)) })
     }
     /** Persist the inspector's form onto the picked node. */
@@ -3364,6 +3386,10 @@ function workflowsScreen() {
     const field = (key: string): string => fields[key] ?? ''
     /** Write one inspector field value. */
     const setField = (key: string, value: string): void => { setFields(current => ({ ...current, [key]: value })) }
+    /** The display name of one node id. */
+    const nodeName = (id: string): string => detail?.nodesList.find(node => node.id === id)?.title ?? id
+    /** The edges incident to the picked node, incoming or outgoing. */
+    const incidentEdges = (detail?.edgesList ?? []).filter(edge => edge.from === nodeId || edge.to === nodeId)
 
     return (
       <div className={styles.workflowScreen}>
@@ -3413,6 +3439,7 @@ function workflowsScreen() {
                 <input aria-label={t('wf.concurrency')} placeholder={t('wf.concurrency')} value={concurrency}
                   onChange={(event) => { setConcurrency(event.target.value) }} />
                 <button type="button" onClick={() => { saveConcurrency(selected) }}>{t('wf.concurrency.save')}</button>
+                {selectedSpaceName === null ? null : <span className={styles.workflowSpaceLabel}>{t('wf.space')}: {selectedSpaceName}</span>}
               </div>
               {selectedHealth === null ? null : (
                 <div className={styles.workflowInspector}>
@@ -3501,7 +3528,6 @@ function workflowsScreen() {
                 <div className={styles.workflowTabs}>
                   <button type="button" className={nodeTab === 'node' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('node') }}>{t('wf.tabNode')}</button>
                   <button type="button" className={nodeTab === 'connections' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('connections') }}>{t('wf.tabConnections')}</button>
-                  <button type="button" className={nodeTab === 'space' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('space') }}>{t('wf.tabSpace')}</button>
                   <button type="button" className={nodeTab === 'routines' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('routines') }}>{t('wf.tabRoutines')}</button>
                 </div>
                 {nodeTab === 'node' ? (
@@ -3652,23 +3678,23 @@ function workflowsScreen() {
                 ) : null}
                 {nodeTab === 'connections' ? (
                   <div className={styles.workflowTabPanel}>
-                    {detail !== null && detail.edgesList.length > 0 ? detail.edgesList.map(edge => (
+                    {incidentEdges.length > 0 ? incidentEdges.map(edge => (
                       <div key={edge.id} className={styles.workflowRunRow}>
-                        <span>{edge.from} → {edge.to}{edge.condition === null ? '' : ` · ${edge.condition}`}</span>
+                        <span>{nodeName(edge.from)} → {nodeName(edge.to)}{edge.condition === null ? '' : ` · ${edge.condition}`}</span>
                         <button type="button" onClick={() => { dropEdge(selected, edge.id) }}>{t('wf.disconnect')}</button>
                       </div>
                     )) : <span className={styles.workflowEmpty}>{t('wf.noConnections')}</span>}
                   </div>
                 ) : null}
-                {nodeTab === 'space' ? (
-                  <div className={styles.workflowTabPanel}>
-                    {topology === null || topology.spaces.length === 0
-                      ? <span className={styles.workflowEmpty}>{t('wf.noConnections')}</span>
-                      : topology.spaces.map(space => <div key={space.id}>{space.title}</div>)}
-                  </div>
-                ) : null}
                 {nodeTab === 'routines' ? (
                   <div className={styles.workflowTabPanel}>
+                    <Field label={t('wf.routine')}>
+                      <select aria-label={t('wf.routine')} value={routinePick} onChange={(event) => { setRoutinePick(event.target.value) }}>
+                        <option value="">—</option>
+                        {routineOptions.map(routine => <option key={routine.id} value={routine.id}>{routine.name}</option>)}
+                      </select>
+                    </Field>
+                    <button type="button" className={styles.primary} disabled={routinePick.length === 0} onClick={() => { addRoutineNode(selected, routinePick) }}>{t('wf.addRoutineNode')}</button>
                     {links.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.links.empty')}</span> : links.map(link => (
                       <div key={`${link.direction}:${link.routineId}:${link.workflowId}`}>
                         {link.direction === 'routine-to-workflow'

@@ -684,6 +684,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       nodes: flow.definition.nodes.length,
       edges: flow.definition.edges.length,
       routineId: flow.routineId ?? null,
+      spaceId: flow.scope.kind === 'space' ? flow.scope.spaceId : null,
     }
   }
 
