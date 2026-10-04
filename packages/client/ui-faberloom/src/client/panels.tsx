@@ -38,6 +38,7 @@ import type {
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
   FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomWorkflowTemplateRow,
   FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
+  FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
@@ -300,6 +301,13 @@ export interface FaberloomPanelInjected {
     reject: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
     remove: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
   }
+  /** The shared Session catalog surface. */
+  sessionsShare: {
+    capture: (spaceId: string, sessions: readonly FaberLoomSharedSessionRef[]) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
+    list: (spaceId: string) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
+    content: (spaceId: string, ownerId: string, sessionId: string) => Promise<Result<FaberLoomSharedSessionContentRow>>
+    remove: (spaceId: string, ownerId: string, sessionId: string) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
+  }
 }
 
 /** Binds one glyph to the sidebar panellist owner props. */
@@ -315,6 +323,7 @@ function panelIcon(Glyph: ComponentType<{ size: number }>) {
 
 /** Component props shared by every module screen. */
 type ScreenProps = PropsLocale<'faberloom'>
+  & PropsRuntime<'main'>
   & PropsStore<ReturnType<typeof createWorkspaceStore>>
   & InjectFace<FaberloomPanelInjected>
 
@@ -363,9 +372,50 @@ function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null 
 }
 
 /** Espacios: list, create, and rename. */
+/**
+ * Render one shared-Session snapshot as readable text. The stored content is the
+ * query service's snapshot JSON; text blocks of the first-party events are
+ * surfaced, and an unparseable body falls back to the raw text.
+ * @param content - stored snapshot JSON.
+ * @returns the transcript text.
+ */
+function sharedTranscript(content: string): string {
+  let parsed: unknown
+  try { parsed = JSON.parse(content) } catch { return content }
+  if (parsed === null || typeof parsed !== 'object') return content
+  const events = (parsed as { events?: unknown }).events
+  if (!Array.isArray(events)) return content
+  const lines: string[] = []
+  for (const event of events) lines.push(...sharedEventText(event))
+  return lines.length === 0 ? content : lines.join('\n\n')
+}
+
+/** The text blocks of one stored event, tagged by its type. */
+function sharedEventText(event: unknown): string[] {
+  if (event === null || typeof event !== 'object') return []
+  const record = event as Record<string, unknown>
+  const data = record['data']
+  if (data === null || typeof data !== 'object') return []
+  const frame = data as Record<string, unknown>
+  const message = frame['message']
+  const blocks = frame['content']
+    ?? (message !== null && typeof message === 'object' ? (message as Record<string, unknown>)['content'] : undefined)
+  if (!Array.isArray(blocks)) return []
+  const text = blocks.flatMap((block) => {
+    if (block === null || typeof block !== 'object') return []
+    const blockRecord = block as Record<string, unknown>
+    return blockRecord['type'] === 'text' && typeof blockRecord['text'] === 'string' ? [blockRecord['text']] : []
+  }).join('\n')
+  const type = typeof record['type'] === 'string' ? record['type'] : 'event'
+  return text.length === 0 ? [] : [`${type}:\n${text}`]
+}
+
 function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
-    const { t, createSpace, deleteSpace, goToWorkspace, spaceDetail, saveSpace, spaceWorkspace, startSpaceSession } = props
+    const {
+      t, createSpace, deleteSpace, goToWorkspace, spaceDetail, saveSpace, spaceWorkspace, startSpaceSession,
+      sessionsShare, useSessions, useWorkspaces,
+    } = props
     const { overview, status, error } = useOverview(props)
     const [draft, setDraft] = useState('')
     const [agentId, setAgentId] = useState('')
@@ -379,6 +429,11 @@ function spacesScreen() {
     const [parentId, setParentId] = useState('')
     const [newInherit, setNewInherit] = useState(true)
     const [creating, setCreating] = useState(false)
+    const [shared, setShared] = useState<readonly FaberLoomSharedSessionRow[]>([])
+    const [sharedOpen, setSharedOpen] = useState(false)
+    const [sharedContent, setSharedContent] = useState('')
+    const sessionList = useSessions(state => state)
+    const workspaceItems = useWorkspaces(state => state.items)
     const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
     const rows = useMemo(
       () => (overview?.spaces ?? []).filter(space => space.title.toLowerCase().includes(query.trim().toLowerCase())),
@@ -402,6 +457,46 @@ function spacesScreen() {
       setSpaceAgentId(detail.value.agentId ?? '')
       setMessage(null)
     }, [detail])
+
+    // The Space's shared Sessions refresh with the selection and after each sync.
+    useEffect(() => {
+      if (selected === null) { setShared([]); return }
+      void sessionsShare.list(selected).then((result) => { if (result.ok) setShared(result.value) })
+    }, [selected, sessionsShare])
+
+    /** Capture this host's Sessions of the Space's area, then re-list. */
+    const syncShared = (spaceId: string): void => {
+      setMessage(null)
+      const space = (overview?.spaces ?? []).find(row => row.id === spaceId)
+      const workspaceId = space?.workspaceId ?? null
+      const workspace = workspaceId === null ? undefined : workspaceItems.find(item => String(item.workspaceId) === workspaceId)
+      const refs: FaberLoomSharedSessionRef[] = []
+      for (const id of workspace?.sessionIds ?? []) {
+        const node = sessionList.byId[id]
+        if (node === undefined || node.blank) continue
+        refs.push({ id, title: node.title ?? '' })
+      }
+      void sessionsShare.capture(spaceId, refs).then((result) => {
+        if (result.ok) setShared(result.value)
+        else setMessage(result.error.message)
+      })
+    }
+
+    /** Open one shared Session's read-only transcript. */
+    const openShared = (session: FaberLoomSharedSessionRow): void => {
+      void sessionsShare.content(session.spaceId, session.ownerId, session.sessionId).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setSharedContent(result.value.content)
+        setSharedOpen(true)
+      })
+    }
+
+    /** Drop one shared Session (its author or this Space's owner). */
+    const removeShared = (session: FaberLoomSharedSessionRow): void => {
+      void sessionsShare.remove(session.spaceId, session.ownerId, session.sessionId).then((result) => {
+        if (result.ok) setShared(result.value)
+      })
+    }
 
     const columns: readonly Column<FaberLoomOverview['spaces'][number]>[] = [
       {
@@ -511,6 +606,24 @@ function spacesScreen() {
                             <button className={styles.secondary} type="button" disabled={detailValue === undefined} onClick={() => { if (detailValue !== undefined) startSpaceSession(detailValue.id) }}>{t('spaces.newInSpace')}</button>
                           </span>
                         </Field>
+                        <Field label={t('spaces.sharedSessions')} hint={t('spaces.sharedSessionsHint')}>
+                          <span className={styles.tools}>
+                            <button className={styles.secondary} type="button" disabled={detailValue === undefined} onClick={() => { if (detailValue !== undefined) syncShared(detailValue.id) }}>{t('spaces.syncSessions')}</button>
+                          </span>
+                          {shared.length === 0
+                            ? <span className={styles.cellMuted}>{t('spaces.noSharedSessions')}</span>
+                            : shared.map(session => (
+                              <div key={`${session.ownerId}:${session.sessionId}`} className={styles.grid2}>
+                                <span className={styles.cellMuted}>
+                                  {session.title} · {session.ownerId} · {String(session.messageCount)}
+                                </span>
+                                <span className={styles.tools}>
+                                  <button className={styles.ghost} type="button" onClick={() => { openShared(session) }}>{t('spaces.viewSession')}</button>
+                                  <button className={styles.ghost} type="button" onClick={() => { removeShared(session) }}>{t('action.delete')}</button>
+                                </span>
+                              </div>
+                            ))}
+                        </Field>
                       </>
                     )}
           </Inspector>
@@ -545,6 +658,9 @@ function spacesScreen() {
               <option value="no">{t('spaces.inheritNo')}</option>
             </select>
           </Field>
+        </Modal>
+        <Modal open={sharedOpen} onClose={() => { setSharedOpen(false) }} title={t('spaces.sessionContent')} closeLabel={t('action.close')}>
+          <pre className={styles.sharedSessionLog}>{sharedTranscript(sharedContent)}</pre>
         </Modal>
       </Screen>
     )

@@ -1176,3 +1176,15 @@
   flex: 1;
   min-width: 0;
 }
+
+/* Read-only transcript of one shared Session snapshot. */
+.sharedSessionLog {
+  margin: 0;
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+}

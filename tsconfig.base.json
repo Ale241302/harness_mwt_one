@@ -297,6 +297,7 @@
       "@deepseek-ai/dsh-faberloom-workflows": ["./packages/faberloom/workflows/src"],
       "@deepseek-ai/dsh-faberloom-shares": ["./packages/faberloom/shares/src"],
       "@deepseek-ai/dsh-faberloom-context": ["./packages/faberloom/context/src"],
+      "@deepseek-ai/dsh-faberloom-session-shares": ["./packages/faberloom/session-shares/src"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

@@ -56,6 +56,7 @@ import type {
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
   FaberLoomWorkflowTemplateRow, FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
+  FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -71,6 +72,10 @@ import type {
 import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant } from '@deepseek-ai/dsh-faberloom-shares'
 import type { FaberLoomExecutions } from '@deepseek-ai/dsh-faberloom-execution'
 import type { FaberLoomContext, FaberLoomContextEntry } from '@deepseek-ai/dsh-faberloom-context'
+import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-ai/dsh-faberloom-session-shares'
+// Type-only: pulls the ctx.sessionQuery merge for cross-member Session capture.
+import type {} from '@deepseek-ai/dsh-session-query'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 export type * from './types.ts'
 
@@ -729,6 +734,48 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
   }
 
+  /** Resolve the mounted shared-Session catalog, or fail loud. */
+  private sessionSharesService(): FaberLoomSessionShares {
+    const service = this.ctx.get('faberloomSessionShares')
+    if (service === undefined) throw new Error('faberloom: el servicio de sesiones compartidas no está montado')
+    return service
+  }
+
+  /** Map one shared Session to its panel row. */
+  private sharedSessionRow(session: FaberLoomSharedSession): FaberLoomSharedSessionRow {
+    return {
+      sessionId: session.sessionId,
+      ownerId: session.ownerId,
+      spaceId: session.spaceId,
+      title: session.title,
+      workspaceId: session.workspaceId,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      messageCount: session.messageCount,
+      origin: session.origin,
+    }
+  }
+
+  /**
+   * Read one local Session's portable snapshot through the query service. An
+   * absent query service yields an empty artifact, so a bare composition still
+   * records the row.
+   * @param sessionId - the Session to read.
+   * @returns the folded title, event count, and snapshot JSON.
+   */
+  private async readSessionArtifact(sessionId: string): Promise<{ title?: string; messageCount: number; content: string }> {
+    const query = this.ctx.get('sessionQuery')
+    if (query === undefined) return { messageCount: 0, content: '' }
+    const id = sessionId as SessionId
+    const snapshot = await query.readSession(id)
+    const title = (await query.readTitle(id).catch(() => undefined))?.title
+    return {
+      ...(title === undefined || title.length === 0 ? {} : { title }),
+      messageCount: snapshot.events.length,
+      content: JSON.stringify(snapshot),
+    }
+  }
+
   /** The workflow actor derived from the signed-in identity. */
   private workflowActor(): WorkFlowActor { return { id: this.actor().id } }
 
@@ -1282,6 +1329,73 @@ export class FaberLoomViewService extends TypertRemoteService {
   async removeContext(id: string): Promise<readonly FaberLoomContextRow[]> {
     await this.contextService().remove({ id: this.actor().id }, id)
     return await this.contextEntries()
+  }
+
+  /**
+   * Capture the panel's local Sessions into one Space and return the refreshed
+   * shared catalog.
+   * @param spaceId - the Space to share the Sessions in.
+   * @param sessions - the local Sessions the panel offers.
+   * @returns the Space's shared Session rows.
+   */
+  @Remote('captureSpaceSessions')
+  async captureSpaceSessions(
+    spaceId: string, sessions: readonly FaberLoomSharedSessionRef[],
+  ): Promise<readonly FaberLoomSharedSessionRow[]> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    for (const session of sessions) {
+      const artifact = await this.readSessionArtifact(session.id)
+      await this.sessionSharesService().capture({ id: actor.id }, {
+        spaceId,
+        sessionId: session.id,
+        title: artifact.title ?? (session.title.length > 0 ? session.title : session.id),
+        workspaceId: space.workspaceId ?? null,
+        messageCount: artifact.messageCount,
+        content: artifact.content,
+      })
+    }
+    return await this.spaceSessions(spaceId)
+  }
+
+  /**
+   * Sync the console's shared Sessions and list one Space's catalog.
+   * @param spaceId - the Space to list.
+   * @returns the Space's shared Session rows.
+   */
+  @Remote('spaceSessions')
+  async spaceSessions(spaceId: string): Promise<readonly FaberLoomSharedSessionRow[]> {
+    const service = this.sessionSharesService()
+    const actor = this.actor()
+    await service.sync(actor.id)
+    return (await service.list({ id: actor.id }, spaceId)).map(row => this.sharedSessionRow(row))
+  }
+
+  /**
+   * Read one shared Session's portable content.
+   * @param spaceId - the Space the Session is shared in.
+   * @param ownerId - the member whose host holds the Session.
+   * @param sessionId - the Session id.
+   * @returns the row with its content.
+   */
+  @Remote('spaceSessionContent')
+  async spaceSessionContent(spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContentRow> {
+    const row = await this.sessionSharesService().content({ id: this.actor().id }, spaceId, ownerId, sessionId)
+    return { ...this.sharedSessionRow(row), content: row.content }
+  }
+
+  /**
+   * Remove one shared Session (its author or the Space owner) and return the
+   * refreshed catalog.
+   * @param spaceId - the Space the Session is shared in.
+   * @param ownerId - the member whose host holds the Session.
+   * @param sessionId - the Session id.
+   * @returns the Space's shared Session rows.
+   */
+  @Remote('removeSpaceSession')
+  async removeSpaceSession(spaceId: string, ownerId: string, sessionId: string): Promise<readonly FaberLoomSharedSessionRow[]> {
+    await this.sessionSharesService().remove({ id: this.actor().id }, spaceId, ownerId, sessionId)
+    return await this.spaceSessions(spaceId)
   }
 
   /**

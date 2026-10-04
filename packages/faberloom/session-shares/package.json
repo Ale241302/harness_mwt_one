@@ -1,0 +1,43 @@
+{
+  "name": "@deepseek-ai/dsh-faberloom-session-shares",
+  "description": "Shared Session catalog (ctx.faberloomSessionShares): a Space's Sessions captured on each member's host, published to and imported from the MWT.ONE console",
+  "version": "0.1.6-alpha.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/faberloom/session-shares"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-storage-domain": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-shares": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
+    "@deepseek-ai/dsh-storage-domain": "workspace:^"
+  }
+}

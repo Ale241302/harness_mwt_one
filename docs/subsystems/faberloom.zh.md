@@ -1167,6 +1167,63 @@ releaseLock(): void
 
 Source: [`packages/faberloom/routines/src/index.ts`](../../packages/faberloom/routines/src/index.ts)
 
+<a id="ctxfaberloomsessionshares--faberloomsessionshares"></a>
+
+### `ctx.faberloomSessionShares` — `FaberLoomSessionShares`
+
+The shared Session catalog: durable, per-Space, and console-synced.
+
+```ts cordis-catalog
+/**
+ * Capture one local Session into its Space: store its portable log and publish
+ * it to the console when one is configured.
+ * @param actor - the acting identity, which must own the Session.
+ * @param input - Space, Session identity, title, and canonical log text.
+ * @returns the captured row.
+ */
+async capture(actor: FaberLoomSessionActor, input: FaberLoomSharedSessionCapture): Promise<FaberLoomSharedSession>
+
+/**
+ * List one Space's shared Sessions, newest first. The actor must be able to
+ * view the Space.
+ * @param actor - the acting identity.
+ * @param spaceId - the Space being listed.
+ * @returns the rows, without content.
+ */
+async list(actor: FaberLoomSessionActor, spaceId: string): Promise<readonly FaberLoomSharedSession[]>
+
+/**
+ * Read one shared Session's content.
+ * @param actor - the acting identity.
+ * @param spaceId - the Space the Session is shared in.
+ * @param ownerId - the member whose host holds the Session.
+ * @param sessionId - the Session id.
+ * @returns the row with its content.
+ */
+async content(actor: FaberLoomSessionActor, spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContent>
+
+/**
+ * Remove one captured Session the actor owns, or any Session when the actor
+ * owns the Space.
+ * @param actor - the acting identity.
+ * @param spaceId - the Space the Session is shared in.
+ * @param ownerId - the member whose host holds the Session.
+ * @param sessionId - the Session id.
+ * @returns true when a row was removed.
+ */
+async remove(actor: FaberLoomSessionActor, spaceId: string, ownerId: string, sessionId: string): Promise<boolean>
+
+/**
+ * Import the console's shared Sessions for one member and prune the local
+ * copies the console no longer carries, so a revoked share stops showing.
+ * A no-op when the console is not configured.
+ * @param readerId - the identity whose incoming Sessions are imported.
+ */
+async sync(readerId: string): Promise<void>
+```
+
+Source: [`packages/faberloom/session-shares/src/index.ts`](../../packages/faberloom/session-shares/src/index.ts)
+
 <a id="ctxfaberloomshares--faberloomshares"></a>
 
 ### `ctx.faberloomShares` — `FaberLoomShares`
@@ -1573,7 +1630,7 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @param permissions - the permission subset each grantee receives.
  * @returns the Space's outgoing grant rows.
  */
-@Remote('shareSpaceByWorkspace') async shareSpaceByWorkspace(workspaceId: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>
+@Remote('shareSpaceByWorkspace') async shareSpaceByWorkspace( workspaceId: string, emails: readonly string[], permissions: readonly string[], ): Promise<readonly FaberLoomShareGrantRow[]>
 
 /**
  * Share one Work Flow the owner manages — or that the actor holds `share` on —
@@ -1711,6 +1768,41 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns the refreshed rows.
  */
 @Remote('removeContext') async removeContext(id: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Capture the panel's local Sessions into one Space and return the refreshed
+ * shared catalog.
+ * @param spaceId - the Space to share the Sessions in.
+ * @param sessions - the local Sessions the panel offers.
+ * @returns the Space's shared Session rows.
+ */
+@Remote('captureSpaceSessions') async captureSpaceSessions( spaceId: string, sessions: readonly FaberLoomSharedSessionRef[], ): Promise<readonly FaberLoomSharedSessionRow[]>
+
+/**
+ * Sync the console's shared Sessions and list one Space's catalog.
+ * @param spaceId - the Space to list.
+ * @returns the Space's shared Session rows.
+ */
+@Remote('spaceSessions') async spaceSessions(spaceId: string): Promise<readonly FaberLoomSharedSessionRow[]>
+
+/**
+ * Read one shared Session's portable content.
+ * @param spaceId - the Space the Session is shared in.
+ * @param ownerId - the member whose host holds the Session.
+ * @param sessionId - the Session id.
+ * @returns the row with its content.
+ */
+@Remote('spaceSessionContent') async spaceSessionContent(spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContentRow>
+
+/**
+ * Remove one shared Session (its author or the Space owner) and return the
+ * refreshed catalog.
+ * @param spaceId - the Space the Session is shared in.
+ * @param ownerId - the member whose host holds the Session.
+ * @param sessionId - the Session id.
+ * @returns the Space's shared Session rows.
+ */
+@Remote('removeSpaceSession') async removeSpaceSession(spaceId: string, ownerId: string, sessionId: string): Promise<readonly FaberLoomSharedSessionRow[]>
 
 /**
  * Create a space (root or sub-space) for the owner with an optional

@@ -1717,6 +1717,42 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomSessionShares',
+    summary: 'The shared Session catalog: durable, per-Space, and console-synced.',
+    description: 'The shared Session catalog: durable, per-Space, and console-synced.',
+    methods: [
+      {
+        signature: 'async capture(actor: FaberLoomSessionActor, input: FaberLoomSharedSessionCapture): Promise<FaberLoomSharedSession>',
+        description: 'Capture one local Session into its Space: store its portable log and publish it to the console when one is configured.',
+        parameters: [{ name: 'actor', description: 'the acting identity, which must own the Session.' }, { name: 'input', description: 'Space, Session identity, title, and canonical log text.' }],
+        returns: 'the captured row.',
+      },
+      {
+        signature: 'async list(actor: FaberLoomSessionActor, spaceId: string): Promise<readonly FaberLoomSharedSession[]>',
+        description: 'List one Space\'s shared Sessions, newest first. The actor must be able to view the Space.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space being listed.' }],
+        returns: 'the rows, without content.',
+      },
+      {
+        signature: 'async content(actor: FaberLoomSessionActor, spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContent>',
+        description: 'Read one shared Session\'s content.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space the Session is shared in.' }, { name: 'ownerId', description: 'the member whose host holds the Session.' }, { name: 'sessionId', description: 'the Session id.' }],
+        returns: 'the row with its content.',
+      },
+      {
+        signature: 'async remove(actor: FaberLoomSessionActor, spaceId: string, ownerId: string, sessionId: string): Promise<boolean>',
+        description: 'Remove one captured Session the actor owns, or any Session when the actor owns the Space.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space the Session is shared in.' }, { name: 'ownerId', description: 'the member whose host holds the Session.' }, { name: 'sessionId', description: 'the Session id.' }],
+        returns: 'true when a row was removed.',
+      },
+      {
+        signature: 'async sync(readerId: string): Promise<void>',
+        description: 'Import the console\'s shared Sessions for one member and prune the local copies the console no longer carries, so a revoked share stops showing. A no-op when the console is not configured.',
+        parameters: [{ name: 'readerId', description: 'the identity whose incoming Sessions are imported.' }],
+      },
+    ],
+  },
+  {
     key: 'faberloomShares',
     summary: 'The product sharing service: durable per-action grants with console transport and email acceptance.',
     description: 'The product sharing service: durable per-action grants with console transport and email acceptance.',
@@ -1995,7 +2031,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the resource\'s outgoing grant rows.',
       },
       {
-        signature: '@Remote(\'shareSpaceByWorkspace\') async shareSpaceByWorkspace(workspaceId: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>',
+        signature: '@Remote(\'shareSpaceByWorkspace\') async shareSpaceByWorkspace( workspaceId: string, emails: readonly string[], permissions: readonly string[], ): Promise<readonly FaberLoomShareGrantRow[]>',
         description: 'Share the Space that mirrors one registered Workspace, resolving the Space from the sidebar Workspace the caller addresses.',
         parameters: [{ name: 'workspaceId', description: 'the Workspace whose mirrored Space is shared.' }, { name: 'emails', description: 'the grantees.' }, { name: 'permissions', description: 'the permission subset each grantee receives.' }],
         returns: 'the Space\'s outgoing grant rows.',
@@ -2107,6 +2143,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one context entry and its history.',
         parameters: [{ name: 'id', description: 'entry id.' }],
         returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'captureSpaceSessions\') async captureSpaceSessions( spaceId: string, sessions: readonly FaberLoomSharedSessionRef[], ): Promise<readonly FaberLoomSharedSessionRow[]>',
+        description: 'Capture the panel\'s local Sessions into one Space and return the refreshed shared catalog.',
+        parameters: [{ name: 'spaceId', description: 'the Space to share the Sessions in.' }, { name: 'sessions', description: 'the local Sessions the panel offers.' }],
+        returns: 'the Space\'s shared Session rows.',
+      },
+      {
+        signature: '@Remote(\'spaceSessions\') async spaceSessions(spaceId: string): Promise<readonly FaberLoomSharedSessionRow[]>',
+        description: 'Sync the console\'s shared Sessions and list one Space\'s catalog.',
+        parameters: [{ name: 'spaceId', description: 'the Space to list.' }],
+        returns: 'the Space\'s shared Session rows.',
+      },
+      {
+        signature: '@Remote(\'spaceSessionContent\') async spaceSessionContent(spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContentRow>',
+        description: 'Read one shared Session\'s portable content.',
+        parameters: [{ name: 'spaceId', description: 'the Space the Session is shared in.' }, { name: 'ownerId', description: 'the member whose host holds the Session.' }, { name: 'sessionId', description: 'the Session id.' }],
+        returns: 'the row with its content.',
+      },
+      {
+        signature: '@Remote(\'removeSpaceSession\') async removeSpaceSession(spaceId: string, ownerId: string, sessionId: string): Promise<readonly FaberLoomSharedSessionRow[]>',
+        description: 'Remove one shared Session (its author or the Space owner) and return the refreshed catalog.',
+        parameters: [{ name: 'spaceId', description: 'the Space the Session is shared in.' }, { name: 'ownerId', description: 'the member whose host holds the Session.' }, { name: 'sessionId', description: 'the Session id.' }],
+        returns: 'the Space\'s shared Session rows.',
       },
       {
         signature: '@Remote(\'createSpace\') async createSpace(title: string, agentId?: string, parentId?: string, inheritContext?: boolean): Promise<FaberLoomOverview>',
@@ -6788,6 +6848,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomRoutineStepRow',
     declaration: 'export interface FaberLoomRoutineStepRow {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomSessionActor',
+    declaration: 'export interface FaberLoomSessionActor {\n    readonly id: string;\n}',
+  },
+  {
+    name: 'FaberLoomSharedSession',
+    declaration: 'export interface FaberLoomSharedSession {\n    readonly sessionId: string;\n    readonly ownerId: string;\n    readonly spaceId: string;\n    readonly title: string;\n    readonly workspaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly messageCount: number;\n    readonly origin: FaberLoomSharedSessionOrigin;\n}',
+  },
+  {
+    name: 'FaberLoomSharedSessionCapture',
+    declaration: 'export interface FaberLoomSharedSessionCapture {\n    readonly spaceId: string;\n    readonly sessionId: string;\n    readonly title: string;\n    readonly workspaceId?: string | null;\n    readonly createdAt?: string;\n    readonly updatedAt?: string;\n    readonly messageCount?: number;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'FaberLoomSharedSessionContent',
+    declaration: 'export interface FaberLoomSharedSessionContent extends FaberLoomSharedSession {\n    readonly content: string;\n}',
+  },
+  {
+    name: 'FaberLoomSharedSessionContentRow',
+    declaration: 'export interface FaberLoomSharedSessionContentRow extends FaberLoomSharedSessionRow {\n    readonly content: string;\n}',
+  },
+  {
+    name: 'FaberLoomSharedSessionOrigin',
+    declaration: 'export type FaberLoomSharedSessionOrigin = \'owner\' | \'console\';',
+  },
+  {
+    name: 'FaberLoomSharedSessionRef',
+    declaration: 'export interface FaberLoomSharedSessionRef {\n    readonly id: string;\n    readonly title: string;\n}',
+  },
+  {
+    name: 'FaberLoomSharedSessionRow',
+    declaration: 'export interface FaberLoomSharedSessionRow {\n    readonly sessionId: string;\n    readonly ownerId: string;\n    readonly spaceId: string;\n    readonly title: string;\n    readonly workspaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly messageCount: number;\n    readonly origin: string;\n}',
   },
   {
     name: 'FaberLoomShareGrant',

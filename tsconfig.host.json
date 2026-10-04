@@ -239,6 +239,7 @@
     { "path": "./packages/faberloom/workflows" },
     { "path": "./packages/faberloom/shares" },
     { "path": "./packages/faberloom/context" },
+    { "path": "./packages/faberloom/session-shares" },
     { "path": "./packages/feedback/message-feedback" },
     { "path": "./packages/workspace/workspace" },
     { "path": "./packages/session/session-title" },

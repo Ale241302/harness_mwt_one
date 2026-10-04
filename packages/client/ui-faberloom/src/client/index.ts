@@ -289,6 +289,12 @@ export function apply(ctx: ClientContext): void {
         reject: id => ctx.remote.faberloomView.rejectContext(id),
         remove: id => ctx.remote.faberloomView.removeContext(id),
       },
+      sessionsShare: {
+        capture: (spaceId, sessions) => ctx.remote.faberloomView.captureSpaceSessions(spaceId, sessions),
+        list: spaceId => ctx.remote.faberloomView.spaceSessions(spaceId),
+        content: (spaceId, ownerId, sessionId) => ctx.remote.faberloomView.spaceSessionContent(spaceId, ownerId, sessionId),
+        remove: (spaceId, ownerId, sessionId) => ctx.remote.faberloomView.removeSpaceSession(spaceId, ownerId, sessionId),
+      },
     }
   }
 

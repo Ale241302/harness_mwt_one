@@ -1263,3 +1263,39 @@ export interface FaberLoomWorkflowVersionRow {
   /** ISO-8601 instant that version was written. */
   readonly createdAt: string
 }
+
+/** One Session a Space shares, as the Espacios panel lists it. */
+export interface FaberLoomSharedSessionRow {
+  /** Session id on its author's host. */
+  readonly sessionId: string
+  /** Email of the member whose host holds the Session. */
+  readonly ownerId: string
+  /** Space the Session is shared in. */
+  readonly spaceId: string
+  /** Display title. */
+  readonly title: string
+  /** Workspace the Session ran in, when known. */
+  readonly workspaceId: string | null
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+  /** ISO-8601 last-change instant. */
+  readonly updatedAt: string
+  /** Committed event count. */
+  readonly messageCount: number
+  /** `owner` for a local capture, `console` for an imported row. */
+  readonly origin: string
+}
+
+/** One shared Session with its portable content. */
+export interface FaberLoomSharedSessionContentRow extends FaberLoomSharedSessionRow {
+  /** Portable snapshot JSON the read-only viewer renders. */
+  readonly content: string
+}
+
+/** One local Session the panel asks the host to capture into its Space. */
+export interface FaberLoomSharedSessionRef {
+  /** Session id. */
+  readonly id: string
+  /** Display title the panel already holds. */
+  readonly title: string
+}

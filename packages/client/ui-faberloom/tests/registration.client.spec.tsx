@@ -136,6 +136,13 @@ async function bench(
   const workflowTemplates = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const createWorkflowFromTemplate = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const importWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const captureSpaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const spaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const spaceSessionContent = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: { sessionId: 's1', ownerId: 'o@x', spaceId: 'sp', title: 't', workspaceId: null, createdAt: 'c', updatedAt: 'u', messageCount: 0, origin: 'owner', content: '' },
+  }))
+  const removeSpaceSession = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
@@ -150,6 +157,7 @@ async function bench(
     routineWorkflowLinks, setWorkflowConcurrency,
     shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
     workflowTemplates, createWorkflowFromTemplate, importWorkflow,
+    captureSpaceSessions, spaceSessions, spaceSessionContent, removeSpaceSession,
   }
   await runtime.mount({
     inject: ['slots'],
