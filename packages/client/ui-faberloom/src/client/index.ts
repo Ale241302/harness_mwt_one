@@ -270,6 +270,7 @@ export function apply(ctx: ClientContext): void {
         shareSpace: (id, emails, permissions) => ctx.remote.faberloomView.shareSpace(id, emails, permissions),
         resourceShares: (kind, id) => ctx.remote.faberloomView.resourceShares(kind, id),
         revokeShareGrant: grantId => ctx.remote.faberloomView.revokeShareGrant(grantId),
+        health: () => ctx.remote.faberloomView.executionHealth(),
         exportFlow: (id, format) => ctx.remote.faberloomView.exportWorkflow(id, format),
       },
     }

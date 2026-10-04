@@ -27,6 +27,8 @@ const stepRecord = z.object({
   effect: z.boolean(),
   revalidateKey: z.string().nullable(),
   revalidateExpect: z.string().nullable(),
+  // Handler attempts allowed before the step fails; defaulted for pre-field rows.
+  maxAttempts: z.number().default(1),
 })
 
 /** Durable trigger. */
@@ -85,6 +87,8 @@ const stepStateRecord = z.object({
   ]),
   result: z.unknown(),
   reason: z.string().nullable(),
+  // Handler attempts made; defaulted for rows written before the field existed.
+  attempts: z.number().default(0),
 })
 
 /** Durable ingested event. */

@@ -23,6 +23,7 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   EventSource,
   Execution,
+  ExecutionReview,
   ExecutionStatus,
   FaberLoomExecutionId,
   FaberLoomRoutine,
@@ -97,6 +98,7 @@ function normalizeDefinition(input: RoutineDefinitionInput): RoutineDefinition {
       effect: step.effect ?? false,
       revalidateKey: step.revalidateKey ?? null,
       revalidateExpect: step.revalidateExpect ?? null,
+      maxAttempts: step.maxAttempts ?? 1,
     })),
     expectedResult: input.expectedResult,
     permissions: [...input.permissions],
@@ -130,6 +132,7 @@ function toStoredDefinition(definition: RoutineDefinition): RoutineRecord['defin
       effect: step.effect,
       revalidateKey: step.revalidateKey,
       revalidateExpect: step.revalidateExpect,
+      maxAttempts: step.maxAttempts,
     })),
     expectedResult: definition.expectedResult,
     permissions: [...definition.permissions],
@@ -147,6 +150,7 @@ function validateDefinition(definition: RoutineDefinition, handlers: ReadonlySet
   const known = new Set(definition.steps.map(step => step.id))
   for (const step of definition.steps) {
     if (!handlers.has(step.handler)) problems.push(`MISSING_HANDLER:${step.id}:${step.handler}`)
+    if (!Number.isSafeInteger(step.maxAttempts) || step.maxAttempts < 1) problems.push(`BAD_MAX_ATTEMPTS:${step.id}:${String(step.maxAttempts)}`)
     for (const dependency of step.dependsOn) {
       if (!known.has(dependency)) problems.push(`MISSING_DEPENDENCY:${step.id}:${dependency}`)
     }
@@ -263,7 +267,7 @@ function toExecution(id: FaberLoomExecutionId, record: ExecutionRecord): Executi
 /** Prepare a fresh step-state map for a definition. */
 function initialState(definition: RoutineDefinition): Record<string, StepState> {
   const steps: Record<string, StepState> = {}
-  for (const step of definition.steps) steps[step.id] = { status: 'pending', result: null, reason: null }
+  for (const step of definition.steps) steps[step.id] = { status: 'pending', result: null, reason: null, attempts: 0 }
   return steps
 }
 
@@ -276,6 +280,8 @@ export class FaberLoomRoutines extends Service {
 
   private domainPromise: Promise<Domain<typeof routinesDomainSpec>> | undefined
   private readonly handlers = new Map<string, StepHandler>()
+
+  private readonly reviewListeners = new Set<(review: ExecutionReview) => void>()
   private locked = false
 
   /**
@@ -337,6 +343,40 @@ export class FaberLoomRoutines extends Service {
    * @returns the names.
    */
   listHandlers(): string[] { return [...this.handlers.keys()] }
+
+  // ── Review listeners ────────────────────────────────────────────────
+
+  /**
+   * Register a listener the engine calls when an execution reaches review
+   * (a failed step, a missing handler, or an expired wait), so a deployment can
+   * dead-letter it and alert the owner.
+   * @param listener - the callback.
+   * @returns the disposer removing the listener.
+   */
+  registerReviewListener(listener: (review: ExecutionReview) => void): () => void {
+    this.reviewListeners.add(listener)
+    return () => { this.reviewListeners.delete(listener) }
+  }
+
+  /** Notify every registered listener; a listener failure never breaks the run. */
+  private review(id: FaberLoomExecutionId, record: ExecutionRecord, stepId: string | null, reason: string, attempts: number): void {
+    const review: ExecutionReview = {
+      executionId: id,
+      routineId: record.routineId,
+      ownerId: record.ownerId,
+      stepId,
+      reason,
+      attempts,
+      at: new Date().toISOString(),
+    }
+    for (const listener of this.reviewListeners) {
+      try {
+        listener(review)
+      } catch (error) {
+        this.ctx.logger.warn(`faberloom: review listener failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  }
 
   // ── Definitions ─────────────────────────────────────────────────────
 
@@ -496,10 +536,10 @@ export class FaberLoomRoutines extends Service {
       if (Date.parse(record.deadlineAt) > now.getTime()) continue
       const steps = { ...record.steps }
       for (const [stepId, state] of Object.entries(steps)) {
-        if (state.status === 'waiting') steps[stepId] = { status: 'failed', result: null, reason: 'WAIT_TIMEOUT' }
+        if (state.status === 'waiting') steps[stepId] = { status: 'failed', result: null, reason: 'WAIT_TIMEOUT', attempts: state.attempts }
       }
       const id = rawId as FaberLoomExecutionId
-      await this.saveExecution(id, {
+      const next: ExecutionRecord = {
         ...record,
         steps,
         status: 'needs_review',
@@ -507,7 +547,9 @@ export class FaberLoomRoutines extends Service {
         deadlineAt: null,
         reason: 'WAIT_TIMEOUT',
         updatedAt: now.toISOString(),
-      })
+      }
+      await this.saveExecution(id, next)
+      this.review(id, next, null, 'WAIT_TIMEOUT', 0)
       expired.push(id)
     }
     return expired
@@ -651,14 +693,14 @@ export class FaberLoomRoutines extends Service {
       if (step.gateStepId !== null) {
         const gate = steps[step.gateStepId]
         if (gate !== undefined && gate.status === 'completed' && gatePassed(gate.result) !== (step.gateExpect === true)) {
-          steps[step.id] = { status: 'skipped', result: null, reason: 'GATED' }
+          steps[step.id] = { status: 'skipped', result: null, reason: 'GATED', attempts: 0 }
           record = { ...record, steps, updatedAt: new Date().toISOString() }
           await this.saveExecution(id, record)
           continue
         }
       }
       if (step.waitFor !== null && (event === undefined || !eventMatches(step.waitFor, event))) {
-        steps[step.id] = { status: 'waiting', result: null, reason: null }
+        steps[step.id] = { status: 'waiting', result: null, reason: null, attempts: state?.attempts ?? 0 }
         const at = new Date().toISOString()
         record = {
           ...record,
@@ -674,7 +716,7 @@ export class FaberLoomRoutines extends Service {
       if (step.revalidateKey !== null && event !== undefined) {
         const actual = event.data === undefined ? '' : (event.data[step.revalidateKey] ?? '') as string
         if (actual !== (step.revalidateExpect ?? '')) {
-          steps[step.id] = { status: 'failed', result: null, reason: 'REVALIDATION_CHANGED' }
+          steps[step.id] = { status: 'failed', result: null, reason: 'REVALIDATION_CHANGED', attempts: state?.attempts ?? 0 }
           record = { ...record, steps, status: 'needs_review', deadlineAt: null, reason: 'REVALIDATION_CHANGED', updatedAt: new Date().toISOString() }
           await this.saveExecution(id, record)
           return record
@@ -684,13 +726,13 @@ export class FaberLoomRoutines extends Service {
         const decision = await this.authorize(record.ownerId, definition, step.id, record.routineId)
         if (!decision.allowed) {
           const reason = `NOT_AUTHORIZED:${decision.reason}`
-          steps[step.id] = { status: 'failed', result: null, reason }
+          steps[step.id] = { status: 'failed', result: null, reason, attempts: state?.attempts ?? 0 }
           record = { ...record, steps, status: 'needs_review', deadlineAt: null, reason, updatedAt: new Date().toISOString() }
           await this.saveExecution(id, record)
           return record
         }
       }
-      steps[step.id] = { status: 'running', result: null, reason: null }
+      steps[step.id] = { status: 'running', result: null, reason: null, attempts: state?.attempts ?? 0 }
       record = { ...record, steps, updatedAt: new Date().toISOString() }
       await this.saveExecution(id, record)
 
@@ -699,9 +741,10 @@ export class FaberLoomRoutines extends Service {
       }
       const handler = this.handlers.get(step.handler)
       if (handler === undefined) {
-        steps[step.id] = { status: 'failed', result: null, reason: 'MISSING_HANDLER' }
+        steps[step.id] = { status: 'failed', result: null, reason: 'MISSING_HANDLER', attempts: 0 }
         record = { ...record, steps, status: 'needs_review', reason: 'MISSING_HANDLER', updatedAt: new Date().toISOString() }
         await this.saveExecution(id, record)
+        this.review(id, record, step.id, 'MISSING_HANDLER', 0)
         return record
       }
       if (event !== undefined && !record.events.some(entry => entry.key === event.key)) {
@@ -721,19 +764,33 @@ export class FaberLoomRoutines extends Service {
         results,
         events: record.events.map(toEvent),
       }
-      try {
-        const result = await handler(context)
-        if (step.effect) {
-          await (await this.effects()).put(`${id}:${step.id}`, { state: 'applied', result: result ?? null, at: new Date().toISOString() })
+      const maxAttempts = Math.max(1, step.maxAttempts)
+      let attempts = state?.attempts ?? 0
+      for (;;) {
+        attempts += 1
+        try {
+          const result = await handler(context)
+          if (step.effect) {
+            await (await this.effects()).put(`${id}:${step.id}`, { state: 'applied', result: result ?? null, at: new Date().toISOString() })
+          }
+          steps[step.id] = { status: 'completed', result: result ?? null, reason: null, attempts }
+          break
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (attempts < maxAttempts) {
+            steps[step.id] = { status: 'running', result: null, reason: message, attempts }
+            record = { ...record, steps, updatedAt: new Date().toISOString() }
+            await this.saveExecution(id, record)
+            continue
+          }
+          steps[step.id] = { status: 'failed', result: null, reason: message, attempts }
+          const reason = step.effect ? 'EFFECT_UNCERTAIN' : message
+          const status: ExecutionStatus = step.effect ? 'needs_review' : definition.failurePolicy === 'stop' ? 'failed' : 'needs_review'
+          record = { ...record, steps, status, deadlineAt: null, reason, updatedAt: new Date().toISOString() }
+          await this.saveExecution(id, record)
+          this.review(id, record, step.id, reason, attempts)
+          return record
         }
-        steps[step.id] = { status: 'completed', result: result ?? null, reason: null }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        steps[step.id] = { status: 'failed', result: null, reason: message }
-        const status: ExecutionStatus = step.effect ? 'needs_review' : definition.failurePolicy === 'stop' ? 'failed' : 'needs_review'
-        record = { ...record, steps, status, deadlineAt: null, reason: step.effect ? 'EFFECT_UNCERTAIN' : message, updatedAt: new Date().toISOString() }
-        await this.saveExecution(id, record)
-        return record
       }
       record = { ...record, steps, updatedAt: new Date().toISOString() }
       await this.saveExecution(id, record)
@@ -867,7 +924,7 @@ export class FaberLoomRoutines extends Service {
     const target = await this.getRoutineVersion(record.routineId, toVersion)
     const steps = { ...record.steps }
     for (const step of target.steps) {
-      if (steps[step.id] === undefined) steps[step.id] = { status: 'pending', result: null, reason: null }
+      if (steps[step.id] === undefined) steps[step.id] = { status: 'pending', result: null, reason: null, attempts: 0 }
     }
     await this.saveExecution(id, { ...record, routineVersion: toVersion, steps, updatedAt: new Date().toISOString() })
     const run = await this.runSteps(id, target, undefined, undefined)

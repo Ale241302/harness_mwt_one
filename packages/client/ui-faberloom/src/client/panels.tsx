@@ -34,7 +34,7 @@ import type {
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
-  FaberLoomJsonValue, FaberLoomShareGrantRow,
+  FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
@@ -278,6 +278,7 @@ export interface FaberloomPanelInjected {
     ) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
     resourceShares: (kind: string, id: string) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
     revokeShareGrant: (grantId: string) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
+    health: () => Promise<Result<FaberLoomHealth>>
     exportFlow: (id: string, format: string) => Promise<Result<FaberLoomWorkflowExport>>
   }
 }
@@ -3014,6 +3015,7 @@ function workflowsScreen() {
     const [concurrency, setConcurrency] = useState('')
     const [links, setLinks] = useState<readonly FaberLoomWorkflowLink[]>([])
     const [grants, setGrants] = useState<readonly FaberLoomShareGrantRow[]>([])
+    const [health, setHealth] = useState<FaberLoomHealth | null>(null)
     const [shareEmail, setShareEmail] = useState('')
     const [sharePermissions, setSharePermissions] = useState<readonly string[]>(['view'])
     const dragging = useRef<string | null>(null)
@@ -3030,6 +3032,7 @@ function workflowsScreen() {
       void workflows.overview().then((result) => { if (result.ok) setFlows(result.value) }).catch(() => undefined)
       void workflows.topology().then((result) => { if (result.ok) setTopology(result.value) }).catch(() => undefined)
       void workflows.links().then((result) => { if (result.ok) setLinks(result.value) }).catch(() => undefined)
+      void workflows.health().then((result) => { if (result.ok) setHealth(result.value) }).catch(() => undefined)
     }, [])
     useEffect(() => {
       if (selected === null) { setDetail(null); setRuns([]); return }
@@ -3061,6 +3064,9 @@ function workflowsScreen() {
     const byId = new Map(nodes.map(node => [node.id, node]))
     const agentOptions = topology?.agents ?? []
     const connectionOptions = topology?.connections ?? []
+    const selectedHealth = detail?.routineId === undefined || health === null
+      ? null
+      : health.routines.find(row => row.routineId === detail.routineId) ?? null
 
     const pick = (id: string): void => {
       if (connectFrom !== null && connectFrom !== id) {
@@ -3203,6 +3209,16 @@ function workflowsScreen() {
                   onChange={(event) => { setConcurrency(event.target.value) }} />
                 <button type="button" onClick={() => { saveConcurrency(selected) }}>{t('wf.concurrency.save')}</button>
               </div>
+              {selectedHealth === null ? null : (
+                <div className={styles.workflowInspector}>
+                  <span>{t('wf.health')}</span>
+                  <span>{t('wf.health.runs')}: {selectedHealth.runs}</span>
+                  <span>{t('wf.health.failures')}: {selectedHealth.failures}</span>
+                  <span>{t('wf.health.review')}: {selectedHealth.needsReview}</span>
+                  <span>{t('wf.health.retries')}: {selectedHealth.retries}</span>
+                  {selectedHealth.deadlineAt === null ? null : <span>{t('wf.health.deadline')}: {selectedHealth.deadlineAt}</span>}
+                </div>
+              )}
               <svg className={styles.workflowCanvas} viewBox="0 0 900 320" onPointerMove={(event) => {
                 const id = dragging.current
                 if (id === null) return

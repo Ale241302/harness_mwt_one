@@ -125,6 +125,7 @@ async function bench(
   const shareSpace = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const resourceShares = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const revokeShareGrant = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const executionHealth = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { ownerId: '', routines: [], totals: { runs: 0, failures: 0, needsReview: 0, waiting: 0, retries: 0, deadLettered: 0, alerts: 0 } } }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
@@ -136,7 +137,7 @@ async function bench(
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connect: connectNode, disconnect: disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,
-    shareWorkflow, shareSpace, resourceShares, revokeShareGrant,
+    shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -178,7 +179,7 @@ async function bench(
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connectNode, disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,
-    shareWorkflow, shareSpace, resourceShares, revokeShareGrant,
+    shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
   }
 }
 

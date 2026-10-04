@@ -19,6 +19,12 @@
     },
     {
       "path": "../routines"
+    },
+    {
+      "path": "../board"
+    },
+    {
+      "path": "../connections"
     }
   ]
 }

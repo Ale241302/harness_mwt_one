@@ -1318,6 +1318,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'now', description: 'the instant this pass considers current.' }],
         returns: 'what the pass did.',
       },
+      {
+        signature: 'async health(): Promise<FaberLoomHealth>',
+        description: 'The dispatcher\'s liveness: one row per routine plus aggregate counters.',
+        parameters: [],
+        returns: 'the health snapshot.',
+      },
     ],
   },
   {
@@ -1490,6 +1496,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List registered handler names.',
         parameters: [],
         returns: 'the names.',
+      },
+      {
+        signature: 'registerReviewListener(listener: (review: ExecutionReview) => void): () => void',
+        description: 'Register a listener the engine calls when an execution reaches review (a failed step, a missing handler, or an expired wait), so a deployment can dead-letter it and alert the owner.',
+        parameters: [{ name: 'listener', description: 'the callback.' }],
+        returns: 'the disposer removing the listener.',
       },
       {
         signature: 'async createRoutine(ownerId: string, input: RoutineInput): Promise<FaberLoomRoutine>',
@@ -2382,6 +2394,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List the owner\'s executions, optionally only one routine\'s.',
         parameters: [{ name: 'routineId', description: 'routine id, or undefined for every routine.' }],
         returns: 'execution rows oldest first.',
+      },
+      {
+        signature: '@Remote(\'executionHealth\') async executionHealth(): Promise<FaberLoomHealth>',
+        description: 'The dispatcher\'s liveness — last run, failures, review backlog, retries, and the sooner wait deadline — per routine and in aggregate.',
+        parameters: [],
+        returns: 'the health snapshot.',
       },
       {
         signature: '@Remote(\'startRoutine\') async startRoutine(routineId: string): Promise<readonly FaberLoomExecutionRow[]>',
@@ -6293,6 +6311,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ExecutionEvidence {\n    readonly channel: string;\n    readonly eventKey: string | null;\n    readonly at: string;\n}',
   },
   {
+    name: 'ExecutionReview',
+    declaration: 'export interface ExecutionReview {\n    readonly executionId: string;\n    readonly routineId: string;\n    readonly ownerId: string;\n    readonly stepId: string | null;\n    readonly reason: string;\n    readonly attempts: number;\n    readonly at: string;\n}',
+  },
+  {
     name: 'ExecutionStatus',
     declaration: 'export type ExecutionStatus = \'running\' | \'waiting\' | \'completed\' | \'failed\' | \'needs_review\';',
   },
@@ -7614,11 +7636,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineStep',
-    declaration: 'export interface RoutineStep {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly config: Readonly<Record<string, unknown>>;\n    readonly gateStepId: string | null;\n    readonly gateExpect: boolean | null;\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n    readonly revalidateKey: string | null;\n    readonly revalidateExpect: string | null;\n}',
+    declaration: 'export interface RoutineStep {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly config: Readonly<Record<string, unknown>>;\n    readonly gateStepId: string | null;\n    readonly gateExpect: boolean | null;\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n    readonly revalidateKey: string | null;\n    readonly revalidateExpect: string | null;\n    readonly maxAttempts: number;\n}',
   },
   {
     name: 'RoutineStepInput',
-    declaration: 'export interface RoutineStepInput {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn?: readonly string[];\n    readonly config?: Readonly<Record<string, unknown>>;\n    readonly gate?: {\n        readonly stepId: string;\n        readonly expect: boolean;\n    } | undefined;\n    readonly waitFor?: string;\n    readonly effect?: boolean;\n    readonly revalidateKey?: string;\n    readonly revalidateExpect?: string;\n}',
+    declaration: 'export interface RoutineStepInput {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn?: readonly string[];\n    readonly config?: Readonly<Record<string, unknown>>;\n    readonly gate?: {\n        readonly stepId: string;\n        readonly expect: boolean;\n    } | undefined;\n    readonly waitFor?: string;\n    readonly effect?: boolean;\n    readonly revalidateKey?: string;\n    readonly revalidateExpect?: string;\n    readonly maxAttempts?: number;\n}',
   },
   {
     name: 'RoutineTrigger',
@@ -8474,7 +8496,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StepState',
-    declaration: 'export interface StepState {\n    readonly status: \'pending\' | \'running\' | \'waiting\' | \'completed\' | \'failed\' | \'skipped\';\n    readonly result: unknown;\n    readonly reason: string | null;\n}',
+    declaration: 'export interface StepState {\n    readonly status: \'pending\' | \'running\' | \'waiting\' | \'completed\' | \'failed\' | \'skipped\';\n    readonly result: unknown;\n    readonly reason: string | null;\n    readonly attempts: number;\n}',
   },
   {
     name: 'StorageBackend',

@@ -54,7 +54,7 @@ import type {
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
-  FaberLoomWorkflowLink, FaberLoomShareGrantRow,
+  FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -68,6 +68,7 @@ import type {
   WorkFlowStatus,
 } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant } from '@deepseek-ai/dsh-faberloom-shares'
+import type { FaberLoomExecutions } from '@deepseek-ai/dsh-faberloom-execution'
 
 export type * from './types.ts'
 
@@ -2937,6 +2938,48 @@ export class FaberLoomViewService extends TypertRemoteService {
       new Set(routine.definition.steps.filter(step => step.effect).map(step => step.id)),
     ]))
     return rows.map(row => this.executionRow(row, names, effects))
+  }
+
+  /**
+   * The dispatcher's liveness — last run, failures, review backlog, retries, and
+   * the sooner wait deadline — per routine and in aggregate.
+   * @returns the health snapshot.
+   */
+  @Remote('executionHealth')
+  async executionHealth(): Promise<FaberLoomHealth> {
+    const executions: FaberLoomExecutions | undefined = this.ctx.get('faberloomExecutions')
+    if (executions === undefined) {
+      return {
+        ownerId: this.actor().id,
+        routines: [],
+        totals: { runs: 0, failures: 0, needsReview: 0, retries: 0, deadLettered: 0, alerts: 0 },
+      }
+    }
+    const health = await executions.health()
+    const routines: FaberLoomHealthRow[] = health.routines.map(row => ({
+      routineId: row.routineId,
+      name: row.name,
+      status: row.status,
+      lastStatus: row.lastStatus,
+      lastAt: row.lastAt,
+      runs: row.runs,
+      failures: row.failures,
+      needsReview: row.needsReview,
+      retries: row.retries,
+      deadlineAt: row.deadlineAt,
+    }))
+    return {
+      ownerId: health.ownerId,
+      routines,
+      totals: {
+        runs: health.totals.runs,
+        failures: health.totals.failures,
+        needsReview: health.totals.needsReview,
+        retries: health.totals.retries,
+        deadLettered: health.totals.deadLettered,
+        alerts: health.totals.alerts,
+      },
+    }
   }
 
   /**

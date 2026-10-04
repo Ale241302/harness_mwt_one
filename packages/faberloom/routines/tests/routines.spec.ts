@@ -5,7 +5,7 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomAccess from '../../access/src/index.ts'
 import FaberLoomRoutines from '../src/index.ts'
-import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput } from '../src/index.ts'
+import type { ExecutionReview, RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput } from '../src/index.ts'
 
 /** Boot the storage/domain composition plus the routines service over one pool. */
 async function harness(pool = new MemoryMediaPool(), config: { readonly waitTimeoutMs?: number } = {}) {
@@ -406,5 +406,75 @@ describe('FaberLoomRoutines', () => {
     const resumed = await routines.tick({ events: [], now: new Date(Date.now() + 120_000).toISOString() })
     expect(resumed.resumed).toHaveLength(1)
     expect((await routines.getExecution(started.execution.id)).status).toBe('completed')
+  })
+})
+
+describe('FaberLoomRoutines retries and review', () => {
+  it('F8 — retries a failing handler up to maxAttempts and succeeds', async () => {
+    const { routines } = await harness()
+    let calls = 0
+    routines.registerHandler('flaky', () => {
+      calls += 1
+      if (calls < 3) throw new Error('boom')
+      return 'ok'
+    })
+    const routine = await routines.createRoutine(OWNER, { name: 'flaky', definition: definition([{ id: 's1', instruction: 'x', handler: 'flaky', maxAttempts: 3 }]) })
+    await routines.activateRoutine(OWNER, routine.id)
+    const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'k1', channel: 'ui' })
+    expect(started.execution.status).toBe('completed')
+    expect(started.execution.steps['s1']?.attempts).toBe(3)
+    expect(calls).toBe(3)
+  })
+
+  it('F8 — a handler that never succeeds fails after maxAttempts and notifies review once', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('always', () => { throw new Error('nope') })
+    const reviews: ExecutionReview[] = []
+    routines.registerReviewListener((review) => { reviews.push(review) })
+    const routine = await routines.createRoutine(OWNER, { name: 'dead', definition: definition([{ id: 's1', instruction: 'x', handler: 'always', maxAttempts: 2 }]) })
+    await routines.activateRoutine(OWNER, routine.id)
+    const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'k2', channel: 'ui' })
+    expect(started.execution.status).toBe('failed')
+    expect(started.execution.steps['s1']).toMatchObject({ status: 'failed', reason: 'nope', attempts: 2 })
+    expect(reviews).toHaveLength(1)
+    expect(reviews[0]).toMatchObject({ routineId: String(routine.id), stepId: 's1', reason: 'nope', attempts: 2 })
+  })
+
+  it('F8 — refuses a step whose maxAttempts is not a positive integer', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('h', () => 'ok')
+    const routine = await routines.createRoutine(OWNER, { name: 'bad', definition: definition([{ id: 's1', instruction: 'x', handler: 'h', maxAttempts: 0 }]) })
+    await expect(routines.activateRoutine(OWNER, routine.id)).rejects.toThrow('BAD_MAX_ATTEMPTS:s1:0')
+  })
+
+  it('F8 — a handler unregistered before the run reaches review and notifies the listener', async () => {
+    const { routines } = await harness()
+    const routine = await routines.createRoutine(OWNER, { name: 'mh', definition: definition([{ id: 's1', instruction: 'x', handler: 'gone' }]) })
+    const dispose = routines.registerHandler('gone', () => 'ok')
+    await routines.activateRoutine(OWNER, routine.id)
+    dispose()
+    const reviews: ExecutionReview[] = []
+    routines.registerReviewListener((review) => { reviews.push(review) })
+    const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'k4', channel: 'ui' })
+    expect(started.execution.status).toBe('needs_review')
+    expect(started.execution.steps['s1']).toMatchObject({ status: 'failed', reason: 'MISSING_HANDLER', attempts: 0 })
+    expect(reviews[0]).toMatchObject({ stepId: 's1', reason: 'MISSING_HANDLER', attempts: 0 })
+  })
+
+  it('F8 — a wait that nobody answers expires and notifies the listener', async () => {
+    const { routines } = await harness(new MemoryMediaPool(), { waitTimeoutMs: 60_000 })
+    routines.registerHandler('step', () => 'ok')
+    const reviews: ExecutionReview[] = []
+    routines.registerReviewListener((review) => { reviews.push(review) })
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'wait',
+      definition: { ...definition([{ id: 's1', instruction: 'pide', handler: 'step', waitFor: 'responde' }]), failurePolicy: 'continue' },
+    })
+    await routines.activateRoutine(OWNER, routine.id)
+    const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'k3', channel: 'ui' })
+    expect(started.execution.status).toBe('waiting')
+    await routines.expireWaits(new Date(Date.parse(String(started.execution.deadlineAt)) + 1))
+    expect(reviews).toHaveLength(1)
+    expect(reviews[0]).toMatchObject({ stepId: null, reason: 'WAIT_TIMEOUT' })
   })
 })

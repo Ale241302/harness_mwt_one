@@ -84,6 +84,8 @@ export interface RoutineStep {
   readonly revalidateKey: string | null
   /** Expected value for {@link revalidateKey}, or `null`. */
   readonly revalidateExpect: string | null
+  /** Attempts the handler may make before the step is failed; at least 1. */
+  readonly maxAttempts: number
 }
 
 /** Step authoring input. */
@@ -100,6 +102,8 @@ export interface RoutineStepInput {
   readonly effect?: boolean
   readonly revalidateKey?: string
   readonly revalidateExpect?: string
+  /** Attempts the handler may make before the step is failed; defaults to 1. */
+  readonly maxAttempts?: number
 }
 
 /** The stored procedure of one routine version. */
@@ -184,6 +188,26 @@ export interface StepState {
   readonly result: unknown
   /** Stable reason code, or `null`. */
   readonly reason: string | null
+  /** Handler attempts made so far. */
+  readonly attempts: number
+}
+
+/** One failed step the engine handed to the dead-letter and alert path. */
+export interface ExecutionReview {
+  /** Execution that reached review. */
+  readonly executionId: string
+  /** Routine that produced it. */
+  readonly routineId: string
+  /** Owning identity. */
+  readonly ownerId: string
+  /** Step that failed, or `null` for an execution-level failure. */
+  readonly stepId: string | null
+  /** Stable reason: the handler message, `EFFECT_UNCERTAIN`, `WAIT_TIMEOUT`, or similar. */
+  readonly reason: string
+  /** Handler attempts the failing step made. */
+  readonly attempts: number
+  /** ISO-8601 instant of the review. */
+  readonly at: string
 }
 
 /** One persistent execution of a routine version. */

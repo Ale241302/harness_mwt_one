@@ -624,6 +624,12 @@ The persistent driver over the routines engine.
  * @returns what the pass did.
  */
 async runOnce(now: Date = new Date()): Promise<DispatchReport>
+
+/**
+ * The dispatcher's liveness: one row per routine plus aggregate counters.
+ * @returns the health snapshot.
+ */
+async health(): Promise<FaberLoomHealth>
 ```
 
 Source: [`packages/faberloom/execution/src/index.ts`](../../packages/faberloom/execution/src/index.ts)
@@ -864,6 +870,15 @@ registerHandler(name: string, handler: StepHandler): () => void
  * @returns the names.
  */
 listHandlers(): string[]
+
+/**
+ * Register a listener the engine calls when an execution reaches review
+ * (a failed step, a missing handler, or an expired wait), so a deployment can
+ * dead-letter it and alert the owner.
+ * @param listener - the callback.
+ * @returns the disposer removing the listener.
+ */
+registerReviewListener(listener: (review: ExecutionReview) => void): () => void
 
 /**
  * Create one routine as version 1 in draft.
@@ -2076,6 +2091,13 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns execution rows oldest first.
  */
 @Remote('executions') async executions(routineId?: string): Promise<readonly FaberLoomExecutionRow[]>
+
+/**
+ * The dispatcher's liveness — last run, failures, review backlog, retries, and
+ * the sooner wait deadline — per routine and in aggregate.
+ * @returns the health snapshot.
+ */
+@Remote('executionHealth') async executionHealth(): Promise<FaberLoomHealth>
 
 /**
  * Start a manual run of one active routine.

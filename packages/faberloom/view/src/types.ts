@@ -1121,8 +1121,7 @@ export interface FaberLoomWorkflowExport {
   readonly content: string
 }
 
-/** One share grant on a Space or Work Flow, as the Compartir panel renders it. */
-export interface FaberLoomShareGrantRow {
+/** One share grant on a Space or Work Flow, as the Compartir panel renders it. */export interface FaberLoomShareGrantRow {
   /** Grant id. */
   readonly id: string
   /** Resource family. */
@@ -1145,4 +1144,54 @@ export interface FaberLoomShareGrantRow {
   readonly createdAt: string
   /** ISO-8601 acceptance instant, or null while pending. */
   readonly acceptedAt: string | null
+}
+
+/**
+ * One routine's liveness as the Ejecución panel renders it. The view drops the
+ * `waiting` count the dispatcher reports; the panel shows failures and review.
+ */
+export interface FaberLoomHealthRow {
+  /** Routine id. */
+  readonly routineId: string
+  /** Display name. */
+  readonly name: string
+  /** Lifecycle status. */
+  readonly status: string
+  /** Status of the most recent execution, or null. */
+  readonly lastStatus: string | null
+  /** ISO-8601 instant of the most recent execution, or null. */
+  readonly lastAt: string | null
+  /** Executions recorded. */
+  readonly runs: number
+  /** Executions that ended failed. */
+  readonly failures: number
+  /** Executions awaiting a person. */
+  readonly needsReview: number
+  /** Handler retries made. */
+  readonly retries: number
+  /** Earliest wait deadline, or null. */
+  readonly deadlineAt: string | null
+}
+
+/** The dispatcher's aggregate liveness, as the panel reads it. */
+export interface FaberLoomHealth {
+  /** Owner the dispatcher drives. */
+  readonly ownerId: string
+  /** One row per routine. */
+  readonly routines: readonly FaberLoomHealthRow[]
+  /** Aggregate counters. */
+  readonly totals: {
+    /** Executions recorded. */
+    readonly runs: number
+    /** Executions that ended failed. */
+    readonly failures: number
+    /** Executions awaiting a person. */
+    readonly needsReview: number
+    /** Handler retries made. */
+    readonly retries: number
+    /** Executions dead-lettered to the board. */
+    readonly deadLettered: number
+    /** Owner alerts sent. */
+    readonly alerts: number
+  }
 }

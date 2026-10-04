@@ -44,12 +44,19 @@ function harness(detail = flow([], [])) {
     revoke: vi.fn(async () => ({})),
     can: vi.fn(async () => false),
   }
+  const executions = {
+    health: vi.fn(async () => ({
+      ownerId: 'owner@muitowork.com',
+      routines: [] as unknown[],
+      totals: { runs: 0, failures: 0, needsReview: 0, waiting: 0, retries: 0, deadLettered: 0, alerts: 0 },
+    })),
+  }
   const ctx = {
     faberloomSpaces: { list: vi.fn(async () => []), get: vi.fn(async () => ({ id: 'sp-1', title: 'Marluvas', ownerId: 'owner@muitowork.com' })) },
     faberloomAgents: { listAgents: vi.fn(async () => []) },
     faberloomRoutines: routines,
     faberloomShares: shares,
-    get: (name: string) => name === 'faberloomWorkflows' ? workflows : name === 'faberloomShares' ? shares : undefined,
+    get: (name: string) => name === 'faberloomWorkflows' ? workflows : name === 'faberloomShares' ? shares : name === 'faberloomExecutions' ? executions : undefined,
     provide: () => {},
     reflect: { provide: () => {} },
     on: vi.fn(() => () => {}),
@@ -57,7 +64,7 @@ function harness(detail = flow([], [])) {
     logger: { warn: vi.fn(), info: vi.fn() },
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
-  return { view, workflows, routines, shares }
+  return { view, workflows, routines, shares, executions }
 }
 
 describe('FaberLoomViewService workflows', () => {
@@ -258,5 +265,30 @@ describe('FaberLoomViewService workflows', () => {
       resource: { kind: 'space', id: 'sp-1' },
       resourceName: 'Marluvas',
     }))
+  })
+
+  it('reads the dispatcher health and reports an empty one without a dispatcher', async () => {
+    const { view, executions } = harness()
+    executions.health.mockResolvedValue({
+      ownerId: 'owner@muitowork.com',
+      routines: [{
+        routineId: 'r1', name: 'Vigía', status: 'active', lastStatus: 'needs_review', lastAt: 'now',
+        runs: 3, failures: 1, needsReview: 1, waiting: 0, retries: 2, deadlineAt: null,
+      }],
+      totals: { runs: 3, failures: 1, needsReview: 1, waiting: 0, retries: 2, deadLettered: 1, alerts: 1 },
+    })
+    const health = await view.executionHealth()
+    expect(health.totals).toMatchObject({ runs: 3, retries: 2, deadLettered: 1, alerts: 1 })
+    expect(health.routines[0]).toMatchObject({ routineId: 'r1', lastStatus: 'needs_review' })
+
+    const bare = new FaberLoomViewService({
+      get: () => undefined,
+      provide: () => {},
+      reflect: { provide: () => {} },
+      on: vi.fn(() => () => {}),
+      effect: (run: () => unknown) => { run(); return () => {} },
+      logger: { warn: vi.fn(), info: vi.fn() },
+    } as unknown as Context, { ownerId: 'owner@x', role: 'admin', readOnly: false })
+    expect(await bare.executionHealth()).toMatchObject({ ownerId: 'owner@x', routines: [], totals: { runs: 0 } })
   })
 })

@@ -17,7 +17,11 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { FaberLoomRoutineId, RoutineTrigger } from '@deepseek-ai/dsh-faberloom-routines'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { Execution, ExecutionReview, FaberLoomRoutineId, FaberLoomRoutine, RoutineTrigger } from '@deepseek-ai/dsh-faberloom-routines'
+import type {} from '@deepseek-ai/dsh-faberloom-board'
+import type {} from '@deepseek-ai/dsh-faberloom-connections'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -61,6 +65,67 @@ export interface DispatchReport {
 
 /** Longest a `recurrence` match may ask for, so a typo cannot schedule a year. */
 const MAX_INTERVAL_MS = 31 * 24 * 60 * 60 * 1000
+
+/** One routine's liveness, as the panel and the gateway metrics read it. */
+export interface RoutineHealth {
+  /** Routine id. */
+  readonly routineId: string
+  /** Display name. */
+  readonly name: string
+  /** Lifecycle status. */
+  readonly status: string
+  /** Status of the most recent execution, or null when the routine never ran. */
+  readonly lastStatus: string | null
+  /** ISO-8601 instant of the most recent execution, or null. */
+  readonly lastAt: string | null
+  /** Executions recorded. */
+  readonly runs: number
+  /** Executions that ended failed. */
+  readonly failures: number
+  /** Executions awaiting a person. */
+  readonly needsReview: number
+  /** Executions parked on a wait. */
+  readonly waiting: number
+  /** Handler retries the routine's executions made. */
+  readonly retries: number
+  /** Earliest wait deadline among the routine's executions, or null. */
+  readonly deadlineAt: string | null
+}
+
+/** The dispatcher's aggregate liveness. */
+export interface FaberLoomHealth {
+  /** Owner the dispatcher drives. */
+  readonly ownerId: string
+  /** One row per routine the owner holds. */
+  readonly routines: readonly RoutineHealth[]
+  /** Aggregate counters. */
+  readonly totals: {
+    /** Executions recorded. */
+    readonly runs: number
+    /** Executions that ended failed. */
+    readonly failures: number
+    /** Executions awaiting a person. */
+    readonly needsReview: number
+    /** Executions parked on a wait. */
+    readonly waiting: number
+    /** Handler retries made. */
+    readonly retries: number
+    /** Executions dead-lettered to the board. */
+    readonly deadLettered: number
+    /** Owner alerts sent. */
+    readonly alerts: number
+  }
+}
+
+/** Count the retries one execution's steps made beyond their first attempt. */
+function retriesOf(execution: Execution): number {
+  let total = 0
+  for (const state of Object.values(execution.steps)) {
+    if (state.status !== 'completed' && state.status !== 'failed') continue
+    total += Math.max(0, state.attempts - 1)
+  }
+  return total
+}
 
 /**
  * Parse a `recurrence` trigger's match into its interval.
@@ -259,12 +324,26 @@ export class FaberLoomExecutions extends Service {
 
   private readonly reported = new Set<string>()
 
+  /** Executions dead-lettered to the board since this process started. */
+  private deadLettered = 0
+
+  /** Owner alerts sent since this process started. */
+  private alerts = 0
+
   /**
    * @param ctx - Cordis context owning the service fiber.
    * @param config - identity and cadence.
    */
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomExecutions')
+    this.ctx.effect(
+      () => this.ctx.faberloomRoutines.registerReviewListener((review) => {
+        void this.onReview(review).catch((error: unknown) => {
+          this.ctx.logger.warn(`faberloom: review handling failed: ${String(error)}`)
+        })
+      }),
+      'faberloom.executions.review',
+    )
     const interval = this.config.intervalMs ?? 60_000
     if (!Number.isSafeInteger(interval) || interval < MIN_INTERVAL_MS) {
       throw new Error(`faberloom: intervalMs must be a whole number of at least ${String(MIN_INTERVAL_MS)} ms`)
@@ -298,6 +377,7 @@ export class FaberLoomExecutions extends Service {
       const { resumed } = await this.ctx.faberloomRoutines.tick({ events: [], now: now.toISOString() })
       const reconciled = await this.reconcile()
       const expired = await this.ctx.faberloomRoutines.expireWaits(now)
+      await this.publishMetrics()
       return { skipped: null, started, advanced: resumed.map(String), reconciled, expired: expired.map(String) }
     } finally {
       this.running = false
@@ -349,6 +429,111 @@ export class FaberLoomExecutions extends Service {
       if (next.reason === 'RECONCILE_REQUIRED') reconciled.push(String(execution.id))
     }
     return reconciled
+  }
+
+  /**
+   * The dispatcher's liveness: one row per routine plus aggregate counters.
+   * @returns the health snapshot.
+   */
+  async health(): Promise<FaberLoomHealth> {
+    const ownerId = this.config.ownerId ?? ''
+    const routines = await this.ctx.faberloomRoutines.listRoutines(ownerId)
+    const executions = await this.ctx.faberloomRoutines.listExecutions()
+    const rows = routines.map(routine => healthOf(routine, executions.filter(execution => execution.routineId === routine.id)))
+    const sum = (pick: (row: RoutineHealth) => number): number => rows.reduce((total, row) => total + pick(row), 0)
+    return {
+      ownerId,
+      routines: rows,
+      totals: {
+        runs: sum(row => row.runs),
+        failures: sum(row => row.failures),
+        needsReview: sum(row => row.needsReview),
+        waiting: sum(row => row.waiting),
+        retries: sum(row => row.retries),
+        deadLettered: this.deadLettered,
+        alerts: this.alerts,
+      },
+    }
+  }
+
+  /**
+   * Dead-letter one reviewed execution to the board and alert the owner, so a
+   * failure that exhausted its attempts is never lost.
+   * @param review - the execution the engine handed to review.
+   */
+  private async onReview(review: ExecutionReview): Promise<void> {
+    const board = this.ctx.get('faberloomBoard')
+    if (board !== undefined) {
+      try {
+        await board.create(review.ownerId, {
+          title: `Dead letter: ${review.stepId ?? review.routineId}`,
+          summary: review.reason,
+          evidence: [
+            `execution:${review.executionId}`,
+            `routine:${review.routineId}`,
+            ...review.stepId === null ? [] : [`step:${review.stepId}`],
+          ],
+          routineId: review.routineId,
+          executionId: review.executionId,
+        })
+        this.deadLettered += 1
+      } catch (error) {
+        this.ctx.logger.warn(`faberloom: dead-letter to the board failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections !== undefined) {
+      try {
+        await connections.sendMail(review.ownerId, {
+          to: [review.ownerId],
+          subject: 'FaberLoom: un flujo necesita revisión',
+          text: `La ejecución ${review.executionId} (${review.reason}) necesita revisión en la Mesa de trabajo.`,
+        })
+        this.alerts += 1
+      } catch (error) {
+        this.ctx.logger.warn(`faberloom: owner alert failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  }
+
+  /** Write the aggregate counters where the gateway's `/metrics` reads them. */
+  private async publishMetrics(): Promise<void> {
+    const home = process.env['DSH_HOME']
+    if (home === undefined || home.length === 0) return
+    try {
+      const snapshot = await this.health()
+      mkdirSync(home, { recursive: true })
+      writeFileSync(
+        join(home, 'faberloom-metrics.json'),
+        JSON.stringify({ ownerId: snapshot.ownerId, totals: snapshot.totals, updatedAt: new Date().toISOString() }),
+        'utf8',
+      )
+    } catch (error) {
+      this.ctx.logger.warn(`faberloom: publishing metrics failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+}
+
+/** Project one routine's executions into its liveness row. */
+function healthOf(routine: FaberLoomRoutine, executions: readonly Execution[]): RoutineHealth {
+  const sorted = [...executions].sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))
+  const last = sorted.at(-1)
+  const deadlines = executions
+    .map(execution => execution.deadlineAt)
+    .filter((deadline): deadline is string => deadline !== null)
+    .sort()
+  return {
+    routineId: String(routine.id),
+    name: routine.name,
+    status: routine.status,
+    lastStatus: last?.status ?? null,
+    lastAt: last?.updatedAt ?? null,
+    runs: executions.length,
+    failures: executions.filter(execution => execution.status === 'failed').length,
+    needsReview: executions.filter(execution => execution.status === 'needs_review').length,
+    waiting: executions.filter(execution => execution.status === 'waiting').length,
+    retries: executions.reduce((total, execution) => total + retriesOf(execution), 0),
+    deadlineAt: deadlines[0] ?? null,
   }
 }
 
