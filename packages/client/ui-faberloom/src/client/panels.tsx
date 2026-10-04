@@ -3120,7 +3120,9 @@ function workflowsScreen() {
     const [fields, setFields] = useState<Record<string, string>>({})
     const [logsOpen, setLogsOpen] = useState(false)
     const [shareOpen, setShareOpen] = useState(false)
+    const [nodeOpen, setNodeOpen] = useState(false)
     const dragging = useRef<string | null>(null)
+    const dragged = useRef(false)
 
     const accept = (result: Result<FaberLoomWorkflowDetail>): void => {
       if (result.ok) {
@@ -3214,6 +3216,13 @@ function workflowsScreen() {
         setScheduleDays(Array.isArray(days) ? days.filter((value): value is number => typeof value === 'number').join(', ') : '')
         setScheduleBusinessDays(config['businessDays'] === true)
       }
+      if (!dragged.current) setNodeOpen(true)
+    }
+
+    /** Open the node editor modal for one node. */
+    const openNode = (id: string): void => {
+      pick(id)
+      setNodeOpen(true)
     }
 
     const act = (run: () => Promise<Result<FaberLoomWorkflowDetail>>): void => {
@@ -3231,6 +3240,7 @@ function workflowsScreen() {
           setTitle(added.title)
           setKind(added.kind)
           setFields(workflowFields(added.kind, added.config))
+          setNodeOpen(true)
         }
       }).catch((error: unknown) => { setMessage(String(error)) })
     }
@@ -3369,6 +3379,7 @@ function workflowsScreen() {
               <div className={styles.workflowToolbar}>
                 <button type="button" className={styles.primary} onClick={() => { act(() => workflows.setStatus(selected, 'active')) }}>{t('wf.activate')}</button>
                 <button type="button" onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
+                <button type="button" className={styles.primary} onClick={() => { addNode(selected) }}>{t('wf.addNode')}</button>
                 <button type="button" onClick={() => { setLogsOpen(true) }}>{t('wf.logs')}</button>
                 <button type="button" onClick={() => { setShareOpen(true) }}>{t('wf.share')}</button>
                 <button type="button" onClick={() => { void workflows.exportFlow(selected, 'json').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportJson')}</button>
@@ -3390,6 +3401,7 @@ function workflowsScreen() {
               <svg className={styles.workflowCanvas} viewBox="0 0 900 320" onPointerMove={(event) => {
                 const id = dragging.current
                 if (id === null) return
+                dragged.current = true
                 const rect = (event.currentTarget).getBoundingClientRect()
                 const x = ((event.clientX - rect.left) / rect.width) * 900
                 const y = ((event.clientY - rect.top) / rect.height) * 320
@@ -3411,16 +3423,19 @@ function workflowsScreen() {
                   )
                 })}
                 {nodes.map(node => (
-                  <g key={node.id} className={styles.workflowNode} transform={`translate(${String(node.x)}, ${String(node.y)})`} onPointerDown={() => { dragging.current = node.id }} onClick={() => { pick(node.id) }}>
+                  <g key={node.id} className={styles.workflowNode} transform={`translate(${String(node.x)}, ${String(node.y)})`} onPointerDown={() => { dragging.current = node.id; dragged.current = false }} onClick={() => { pick(node.id) }}>
                     <rect className={`${styles.workflowNodeBody} ${kindIsTrigger(node.kind) ? styles.workflowNodeBodyTrigger : ''} ${nodeId === node.id ? styles.workflowNodeBodySelected : ''} ${connectFrom === node.id ? styles.workflowNodeBodyConnecting : ''}`} width={NODE_WIDTH} height={NODE_HEIGHT} rx={10} />
                     {kindIsTrigger(node.kind) ? <rect className={styles.workflowNodeAccent} width={4} height={NODE_HEIGHT} rx={2} /> : null}
                     <text className={styles.workflowNodeTitle} x={12} y={24}>{node.title}</text>
                     <text className={styles.workflowNodeKind} x={12} y={42}>{node.kind}</text>
+                    <g className={styles.workflowNodeEdit} role="button" aria-label={t('wf.editNode')} transform={`translate(${String(NODE_WIDTH - 28)}, 6)`} onPointerDown={(event) => { event.stopPropagation() }} onClick={(event) => { event.stopPropagation(); openNode(node.id) }}>
+                      <rect className={styles.workflowNodeEditBg} width={20} height={18} rx={5} />
+                      <path className={styles.workflowNodeEditGlyph} d="M5 12 L5 14.5 L7.5 14.5 L13.5 8.5 L11 6 Z" />
+                    </g>
                   </g>
                 ))}
               </svg>
-              <section className={styles.workflowForm}>
-                <h4>{t('wf.node')}</h4>
+              <Modal open={nodeOpen} onClose={() => { setNodeOpen(false) }} title={t('wf.node')} closeLabel={t('action.close')} className={styles.workflowModal ?? ''} contentClassName={styles.workflowModalContent ?? ''}>
                 <Field label={t('wf.kind')}>
                   <select aria-label={t('wf.kind')} value={kind} onChange={(event) => { if (nodeId !== null) changeKind(selected, nodeId, event.target.value); else setKind(event.target.value) }}>
                     {WORKFLOW_KINDS.map(value => <option key={value} value={value}>{value}</option>)}
@@ -3559,39 +3574,12 @@ function workflowsScreen() {
                   ) : null}
                   <button type="button" disabled={nodeId === null} onClick={() => { setConnectFrom(nodeId) }}>{t('wf.connect')}</button>
                   <button type="button" disabled={nodeId === null} onClick={() => { if (nodeId !== null) deleteNode(selected, nodeId) }}>{t('wf.removeNode')}</button>
-                  <button type="button" onClick={() => { addNode(selected) }}>{t('wf.addNode')}</button>
                 </div>
                 <span className={styles.workflowHint}>
-                  {nodeId === null ? t('wf.hintAdd') : connectFrom === null ? t('wf.hintEdit') : t('wf.hintConnect')}
+                  {connectFrom === null ? t('wf.hintEdit') : t('wf.hintConnect')}
                 </span>
-              </section>
-              {detail !== null && detail.edgesList.length > 0 ? (
-                <section className={styles.workflowSection}>
-                  <h4>{t('wf.connections')}</h4>
-                  {detail.edgesList.map(edge => (
-                    <div key={edge.id} className={styles.workflowRunRow}>
-                      <span>{edge.from} → {edge.to}{edge.condition === null ? '' : ` · ${edge.condition}`}</span>
-                      <button type="button" onClick={() => { dropEdge(selected, edge.id) }}>{t('wf.disconnect')}</button>
-                    </div>
-                  ))}
-                </section>
-              ) : null}
-              <div className={styles.workflowRuns}>
-                <section className={styles.workflowSection}>
-                  <h4>{t('wf.spaceMap')}</h4>
-                  {topology?.spaces.map(space => <div key={space.id}>{space.title}</div>)}
-                </section>
-                <section className={styles.workflowSection}>
-                  <h4>{t('wf.links')}</h4>
-                  {links.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.links.empty')}</span> : links.map(link => (
-                    <div key={`${link.direction}:${link.routineId}:${link.workflowId}`}>
-                      {link.direction === 'routine-to-workflow'
-                        ? `${link.routineName} → ${link.workflowName}`
-                        : `${link.workflowName} → ${link.routineName}`}
-                    </div>
-                  ))}
-                </section>
-              </div>
+              </Modal>
+              {/* Connections, the Space map, and the routine links live in the Logs modal. */}
               <Modal open={logsOpen} onClose={() => { setLogsOpen(false) }} title={t('wf.runs')} closeLabel={t('action.close')}>
                 {selectedHealth === null ? null : (
                   <div className={styles.workflowHealthRow}>
@@ -3608,6 +3596,33 @@ function workflowsScreen() {
                     <span>{run.status}</span><span className={styles.workflowRunWhen}>{run.createdAt}</span>
                   </div>
                 ))}
+                {detail !== null && detail.edgesList.length > 0 ? (
+                  <section className={styles.workflowSection}>
+                    <h4>{t('wf.connections')}</h4>
+                    {detail.edgesList.map(edge => (
+                      <div key={edge.id} className={styles.workflowRunRow}>
+                        <span>{edge.from} → {edge.to}{edge.condition === null ? '' : ` · ${edge.condition}`}</span>
+                        <button type="button" onClick={() => { dropEdge(selected, edge.id) }}>{t('wf.disconnect')}</button>
+                      </div>
+                    ))}
+                  </section>
+                ) : null}
+                <div className={styles.workflowRuns}>
+                  <section className={styles.workflowSection}>
+                    <h4>{t('wf.spaceMap')}</h4>
+                    {topology?.spaces.map(space => <div key={space.id}>{space.title}</div>)}
+                  </section>
+                  <section className={styles.workflowSection}>
+                    <h4>{t('wf.links')}</h4>
+                    {links.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.links.empty')}</span> : links.map(link => (
+                      <div key={`${link.direction}:${link.routineId}:${link.workflowId}`}>
+                        {link.direction === 'routine-to-workflow'
+                          ? `${link.routineName} → ${link.workflowName}`
+                          : `${link.workflowName} → ${link.routineName}`}
+                      </div>
+                    ))}
+                  </section>
+                </div>
               </Modal>
               <Modal open={shareOpen} onClose={() => { setShareOpen(false) }} title={t('wf.share')} closeLabel={t('action.close')}>
                 <div className={styles.workflowForm}>
