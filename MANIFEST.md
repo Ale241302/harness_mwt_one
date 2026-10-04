@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-04-tools-approvals` (commit `8f89e301325a34f5511073cadcbdb2bef6c34d54`: herramientas de chat de Contexto `faberloom_context_*`, auto-propuesta de Work Flows `faberloom_workflows_propose`, aprobación pendiente de workflows con diff y panel **Aprobaciones**, y transporte a consola del contexto compartido; lint, duplicación, `test:docs` y `test:gui` en verde).
-**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `8f89e301325a34f5511073cadcbdb2bef6c34d54` (Contexto + Sesiones compartidas + Aprobaciones; deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-04-domain-version-fix` (commit `c3a3921f17d0d348aaa03bc5a606492a266ae7d2`: mantiene las versiones de dominio de `faberloom_workflows`/`faberloom_context` en 1 para que los stores existentes abran — tablas y campos añadidos sin migración — con regresión en storage-domain; sobre Fase 10 + Sesiones compartidas + Aprobaciones; lint, duplicación, `test:docs` y `test:gui` en verde).
+**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `c3a3921f17d0d348aaa03bc5a606492a266ae7d2` (fix de versiones de dominio sobre Contexto/Sesiones/Aprobaciones; deploy caliente).
 **Verificado en el VPS:** 4 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
