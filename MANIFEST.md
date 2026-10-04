@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-03-faberloom` (commit `4a5a2d6b1336703bb4b06e5df7678d813566a70f`: Work Flow Fases 0–9 — plantillas, export/import portátil, galería, salud/reintentos/dead-letter, compartir con permisos y programación; tools `faberloom_workflows_*`; lint, duplicación, `test:docs` y `test:gui` en verde).
-**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `4a5a2d6b1336703bb4b06e5df7678d813566a70f` (Work Flow completo hasta Fase 9; deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-04-faberloom` (commit `f2dc7fd87b188c6e17b5cf43e54716824d5ea4cb`: Work Flow Fases 0–9 — plantillas, export/import portátil, galería, salud/reintentos/dead-letter, compartir con permisos y programación; icono de Workflows y auto-selección del flujo nuevo; lint, duplicación, `test:docs` y `test:gui` en verde).
+**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `f2dc7fd87b188c6e17b5cf43e54716824d5ea4cb` (Work Flow completo hasta Fase 9; deploy caliente).
 **Verificado en el VPS:** 3 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
