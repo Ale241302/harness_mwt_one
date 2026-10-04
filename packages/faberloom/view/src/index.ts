@@ -54,7 +54,7 @@ import type {
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
-  FaberLoomWorkflowLink,
+  FaberLoomWorkflowLink, FaberLoomShareGrantRow,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -67,6 +67,7 @@ import type {
   WorkFlowNodeKind,
   WorkFlowStatus,
 } from '@deepseek-ai/dsh-faberloom-workflows'
+import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant } from '@deepseek-ai/dsh-faberloom-shares'
 
 export type * from './types.ts'
 
@@ -913,6 +914,107 @@ export class FaberLoomViewService extends TypertRemoteService {
       })
     }
     return links
+  }
+
+  /** Resolve the mounted shares service, or fail loud. */
+  private sharesService(): FaberLoomSharesService {
+    const service = this.ctx.get('faberloomShares')
+    if (service === undefined) throw new Error('faberloom: el servicio de compartir no está montado')
+    return service
+  }
+
+  /** Map one share grant to its panel row. */
+  private shareGrantRow(grant: FaberLoomShareGrant): FaberLoomShareGrantRow {
+    return {
+      id: grant.id,
+      resourceKind: grant.resource.kind,
+      resourceId: grant.resource.id,
+      resourceName: grant.resourceName,
+      ownerId: grant.ownerId,
+      granteeEmail: grant.granteeEmail,
+      permissions: [...grant.permissions],
+      permissionLabel: grant.permissions.join(', '),
+      status: grant.status,
+      createdAt: grant.createdAt,
+      acceptedAt: grant.acceptedAt,
+    }
+  }
+
+  /** The actor's outgoing grants, optionally narrowed to one resource. */
+  private async outgoingGrantRows(kind?: string, id?: string): Promise<readonly FaberLoomShareGrantRow[]> {
+    const rows: FaberLoomShareGrantRow[] = []
+    for (const grant of (await this.sharesService().list(this.actor().id)).outgoing) {
+      if (kind !== undefined && grant.resource.kind !== kind) continue
+      if (id !== undefined && grant.resource.id !== id) continue
+      rows.push(this.shareGrantRow(grant))
+    }
+    return rows
+  }
+
+  /**
+   * Share one Space the owner (or an admin) manages with named emails.
+   * @param id - space id.
+   * @param emails - the grantees.
+   * @param permissions - the permission subset each grantee receives.
+   * @returns the resource's outgoing grant rows.
+   */
+  @Remote('shareSpace')
+  async shareSpace(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot share')
+    const space = await this.ctx.faberloomSpaces.get(this.actor(), id as FaberLoomSpaceId)
+    if (space.ownerId !== this.actor().id && !this.isPrivileged()) {
+      throw new Error('faberloom: only the owner or an admin can share this space')
+    }
+    const shares = this.sharesService()
+    for (const email of emails) {
+      await shares.create(this.actor().id, { resource: { kind: 'space', id }, resourceName: space.title, granteeEmail: email, permissions })
+    }
+    return await this.outgoingGrantRows('space', id)
+  }
+
+  /**
+   * Share one Work Flow the owner manages — or that the actor holds `share` on —
+   * with named emails.
+   * @param id - work flow id.
+   * @param emails - the grantees.
+   * @param permissions - the permission subset each grantee receives.
+   * @returns the flow's outgoing grant rows.
+   */
+  @Remote('shareWorkflow')
+  async shareWorkflow(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot share')
+    const shares = this.sharesService()
+    const flow = await this.workflowsService().get(this.workflowActor(), id as WorkFlowId)
+    const allowed = flow.ownerId === this.actor().id || this.isPrivileged()
+      || await shares.can(this.actor().id, flow.ownerId, { kind: 'workflow', id }, 'share')
+    if (!allowed) throw new Error('faberloom: no puedes compartir este flujo')
+    for (const email of emails) {
+      await shares.create(this.actor().id, { resource: { kind: 'workflow', id }, resourceName: flow.name, granteeEmail: email, permissions })
+    }
+    return await this.outgoingGrantRows('workflow', id)
+  }
+
+  /**
+   * List the actor's grants on one resource.
+   * @param kind - `space` or `workflow`.
+   * @param id - resource id.
+   * @returns the outgoing grant rows.
+   */
+  @Remote('resourceShares')
+  async resourceShares(kind: string, id: string): Promise<readonly FaberLoomShareGrantRow[]> {
+    return await this.outgoingGrantRows(kind, id)
+  }
+
+  /**
+   * Revoke one grant the actor issued.
+   * @param grantId - grant id.
+   * @returns the actor's refreshed outgoing grant rows.
+   */
+  @Remote('revokeShareGrant')
+  async revokeShareGrant(grantId: string): Promise<readonly FaberLoomShareGrantRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot share')
+    await this.sharesService().revoke(this.actor().id, grantId)
+    return await this.outgoingGrantRows()
   }
 
   /**

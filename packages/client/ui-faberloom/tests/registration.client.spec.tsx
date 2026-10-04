@@ -121,6 +121,10 @@ async function bench(
   const exportWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { format: 'json', content: '{}' } }))
   const routineWorkflowLinks = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const setWorkflowConcurrency = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const shareWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const shareSpace = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const resourceShares = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const revokeShareGrant = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
@@ -132,6 +136,7 @@ async function bench(
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connect: connectNode, disconnect: disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,
+    shareWorkflow, shareSpace, resourceShares, revokeShareGrant,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -173,6 +178,7 @@ async function bench(
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connectNode, disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,
+    shareWorkflow, shareSpace, resourceShares, revokeShareGrant,
   }
 }
 
@@ -623,5 +629,34 @@ describe('faberloom work-flow canvas', () => {
     await waitFor(() => {
       expect(updateNode).toHaveBeenCalledWith('wf1', 'n1', 'cada 12 h', 'trigger.schedule', expect.stringContaining('0 7 * * *'))
     })
+  })
+
+  it('shares the selected flow with an email and revokes the grant', async () => {
+    const {
+      runtime, view, workflowOverview, workflowDetail, resourceShares, shareWorkflow, revokeShareGrant,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    const detailValue = { ...row, valid: true, problems: [], maxConcurrency: null, nodesList: [], edgesList: [] }
+    workflowDetail.mockResolvedValue({ ok: true, value: detailValue })
+    const grant = {
+      id: 'g1', resourceKind: 'workflow', resourceId: 'wf1', resourceName: 'Anti-spam', ownerId: 'owner@muitowork.com',
+      granteeEmail: 'guest@proveedor.com', permissions: ['view'], permissionLabel: 'view', status: 'pending',
+      createdAt: 'now', acceptedAt: null,
+    }
+    resourceShares.mockResolvedValue({ ok: true, value: [grant] })
+    shareWorkflow.mockResolvedValue({ ok: true, value: [{ ...grant, id: 'g2', granteeEmail: 'nuevo@proveedor.com' }] })
+    revokeShareGrant.mockResolvedValue({ ok: true, value: [] })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(await view.findByText(/Anti-spam/))
+    expect(await view.findByText('guest@proveedor.com')).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: 'Revoke' }))
+    await waitFor(() => { expect(revokeShareGrant).toHaveBeenCalledWith('g1') })
+
+    fireEvent.change(view.getByRole('textbox', { name: 'Guest email' }), { target: { value: 'nuevo@proveedor.com' } })
+    fireEvent.click(view.getByRole('button', { name: 'Share' }))
+    await waitFor(() => { expect(shareWorkflow).toHaveBeenCalledWith('wf1', ['nuevo@proveedor.com'], ['view']) })
+    expect(await view.findByText('nuevo@proveedor.com')).toBeTruthy()
   })
 })

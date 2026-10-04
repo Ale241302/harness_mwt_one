@@ -38,11 +38,18 @@ function fakeWorkflows(detail = flow([], [])) {
 function harness(detail = flow([], [])) {
   const workflows = fakeWorkflows(detail)
   const routines = { listRoutines: vi.fn(async () => [] as unknown[]) }
+  const shares = {
+    list: vi.fn(async () => ({ outgoing: [] as unknown[], incoming: [] as unknown[] })),
+    create: vi.fn(async () => ({})),
+    revoke: vi.fn(async () => ({})),
+    can: vi.fn(async () => false),
+  }
   const ctx = {
-    faberloomSpaces: { list: vi.fn(async () => []) },
+    faberloomSpaces: { list: vi.fn(async () => []), get: vi.fn(async () => ({ id: 'sp-1', title: 'Marluvas', ownerId: 'owner@muitowork.com' })) },
     faberloomAgents: { listAgents: vi.fn(async () => []) },
     faberloomRoutines: routines,
-    get: (name: string) => name === 'faberloomWorkflows' ? workflows : undefined,
+    faberloomShares: shares,
+    get: (name: string) => name === 'faberloomWorkflows' ? workflows : name === 'faberloomShares' ? shares : undefined,
     provide: () => {},
     reflect: { provide: () => {} },
     on: vi.fn(() => () => {}),
@@ -50,7 +57,7 @@ function harness(detail = flow([], [])) {
     logger: { warn: vi.fn(), info: vi.fn() },
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
-  return { view, workflows, routines }
+  return { view, workflows, routines, shares }
 }
 
 describe('FaberLoomViewService workflows', () => {
@@ -206,5 +213,50 @@ describe('FaberLoomViewService workflows', () => {
       { routineId: 'r1', routineName: 'Vigía', workflowId: 'wf2', workflowName: 'Informe', direction: 'routine-to-workflow' },
       { routineId: 'r1', routineName: 'Vigía', workflowId: 'wf1', workflowName: 'Anti-spam', direction: 'workflow-to-routine' },
     ])
+  })
+
+  it('shares a flow and a space, lists the grants, and revokes one', async () => {
+    const { view, shares } = harness()
+    const grant = {
+      id: 'g1',
+      resource: { kind: 'workflow', id: 'wf1' },
+      resourceName: 'Anti-spam',
+      ownerId: 'owner@muitowork.com',
+      granteeEmail: 'guest@x',
+      permissions: ['view', 'run'],
+      status: 'pending',
+      createdAt: 'c',
+      acceptedAt: null,
+    }
+    shares.list.mockResolvedValue({ outgoing: [grant], incoming: [] })
+    expect(await view.resourceShares('workflow', 'wf1')).toEqual([{
+      id: 'g1',
+      resourceKind: 'workflow',
+      resourceId: 'wf1',
+      resourceName: 'Anti-spam',
+      ownerId: 'owner@muitowork.com',
+      granteeEmail: 'guest@x',
+      permissions: ['view', 'run'],
+      permissionLabel: 'view, run',
+      status: 'pending',
+      createdAt: 'c',
+      acceptedAt: null,
+    }])
+
+    await view.revokeShareGrant('g1')
+    expect(shares.revoke).toHaveBeenCalledWith('owner@muitowork.com', 'g1')
+
+    await view.shareWorkflow('wf1', ['guest@x'], ['view', 'run'])
+    expect(shares.create).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({
+      resource: { kind: 'workflow', id: 'wf1' },
+      granteeEmail: 'guest@x',
+      permissions: ['view', 'run'],
+    }))
+
+    await view.shareSpace('sp-1', ['guest@x'], ['view'])
+    expect(shares.create).toHaveBeenLastCalledWith('owner@muitowork.com', expect.objectContaining({
+      resource: { kind: 'space', id: 'sp-1' },
+      resourceName: 'Marluvas',
+    }))
   })
 })

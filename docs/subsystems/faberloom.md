@@ -1068,6 +1068,82 @@ releaseLock(): void
 
 Source: [`packages/faberloom/routines/src/index.ts`](../../packages/faberloom/routines/src/index.ts)
 
+<a id="ctxfaberloomshares--faberloomshares"></a>
+
+### `ctx.faberloomShares` — `FaberLoomShares`
+
+The product sharing service: durable per-action grants with console transport and email acceptance.
+
+```ts cordis-catalog
+/**
+ * Create one share grant, notify the grantee by email, and publish it to the
+ * console when one is configured. The grant starts `pending`; only an
+ * accepted (`active`) grant authorizes an action.
+ * @param ownerId - the identity granting access.
+ * @param input - resource, resource name, grantee email, and permissions.
+ * @returns the created grant.
+ * @throws when the grantee email is empty.
+ */
+async create(ownerId: string, input: FaberLoomShareInput): Promise<FaberLoomShareGrant>
+
+/**
+ * Accept one pending grant addressed to the grantee; a pending grant becomes
+ * active and its permissions start authorizing actions.
+ * @param granteeEmail - the identity accepting.
+ * @param id - grant id.
+ * @returns the accepted grant.
+ * @throws when the grant is missing or not addressed to the grantee.
+ */
+async accept(granteeEmail: string, id: string): Promise<FaberLoomShareGrant>
+
+/**
+ * Revoke one grant the actor issued; the next permission check denies it and
+ * the console mirror is removed.
+ * @param ownerId - the identity that granted access.
+ * @param id - grant id.
+ * @returns the revoked grant.
+ * @throws when the grant is missing or the actor did not issue it.
+ */
+async revoke(ownerId: string, id: string): Promise<FaberLoomShareGrant>
+
+/**
+ * List the grants the actor issued and the ones addressed to it.
+ * @param actorId - the acting identity (owner or grantee email).
+ * @returns the outgoing and incoming grants, oldest first.
+ */
+async list(actorId: string): Promise<FaberLoomShareList>
+
+/**
+ * List the permissions one grantee holds on one resource, unioned over every
+ * active grant.
+ * @param granteeEmail - the identity acting.
+ * @param resource - the resource being touched.
+ * @returns the active permissions, in display order.
+ */
+async permissionsFor(granteeEmail: string, resource: FaberLoomShareResource): Promise<readonly FaberLoomSharePermission[]>
+
+/**
+ * Whether one grantee may perform one action on one resource. The owner is
+ * always allowed; a grantee needs an active grant carrying the permission.
+ * @param actorId - the acting identity.
+ * @param ownerId - the resource owner.
+ * @param resource - the resource being touched.
+ * @param permission - the action being authorized.
+ * @returns true when the action is authorized.
+ */
+async can(actorId: string, ownerId: string, resource: FaberLoomShareResource, permission: FaberLoomSharePermission): Promise<boolean>
+
+/**
+ * Import the grants the console holds for one grantee and prune the local
+ * copies the console no longer carries, so a revoked share stops authorizing
+ * here. A no-op when the console is not configured.
+ * @param granteeEmail - the identity whose incoming grants are imported.
+ */
+async sync(granteeEmail: string): Promise<void>
+```
+
+Source: [`packages/faberloom/shares/src/index.ts`](../../packages/faberloom/shares/src/index.ts)
+
 <a id="ctxfaberloomspaces--faberloomspaces"></a>
 
 ### `ctx.faberloomSpaces` — `FaberLoomSpaces`
@@ -1380,6 +1456,40 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns the links, routines first.
  */
 @Remote('routineWorkflowLinks') async routineWorkflowLinks(): Promise<readonly FaberLoomWorkflowLink[]>
+
+/**
+ * Share one Space the owner (or an admin) manages with named emails.
+ * @param id - space id.
+ * @param emails - the grantees.
+ * @param permissions - the permission subset each grantee receives.
+ * @returns the resource's outgoing grant rows.
+ */
+@Remote('shareSpace') async shareSpace(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>
+
+/**
+ * Share one Work Flow the owner manages — or that the actor holds `share` on —
+ * with named emails.
+ * @param id - work flow id.
+ * @param emails - the grantees.
+ * @param permissions - the permission subset each grantee receives.
+ * @returns the flow's outgoing grant rows.
+ */
+@Remote('shareWorkflow') async shareWorkflow(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>
+
+/**
+ * List the actor's grants on one resource.
+ * @param kind - `space` or `workflow`.
+ * @param id - resource id.
+ * @returns the outgoing grant rows.
+ */
+@Remote('resourceShares') async resourceShares(kind: string, id: string): Promise<readonly FaberLoomShareGrantRow[]>
+
+/**
+ * Revoke one grant the actor issued.
+ * @param grantId - grant id.
+ * @returns the actor's refreshed outgoing grant rows.
+ */
+@Remote('revokeShareGrant') async revokeShareGrant(grantId: string): Promise<readonly FaberLoomShareGrantRow[]>
 
 /**
  * Read the Space connectivity map for the palette and canvas.

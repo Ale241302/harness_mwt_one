@@ -1794,6 +1794,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../../faberloom/routines
+      '@deepseek-ai/dsh-faberloom-shares':
+        specifier: workspace:^
+        version: link:../../faberloom/shares
       '@deepseek-ai/dsh-faberloom-spaces':
         specifier: workspace:^
         version: link:../../faberloom/spaces
@@ -6957,6 +6960,25 @@ importers:
         specifier: workspace:^
         version: link:../../storage/storage-domain
 
+  packages/faberloom/shares:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-connections':
+        specifier: workspace:^
+        version: link:../connections
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+
   packages/faberloom/spaces:
     dependencies:
       zod:
@@ -6969,6 +6991,9 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:^
         version: link:../../util/brand
+      '@deepseek-ai/dsh-faberloom-shares':
+        specifier: workspace:^
+        version: link:../shares
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain
@@ -7000,6 +7025,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines
+      '@deepseek-ai/dsh-faberloom-shares':
+        specifier: workspace:^
+        version: link:../shares
       '@deepseek-ai/dsh-faberloom-spaces':
         specifier: workspace:^
         version: link:../spaces
@@ -7055,6 +7083,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines
+      '@deepseek-ai/dsh-faberloom-shares':
+        specifier: workspace:^
+        version: link:../shares
       '@deepseek-ai/dsh-faberloom-spaces':
         specifier: workspace:^
         version: link:../spaces
@@ -7092,6 +7123,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines
+      '@deepseek-ai/dsh-faberloom-shares':
+        specifier: workspace:^
+        version: link:../shares
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain

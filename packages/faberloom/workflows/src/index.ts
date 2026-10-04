@@ -13,6 +13,8 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { workflowsDomainSpec } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput, FaberLoomRoutineId, Execution } from '@deepseek-ai/dsh-faberloom-routines'
+// Type-only: pulls the shares service's Context merge and the permission union.
+import type { FaberLoomSharePermission } from '@deepseek-ai/dsh-faberloom-shares'
 import type {
   CreateWorkFlowInput,
   UpdateWorkFlowInput,
@@ -309,6 +311,31 @@ export class FaberLoomWorkflows extends Service {
   }
 
   /**
+   * Read a record the actor owns, or one an active share grant authorizes for
+   * the named permission.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param permission - the action being authorized.
+   * @returns the table handle and the record.
+   * @throws when the flow is absent or the actor has neither ownership nor the grant.
+   */
+  private async requireAccess(
+    actor: WorkFlowActor,
+    id: WorkFlowId,
+    permission: FaberLoomSharePermission,
+  ): Promise<{ table: KvTable<WorkFlowId, WorkFlowRecord>; record: WorkFlowRecord }> {
+    const table = await this.table()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: work flow ${id} not found`)
+    if (record.ownerId === actor.id) return { table, record }
+    const shares = this.ctx.get('faberloomShares')
+    if (shares === undefined || !await shares.can(actor.id, record.ownerId, { kind: 'workflow', id }, permission)) {
+      throw new Error('faberloom: work flow access denied')
+    }
+    return { table, record }
+  }
+
+  /**
    * Compile the record and reconcile it with the routines engine: create and
    * activate the compiled routine the first time, or version it and migrate its
    * waiting executions on a later edit. Returns the routine id to store.
@@ -364,9 +391,13 @@ export class FaberLoomWorkflows extends Service {
    * @returns the actor's work flows.
    */
   async list(actor: WorkFlowActor, scope?: WorkFlowScope): Promise<WorkFlow[]> {
+    const shares = this.ctx.get('faberloomShares')
     const out: WorkFlow[] = []
     for (const [id, record] of (await this.table()).entries()) {
-      if (record.ownerId !== actor.id) continue
+      if (record.ownerId !== actor.id) {
+        if (shares === undefined) continue
+        if (!await shares.can(actor.id, record.ownerId, { kind: 'workflow', id }, 'view')) continue
+      }
       if (scope !== undefined && !sameScope(record.scope, scope)) continue
       out.push(toWorkFlow(id, record))
     }
@@ -382,7 +413,7 @@ export class FaberLoomWorkflows extends Service {
    * @throws when the flow is absent or owned by another identity.
    */
   async get(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow> {
-    const { record } = await this.requireOwned(actor, id)
+    const { record } = await this.requireAccess(actor, id, 'view')
     return toWorkFlow(id, record)
   }
 
@@ -394,7 +425,7 @@ export class FaberLoomWorkflows extends Service {
    * @returns the updated work flow.
    */
   async update(actor: WorkFlowActor, id: WorkFlowId, patch: UpdateWorkFlowInput): Promise<WorkFlow> {
-    const { table, record } = await this.requireOwned(actor, id)
+    const { table, record } = await this.requireAccess(actor, id, 'edit-graph')
     let next: WorkFlowRecord = {
       ...record,
       name: patch.name ?? record.name,
@@ -462,7 +493,7 @@ export class FaberLoomWorkflows extends Service {
     id: WorkFlowId,
     input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined },
   ): Promise<WorkFlow> {
-    const { table, record } = await this.requireOwned(actor, id)
+    const { table, record } = await this.requireAccess(actor, id, 'add-nodes')
     const nodeId = brandString<WorkFlowNodeId>(input.id ?? randomUUID())
     if (record.definition.nodes.some(node => node.id === nodeId)) {
       throw new Error(`faberloom: work flow ${id} already has node ${nodeId}`)
@@ -486,7 +517,7 @@ export class FaberLoomWorkflows extends Service {
     nodeId: WorkFlowNodeId,
     patch: { title?: string | undefined; kind?: WorkFlowNodeKind | undefined; config?: Record<string, unknown> | undefined },
   ): Promise<WorkFlow> {
-    const { table, record } = await this.requireOwned(actor, id)
+    const { table, record } = await this.requireAccess(actor, id, 'edit-graph')
     const index = record.definition.nodes.findIndex(node => node.id === nodeId)
     if (index < 0) throw new Error(`faberloom: work flow ${id} has no node ${nodeId}`)
     const current = record.definition.nodes[index] as WorkFlowNode
@@ -510,7 +541,7 @@ export class FaberLoomWorkflows extends Service {
    * @throws when the node does not exist.
    */
   async removeNode(actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId): Promise<WorkFlow> {
-    const { table, record } = await this.requireOwned(actor, id)
+    const { table, record } = await this.requireAccess(actor, id, 'remove-nodes')
     if (!record.definition.nodes.some(node => node.id === nodeId)) throw new Error(`faberloom: work flow ${id} has no node ${nodeId}`)
     return await this.writeDefinition(table, id, record, {
       ...record.definition,
@@ -532,7 +563,7 @@ export class FaberLoomWorkflows extends Service {
     id: WorkFlowId,
     input: { from: WorkFlowNodeId; to: WorkFlowNodeId; condition?: string | undefined },
   ): Promise<WorkFlow> {
-    const { table, record } = await this.requireOwned(actor, id)
+    const { table, record } = await this.requireAccess(actor, id, 'edit-graph')
     const ids = new Set(record.definition.nodes.map(node => node.id))
     if (!ids.has(input.from) || !ids.has(input.to)) throw new Error(`faberloom: work flow ${id} connect needs two existing nodes`)
     const edge: WorkFlowEdge = {
@@ -553,7 +584,7 @@ export class FaberLoomWorkflows extends Service {
    * @throws when the edge does not exist.
    */
   async disconnect(actor: WorkFlowActor, id: WorkFlowId, edgeId: WorkFlowEdgeId): Promise<WorkFlow> {
-    const { table, record } = await this.requireOwned(actor, id)
+    const { table, record } = await this.requireAccess(actor, id, 'edit-graph')
     if (!record.definition.edges.some(edge => edge.id === edgeId)) {
       throw new Error(`faberloom: work flow ${id} has no edge ${edgeId}`)
     }
@@ -577,7 +608,7 @@ export class FaberLoomWorkflows extends Service {
     id: WorkFlowId,
     input: { kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined },
   ): Promise<WorkFlow> {
-    const { table, record } = await this.requireOwned(actor, id)
+    const { table, record } = await this.requireAccess(actor, id, 'manage-triggers')
     if (!TRIGGER_KINDS.has(input.kind)) throw new Error(`faberloom: ${input.kind} is not a trigger kind`)
     const nodes = record.definition.nodes.filter(node => !isTriggerNode(node))
     const kept = new Set(nodes.map(node => node.id))
@@ -602,7 +633,7 @@ export class FaberLoomWorkflows extends Service {
    * @throws when the graph is invalid and the target status is `active`.
    */
   async setStatus(actor: WorkFlowActor, id: WorkFlowId, status: WorkFlowStatus): Promise<WorkFlow> {
-    const { table, record } = await this.requireOwned(actor, id)
+    const { table, record } = await this.requireAccess(actor, id, 'manage-triggers')
     let routineId = record.routineId
     if (status === 'active') {
       const verdict = validateWorkFlow(record.definition)
@@ -625,7 +656,7 @@ export class FaberLoomWorkflows extends Service {
    * @returns the updated work flow.
    */
   async setConcurrency(actor: WorkFlowActor, id: WorkFlowId, maxConcurrency: number | null): Promise<WorkFlow> {
-    const { table, record } = await this.requireOwned(actor, id)
+    const { table, record } = await this.requireAccess(actor, id, 'edit-graph')
     const definition: WorkFlowDefinition = { ...record.definition, maxConcurrency: maxConcurrency ?? undefined }
     return await this.persistDefinition(table, id, record, definition)
   }
@@ -637,7 +668,7 @@ export class FaberLoomWorkflows extends Service {
    * @returns the verdict.
    */
   async validate(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlowValidation> {
-    const { record } = await this.requireOwned(actor, id)
+    const { record } = await this.requireAccess(actor, id, 'view')
     return validateWorkFlow(record.definition)
   }
 
@@ -670,7 +701,7 @@ export class FaberLoomWorkflows extends Service {
    * @throws when the flow has no activated routine.
    */
   async runNow(actor: WorkFlowActor, id: WorkFlowId): Promise<{ executionId: string; deduped: boolean }> {
-    const { record } = await this.requireOwned(actor, id)
+    const { record } = await this.requireAccess(actor, id, 'run')
     if (record.routineId === null) throw new Error(`faberloom: work flow ${id} is not active`)
     const started = await this.ctx.faberloomRoutines.startExecution({
       routineId: brandString<FaberLoomRoutineId>(record.routineId),
@@ -694,7 +725,7 @@ export class FaberLoomWorkflows extends Service {
     id: WorkFlowId,
     request: { idempotencyKey: string },
   ): Promise<{ executionId: string; deduped: boolean }> {
-    const { record } = await this.requireOwned(actor, id)
+    const { record } = await this.requireAccess(actor, id, 'run')
     if (record.routineId === null) throw new Error(`faberloom: work flow ${id} is not active`)
     const started = await this.ctx.faberloomRoutines.startExecution({
       routineId: brandString<FaberLoomRoutineId>(record.routineId),
@@ -711,7 +742,7 @@ export class FaberLoomWorkflows extends Service {
    * @returns the executions, or an empty list when the flow has no routine.
    */
   async runs(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly Execution[]> {
-    const { record } = await this.requireOwned(actor, id)
+    const { record } = await this.requireAccess(actor, id, 'view')
     if (record.routineId === null) return []
     return await this.ctx.faberloomRoutines.listExecutions({ routineId: brandString<FaberLoomRoutineId>(record.routineId) })
   }

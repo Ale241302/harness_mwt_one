@@ -1,6 +1,6 @@
 {
-  "name": "@deepseek-ai/dsh-faberloom-spaces",
-  "description": "Native product spaces (ctx.faberloomSpaces): durable thematic spaces, sub-spaces, configurable inheritance with exclusions, personal scope, and opaque work-directory references",
+  "name": "@deepseek-ai/dsh-faberloom-shares",
+  "description": "Native product sharing (ctx.faberloomShares): durable per-action share grants on Spaces and Work Flows, emailed acceptance, console transport, and revocation",
   "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
@@ -8,7 +8,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/faberloom/spaces"
+    "directory": "packages/faberloom/shares"
   },
   "type": "module",
   "main": "lib/index.js",
@@ -27,17 +27,16 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
     "@deepseek-ai/dsh-storage-domain": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-storage-domain": "workspace:^",
-    "@deepseek-ai/dsh-faberloom-shares": "workspace:^"
+    "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
+    "@deepseek-ai/dsh-storage-domain": "workspace:^"
   }
 }

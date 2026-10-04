@@ -48,6 +48,9 @@
       "path": "../workflows"
     },
     {
+      "path": "../shares"
+    },
+    {
       "path": "../../subprocess/subprocess"
     }
   ]

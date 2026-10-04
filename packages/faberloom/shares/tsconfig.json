@@ -9,22 +9,13 @@
   ],
   "references": [
     {
-      "path": "../../../vendor/cosmokit"
-    },
-    {
       "path": "../../../vendor/cordis"
-    },
-    {
-      "path": "../../util/brand"
     },
     {
       "path": "../../storage/storage-domain"
     },
     {
-      "path": "../routines"
-    },
-    {
-      "path": "../shares"
+      "path": "../connections"
     }
   ]
 }

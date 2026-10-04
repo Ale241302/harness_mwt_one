@@ -34,7 +34,7 @@ import type {
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
-  FaberLoomJsonValue,
+  FaberLoomJsonValue, FaberLoomShareGrantRow,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
@@ -266,6 +266,18 @@ export interface FaberloomPanelInjected {
     runs: (id: string) => Promise<Result<readonly FaberLoomWorkflowRunRow[]>>
     topology: () => Promise<Result<FaberLoomSpaceMap>>
     links: () => Promise<Result<readonly FaberLoomWorkflowLink[]>>
+    shareWorkflow: (
+      id: string,
+      emails: readonly string[],
+      permissions: readonly string[],
+    ) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
+    shareSpace: (
+      id: string,
+      emails: readonly string[],
+      permissions: readonly string[],
+    ) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
+    resourceShares: (kind: string, id: string) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
+    revokeShareGrant: (grantId: string) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
     exportFlow: (id: string, format: string) => Promise<Result<FaberLoomWorkflowExport>>
   }
 }
@@ -2967,6 +2979,9 @@ const WORKFLOW_KINDS = [
   'board.create', 'space.reference', 'routine.invoke', 'condition', 'transform', 'wait', 'notify', 'deadletter',
 ] as const
 
+/** Permission checkboxes the Compartir form offers. */
+const SHARE_PERMISSION_OPTIONS = ['view', 'run', 'edit-graph', 'add-nodes', 'remove-nodes', 'edit-agents', 'manage-triggers', 'share'] as const
+
 /** Open a read-only export in a new tab. */
 function openWorkflowExport(value: FaberLoomWorkflowExport): void {
   const blob = new Blob([value.content], { type: value.format === 'json' ? 'application/json' : 'text/html' })
@@ -2998,6 +3013,9 @@ function workflowsScreen() {
     const [scheduleBusinessDays, setScheduleBusinessDays] = useState(false)
     const [concurrency, setConcurrency] = useState('')
     const [links, setLinks] = useState<readonly FaberLoomWorkflowLink[]>([])
+    const [grants, setGrants] = useState<readonly FaberLoomShareGrantRow[]>([])
+    const [shareEmail, setShareEmail] = useState('')
+    const [sharePermissions, setSharePermissions] = useState<readonly string[]>(['view'])
     const dragging = useRef<string | null>(null)
 
     const accept = (result: Result<FaberLoomWorkflowDetail>): void => {
@@ -3018,6 +3036,7 @@ function workflowsScreen() {
       void workflows.detail(selected).then(accept)
       void workflows.runs(selected).then((result) => { if (result.ok) setRuns(result.value) })
       void workflows.links().then((result) => { if (result.ok) setLinks(result.value) })
+      void workflows.resourceShares('workflow', selected).then((result) => { if (result.ok) setGrants(result.value) })
     }, [selected])
     useEffect(() => {
       if (detail === null) { setPositions({}); return }
@@ -3120,6 +3139,33 @@ function workflowsScreen() {
       }
       act(() => workflows.setConcurrency(flowId, value))
     }
+    /** Toggle one permission in the Compartir form. */
+    const togglePermission = (permission: string): void => {
+      setSharePermissions(current => current.includes(permission)
+        ? current.filter(value => value !== permission)
+        : [...current, permission])
+    }
+    /** Share the selected flow with the entered email and checked permissions. */
+    const shareFlow = (flowId: string): void => {
+      const email = shareEmail.trim()
+      if (email.length === 0 || sharePermissions.length === 0) return
+      void workflows.shareWorkflow(flowId, [email], sharePermissions).then((result) => {
+        if (result.ok) { setGrants(result.value); setShareEmail(''); setMessage(null) } else setMessage(result.error.message)
+      })
+    }
+    /** Revoke one grant and drop its row. */
+    const revokeGrant = (grantId: string): void => {
+      void workflows.revokeShareGrant(grantId).then((result) => {
+        if (result.ok) {
+          setGrants(current => current.filter(row => row.id !== grantId))
+          setMessage(null)
+        } else setMessage(result.error.message)
+      })
+    }
+    /** The localized label of one grant status. */
+    const statusLabel = (status: string): string => status === 'active'
+      ? t('wf.share.status.active')
+      : status === 'revoked' ? t('wf.share.status.revoked') : t('wf.share.status.pending')
     const STATUS_CLASSES: Readonly<Record<ReturnType<typeof statusTone>, string | undefined>> = {
       running: styles.workflowStatusRunning,
       waiting: styles.workflowStatusWaiting,
@@ -3256,6 +3302,29 @@ function workflowsScreen() {
                   ))}
                 </section>
               </div>
+              <section className={styles.workflowSection}>
+                <h4>{t('wf.share')}</h4>
+                <div className={styles.workflowInspector}>
+                  <input aria-label={t('wf.share.email')} placeholder={t('wf.share.email')} value={shareEmail}
+                    onChange={(event) => { setShareEmail(event.target.value) }} />
+                  {SHARE_PERMISSION_OPTIONS.map(permission => (
+                    <label key={permission}>
+                      <input type="checkbox" checked={sharePermissions.includes(permission)}
+                        onChange={() => { togglePermission(permission) }} />
+                      {permission}
+                    </label>
+                  ))}
+                  <button type="button" onClick={() => { shareFlow(selected) }}>{t('wf.share.submit')}</button>
+                </div>
+                {grants.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.share.none')}</span> : grants.map(grant => (
+                  <div key={grant.id} className={styles.workflowRunRow}>
+                    <span>{grant.granteeEmail}</span>
+                    <span className={styles.workflowRunWhen}>{grant.permissionLabel}</span>
+                    <span>{statusLabel(grant.status)}</span>
+                    <button type="button" onClick={() => { revokeGrant(grant.id) }}>{t('wf.share.revoke')}</button>
+                  </div>
+                ))}
+              </section>
             </>
           )}
         </main>

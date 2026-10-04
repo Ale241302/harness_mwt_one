@@ -39,6 +39,7 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-brand": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-shares": "workspace:^",
     "@deepseek-ai/dsh-storage-domain": "workspace:^"
   }
 }

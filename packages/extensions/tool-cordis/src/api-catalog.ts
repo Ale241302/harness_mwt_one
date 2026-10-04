@@ -1644,6 +1644,57 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomShares',
+    summary: 'The product sharing service: durable per-action grants with console transport and email acceptance.',
+    description: 'The product sharing service: durable per-action grants with console transport and email acceptance.',
+    methods: [
+      {
+        signature: 'async create(ownerId: string, input: FaberLoomShareInput): Promise<FaberLoomShareGrant>',
+        description: 'Create one share grant, notify the grantee by email, and publish it to the console when one is configured. The grant starts `pending`; only an accepted (`active`) grant authorizes an action.',
+        parameters: [{ name: 'ownerId', description: 'the identity granting access.' }, { name: 'input', description: 'resource, resource name, grantee email, and permissions.' }],
+        returns: 'the created grant.',
+        throws: ['when the grantee email is empty.'],
+      },
+      {
+        signature: 'async accept(granteeEmail: string, id: string): Promise<FaberLoomShareGrant>',
+        description: 'Accept one pending grant addressed to the grantee; a pending grant becomes active and its permissions start authorizing actions.',
+        parameters: [{ name: 'granteeEmail', description: 'the identity accepting.' }, { name: 'id', description: 'grant id.' }],
+        returns: 'the accepted grant.',
+        throws: ['when the grant is missing or not addressed to the grantee.'],
+      },
+      {
+        signature: 'async revoke(ownerId: string, id: string): Promise<FaberLoomShareGrant>',
+        description: 'Revoke one grant the actor issued; the next permission check denies it and the console mirror is removed.',
+        parameters: [{ name: 'ownerId', description: 'the identity that granted access.' }, { name: 'id', description: 'grant id.' }],
+        returns: 'the revoked grant.',
+        throws: ['when the grant is missing or the actor did not issue it.'],
+      },
+      {
+        signature: 'async list(actorId: string): Promise<FaberLoomShareList>',
+        description: 'List the grants the actor issued and the ones addressed to it.',
+        parameters: [{ name: 'actorId', description: 'the acting identity (owner or grantee email).' }],
+        returns: 'the outgoing and incoming grants, oldest first.',
+      },
+      {
+        signature: 'async permissionsFor(granteeEmail: string, resource: FaberLoomShareResource): Promise<readonly FaberLoomSharePermission[]>',
+        description: 'List the permissions one grantee holds on one resource, unioned over every active grant.',
+        parameters: [{ name: 'granteeEmail', description: 'the identity acting.' }, { name: 'resource', description: 'the resource being touched.' }],
+        returns: 'the active permissions, in display order.',
+      },
+      {
+        signature: 'async can(actorId: string, ownerId: string, resource: FaberLoomShareResource, permission: FaberLoomSharePermission): Promise<boolean>',
+        description: 'Whether one grantee may perform one action on one resource. The owner is always allowed; a grantee needs an active grant carrying the permission.',
+        parameters: [{ name: 'actorId', description: 'the acting identity.' }, { name: 'ownerId', description: 'the resource owner.' }, { name: 'resource', description: 'the resource being touched.' }, { name: 'permission', description: 'the action being authorized.' }],
+        returns: 'true when the action is authorized.',
+      },
+      {
+        signature: 'async sync(granteeEmail: string): Promise<void>',
+        description: 'Import the grants the console holds for one grantee and prune the local copies the console no longer carries, so a revoked share stops authorizing here. A no-op when the console is not configured.',
+        parameters: [{ name: 'granteeEmail', description: 'the identity whose incoming grants are imported.' }],
+      },
+    ],
+  },
+  {
     key: 'faberloomSpaces',
     summary: 'The product spaces service.',
     description: 'The product spaces service. It owns the durable space records, the effective context resolution, the personal scope, the opaque work-directory references, and console-role access control; every operation carries the authenticated actor.',
@@ -1863,6 +1914,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List every routine ↔ work flow link the owner holds, in both directions: a routine step with handler `workflow` invoking a flow, and the compiled routine an active flow drives.',
         parameters: [],
         returns: 'the links, routines first.',
+      },
+      {
+        signature: '@Remote(\'shareSpace\') async shareSpace(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'Share one Space the owner (or an admin) manages with named emails.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'emails', description: 'the grantees.' }, { name: 'permissions', description: 'the permission subset each grantee receives.' }],
+        returns: 'the resource\'s outgoing grant rows.',
+      },
+      {
+        signature: '@Remote(\'shareWorkflow\') async shareWorkflow(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'Share one Work Flow the owner manages — or that the actor holds `share` on — with named emails.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'emails', description: 'the grantees.' }, { name: 'permissions', description: 'the permission subset each grantee receives.' }],
+        returns: 'the flow\'s outgoing grant rows.',
+      },
+      {
+        signature: '@Remote(\'resourceShares\') async resourceShares(kind: string, id: string): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'List the actor\'s grants on one resource.',
+        parameters: [{ name: 'kind', description: '`space` or `workflow`.' }, { name: 'id', description: 'resource id.' }],
+        returns: 'the outgoing grant rows.',
+      },
+      {
+        signature: '@Remote(\'revokeShareGrant\') async revokeShareGrant(grantId: string): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'Revoke one grant the actor issued.',
+        parameters: [{ name: 'grantId', description: 'grant id.' }],
+        returns: 'the actor\'s refreshed outgoing grant rows.',
       },
       {
         signature: '@Remote(\'spaceTopology\') async spaceTopology(): Promise<FaberLoomSpaceMap>',
@@ -6470,16 +6545,36 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomRoutineStepRow {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n}',
   },
   {
-    name: 'FaberLoomSharePayload',
-    declaration: 'export interface FaberLoomSharePayload {\n    readonly responsibility?: string;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly markdown?: string;\n    readonly provider?: string | null;\n    readonly model?: string | null;\n}',
+    name: 'FaberLoomShareGrant',
+    declaration: 'export interface FaberLoomShareGrant {\n    readonly id: string;\n    readonly resource: FaberLoomShareResource;\n    readonly resourceName: string;\n    readonly ownerId: string;\n    readonly granteeEmail: string;\n    readonly permissions: readonly FaberLoomSharePermission[];\n    readonly status: FaberLoomShareStatus;\n    readonly createdAt: string;\n    readonly acceptedAt: string | null;\n}',
   },
   {
-    name: 'FaberLoomShareRow',
-    declaration: 'export interface FaberLoomShareRow {\n    readonly id: string;\n    readonly kind: \'agent\' | \'skill\';\n    readonly owner_email: string;\n    readonly name: string;\n    readonly payload: FaberLoomSharePayload;\n    readonly share_all: boolean;\n    readonly shared_emails: readonly string[];\n}',
+    name: 'FaberLoomShareGrantRow',
+    declaration: 'export interface FaberLoomShareGrantRow {\n    readonly id: string;\n    readonly resourceKind: string;\n    readonly resourceId: string;\n    readonly resourceName: string;\n    readonly ownerId: string;\n    readonly granteeEmail: string;\n    readonly permissions: readonly string[];\n    readonly permissionLabel: string;\n    readonly status: string;\n    readonly createdAt: string;\n    readonly acceptedAt: string | null;\n}',
   },
   {
-    name: 'FaberLoomShares',
-    declaration: 'export interface FaberLoomShares {\n    readonly configured: boolean;\n    readonly outgoing: readonly FaberLoomShareRow[];\n    readonly incoming: readonly FaberLoomShareRow[];\n}',
+    name: 'FaberLoomShareInput',
+    declaration: 'export interface FaberLoomShareInput {\n    readonly resource: FaberLoomShareResource;\n    readonly resourceName: string;\n    readonly granteeEmail: string;\n    readonly permissions: readonly string[];\n    readonly snapshot?: Record<string, unknown> | undefined;\n}',
+  },
+  {
+    name: 'FaberLoomShareList',
+    declaration: 'export interface FaberLoomShareList {\n    readonly outgoing: readonly FaberLoomShareGrant[];\n    readonly incoming: readonly FaberLoomShareGrant[];\n}',
+  },
+  {
+    name: 'FaberLoomSharePermission',
+    declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'share\' | \'manage-members\';',
+  },
+  {
+    name: 'FaberLoomShareResource',
+    declaration: 'export interface FaberLoomShareResource {\n    readonly kind: FaberLoomShareResourceKind;\n    readonly id: string;\n}',
+  },
+  {
+    name: 'FaberLoomShareResourceKind',
+    declaration: 'export type FaberLoomShareResourceKind = \'space\' | \'workflow\';',
+  },
+  {
+    name: 'FaberLoomShareStatus',
+    declaration: 'export type FaberLoomShareStatus = \'pending\' | \'active\' | \'revoked\';',
   },
   {
     name: 'FaberLoomSkillRow',

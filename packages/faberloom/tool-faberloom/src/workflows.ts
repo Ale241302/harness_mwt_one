@@ -17,6 +17,7 @@ import type {
   WorkFlowNodeId,
   WorkFlowNodeKind,
 } from '@deepseek-ai/dsh-faberloom-workflows'
+import type { FaberLoomShares } from '@deepseek-ai/dsh-faberloom-shares'
 
 /** One argument value accepted by a workflow tool executor. */
 type WorkflowArgs = Record<string, unknown>
@@ -55,6 +56,25 @@ const WORKFLOW_OUTPUT = {
     },
   },
   render: (_args: unknown, value: Record<string, unknown>) => [{ type: 'text' as const, text: renderWorkflow(value) }],
+} as const
+
+/** Shared output: every sharing tool renders its grant summary. */
+const SHARE_OUTPUT = {
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      workflowId: { type: 'string' },
+      revoked: { type: 'string' },
+      grants: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    },
+  },
+  render: (_args: unknown, value: Record<string, unknown>) => [{
+    type: 'text' as const,
+    text: Array.isArray(value['grants'])
+      ? `${String((value['grants'] as readonly unknown[]).length)} share grant(s) on ${String(value['workflowId'])}.`
+      : `Revoked ${String(value['revoked'])}.`,
+  }],
 } as const
 
 /** The two fields every node tool shares. */
@@ -244,4 +264,77 @@ export function registerWorkflowTools(ctx: Context, actor: SpaceActor): void {
       presentCall: (callArgs: WorkflowArgs) => ({ card: 'generic', title: tool.name, kind: 'other', rawInput: callArgs }),
     }))
   }
+  registerShareTools(ctx, actor)
+}
+
+/**
+ * Register the sharing tools (`faberloom_workflows_share/_revoke/_permissions`),
+ * which act on `ctx.faberloomShares` rather than the graph.
+ * @param ctx - context carrying `tools` and the `faberloomShares` service.
+ * @param actor - the acting identity, from the deployment config.
+ */
+function registerShareTools(ctx: Context, actor: SpaceActor): void {
+  const shares = (): FaberLoomShares => {
+    const service = ctx.get('faberloomShares')
+    if (service === undefined) throw new Error('faberloom: the shares service is not mounted')
+    return service
+  }
+  const grantsFor = async (workflowId: string): Promise<Record<string, string | string[]>[]> =>
+    (await shares().list(actor.id)).outgoing
+      .filter(grant => grant.resource.kind === 'workflow' && grant.resource.id === workflowId)
+      .map(grant => ({
+        id: grant.id,
+        email: grant.granteeEmail,
+        permissions: [...grant.permissions],
+        status: grant.status,
+      }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_workflows_share',
+    description: 'Share one work flow with named emails and per-action permissions (view, run, edit-graph, add-nodes, remove-nodes, edit-agents, manage-triggers, share). The grantee receives an acceptance link by email and gets access once accepted.',
+    parameters: {
+      workflowId: WORKFLOW_ID,
+      emails: { type: 'array', required: true, items: { type: 'string' }, description: 'Emails to share with.' },
+      permissions: { type: 'array', required: true, items: { type: 'string' }, description: 'Permissions to grant.' },
+    },
+    output: SHARE_OUTPUT,
+    execute: async (args: WorkflowArgs) => {
+      const service = ctx.get('faberloomWorkflows')
+      if (service === undefined) throw new Error('faberloom: the workflows service is not mounted')
+      const workflowId = typeof args['workflowId'] === 'string' ? args['workflowId'] : ''
+      const flow = await service.get(actor, workflowId as WorkFlowId)
+      const emails = Array.isArray(args['emails']) ? args['emails'].map(String) : []
+      const permissions = Array.isArray(args['permissions']) ? args['permissions'].map(String) : []
+      for (const email of emails) {
+        await shares().create(actor.id, { resource: { kind: 'workflow', id: workflowId }, resourceName: flow.name, granteeEmail: email, permissions })
+      }
+      return { workflowId, grants: await grantsFor(workflowId) }
+    },
+    presentCall: (callArgs: WorkflowArgs) => ({ card: 'generic', title: 'faberloom_workflows_share', kind: 'other', rawInput: callArgs }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_workflows_revoke',
+    description: 'Revoke one share grant by id.',
+    parameters: { grantId: { type: 'string', required: true, description: 'Grant id from faberloom_workflows_permissions.' } },
+    output: SHARE_OUTPUT,
+    execute: async (args: WorkflowArgs) => {
+      const grantId = typeof args['grantId'] === 'string' ? args['grantId'] : ''
+      await shares().revoke(actor.id, grantId)
+      return { revoked: grantId }
+    },
+    presentCall: (callArgs: WorkflowArgs) => ({ card: 'generic', title: 'faberloom_workflows_revoke', kind: 'other', rawInput: callArgs }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_workflows_permissions',
+    description: 'List the share grants on one work flow: grantee email, permissions, and status.',
+    parameters: { workflowId: WORKFLOW_ID },
+    output: SHARE_OUTPUT,
+    execute: async (args: WorkflowArgs) => {
+      const workflowId = typeof args['workflowId'] === 'string' ? args['workflowId'] : ''
+      return { workflowId, grants: await grantsFor(workflowId) }
+    },
+    presentCall: (callArgs: WorkflowArgs) => ({ card: 'generic', title: 'faberloom_workflows_permissions', kind: 'other', rawInput: callArgs }),
+  }))
 }

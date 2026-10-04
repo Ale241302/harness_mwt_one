@@ -1120,3 +1120,29 @@ export interface FaberLoomWorkflowExport {
   /** Export body: standalone HTML for archify, JSON for json. */
   readonly content: string
 }
+
+/** One share grant on a Space or Work Flow, as the Compartir panel renders it. */
+export interface FaberLoomShareGrantRow {
+  /** Grant id. */
+  readonly id: string
+  /** Resource family. */
+  readonly resourceKind: string
+  /** Resource id. */
+  readonly resourceId: string
+  /** Resource display name. */
+  readonly resourceName: string
+  /** Email of the identity that granted access. */
+  readonly ownerId: string
+  /** Email the grant is offered to. */
+  readonly granteeEmail: string
+  /** Granted permissions. */
+  readonly permissions: readonly string[]
+  /** Granted permissions as one comma-separated label, for the table cell. */
+  readonly permissionLabel: string
+  /** Grant lifecycle. */
+  readonly status: string
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+  /** ISO-8601 acceptance instant, or null while pending. */
+  readonly acceptedAt: string | null
+}

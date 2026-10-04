@@ -266,6 +266,10 @@ export function apply(ctx: ClientContext): void {
         runs: id => ctx.remote.faberloomView.workflowRuns(id),
         topology: () => ctx.remote.faberloomView.spaceTopology(),
         links: () => ctx.remote.faberloomView.routineWorkflowLinks(),
+        shareWorkflow: (id, emails, permissions) => ctx.remote.faberloomView.shareWorkflow(id, emails, permissions),
+        shareSpace: (id, emails, permissions) => ctx.remote.faberloomView.shareSpace(id, emails, permissions),
+        resourceShares: (kind, id) => ctx.remote.faberloomView.resourceShares(kind, id),
+        revokeShareGrant: grantId => ctx.remote.faberloomView.revokeShareGrant(grantId),
         exportFlow: (id, format) => ctx.remote.faberloomView.exportWorkflow(id, format),
       },
     }
