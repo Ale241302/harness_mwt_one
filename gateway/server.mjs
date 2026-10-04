@@ -863,6 +863,13 @@ function renderPatch(home, user, memory) {
     '  config:',
     `    waitTimeoutMs: ${cfg.waitTimeoutMs}`,
     '',
+    // Compartir Spaces y Work Flows: la consola transporta los grants entre
+    // procesos y el correo de aceptación sale por el SMTP del propio usuario.
+    '- id: faberloom-shares',
+    '  config:',
+    '    consoleBase: !!js process.env.CONSOLA_API_BASE ?? \'\'',
+    '    consoleToken: !!js process.env.CONSOLA_TOKEN ?? \'\'',
+    '',
     // Servidor MCP propio: escucha en un socket del home del usuario y el
     // gateway lo publica en /mcp autenticando con el token de cada cliente.
     '- id: faberloom-mcp-server',
@@ -1173,6 +1180,10 @@ function startInstance(user, memory) {
         // el proceso hijo debe recibir el valor resuelto (env o *_FILE).
         ...(cfg.mcpGatewayKey ? { MWT_MCP_GATEWAY_KEY: cfg.mcpGatewayKey } : {}),
         ...(cfg.faberloomGatewayKey ? { FABERLOOM_GATEWAY_KEY: cfg.faberloomGatewayKey } : {}),
+        // El servicio de compartir llama a la consola como el propio usuario: el
+        // parche lee estos dos nombres como `!!js process.env.*`.
+        CONSOLA_API_BASE: cfg.consolaApi,
+        ...(typeof user.accessToken === 'string' && user.accessToken.length > 0 ? { CONSOLA_TOKEN: user.accessToken } : {}),
         // Con memoria activa el proveedor lee este credencial-ref; el dsh sigue
         // teniendo DEEPSEEK_API_KEY como respaldo del arranque.
         ...(memory && memory.userKey ? { PROXY_USER_KEY: memory.userKey } : {}),

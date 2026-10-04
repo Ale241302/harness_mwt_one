@@ -20,6 +20,10 @@
     - id: faberloom-workflows
       name: '@deepseek-ai/dsh-faberloom-workflows'
 
+    # Compartir Spaces y Work Flows con permisos, aviso por correo y consola.
+    - id: faberloom-shares
+      name: '@deepseek-ai/dsh-faberloom-shares'
+
     - id: faberloom-execution
       name: '@deepseek-ai/dsh-faberloom-execution'
 
