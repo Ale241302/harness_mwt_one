@@ -30,13 +30,15 @@ export type FaberLoomSharePermission =
   | 'manage-triggers'
   | 'manage-connections'
   | 'approve-effects'
+  | 'create-context'
+  | 'index-context'
   | 'share'
   | 'manage-members'
 
 /** Every permission, in display order. */
 export const SHARE_PERMISSIONS: readonly FaberLoomSharePermission[] = [
   'view', 'run', 'edit-graph', 'add-nodes', 'remove-nodes', 'edit-agents',
-  'manage-triggers', 'manage-connections', 'approve-effects', 'share', 'manage-members',
+  'manage-triggers', 'manage-connections', 'approve-effects', 'create-context', 'index-context', 'share', 'manage-members',
 ]
 
 /** Grant lifecycle: the grantee has not accepted yet, accepted, or revoked. */

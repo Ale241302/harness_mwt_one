@@ -1213,3 +1213,53 @@ export interface FaberLoomHealth {
     readonly alerts: number
   }
 }
+
+/** One context entry as the Contexto panel renders it. */
+export interface FaberLoomContextRow {
+  /** Entry id. */
+  readonly id: string
+  /** Space the entry belongs to, or null for the personal scope. */
+  readonly spaceId: string | null
+  /** Display title. */
+  readonly title: string
+  /** Context body. */
+  readonly body: string
+  /** Monotonic version. */
+  readonly version: number
+  /** `local`, `pending`, or `shared`. */
+  readonly visibility: string
+  /** Who wrote it. */
+  readonly authorId: string
+  /** Space owner the entry indexes to. */
+  readonly ownerId: string
+  /** ISO-8601 last-change instant. */
+  readonly updatedAt: string
+}
+
+/** One stored context version as the panel renders it. */
+export interface FaberLoomContextVersionRow {
+  /** Version number. */
+  readonly version: number
+  /** Title at that version. */
+  readonly title: string
+  /** Body at that version. */
+  readonly body: string
+  /** Who wrote that version. */
+  readonly authorId: string
+  /** ISO-8601 instant that version was written. */
+  readonly createdAt: string
+}
+
+/** One stored work flow version as the panel renders it. */
+export interface FaberLoomWorkflowVersionRow {
+  /** Version number. */
+  readonly version: number
+  /** Display name at that version. */
+  readonly name: string
+  /** Node count. */
+  readonly nodes: number
+  /** Edge count. */
+  readonly edges: number
+  /** ISO-8601 instant that version was written. */
+  readonly createdAt: string
+}

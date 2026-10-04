@@ -7,7 +7,7 @@
 
 import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
-import type { WorkFlowEdgeId, WorkFlowId, WorkFlowNodeId, WorkFlowRecord } from './types.ts'
+import type { WorkFlowEdgeId, WorkFlowId, WorkFlowNodeId, WorkFlowRecord, WorkFlowVersionRecord } from './types.ts'
 
 /** Branded ids have no runtime representation; the boundary only types them. */
 const nodeId = z.string().transform(value => value as WorkFlowNodeId)
@@ -86,13 +86,28 @@ export const workFlowRecord: z.ZodType<WorkFlowRecord> = z.object({
 })
 
 /**
- * The work flows domain spec: one `workflows` table keyed by
- * {@link WorkFlowId}. The service opens this through `ctx.storageDomain`.
+ * Append-only work flow version row, keyed by `${id}:${version}`, so any earlier
+ * graph can be restored.
+ */
+export const workFlowVersionRecord: z.ZodType<WorkFlowVersionRecord> = z.object({
+  workflowId: z.string(),
+  version: z.number(),
+  name: z.string(),
+  scope: workFlowScope,
+  definition: workFlowDefinition,
+  createdAt: z.string(),
+})
+
+/**
+ * The work flows domain spec: a `workflows` table keyed by {@link WorkFlowId}
+ * and its append-only `versions` table. The service opens this through
+ * `ctx.storageDomain`.
  */
 export const workflowsDomainSpec = defineDomain({
   name: 'faberloom_workflows',
-  version: 1,
+  version: 2,
   tables: {
     workflows: domainTable<WorkFlowId, WorkFlowRecord>(workFlowRecord),
+    versions: domainTable<string, WorkFlowVersionRecord>(workFlowVersionRecord),
   },
 })

@@ -29,6 +29,7 @@ import type {
   WorkFlowNodeId,
   WorkFlowNodeKind,
   WorkFlowRecord,
+  WorkFlowVersionRecord,
   WorkFlowScope,
   WorkFlowStatus,
   WorkFlowValidation,
@@ -358,6 +359,23 @@ export class FaberLoomWorkflows extends Service {
     return (await this.domain()).table('workflows')
   }
 
+  /** The append-only work flow versions table handle, keyed by `${id}:${version}`. */
+  private async versionsTable(): Promise<KvTable<string, WorkFlowVersionRecord>> {
+    return (await this.domain()).table('versions')
+  }
+
+  /** Append one immutable version row for a flow record. */
+  private async recordVersion(id: WorkFlowId, record: WorkFlowRecord): Promise<void> {
+    await (await this.versionsTable()).put(`${id}:${String(record.version)}`, {
+      workflowId: id,
+      version: record.version,
+      name: record.name,
+      scope: record.scope,
+      definition: record.definition,
+      createdAt: record.updatedAt,
+    })
+  }
+
   /** Read one record and require the actor to own it. */
   private async requireOwned(
     actor: WorkFlowActor,
@@ -441,6 +459,7 @@ export class FaberLoomWorkflows extends Service {
       updatedAt: now,
     }
     await table.put(id, record)
+    await this.recordVersion(id, record)
     return toWorkFlow(id, record)
   }
 
@@ -498,6 +517,48 @@ export class FaberLoomWorkflows extends Service {
       next = { ...next, routineId: await this.syncRoutine(id, next) }
     }
     await table.update(id, () => next)
+    await this.recordVersion(id, next)
+    return toWorkFlow(id, next)
+  }
+
+  /**
+   * List one work flow's version history, newest first.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @returns the versions.
+   */
+  async versions(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly WorkFlowVersionRecord[]> {
+    await this.requireAccess(actor, id, 'view')
+    const rows: WorkFlowVersionRecord[] = []
+    for (const [, record] of (await this.versionsTable()).entries()) {
+      if (record.workflowId === id) rows.push(record)
+    }
+    return rows.sort((left, right) => right.version - left.version)
+  }
+
+  /**
+   * Restore one work flow to an earlier version, bumping the version and
+   * reconciling an active flow's compiled routine.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param version - the version to restore.
+   * @returns the restored work flow.
+   */
+  async restore(actor: WorkFlowActor, id: WorkFlowId, version: number): Promise<WorkFlow> {
+    const { table, record } = await this.requireAccess(actor, id, 'edit-graph')
+    const target = (await this.versionsTable()).get(`${id}:${String(version)}`)
+    if (target === undefined) throw new Error(`faberloom: work flow version ${String(version)} not found`)
+    let next: WorkFlowRecord = {
+      ...record,
+      name: target.name,
+      scope: target.scope,
+      definition: target.definition,
+      updatedAt: new Date().toISOString(),
+      version: record.version + 1,
+    }
+    if (next.status === 'active') next = { ...next, routineId: await this.syncRoutine(id, next) }
+    await table.update(id, () => next)
+    await this.recordVersion(id, next)
     return toWorkFlow(id, next)
   }
 
@@ -537,6 +598,7 @@ export class FaberLoomWorkflows extends Service {
     let next: WorkFlowRecord = { ...record, definition, updatedAt: new Date().toISOString(), version: record.version + 1 }
     if (next.status === 'active') next = { ...next, routineId: await this.syncRoutine(id, next) }
     await table.update(id, () => next)
+    await this.recordVersion(id, next)
     return toWorkFlow(id, next)
   }
 

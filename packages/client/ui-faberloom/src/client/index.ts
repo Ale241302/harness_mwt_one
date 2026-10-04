@@ -275,6 +275,18 @@ export function apply(ctx: ClientContext): void {
         templates: () => ctx.remote.faberloomView.workflowTemplates(),
         createFromTemplate: (templateId, name) => ctx.remote.faberloomView.createWorkflowFromTemplate(templateId, name),
         importFlow: (json, name) => ctx.remote.faberloomView.importWorkflow(json, name),
+        workflowVersions: id => ctx.remote.faberloomView.workflowVersions(id),
+        restoreWorkflow: (id, version) => ctx.remote.faberloomView.restoreWorkflow(id, version),
+      },
+      context: {
+        entries: () => ctx.remote.faberloomView.contextEntries(),
+        create: (title, body, spaceId) => ctx.remote.faberloomView.createContext(title, body, spaceId),
+        update: (id, title, body) => ctx.remote.faberloomView.updateContext(id, title, body),
+        versions: id => ctx.remote.faberloomView.contextVersions(id),
+        restore: (id, version) => ctx.remote.faberloomView.restoreContext(id, version),
+        approve: id => ctx.remote.faberloomView.approveContext(id),
+        reject: id => ctx.remote.faberloomView.rejectContext(id),
+        remove: id => ctx.remote.faberloomView.removeContext(id),
       },
     }
   }

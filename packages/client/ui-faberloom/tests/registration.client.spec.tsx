@@ -213,6 +213,7 @@ describe('faberloom surface', () => {
       'faberloom-routines',
       'faberloom-workflows',
       'faberloom-memory',
+      'faberloom-context',
       'faberloom-connections',
       'faberloom-email',
     ])
@@ -225,6 +226,7 @@ describe('faberloom surface', () => {
       'faberloom-routines',
       'faberloom-workflows',
       'faberloom-memory',
+      'faberloom-context',
       'faberloom-connections',
       'faberloom-email',
     ])

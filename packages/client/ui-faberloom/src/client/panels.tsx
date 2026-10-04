@@ -16,6 +16,7 @@ import {
   IconApiOutline14,
   IconBranchOutline16,
   IconChecklistOutline14,
+  IconContextInjectionOutline16,
   IconSendOutline14,
   IconDatabaseOutline16,
   IconFolderOpenOutline16,
@@ -36,6 +37,7 @@ import type {
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
   FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomWorkflowTemplateRow,
+  FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
@@ -284,6 +286,19 @@ export interface FaberloomPanelInjected {
     templates: () => Promise<Result<readonly FaberLoomWorkflowTemplateRow[]>>
     createFromTemplate: (templateId: string, name?: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
     importFlow: (json: string, name?: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    workflowVersions: (id: string) => Promise<Result<readonly FaberLoomWorkflowVersionRow[]>>
+    restoreWorkflow: (id: string, version: number) => Promise<Result<FaberLoomWorkflowDetail>>
+  }
+  /** The Workspace/Space Context surface. */
+  context: {
+    entries: () => Promise<Result<readonly FaberLoomContextRow[]>>
+    create: (title: string, body: string, spaceId?: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+    update: (id: string, title: string, body: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+    versions: (id: string) => Promise<Result<readonly FaberLoomContextVersionRow[]>>
+    restore: (id: string, version: number) => Promise<Result<readonly FaberLoomContextRow[]>>
+    approve: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+    reject: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+    remove: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
   }
 }
 
@@ -3147,6 +3162,8 @@ function workflowsScreen() {
     const [templatesOpen, setTemplatesOpen] = useState(false)
     const [nodeTab, setNodeTab] = useState<'node' | 'connections' | 'routines'>('node')
     const [routinePick, setRoutinePick] = useState('')
+    const [versionsOpen, setVersionsOpen] = useState(false)
+    const [flowVersions, setFlowVersions] = useState<readonly FaberLoomWorkflowVersionRow[]>([])
     const dragging = useRef<string | null>(null)
     const dragged = useRef(false)
 
@@ -3418,6 +3435,7 @@ function workflowsScreen() {
                 <button type="button" onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
                 <button type="button" className={styles.primary} onClick={() => { addNode(selected) }}>{t('wf.addNode')}</button>
                 <button type="button" onClick={() => { setLogsOpen(true) }}>{t('wf.logs')}</button>
+                <button type="button" onClick={() => { void workflows.workflowVersions(selected).then((result) => { if (result.ok) { setFlowVersions(result.value); setVersionsOpen(true) } }) }}>{t('wf.versions')}</button>
                 <button type="button" onClick={() => { setShareOpen(true) }}>{t('wf.share')}</button>
                 <button type="button" onClick={() => { void workflows.exportFlow(selected, 'json').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportJson')}</button>
                 <button type="button" onClick={() => { void workflows.exportFlow(selected, 'archify').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportArchify')}</button>
@@ -3692,6 +3710,14 @@ function workflowsScreen() {
                   </div>
                 ) : null}
               </Modal>
+              <Modal open={versionsOpen} onClose={() => { setVersionsOpen(false) }} title={t('wf.versions')} closeLabel={t('action.close')}>
+                {flowVersions.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.noVersions')}</span> : flowVersions.map(version => (
+                  <div key={version.version} className={styles.workflowRunRow}>
+                    <span>{String(version.version)} · {version.name} · {version.nodes}/{version.edges} · {version.createdAt}</span>
+                    <button type="button" onClick={() => { act(() => workflows.restoreWorkflow(selected, version.version)); setVersionsOpen(false) }}>{t('ctx.restore')}</button>
+                  </div>
+                ))}
+              </Modal>
               {/* Run history and health live in the Logs modal. */}
               <Modal open={logsOpen} onClose={() => { setLogsOpen(false) }} title={t('wf.runs')} closeLabel={t('action.close')}>
                 {selectedHealth === null ? null : (
@@ -3768,9 +3794,99 @@ function workflowsScreen() {
   }
 }
 
+/** Contexto: the versioned, approvable Workspace/Space context, separate from Memory. */
+function contextScreen() {
+  return function FaberloomContext(props: ScreenProps) {
+    const { t } = props
+    const list = useLazy<readonly FaberLoomContextRow[]>(() => props.context.entries(), [])
+    const [rows, setRows] = useState<readonly FaberLoomContextRow[]>([])
+    const [selected, setSelected] = useState<string | null>(null)
+    const [title, setTitle] = useState('')
+    const [body, setBody] = useState('')
+    const [newTitle, setNewTitle] = useState('')
+    const [newBody, setNewBody] = useState('')
+    const [versions, setVersions] = useState<readonly FaberLoomContextVersionRow[]>([])
+    const [message, setMessage] = useState<string | null>(null)
+    useEffect(() => { if (list.kind === 'ready') setRows(list.value) }, [list])
+
+    const apply = (result: Result<readonly FaberLoomContextRow[]>): void => {
+      if (result.ok) { setRows(result.value); setMessage(null) } else setMessage(result.error.message)
+    }
+    const open = (row: FaberLoomContextRow): void => {
+      setSelected(row.id)
+      setTitle(row.title)
+      setBody(row.body)
+      void props.context.versions(row.id).then((result) => { if (result.ok) setVersions(result.value) })
+    }
+    const reloadVersions = (id: string): void => {
+      void props.context.versions(id).then((next) => { if (next.ok) setVersions(next.value) })
+    }
+    const create = (): void => {
+      if (newTitle.trim().length === 0) return
+      void props.context.create(newTitle.trim(), newBody).then((result) => {
+        apply(result)
+        if (result.ok) { setNewTitle(''); setNewBody('') }
+      })
+    }
+    const save = (): void => {
+      if (selected === null) return
+      void props.context.update(selected, title, body).then((result) => { apply(result); reloadVersions(selected) })
+    }
+    const restore = (version: number): void => {
+      if (selected === null) return
+      void props.context.restore(selected, version).then((result) => { apply(result); reloadVersions(selected) })
+    }
+
+    return (
+      <Screen title={t('ctx.title')} subtitle={t('ctx.subtitle')} trailing={<Feedback t={t} message={message} />}>
+        <div className={styles.workflowScreen}>
+          <aside className={styles.workflowSidebar}>
+            <input value={newTitle} placeholder={t('ctx.newPlaceholder')} onChange={(event) => { setNewTitle(event.target.value) }} />
+            <input value={newBody} placeholder={t('ctx.bodyPlaceholder')} onChange={(event) => { setNewBody(event.target.value) }} />
+            <button type="button" className={styles.primary} onClick={() => { create() }}>{t('ctx.create')}</button>
+            {rows.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.empty')}</span> : rows.map(row => (
+              <button key={row.id} type="button" className={`${styles.workflowFlowButton} ${selected === row.id ? styles.workflowFlowButtonActive : ''}`} onClick={() => { open(row) }}>
+                {row.title} · {row.visibility} · {String(row.version)}
+              </button>
+            ))}
+          </aside>
+          <main className={styles.workflowMain}>
+            {selected === null ? <span>{t('ctx.select')}</span> : (
+              <>
+                <div className={styles.workflowForm}>
+                  <Field label={t('ctx.title')}>
+                    <input aria-label={t('ctx.title')} value={title} onChange={(event) => { setTitle(event.target.value) }} />
+                  </Field>
+                  <Field label={t('ctx.body')}>
+                    <textarea aria-label={t('ctx.body')} value={body} onChange={(event) => { setBody(event.target.value) }} />
+                  </Field>
+                  <div className={styles.workflowActions}>
+                    <button type="button" className={styles.primary} onClick={() => { save() }}>{t('ctx.save')}</button>
+                    <button type="button" onClick={() => { void props.context.approve(selected).then(apply) }}>{t('ctx.approve')}</button>
+                    <button type="button" onClick={() => { void props.context.reject(selected).then(apply) }}>{t('ctx.reject')}</button>
+                    <button type="button" onClick={() => { void props.context.remove(selected).then((result) => { apply(result); setSelected(null) }) }}>{t('ctx.remove')}</button>
+                  </div>
+                </div>
+                <section className={styles.workflowSection}>
+                  <h4>{t('ctx.versions')}</h4>
+                  {versions.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.noVersions')}</span> : versions.map(version => (
+                    <div key={version.version} className={styles.workflowRunRow}>
+                      <span>{String(version.version)} · {version.title} · {version.createdAt}</span>
+                      <button type="button" onClick={() => { restore(version.version) }}>{t('ctx.restore')}</button>
+                    </div>
+                  ))}
+                </section>
+              </>
+            )}
+          </main>
+        </div>
+      </Screen>
+    )
+  }
+}
+
 /** The FaberLoom sections in sidebar order. */
-export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
-  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel() },
+export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel() },
   { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', Icon: panelIcon(IconChecklistOutline14), Page: boardScreen() },
   { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', Icon: panelIcon(IconFolderOpenOutline16), Page: spacesScreen() },
   { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agents', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsScreen() },
@@ -3778,6 +3894,7 @@ export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(IconAlarmClockOutline16), Page: routinesScreen() },
   { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(IconBranchOutline16), Page: workflowsScreen() },
   { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(IconDatabaseOutline16), Page: memoryScreen() },
+  { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', Icon: panelIcon(IconContextInjectionOutline16), Page: contextScreen() },
   { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', Icon: panelIcon(IconApiOutline14), Page: connectionsScreen() },
   { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', Icon: panelIcon(IconSendOutline14), Page: emailScreen() },
 ]

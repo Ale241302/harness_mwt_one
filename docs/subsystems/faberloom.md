@@ -589,6 +589,90 @@ async imap(ownerId: string, id?: string): Promise<ImapCredentials | undefined>
 
 Source: [`packages/faberloom/connections/src/index.ts`](../../packages/faberloom/connections/src/index.ts)
 
+<a id="ctxfaberloomcontext--faberloomcontext"></a>
+
+### `ctx.faberloomContext` — `FaberLoomContext`
+
+The Workspace/Space Context service: versioned entries with an owner approval gate.
+
+```ts cordis-catalog
+/**
+ * Create one context entry.
+ * @param actor - the acting identity.
+ * @param input - title, body, and optional Space.
+ * @returns the created entry.
+ */
+async create(actor: FaberLoomContextActor, input: FaberLoomContextInput): Promise<FaberLoomContextEntry>
+
+/**
+ * List every context entry the actor may see, newest first.
+ * @param actor - the acting identity.
+ * @returns the visible entries.
+ */
+async list(actor: FaberLoomContextActor): Promise<readonly FaberLoomContextEntry[]>
+
+/**
+ * Read one entry.
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @returns the entry.
+ */
+async get(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>
+
+/**
+ * Edit one entry, appending a version. A member's edit returns the entry to
+ * `pending` until the owner approves it again.
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @param edit - the new title and/or body.
+ * @returns the updated entry.
+ */
+async update(actor: FaberLoomContextActor, id: string, edit: FaberLoomContextEdit): Promise<FaberLoomContextEntry>
+
+/**
+ * List one entry's version history, newest first.
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @returns the versions.
+ */
+async versions(actor: FaberLoomContextActor, id: string): Promise<readonly FaberLoomContextVersion[]>
+
+/**
+ * Restore one entry to an earlier version, appending a fresh version.
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @param version - version to restore.
+ * @returns the restored entry.
+ */
+async restore(actor: FaberLoomContextActor, id: string, version: number): Promise<FaberLoomContextEntry>
+
+/**
+ * Index one entry into the Space's shared context (owner only).
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @returns the approved entry.
+ */
+async approve(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>
+
+/**
+ * Keep one entry private to its author, out of the shared context (owner only).
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @returns the entry.
+ */
+async reject(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>
+
+/**
+ * Remove one entry and its history (author or owner).
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @returns true when removed.
+ */
+async remove(actor: FaberLoomContextActor, id: string): Promise<boolean>
+```
+
+Source: [`packages/faberloom/context/src/index.ts`](../../packages/faberloom/context/src/index.ts)
+
 <a id="ctxfaberloomdefaults--faberloomdefaults"></a>
 
 ### `ctx.faberloomDefaults` — `FaberLoomDefaults`
@@ -1544,6 +1628,81 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('importWorkflow') async importWorkflow(json: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]>
 
 /**
+ * List one work flow's version history, newest first.
+ * @param id - work flow id.
+ * @returns the versions.
+ */
+@Remote('workflowVersions') async workflowVersions(id: string): Promise<readonly FaberLoomWorkflowVersionRow[]>
+
+/**
+ * Restore one work flow to an earlier version.
+ * @param id - work flow id.
+ * @param version - version to restore.
+ * @returns the refreshed detail.
+ */
+@Remote('restoreWorkflow') async restoreWorkflow(id: string, version: number): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * List the context entries the actor may see, newest first.
+ * @returns the visible context rows.
+ */
+@Remote('contextEntries') async contextEntries(): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Create one context entry, optionally attached to a Space.
+ * @param title - display title.
+ * @param body - context body.
+ * @param spaceId - optional Space to attach it to.
+ * @returns the refreshed rows.
+ */
+@Remote('createContext') async createContext(title: string, body: string, spaceId?: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Edit one context entry, appending a version.
+ * @param id - entry id.
+ * @param title - new title.
+ * @param body - new body.
+ * @returns the refreshed rows.
+ */
+@Remote('updateContext') async updateContext(id: string, title: string, body: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * List one context entry's version history.
+ * @param id - entry id.
+ * @returns the versions.
+ */
+@Remote('contextVersions') async contextVersions(id: string): Promise<readonly FaberLoomContextVersionRow[]>
+
+/**
+ * Restore one context entry to an earlier version.
+ * @param id - entry id.
+ * @param version - version to restore.
+ * @returns the refreshed rows.
+ */
+@Remote('restoreContext') async restoreContext(id: string, version: number): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Index one context entry into its Space's shared context.
+ * @param id - entry id.
+ * @returns the refreshed rows.
+ */
+@Remote('approveContext') async approveContext(id: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Keep one context entry private to its author.
+ * @param id - entry id.
+ * @returns the refreshed rows.
+ */
+@Remote('rejectContext') async rejectContext(id: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Remove one context entry and its history.
+ * @param id - entry id.
+ * @returns the refreshed rows.
+ */
+@Remote('removeContext') async removeContext(id: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
  * Create a space (root or sub-space) for the owner with an optional
  * responsible agent, and register its conversation area as a Workspace so
  * the sidebar and the Espacios panel show the same thing.
@@ -2306,6 +2465,24 @@ async get(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>
  * @returns the updated work flow.
  */
 async update(actor: WorkFlowActor, id: WorkFlowId, patch: UpdateWorkFlowInput): Promise<WorkFlow>
+
+/**
+ * List one work flow's version history, newest first.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the versions.
+ */
+async versions(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly WorkFlowVersionRecord[]>
+
+/**
+ * Restore one work flow to an earlier version, bumping the version and
+ * reconciling an active flow's compiled routine.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param version - the version to restore.
+ * @returns the restored work flow.
+ */
+async restore(actor: WorkFlowActor, id: WorkFlowId, version: number): Promise<WorkFlow>
 
 /**
  * Append one node to a work flow the actor owns.

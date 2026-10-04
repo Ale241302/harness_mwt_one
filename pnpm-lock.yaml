@@ -1773,6 +1773,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../../faberloom/connections
+      '@deepseek-ai/dsh-faberloom-context':
+        specifier: workspace:^
+        version: link:../../faberloom/context
       '@deepseek-ai/dsh-faberloom-defaults':
         specifier: workspace:^
         version: link:../../faberloom/defaults
@@ -6764,6 +6767,25 @@ importers:
         specifier: workspace:^
         version: link:../../storage/storage-domain
 
+  packages/faberloom/context:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-shares':
+        specifier: workspace:^
+        version: link:../shares
+      '@deepseek-ai/dsh-faberloom-spaces':
+        specifier: workspace:^
+        version: link:../spaces
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+
   packages/faberloom/defaults:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -7077,6 +7099,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../connections
+      '@deepseek-ai/dsh-faberloom-context':
+        specifier: workspace:^
+        version: link:../context
       '@deepseek-ai/dsh-faberloom-execution':
         specifier: workspace:^
         version: link:../execution

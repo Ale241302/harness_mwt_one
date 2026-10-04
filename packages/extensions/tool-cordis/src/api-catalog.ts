@@ -1295,6 +1295,67 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomContext',
+    summary: 'The Workspace/Space Context service: versioned entries with an owner approval gate.',
+    description: 'The Workspace/Space Context service: versioned entries with an owner approval gate.',
+    methods: [
+      {
+        signature: 'async create(actor: FaberLoomContextActor, input: FaberLoomContextInput): Promise<FaberLoomContextEntry>',
+        description: 'Create one context entry.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'input', description: 'title, body, and optional Space.' }],
+        returns: 'the created entry.',
+      },
+      {
+        signature: 'async list(actor: FaberLoomContextActor): Promise<readonly FaberLoomContextEntry[]>',
+        description: 'List every context entry the actor may see, newest first.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }],
+        returns: 'the visible entries.',
+      },
+      {
+        signature: 'async get(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>',
+        description: 'Read one entry.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
+        returns: 'the entry.',
+      },
+      {
+        signature: 'async update(actor: FaberLoomContextActor, id: string, edit: FaberLoomContextEdit): Promise<FaberLoomContextEntry>',
+        description: 'Edit one entry, appending a version. A member\'s edit returns the entry to `pending` until the owner approves it again.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }, { name: 'edit', description: 'the new title and/or body.' }],
+        returns: 'the updated entry.',
+      },
+      {
+        signature: 'async versions(actor: FaberLoomContextActor, id: string): Promise<readonly FaberLoomContextVersion[]>',
+        description: 'List one entry\'s version history, newest first.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
+        returns: 'the versions.',
+      },
+      {
+        signature: 'async restore(actor: FaberLoomContextActor, id: string, version: number): Promise<FaberLoomContextEntry>',
+        description: 'Restore one entry to an earlier version, appending a fresh version.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }, { name: 'version', description: 'version to restore.' }],
+        returns: 'the restored entry.',
+      },
+      {
+        signature: 'async approve(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>',
+        description: 'Index one entry into the Space\'s shared context (owner only).',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
+        returns: 'the approved entry.',
+      },
+      {
+        signature: 'async reject(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>',
+        description: 'Keep one entry private to its author, out of the shared context (owner only).',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
+        returns: 'the entry.',
+      },
+      {
+        signature: 'async remove(actor: FaberLoomContextActor, id: string): Promise<boolean>',
+        description: 'Remove one entry and its history (author or owner).',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
+        returns: 'true when removed.',
+      },
+    ],
+  },
+  {
     key: 'faberloomDefaults',
     summary: 'FaberLoom\'s own default agents and routines for one owner.',
     description: 'FaberLoom\'s own default agents and routines for one owner.',
@@ -1982,6 +2043,66 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed rows.',
       },
       {
+        signature: '@Remote(\'workflowVersions\') async workflowVersions(id: string): Promise<readonly FaberLoomWorkflowVersionRow[]>',
+        description: 'List one work flow\'s version history, newest first.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
+        returns: 'the versions.',
+      },
+      {
+        signature: '@Remote(\'restoreWorkflow\') async restoreWorkflow(id: string, version: number): Promise<FaberLoomWorkflowDetail>',
+        description: 'Restore one work flow to an earlier version.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'version', description: 'version to restore.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'contextEntries\') async contextEntries(): Promise<readonly FaberLoomContextRow[]>',
+        description: 'List the context entries the actor may see, newest first.',
+        parameters: [],
+        returns: 'the visible context rows.',
+      },
+      {
+        signature: '@Remote(\'createContext\') async createContext(title: string, body: string, spaceId?: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Create one context entry, optionally attached to a Space.',
+        parameters: [{ name: 'title', description: 'display title.' }, { name: 'body', description: 'context body.' }, { name: 'spaceId', description: 'optional Space to attach it to.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'updateContext\') async updateContext(id: string, title: string, body: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Edit one context entry, appending a version.',
+        parameters: [{ name: 'id', description: 'entry id.' }, { name: 'title', description: 'new title.' }, { name: 'body', description: 'new body.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'contextVersions\') async contextVersions(id: string): Promise<readonly FaberLoomContextVersionRow[]>',
+        description: 'List one context entry\'s version history.',
+        parameters: [{ name: 'id', description: 'entry id.' }],
+        returns: 'the versions.',
+      },
+      {
+        signature: '@Remote(\'restoreContext\') async restoreContext(id: string, version: number): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Restore one context entry to an earlier version.',
+        parameters: [{ name: 'id', description: 'entry id.' }, { name: 'version', description: 'version to restore.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'approveContext\') async approveContext(id: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Index one context entry into its Space\'s shared context.',
+        parameters: [{ name: 'id', description: 'entry id.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'rejectContext\') async rejectContext(id: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Keep one context entry private to its author.',
+        parameters: [{ name: 'id', description: 'entry id.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'removeContext\') async removeContext(id: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Remove one context entry and its history.',
+        parameters: [{ name: 'id', description: 'entry id.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
         signature: '@Remote(\'createSpace\') async createSpace(title: string, agentId?: string, parentId?: string, inheritContext?: boolean): Promise<FaberLoomOverview>',
         description: 'Create a space (root or sub-space) for the owner with an optional responsible agent, and register its conversation area as a Workspace so the sidebar and the Espacios panel show the same thing.',
         parameters: [{ name: 'title', description: 'display title.' }, { name: 'agentId', description: 'catalog agent put in charge; the same agent may lead a parent and a sub-space.' }, { name: 'parentId', description: 'parent space id, when this is a sub-space.' }, { name: 'inheritContext', description: 'whether the space inherits its parent\'s context; defaults to true.' }],
@@ -2558,6 +2679,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Apply a mutable patch to one work flow the actor owns, bumping the version.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'patch', description: 'fields to change.' }],
         returns: 'the updated work flow.',
+      },
+      {
+        signature: 'async versions(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly WorkFlowVersionRecord[]>',
+        description: 'List one work flow\'s version history, newest first.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the versions.',
+      },
+      {
+        signature: 'async restore(actor: WorkFlowActor, id: WorkFlowId, version: number): Promise<WorkFlow>',
+        description: 'Restore one work flow to an earlier version, bumping the version and reconciling an active flow\'s compiled routine.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'version', description: 'the version to restore.' }],
+        returns: 'the restored work flow.',
       },
       {
         signature: 'async addNode( actor: WorkFlowActor, id: WorkFlowId, input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>',
@@ -6431,6 +6564,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomConnection {\n    readonly id: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host: string | null;\n    readonly port: number | null;\n    readonly secure: boolean | null;\n    readonly starttls: boolean;\n    readonly primary: boolean;\n    readonly username: string | null;\n    readonly hasSecret: boolean;\n    readonly destination: string | null;\n    readonly retentionDays: number | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
+    name: 'FaberLoomContextActor',
+    declaration: 'export interface FaberLoomContextActor {\n    readonly id: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextEdit',
+    declaration: 'export interface FaberLoomContextEdit {\n    readonly title?: string | undefined;\n    readonly body?: string | undefined;\n}',
+  },
+  {
+    name: 'FaberLoomContextEntry',
+    declaration: 'export interface FaberLoomContextEntry {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly title: string;\n    readonly body: string;\n    readonly version: number;\n    readonly visibility: FaberLoomContextVisibility;\n    readonly authorId: string;\n    readonly ownerId: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextInput',
+    declaration: 'export interface FaberLoomContextInput {\n    readonly spaceId?: string | null | undefined;\n    readonly title: string;\n    readonly body: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextRow',
+    declaration: 'export interface FaberLoomContextRow {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly title: string;\n    readonly body: string;\n    readonly version: number;\n    readonly visibility: string;\n    readonly authorId: string;\n    readonly ownerId: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextVersion',
+    declaration: 'export interface FaberLoomContextVersion {\n    readonly version: number;\n    readonly title: string;\n    readonly body: string;\n    readonly authorId: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextVersionRow',
+    declaration: 'export interface FaberLoomContextVersionRow {\n    readonly version: number;\n    readonly title: string;\n    readonly body: string;\n    readonly authorId: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextVisibility',
+    declaration: 'export type FaberLoomContextVisibility = \'local\' | \'pending\' | \'shared\';',
+  },
+  {
     name: 'FaberLoomCostRow',
     declaration: 'export interface FaberLoomCostRow {\n    readonly key: string;\n    readonly cost: number;\n    readonly records: number;\n    readonly partial: boolean;\n}',
   },
@@ -6628,7 +6793,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSharePermission',
-    declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'share\' | \'manage-members\';',
+    declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'create-context\' | \'index-context\' | \'share\' | \'manage-members\';',
   },
   {
     name: 'FaberLoomShareResource',
@@ -6741,6 +6906,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomWorkflowTemplateRow',
     declaration: 'export interface FaberLoomWorkflowTemplateRow {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly nodes: number;\n    readonly edges: number;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowVersionRow',
+    declaration: 'export interface FaberLoomWorkflowVersionRow {\n    readonly version: number;\n    readonly name: string;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'FaberLoomWorkProposal',
@@ -9409,6 +9578,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkFlowValidation',
     declaration: 'export interface WorkFlowValidation {\n    readonly ok: boolean;\n    readonly problems: readonly string[];\n}',
+  },
+  {
+    name: 'WorkFlowVersionRecord',
+    declaration: 'export interface WorkFlowVersionRecord {\n    readonly workflowId: string;\n    readonly version: number;\n    readonly name: string;\n    readonly scope: WorkFlowScope;\n    readonly definition: WorkFlowDefinition;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'Workspace',

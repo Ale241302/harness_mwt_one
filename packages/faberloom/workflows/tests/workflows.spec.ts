@@ -370,3 +370,16 @@ describe('FaberLoomWorkflows templates, export, and import', () => {
     await expect(workflows.importFlow(OWNER, brokenJson)).rejects.toThrow('no es válido')
   })
 })
+
+describe('FaberLoomWorkflows versions', () => {
+  it('F10 · lists versions and restores an earlier graph', async () => {
+    const { workflows } = await harness()
+    const flow = await workflows.create(OWNER, { name: 'v1', definition: simple })
+    await workflows.update(OWNER, flow.id, { name: 'v2' })
+    expect((await workflows.versions(OWNER, flow.id)).map(row => row.version)).toEqual([2, 1])
+    const restored = await workflows.restore(OWNER, flow.id, 1)
+    expect(restored.name).toBe('v1')
+    expect(restored.version).toBe(3)
+    await expect(workflows.restore(OWNER, flow.id, 99)).rejects.toThrow('version 99 not found')
+  })
+})

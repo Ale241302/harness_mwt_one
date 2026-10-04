@@ -186,6 +186,22 @@ export interface WorkFlowRecord {
   readonly updatedAt: string
 }
 
+/** One stored, immutable version of a work flow, keyed by `${id}:${version}`. */
+export interface WorkFlowVersionRecord {
+  /** Owning work flow id. */
+  readonly workflowId: string
+  /** Version number. */
+  readonly version: number
+  /** Display name at that version. */
+  readonly name: string
+  /** Scope at that version. */
+  readonly scope: WorkFlowScope
+  /** Graph at that version. */
+  readonly definition: WorkFlowDefinition
+  /** ISO-8601 instant that version was written. */
+  readonly createdAt: string
+}
+
 /** Input accepted when creating one work flow; the actor supplies ownership. */
 export interface CreateWorkFlowInput {
   /** Display name. */

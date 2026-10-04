@@ -55,7 +55,7 @@ import type {
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
-  FaberLoomWorkflowTemplateRow,
+  FaberLoomWorkflowTemplateRow, FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -70,6 +70,7 @@ import type {
 } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant } from '@deepseek-ai/dsh-faberloom-shares'
 import type { FaberLoomExecutions } from '@deepseek-ai/dsh-faberloom-execution'
+import type { FaberLoomContext, FaberLoomContextEntry } from '@deepseek-ai/dsh-faberloom-context'
 
 export type * from './types.ts'
 
@@ -671,6 +672,28 @@ export class FaberLoomViewService extends TypertRemoteService {
     return service
   }
 
+  /** Resolve the mounted context service, or fail loud. */
+  private contextService(): FaberLoomContext {
+    const service = this.ctx.get('faberloomContext')
+    if (service === undefined) throw new Error('faberloom: el servicio de Contexto no está montado')
+    return service
+  }
+
+  /** Map one stored context entry to its panel row. */
+  private contextRow(entry: FaberLoomContextEntry): FaberLoomContextRow {
+    return {
+      id: entry.id,
+      spaceId: entry.spaceId,
+      title: entry.title,
+      body: entry.body,
+      version: entry.version,
+      visibility: entry.visibility,
+      authorId: entry.authorId,
+      ownerId: entry.ownerId,
+      updatedAt: entry.updatedAt,
+    }
+  }
+
   /** The workflow actor derived from the signed-in identity. */
   private workflowActor(): WorkFlowActor { return { id: this.actor().id } }
 
@@ -1081,6 +1104,132 @@ export class FaberLoomViewService extends TypertRemoteService {
   async importWorkflow(json: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]> {
     await this.workflowsService().importFlow(this.workflowActor(), json, name)
     return await this.workflowOverview()
+  }
+
+  /**
+   * List one work flow's version history, newest first.
+   * @param id - work flow id.
+   * @returns the versions.
+   */
+  @Remote('workflowVersions')
+  async workflowVersions(id: string): Promise<readonly FaberLoomWorkflowVersionRow[]> {
+    const rows = await this.workflowsService().versions(this.workflowActor(), id as WorkFlowId)
+    return rows.map(row => ({
+      version: row.version,
+      name: row.name,
+      nodes: row.definition.nodes.length,
+      edges: row.definition.edges.length,
+      createdAt: row.createdAt,
+    }))
+  }
+
+  /**
+   * Restore one work flow to an earlier version.
+   * @param id - work flow id.
+   * @param version - version to restore.
+   * @returns the refreshed detail.
+   */
+  @Remote('restoreWorkflow')
+  async restoreWorkflow(id: string, version: number): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().restore(this.workflowActor(), id as WorkFlowId, version)
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * List the context entries the actor may see, newest first.
+   * @returns the visible context rows.
+   */
+  @Remote('contextEntries')
+  async contextEntries(): Promise<readonly FaberLoomContextRow[]> {
+    return (await this.contextService().list({ id: this.actor().id })).map(row => this.contextRow(row))
+  }
+
+  /**
+   * Create one context entry, optionally attached to a Space.
+   * @param title - display title.
+   * @param body - context body.
+   * @param spaceId - optional Space to attach it to.
+   * @returns the refreshed rows.
+   */
+  @Remote('createContext')
+  async createContext(title: string, body: string, spaceId?: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().create({ id: this.actor().id }, {
+      title,
+      body,
+      spaceId: spaceId === undefined || spaceId.length === 0 ? null : spaceId,
+    })
+    return await this.contextEntries()
+  }
+
+  /**
+   * Edit one context entry, appending a version.
+   * @param id - entry id.
+   * @param title - new title.
+   * @param body - new body.
+   * @returns the refreshed rows.
+   */
+  @Remote('updateContext')
+  async updateContext(id: string, title: string, body: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().update({ id: this.actor().id }, id, { title, body })
+    return await this.contextEntries()
+  }
+
+  /**
+   * List one context entry's version history.
+   * @param id - entry id.
+   * @returns the versions.
+   */
+  @Remote('contextVersions')
+  async contextVersions(id: string): Promise<readonly FaberLoomContextVersionRow[]> {
+    const rows = await this.contextService().versions({ id: this.actor().id }, id)
+    return rows.map(row => ({
+      version: row.version, title: row.title, body: row.body, authorId: row.authorId, createdAt: row.createdAt,
+    }))
+  }
+
+  /**
+   * Restore one context entry to an earlier version.
+   * @param id - entry id.
+   * @param version - version to restore.
+   * @returns the refreshed rows.
+   */
+  @Remote('restoreContext')
+  async restoreContext(id: string, version: number): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().restore({ id: this.actor().id }, id, version)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Index one context entry into its Space's shared context.
+   * @param id - entry id.
+   * @returns the refreshed rows.
+   */
+  @Remote('approveContext')
+  async approveContext(id: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().approve({ id: this.actor().id }, id)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Keep one context entry private to its author.
+   * @param id - entry id.
+   * @returns the refreshed rows.
+   */
+  @Remote('rejectContext')
+  async rejectContext(id: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().reject({ id: this.actor().id }, id)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Remove one context entry and its history.
+   * @param id - entry id.
+   * @returns the refreshed rows.
+   */
+  @Remote('removeContext')
+  async removeContext(id: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().remove({ id: this.actor().id }, id)
+    return await this.contextEntries()
   }
 
   /**

@@ -61,6 +61,9 @@
     },
     {
       "path": "../execution"
+    },
+    {
+      "path": "../context"
     }
   ]
 }

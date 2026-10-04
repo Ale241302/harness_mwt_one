@@ -50,6 +50,7 @@
     "@deepseek-ai/dsh-faberloom-view": "workspace:^",
     "@deepseek-ai/dsh-faberloom-workflows": "workspace:^",
     "@deepseek-ai/dsh-faberloom-shares": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-context": "workspace:^",
     "@deepseek-ai/dsh-client-ui-faberloom": "workspace:^",
     "@deepseek-ai/dsh-tool-faberloom": "workspace:^"
   },
