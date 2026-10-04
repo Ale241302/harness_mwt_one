@@ -526,6 +526,7 @@ describe('faberloom work-flow canvas', () => {
     })
 
     act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(view.getByRole('button', { name: 'Templates' }))
     await view.findByRole('option', { name: 'Anti-spam' })
     fireEvent.change(view.getByRole('combobox', { name: 'Templates' }), { target: { value: 'anti-spam' } })
     await waitFor(() => {
@@ -651,6 +652,7 @@ describe('faberloom work-flow canvas', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
     await waitFor(() => { expect(workflowTemplates).toHaveBeenCalled() })
 
+    fireEvent.click(view.getByRole('button', { name: 'Templates' }))
     // Using the gallery without picking a template does nothing.
     fireEvent.click(view.getByRole('button', { name: 'Use template' }))
     expect(createWorkflowFromTemplate).not.toHaveBeenCalled()
@@ -662,6 +664,7 @@ describe('faberloom work-flow canvas', () => {
     fireEvent.click(view.getByRole('button', { name: 'Use template' }))
     await waitFor(() => { expect(createWorkflowFromTemplate).toHaveBeenCalledWith('anti-spam', undefined) })
 
+    fireEvent.click(view.getByRole('button', { name: 'Templates' }))
     const file = { text: async () => '{"format":"faberloom-workflow"}' } as unknown as File
     fireEvent.change(view.getByLabelText('Import JSON'), { target: { files: [file] } })
     await waitFor(() => { expect(importWorkflow).toHaveBeenCalledWith('{"format":"faberloom-workflow"}', undefined) })

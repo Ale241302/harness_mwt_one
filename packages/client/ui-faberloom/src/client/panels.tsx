@@ -3144,6 +3144,7 @@ function workflowsScreen() {
     const [logsOpen, setLogsOpen] = useState(false)
     const [shareOpen, setShareOpen] = useState(false)
     const [nodeOpen, setNodeOpen] = useState(false)
+    const [templatesOpen, setTemplatesOpen] = useState(false)
     const [nodeTab, setNodeTab] = useState<'node' | 'connections' | 'routines'>('node')
     const [routinePick, setRoutinePick] = useState('')
     const dragging = useRef<string | null>(null)
@@ -3400,29 +3401,13 @@ function workflowsScreen() {
             if (flowName.trim().length === 0) return
             void workflows.create(flowName.trim()).then((result) => { acceptFlows(result); if (result.ok) setFlowName('') })
           }}>{t('wf.create')}</button>
+          <button type="button" onClick={() => { setTemplatesOpen(true) }}>{t('wf.templates')}</button>
           {flows.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.empty')}</span> : null}
           {flows.map(flow => (
             <button key={flow.id} type="button" className={`${styles.workflowFlowButton} ${selected === flow.id ? styles.workflowFlowButtonActive : ''}`} onClick={() => { setSelected(flow.id) }}>
               {flow.name} · {flow.status} · {flow.nodes}/{flow.edges}
             </button>
           ))}
-          <div className={styles.workflowTemplates}>
-            <span>{t('wf.templates')}</span>
-            <select aria-label={t('wf.templates')} value={templateId} onChange={(event) => { setTemplateId(event.target.value) }}>
-              <option value="">{t('wf.templates.pick')}</option>
-              {templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
-            </select>
-            <button type="button" onClick={() => { useTemplate() }}>{t('wf.templates.use')}</button>
-            <label className={styles.workflowImport}>
-              {t('wf.import')}
-              <input type="file" accept="application/json,.json" onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file === undefined) return
-                void file.text().then(text => workflows.importFlow(text)).then((result) => { acceptFlows(result) })
-                event.target.value = ''
-              }} />
-            </label>
-          </div>
         </aside>
         <main className={styles.workflowMain}>
           {message !== null ? <div className={styles.workflowMessage}>{message}</div> : null}
@@ -3439,7 +3424,9 @@ function workflowsScreen() {
                 <input aria-label={t('wf.concurrency')} placeholder={t('wf.concurrency')} value={concurrency}
                   onChange={(event) => { setConcurrency(event.target.value) }} />
                 <button type="button" onClick={() => { saveConcurrency(selected) }}>{t('wf.concurrency.save')}</button>
-                {selectedSpaceName === null ? null : <span className={styles.workflowSpaceLabel}>{t('wf.space')}: {selectedSpaceName}</span>}
+                {selectedSpaceName === null
+                  ? <span className={styles.workflowSpaceLabel}>{t('wf.space')}: {t('wf.personal')}</span>
+                  : <span className={styles.workflowSpaceLabel}>{t('wf.space')}: {selectedSpaceName}</span>}
               </div>
               {selectedHealth === null ? null : (
                 <div className={styles.workflowInspector}>
@@ -3705,7 +3692,7 @@ function workflowsScreen() {
                   </div>
                 ) : null}
               </Modal>
-              {/* Connections, the Space map, and the routine links live in the Logs modal. */}
+              {/* Run history and health live in the Logs modal. */}
               <Modal open={logsOpen} onClose={() => { setLogsOpen(false) }} title={t('wf.runs')} closeLabel={t('action.close')}>
                 {selectedHealth === null ? null : (
                   <div className={styles.workflowHealthRow}>
@@ -3753,6 +3740,28 @@ function workflowsScreen() {
               </Modal>
             </>
           )}
+          <Modal open={templatesOpen} onClose={() => { setTemplatesOpen(false) }} title={t('wf.templates')} closeLabel={t('action.close')}>
+            <div className={styles.workflowForm}>
+              <Field label={t('wf.templates')}>
+                <select aria-label={t('wf.templates')} value={templateId} onChange={(event) => { setTemplateId(event.target.value) }}>
+                  <option value="">{t('wf.templates.pick')}</option>
+                  {templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
+                </select>
+              </Field>
+              <button type="button" className={styles.primary} disabled={templateId.length === 0} onClick={() => { useTemplate(); setTemplatesOpen(false) }}>{t('wf.templates.use')}</button>
+              <Field label={t('wf.import')}>
+                <input type="file" accept="application/json,.json" onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file === undefined) return
+                  void file.text().then(text => workflows.importFlow(text)).then((result) => {
+                    acceptFlows(result)
+                    setTemplatesOpen(false)
+                  })
+                  event.target.value = ''
+                }} />
+              </Field>
+            </div>
+          </Modal>
         </main>
       </div>
     )
