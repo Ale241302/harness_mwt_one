@@ -104,7 +104,13 @@ async function bench(
   const removeConnection = vi.fn(async () => ({ ok: true, value: [] }))
   const probeConnection = vi.fn(async () => ({ ok: true, value: { ok: true, detail: 'ok' } }))
   const workflowOverview = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
-  const workflowDetail = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const workflowDetail = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: {
+      id: 'wf1', name: 'flujo', status: 'draft', version: 1, routineId: null,
+      valid: true, problems: [], maxConcurrency: null, nodesList: [], edgesList: [],
+    },
+  }))
   const createWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const saveWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const addNode = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
@@ -562,8 +568,9 @@ describe('faberloom work-flow canvas', () => {
     urlAny.createObjectURL = vi.fn(() => 'blob:x')
     try {
       act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
-      expect(await view.findByText('No flows yet')).toBeTruthy()
-      expect(view.getByText('Select a flow')).toBeTruthy()
+      // The first flow is selected on load, so its graph is on screen.
+      expect(await view.findByText(/Anti-spam/)).toBeTruthy()
+      expect(await view.findByText('clasifica')).toBeTruthy()
 
       fireEvent.click(view.getByRole('button', { name: 'New flow' }))
       expect(createWorkflow).not.toHaveBeenCalled()
@@ -686,7 +693,7 @@ describe('faberloom work-flow canvas', () => {
     })
 
     act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
-    fireEvent.click(await view.findByText(/Anti-spam/))
+    fireEvent.click(await view.findByRole('button', { name: /Anti-spam · draft/ }))
     expect(await view.findByText('Vigía → Anti-spam')).toBeTruthy()
 
     const concurrencyBox = view.getByRole('textbox', { name: 'Max concurrency' }) as HTMLInputElement

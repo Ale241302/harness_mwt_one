@@ -3045,7 +3045,12 @@ function workflowsScreen() {
     }
 
     useEffect(() => {
-      void workflows.overview().then((result) => { if (result.ok) setFlows(result.value) }).catch(() => undefined)
+      void workflows.overview().then((result) => {
+        if (!result.ok) return
+        setFlows(result.value)
+        const first = result.value[0]
+        if (first !== undefined) setSelected(current => current ?? first.id)
+      }).catch(() => undefined)
       void workflows.topology().then((result) => { if (result.ok) setTopology(result.value) }).catch(() => undefined)
       void workflows.links().then((result) => { if (result.ok) setLinks(result.value) }).catch(() => undefined)
       void workflows.health().then((result) => { if (result.ok) setHealth(result.value) }).catch(() => undefined)
