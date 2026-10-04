@@ -206,7 +206,42 @@ function prometheus(extra) {
     '# TYPE gateway_instances gauge',
     `gateway_instances ${extra.instances}`,
   ]
+  const families = [
+    ['runs', 'faberloom_workflow_runs'],
+    ['failures', 'faberloom_workflow_failures'],
+    ['needs_review', 'faberloom_workflow_needs_review'],
+    ['waiting', 'faberloom_workflow_waiting'],
+    ['retries', 'faberloom_workflow_retries'],
+    ['dead_lettered', 'faberloom_workflow_dead_lettered'],
+    ['alerts', 'faberloom_workflow_alerts'],
+  ]
+  for (const [key, name] of families) {
+    lines.push(`# HELP ${name} FaberLoom workflow ${key.replace(/_/g, ' ')} per owner.`)
+    lines.push(`# TYPE ${name} gauge`)
+    for (const row of extra.faberloom ?? []) {
+      lines.push(`${name}{owner="${escapeLabel(row.ownerId)}"} ${Number(row.totals[key] ?? 0)}`)
+    }
+  }
   return `${lines.join('\n')}\n`
+}
+
+/** Escape a Prometheus label value. */
+function escapeLabel(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')
+}
+
+/** Read each user home's workflow metrics snapshot; missing files are skipped. */
+function faberloomMetrics() {
+  const out = []
+  let dirs = []
+  try { dirs = fs.readdirSync(cfg.dataDir) } catch { return out }
+  for (const id of dirs) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(path.join(cfg.dataDir, id, 'faberloom-metrics.json'), 'utf8'))
+      if (parsed && typeof parsed === 'object' && parsed.totals) out.push({ ownerId: String(parsed.ownerId ?? id), totals: parsed.totals })
+    } catch { /* no metrics snapshot yet */ }
+  }
+  return out
 }
 
 // ── M1/M6 · rate limiter en memoria (ventana deslizante de 60 s) ──────
@@ -1318,7 +1353,7 @@ app.get('/healthz', (_req, res) => {
 
 // M4 · métricas Prometheus para observabilidad por instancia.
 app.get('/metrics', (_req, res) => {
-  res.type('text/plain; version=0.0.4').send(prometheus({ instances: instances.size }))
+  res.type('text/plain; version=0.0.4').send(prometheus({ instances: instances.size, faberloom: faberloomMetrics() }))
 })
 
 // Marca del producto: el favicon de la app y del login es el logo MWT.ONE.
