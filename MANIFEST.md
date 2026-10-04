@@ -1,8 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-04-context` (commit `6565eed9eb56f91bf08daf75a46e0952163f84c5`: Work Flow Fases 0–9 — plantillas, export/import portátil, galería, salud/reintentos/dead-letter, compartir con permisos y programación; icono de Workflows y auto-selección del flujo nuevo; lint, duplicación, `test:docs` y `test:gui` en verde).
-**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `6565eed9eb56f91bf08daf75a46e0952163f84c5` (Work Flow completo hasta Fase 9; deploy caliente).
-**Verificado en el VPS:** 3 de octubre de 2026.
+**Tag de despliegue:** `deploy-2026-10-04-workspace-share` (commit `e99bd30dbfc7e5577432366d8b68cb7cb957326b`: compartir un Workspace desde su menú «…» con diálogo de correos y permisos, y sincronización de nombre Workspace↔Space mediante el evento `workspace/renamed`; lint, duplicación, `test:docs` y `test:gui` en verde).
+**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `e99bd30dbfc7e5577432366d8b68cb7cb957326b` (Fase 10 + Compartir Workspace y sync de renombrado; deploy caliente).
+**Verificado en el VPS:** 4 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
