@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-04-workspace-share` (commit `e99bd30dbfc7e5577432366d8b68cb7cb957326b`: compartir un Workspace desde su menú «…» con diálogo de correos y permisos, y sincronización de nombre Workspace↔Space mediante el evento `workspace/renamed`; lint, duplicación, `test:docs` y `test:gui` en verde).
-**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `e99bd30dbfc7e5577432366d8b68cb7cb957326b` (Fase 10 + Compartir Workspace y sync de renombrado; deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-04-shared-sessions` (commit `07fbcc94f12d1765a31c9297f76e95b895ca88b0`: sesiones compartidas por Space — capturadas en cada host, publicadas/importadas por la consola, con visor de solo lectura en Espacios; más Compartir Workspace y sync de renombrado; lint, duplicación, `test:docs` y `test:gui` en verde).
+**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `07fbcc94f12d1765a31c9297f76e95b895ca88b0` (Fase 10 + Compartir Workspace + Sesiones compartidas; deploy caliente).
 **Verificado en el VPS:** 4 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones

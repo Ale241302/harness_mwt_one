@@ -28,6 +28,10 @@
     - id: faberloom-context
       name: '@deepseek-ai/dsh-faberloom-context'
 
+    # Sesiones compartidas del Space: capturadas por cada miembro y sincronizadas por la consola.
+    - id: faberloom-session-shares
+      name: '@deepseek-ai/dsh-faberloom-session-shares'
+
     - id: faberloom-execution
       name: '@deepseek-ai/dsh-faberloom-execution'
 
