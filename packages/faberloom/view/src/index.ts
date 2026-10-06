@@ -80,6 +80,7 @@ import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-a
 // Type-only: pulls the ctx.sessionQuery merge for cross-member Session capture.
 import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-session-persistence'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session/types'
 
 export type * from './types.ts'
@@ -468,6 +469,35 @@ function readStringMap(value: unknown): SpaceContext | undefined {
   return out
 }
 
+/** Read the plain text of one message event's data (user or assistant), when it carries any. */
+function memoryMessageText(value: unknown): string {
+  const holder = value as { message?: { content?: unknown }; content?: unknown } | undefined
+  const content = holder?.message?.content ?? holder?.content
+  if (typeof content === 'string') return content.trim()
+  if (!Array.isArray(content)) return ''
+  const parts: string[] = []
+  for (const part of content) {
+    if (typeof part === 'string') { parts.push(part); continue }
+    const text = (part as { text?: unknown } | null)?.text
+    if (typeof text === 'string' && text.length > 0) parts.push(text)
+  }
+  return parts.join('\n').trim()
+}
+
+/** The Space-memory text of one Session: its last question and result, bounded. */
+function sessionTurnMemory(events: readonly SessionEvent[]): string {
+  let question = ''
+  let result = ''
+  for (const event of events) {
+    if (event.type === 'user/message') question = memoryMessageText(event.data)
+    else if (event.type === 'assistant/message') result = memoryMessageText(event.data)
+  }
+  const parts: string[] = []
+  if (question.length > 0) parts.push(`Pregunta: ${question}`)
+  if (result.length > 0) parts.push(`Resultado: ${result}`)
+  return parts.join('\n\n').slice(0, 4000)
+}
+
 /** Read a Work Flow scope value, or undefined when it is not one. */
 function readScope(value: unknown): WorkFlowScope | undefined {
   const scope = readObject(value)
@@ -551,6 +581,39 @@ export class FaberLoomViewService extends TypertRemoteService {
         ctx.logger.warn(`faberloom: could not rename the space of a renamed workspace: ${String(error)}`)
       })
     }), 'faberloom.view.workspace-renamed')
+    // A completed turn in a Space's area holds a durable fact the next session
+    // should recall, so capture it into the Space's memory (not the chat log).
+    ctx.effect(() => ctx.on('session/event', (session, event) => {
+      if (event.type !== 'turn/end') return
+      if (event.data.reason.kind !== 'completed') return
+      void this.captureTurnToMemory(session).catch((error: unknown) => {
+        ctx.logger.warn(`faberloom: no se pudo guardar el turno en la memoria del Space: ${String(error)}`)
+      })
+    }), 'faberloom.view.session-memory')
+  }
+
+  /**
+   * Remember one finished turn as the Space's memory: resolve the Session's area
+   * to its Space and store the last question and result, skipping repeats. A
+   * turn outside a Space's area, or with no text, stores nothing.
+   * @param session - the Session whose turn just ended.
+   */
+  private async captureTurnToMemory(session: Session): Promise<void> {
+    const cwd = session.header.cwd
+    if (cwd === undefined) return
+    const registry = this.workspaceRegistryOrUndefined()
+    if (registry === undefined) return
+    const workspace = await registry.resolveByPath(cwd)
+    if (workspace === undefined) return
+    const actor = this.actor()
+    const space = (await this.ctx.faberloomSpaces.list(actor))
+      .find(candidate => candidate.workspaceId === String(workspace.id))
+    if (space === undefined) return
+    const text = sessionTurnMemory(session.snapshotEvents())
+    if (text.length === 0) return
+    const existing = await this.ctx.faberloomSpaces.listMemory(actor, space.id)
+    if (existing.some(entry => entry.text === text)) return
+    await this.ctx.faberloomSpaces.remember(actor, text, [space.id])
   }
 
   /**

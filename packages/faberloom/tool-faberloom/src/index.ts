@@ -475,6 +475,13 @@ export function apply(ctx: Context, config: Config): void {
       order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 2,
       text: 'Si una tarea necesita el contexto de otro Space y no conoces su id, usa faberloom_spaces_find para localizarlo por texto y faberloom_spaces_reference para extraer su contexto, memoria y archivos; no inventes contexto. Por ejemplo, para redactar el reporte de Sondel con los formatos de documentos, busca el Space "formatos de documentos", resuélvelo y usa su plantilla. Una búsqueda vacía lista los Spaces más recientes. Enlaza siempre el Space por el id que devuelve faberloom_spaces_find.',
     }), 'tool-faberloom: spaces prompt')
+
+    // The memory rule: durable facts belong to the Space, not to the chat log.
+    ctx.effect(() => prompt.section({
+      name: 'faberloom:memory',
+      order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 3,
+      text: 'Cuando aprendas un hecho durable de este Space —un dato, una preferencia, una regla, una decisión o un resultado que deba recordarse en próximas sesiones— guárdalo con faberloom_spaces_remember, con el id del Space de esta área de trabajo (resuélvelo con faberloom_spaces_list o faberloom_spaces_find si no lo conoces). Guarda solo lo que aporte valor futuro, en texto breve y autosuficiente; no vuelques la conversación completa ni datos efímeros. Una corrección o lección se registra con faberloom_teaching_record.',
+    }), 'tool-faberloom: memory prompt')
   }
 
   ctx.tools.register(defineTool({
