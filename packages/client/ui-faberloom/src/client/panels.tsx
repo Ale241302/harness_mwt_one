@@ -38,7 +38,7 @@ import type {
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
   FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomWorkflowTemplateRow,
   FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
-  FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
+  FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow,
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
@@ -304,7 +304,6 @@ export interface FaberloomPanelInjected {
   }
   /** The shared Session catalog surface. */
   sessionsShare: {
-    capture: (spaceId: string, sessions: readonly FaberLoomSharedSessionRef[]) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
     list: (spaceId: string) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
     content: (spaceId: string, ownerId: string, sessionId: string) => Promise<Result<FaberLoomSharedSessionContentRow>>
     remove: (spaceId: string, ownerId: string, sessionId: string) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
@@ -423,7 +422,7 @@ function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
     const {
       t, createSpace, deleteSpace, goToWorkspace, spaceDetail, saveSpace, spaceWorkspace, startSpaceSession,
-      sessionsShare, useSessions, useWorkspaces,
+      sessionsShare,
     } = props
     const { overview, status, error } = useOverview(props)
     const [draft, setDraft] = useState('')
@@ -441,8 +440,6 @@ function spacesScreen() {
     const [shared, setShared] = useState<readonly FaberLoomSharedSessionRow[]>([])
     const [sharedOpen, setSharedOpen] = useState(false)
     const [sharedContent, setSharedContent] = useState('')
-    const sessionList = useSessions(state => state)
-    const workspaceItems = useWorkspaces(state => state.items)
     const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
     const rows = useMemo(
       () => (overview?.spaces ?? []).filter(space => space.title.toLowerCase().includes(query.trim().toLowerCase())),
@@ -472,24 +469,6 @@ function spacesScreen() {
       if (selected === null) { setShared([]); return }
       void sessionsShare.list(selected).then((result) => { if (result.ok) setShared(result.value) })
     }, [selected, sessionsShare])
-
-    /** Capture this host's Sessions of the Space's area, then re-list. */
-    const syncShared = (spaceId: string): void => {
-      setMessage(null)
-      const space = (overview?.spaces ?? []).find(row => row.id === spaceId)
-      const workspaceId = space?.workspaceId ?? null
-      const workspace = workspaceId === null ? undefined : workspaceItems.find(item => String(item.workspaceId) === workspaceId)
-      const refs: FaberLoomSharedSessionRef[] = []
-      for (const id of workspace?.sessionIds ?? []) {
-        const node = sessionList.byId[id]
-        if (node === undefined || node.blank) continue
-        refs.push({ id, title: node.title ?? '' })
-      }
-      void sessionsShare.capture(spaceId, refs).then((result) => {
-        if (result.ok) setShared(result.value)
-        else setMessage(result.error.message)
-      })
-    }
 
     /** Open one shared Session's read-only transcript. */
     const openShared = (session: FaberLoomSharedSessionRow): void => {
@@ -616,9 +595,6 @@ function spacesScreen() {
                           </span>
                         </Field>
                         <Field label={t('spaces.sharedSessions')} hint={t('spaces.sharedSessionsHint')}>
-                          <span className={styles.tools}>
-                            <button className={styles.secondary} type="button" disabled={detailValue === undefined} onClick={() => { if (detailValue !== undefined) syncShared(detailValue.id) }}>{t('spaces.syncSessions')}</button>
-                          </span>
                           {shared.length === 0
                             ? <span className={styles.cellMuted}>{t('spaces.noSharedSessions')}</span>
                             : shared.map(session => (

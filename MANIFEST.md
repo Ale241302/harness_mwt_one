@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-06-sessions-member-import-fix` (commit `f4c3b1f80583b5696e1fcb106b96374abe760873`: sobre la publicación al cargar, el pase de sesiones del `overview` ya no salta el Space importado del invitado —la condición estaba invertida— y se repite cada ≤30 s, así el invitado importa las sesiones nuevas del dueño al recargar).
-**Imagen desplegada actual:** build de `main` @ `f4c3b1f80583b5696e1fcb106b96374abe760873` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-06-sessions-no-republish` (commit `80fdc7cb4e8bafd43e5ee7f72bbc765db08ec369`: sobre el fix de importación, un miembro ya no re-publica como suyas las sesiones que importó del dueño —antes duplicaba la fila bajo su identidad en "Shared sessions"—; además se limpiaron en la consola las filas duplicadas existentes).
+**Imagen desplegada actual:** build de `main` @ `80fdc7cb4e8bafd43e5ee7f72bbc765db08ec369` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `f4c3b1f805` (6 oct 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `80fdc7cb4e` (6 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |

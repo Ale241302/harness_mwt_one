@@ -1387,6 +1387,9 @@ export class FaberLoomViewService extends TypertRemoteService {
           await handle.close()
         }
         await workspace.attachSession(header.id)
+        // Warm the title projection so the sidebar shows the author's title
+        // instead of falling back to the area id until the Session is opened.
+        await this.ctx.get('sessionQuery')?.readTitle(header.id).catch(() => undefined)
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: no se pudo materializar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
       }
