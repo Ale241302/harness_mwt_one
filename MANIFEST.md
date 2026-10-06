@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-06-live-shared-content` (commit `639ed43424099da74622db7f177a0a1bd486d4a9`: sobre la compartición por Space, el dueño **refresca** en cada carga (con estrangulamiento) el snapshot que viaja a la consola con sus entradas de **Context**, sus **Work Flows** y las **Routines** que estos compilan, y el invitado las materializa como copias que **convergen por título/nombre** en cada refresco; así el invitado ve el contenido del dueño —y no un panel vacío— al recargar).
-**Imagen desplegada actual:** build de `main` @ `639ed43424099da74622db7f177a0a1bd486d4a9` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-06-session-deletion-sync` (commit `72edd789c4a0fa7fa3c0f7fd2a7dae016383e669`: sobre el contenido compartido en vivo, (1) el dueño trata una sesión como viva **solo si su log existe y no está archivada**, desliga el hueco colgante en `sessionIds` y **retira del catálogo** la fila obsoleta, y (2) el espejo **no resucita** ids archivados y **poda** la copia local que el catálogo ya no ofrece; así el borrado del dueño desaparece en el invitado y las sesiones de ambos fluyen en los dos sentidos).
+**Imagen desplegada actual:** build de `main` @ `72edd789c4a0fa7fa3c0f7fd2a7dae016383e669` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `639ed43424` (6 oct 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `72edd789c4` (6 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
