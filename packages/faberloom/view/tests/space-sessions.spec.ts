@@ -21,9 +21,19 @@ function harness(options: { query?: boolean; workspaceId?: string | null } = {})
     sync: vi.fn(async (_readerId: string) => undefined),
   }
   const query = { readSession: vi.fn(async () => ({ session: { id: 's1' }, events: [{ type: 'user/message' }] })), readTitle: vi.fn(async () => ({ title: 'Título del log' })) }
+  const shares = {
+    list: vi.fn(async () => ({ outgoing: [] as unknown[], incoming: [] as unknown[] })),
+    create: vi.fn(async () => ({})),
+    can: vi.fn(async () => true),
+  }
+  const workflows = { list: vi.fn(async () => [] as unknown[]) }
+  const registry = { get: vi.fn((id: string) => id === 'ws-1' ? { sessionIds: ['s1'] } : undefined) }
   const ctx = {
-    faberloomSpaces: { get: vi.fn(async () => ({ id: 'sp-1', title: 'SICOP', ownerId: 'owner@muitowork.com', workspaceId: options.workspaceId === undefined ? 'ws-1' : options.workspaceId })) },
-    faberloomShares: { can: vi.fn(async () => true) },
+    faberloomSpaces: {
+      get: vi.fn(async () => ({ id: 'sp-1', title: 'SICOP', ownerId: 'owner@muitowork.com', workspaceId: options.workspaceId === undefined ? 'ws-1' : options.workspaceId })),
+      listMemory: vi.fn(async () => [] as unknown[]),
+    },
+    faberloomShares: shares,
     provide: () => {},
     reflect: { provide: () => {} },
     on: vi.fn(() => () => {}),
@@ -32,11 +42,14 @@ function harness(options: { query?: boolean; workspaceId?: string | null } = {})
     get: (name: string) => {
       if (name === 'faberloomSessionShares') return catalog
       if (name === 'sessionQuery') return options.query === false ? undefined : query
+      if (name === 'faberloomShares') return shares
+      if (name === 'faberloomWorkflows') return workflows
+      if (name === 'workspaceRegistry') return registry
       return undefined
     },
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
-  return { view, catalog, query }
+  return { view, catalog, query, shares, registry }
 }
 
 describe('FaberLoomViewService shared Sessions', () => {
@@ -87,6 +100,16 @@ describe('FaberLoomViewService shared Sessions', () => {
     const noWorkspace = harness({ workspaceId: null })
     await noWorkspace.view.captureSpaceSessions('sp-1', [{ id: 's1', title: 'X' }])
     expect(noWorkspace.catalog.capture.mock.calls[0]?.[1]).toMatchObject({ workspaceId: null })
+  })
+
+  it('publishes the area Sessions when the Space is shared, so the member reads them', async () => {
+    const { view, catalog, shares } = harness()
+    await view.shareSpace('sp-1', ['guest@x'], ['view'])
+    expect(shares.create).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ resource: { kind: 'space', id: 'sp-1' } }))
+    await vi.waitFor(() => expect(catalog.capture).toHaveBeenCalledWith(
+      { id: 'owner@muitowork.com' },
+      expect.objectContaining({ spaceId: 'sp-1', sessionId: 's1', workspaceId: 'ws-1' }),
+    ))
   })
 
   it('fails loud when the shared-Session catalog is not mounted', async () => {    const ctx = {

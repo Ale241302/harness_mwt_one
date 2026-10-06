@@ -18,6 +18,8 @@ harness 在每个 grant 中发布 `resource_id: input.resource.id`，因此控�
 
 受邀侧会导入并物化它所接受的内容。`shareSpace` 随 grant 发布一个可移植快照——Space 的标题与上下文、其 Memory 条目、其 Context 条目、其 Space 作用域的 Work Flow，以及这些流程所依托的 Routine；`shareWorkflow` 则发布 `{ scope, definition }`。视图的 `overview` 每进程调用一次 `FaberLoomShares.sync`，并对每个 active 的来向 grant 通过 `FaberLoomShares.snapshotFor` 读取快照。Space 用 `faberloomSpaces.importShared` 以远程资源 id 物化、归发布者所有，因此同一个 grant 即可授权它；同时为受邀者镜像一个侧边栏 Workspace，并把它的 Memory、Context 条目、Work Flow 和 Routine 重建为受邀者自己的副本，其中文本、标题、名称已存在者会跳过，因此重复 sync 或再次共享只会新增内容。Work Flow 用 `faberloomWorkflows.importShared` 以远程 id 物化。没有发布快照的 grant 会被跳过，因此旧邀请不会物化出空资源。控制台会把作为文本返回的 `jsonb` `payload` 归一化为对象，`sync` 也会防御性地解析文本 payload。
 
+Space 的对话 Session 随 grant 一起传递。控制台通过 `HarnessSessionViewSet` 把它们存进 `core.harness_shared_session`，路径为 `{CONSOLA_API_BASE}/harness/sessions/`：作者按 `(owner_email, space_id, session_id)` POST 一行并带上可移植日志，active 的受邀者或 Space 所有者列出收到的行，两者都可 DELETE。`shareSpace` 通过 `ctx.faberloomSessionShares.capture` 发布该区域的 Session——尽最大努力、不在共享的关键路径上，因此缓慢或未接线的目录绝不会让 grant 失败——受邀者的 `spaceSessions` 从控制台同步并在 Space 下列出它们。`M2_harness_shared_session.sql` 是新增该表的幂等迁移。
+
 网关在启动时、以及 `refreshConsolaAccess` 轮换时，把用户当前的控制台 JWT 写入 `<DSH_HOME>/.consola-token`，注入 `CONSOLA_TOKEN_FILE`，并通过 `NODE_OPTIONS` 把 `gateway/consola-token-watch.mjs` 预加载进每个 `dsh`。该 watcher 每分钟把文件重新读入 `process.env.CONSOLA_TOKEN`，同时网关每五分钟在过期前刷新每个已存 token。各服务本就每次调用都读 `process.env.CONSOLA_TOKEN`，因此环境不会失效。
 
 ## Alternatives considered
@@ -32,4 +34,4 @@ harness 在每个 grant 中发布 `resource_id: input.resource.id`，因此控�
 
 共享一个 Space 或 Work Flow 会到达控制台，并存入一个可按 id 寻址的 grant，带有其权限与状态；agents/skills 不变。`dsh` 的控制台 token 在进程存活期间不再过期，这同时修复了邮件附件以及共享 Session/上下文的控制台调用。
 
-接受邀请会把控制台的 grant 标记为 active，受邀者的下一次 overview 会导入该 grant 并以远程 id 物化共享的 Space/Work Flow。共享的 Space 还会作为侧边栏 Workspace 出现，它的 Memory、Context、Work Flow 与 Routine 会复制给受邀者。复制的 Work Flow 以 `draft` 物化，复制的 Routine 可能引用发布者的 connection id，因此它可能出现在 Routine 面板中而在受邀者主机上没有可用的邮箱；共享的 Space 只带上下文，不携带附件。
+接受邀请会把控制台的 grant 标记为 active，受邀者的下一次 overview 会导入该 grant 并以远程 id 物化共享的 Space/Work Flow。共享的 Space 还会作为侧边栏 Workspace 出现，它的 Memory、Context、Work Flow 与 Routine 会复制给受邀者。复制的 Work Flow 以 `draft` 物化，复制的 Routine 可能引用发布者的 connection id，因此它可能出现在 Routine 面板中而在受邀者主机上没有可用的邮箱；共享的 Space 只带上下文，不携带附件。该 Space 的区域 Session 会随 grant 一起发布，受邀者在 Space 的共享 Session 列表下读取；从 Spaces 面板直接捕获会更新同一批行。

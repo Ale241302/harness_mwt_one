@@ -1286,7 +1286,39 @@ export class FaberLoomViewService extends TypertRemoteService {
     for (const email of emails) {
       await shares.create(actor.id, { resource: { kind: 'space', id }, resourceName: space.title, granteeEmail: email, permissions, snapshot })
     }
+    // Publish the area's conversation Sessions beside the Space, so the member
+    // reads them the same way the snapshot carries its other resources. Best
+    // effort and off the share's critical path: a slow catalog never fails the grant.
+    void this.publishSpaceSessions(actor, space).catch((error: unknown) => {
+      this.ctx.logger.warn(`faberloom: no se pudieron publicar las sesiones del espacio '${space.title}': ${error instanceof Error ? error.message : String(error)}`)
+    })
     return await this.outgoingGrantRows('space', id)
+  }
+
+  /**
+   * Publish a Space's conversation Sessions to the shared catalog so the grantee
+   * reads them under the Space. A deployment without the shared-Session catalog,
+   * or a Space with no area, publishes none.
+   * @param actor - the Space's owner, sharing the grant.
+   * @param space - the shared Space.
+   */
+  private async publishSpaceSessions(actor: SpaceActor, space: FaberLoomSpace): Promise<void> {
+    if (space.workspaceId === undefined) return
+    const workspace = this.workspaceRegistryOrUndefined()?.get(space.workspaceId as WorkspaceId)
+    if (workspace === undefined) return
+    const catalog = this.ctx.get('faberloomSessionShares')
+    if (catalog === undefined) return
+    for (const sessionId of workspace.sessionIds) {
+      const artifact = await this.readSessionArtifact(sessionId)
+      await catalog.capture({ id: actor.id }, {
+        spaceId: space.id,
+        sessionId,
+        title: artifact.title ?? sessionId,
+        workspaceId: space.workspaceId,
+        messageCount: artifact.messageCount,
+        content: artifact.content,
+      })
+    }
   }
 
   /**
