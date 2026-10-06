@@ -3920,9 +3920,16 @@ function workflowsScreen() {
 }
 
 /** Contexto: the versioned, approvable Workspace/Space context, separate from Memory. */
+/** Name one context entry's Space, or the personal scope, without leaking ids. */
+function contextSpaceName(t: ScreenProps['t'], spaces: readonly { readonly id: string; readonly title: string }[], id: string | null): string {
+  if (id === null) return t('ctx.personal')
+  return spaces.find(space => space.id === id)?.title ?? t('memory.deletedSpace')
+}
+
 function contextScreen() {
   return function FaberloomContext(props: ScreenProps) {
     const { t } = props
+    const { overview } = useOverview(props)
     const list = useLazy<readonly FaberLoomContextRow[]>(() => props.context.entries(), [])
     const [rows, setRows] = useState<readonly FaberLoomContextRow[]>([])
     const [selected, setSelected] = useState<string | null>(null)
@@ -3930,9 +3937,15 @@ function contextScreen() {
     const [body, setBody] = useState('')
     const [newTitle, setNewTitle] = useState('')
     const [newBody, setNewBody] = useState('')
+    const [spaceId, setSpaceId] = useState('')
     const [versions, setVersions] = useState<readonly FaberLoomContextVersionRow[]>([])
     const [message, setMessage] = useState<string | null>(null)
     useEffect(() => { if (list.kind === 'ready') setRows(list.value) }, [list])
+
+    const visibilityLabel = (visibility: string): string =>
+      visibility === 'shared' ? t('ctx.visibility.shared')
+        : visibility === 'pending' ? t('ctx.visibility.pending')
+          : t('ctx.visibility.local')
 
     const apply = (result: Result<readonly FaberLoomContextRow[]>): void => {
       if (result.ok) { setRows(result.value); setMessage(null) } else setMessage(result.error.message)
@@ -3948,7 +3961,7 @@ function contextScreen() {
     }
     const create = (): void => {
       if (newTitle.trim().length === 0) return
-      void props.context.create(newTitle.trim(), newBody).then((result) => {
+      void props.context.create(newTitle.trim(), newBody, spaceId.length === 0 ? undefined : spaceId).then((result) => {
         apply(result)
         if (result.ok) { setNewTitle(''); setNewBody('') }
       })
@@ -3966,18 +3979,25 @@ function contextScreen() {
       <Screen title={t('ctx.title')} subtitle={t('ctx.subtitle')} trailing={<Feedback t={t} message={message} />}>
         <div className={styles.workflowScreen}>
           <aside className={styles.workflowSidebar}>
+            <p className={styles.hint}>{t('ctx.createHint')}</p>
+            <select className={styles.paneSearch} value={spaceId} aria-label={t('ctx.space')} onChange={(event) => { setSpaceId(event.target.value) }}>
+              <option value="">{t('ctx.personal')}</option>
+              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+            </select>
             <input value={newTitle} placeholder={t('ctx.newPlaceholder')} onChange={(event) => { setNewTitle(event.target.value) }} />
             <input value={newBody} placeholder={t('ctx.bodyPlaceholder')} onChange={(event) => { setNewBody(event.target.value) }} />
             <button type="button" className={styles.primary} onClick={() => { create() }}>{t('ctx.create')}</button>
             {rows.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.empty')}</span> : rows.map(row => (
               <button key={row.id} type="button" className={`${styles.workflowFlowButton} ${selected === row.id ? styles.workflowFlowButtonActive : ''}`} onClick={() => { open(row) }}>
-                {row.title} · {row.visibility} · {String(row.version)}
+                {row.title} · {visibilityLabel(row.visibility)} · v{String(row.version)} ·{' '}
+                {contextSpaceName(t, overview?.spaces ?? [], row.spaceId)}
               </button>
             ))}
           </aside>
           <main className={styles.workflowMain}>
             {selected === null ? <span>{t('ctx.select')}</span> : (
               <>
+                <h4>{t('ctx.detail')}</h4>
                 <div className={styles.workflowForm}>
                   <Field label={t('ctx.title')}>
                     <input aria-label={t('ctx.title')} value={title} onChange={(event) => { setTitle(event.target.value) }} />
@@ -3991,12 +4011,15 @@ function contextScreen() {
                     <button type="button" onClick={() => { void props.context.reject(selected).then(apply) }}>{t('ctx.reject')}</button>
                     <button type="button" onClick={() => { void props.context.remove(selected).then((result) => { apply(result); setSelected(null) }) }}>{t('ctx.remove')}</button>
                   </div>
+                  <p className={styles.hint}>{t('ctx.approveHint')}</p>
                 </div>
                 <section className={styles.workflowSection}>
                   <h4>{t('ctx.versions')}</h4>
                   {versions.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.noVersions')}</span> : versions.map(version => (
                     <div key={version.version} className={styles.workflowRunRow}>
-                      <span>{String(version.version)} · {version.title} · {version.createdAt}</span>
+                      <span className={styles.cellMuted}>
+                        {`v${String(version.version)} · ${version.authorId} · ${version.createdAt}`}
+                      </span>
                       <button type="button" onClick={() => { restore(version.version) }}>{t('ctx.restore')}</button>
                     </div>
                   ))}
@@ -4052,6 +4075,7 @@ function workflowDiffLines(base: FaberLoomWorkflowGraph, proposed: FaberLoomWork
 function approvalsScreen() {
   return function FaberloomApprovals(props: ScreenProps) {
     const { t, context, approvals } = props
+    const { overview } = useOverview(props)
     const [contextRows, setContextRows] = useState<readonly FaberLoomContextRow[]>([])
     const [changes, setChanges] = useState<readonly FaberLoomWorkflowPendingRow[]>([])
     const [message, setMessage] = useState<string | null>(null)
@@ -4062,11 +4086,15 @@ function approvalsScreen() {
     }, [approvals])
 
     const pendingContext = contextRows.filter(row => row.visibility === 'pending')
+    const preview = (text: string): string => {
+      const flat = text.replace(/\s+/g, ' ').trim()
+      return flat.length <= 120 ? flat : `${flat.slice(0, 120).trimEnd()}…`
+    }
 
     return (
       <Screen title={t('approvals.title')} subtitle={t('approvals.subtitle')} trailing={<Feedback t={t} message={message} />}>
         <section className={styles.workflowSection}>
-          <h4>{t('approvals.context')}</h4>
+          <h4>{t('approvals.context')} ({String(pendingContext.length)})</h4>
           <span className={styles.tools}>
             <button className={styles.secondary} type="button" onClick={() => {
               void approvals.syncContext().then((result) => {
@@ -4075,11 +4103,12 @@ function approvalsScreen() {
               })
             }}>{t('approvals.sync')}</button>
           </span>
+          <p className={styles.hint}>{t('approvals.pendingHint')}</p>
           {pendingContext.length === 0
             ? <span className={styles.workflowEmpty}>{t('approvals.noContext')}</span>
             : pendingContext.map(row => (
               <div key={row.id} className={styles.workflowRunRow}>
-                <span className={styles.cellMuted}>{row.title} · {row.authorId}</span>
+                <span className={styles.cellMuted}>{row.title} · {t('approvals.author')}: {row.authorId} · {t('col.space')}: {contextSpaceName(t, overview?.spaces ?? [], row.spaceId)} · {preview(row.body)}</span>
                 <span className={styles.tools}>
                   <button className={styles.primary} type="button" onClick={() => {
                     void context.approve(row.id).then((result) => { if (result.ok) setContextRows(result.value) })
@@ -4092,7 +4121,8 @@ function approvalsScreen() {
             ))}
         </section>
         <section className={styles.workflowSection}>
-          <h4>{t('approvals.workflows')}</h4>
+          <h4>{t('approvals.workflows')} ({String(changes.length)})</h4>
+          <p className={styles.hint}>{t('approvals.flowHint')}</p>
           {changes.length === 0
             ? <span className={styles.workflowEmpty}>{t('approvals.noWorkflows')}</span>
             : changes.map(change => (
