@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-05-faberloom-share-console-scope.md
-2026-10-05-faberloom-share-console-scope.md: 8a9cc2aba5e9219bb5b028e02f1ffe25d83d64ce
-2026-10-05-faberloom-share-console-scope.zh.md: 2b06ef83892d34232cacf181f413ea5fe6c1f8a3
+2026-10-05-faberloom-share-console-scope.md: 27e2a2f2ca91a2072bfc68c296a1dde572ede605
+2026-10-05-faberloom-share-console-scope.zh.md: 6454cca2fa3519ec1f7d22cd3ced2c836035de9a

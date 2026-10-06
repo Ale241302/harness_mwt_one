@@ -117,6 +117,7 @@ describe('FaberLoomViewService shared Sessions', () => {
 
   it('publishes the area Sessions when the Space is shared, so the member reads them', async () => {
     const { view, catalog, shares } = harness()
+    catalog.list.mockResolvedValue([])
     await view.shareSpace('sp-1', ['guest@x'], ['view'])
     expect(shares.create).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ resource: { kind: 'space', id: 'sp-1' } }))
     await vi.waitFor(() => expect(catalog.capture).toHaveBeenCalledWith(

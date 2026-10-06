@@ -754,8 +754,15 @@ export class FaberLoomViewService extends TypertRemoteService {
         await catalog.sync(actor.id).catch((error: unknown) => {
           this.ctx.logger.warn(`faberloom: no se pudieron sincronizar las sesiones compartidas: ${String(error)}`)
         })
+        const outgoing = await this.sharesService().list(actor.id)
+          .then(list => new Set(list.outgoing.filter(grant => grant.resource.kind === 'space').map(grant => grant.resource.id)))
+          .catch(() => new Set<string>())
         for (const space of spaces) {
           if (space.workspaceId === undefined) continue
+          if (space.ownerId !== actor.id && !outgoing.has(space.id)) continue
+          await this.publishSpaceSessions(actor, space).catch((error: unknown) => {
+            this.ctx.logger.warn(`faberloom: no se pudieron publicar las sesiones del espacio '${space.title}': ${String(error)}`)
+          })
           await this.materializeSharedSessions(actor, space.id, space.workspaceId, false).catch((error: unknown) => {
             this.ctx.logger.warn(`faberloom: no se pudieron espejar las sesiones del espacio '${space.title}': ${String(error)}`)
           })
@@ -1443,7 +1450,10 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (workspace === undefined) return
     const catalog = this.ctx.get('faberloomSessionShares')
     if (catalog === undefined) return
+    // Skip transcript uploads already captured, so a load does not re-push them.
+    const existing = new Set((await catalog.list({ id: actor.id }, space.id)).map(row => row.sessionId))
     for (const sessionId of workspace.sessionIds) {
+      if (existing.has(sessionId)) continue
       const artifact = await this.readSessionArtifact(sessionId)
       await catalog.capture({ id: actor.id }, {
         spaceId: space.id,
