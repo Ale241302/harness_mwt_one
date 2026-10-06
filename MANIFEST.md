@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-06-share-space-sessions-sidebar` (commit `c4312687419a696b484caf5928467e24dc59ad74`: sobre la publicación de sesiones al compartir, el invitado recrea cada sesión compartida como sesión local en su store, con el `cwd` del área espejada, para que aparezca en el sidebar junto al Space además de en "Sesiones compartidas").
-**Imagen desplegada actual:** build de `main` @ `c4312687419a696b484caf5928467e24dc59ad74` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-06-memory-autocapture` (commit `b4dcb12de4ead2583dfd6ca6aef8a9c3a30ffae8`: además de compartir sesiones, la Memory se llena sin depender del modelo —una directiva del prompt ordena guardar hechos durables con `faberloom_spaces_remember` y la vista captura cada turno completado del área del Space en su Memory, deduplicando—).
+**Imagen desplegada actual:** build de `main` @ `b4dcb12de4ead2583dfd6ca6aef8a9c3a30ffae8` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `c431268741` (6 oct 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `b4dcb12de4` (6 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
