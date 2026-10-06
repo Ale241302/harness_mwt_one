@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-06-share-readonly-workspace` (commit `a17f5e5fc646b5f57ec12829ae0865d0b1d845f9`: sobre la tolerancia de snapshot, el Space compartido espeja su Workspace en el sidebar también para un miembro read-only, para que lo vea en Workspaces y Spaces).
-**Imagen desplegada actual:** build de `main` @ `a17f5e5fc646b5f57ec12829ae0865d0b1d845f9` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-06-share-space-sessions` (commit `fc7c93d553924bddfa286552664f8143e4d2f083`: sobre el espejo del Workspace, compartir un Space publica también sus sesiones de conversación —el harness las captura al otorgar y el invitado las lee bajo el Space— y la consola gana el almacén que faltaba, `/api/harness/sessions/`).
+**Imagen desplegada actual:** build de `main` @ `fc7c93d553924bddfa286552664f8143e4d2f083` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `a17f5e5fc6` (6 oct 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `fc7c93d553` (6 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
