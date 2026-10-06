@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-06-share-snapshot-tolerance` (commit `0b972f6585db82ee69a23bd198da52d8db102381`: sobre el rediseño de Context/Approvals, el dominio `faberloom_shares` tolera un `snapshot` guardado como texto y se auto-sana al re-sincronizar, para que un registro heredado no rompa el panel de Spaces).
-**Imagen desplegada actual:** build de `main` @ `0b972f6585db82ee69a23bd198da52d8db102381` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-06-share-readonly-workspace` (commit `a17f5e5fc646b5f57ec12829ae0865d0b1d845f9`: sobre la tolerancia de snapshot, el Space compartido espeja su Workspace en el sidebar también para un miembro read-only, para que lo vea en Workspaces y Spaces).
+**Imagen desplegada actual:** build de `main` @ `a17f5e5fc646b5f57ec12829ae0865d0b1d845f9` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `0b972f6585` (6 oct 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `a17f5e5fc6` (6 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
