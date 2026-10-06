@@ -27,7 +27,19 @@ function harness(options: { query?: boolean; workspaceId?: string | null } = {})
     can: vi.fn(async () => true),
   }
   const workflows = { list: vi.fn(async () => [] as unknown[]) }
-  const registry = { get: vi.fn((id: string) => id === 'ws-1' ? { sessionIds: ['s1'] } : undefined) }
+  const workspaceEntity = {
+    sessionIds: ['s1'],
+    path: '/data/owner/spaces/shared/3a4d6839',
+    attachSession: vi.fn(async (_id: string) => {}),
+  }
+  const registry = { get: vi.fn((id: string) => id === 'ws-1' ? workspaceEntity : undefined) }
+  const persistence = {
+    stat: vi.fn(async (_id: string) => undefined as unknown),
+    create: vi.fn(async (_header: Record<string, unknown>) => ({
+      append: vi.fn(async (_events: unknown) => {}),
+      close: vi.fn(async () => {}),
+    })),
+  }
   const ctx = {
     faberloomSpaces: {
       get: vi.fn(async () => ({ id: 'sp-1', title: 'SICOP', ownerId: 'owner@muitowork.com', workspaceId: options.workspaceId === undefined ? 'ws-1' : options.workspaceId })),
@@ -45,11 +57,12 @@ function harness(options: { query?: boolean; workspaceId?: string | null } = {})
       if (name === 'faberloomShares') return shares
       if (name === 'faberloomWorkflows') return workflows
       if (name === 'workspaceRegistry') return registry
+      if (name === 'sessionPersistence') return persistence
       return undefined
     },
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
-  return { view, catalog, query, shares, registry }
+  return { view, catalog, query, shares, registry, persistence }
 }
 
 describe('FaberLoomViewService shared Sessions', () => {
@@ -110,6 +123,22 @@ describe('FaberLoomViewService shared Sessions', () => {
       { id: 'owner@muitowork.com' },
       expect.objectContaining({ spaceId: 'sp-1', sessionId: 's1', workspaceId: 'ws-1' }),
     ))
+  })
+
+  it('materializes a shared Session as the member own Session under the area', async () => {
+    const { view, catalog, persistence } = harness()
+    const shared = row({ ownerId: 'publisher@muitowork.com', sessionId: 'sess-remote' })
+    catalog.list.mockResolvedValue([shared])
+    catalog.content.mockResolvedValue({
+      ...shared,
+      content: JSON.stringify({
+        session: { version: 3, id: 'sess-remote', createdAt: 1, cwd: '/root/SICOP', isSeeded: false, delegationDepth: 0, agentPreset: 'standard' },
+        events: [{ type: 'user/message', seq: 0, time: 1, data: {} }],
+      }),
+    })
+    await view.spaceSessions('sp-1')
+    await vi.waitFor(() => expect(persistence.create).toHaveBeenCalled())
+    expect(persistence.create).toHaveBeenCalledWith(expect.objectContaining({ id: 'sess-remote', cwd: '/data/owner/spaces/shared/3a4d6839' }))
   })
 
   it('fails loud when the shared-Session catalog is not mounted', async () => {    const ctx = {

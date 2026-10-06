@@ -72,6 +72,9 @@
       "path": "../../session-query/session-query/tsconfig.json"
     },
     {
+      "path": "../../session/session-persistence/tsconfig.json"
+    },
+    {
       "path": "../../core/session/tsconfig.json"
     }
   ]

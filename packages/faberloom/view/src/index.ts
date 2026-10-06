@@ -79,7 +79,8 @@ import type { FaberLoomContext, FaberLoomContextEntry } from '@deepseek-ai/dsh-f
 import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-ai/dsh-faberloom-session-shares'
 // Type-only: pulls the ctx.sessionQuery merge for cross-member Session capture.
 import type {} from '@deepseek-ai/dsh-session-query'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-session-persistence'
+import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session/types'
 
 export type * from './types.ts'
 
@@ -1156,6 +1157,7 @@ export class FaberLoomViewService extends TypertRemoteService {
           workspaceId,
         })
         await this.materializeSharedContent(actor, grant.resource.id, snapshot)
+        await this.materializeSharedSessions(actor, grant.resource.id, workspaceId)
         continue
       }
       const definition = readObject(snapshot.definition)
@@ -1240,6 +1242,44 @@ export class FaberLoomViewService extends TypertRemoteService {
         await this.ctx.faberloomRoutines.createRoutine(actor.id, { name, definition: definition as unknown as RoutineInput['definition'] })
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: could not import the shared routine '${name}': ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  }
+
+  /**
+   * Recreate the Sessions another member published in one Space as the member's
+   * own durable Sessions under its mirrored area, so the sidebar lists them
+   * beside the Space. Each copy keeps the publisher's transcript but adopts the
+   * member's area as its `cwd`, which is what binds it to the Workspace.
+   * Idempotent by stored Session id; best effort, so one bad Session never fails
+   * the read.
+   * @param actor - the acting identity.
+   * @param spaceId - the Space whose shared Sessions are materialized.
+   * @param workspaceId - the member's mirrored Workspace, when one exists.
+   */
+  private async materializeSharedSessions(actor: SpaceActor, spaceId: string, workspaceId: string | undefined): Promise<void> {
+    if (workspaceId === undefined) return
+    const persistence = this.ctx.get('sessionPersistence')
+    const catalog = this.ctx.get('faberloomSessionShares')
+    const workspace = this.workspaceRegistryOrUndefined()?.get(workspaceId as WorkspaceId)
+    if (persistence === undefined || catalog === undefined || workspace === undefined) return
+    await catalog.sync(actor.id)
+    for (const row of await catalog.list({ id: actor.id }, spaceId)) {
+      if (row.ownerId === actor.id) continue
+      try {
+        if (await persistence.stat(row.sessionId as SessionId) !== undefined) continue
+        const shared = await catalog.content({ id: actor.id }, spaceId, row.ownerId, row.sessionId)
+        const parsed = JSON.parse(shared.content) as { session: SessionHeader; events: readonly SessionEvent[] }
+        const header: SessionHeader = { ...parsed.session, id: row.sessionId as SessionId, cwd: workspace.path }
+        const handle = await persistence.create(header)
+        try {
+          await handle.append(parsed.events)
+        } finally {
+          await handle.close()
+        }
+        await workspace.attachSession(header.id)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: no se pudo materializar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
       }
     }
   }
@@ -1653,6 +1693,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     const service = this.sessionSharesService()
     const actor = this.actor()
     await service.sync(actor.id)
+    const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    await this.materializeSharedSessions(actor, spaceId, space.workspaceId)
     return (await service.list({ id: actor.id }, spaceId)).map(row => this.sharedSessionRow(row))
   }
 
