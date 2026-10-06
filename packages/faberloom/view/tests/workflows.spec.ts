@@ -44,7 +44,7 @@ function fakeWorkflows(detail = flow([], [])) {
 /** Boot the view service over a minimal hand-built context. */
 function harness(detail = flow([], [])) {
   const workflows = fakeWorkflows(detail)
-  const routines = { listRoutines: vi.fn(async () => [] as unknown[]) }
+  const routines = { listRoutines: vi.fn(async () => [] as unknown[]), getRoutine: vi.fn(async () => ({ id: 'r1', name: 'R', definition: { intent: '', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop' } })), createRoutine: vi.fn(async () => ({})) }
   const shares = {
     list: vi.fn(async () => ({ outgoing: [] as unknown[], incoming: [] as unknown[] })),
     create: vi.fn(async () => ({})),
@@ -61,6 +61,7 @@ function harness(detail = flow([], [])) {
   const spaces = {
     list: vi.fn(async (): Promise<{ id: string; title: string; workspaceId?: string; ownerId?: string }[]> => []),
     get: vi.fn(async () => ({ id: 'sp-1', title: 'Marluvas', ownerId: 'owner@muitowork.com' })),
+    listMemory: vi.fn(async () => [] as unknown[]),
   }
   const ctx = {
     faberloomSpaces: spaces,

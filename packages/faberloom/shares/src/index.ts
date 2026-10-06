@@ -66,6 +66,20 @@ function sameResource(left: FaberLoomShareResource, right: FaberLoomShareResourc
 }
 
 /**
+ * Read a console payload into a portable snapshot object. The console's raw
+ * cursor can return a `jsonb` column as its JSON text, so a string payload is
+ * parsed once; anything that is not a JSON object becomes null.
+ * @param payload - the console row's payload column.
+ * @returns the snapshot object, or null when there is none.
+ */
+function readSnapshot(payload: unknown): Record<string, unknown> | null {
+  const value = typeof payload === 'string'
+    ? ((): unknown => { try { return JSON.parse(payload) } catch { return null } })()
+    : payload
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+/**
  * The product sharing service: durable per-action grants with console transport
  * and email acceptance.
  */
@@ -336,7 +350,7 @@ export class FaberLoomShares extends Service {
         granteeEmail: email,
         permissions: (row.permissions ?? ['view']).filter((permission: string) => KNOWN_PERMISSIONS.has(permission)),
         status: row.status === 'active' ? 'active' : 'pending',
-        snapshot: row.payload ?? null,
+        snapshot: readSnapshot(row.payload),
         consoleId: row.id,
         createdAt: existing?.createdAt ?? new Date().toISOString(),
         acceptedAt: existing?.acceptedAt ?? null,
@@ -365,7 +379,7 @@ interface ConsoleShareRow {
   /** Resource id, when the console carries it. */
   readonly resource_id?: string
   /** Portable resource content. */
-  readonly payload?: Record<string, unknown>
+  readonly payload?: unknown
   /** Granted permissions. */
   readonly permissions?: readonly string[]
   /** Console-side status. */

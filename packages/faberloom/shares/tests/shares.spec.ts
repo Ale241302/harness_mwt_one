@@ -270,6 +270,33 @@ describe('FaberLoomShares', () => {
     }
   })
 
+  it('parses a console payload returned as JSON text and drops a non-object payload', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const { shares } = await harness({ consoleBase: 'http://console', consoleToken: 'tok' })
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          incoming: [
+            { id: 'c9', kind: 'space', owner_email: OWNER, name: 'A', resource_id: 'sp-9', permissions: ['view'], status: 'active', payload: '{"context":{"area":"compras"}}' },
+            { id: 'c10', kind: 'space', owner_email: OWNER, name: 'B', resource_id: 'sp-10', permissions: ['view'], status: 'active', payload: '42' },
+            { id: 'c11', kind: 'space', owner_email: OWNER, name: 'C', resource_id: 'sp-11', permissions: ['view'], status: 'active', payload: '{' },
+          ],
+        }),
+      })
+      await shares.sync(GUEST)
+      const incoming = (await shares.list(GUEST)).incoming
+      const idOf = (resourceId: string): string => incoming.find(grant => grant.resource.id === resourceId)?.id ?? ''
+      expect(await shares.snapshotFor(GUEST, idOf('sp-9'))).toEqual({ context: { area: 'compras' } })
+      expect(await shares.snapshotFor(GUEST, idOf('sp-10'))).toBeNull()
+      expect(await shares.snapshotFor(GUEST, idOf('sp-11'))).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('closes cleanly when no domain was ever opened', async () => {
     const { fiber } = await harness()
     await fiber.dispose()

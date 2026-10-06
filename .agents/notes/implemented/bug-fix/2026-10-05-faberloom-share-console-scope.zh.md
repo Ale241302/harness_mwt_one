@@ -16,7 +16,7 @@ harness 在每个 grant 中发布 `resource_id: input.resource.id`，因此控�
 
 控制台在 `GET {consoleBase}/harness/shares/accept?grant=<id>` 提供邀请链接：该 action 无需认证（行 id 只出现在受邀者的邮件里，因此它就是链接的密钥），把该行标记为 `active` 并写入 `accepted_at`，并通过 `StaticHTMLRenderer` 返回一个简单的 HTML 确认页。每个 grant 邮件发送的是该控制台行 id，而不是所有者本地的 grant id，因此受邀者打开的链接能在控制台解析。
 
-受邀侧会导入并物化它所接受的内容。`shareSpace`/`shareWorkflow` 随 grant 发布一个可移植快照（`{ title, context }` / `{ scope, definition }`）；视图的 `overview` 每进程调用一次 `FaberLoomShares.sync`，并对每个 active 的来向 grant 通过 `FaberLoomShares.snapshotFor` 读取快照，再用 `faberloomSpaces.importShared` 或 `faberloomWorkflows.importShared` 物化。导入是幂等的，并以远程资源 id 创建本地记录、归发布者所有，因此同一个 grant 即可授权它，重复 sync 也不会覆盖受邀者的状态。没有发布快照的 grant 会被跳过，因此旧邀请不会物化出空资源。
+受邀侧会导入并物化它所接受的内容。`shareSpace` 随 grant 发布一个可移植快照——Space 的标题与上下文、其 Memory 条目、其 Context 条目、其 Space 作用域的 Work Flow，以及这些流程所依托的 Routine；`shareWorkflow` 则发布 `{ scope, definition }`。视图的 `overview` 每进程调用一次 `FaberLoomShares.sync`，并对每个 active 的来向 grant 通过 `FaberLoomShares.snapshotFor` 读取快照。Space 用 `faberloomSpaces.importShared` 以远程资源 id 物化、归发布者所有，因此同一个 grant 即可授权它；同时为受邀者镜像一个侧边栏 Workspace，并把它的 Memory、Context 条目、Work Flow 和 Routine 重建为受邀者自己的副本，其中文本、标题、名称已存在者会跳过，因此重复 sync 或再次共享只会新增内容。Work Flow 用 `faberloomWorkflows.importShared` 以远程 id 物化。没有发布快照的 grant 会被跳过，因此旧邀请不会物化出空资源。控制台会把作为文本返回的 `jsonb` `payload` 归一化为对象，`sync` 也会防御性地解析文本 payload。
 
 网关在启动时、以及 `refreshConsolaAccess` 轮换时，把用户当前的控制台 JWT 写入 `<DSH_HOME>/.consola-token`，注入 `CONSOLA_TOKEN_FILE`，并通过 `NODE_OPTIONS` 把 `gateway/consola-token-watch.mjs` 预加载进每个 `dsh`。该 watcher 每分钟把文件重新读入 `process.env.CONSOLA_TOKEN`，同时网关每五分钟在过期前刷新每个已存 token。各服务本就每次调用都读 `process.env.CONSOLA_TOKEN`，因此环境不会失效。
 
@@ -32,4 +32,4 @@ harness 在每个 grant 中发布 `resource_id: input.resource.id`，因此控�
 
 共享一个 Space 或 Work Flow 会到达控制台，并存入一个可按 id 寻址的 grant，带有其权限与状态；agents/skills 不变。`dsh` 的控制台 token 在进程存活期间不再过期，这同时修复了邮件附件以及共享 Session/上下文的控制台调用。
 
-接受邀请会把控制台的 grant 标记为 active，受邀者的下一次 overview 会导入该 grant 并以远程 id 物化共享的 Space/Work Flow。共享的 Work Flow 以 `draft` 物化且不创建 routine，因此受邀者可按 grant 读取或编辑，但它不会在受邀者主机上开始执行；共享的 Space 只带上下文，不携带文件。更早发布、没有快照的 grant 不会被物化。
+接受邀请会把控制台的 grant 标记为 active，受邀者的下一次 overview 会导入该 grant 并以远程 id 物化共享的 Space/Work Flow。共享的 Space 还会作为侧边栏 Workspace 出现，它的 Memory、Context、Work Flow 与 Routine 会复制给受邀者。复制的 Work Flow 以 `draft` 物化，复制的 Routine 可能引用发布者的 connection id，因此它可能出现在 Routine 面板中而在受邀者主机上没有可用的邮箱；共享的 Space 只带上下文，不携带附件。

@@ -440,6 +440,43 @@ function triggerFromSave(input: RoutineSaveInput, base: RoutineTrigger | undefin
 }
 
 /**
+ * Read a JSON object value, or undefined when it is not a plain object.
+ * @param value - the value to narrow.
+ * @returns the object, or undefined.
+ */
+function readObject(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
+}
+
+/** Read an array of JSON objects, dropping entries that are not objects. */
+function readObjectArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : []
+}
+
+/** Read a non-empty string value, or undefined. */
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+/** Read a string map (Space context), dropping non-string entries. */
+function readStringMap(value: unknown): SpaceContext | undefined {
+  const record = readObject(value)
+  if (record === undefined) return undefined
+  const out: SpaceContext = {}
+  for (const [key, entry] of Object.entries(record)) if (typeof entry === 'string') out[key] = entry
+  return out
+}
+
+/** Read a Work Flow scope value, or undefined when it is not one. */
+function readScope(value: unknown): WorkFlowScope | undefined {
+  const scope = readObject(value)
+  if (scope === undefined) return undefined
+  if (scope.kind === 'personal') return { kind: 'personal' }
+  if (scope.kind === 'space' && typeof scope.spaceId === 'string') return { kind: 'space', spaceId: scope.spaceId }
+  return undefined
+}
+
+/**
  * Workspace view (`ctx.faberloomView`) over the mounted product services and the
  * agent-memory core. Reads and writes both return the fresh overview so the
  * panels refresh from one value instead of recomputing.
@@ -1104,28 +1141,106 @@ export class FaberLoomViewService extends TypertRemoteService {
   private async syncSharedGrants(actorId: string): Promise<void> {
     const shares = this.sharesService()
     await shares.sync(actorId)
+    const actor = this.actor()
     for (const grant of (await shares.list(actorId)).incoming) {
       if (grant.status !== 'active') continue
       const snapshot = await shares.snapshotFor(actorId, grant.id)
       if (snapshot === null || Object.keys(snapshot).length === 0) continue
       if (grant.resource.kind === 'space') {
+        const workspaceId = await this.prepareSharedWorkspace(actor, grant.resourceName, grant.resource.id)
         await this.ctx.faberloomSpaces.importShared({
           id: grant.resource.id,
           ownerId: grant.ownerId,
           title: grant.resourceName,
-          context: snapshot.context as SpaceContext | undefined,
+          context: readStringMap(snapshot.context),
+          workspaceId,
         })
+        await this.materializeSharedContent(actor, grant.resource.id, snapshot)
         continue
       }
-      const definition = snapshot.definition as WorkFlowDefinition | undefined
+      const definition = readObject(snapshot.definition)
       if (definition === undefined) continue
       await this.ctx.faberloomWorkflows.importShared({
         id: grant.resource.id,
         ownerId: grant.ownerId,
         name: grant.resourceName,
-        scope: snapshot.scope as WorkFlowScope | undefined,
-        definition,
+        scope: readScope(snapshot.scope),
+        definition: definition as unknown as WorkFlowDefinition,
       })
+    }
+  }
+
+  /**
+   * Create (or reuse) a sidebar Workspace for an imported Space, so the member
+   * sees it beside their own workspaces. Returns the workspace id, or undefined
+   * when the deployment mounts no registry or the identity is read-only.
+   * @param actor - the acting identity.
+   * @param title - the space title, used as the workspace name.
+   * @param resourceId - the remote space id, used for the stable directory.
+   * @returns the workspace id, when one was created.
+   */
+  private async prepareSharedWorkspace(actor: SpaceActor, title: string, resourceId: string): Promise<string | undefined> {
+    const registry = this.workspaceRegistryOrUndefined()
+    if (registry === undefined || actor.readOnly) return undefined
+    try {
+      const dir = join(this.dshHome(), 'spaces', 'shared', resourceId)
+      mkdirSync(dir, { recursive: true })
+      const workspace = await registry.create(dir, title)
+      return String(workspace.id)
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: could not mirror the shared space '${title}' as a workspace: ${error instanceof Error ? error.message : String(error)}`)
+      return undefined
+    }
+  }
+
+  /**
+   * Recreate the Memory, Context entries, Work Flows, and Routines another
+   * identity published with a shared Space, as the member's own copies attached
+   * to the imported Space. Runs once, when the Space is first imported; each
+   * item is best-effort and a failure is logged instead of failing the read.
+   * @param actor - the acting identity.
+   * @param spaceId - the imported space id.
+   * @param snapshot - the portable content published with the grant.
+   */
+  private async materializeSharedContent(actor: SpaceActor, spaceId: string, snapshot: Record<string, unknown>): Promise<void> {
+    const memoryTexts = new Set((await this.ctx.faberloomSpaces.listMemory(actor, spaceId as FaberLoomSpaceId)).map(entry => entry.text))
+    for (const entry of readObjectArray(snapshot.memory)) {
+      const text = readString(entry.text)
+      if (text === undefined || memoryTexts.has(text)) continue
+      memoryTexts.add(text)
+      await this.ctx.faberloomSpaces.remember(actor, text, [spaceId as FaberLoomSpaceId])
+    }
+    const context = this.ctx.get('faberloomContext')
+    if (context !== undefined) {
+      const titles = new Set((await context.list({ id: actor.id })).filter(entry => entry.spaceId === spaceId).map(entry => entry.title))
+      for (const entry of readObjectArray(snapshot.contextEntries)) {
+        const title = readString(entry.title)
+        const body = readString(entry.body)
+        if (title === undefined || body === undefined || titles.has(title)) continue
+        titles.add(title)
+        await context.create({ id: actor.id }, { spaceId, title, body })
+      }
+    }
+    const scope: WorkFlowScope = { kind: 'space', spaceId }
+    const flowNames = new Set((await this.workflowsService().list(this.workflowActor(), scope)).map(flow => flow.name))
+    for (const flow of readObjectArray(snapshot.workflows)) {
+      const name = readString(flow.name)
+      const definition = readObject(flow.definition)
+      if (name === undefined || definition === undefined || flowNames.has(name)) continue
+      flowNames.add(name)
+      await this.workflowsService().create(this.workflowActor(), { name, scope, definition: definition as unknown as WorkFlowDefinition })
+    }
+    const routineNames = new Set((await this.ctx.faberloomRoutines.listRoutines(actor.id)).map(routine => routine.name))
+    for (const routine of readObjectArray(snapshot.routines)) {
+      const name = readString(routine.name)
+      const definition = readObject(routine.definition)
+      if (name === undefined || definition === undefined || routineNames.has(name)) continue
+      routineNames.add(name)
+      try {
+        await this.ctx.faberloomRoutines.createRoutine(actor.id, { name, definition: definition as unknown as RoutineInput['definition'] })
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: could not import the shared routine '${name}': ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
   }
 
@@ -1144,9 +1259,32 @@ export class FaberLoomViewService extends TypertRemoteService {
       throw new Error('faberloom: only the owner or an admin can share this space')
     }
     const shares = this.sharesService()
-    const snapshot = { title: space.title, context: space.context }
+    const actor = this.actor()
+    const workflows = await this.workflowsService().list(this.workflowActor(), { kind: 'space', spaceId: id })
+    const routines: { name: string; definition: RoutineInput['definition'] }[] = []
+    for (const flow of workflows) {
+      if (flow.routineId === undefined) continue
+      const routine = await this.ctx.faberloomRoutines.getRoutine(flow.routineId as FaberLoomRoutineId)
+      routines.push({ name: routine.name, definition: routine.definition as unknown as RoutineInput['definition'] })
+    }
+    const context = this.ctx.get('faberloomContext')
+    const contextEntries = context === undefined
+      ? []
+      : (await context.list({ id: actor.id }))
+        .filter(entry => entry.spaceId === id)
+        .map(entry => ({ title: entry.title, body: entry.body }))
+    const memoryEntries = await this.ctx.faberloomSpaces.listMemory(actor, id as FaberLoomSpaceId)
+    const memory = memoryEntries.map(entry => ({ text: entry.text, createdAt: entry.createdAt }))
+    const snapshot = {
+      title: space.title,
+      context: space.context,
+      memory,
+      contextEntries,
+      workflows: workflows.map(flow => ({ name: flow.name, scope: flow.scope, definition: flow.definition })),
+      routines,
+    }
     for (const email of emails) {
-      await shares.create(this.actor().id, { resource: { kind: 'space', id }, resourceName: space.title, granteeEmail: email, permissions, snapshot })
+      await shares.create(actor.id, { resource: { kind: 'space', id }, resourceName: space.title, granteeEmail: email, permissions, snapshot })
     }
     return await this.outgoingGrantRows('space', id)
   }

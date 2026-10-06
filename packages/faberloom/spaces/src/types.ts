@@ -107,6 +107,8 @@ export interface ImportSharedSpaceInput {
   readonly title: string
   /** Context the owner published with the share, when any. */
   readonly context?: SpaceContext | undefined
+  /** Workspace to mirror the imported Space to, so it appears in the sidebar. */
+  readonly workspaceId?: string | undefined
 }
 
 /** Mutable fields of a space. Absent fields stay unchanged. */

@@ -260,9 +260,8 @@ describe('FaberLoomSpaces', () => {
   it('imports a shared space under the remote id, idempotently, and only the publisher reads it without a grant', async () => {
     const { spaces } = await harness()
     const owner: SpaceActor = { id: 'ana@sondelsa.com', role: 'client_b2b', companyId: 'co-sondel', readOnly: false }
-    const imported = await spaces.importShared({ id: 'sp-remote', ownerId: owner.id, title: 'SICOP', context: { area: 'compras' } })
-    expect(imported).toMatchObject({ id: 'sp-remote', ownerId: owner.id, title: 'SICOP', context: { area: 'compras' }, version: 1 })
-    expect(imported.workspaceId).toBeUndefined()
+    const imported = await spaces.importShared({ id: 'sp-remote', ownerId: owner.id, title: 'SICOP', context: { area: 'compras' }, workspaceId: 'ws-sicop' })
+    expect(imported).toMatchObject({ id: 'sp-remote', ownerId: owner.id, title: 'SICOP', context: { area: 'compras' }, workspaceId: 'ws-sicop', version: 1 })
     // Idempotent: a second import never overwrites the stored record.
     const again = await spaces.importShared({ id: 'sp-remote', ownerId: owner.id, title: 'Otro' })
     expect(again.title).toBe('SICOP')

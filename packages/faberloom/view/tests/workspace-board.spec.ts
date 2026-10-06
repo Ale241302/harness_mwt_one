@@ -108,7 +108,15 @@ function harness(options: {
   }
   const workflows = {
     importShared: vi.fn(async (input: { id: string; name: string }) => ({ id: input.id, name: input.name })),
+    create: vi.fn(async () => ({})),
+    list: vi.fn(async () => [] as unknown[]),
   }
+  const routines = {
+    listRoutines: vi.fn(async () => []),
+    createRoutine: vi.fn(async () => ({})),
+    getRoutine: vi.fn(async () => ({ id: 'r1', name: 'R', definition: { intent: '', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop' } })),
+  }
+  const context = { create: vi.fn(async () => ({})), list: vi.fn(async () => [] as unknown[]) }
   const shares = {
     sync: vi.fn(async (): Promise<void> => undefined),
     list: vi.fn(async (): Promise<{ outgoing: readonly unknown[]; incoming: readonly unknown[] }> => ({ outgoing: [], incoming: [] })),
@@ -121,7 +129,7 @@ function harness(options: {
     faberloomAgents: agents,
     faberloomWorkflows: workflows,
     faberloomBoard: board,
-    faberloomRoutines: { listRoutines: vi.fn(async () => []) },
+    faberloomRoutines: routines,
     provide: () => {},
     reflect: { provide: () => {} },
     effect: (run: () => unknown) => { run(); return () => {} },
@@ -131,6 +139,8 @@ function harness(options: {
       if (name === 'workspaceRegistry') return options.registry === false ? undefined : registry
       if (name === 'faberloomConnections' && options.connections !== undefined) return { list: vi.fn(async () => options.connections) }
       if (name === 'faberloomShares') return shares
+      if (name === 'faberloomContext') return context
+      if (name === 'faberloomWorkflows') return workflows
       return undefined
     },
   } as unknown as Context
@@ -139,7 +149,7 @@ function harness(options: {
     role: options.role ?? 'admin',
     readOnly: options.readOnly === true,
   })
-  return { view, board, registry, spaces, agents, workflows, shares, entities, events, logger }
+  return { view, board, registry, spaces, agents, workflows, routines, context, shares, entities, events, logger }
 }
 
 describe('FaberLoomViewService space workspace', () => {
@@ -654,11 +664,11 @@ describe('FaberLoomViewService board actions', () => {
     expect(board.review).not.toHaveBeenCalled()
   })
 
-  it('imports and materializes a Space another identity shared once its grant is active', async () => {
+  it('imports a shared Space with its workspace, Memory, Context, Work Flows, and Routines', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-space-'))
     homes.push(home)
     vi.stubEnv('DSH_HOME', home)
-    const { view, spaces, shares } = harness()
+    const { view, spaces, workflows, routines, context, shares, registry } = harness()
     shares.list.mockResolvedValue({
       outgoing: [],
       incoming: [{
@@ -667,15 +677,26 @@ describe('FaberLoomViewService board actions', () => {
         status: 'active', createdAt: '2026-01-01T00:00:00Z', acceptedAt: null,
       }],
     })
-    shares.snapshotFor.mockResolvedValue({ title: 'SICOP', context: { area: 'compras' } })
-    spaces.list.mockResolvedValue([{ id: 'sp-remote', title: 'SICOP', parentId: null }])
+    shares.snapshotFor.mockResolvedValue({
+      title: 'SICOP',
+      context: { area: 'compras' },
+      memory: [{ text: 'cliente Sondel', createdAt: '2026-01-01T00:00:00Z' }],
+      contextEntries: [{ title: 'Regla', body: 'factura' }],
+      workflows: [{ name: 'Anti-spam', scope: { kind: 'space', spaceId: 'sp-remote' }, definition: { intent: 'i', nodes: [], edges: [], permissions: [], failurePolicy: 'stop' } }],
+      routines: [{ name: 'Rutina', definition: { intent: 'i', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop' } }],
+    })
 
     await view.overview()
 
     expect(shares.sync).toHaveBeenCalledWith('owner@muitowork.com')
+    expect(registry.create).toHaveBeenCalled()
     expect(spaces.importShared).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'sp-remote', ownerId: 'ana@sondelsa.com', title: 'SICOP', context: { area: 'compras' },
+      id: 'sp-remote', ownerId: 'ana@sondelsa.com', title: 'SICOP', context: { area: 'compras' }, workspaceId: expect.any(String),
     }))
+    expect(spaces.remember).toHaveBeenCalledWith(expect.anything(), 'cliente Sondel', ['sp-remote'])
+    expect(context.create).toHaveBeenCalledWith(expect.anything(), { spaceId: 'sp-remote', title: 'Regla', body: 'factura' })
+    expect(workflows.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ name: 'Anti-spam', scope: { kind: 'space', spaceId: 'sp-remote' } }))
+    expect(routines.createRoutine).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ name: 'Rutina' }))
   })
 
   it('imports a Work Flow snapshot and skips a pending grant, an empty snapshot, or a missing graph', async () => {

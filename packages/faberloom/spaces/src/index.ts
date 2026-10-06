@@ -343,7 +343,7 @@ export class FaberLoomSpaces extends Service {
       context: { ...(input.context ?? {}) },
       sources: [],
       agentId: null,
-      workspaceId: null,
+      workspaceId: input.workspaceId ?? null,
       archived: false,
       createdAt: now,
       updatedAt: now,
