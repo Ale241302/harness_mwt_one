@@ -1,8 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-03` (commit `009e4d9801c57eb76e9219f2e1a39f0b08de4e26`: contexto entre Spaces — `faberloom_spaces_find`/`_reference`/`_ask`, inferencia implícita y directiva reforzada; tools de memoria/teachings opt-in; seam `ctx.spaceIndex`; lint, duplicación y catálogo en verde; lockfile regenerado).
-**Imagen desplegada actual:** build de `main` @ `009e4d9801c57eb76e9219f2e1a39f0b08de4e26` (resolución de contexto entre Spaces y tools de memoria; gates de lint/duplicación/catálogo cerrados; deploy caliente ~6 min).
-**Verificado en el VPS:** 3 de octubre de 2026.
+**Tag de despliegue:** `deploy-2026-10-05-faberloom-share-console-scope` (commit `00807768fa83f812b708f329ee017e9d696cf31b`: compartir Spaces/Work Flows por la consola con `resource_id`, `permissions` y `status`; gateway con token de consola vivo por usuario — `<DSH_HOME>/.consola-token` re-leído por un preload del `dsh`; Nota de agente y pruebas de shares).
+**Imagen desplegada actual:** build de `feat/space-context-resolution` @ `00807768fa83f812b708f329ee017e9d696cf31b` (deploy caliente).
+**Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
@@ -12,13 +12,13 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Componente | Versión / referencia | Notas |
 |---|---|---|
 | DeepSeek Harness (`dsh`) | `0.1.6-alpha.1` (**nuestro fork**) | Construido en la etapa 1 del `Dockerfile` desde `vendor/deepseek-harness-src.tgz` |
-| Fuente del harness | `git archive` del tree del push (rama `feat/faberloom-native`) | Incluye `packages/faberloom/*` y el perfil `faberloom` |
+| Fuente del harness | `git archive` del tree del push (rama `feat/space-context-resolution`) | Incluye `packages/faberloom/*` y el perfil `faberloom` |
 | Perfil arrancado por usuario | `faberloom` | `DSH_PROFILE`; = `dsh-base` + `dsh-web-app` + `dsh-faberloom-app` |
 | Node.js (imagen) | `node:22.23.2-bookworm-slim` (tag fijo, no `node:22`) | `v22.23.2` en el contenedor |
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | `sha256:62be664e5b2a…` (`main` @ `893f2bbd`, build del 30 sep 18:09 UTC) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `feat/space-context-resolution` @ `00807768fa` (5 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
