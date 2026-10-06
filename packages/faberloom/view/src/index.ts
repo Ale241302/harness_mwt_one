@@ -497,6 +497,26 @@ function sessionTurnMemory(events: readonly SessionEvent[]): string {
   return parts.join('\n\n').slice(0, 4000)
 }
 
+/** Read the durable set of Sessions this host mirrored, as id → Space id. */
+function readMirrorFile(path: string): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+    if (!isRecord(parsed)) return {}
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+  } catch {
+    return {}
+  }
+}
+
+/** Persist the mirrored-Session set, best effort. */
+function writeMirrorFile(path: string, value: Record<string, string>): void {
+  try {
+    writeFileSync(path, JSON.stringify(value), 'utf8')
+  } catch {
+    // A failed bookkeeping write only risks a stale prune on the next pass.
+  }
+}
+
 /** Read a Work Flow scope value, or undefined when it is not one. */
 function readScope(value: unknown): WorkFlowScope | undefined {
   const scope = readObject(value)
@@ -1373,10 +1393,17 @@ export class FaberLoomViewService extends TypertRemoteService {
     const workspace = this.workspaceRegistryOrUndefined()?.get(workspaceId as WorkspaceId)
     if (persistence === undefined || catalog === undefined || workspace === undefined) return
     if (syncCatalog) await catalog.sync(actor.id)
+    const file = join(this.dshHome(), '.faberloom-mirrored-sessions.json')
+    const mirrored = readMirrorFile(file)
+    const wanted = new Set<string>()
     for (const row of await catalog.list({ id: actor.id }, spaceId)) {
       if (row.ownerId === actor.id) continue
+      wanted.add(row.sessionId)
       try {
-        if (await persistence.stat(row.sessionId as SessionId) !== undefined) continue
+        if (await persistence.stat(row.sessionId as SessionId) !== undefined) {
+          mirrored[row.sessionId] = spaceId
+          continue
+        }
         const shared = await catalog.content({ id: actor.id }, spaceId, row.ownerId, row.sessionId)
         const parsed = JSON.parse(shared.content) as { session: SessionHeader; events: readonly SessionEvent[] }
         const header: SessionHeader = { ...parsed.session, id: row.sessionId as SessionId, cwd: workspace.path }
@@ -1390,10 +1417,28 @@ export class FaberLoomViewService extends TypertRemoteService {
         // Warm the title projection so the sidebar shows the author's title
         // instead of falling back to the area id until the Session is opened.
         await this.ctx.get('sessionQuery')?.readTitle(header.id).catch(() => undefined)
+        mirrored[row.sessionId] = spaceId
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: no se pudo materializar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
       }
     }
+    // Reconcile removals: a Session this host mirrored for the Space but the
+    // catalog no longer lists (its author deleted or revoked it) is dropped
+    // here too, so a deletion on one side clears the mirror on the other.
+    const next: Record<string, string> = {}
+    for (const [id, ownerSpace] of Object.entries(mirrored)) {
+      if (ownerSpace === spaceId && !wanted.has(id)) {
+        try {
+          await persistence.delete(id as SessionId)
+          await workspace.detachSession(id as SessionId)
+        } catch (error: unknown) {
+          this.ctx.logger.warn(`faberloom: no se pudo quitar la sesión compartida '${id}': ${error instanceof Error ? error.message : String(error)}`)
+        }
+        continue
+      }
+      next[id] = ownerSpace
+    }
+    writeMirrorFile(file, next)
   }
 
   /**
@@ -1935,7 +1980,6 @@ export class FaberLoomViewService extends TypertRemoteService {
     mailConnectionIds?: readonly string[],
     subagentIds?: readonly string[],
   ): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create agents')
     const catalog = subagentIds === undefined ? undefined : await this.ctx.faberloomAgents.listAgents()
     await this.ctx.faberloomAgents.createAgent({
       name,
@@ -1966,7 +2010,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('renameAgent')
   async renameAgent(id: string, name: string): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot rename agents')
     await this.requireManageableAgent(id)
     await this.ctx.faberloomAgents.updateAgent(id as FaberLoomAgentId, { name })
     return await this.overview()
@@ -1979,7 +2022,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('deleteAgent')
   async deleteAgent(id: string): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot deactivate agents')
     await this.requireManageableAgent(id)
     await this.ctx.faberloomAgents.deactivateAgent(id as FaberLoomAgentId)
     return await this.overview()
@@ -2041,7 +2083,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('saveAgent')
   async saveAgent(id: string, input: AgentSaveInput): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot save agents')
     await this.requireManageableAgent(id)
     const patch: {
       name?: string
@@ -2107,7 +2148,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('purgeAgent')
   async purgeAgent(id: string): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot purge agents')
     await this.requireManageableAgent(id)
     await this.ctx.faberloomAgents.removeAgent(id as FaberLoomAgentId)
     return await this.overview()
@@ -3108,7 +3148,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('createAgentFromWork')
   async createAgentFromWork(text: string, name: string, spaceId: string | null): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create agents')
     const trimmed = text.trim()
     const origin = `conversacion:${(trimmed.split('\n')[0] ?? trimmed).slice(0, 120)}`
     await this.ctx.faberloomAgents.createAgent({
@@ -3952,7 +3991,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('setAgentResponsibility')
   async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot change agents')
     await this.requireManageableAgent(id)
     await this.ctx.faberloomAgents.updateAgent(id as FaberLoomAgentId, { responsibility })
     return await this.overview()
@@ -4128,7 +4166,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('deleteSpaceMemory')
   async deleteSpaceMemory(id: string): Promise<readonly FaberLoomSpaceMemoryRow[]> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot delete memory')
     await this.ctx.faberloomSpaces.forgetMemory(this.actor(), id)
     return await this.spaceMemory()
   }
