@@ -265,6 +265,11 @@ describe('FaberLoomSpaces', () => {
     // Idempotent: a second import never overwrites the stored record.
     const again = await spaces.importShared({ id: 'sp-remote', ownerId: owner.id, title: 'Otro' })
     expect(again.title).toBe('SICOP')
+    // A later import binds the sidebar Workspace an earlier one lacked.
+    const legacy = await spaces.importShared({ id: 'sp-legacy', ownerId: owner.id, title: 'Viejo' })
+    expect(legacy.workspaceId).toBeUndefined()
+    const bound = await spaces.importShared({ id: 'sp-legacy', ownerId: owner.id, title: 'Viejo', workspaceId: 'ws-late' })
+    expect(bound.workspaceId).toBe('ws-late')
     // The publisher reads it; a stranger without a grant does not.
     expect((await spaces.list(owner)).map(space => space.id)).toContain('sp-remote')
     await expect(spaces.get(SONEPAR, 'sp-remote' as FaberLoomSpaceId)).rejects.toThrow('access denied')

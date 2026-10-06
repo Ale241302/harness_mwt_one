@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-05-shared-grant-materialization` (commit `4ba1193b7b47abd40f80d6b692d8a03be8b7f101`: sobre el merge a `main`, `shareSpace`/`shareWorkflow` publican un snapshot portable con el grant y el `overview` del invitado importa los grants de la consola y materializa cada Space/Work Flow activo bajo el id remoto, idempotente y propiedad del publicador).
-**Imagen desplegada actual:** build de `main` @ `4ba1193b7b47abd40f80d6b692d8a03be8b7f101` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-05-share-related-resources` (commit `6ba5204a06205deb2fee76b070a5e2aea0ed3515`: al compartir un Space se publican también su Memory, Context, Work Flows y Routines; el invitado espeja un Workspace en el sidebar y recrea esos recursos como copias propias, sin duplicar; la consola normaliza el `payload` jsonb devuelto como texto).
+**Imagen desplegada actual:** build de `main` @ `6ba5204a06205deb2fee76b070a5e2aea0ed3515` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `4ba1193b7b` (5 oct 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `6ba5204a06` (5 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |

@@ -330,7 +330,21 @@ export class FaberLoomSpaces extends Service {
     const table = await this.table()
     const id = brandString<FaberLoomSpaceId>(input.id)
     const existing = table.get(id)
-    if (existing !== undefined) return toSpace(id, existing)
+    if (existing !== undefined) {
+      // A later sync may carry the sidebar Workspace the earlier import lacked;
+      // bind it without touching the rest of the member's record.
+      if (input.workspaceId !== undefined && existing.workspaceId === null) {
+        const bound: SpaceRecord = {
+          ...existing,
+          workspaceId: input.workspaceId,
+          updatedAt: new Date().toISOString(),
+          version: existing.version + 1,
+        }
+        await table.update(id, () => bound)
+        return toSpace(id, bound)
+      }
+      return toSpace(id, existing)
+    }
     const now = new Date().toISOString()
     const record: SpaceRecord = {
       ownerId: input.ownerId,
