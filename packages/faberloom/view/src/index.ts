@@ -624,7 +624,13 @@ export class FaberLoomViewService extends TypertRemoteService {
       || (await this.sharesService().list(actor.id)).outgoing
         .some(grant => grant.resource.kind === 'space' && grant.resource.id === space.id)
     if (!shared) return
-    await this.captureSpaceSessions(space.id, [{ id: session.id, title: '' }])
+    // Never re-publish a Session this host imported from another member: the
+    // catalog already carries it under its author, and re-publishing would
+    // duplicate the row under this identity.
+    const known = await this.sessionSharesService().list({ id: actor.id }, space.id)
+    if (!known.some(row => row.sessionId === session.id && row.origin === 'console')) {
+      await this.captureSpaceSessions(space.id, [{ id: session.id, title: '' }])
+    }
     await this.materializeSharedSessions(actor, space.id, workspace.id)
   }
 
