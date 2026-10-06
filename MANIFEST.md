@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-05-accept-link` (commit `6b43b0b7f799adad0b377f616320e41de5735786`: sobre el merge a `main` de la línea FaberLoom — Contexto, Sesiones, Aprobaciones y Work Flows — el enlace del correo de invitación lleva el id de la fila de la consola y un `GET /api/harness/shares/accept` público marca el grant `active`; más el token de consola vivo por usuario).
-**Imagen desplegada actual:** build de `main` @ `6b43b0b7f799adad0b377f616320e41de5735786` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-05-shared-grant-materialization` (commit `2579845a3cd615b793caa8ce59247d7a2cfd37c5`: sobre el merge a `main`, `shareSpace`/`shareWorkflow` publican un snapshot portable con el grant y el `overview` del invitado importa los grants de la consola y materializa cada Space/Work Flow activo bajo el id remoto, idempotente y propiedad del publicador).
+**Imagen desplegada actual:** build de `main` @ `2579845a3cd615b793caa8ce59247d7a2cfd37c5` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `6b43b0b7f7` (5 oct 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `2579845a3c` (5 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |

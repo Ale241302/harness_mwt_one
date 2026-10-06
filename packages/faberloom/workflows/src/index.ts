@@ -18,6 +18,7 @@ import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput, Fab
 import type { FaberLoomSharePermission } from '@deepseek-ai/dsh-faberloom-shares'
 import type {
   CreateWorkFlowInput,
+  ImportSharedWorkFlowInput,
   UpdateWorkFlowInput,
   WorkFlow,
   WorkFlowActor,
@@ -476,6 +477,38 @@ export class FaberLoomWorkflows extends Service {
     const id = brandString<WorkFlowId>(randomUUID())
     const record: WorkFlowRecord = {
       ownerId: actor.id,
+      scope: input.scope ?? { kind: 'personal' },
+      name: input.name,
+      status: 'draft',
+      version: 1,
+      definition: input.definition,
+      routineId: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+    await table.put(id, record)
+    await this.recordVersion(id, record)
+    return toWorkFlow(id, record)
+  }
+
+  /**
+   * Materialize a Work Flow another identity shared, under the remote id so the
+   * imported record resolves the same grants. Idempotent: an existing record is
+   * returned untouched, so a repeated sync never clobbers the member's state.
+   * The record is owned by the publisher and stays `draft`; no routine is
+   * created here, so a shared flow is readable and editable per grant but does
+   * not start executing on the member's host.
+   * @param input - remote id, publisher email, name, scope, and shared definition.
+   * @returns the imported (or already present) work flow.
+   */
+  async importShared(input: ImportSharedWorkFlowInput): Promise<WorkFlow> {
+    const table = await this.table()
+    const id = brandString<WorkFlowId>(input.id)
+    const existing = table.get(id)
+    if (existing !== undefined) return toWorkFlow(id, existing)
+    const now = new Date().toISOString()
+    const record: WorkFlowRecord = {
+      ownerId: input.ownerId,
       scope: input.scope ?? { kind: 'personal' },
       name: input.name,
       status: 'draft',

@@ -93,6 +93,22 @@ export interface CreateSpaceInput {
   readonly inheritContext?: boolean
 }
 
+/**
+ * Input accepted when importing a Space another identity shared. The imported
+ * record keeps the remote id so the share grant authorizes it, and is owned by
+ * the publisher so the member can never manage or delete it.
+ */
+export interface ImportSharedSpaceInput {
+  /** Remote resource id; the imported record keeps it so grants resolve. */
+  readonly id: string
+  /** Email of the identity that owns the shared Space. */
+  readonly ownerId: string
+  /** Display title. */
+  readonly title: string
+  /** Context the owner published with the share, when any. */
+  readonly context?: SpaceContext | undefined
+}
+
 /** Mutable fields of a space. Absent fields stay unchanged. */
 export interface UpdateSpaceInput {
   /** New display title. */

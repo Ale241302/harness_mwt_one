@@ -429,4 +429,17 @@ describe('FaberLoomWorkflows pending approval', () => {
     // A personal flow has no owner-visible stage for another identity.
     expect(await workflows.pendingChanges(OTHER)).toEqual([])
   })
+
+  it('imports a shared flow under the remote id, idempotently, with no routine', async () => {
+    const { workflows } = await harness()
+    const imported = await workflows.importShared({ id: 'wf-remote', ownerId: OWNER.id, name: 'Anti-spam', definition: simple })
+    expect(imported).toMatchObject({ id: 'wf-remote', ownerId: OWNER.id, name: 'Anti-spam', status: 'draft', version: 1 })
+    expect(imported.routineId).toBeUndefined()
+    // Idempotent: a second import never overwrites the stored record.
+    const again = await workflows.importShared({ id: 'wf-remote', ownerId: OWNER.id, name: 'Otro', definition: invalid })
+    expect(again.name).toBe('Anti-spam')
+    // The publisher reads it; a stranger without a grant does not.
+    expect((await workflows.get(OWNER, 'wf-remote' as WorkFlowId)).name).toBe('Anti-spam')
+    await expect(workflows.get(OTHER, 'wf-remote' as WorkFlowId)).rejects.toThrow('access denied')
+  })
 })

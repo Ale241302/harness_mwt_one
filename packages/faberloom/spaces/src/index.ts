@@ -21,6 +21,7 @@ import type {
   EffectiveContextConflict,
   FaberLoomSpace,
   FaberLoomSpaceId,
+  ImportSharedSpaceInput,
   LinkPreview,
   PersonalScope,
   SpaceActor,
@@ -307,6 +308,42 @@ export class FaberLoomSpaces extends Service {
       sources: [],
       agentId: input.agentId ?? null,
       workspaceId: input.workspaceId ?? null,
+      archived: false,
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    }
+    await table.put(id, record)
+    return toSpace(id, record)
+  }
+
+  /**
+   * Materialize a Space another identity shared, under the remote id so the
+   * imported record resolves the same `view`/`manage-members` grants. Idempotent:
+   * an existing record is returned untouched, so a repeated sync never clobbers
+   * the member's own state. The record is owned by the publisher, so the member
+   * can never manage or delete it, and it is never a sub-space of a local parent.
+   * @param input - remote id, publisher email, title, and the shared context.
+   * @returns the imported (or already present) space.
+   */
+  async importShared(input: ImportSharedSpaceInput): Promise<FaberLoomSpace> {
+    const table = await this.table()
+    const id = brandString<FaberLoomSpaceId>(input.id)
+    const existing = table.get(id)
+    if (existing !== undefined) return toSpace(id, existing)
+    const now = new Date().toISOString()
+    const record: SpaceRecord = {
+      ownerId: input.ownerId,
+      companyId: null,
+      title: input.title,
+      parentId: null,
+      inheritContext: false,
+      excluded: [],
+      members: [],
+      context: { ...(input.context ?? {}) },
+      sources: [],
+      agentId: null,
+      workspaceId: null,
       archived: false,
       createdAt: now,
       updatedAt: now,

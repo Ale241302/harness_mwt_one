@@ -254,6 +254,24 @@ export interface CreateWorkFlowInput {
   readonly definition: WorkFlowDefinition
 }
 
+/**
+ * Input accepted when importing a Work Flow another identity shared. The
+ * imported record keeps the remote id so the share grant authorizes it, and is
+ * owned by the publisher so the member can never manage or delete it.
+ */
+export interface ImportSharedWorkFlowInput {
+  /** Remote resource id; the imported record keeps it so grants resolve. */
+  readonly id: string
+  /** Email of the identity that owns the shared Work Flow. */
+  readonly ownerId: string
+  /** Display name. */
+  readonly name: string
+  /** Scope the owner published with the share, when any. */
+  readonly scope?: WorkFlowScope | undefined
+  /** Graph the owner published with the share. */
+  readonly definition: WorkFlowDefinition
+}
+
 /** Mutable fields of a work flow. Absent fields stay unchanged. */
 export interface UpdateWorkFlowInput {
   /** New display name. */

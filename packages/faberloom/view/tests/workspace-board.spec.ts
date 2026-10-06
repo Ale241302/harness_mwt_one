@@ -89,6 +89,8 @@ function harness(options: {
       ({ id: 'm1', spaceIds: [], text: '', createdAt: '2026-01-01T00:00:00Z' })),
     listMemory: vi.fn(async (): Promise<readonly { id: string; spaceIds: string[]; text: string; createdAt: string }[]> => []),
     effectiveMemory: vi.fn(async (): Promise<readonly { id: string; spaceIds: string[]; text: string; createdAt: string }[]> => []),
+    importShared: vi.fn(async (input: { id: string; title: string }): Promise<MockSpace> =>
+      ({ id: input.id, title: input.title, parentId: null })),
   }
   const agents = {
     listAgents: vi.fn(async (): Promise<readonly {
@@ -104,11 +106,20 @@ function harness(options: {
     createAgent: vi.fn(async () => ({})),
     removeAgent: vi.fn(async () => {}),
   }
+  const workflows = {
+    importShared: vi.fn(async (input: { id: string; name: string }) => ({ id: input.id, name: input.name })),
+  }
+  const shares = {
+    sync: vi.fn(async (): Promise<void> => undefined),
+    list: vi.fn(async (): Promise<{ outgoing: readonly unknown[]; incoming: readonly unknown[] }> => ({ outgoing: [], incoming: [] })),
+    snapshotFor: vi.fn(async (_email: string, _grantId: string): Promise<Record<string, unknown> | null> => null),
+  }
   const events = new Map<string, (...args: never[]) => void>()
   const logger = { warn: vi.fn(), info: vi.fn() }
   const ctx = {
     faberloomSpaces: spaces,
     faberloomAgents: agents,
+    faberloomWorkflows: workflows,
     faberloomBoard: board,
     faberloomRoutines: { listRoutines: vi.fn(async () => []) },
     provide: () => {},
@@ -119,6 +130,7 @@ function harness(options: {
     get: (name: string) => {
       if (name === 'workspaceRegistry') return options.registry === false ? undefined : registry
       if (name === 'faberloomConnections' && options.connections !== undefined) return { list: vi.fn(async () => options.connections) }
+      if (name === 'faberloomShares') return shares
       return undefined
     },
   } as unknown as Context
@@ -127,7 +139,7 @@ function harness(options: {
     role: options.role ?? 'admin',
     readOnly: options.readOnly === true,
   })
-  return { view, board, registry, spaces, agents, entities, events, logger }
+  return { view, board, registry, spaces, agents, workflows, shares, entities, events, logger }
 }
 
 describe('FaberLoomViewService space workspace', () => {
@@ -640,5 +652,64 @@ describe('FaberLoomViewService board actions', () => {
     await expect(view.reviewBoardItem('b1', true)).rejects.toThrow('read-only')
     expect(board.submitRevision).not.toHaveBeenCalled()
     expect(board.review).not.toHaveBeenCalled()
+  })
+
+  it('imports and materializes a Space another identity shared once its grant is active', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, shares } = harness()
+    shares.list.mockResolvedValue({
+      outgoing: [],
+      incoming: [{
+        id: 'console:c1', resource: { kind: 'space', id: 'sp-remote' }, resourceName: 'SICOP',
+        ownerId: 'ana@sondelsa.com', granteeEmail: 'owner@muitowork.com', permissions: ['view'],
+        status: 'active', createdAt: '2026-01-01T00:00:00Z', acceptedAt: null,
+      }],
+    })
+    shares.snapshotFor.mockResolvedValue({ title: 'SICOP', context: { area: 'compras' } })
+    spaces.list.mockResolvedValue([{ id: 'sp-remote', title: 'SICOP', parentId: null }])
+
+    await view.overview()
+
+    expect(shares.sync).toHaveBeenCalledWith('owner@muitowork.com')
+    expect(spaces.importShared).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'sp-remote', ownerId: 'ana@sondelsa.com', title: 'SICOP', context: { area: 'compras' },
+    }))
+  })
+
+  it('imports a Work Flow snapshot and skips a pending grant, an empty snapshot, or a missing graph', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, workflows, shares } = harness()
+    const grant = (id: string, kind: 'space' | 'workflow', resourceId: string, status: string) => ({
+      id, resource: { kind, id: resourceId }, resourceName: 'Compartido', ownerId: 'ana@sondelsa.com',
+      granteeEmail: 'owner@muitowork.com', permissions: ['view'], status,
+      createdAt: '2026-01-01T00:00:00Z', acceptedAt: null,
+    })
+    shares.list.mockResolvedValue({
+      outgoing: [],
+      incoming: [
+        grant('console:c2', 'workflow', 'wf-remote', 'active'),
+        grant('console:c3', 'space', 'sp-pending', 'pending'),
+        grant('console:c4', 'space', 'sp-empty', 'active'),
+        grant('console:c5', 'workflow', 'wf-nograph', 'active'),
+      ],
+    })
+    shares.snapshotFor.mockImplementation(async (_email: string, grantId: string) => {
+      if (grantId === 'console:c2') return { scope: { kind: 'personal' }, definition: { intent: 'x', nodes: [], edges: [], permissions: [], failurePolicy: 'stop' } }
+      if (grantId === 'console:c5') return { scope: { kind: 'personal' } }
+      return {}
+    })
+    spaces.list.mockResolvedValue([])
+
+    await view.overview()
+
+    expect(workflows.importShared).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'wf-remote', ownerId: 'ana@sondelsa.com', name: 'Compartido',
+    }))
+    expect(workflows.importShared).toHaveBeenCalledTimes(1)
+    expect(spaces.importShared).not.toHaveBeenCalled()
   })
 })

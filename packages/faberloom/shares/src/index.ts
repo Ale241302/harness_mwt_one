@@ -261,6 +261,20 @@ export class FaberLoomShares extends Service {
   }
 
   /**
+   * The portable snapshot attached to one grant the actor holds, so a consumer
+   * can materialize the shared resource without a second console read.
+   * @param granteeEmail - the identity that holds the grant.
+   * @param grantId - grant id (the id `list` returned for the incoming grant).
+   * @returns the resource snapshot, or null when the actor holds no such grant.
+   */
+  async snapshotFor(granteeEmail: string, grantId: string): Promise<Record<string, unknown> | null> {
+    const record = (await this.grants()).get(grantId)
+    if (record === undefined) return null
+    if (record.granteeEmail !== granteeEmail.trim().toLowerCase()) return null
+    return record.snapshot
+  }
+
+  /**
    * List the permissions one grantee holds on one resource, unioned over every
    * active grant.
    * @param granteeEmail - the identity acting.

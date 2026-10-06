@@ -27,7 +27,7 @@ import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@dee
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
-import type { SpaceActor, FaberLoomSpaceId, FaberLoomSpace } from '@deepseek-ai/dsh-faberloom-spaces'
+import type { SpaceActor, FaberLoomSpaceId, FaberLoomSpace, SpaceContext } from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the workspace registry, read through ctx.get like the product services.
 import type { Workspace, WorkspaceRegistry, WorkspaceId } from '@deepseek-ai/dsh-workspace'
@@ -70,6 +70,7 @@ import type {
   WorkFlowNodeId,
   WorkFlowNodeKind,
   WorkFlowPendingChange,
+  WorkFlowScope,
   WorkFlowStatus,
 } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant } from '@deepseek-ai/dsh-faberloom-shares'
@@ -613,6 +614,14 @@ export class FaberLoomViewService extends TypertRemoteService {
       })
     }
     const actor = this.actor()
+    // Import the console's incoming grants and materialize what others shared,
+    // once per process, so an accepted Space/Work Flow is readable here.
+    if (!this.grantsSynced) {
+      this.grantsSynced = true
+      await this.syncSharedGrants(actor.id).catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: shared grant import failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }
     // Make the Spaces panel mirror the sidebar before reading the rows.
     await this.adoptOrphanWorkspaces(actor)
     const [spaces, agents, board, routines, memory] = await Promise.all([
@@ -1085,6 +1094,42 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Import the console's grants for this identity and materialize every active
+   * Space or Work Flow another identity shared, under the remote resource id so
+   * the same grant authorizes it. A grant with no published snapshot is skipped,
+   * so an older invite never materializes an empty resource. Best-effort: the
+   * caller logs a failure instead of failing the read.
+   * @param actorId - the identity whose incoming grants are imported.
+   */
+  private async syncSharedGrants(actorId: string): Promise<void> {
+    const shares = this.sharesService()
+    await shares.sync(actorId)
+    for (const grant of (await shares.list(actorId)).incoming) {
+      if (grant.status !== 'active') continue
+      const snapshot = await shares.snapshotFor(actorId, grant.id)
+      if (snapshot === null || Object.keys(snapshot).length === 0) continue
+      if (grant.resource.kind === 'space') {
+        await this.ctx.faberloomSpaces.importShared({
+          id: grant.resource.id,
+          ownerId: grant.ownerId,
+          title: grant.resourceName,
+          context: snapshot.context as SpaceContext | undefined,
+        })
+        continue
+      }
+      const definition = snapshot.definition as WorkFlowDefinition | undefined
+      if (definition === undefined) continue
+      await this.ctx.faberloomWorkflows.importShared({
+        id: grant.resource.id,
+        ownerId: grant.ownerId,
+        name: grant.resourceName,
+        scope: snapshot.scope as WorkFlowScope | undefined,
+        definition,
+      })
+    }
+  }
+
+  /**
    * Share one Space the owner (or an admin) manages with named emails.
    * @param id - space id.
    * @param emails - the grantees.
@@ -1099,8 +1144,9 @@ export class FaberLoomViewService extends TypertRemoteService {
       throw new Error('faberloom: only the owner or an admin can share this space')
     }
     const shares = this.sharesService()
+    const snapshot = { title: space.title, context: space.context }
     for (const email of emails) {
-      await shares.create(this.actor().id, { resource: { kind: 'space', id }, resourceName: space.title, granteeEmail: email, permissions })
+      await shares.create(this.actor().id, { resource: { kind: 'space', id }, resourceName: space.title, granteeEmail: email, permissions, snapshot })
     }
     return await this.outgoingGrantRows('space', id)
   }
@@ -1138,8 +1184,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     const allowed = flow.ownerId === this.actor().id || this.isPrivileged()
       || await shares.can(this.actor().id, flow.ownerId, { kind: 'workflow', id }, 'share')
     if (!allowed) throw new Error('faberloom: no puedes compartir este flujo')
+    const snapshot = { scope: flow.scope, definition: flow.definition }
     for (const email of emails) {
-      await shares.create(this.actor().id, { resource: { kind: 'workflow', id }, resourceName: flow.name, granteeEmail: email, permissions })
+      await shares.create(this.actor().id, { resource: { kind: 'workflow', id }, resourceName: flow.name, granteeEmail: email, permissions, snapshot })
     }
     return await this.outgoingGrantRows('workflow', id)
   }
@@ -1877,6 +1924,9 @@ export class FaberLoomViewService extends TypertRemoteService {
 
   /** Set once per process so the read path pulls shared resources a single time. */
   private sharesSynced = false
+
+  /** Set once per process so the read path imports shared grants a single time. */
+  private grantsSynced = false
 
   /** The console API base the gateway injects, or undefined when the deployment did not. */
   private consoleBase(): string | undefined {

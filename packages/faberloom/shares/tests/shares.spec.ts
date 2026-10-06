@@ -241,6 +241,35 @@ describe('FaberLoomShares', () => {
     expect((await shares.list(GUEST)).incoming).toHaveLength(2)
   })
 
+  it('returns a held grant snapshot to its grantee and null otherwise', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const { shares } = await harness({ consoleBase: 'http://console', consoleToken: 'tok' })
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'c1' }) })
+      await shares.create(OWNER, {
+        resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST,
+        permissions: ['view'], snapshot: { context: { area: 'compras' } },
+      })
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          incoming: [{ id: 'c1', kind: 'space', owner_email: OWNER, name: 'A', resource_id: 'sp-1', permissions: ['view'], status: 'active', payload: { context: { area: 'compras' } } }],
+        }),
+      })
+      await shares.sync(GUEST)
+      const incoming = (await shares.list(GUEST)).incoming[0]
+      expect(incoming).toBeDefined()
+      expect(await shares.snapshotFor(GUEST, incoming?.id ?? '')).toEqual({ context: { area: 'compras' } })
+      // Another identity never reads that snapshot, and a missing id is null.
+      expect(await shares.snapshotFor(OTHER, incoming?.id ?? '')).toBeNull()
+      expect(await shares.snapshotFor(GUEST, 'missing')).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('closes cleanly when no domain was ever opened', async () => {
     const { fiber } = await harness()
     await fiber.dispose()
