@@ -473,15 +473,14 @@ function readStringMap(value: unknown): SpaceContext | undefined {
 function memoryMessageText(value: unknown): string {
   const holder = value as { message?: { content?: unknown }; content?: unknown } | undefined
   const content = holder?.message?.content ?? holder?.content
-  if (typeof content === 'string') return content.trim()
-  if (!Array.isArray(content)) return ''
-  const parts: string[] = []
-  for (const part of content) {
-    if (typeof part === 'string') { parts.push(part); continue }
+  const join = (parts: readonly unknown[]): string => parts.map((part) => {
+    if (typeof part === 'string') return part
     const text = (part as { text?: unknown } | null)?.text
-    if (typeof text === 'string' && text.length > 0) parts.push(text)
-  }
-  return parts.join('\n').trim()
+    return typeof text === 'string' ? text : ''
+  }).filter(text => text.length > 0).join('\n')
+  const raw = typeof content === 'string' ? content : Array.isArray(content) ? join(content) : ''
+  // The harness appends UI-only reminders to the user turn; they are not the question.
+  return raw.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim()
 }
 
 /** The Space-memory text of one Session: its last question and result, bounded. */
@@ -559,6 +558,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     return documents.map(document => `Documento «${document.name}»:\n${document.markdown}`).join('\n\n')
   }
 
+  /** Whether this process already mirrored every shared Space's Sessions. */
+  private sessionsMaterialized = false
+
   /**
    * @param ctx - host context.
    * @param config - the gateway-injected identity, or an empty configuration
@@ -613,8 +615,17 @@ export class FaberLoomViewService extends TypertRemoteService {
     const text = sessionTurnMemory(session.snapshotEvents())
     if (text.length === 0) return
     const existing = await this.ctx.faberloomSpaces.listMemory(actor, space.id)
-    if (existing.some(entry => entry.text === text)) return
-    await this.ctx.faberloomSpaces.remember(actor, text, [space.id])
+    if (!existing.some(entry => entry.text === text)) {
+      await this.ctx.faberloomSpaces.remember(actor, text, [space.id])
+    }
+    // Keep the Space's members in sync: publish this Session so the other side
+    // reads it, and pull theirs so this side's sidebar mirrors the area.
+    const shared = space.ownerId !== actor.id
+      || (await this.sharesService().list(actor.id)).outgoing
+        .some(grant => grant.resource.kind === 'space' && grant.resource.id === space.id)
+    if (!shared) return
+    await this.captureSpaceSessions(space.id, [{ id: session.id, title: '' }])
+    await this.materializeSharedSessions(actor, space.id, workspace.id)
   }
 
   /**
@@ -734,6 +745,23 @@ export class FaberLoomViewService extends TypertRemoteService {
       this.readMemory(),
     ])
     const registry = this.workspaceRegistryOrUndefined()
+    // Mirror each shared Space's Sessions into this host once, so a member sees
+    // the owner's transcripts and the owner sees the member's.
+    if (!this.sessionsMaterialized) {
+      this.sessionsMaterialized = true
+      const catalog = this.ctx.get('faberloomSessionShares')
+      if (catalog !== undefined) {
+        await catalog.sync(actor.id).catch((error: unknown) => {
+          this.ctx.logger.warn(`faberloom: no se pudieron sincronizar las sesiones compartidas: ${String(error)}`)
+        })
+        for (const space of spaces) {
+          if (space.workspaceId === undefined) continue
+          await this.materializeSharedSessions(actor, space.id, space.workspaceId, false).catch((error: unknown) => {
+            this.ctx.logger.warn(`faberloom: no se pudieron espejar las sesiones del espacio '${space.title}': ${String(error)}`)
+          })
+        }
+      }
+    }
     // The responsible agent lives on the space, so the same agent may lead
     // several spaces (a parent and its sub-spaces). The space's Workspace is
     // keyed by its opaque workdir.
@@ -1320,14 +1348,17 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param actor - the acting identity.
    * @param spaceId - the Space whose shared Sessions are materialized.
    * @param workspaceId - the member's mirrored Workspace, when one exists.
+   * @param syncCatalog - whether to pull the console catalog first.
    */
-  private async materializeSharedSessions(actor: SpaceActor, spaceId: string, workspaceId: string | undefined): Promise<void> {
+  private async materializeSharedSessions(
+    actor: SpaceActor, spaceId: string, workspaceId: string | undefined, syncCatalog = true,
+  ): Promise<void> {
     if (workspaceId === undefined) return
     const persistence = this.ctx.get('sessionPersistence')
     const catalog = this.ctx.get('faberloomSessionShares')
     const workspace = this.workspaceRegistryOrUndefined()?.get(workspaceId as WorkspaceId)
     if (persistence === undefined || catalog === undefined || workspace === undefined) return
-    await catalog.sync(actor.id)
+    if (syncCatalog) await catalog.sync(actor.id)
     for (const row of await catalog.list({ id: actor.id }, spaceId)) {
       if (row.ownerId === actor.id) continue
       try {
