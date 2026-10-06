@@ -109,9 +109,11 @@ export class FaberLoomDefaults extends Service {
   /**
    * Seed the catalogue once for this owner.
    *
-   * A pass is a no-op when the identity is read-only, when it has no owner, or
-   * when the marker exists. Items are matched by name, so a retry after a
-   * partial pass never duplicates what already landed.
+   * A pass seeds the deployment's shared agents for every identity, and the
+   * owner's plan agents once (no-op while the marker exists). A read-only
+   * identity still receives the shared agents but no plan agents or routines.
+   * Items are matched by name, so a retry after a partial pass never duplicates
+   * what already landed.
    * @returns what the pass created.
    */
   async seed(): Promise<SeedReport> {
@@ -121,13 +123,17 @@ export class FaberLoomDefaults extends Service {
 
   private async run(): Promise<SeedReport> {
     const ownerId = this.config.ownerId ?? ''
-    if (this.config.readOnly === true) return { seeded: false, skipped: 'read-only identity', agents: [], routines: [] }
     if (ownerId.length === 0) return { seeded: false, skipped: 'no owner configured', agents: [], routines: [] }
     const available = new Set(this.availableSkills())
     // Shared agent presets are deployment-provided and re-synced on every start
-    // (idempotent by name), independent of the one-time plan marker.
+    // (idempotent by name), independent of the one-time plan marker. They reach
+    // every identity, so a read-only member still sees and calls them; editing
+    // stays gated by the acting role elsewhere.
     const shared = await this.seedSharedAgents()
     await this.convergeBaselineAgents()
+    if (this.config.readOnly === true) {
+      return { seeded: shared.length > 0, skipped: 'read-only identity', agents: shared, routines: [] }
+    }
     const marker = this.markerPath()
     let report: SeedReport
     if (existsSync(marker)) {
