@@ -583,13 +583,14 @@ export class FaberLoomViewService extends TypertRemoteService {
     }), 'faberloom.view.workspace-renamed')
     // A completed turn in a Space's area holds a durable fact the next session
     // should recall, so capture it into the Space's memory (not the chat log).
+    // Global, because the Session's events are emitted on the root scope.
     ctx.effect(() => ctx.on('session/event', (session, event) => {
       if (event.type !== 'turn/end') return
       if (event.data.reason.kind !== 'completed') return
       void this.captureTurnToMemory(session).catch((error: unknown) => {
         ctx.logger.warn(`faberloom: no se pudo guardar el turno en la memoria del Space: ${String(error)}`)
       })
-    }), 'faberloom.view.session-memory')
+    }, { global: true }), 'faberloom.view.session-memory')
   }
 
   /**
