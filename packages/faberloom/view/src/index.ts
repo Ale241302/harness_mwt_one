@@ -815,17 +815,26 @@ export class FaberLoomViewService extends TypertRemoteService {
       this.sessionsSyncedAt = Date.now()
       const catalog = this.ctx.get('faberloomSessionShares')
       if (catalog !== undefined) {
-        await catalog.sync(actor.id).catch((error: unknown) => {
-          this.ctx.logger.warn(`faberloom: no se pudieron sincronizar las sesiones compartidas: ${String(error)}`)
-        })
         const outgoing = await this.sharesService().list(actor.id)
           .then(list => new Set(list.outgoing.filter(grant => grant.resource.kind === 'space').map(grant => grant.resource.id)))
           .catch(() => new Set<string>())
-        for (const space of spaces) {
-          if (space.workspaceId === undefined) continue
-          // Mirror only shared areas: an imported Space, or one the actor shared.
-          if (space.ownerId === actor.id && !outgoing.has(space.id)) continue
-          await this.publishSpaceSessions(actor, space).catch((error: unknown) => {
+        // Mirror only shared areas: an imported Space, or one the actor shared.
+        const shared = spaces.filter(space => space.workspaceId !== undefined
+          && !(space.ownerId === actor.id && !outgoing.has(space.id)))
+        // Read the ids this host already mirrors before the sync drops a row the
+        // console no longer carries: the copy then prunes, and the publish below
+        // never re-publishes it under this identity.
+        const mirroredBySpace = new Map<string, Set<string>>()
+        for (const space of shared) {
+          const rows = await catalog.list({ id: actor.id }, space.id).catch(() => [])
+          mirroredBySpace.set(space.id, new Set(rows.filter(row => row.ownerId !== actor.id).map(row => row.sessionId)))
+        }
+        await catalog.sync(actor.id).catch((error: unknown) => {
+          this.ctx.logger.warn(`faberloom: no se pudieron sincronizar las sesiones compartidas: ${String(error)}`)
+        })
+        for (const space of shared) {
+          const mirrored = mirroredBySpace.get(space.id) ?? new Set<string>()
+          await this.publishSpaceSessions(actor, space, mirrored).catch((error: unknown) => {
             this.ctx.logger.warn(`faberloom: no se pudieron publicar las sesiones del espacio '${space.title}': ${String(error)}`)
           })
           await this.materializeSharedSessions(actor, space.id, space.workspaceId, false).catch((error: unknown) => {
@@ -1612,10 +1621,14 @@ export class FaberLoomViewService extends TypertRemoteService {
    * Publish a Space's conversation Sessions to the shared catalog so the grantee
    * reads them under the Space. A deployment without the shared-Session catalog,
    * or a Space with no area, publishes none.
-   * @param actor - the Space's owner, sharing the grant.
+   * @param actor - the acting identity.
    * @param space - the shared Space.
+   * @param mirrored - ids this host already mirrors for the Space, read before
+   *   the sync, so an imported copy is never re-published under this identity.
    */
-  private async publishSpaceSessions(actor: SpaceActor, space: FaberLoomSpace): Promise<void> {
+  private async publishSpaceSessions(
+    actor: SpaceActor, space: FaberLoomSpace, mirrored: ReadonlySet<string> = new Set(),
+  ): Promise<void> {
     if (space.workspaceId === undefined) return
     const registry = this.workspaceRegistryOrUndefined()
     const workspace = registry?.get(space.workspaceId as WorkspaceId)
@@ -1647,7 +1660,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const known = new Set(rows.map(row => row.sessionId))
     for (const sessionId of workspace.sessionIds) {
       const id = String(sessionId)
-      if (!live.has(id) || known.has(id)) continue
+      if (!live.has(id) || known.has(id) || mirrored.has(id)) continue
       const artifact = await this.readSessionArtifact(sessionId)
       await catalog.capture({ id: actor.id }, {
         spaceId: space.id,
