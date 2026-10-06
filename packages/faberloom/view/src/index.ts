@@ -497,26 +497,6 @@ function sessionTurnMemory(events: readonly SessionEvent[]): string {
   return parts.join('\n\n').slice(0, 4000)
 }
 
-/** Read the durable set of Sessions this host mirrored, as id → Space id. */
-function readMirrorFile(path: string): Record<string, string> {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
-    if (!isRecord(parsed)) return {}
-    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
-  } catch {
-    return {}
-  }
-}
-
-/** Persist the mirrored-Session set, best effort. */
-function writeMirrorFile(path: string, value: Record<string, string>): void {
-  try {
-    writeFileSync(path, JSON.stringify(value), 'utf8')
-  } catch {
-    // A failed bookkeeping write only risks a stale prune on the next pass.
-  }
-}
-
 /** Read a Work Flow scope value, or undefined when it is not one. */
 function readScope(value: unknown): WorkFlowScope | undefined {
   const scope = readObject(value)
@@ -1502,20 +1482,22 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (workspaceId === undefined) return
     const persistence = this.ctx.get('sessionPersistence')
     const catalog = this.ctx.get('faberloomSessionShares')
-    const workspace = this.workspaceRegistryOrUndefined()?.get(workspaceId as WorkspaceId)
+    const registry = this.workspaceRegistryOrUndefined()
+    const workspace = registry?.get(workspaceId as WorkspaceId)
     if (persistence === undefined || catalog === undefined || workspace === undefined) return
     if (syncCatalog) await catalog.sync(actor.id)
-    const file = join(this.dshHome(), '.faberloom-mirrored-sessions.json')
-    const mirrored = readMirrorFile(file)
+    // A Session the member archived stays hidden; re-materializing it would
+    // resurrect a conversation the member removed from the sidebar.
+    const archived = new Set<string>(registry?.archivedSessionIds ?? [])
+    const rows = await catalog.list({ id: actor.id }, spaceId)
+    const ownIds = new Set(rows.filter(row => row.ownerId === actor.id).map(row => row.sessionId))
     const wanted = new Set<string>()
-    for (const row of await catalog.list({ id: actor.id }, spaceId)) {
+    for (const row of rows) {
       if (row.ownerId === actor.id) continue
       wanted.add(row.sessionId)
+      if (archived.has(row.sessionId)) continue
       try {
-        if (await persistence.stat(row.sessionId as SessionId) !== undefined) {
-          mirrored[row.sessionId] = spaceId
-          continue
-        }
+        if (await persistence.stat(row.sessionId as SessionId) !== undefined) continue
         const shared = await catalog.content({ id: actor.id }, spaceId, row.ownerId, row.sessionId)
         const parsed = JSON.parse(shared.content) as { session: SessionHeader; events: readonly SessionEvent[] }
         const header: SessionHeader = { ...parsed.session, id: row.sessionId as SessionId, cwd: workspace.path }
@@ -1529,28 +1511,25 @@ export class FaberLoomViewService extends TypertRemoteService {
         // Warm the title projection so the sidebar shows the author's title
         // instead of falling back to the area id until the Session is opened.
         await this.ctx.get('sessionQuery')?.readTitle(header.id).catch(() => undefined)
-        mirrored[row.sessionId] = spaceId
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: no se pudo materializar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
       }
     }
-    // Reconcile removals: a Session this host mirrored for the Space but the
-    // catalog no longer lists (its author deleted or revoked it) is dropped
-    // here too, so a deletion on one side clears the mirror on the other.
-    const next: Record<string, string> = {}
-    for (const [id, ownerSpace] of Object.entries(mirrored)) {
-      if (ownerSpace === spaceId && !wanted.has(id)) {
-        try {
-          await persistence.delete(id as SessionId)
-          await workspace.detachSession(id as SessionId)
-        } catch (error: unknown) {
-          this.ctx.logger.warn(`faberloom: no se pudo quitar la sesión compartida '${id}': ${error instanceof Error ? error.message : String(error)}`)
-        }
-        continue
+    // Reconcile removals: a Session in this area that the actor neither owns
+    // (its own capture) nor the catalog still offers is a stale mirror of an
+    // author's deleted or archived Session, so it leaves here too. The caller
+    // publishes before this runs, so the actor's own Sessions are already ownIds.
+    for (const sessionId of [...workspace.sessionIds]) {
+      const id = String(sessionId)
+      if (ownIds.has(id) || wanted.has(id)) continue
+      if (await persistence.stat(id as SessionId) === undefined) continue
+      try {
+        await persistence.delete(id as SessionId)
+        await workspace.detachSession(id as SessionId)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: no se pudo quitar la sesión compartida '${id}': ${error instanceof Error ? error.message : String(error)}`)
       }
-      next[id] = ownerSpace
     }
-    writeMirrorFile(file, next)
   }
 
   /**
@@ -1591,14 +1570,37 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   private async publishSpaceSessions(actor: SpaceActor, space: FaberLoomSpace): Promise<void> {
     if (space.workspaceId === undefined) return
-    const workspace = this.workspaceRegistryOrUndefined()?.get(space.workspaceId as WorkspaceId)
+    const registry = this.workspaceRegistryOrUndefined()
+    const workspace = registry?.get(space.workspaceId as WorkspaceId)
     if (workspace === undefined) return
     const catalog = this.ctx.get('faberloomSessionShares')
-    if (catalog === undefined) return
-    // Skip transcript uploads already captured, so a load does not re-push them.
-    const existing = new Set((await catalog.list({ id: actor.id }, space.id)).map(row => row.sessionId))
+    const persistence = this.ctx.get('sessionPersistence')
+    if (catalog === undefined || persistence === undefined) return
+    // A Session is live when its id is in the area, was not archived, and its
+    // log still exists. A deleted Session leaves a dangling `sessionIds` slot,
+    // so the existence check is what actually retires it.
+    const archived = new Set<string>(registry?.archivedSessionIds ?? [])
+    const live = new Set<string>()
     for (const sessionId of workspace.sessionIds) {
-      if (existing.has(sessionId)) continue
+      const id = String(sessionId)
+      if (archived.has(id)) continue
+      if (await persistence.stat(id as SessionId) === undefined) {
+        try {
+          await workspace.detachSession(id as SessionId)
+        } catch (error: unknown) {
+          this.ctx.logger.warn(`faberloom: no se pudo desligar la sesión ausente '${id}': ${error instanceof Error ? error.message : String(error)}`)
+        }
+        continue
+      }
+      live.add(id)
+    }
+    const rows = await catalog.list({ id: actor.id }, space.id)
+    // Any Session the catalog already knows — this actor's own capture or an
+    // imported copy of another member's — is not captured again.
+    const known = new Set(rows.map(row => row.sessionId))
+    for (const sessionId of workspace.sessionIds) {
+      const id = String(sessionId)
+      if (!live.has(id) || known.has(id)) continue
       const artifact = await this.readSessionArtifact(sessionId)
       await catalog.capture({ id: actor.id }, {
         spaceId: space.id,
@@ -1607,6 +1609,15 @@ export class FaberLoomViewService extends TypertRemoteService {
         workspaceId: space.workspaceId,
         messageCount: artifact.messageCount,
         content: artifact.content,
+      })
+    }
+    // A Session this actor captured but no longer offers — removed from the
+    // area, archived, or its log deleted — leaves the catalog so a member's
+    // copy stops showing.
+    for (const row of rows) {
+      if (row.ownerId !== actor.id || live.has(row.sessionId)) continue
+      await catalog.remove({ id: actor.id }, space.id, actor.id, row.sessionId).catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: no se pudo retirar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
       })
     }
   }

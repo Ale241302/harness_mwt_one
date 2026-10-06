@@ -31,10 +31,12 @@ function harness(options: { query?: boolean; workspaceId?: string | null } = {})
     sessionIds: ['s1'],
     path: '/data/owner/spaces/shared/3a4d6839',
     attachSession: vi.fn(async (_id: string) => {}),
+    detachSession: vi.fn(async (_id: string) => {}),
   }
   const registry = { get: vi.fn((id: string) => id === 'ws-1' ? workspaceEntity : undefined) }
   const persistence = {
-    stat: vi.fn(async (_id: string) => undefined as unknown),
+    // The area's own Session exists; a not-yet-materialized shared one does not.
+    stat: vi.fn(async (id: string) => id === 's1' ? { id } : undefined as unknown),
     create: vi.fn(async (_header: Record<string, unknown>) => ({
       append: vi.fn(async (_events: unknown) => {}),
       close: vi.fn(async () => {}),
@@ -123,6 +125,21 @@ describe('FaberLoomViewService shared Sessions', () => {
     await vi.waitFor(() => expect(catalog.capture).toHaveBeenCalledWith(
       { id: 'owner@muitowork.com' },
       expect.objectContaining({ spaceId: 'sp-1', sessionId: 's1', workspaceId: 'ws-1' }),
+    ))
+  })
+
+  it('retires a captured Session whose log is gone and drops its dangling area slot', async () => {
+    const { view, catalog, registry } = harness()
+    // The area lists two Sessions, but only s1 still has a log; s2 was deleted.
+    const entity = registry.get('ws-1') as unknown as { sessionIds: string[] }
+    entity.sessionIds = ['s1', 's2']
+    catalog.list.mockResolvedValue([
+      row({ ownerId: 'owner@muitowork.com', sessionId: 's1' }),
+      row({ ownerId: 'owner@muitowork.com', sessionId: 's2' }),
+    ])
+    await view.shareSpace('sp-1', ['guest@x'], ['view'])
+    await vi.waitFor(() => expect(catalog.remove).toHaveBeenCalledWith(
+      { id: 'owner@muitowork.com' }, 'sp-1', 'owner@muitowork.com', 's2',
     ))
   })
 
