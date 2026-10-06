@@ -255,6 +255,14 @@ en `/opt/faberloom` (`faberloom-mcp:8090`, red `harness-net`, volumen
   `scripts/backup-harness.sh`) y `/opt/mwt/harness-manifest/` (lo rellena
   `deploy-vps.sh`); sin ellos `lastBackup` sale nulo y el drift compara contra el
   manifiesto cocido en la imagen.
+- **M10 · token de consola vivo**: el gateway escribe el JWT de consola del
+  usuario en `<DSH_HOME>/.consola-token` al arrancar y cada vez que
+  `refreshConsolaAccess` lo rota, lo inyecta como `CONSOLA_TOKEN_FILE` y
+  precarga `gateway/consola-token-watch.mjs` en cada `dsh` vía `NODE_OPTIONS`.
+  El watcher re-lee el archivo cada minuto hacia `process.env.CONSOLA_TOKEN`, así
+  que un proceso que vive más de los 30 min del access token no sigue enviando
+  uno caducado (lo que devolvía 401 al compartir y en los adjuntos de correo);
+  un temporizador del gateway refresca cada token antes de expirar.
 
 ### M8 · TLS de extremo a extremo (pendiente operativo)
 

@@ -172,6 +172,9 @@ export class FaberLoomShares extends Service {
       method: 'POST',
       body: JSON.stringify({
         kind: input.resource.kind,
+        // La consola devuelve `resource_id` en las filas de `sync`, así que el
+        // grantee importa el grant contra el recurso real y no contra su nombre.
+        resource_id: input.resource.id,
         name: input.resourceName,
         payload: input.snapshot ?? {},
         shared_emails: [granteeEmail],

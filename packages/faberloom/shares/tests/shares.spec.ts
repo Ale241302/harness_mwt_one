@@ -110,6 +110,8 @@ describe('FaberLoomShares', () => {
       fetchMock.mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'console-1' }) })
       const grant = await shares.create(OWNER, { resource: { kind: 'workflow', id: 'wf-1' }, resourceName: 'Anti-spam', granteeEmail: GUEST, permissions: ['view'] })
       expect(fetchMock).toHaveBeenCalledWith('http://console/harness/shares/', expect.objectContaining({ method: 'POST' }))
+      const published = fetchMock.mock.calls.find(([url]) => url === 'http://console/harness/shares/')?.[1] as { body: string }
+      expect(JSON.parse(published.body)).toMatchObject({ kind: 'workflow', resource_id: 'wf-1', shared_emails: [GUEST] })
 
       // The console now offers an active grant to the guest; sync imports it.
       fetchMock.mockResolvedValueOnce({

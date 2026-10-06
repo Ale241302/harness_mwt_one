@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import express from 'express'
 import httpProxy from 'http-proxy'
@@ -515,6 +515,29 @@ function consolaTokenStale(token) {
 }
 
 /**
+ * Write one user's current console JWT where their dsh re-reads it. The dsh
+ * keeps `CONSOLA_TOKEN` current from this file (see `consola-token-watch.mjs`),
+ * so a process that outlives the spawn-time token does not start 401ing.
+ * @param user - the user record; `id` and `consolaAccess` are read.
+ */
+function writeConsolaTokenFile(user) {
+  const file = path.join(cfg.dataDir, user.id, '.consola-token')
+  try {
+    if (typeof user.consolaAccess !== 'string' || user.consolaAccess.length === 0) {
+      fs.rmSync(file, { force: true })
+      return
+    }
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    const tmp = `${file}.tmp`
+    fs.writeFileSync(tmp, user.consolaAccess, 'utf8')
+    fs.chmodSync(tmp, 0o600)
+    fs.renameSync(tmp, file)
+  } catch (err) {
+    console.error(`[gateway] no se pudo escribir el token de consola de ${user.email}: ${err.message}`)
+  }
+}
+
+/**
  * Keep the user's console access token current, refreshing the stored one when
  * it is about to expire. Best-effort: a failed refresh keeps the previous token,
  * and the attachment tool then degrades to the workspace file.
@@ -535,10 +558,27 @@ async function refreshConsolaAccess(user) {
     if (typeof data.access !== 'string') return user.consolaAccess
     user.consolaAccess = data.access
     rememberUser(user)
+    writeConsolaTokenFile(user)
     return data.access
   } catch {
     // La consola no responde: se conserva el token previo.
     return user.consolaAccess
+  }
+}
+
+/**
+ * Refresh every stored user's console token so each running dsh's token file
+ * stays ahead of expiry even while the process keeps serving without new logins.
+ */
+async function refreshStoredConsolaTokens() {
+  let state
+  try {
+    state = JSON.parse(fs.readFileSync(cfg.userStateFile, 'utf8'))
+  } catch { /* sin estado todavía: nada que refrescar */ return }
+  for (const user of Object.values(state.users ?? {})) {
+    if (user === null || typeof user !== 'object') continue
+    if (typeof user.consolaRefresh !== 'string' || user.consolaRefresh.length === 0) continue
+    await refreshConsolaAccess(user)
   }
 }
 
@@ -1132,6 +1172,7 @@ function startInstance(user, memory) {
   const startedAt = Date.now()
   const home = path.join(cfg.dataDir, user.id)
   fs.mkdirSync(home, { recursive: true })
+  writeConsolaTokenFile(user)
   ensureWorkspaceDirs(home)
   const patchFile = writeUserPatch(home, user, memory)
   writeUserInstructions(home)
@@ -1152,8 +1193,11 @@ function startInstance(user, memory) {
   if (cfg.cpuLimitS > 0) limits.push(`--cpu=${cfg.cpuLimitS}`)
   const spawnCmd = limits.length ? 'prlimit' : cfg.dshBin
   const spawnArgs = limits.length ? [...limits, '--', cfg.dshBin, ...dshArgs] : dshArgs
-  // Cap de heap de Node por instancia (evita que un usuario agote la RAM).
-  const nodeOptions = `${process.env.NODE_OPTIONS || ''} --max-old-space-size=${cfg.maxOldSpaceMb}`.trim()
+  // Cap de heap de Node por instancia (evita que un usuario agote la RAM) y el
+  // preload que re-lee el token de consola para que no caduque dentro del dsh.
+  const watcher = path.join(__dirname, 'consola-token-watch.mjs')
+  const importFlag = fs.existsSync(watcher) ? ` --import=${pathToFileURL(watcher).href}` : ''
+  const nodeOptions = `${process.env.NODE_OPTIONS || ''} --max-old-space-size=${cfg.maxOldSpaceMb}${importFlag}`.trim()
   const child = spawn(
     spawnCmd,
     spawnArgs,
@@ -1186,6 +1230,8 @@ function startInstance(user, memory) {
         // sube el adjunto a MinIO y devuelve un enlace de descarga.
         CONSOLA_API_BASE: cfg.consolaApi,
         ...(typeof user.consolaAccess === 'string' && user.consolaAccess.length > 0 ? { CONSOLA_TOKEN: user.consolaAccess } : {}),
+        // El dsh re-lee este archivo para mantener el token al día (30 min de vida).
+        CONSOLA_TOKEN_FILE: path.join(home, '.consola-token'),
         NODE_OPTIONS: nodeOptions,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1665,6 +1711,14 @@ server.on('upgrade', (req, socket, head) => {
   }
   proxy.ws(req, socket, head, { target: `http://127.0.0.1:${inst.port}` })
 })
+
+// Refresco en segundo plano de los tokens de consola: cada dsh re-lee su
+// archivo, así que refrescar aquí mantiene viva la integración sin re-login.
+setInterval(() => {
+  void refreshStoredConsolaTokens().catch((err) => {
+    console.error('[gateway] refresco de tokens de consola falló:', err.message)
+  })
+}, 5 * 60 * 1000).unref()
 
 // ── Apagado ordenado ──────────────────────────────────────────────────
 function shutdown() {
