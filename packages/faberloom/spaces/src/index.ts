@@ -502,10 +502,19 @@ export class FaberLoomSpaces extends Service {
    * @returns entries oldest first.
    */
   async listMemory(actor: SpaceActor, spaceId?: FaberLoomSpaceId): Promise<FaberLoomSpaceMemory[]> {
+    // For one Space, a member that may read it also reads the owner's entries,
+    // so a shared Space's memory is visible without copying it.
+    const shared = spaceId === undefined
+      ? false
+      : await this.requireRecord(spaceId).then(({ record }) => this.mayRead(spaceId, record, actor)).catch(() => false)
     const out: FaberLoomSpaceMemory[] = []
     for (const [id, record] of (await this.memory()).entries()) {
-      if (record.ownerId !== actor.id) continue
-      if (spaceId !== undefined && !record.spaceIds.includes(spaceId)) continue
+      if (spaceId === undefined) {
+        if (record.ownerId !== actor.id) continue
+      } else {
+        if (!record.spaceIds.includes(spaceId)) continue
+        if (record.ownerId !== actor.id && !shared) continue
+      }
       out.push(toMemory(id, record))
     }
     out.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
