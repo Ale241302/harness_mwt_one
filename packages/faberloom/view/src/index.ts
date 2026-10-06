@@ -1147,7 +1147,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       const snapshot = await shares.snapshotFor(actorId, grant.id)
       if (snapshot === null || Object.keys(snapshot).length === 0) continue
       if (grant.resource.kind === 'space') {
-        const workspaceId = await this.prepareSharedWorkspace(actor, grant.resourceName, grant.resource.id)
+        const workspaceId = await this.prepareSharedWorkspace(grant.resourceName, grant.resource.id)
         await this.ctx.faberloomSpaces.importShared({
           id: grant.resource.id,
           ownerId: grant.ownerId,
@@ -1172,16 +1172,16 @@ export class FaberLoomViewService extends TypertRemoteService {
 
   /**
    * Create (or reuse) a sidebar Workspace for an imported Space, so the member
-   * sees it beside their own workspaces. Returns the workspace id, or undefined
-   * when the deployment mounts no registry or the identity is read-only.
-   * @param actor - the acting identity.
+   * sees it beside their own workspaces. A shared Space is a system import, so
+   * this runs even for a read-only identity. Returns the workspace id, or
+   * undefined when the deployment mounts no registry.
    * @param title - the space title, used as the workspace name.
    * @param resourceId - the remote space id, used for the stable directory.
    * @returns the workspace id, when one was created.
    */
-  private async prepareSharedWorkspace(actor: SpaceActor, title: string, resourceId: string): Promise<string | undefined> {
+  private async prepareSharedWorkspace(title: string, resourceId: string): Promise<string | undefined> {
     const registry = this.workspaceRegistryOrUndefined()
-    if (registry === undefined || actor.readOnly) return undefined
+    if (registry === undefined) return undefined
     try {
       const dir = join(this.dshHome(), 'spaces', 'shared', resourceId)
       mkdirSync(dir, { recursive: true })
