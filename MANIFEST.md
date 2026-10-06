@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-06-sessions-no-republish` (commit `80fdc7cb4e8bafd43e5ee7f72bbc765db08ec369`: sobre el fix de importación, un miembro ya no re-publica como suyas las sesiones que importó del dueño —antes duplicaba la fila bajo su identidad en "Shared sessions"—; además se limpiaron en la consola las filas duplicadas existentes).
-**Imagen desplegada actual:** build de `main` @ `80fdc7cb4e8bafd43e5ee7f72bbc765db08ec369` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-06-sessions-auto-and-titles` (commit `d6afab24c8e28b2494f869d2f5af87fa3ef5fdfa`: sobre "no re-publicar", se **quita el botón "Sync sessions"** (publicar/importar es automático al cargar y por turno) y al materializar se **calienta la proyección de título**, para que el sidebar del invitado muestre el nombre del autor y no el id del área).
+**Imagen desplegada actual:** build de `main` @ `d6afab24c8e28b2494f869d2f5af87fa3ef5fdfa` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `80fdc7cb4e` (6 oct 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `d6afab24c8` (6 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
