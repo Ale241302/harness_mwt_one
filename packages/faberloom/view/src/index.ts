@@ -564,6 +564,9 @@ export class FaberLoomViewService extends TypertRemoteService {
   /** Last time this process refreshed shared Context/Workflows/Routines (throttle). */
   private contentRefreshedAt = 0
 
+  /** Pending debounce that reconciles shared Space Sessions after a disposal. */
+  private sessionReconcileTimer: ReturnType<typeof setTimeout> | undefined
+
   /**
    * @param ctx - host context.
    * @param config - the gateway-injected identity, or an empty configuration
@@ -596,6 +599,50 @@ export class FaberLoomViewService extends TypertRemoteService {
         ctx.logger.warn(`faberloom: no se pudo guardar el turno en la memoria del Space: ${String(error)}`)
       })
     }, { global: true }), 'faberloom.view.session-memory')
+    // Permanently deleting a Session disposes it, and its shared catalog row
+    // lingers until the next read, so a member keeps seeing it. Reconcile
+    // shortly after the disposal, when the log is gone; a plain close keeps the
+    // log and prunes nothing.
+    ctx.effect(() => {
+      const off = ctx.on('session/disposed', () => { this.scheduleSessionReconcile() }, { global: true })
+      return () => {
+        off()
+        if (this.sessionReconcileTimer !== undefined) {
+          clearTimeout(this.sessionReconcileTimer)
+          this.sessionReconcileTimer = undefined
+        }
+      }
+    }, 'faberloom.view.session-disposed')
+  }
+
+  /** Debounce a shared-Session reconcile so a burst of disposals runs it once. */
+  private scheduleSessionReconcile(): void {
+    if (this.sessionReconcileTimer !== undefined) return
+    this.sessionReconcileTimer = setTimeout(() => {
+      this.sessionReconcileTimer = undefined
+      void this.reconcileSharedSpaceSessions().catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: no se pudieron reconciliar las sesiones compartidas: ${String(error)}`)
+      })
+    }, 1_500)
+  }
+
+  /**
+   * Retire this identity's catalog rows for Sessions it no longer holds in the
+   * shared areas it owns, so a deletion reaches the other side without waiting
+   * for the next read. Best effort.
+   */
+  private async reconcileSharedSpaceSessions(): Promise<void> {
+    const actor = this.actor()
+    const outgoing = new Set(
+      (await this.sharesService().list(actor.id)).outgoing
+        .filter(grant => grant.resource.kind === 'space')
+        .map(grant => grant.resource.id),
+    )
+    if (outgoing.size === 0) return
+    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
+      if (space.ownerId !== actor.id || !outgoing.has(space.id) || space.workspaceId === undefined) continue
+      await this.publishSpaceSessions(actor, space)
+    }
   }
 
   /**
