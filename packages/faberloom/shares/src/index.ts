@@ -187,7 +187,10 @@ export class FaberLoomShares extends Service {
       : null
     record = { ...record, consoleId }
     await (await this.grants()).put(id, record)
-    await this.notify(ownerId, toGrant(id, record), this.acceptUrl(id))
+    // El enlace de aceptación apunta a la fila de la consola (id remoto), que es
+    // el único identificador que el invitado puede resolver en su propia consola;
+    // el id local sólo existe en el proceso del dueño.
+    await this.notify(ownerId, toGrant(id, record), this.acceptUrl(record.consoleId ?? id))
     return toGrant(id, record)
   }
 

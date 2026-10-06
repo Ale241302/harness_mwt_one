@@ -14,6 +14,8 @@ The console's `core.harness_share` table and `HarnessShareViewSet` now carry two
 
 The harness publishes `resource_id: input.resource.id` with each grant, so a console row is addressable by the real resource id rather than by its display name.
 
+The console serves the invite link at `GET {consoleBase}/harness/shares/accept?grant=<id>`: the action is unauthenticated (the row id travels only in the grantee's email, so it is the link's secret), marks the row `active` with `accepted_at`, and returns a small HTML confirmation through `StaticHTMLRenderer`. Each grant emails that console row id rather than the owner-local grant id, so the link a grantee opens resolves in the console.
+
 The gateway writes each user's current console JWT to `<DSH_HOME>/.consola-token` at spawn and whenever `refreshConsolaAccess` rotates it, injects `CONSOLA_TOKEN_FILE`, and preloads `gateway/consola-token-watch.mjs` into every `dsh` through `NODE_OPTIONS`. The watcher re-reads the file into `process.env.CONSOLA_TOKEN` every minute, and a five-minute gateway timer refreshes every stored token ahead of expiry. The services already read `process.env.CONSOLA_TOKEN` per call, so the environment never goes stale.
 
 ## Alternatives considered
@@ -28,4 +30,4 @@ The gateway writes each user's current console JWT to `<DSH_HOME>/.consola-token
 
 Sharing a Space or Work Flow reaches the console and stores an id-addressable grant with its permissions and state; agents/skills are unchanged. A `dsh`'s console token no longer expires while the process lives, which also repairs the mail-attachment and shared-Session/context console calls.
 
-The acceptance step and grantee-side materialization remain unbuilt: the emailed link still points at a console `accept` route that does not exist, and incoming Space/Work Flow grants are not materialized into the grantee's store. `FaberLoomShares.sync` is the seam both will use.
+Accepting the invite marks the console grant active. The grantee side is still incomplete: `FaberLoomShares.sync` is not invoked in production, so an active console grant is not imported, and no code materializes the shared Space or Work Flow into the grantee's store (`shareSpace` sends no snapshot). `FaberLoomShares.sync` and a snapshot-carrying payload are the seams a follow-up will use.

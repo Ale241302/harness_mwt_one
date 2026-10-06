@@ -14,6 +14,8 @@ Status: implemented
 
 harness 在每个 grant 中发布 `resource_id: input.resource.id`，因此控制台行的寻址使用真实资源 id，而不是显示名称。
 
+控制台在 `GET {consoleBase}/harness/shares/accept?grant=<id>` 提供邀请链接：该 action 无需认证（行 id 只出现在受邀者的邮件里，因此它就是链接的密钥），把该行标记为 `active` 并写入 `accepted_at`，并通过 `StaticHTMLRenderer` 返回一个简单的 HTML 确认页。每个 grant 邮件发送的是该控制台行 id，而不是所有者本地的 grant id，因此受邀者打开的链接能在控制台解析。
+
 网关在启动时、以及 `refreshConsolaAccess` 轮换时，把用户当前的控制台 JWT 写入 `<DSH_HOME>/.consola-token`，注入 `CONSOLA_TOKEN_FILE`，并通过 `NODE_OPTIONS` 把 `gateway/consola-token-watch.mjs` 预加载进每个 `dsh`。该 watcher 每分钟把文件重新读入 `process.env.CONSOLA_TOKEN`，同时网关每五分钟在过期前刷新每个已存 token。各服务本就每次调用都读 `process.env.CONSOLA_TOKEN`，因此环境不会失效。
 
 ## Alternatives considered
@@ -28,4 +30,4 @@ harness 在每个 grant 中发布 `resource_id: input.resource.id`，因此控�
 
 共享一个 Space 或 Work Flow 会到达控制台，并存入一个可按 id 寻址的 grant，带有其权限与状态；agents/skills 不变。`dsh` 的控制台 token 在进程存活期间不再过期，这同时修复了邮件附件以及共享 Session/上下文的控制台调用。
 
-接受步骤与受邀侧物化仍未实现：邮件链接仍指向一个并不存在的控制台 `accept` 路由，来向的 Space/Work Flow grant 也尚未物化到受邀者的存储中。`FaberLoomShares.sync` 是两者将来使用的接缝。
+接受邀请会把控制台的 grant 标记为 active。受邀侧仍不完整：`FaberLoomShares.sync` 在生产中未被调用，因此 active 的控制台 grant 不会被导入，也没有代码把共享的 Space/Work Flow 物化到受邀者的存储中（`shareSpace` 不发送快照）。`FaberLoomShares.sync` 与携带快照的 payload 是后续工作要用的接缝。
