@@ -301,4 +301,29 @@ describe('FaberLoomShares', () => {
     const { fiber } = await harness()
     await fiber.dispose()
   })
+
+  it('republishes a resource snapshot to the console and is a no-op without one', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const { shares } = await harness({ consoleBase: 'http://console', consoleToken: 'tok' })
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ updated: 1 }) })
+      await shares.republish({
+        resource: { kind: 'space', id: 'sp-1' },
+        resourceName: 'SICOP',
+        snapshot: { contextEntries: [{ title: 'A', body: 'B' }] },
+      })
+      expect(fetchMock).toHaveBeenCalledWith('http://console/harness/shares/republish', expect.objectContaining({ method: 'POST' }))
+      const published = fetchMock.mock.calls[0]?.[1] as { body: string }
+      expect(JSON.parse(published.body)).toMatchObject({
+        kind: 'space', resource_id: 'sp-1', name: 'SICOP',
+        payload: { contextEntries: [{ title: 'A', body: 'B' }] },
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    // A console-less deployment never reaches the network.
+    const { shares } = await harness()
+    await shares.republish({ resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A' })
+  })
 })

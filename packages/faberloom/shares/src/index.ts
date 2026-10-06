@@ -12,7 +12,7 @@
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SHARE_PERMISSIONS, type FaberLoomShareGrant, type FaberLoomShareInput, type FaberLoomShareList, type FaberLoomSharePermission, type FaberLoomShareResource } from './types.ts'
+import { SHARE_PERMISSIONS, type FaberLoomShareGrant, type FaberLoomShareInput, type FaberLoomShareList, type FaberLoomSharePermission, type FaberLoomShareRepublishInput, type FaberLoomShareResource } from './types.ts'
 import { sharesDomainSpec, type ShareGrantRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
@@ -286,6 +286,26 @@ export class FaberLoomShares extends Service {
     if (record === undefined) return null
     if (record.granteeEmail !== granteeEmail.trim().toLowerCase()) return null
     return readSnapshot(record.snapshot)
+  }
+
+  /**
+   * Replace the portable snapshot the console holds for one of the actor's
+   * Space/Work Flow grants, so a grantee's next sync reads the current content.
+   * The grant lifecycle and permissions are untouched. A no-op when the console
+   * is not configured, so a local-only deployment keeps working.
+   * @param input - resource, display name, and the current snapshot.
+   */
+  async republish(input: FaberLoomShareRepublishInput): Promise<void> {
+    if (this.consoleBase() === undefined || this.consoleToken() === undefined) return
+    await this.consoleShare('republish', {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: input.resource.kind,
+        resource_id: input.resource.id,
+        name: input.resourceName,
+        payload: input.snapshot ?? {},
+      }),
+    })
   }
 
   /**

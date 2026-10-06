@@ -80,6 +80,20 @@ export interface FaberLoomShareInput {
   readonly snapshot?: Record<string, unknown> | undefined
 }
 
+/**
+ * Input accepted when replacing the portable snapshot one resource's grants
+ * carry, so a grantee's next sync reads current content. The grant lifecycle
+ * and permissions are untouched: this only refreshes what travels.
+ */
+export interface FaberLoomShareRepublishInput {
+  /** Resource the grant names. */
+  readonly resource: FaberLoomShareResource
+  /** Display name of the resource. */
+  readonly resourceName: string
+  /** Portable resource content that replaces what the console holds. */
+  readonly snapshot?: Record<string, unknown> | undefined
+}
+
 /** One resource's grants, split by direction for the panel. */
 export interface FaberLoomShareList {
   /** Grants the actor issued on resources it owns. */

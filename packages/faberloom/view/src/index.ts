@@ -581,6 +581,9 @@ export class FaberLoomViewService extends TypertRemoteService {
   /** Last time this process mirrored the shared Spaces' Sessions (throttle). */
   private sessionsSyncedAt = 0
 
+  /** Last time this process refreshed shared Context/Workflows/Routines (throttle). */
+  private contentRefreshedAt = 0
+
   /**
    * @param ctx - host context.
    * @param config - the gateway-injected identity, or an empty configuration
@@ -759,6 +762,14 @@ export class FaberLoomViewService extends TypertRemoteService {
       this.grantsSynced = true
       await this.syncSharedGrants(actor.id).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: shared grant import failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }
+    // Refresh the owner's published content and re-read every shared Space's
+    // Context/Workflows/Routines, so a reload shows the author's current set.
+    if (Date.now() - this.contentRefreshedAt > 20_000) {
+      this.contentRefreshedAt = Date.now()
+      await this.refreshSharedContent(actor).catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: shared content refresh failed: ${error instanceof Error ? error.message : String(error)}`)
       })
     }
     // Make the Spaces panel mirror the sidebar before reading the rows.
@@ -1299,6 +1310,84 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * The portable content one Space publishes to its grantees: the Space's
+   * memory, and the owner's Context entries, Work Flows, and the Routines those
+   * flows compile to. The grantee materializes them as copies, so a shared
+   * Space never leaves the guest with an empty panel.
+   * @param actor - the Space's owner.
+   * @param space - the Space being shared or refreshed.
+   * @returns the snapshot that travels to the console.
+   */
+  private async buildSpaceSnapshot(actor: SpaceActor, space: FaberLoomSpace): Promise<Record<string, unknown>> {
+    const memory = (await this.ctx.faberloomSpaces.listMemory(actor, space.id))
+      .map(entry => ({ text: entry.text, createdAt: entry.createdAt }))
+    const context = this.ctx.get('faberloomContext')
+    const contextEntries = context === undefined
+      ? []
+      : (await context.list({ id: actor.id })).map(entry => ({ title: entry.title, body: entry.body, spaceId: entry.spaceId }))
+    const workflows = await this.workflowsService().list(this.workflowActor())
+    const routines: { name: string; definition: RoutineInput['definition'] }[] = []
+    for (const flow of workflows) {
+      if (flow.routineId === undefined) continue
+      const routine = await this.ctx.faberloomRoutines.getRoutine(flow.routineId as FaberLoomRoutineId).catch(() => undefined)
+      if (routine === undefined) continue
+      routines.push({ name: routine.name, definition: routine.definition as unknown as RoutineInput['definition'] })
+    }
+    return {
+      title: space.title,
+      context: space.context,
+      memory,
+      contextEntries,
+      workflows: workflows.map(flow => ({ name: flow.name, scope: flow.scope, definition: flow.definition })),
+      routines,
+    }
+  }
+
+  /**
+   * Refresh the snapshot every Space this identity shared carries, so a guest's
+   * next sync reads the owner's current Context, Work Flows, and Routines. One
+   * console write per distinct Space the actor owns; a deployment without the
+   * console transport is a no-op.
+   * @param actor - the acting identity.
+   */
+  private async publishSpaceSnapshots(actor: SpaceActor): Promise<void> {
+    if (this.consoleBase() === undefined) return
+    const shares = this.sharesService()
+    const seen = new Set<string>()
+    for (const grant of (await shares.list(actor.id)).outgoing) {
+      if (grant.resource.kind !== 'space' || seen.has(grant.resource.id)) continue
+      seen.add(grant.resource.id)
+      const space = await this.ctx.faberloomSpaces.get(actor, grant.resource.id as FaberLoomSpaceId).catch(() => undefined)
+      if (space === undefined || space.ownerId !== actor.id) continue
+      const snapshot = await this.buildSpaceSnapshot(actor, space)
+      await shares.republish({ resource: { kind: 'space', id: space.id }, resourceName: space.title, snapshot }).catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: no se pudo refrescar el snapshot del espacio '${space.title}': ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }
+  }
+
+  /**
+   * Pull the current shared Space snapshots and materialize each owner's
+   * Context, Work Flows, and Routines as this member's copies, then republish
+   * this identity's own Space snapshots. Best-effort: the caller logs a failure
+   * instead of failing the read.
+   * @param actor - the acting identity.
+   */
+  private async refreshSharedContent(actor: SpaceActor): Promise<void> {
+    if (this.consoleBase() !== undefined) {
+      const shares = this.sharesService()
+      await shares.sync(actor.id)
+      for (const grant of (await shares.list(actor.id)).incoming) {
+        if (grant.status !== 'active' || grant.resource.kind !== 'space') continue
+        const snapshot = await shares.snapshotFor(actor.id, grant.id)
+        if (snapshot === null) continue
+        await this.materializeSharedContent(actor, grant.resource.id, snapshot)
+      }
+    }
+    await this.publishSpaceSnapshots(actor)
+  }
+
+  /**
    * Create (or reuse) a sidebar Workspace for an imported Space, so the member
    * sees it beside their own workspaces. A shared Space is a system import, so
    * this runs even for a read-only identity. Returns the workspace id, or
@@ -1322,10 +1411,11 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Recreate the Memory, Context entries, Work Flows, and Routines another
-   * identity published with a shared Space, as the member's own copies attached
-   * to the imported Space. Runs once, when the Space is first imported; each
-   * item is best-effort and a failure is logged instead of failing the read.
+   * Materialize the Memory, Context entries, Work Flows, and Routines another
+   * identity published with a shared Space, as this member's copies. Adding a
+   * missing item and converging an existing one by title/name keeps the guest's
+   * panels current on every refresh; each item is best-effort and a failure is
+   * logged instead of failing the read.
    * @param actor - the acting identity.
    * @param spaceId - the imported space id.
    * @param snapshot - the portable content published with the grant.
@@ -1340,34 +1430,56 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     const context = this.ctx.get('faberloomContext')
     if (context !== undefined) {
-      const titles = new Set((await context.list({ id: actor.id })).filter(entry => entry.spaceId === spaceId).map(entry => entry.title))
+      const byTitle = new Map((await context.list({ id: actor.id })).map(entry => [entry.title, entry] as const))
       for (const entry of readObjectArray(snapshot.contextEntries)) {
         const title = readString(entry.title)
         const body = readString(entry.body)
-        if (title === undefined || body === undefined || titles.has(title)) continue
-        titles.add(title)
-        await context.create({ id: actor.id }, { spaceId, title, body })
+        if (title === undefined || body === undefined) continue
+        const existing = byTitle.get(title)
+        try {
+          if (existing === undefined) {
+            await context.create({ id: actor.id }, { spaceId, title, body })
+          } else if (existing.body !== body) {
+            await context.update({ id: actor.id }, existing.id, { body })
+          }
+        } catch (error: unknown) {
+          this.ctx.logger.warn(`faberloom: no se pudo importar el contexto compartido '${title}': ${error instanceof Error ? error.message : String(error)}`)
+        }
       }
     }
     const scope: WorkFlowScope = { kind: 'space', spaceId }
-    const flowNames = new Set((await this.workflowsService().list(this.workflowActor(), scope)).map(flow => flow.name))
+    const flowByName = new Map((await this.workflowsService().list(this.workflowActor())).map(flow => [flow.name, flow] as const))
     for (const flow of readObjectArray(snapshot.workflows)) {
       const name = readString(flow.name)
       const definition = readObject(flow.definition)
-      if (name === undefined || definition === undefined || flowNames.has(name)) continue
-      flowNames.add(name)
-      await this.workflowsService().create(this.workflowActor(), { name, scope, definition: definition as unknown as WorkFlowDefinition })
+      if (name === undefined || definition === undefined) continue
+      const existing = flowByName.get(name)
+      const flowDefinition = definition as unknown as WorkFlowDefinition
+      try {
+        if (existing === undefined) {
+          await this.workflowsService().create(this.workflowActor(), { name, scope, definition: flowDefinition })
+        } else if (JSON.stringify(existing.definition) !== JSON.stringify(definition)) {
+          await this.workflowsService().update(this.workflowActor(), existing.id as WorkFlowId, { definition: flowDefinition })
+        }
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: no se pudo importar el Work Flow compartido '${name}': ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
-    const routineNames = new Set((await this.ctx.faberloomRoutines.listRoutines(actor.id)).map(routine => routine.name))
+    const routines = await this.ctx.faberloomRoutines.listRoutines(actor.id)
+    const routineByName = new Map(routines.map(routine => [routine.name, routine] as const))
     for (const routine of readObjectArray(snapshot.routines)) {
       const name = readString(routine.name)
       const definition = readObject(routine.definition)
-      if (name === undefined || definition === undefined || routineNames.has(name)) continue
-      routineNames.add(name)
+      if (name === undefined || definition === undefined) continue
+      const existing = routineByName.get(name)
       try {
-        await this.ctx.faberloomRoutines.createRoutine(actor.id, { name, definition: definition as unknown as RoutineInput['definition'] })
+        if (existing === undefined) {
+          await this.ctx.faberloomRoutines.createRoutine(actor.id, { name, definition: definition as unknown as RoutineInput['definition'] })
+        } else if (JSON.stringify(existing.definition) !== JSON.stringify(definition)) {
+          await this.ctx.faberloomRoutines.updateRoutine(actor.id, existing.id as FaberLoomRoutineId, { name, definition: definition as unknown as RoutineInput['definition'] })
+        }
       } catch (error: unknown) {
-        this.ctx.logger.warn(`faberloom: could not import the shared routine '${name}': ${error instanceof Error ? error.message : String(error)}`)
+        this.ctx.logger.warn(`faberloom: no se pudo importar la Routine compartida '${name}': ${error instanceof Error ? error.message : String(error)}`)
       }
     }
   }
@@ -1457,29 +1569,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     const shares = this.sharesService()
     const actor = this.actor()
-    const workflows = await this.workflowsService().list(this.workflowActor(), { kind: 'space', spaceId: id })
-    const routines: { name: string; definition: RoutineInput['definition'] }[] = []
-    for (const flow of workflows) {
-      if (flow.routineId === undefined) continue
-      const routine = await this.ctx.faberloomRoutines.getRoutine(flow.routineId as FaberLoomRoutineId)
-      routines.push({ name: routine.name, definition: routine.definition as unknown as RoutineInput['definition'] })
-    }
-    const context = this.ctx.get('faberloomContext')
-    const contextEntries = context === undefined
-      ? []
-      : (await context.list({ id: actor.id }))
-        .filter(entry => entry.spaceId === id)
-        .map(entry => ({ title: entry.title, body: entry.body }))
-    const memoryEntries = await this.ctx.faberloomSpaces.listMemory(actor, id as FaberLoomSpaceId)
-    const memory = memoryEntries.map(entry => ({ text: entry.text, createdAt: entry.createdAt }))
-    const snapshot = {
-      title: space.title,
-      context: space.context,
-      memory,
-      contextEntries,
-      workflows: workflows.map(flow => ({ name: flow.name, scope: flow.scope, definition: flow.definition })),
-      routines,
-    }
+    const snapshot = await this.buildSpaceSnapshot(actor, space)
     for (const email of emails) {
       await shares.create(actor.id, { resource: { kind: 'space', id }, resourceName: space.title, granteeEmail: email, permissions, snapshot })
     }
