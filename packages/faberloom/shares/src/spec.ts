@@ -17,7 +17,10 @@ export const shareGrantRecord = z.object({
   granteeEmail: z.string(),
   permissions: z.array(z.string()),
   status: z.union([z.literal('pending'), z.literal('active'), z.literal('revoked')]),
-  snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+  // A console round-trip may have stored the snapshot as its JSON text; the
+  // reader normalizes it, so the schema tolerates the legacy form and a later
+  // sync rewrites the record with a parsed object.
+  snapshot: z.union([z.record(z.string(), z.unknown()), z.string()]).nullable().default(null),
   // Console-side share id, when the grant was published to the console.
   consoleId: z.string().nullable().default(null),
   createdAt: z.string(),

@@ -285,7 +285,7 @@ export class FaberLoomShares extends Service {
     const record = (await this.grants()).get(grantId)
     if (record === undefined) return null
     if (record.granteeEmail !== granteeEmail.trim().toLowerCase()) return null
-    return record.snapshot
+    return readSnapshot(record.snapshot)
   }
 
   /**
