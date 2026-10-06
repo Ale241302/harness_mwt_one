@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-06-share-related-resources-ui` (commit `21d8fc7ce8be807efd17e30e87c8ebd23ad0666a`: al compartir un Space se publican también su Memory, Context, Work Flows y Routines; el invitado espeja un Workspace en el sidebar — ligándolo también en un re-share — y recrea esos recursos como copias propias; la consola normaliza el `payload` jsonb; Context como tabla maestra + inspector y Approvals con tabla de pendientes, al estilo de los demás módulos).
-**Imagen desplegada actual:** build de `main` @ `21d8fc7ce8be807efd17e30e87c8ebd23ad0666a` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-06-share-snapshot-tolerance` (commit `0b972f6585db82ee69a23bd198da52d8db102381`: sobre el rediseño de Context/Approvals, el dominio `faberloom_shares` tolera un `snapshot` guardado como texto y se auto-sana al re-sincronizar, para que un registro heredado no rompa el panel de Spaces).
+**Imagen desplegada actual:** build de `main` @ `0b972f6585db82ee69a23bd198da52d8db102381` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `21d8fc7ce8` (6 oct 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `0b972f6585` (6 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
