@@ -558,8 +558,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     return documents.map(document => `Documento «${document.name}»:\n${document.markdown}`).join('\n\n')
   }
 
-  /** Whether this process already mirrored every shared Space's Sessions. */
-  private sessionsMaterialized = false
+  /** Last time this process mirrored the shared Spaces' Sessions (throttle). */
+  private sessionsSyncedAt = 0
 
   /**
    * @param ctx - host context.
@@ -747,8 +747,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     const registry = this.workspaceRegistryOrUndefined()
     // Mirror each shared Space's Sessions into this host once, so a member sees
     // the owner's transcripts and the owner sees the member's.
-    if (!this.sessionsMaterialized) {
-      this.sessionsMaterialized = true
+    if (Date.now() - this.sessionsSyncedAt > 30_000) {
+      this.sessionsSyncedAt = Date.now()
       const catalog = this.ctx.get('faberloomSessionShares')
       if (catalog !== undefined) {
         await catalog.sync(actor.id).catch((error: unknown) => {
@@ -759,7 +759,8 @@ export class FaberLoomViewService extends TypertRemoteService {
           .catch(() => new Set<string>())
         for (const space of spaces) {
           if (space.workspaceId === undefined) continue
-          if (space.ownerId !== actor.id && !outgoing.has(space.id)) continue
+          // Mirror only shared areas: an imported Space, or one the actor shared.
+          if (space.ownerId === actor.id && !outgoing.has(space.id)) continue
           await this.publishSpaceSessions(actor, space).catch((error: unknown) => {
             this.ctx.logger.warn(`faberloom: no se pudieron publicar las sesiones del espacio '${space.title}': ${String(error)}`)
           })
