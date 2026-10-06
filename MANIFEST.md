@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-05-share-related-resources-ui` (commit `c204978bffd9403e86022264d9d24a7370d3f310`: al compartir un Space se publican también su Memory, Context, Work Flows y Routines; el invitado espeja un Workspace en el sidebar — ligándolo también en un re-share — y recrea esos recursos como copias propias, sin duplicar; la consola normaliza el `payload` jsonb devuelto como texto; paneles Context y Approvals más ricos).
-**Imagen desplegada actual:** build de `main` @ `c204978bffd9403e86022264d9d24a7370d3f310` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-06-share-related-resources-ui` (commit `fd52bcfb7f444892e318f0751909f75aef952e8e`: al compartir un Space se publican también su Memory, Context, Work Flows y Routines; el invitado espeja un Workspace en el sidebar — ligándolo también en un re-share — y recrea esos recursos como copias propias; la consola normaliza el `payload` jsonb; Context y Approvals rediseñados como tablas anchas con modal).
+**Imagen desplegada actual:** build de `main` @ `fd52bcfb7f444892e318f0751909f75aef952e8e` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -18,7 +18,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `c204978bff` (5 oct 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `fd52bcfb7f` (6 oct 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |

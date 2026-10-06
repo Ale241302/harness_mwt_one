@@ -3992,54 +3992,65 @@ function contextScreen() {
             }}>{t('ctx.create')}</button>
           </>
         )}>
-        <Feedback t={t} message={message} />
-        <p className={styles.hint}>{t('ctx.createHint')}</p>
-        {list.kind === 'loading'
-          ? <StateBlock kind="loading" title={t('state.loading')} />
-          : list.kind === 'error'
-            ? <StateBlock kind="error" title={t('state.error')} text={list.message} />
-            : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={open}
-              emptyTitle={t('state.empty.title')} emptyText={t('ctx.empty')} labels={tableLabels(t)} />}
-        <Modal open={chosen !== null} onClose={() => { setSelected(null) }} title={t('ctx.detail')} closeLabel={t('action.close')}
-          footer={(
-            <>
-              <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
-              <button className={styles.danger} type="button" onClick={() => {
-                if (selected === null) return
-                void props.context.remove(selected).then((result) => { if (result.ok) setSelected(null); refresh(result) })
-              }}>{t('ctx.remove')}</button>
-              <button className={styles.primary} type="button" onClick={() => {
-                if (selected === null) return
-                void props.context.update(selected, title, body).then((result) => { refresh(result); reloadVersions(selected) })
-              }}>{t('ctx.save')}</button>
-            </>
-          )}>
-          <div className={styles.workflowForm}>
-            <Field label={t('ctx.title')}><input aria-label={t('ctx.title')} value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
-            <Field label={t('ctx.body')}><textarea aria-label={t('ctx.body')} value={body} onChange={(event) => { setBody(event.target.value) }} /></Field>
-          </div>
-          <div className={styles.workflowActions}>
-            <button className={styles.secondary} type="button" onClick={() => {
-              if (selected !== null) void props.context.approve(selected).then((result) => { refresh(result); reloadVersions(selected) })
-            }}>{t('ctx.approve')}</button>
-            <button className={styles.secondary} type="button" onClick={() => {
-              if (selected !== null) void props.context.reject(selected).then((result) => { refresh(result); reloadVersions(selected) })
-            }}>{t('ctx.reject')}</button>
-          </div>
-          <p className={styles.hint}>{t('ctx.approveHint')}</p>
-          <h4>{t('ctx.versions')}</h4>
-          {versions.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.noVersions')}</span> : versions.map(version => (
-            <div key={version.version} className={styles.workflowRunRow}>
-              <span className={styles.cellMuted}>{`v${String(version.version)} · ${version.authorId} · ${version.createdAt}`}</span>
-              <button className={styles.ghost} type="button" onClick={() => {
-                if (selected === null) return
-                void props.context.restore(selected, version.version).then((result) => {
-                  refresh(result); reloadVersions(selected)
-                })
-              }}>{t('ctx.restore')}</button>
-            </div>
-          ))}
-        </Modal>
+        <Feedback t={t} message={list.kind === 'error' ? list.message : message} />
+        <div className={styles.split}>
+          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={open}
+            emptyTitle={t('state.empty.title')} emptyText={t('ctx.empty')} labels={tableLabels(t)} />
+          <Inspector
+            title={chosen === null ? t('ctx.detail') : chosen.title}
+            status={chosen === null ? undefined : <Chip>{visibilityLabel(chosen.visibility)}</Chip>}
+            footer={selected === null ? undefined : (
+              <>
+                <span className={styles.tools}>
+                  <button className={styles.danger} type="button" onClick={() => {
+                    if (selected === null) return
+                    void props.context.remove(selected).then((result) => { if (result.ok) setSelected(null); refresh(result) })
+                  }}>{t('ctx.remove')}</button>
+                  <button className={styles.secondary} type="button" onClick={() => {
+                    if (selected === null) return
+                    void props.context.approve(selected).then((result) => {
+                      refresh(result); reloadVersions(selected)
+                    })
+                  }}>{t('ctx.approve')}</button>
+                  <button className={styles.secondary} type="button" onClick={() => {
+                    if (selected === null) return
+                    void props.context.reject(selected).then((result) => {
+                      refresh(result); reloadVersions(selected)
+                    })
+                  }}>{t('ctx.reject')}</button>
+                </span>
+                <span className={styles.tools}>
+                  <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+                  <button className={styles.primary} type="button" onClick={() => {
+                    if (selected === null) return
+                    void props.context.update(selected, title, body).then((result) => { refresh(result); reloadVersions(selected) })
+                  }}>{t('ctx.save')}</button>
+                </span>
+              </>
+            )}>
+            {selected === null
+              ? <StateBlock kind="empty" title={t('ctx.select')} text={t('ctx.createHint')} />
+              : (
+                <>
+                  <Field label={t('ctx.title')}><input aria-label={t('ctx.title')} value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
+                  <Field label={t('ctx.body')}><textarea aria-label={t('ctx.body')} value={body} onChange={(event) => { setBody(event.target.value) }} /></Field>
+                  <p className={styles.hint}>{t('ctx.approveHint')}</p>
+                  <h4>{t('ctx.versions')}</h4>
+                  {versions.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.noVersions')}</span> : versions.map(version => (
+                    <div key={version.version} className={styles.workflowRunRow}>
+                      <span className={styles.cellMuted}>{`v${String(version.version)} · ${version.authorId} · ${version.createdAt}`}</span>
+                      <button className={styles.ghost} type="button" onClick={() => {
+                        if (selected === null) return
+                        void props.context.restore(selected, version.version).then((result) => {
+                          refresh(result); reloadVersions(selected)
+                        })
+                      }}>{t('ctx.restore')}</button>
+                    </div>
+                  ))}
+                </>
+              )}
+          </Inspector>
+        </div>
       </Screen>
     )
   }
