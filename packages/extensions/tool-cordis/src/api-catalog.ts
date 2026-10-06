@@ -947,7 +947,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'how many entries were checked and how many are now available.',
       },
       {
-        signature: 'registerExecutableTool(name: string, handler: (args: unknown) => unknown | Promise<unknown>): () => void',
+        signature: 'registerExecutableTool(name: string, handler: (args: unknown) => unknown): () => void',
         description: 'Register one executable tool handler in this process.',
         parameters: [{ name: 'name', description: 'tool name referenced by an agent\'s `tools` list.' }, { name: 'handler', description: 'sync or async handler over the call arguments.' }],
         returns: 'the disposer removing the handler.',
@@ -1295,6 +1295,72 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomContext',
+    summary: 'The Workspace/Space Context service: versioned entries with an owner approval gate and console transport.',
+    description: 'The Workspace/Space Context service: versioned entries with an owner approval gate and console transport.',
+    methods: [
+      {
+        signature: 'async create(actor: FaberLoomContextActor, input: FaberLoomContextInput): Promise<FaberLoomContextEntry>',
+        description: 'Create one context entry.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'input', description: 'title, body, and optional Space.' }],
+        returns: 'the created entry.',
+      },
+      {
+        signature: 'async list(actor: FaberLoomContextActor): Promise<readonly FaberLoomContextEntry[]>',
+        description: 'List every context entry the actor may see, newest first.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }],
+        returns: 'the visible entries.',
+      },
+      {
+        signature: 'async get(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>',
+        description: 'Read one entry.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
+        returns: 'the entry.',
+      },
+      {
+        signature: 'async update(actor: FaberLoomContextActor, id: string, edit: FaberLoomContextEdit): Promise<FaberLoomContextEntry>',
+        description: 'Edit one entry, appending a version. A member\'s edit returns the entry to `pending` until the owner approves it again.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }, { name: 'edit', description: 'the new title and/or body.' }],
+        returns: 'the updated entry.',
+      },
+      {
+        signature: 'async versions(actor: FaberLoomContextActor, id: string): Promise<readonly FaberLoomContextVersion[]>',
+        description: 'List one entry\'s version history, newest first.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
+        returns: 'the versions.',
+      },
+      {
+        signature: 'async restore(actor: FaberLoomContextActor, id: string, version: number): Promise<FaberLoomContextEntry>',
+        description: 'Restore one entry to an earlier version, appending a fresh version.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }, { name: 'version', description: 'version to restore.' }],
+        returns: 'the restored entry.',
+      },
+      {
+        signature: 'async approve(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>',
+        description: 'Index one entry into the Space\'s shared context (owner only).',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
+        returns: 'the approved entry.',
+      },
+      {
+        signature: 'async reject(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>',
+        description: 'Keep one entry private to its author, out of the shared context (owner only).',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
+        returns: 'the entry.',
+      },
+      {
+        signature: 'async remove(actor: FaberLoomContextActor, id: string): Promise<boolean>',
+        description: 'Remove one entry and its history (author or owner).',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
+        returns: 'true when removed.',
+      },
+      {
+        signature: 'async sync(readerId: string): Promise<void>',
+        description: 'Import the console\'s shared context for one owner and prune the imported rows the console no longer carries. Each imported row lands `pending` so the owner decides whether to index it. A no-op when the console is not wired.',
+        parameters: [{ name: 'readerId', description: 'the Space owner importing its members\' context.' }],
+      },
+    ],
+  },
+  {
     key: 'faberloomDefaults',
     summary: 'FaberLoom\'s own default agents and routines for one owner.',
     description: 'FaberLoom\'s own default agents and routines for one owner.',
@@ -1317,6 +1383,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Run one pass. Acquires the engine\'s dispatcher lock first, so an overlapping pass — a timer tick during a manual call, or the same owner served twice — reports `another pass is running` instead of starting work twice.',
         parameters: [{ name: 'now', description: 'the instant this pass considers current.' }],
         returns: 'what the pass did.',
+      },
+      {
+        signature: 'async health(): Promise<FaberLoomHealth>',
+        description: 'The dispatcher\'s liveness: one row per routine plus aggregate counters.',
+        parameters: [],
+        returns: 'the health snapshot.',
       },
     ],
   },
@@ -1492,6 +1564,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the names.',
       },
       {
+        signature: 'registerReviewListener(listener: (review: ExecutionReview) => void): () => void',
+        description: 'Register a listener the engine calls when an execution reaches review (a failed step, a missing handler, or an expired wait), so a deployment can dead-letter it and alert the owner.',
+        parameters: [{ name: 'listener', description: 'the callback.' }],
+        returns: 'the disposer removing the listener.',
+      },
+      {
         signature: 'async createRoutine(ownerId: string, input: RoutineInput): Promise<FaberLoomRoutine>',
         description: 'Create one routine as version 1 in draft.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'name and definition.' }],
@@ -1644,6 +1722,93 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomSessionShares',
+    summary: 'The shared Session catalog: durable, per-Space, and console-synced.',
+    description: 'The shared Session catalog: durable, per-Space, and console-synced.',
+    methods: [
+      {
+        signature: 'async capture(actor: FaberLoomSessionActor, input: FaberLoomSharedSessionCapture): Promise<FaberLoomSharedSession>',
+        description: 'Capture one local Session into its Space: store its portable log and publish it to the console when one is configured.',
+        parameters: [{ name: 'actor', description: 'the acting identity, which must own the Session.' }, { name: 'input', description: 'Space, Session identity, title, and canonical log text.' }],
+        returns: 'the captured row.',
+      },
+      {
+        signature: 'async list(actor: FaberLoomSessionActor, spaceId: string): Promise<readonly FaberLoomSharedSession[]>',
+        description: 'List one Space\'s shared Sessions, newest first. The actor must be able to view the Space.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space being listed.' }],
+        returns: 'the rows, without content.',
+      },
+      {
+        signature: 'async content(actor: FaberLoomSessionActor, spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContent>',
+        description: 'Read one shared Session\'s content.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space the Session is shared in.' }, { name: 'ownerId', description: 'the member whose host holds the Session.' }, { name: 'sessionId', description: 'the Session id.' }],
+        returns: 'the row with its content.',
+      },
+      {
+        signature: 'async remove(actor: FaberLoomSessionActor, spaceId: string, ownerId: string, sessionId: string): Promise<boolean>',
+        description: 'Remove one captured Session the actor owns, or any Session when the actor owns the Space.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space the Session is shared in.' }, { name: 'ownerId', description: 'the member whose host holds the Session.' }, { name: 'sessionId', description: 'the Session id.' }],
+        returns: 'true when a row was removed.',
+      },
+      {
+        signature: 'async sync(readerId: string): Promise<void>',
+        description: 'Import the console\'s shared Sessions for one member and prune the local copies the console no longer carries, so a revoked share stops showing. A no-op when the console is not configured.',
+        parameters: [{ name: 'readerId', description: 'the identity whose incoming Sessions are imported.' }],
+      },
+    ],
+  },
+  {
+    key: 'faberloomShares',
+    summary: 'The product sharing service: durable per-action grants with console transport and email acceptance.',
+    description: 'The product sharing service: durable per-action grants with console transport and email acceptance.',
+    methods: [
+      {
+        signature: 'async create(ownerId: string, input: FaberLoomShareInput): Promise<FaberLoomShareGrant>',
+        description: 'Create one share grant, notify the grantee by email, and publish it to the console when one is configured. The grant starts `pending`; only an accepted (`active`) grant authorizes an action.',
+        parameters: [{ name: 'ownerId', description: 'the identity granting access.' }, { name: 'input', description: 'resource, resource name, grantee email, and permissions.' }],
+        returns: 'the created grant.',
+        throws: ['when the grantee email is empty.'],
+      },
+      {
+        signature: 'async accept(granteeEmail: string, id: string): Promise<FaberLoomShareGrant>',
+        description: 'Accept one pending grant addressed to the grantee; a pending grant becomes active and its permissions start authorizing actions.',
+        parameters: [{ name: 'granteeEmail', description: 'the identity accepting.' }, { name: 'id', description: 'grant id.' }],
+        returns: 'the accepted grant.',
+        throws: ['when the grant is missing or not addressed to the grantee.'],
+      },
+      {
+        signature: 'async revoke(ownerId: string, id: string): Promise<FaberLoomShareGrant>',
+        description: 'Revoke one grant the actor issued; the next permission check denies it and the console mirror is removed.',
+        parameters: [{ name: 'ownerId', description: 'the identity that granted access.' }, { name: 'id', description: 'grant id.' }],
+        returns: 'the revoked grant.',
+        throws: ['when the grant is missing or the actor did not issue it.'],
+      },
+      {
+        signature: 'async list(actorId: string): Promise<FaberLoomShareList>',
+        description: 'List the grants the actor issued and the ones addressed to it.',
+        parameters: [{ name: 'actorId', description: 'the acting identity (owner or grantee email).' }],
+        returns: 'the outgoing and incoming grants, oldest first.',
+      },
+      {
+        signature: 'async permissionsFor(granteeEmail: string, resource: FaberLoomShareResource): Promise<readonly FaberLoomSharePermission[]>',
+        description: 'List the permissions one grantee holds on one resource, unioned over every active grant.',
+        parameters: [{ name: 'granteeEmail', description: 'the identity acting.' }, { name: 'resource', description: 'the resource being touched.' }],
+        returns: 'the active permissions, in display order.',
+      },
+      {
+        signature: 'async can(actorId: string, ownerId: string, resource: FaberLoomShareResource, permission: FaberLoomSharePermission): Promise<boolean>',
+        description: 'Whether one grantee may perform one action on one resource. The owner is always allowed; a grantee needs an active grant carrying the permission.',
+        parameters: [{ name: 'actorId', description: 'the acting identity.' }, { name: 'ownerId', description: 'the resource owner.' }, { name: 'resource', description: 'the resource being touched.' }, { name: 'permission', description: 'the action being authorized.' }],
+        returns: 'true when the action is authorized.',
+      },
+      {
+        signature: 'async sync(granteeEmail: string): Promise<void>',
+        description: 'Import the grants the console holds for one grantee and prune the local copies the console no longer carries, so a revoked share stops authorizing here. A no-op when the console is not configured.',
+        parameters: [{ name: 'granteeEmail', description: 'the identity whose incoming grants are imported.' }],
+      },
+    ],
+  },
+  {
     key: 'faberloomSpaces',
     summary: 'The product spaces service.',
     description: 'The product spaces service. It owns the durable space records, the effective context resolution, the personal scope, the opaque work-directory references, and console-role access control; every operation carries the authenticated actor.',
@@ -1779,6 +1944,258 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read the signed-in owner\'s workspace rows for the global panels.',
         parameters: [],
         returns: 'spaces, agents, board items, routines, and memory rows as plain JSON.',
+      },
+      {
+        signature: '@Remote(\'spaceMap\') async spaceMap(): Promise<FaberLoomSpaceMap>',
+        description: 'Read the Space connectivity map the palette and canvas consume: every Space with its agent and mirrored workspace, every agent with its skills and MCP access, the owner\'s mail connections, and the registered Workspaces. Connections and Workspaces are optional, so a deployment that mounts neither still gets the map.',
+        parameters: [],
+        returns: 'the connectivity map as plain JSON.',
+      },
+      {
+        signature: '@Remote(\'workflowOverview\') async workflowOverview(): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'List the owner\'s work flows.',
+        parameters: [],
+        returns: 'one row per flow.',
+      },
+      {
+        signature: '@Remote(\'workflowDetail\') async workflowDetail(id: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Read one work flow with its graph and validation verdict.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
+        returns: 'the flow detail.',
+      },
+      {
+        signature: '@Remote(\'createWorkflow\') async createWorkflow(name: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Create an empty work flow and return the refreshed list.',
+        parameters: [{ name: 'name', description: 'display name.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'saveWorkflow\') async saveWorkflow(id: string, name: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Rename one work flow and return the refreshed list.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'name', description: 'new display name.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'addNode\') async addNode(id: string, kind: string, title: string, configJson: string, nodeId?: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Append one node to a work flow.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'kind', description: 'node kind.' }, { name: 'title', description: 'node title.' }, { name: 'configJson', description: 'node config as a JSON object string; empty for none.' }, { name: 'nodeId', description: 'optional stable node id.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'updateNode\') async updateNode(id: string, nodeId: string, title: string, kind: string, configJson: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Change one node\'s title, kind, or config.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'nodeId', description: 'the node to change.' }, { name: 'title', description: 'new title, or empty to keep it.' }, { name: 'kind', description: 'new kind, or empty to keep it.' }, { name: 'configJson', description: 'config JSON merged over the node, or empty to keep it.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'removeNode\') async removeNode(id: string, nodeId: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Remove one node and its incident edges.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'nodeId', description: 'the node to remove.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'connect\') async connect(id: string, from: string, to: string, condition?: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Connect two nodes.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'from', description: 'source node id.' }, { name: 'to', description: 'target node id.' }, { name: 'condition', description: 'optional branch condition.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'disconnect\') async disconnect(id: string, edgeId: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Remove one edge.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'edgeId', description: 'the edge to remove.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'setWorkflowStatus\') async setWorkflowStatus(id: string, status: string): Promise<FaberLoomWorkflowDetail>',
+        description: 'Change one work flow\'s lifecycle.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'status', description: '`active`, `paused`, or `draft`.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'setWorkflowConcurrency\') async setWorkflowConcurrency(id: string, maxConcurrency: number | null): Promise<FaberLoomWorkflowDetail>',
+        description: 'Set or clear one work flow\'s concurrency cap.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'maxConcurrency', description: 'the cap, or null to clear it.' }],
+        returns: 'the refreshed flow detail.',
+      },
+      {
+        signature: '@Remote(\'workflowRuns\') async workflowRuns(id: string): Promise<readonly FaberLoomWorkflowRunRow[]>',
+        description: 'List one work flow\'s executions.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
+        returns: 'the run history rows.',
+      },
+      {
+        signature: '@Remote(\'routineWorkflowLinks\') async routineWorkflowLinks(): Promise<readonly FaberLoomWorkflowLink[]>',
+        description: 'List every routine ↔ work flow link the owner holds, in both directions: a routine step with handler `workflow` invoking a flow, and the compiled routine an active flow drives.',
+        parameters: [],
+        returns: 'the links, routines first.',
+      },
+      {
+        signature: '@Remote(\'shareSpace\') async shareSpace(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'Share one Space the owner (or an admin) manages with named emails.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'emails', description: 'the grantees.' }, { name: 'permissions', description: 'the permission subset each grantee receives.' }],
+        returns: 'the resource\'s outgoing grant rows.',
+      },
+      {
+        signature: '@Remote(\'shareSpaceByWorkspace\') async shareSpaceByWorkspace( workspaceId: string, emails: readonly string[], permissions: readonly string[], ): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'Share the Space that mirrors one registered Workspace, resolving the Space from the sidebar Workspace the caller addresses.',
+        parameters: [{ name: 'workspaceId', description: 'the Workspace whose mirrored Space is shared.' }, { name: 'emails', description: 'the grantees.' }, { name: 'permissions', description: 'the permission subset each grantee receives.' }],
+        returns: 'the Space\'s outgoing grant rows.',
+      },
+      {
+        signature: '@Remote(\'shareWorkflow\') async shareWorkflow(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'Share one Work Flow the owner manages — or that the actor holds `share` on — with named emails.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'emails', description: 'the grantees.' }, { name: 'permissions', description: 'the permission subset each grantee receives.' }],
+        returns: 'the flow\'s outgoing grant rows.',
+      },
+      {
+        signature: '@Remote(\'resourceShares\') async resourceShares(kind: string, id: string): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'List the actor\'s grants on one resource.',
+        parameters: [{ name: 'kind', description: '`space` or `workflow`.' }, { name: 'id', description: 'resource id.' }],
+        returns: 'the outgoing grant rows.',
+      },
+      {
+        signature: '@Remote(\'revokeShareGrant\') async revokeShareGrant(grantId: string): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'Revoke one grant the actor issued.',
+        parameters: [{ name: 'grantId', description: 'grant id.' }],
+        returns: 'the actor\'s refreshed outgoing grant rows.',
+      },
+      {
+        signature: '@Remote(\'spaceTopology\') async spaceTopology(): Promise<FaberLoomSpaceMap>',
+        description: 'Read the Space connectivity map for the palette and canvas.',
+        parameters: [],
+        returns: 'the connectivity map.',
+      },
+      {
+        signature: '@Remote(\'exportWorkflow\') async exportWorkflow(id: string, format: string): Promise<FaberLoomWorkflowExport>',
+        description: 'Export one work flow as read-only Archify HTML or plain JSON.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'format', description: '`archify` or `json`.' }],
+        returns: 'the export body.',
+      },
+      {
+        signature: '@Remote(\'workflowTemplates\') workflowTemplates(): Promise<readonly FaberLoomWorkflowTemplateRow[]>',
+        description: 'The built-in Work Flow templates the gallery lists.',
+        parameters: [],
+        returns: 'one row per template.',
+      },
+      {
+        signature: '@Remote(\'createWorkflowFromTemplate\') async createWorkflowFromTemplate(templateId: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Create one work flow from a built-in template and return the refreshed list.',
+        parameters: [{ name: 'templateId', description: 'template id.' }, { name: 'name', description: 'optional display name.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'importWorkflow\') async importWorkflow(json: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Import portable Work Flow JSON as a new work flow and return the refreshed list; the graph is validated before it is stored.',
+        parameters: [{ name: 'json', description: 'the portable JSON text.' }, { name: 'name', description: 'optional display name.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'workflowVersions\') async workflowVersions(id: string): Promise<readonly FaberLoomWorkflowVersionRow[]>',
+        description: 'List one work flow\'s version history, newest first.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
+        returns: 'the versions.',
+      },
+      {
+        signature: '@Remote(\'restoreWorkflow\') async restoreWorkflow(id: string, version: number): Promise<FaberLoomWorkflowDetail>',
+        description: 'Restore one work flow to an earlier version.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'version', description: 'version to restore.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'workflowPendingChanges\') async workflowPendingChanges(): Promise<readonly FaberLoomWorkflowPendingRow[]>',
+        description: 'List the staged work flow revisions awaiting this owner\'s decision, with each proposal\'s base and proposed graph for the diff.',
+        parameters: [],
+        returns: 'the staged revisions.',
+      },
+      {
+        signature: '@Remote(\'acceptWorkflowChange\') async acceptWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]>',
+        description: 'Accept one staged work flow revision and return the refreshed inbox.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
+        returns: 'the staged revisions.',
+      },
+      {
+        signature: '@Remote(\'rejectWorkflowChange\') async rejectWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]>',
+        description: 'Reject one staged work flow revision and return the refreshed inbox.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
+        returns: 'the staged revisions.',
+      },
+      {
+        signature: '@Remote(\'contextEntries\') async contextEntries(): Promise<readonly FaberLoomContextRow[]>',
+        description: 'List the context entries the actor may see, newest first.',
+        parameters: [],
+        returns: 'the visible context rows.',
+      },
+      {
+        signature: '@Remote(\'createContext\') async createContext(title: string, body: string, spaceId?: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Create one context entry, optionally attached to a Space.',
+        parameters: [{ name: 'title', description: 'display title.' }, { name: 'body', description: 'context body.' }, { name: 'spaceId', description: 'optional Space to attach it to.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'updateContext\') async updateContext(id: string, title: string, body: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Edit one context entry, appending a version.',
+        parameters: [{ name: 'id', description: 'entry id.' }, { name: 'title', description: 'new title.' }, { name: 'body', description: 'new body.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'contextVersions\') async contextVersions(id: string): Promise<readonly FaberLoomContextVersionRow[]>',
+        description: 'List one context entry\'s version history.',
+        parameters: [{ name: 'id', description: 'entry id.' }],
+        returns: 'the versions.',
+      },
+      {
+        signature: '@Remote(\'restoreContext\') async restoreContext(id: string, version: number): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Restore one context entry to an earlier version.',
+        parameters: [{ name: 'id', description: 'entry id.' }, { name: 'version', description: 'version to restore.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'approveContext\') async approveContext(id: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Index one context entry into its Space\'s shared context.',
+        parameters: [{ name: 'id', description: 'entry id.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'rejectContext\') async rejectContext(id: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Keep one context entry private to its author.',
+        parameters: [{ name: 'id', description: 'entry id.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'removeContext\') async removeContext(id: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Remove one context entry and its history.',
+        parameters: [{ name: 'id', description: 'entry id.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'syncContext\') async syncContext(): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Import the console\'s shared context for this owner and return the refreshed entries, so a member\'s Space contribution shows up for approval.',
+        parameters: [],
+        returns: 'the visible context rows.',
+      },
+      {
+        signature: '@Remote(\'captureSpaceSessions\') async captureSpaceSessions( spaceId: string, sessions: readonly FaberLoomSharedSessionRef[], ): Promise<readonly FaberLoomSharedSessionRow[]>',
+        description: 'Capture the panel\'s local Sessions into one Space and return the refreshed shared catalog.',
+        parameters: [{ name: 'spaceId', description: 'the Space to share the Sessions in.' }, { name: 'sessions', description: 'the local Sessions the panel offers.' }],
+        returns: 'the Space\'s shared Session rows.',
+      },
+      {
+        signature: '@Remote(\'spaceSessions\') async spaceSessions(spaceId: string): Promise<readonly FaberLoomSharedSessionRow[]>',
+        description: 'Sync the console\'s shared Sessions and list one Space\'s catalog.',
+        parameters: [{ name: 'spaceId', description: 'the Space to list.' }],
+        returns: 'the Space\'s shared Session rows.',
+      },
+      {
+        signature: '@Remote(\'spaceSessionContent\') async spaceSessionContent(spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContentRow>',
+        description: 'Read one shared Session\'s portable content.',
+        parameters: [{ name: 'spaceId', description: 'the Space the Session is shared in.' }, { name: 'ownerId', description: 'the member whose host holds the Session.' }, { name: 'sessionId', description: 'the Session id.' }],
+        returns: 'the row with its content.',
+      },
+      {
+        signature: '@Remote(\'removeSpaceSession\') async removeSpaceSession(spaceId: string, ownerId: string, sessionId: string): Promise<readonly FaberLoomSharedSessionRow[]>',
+        description: 'Remove one shared Session (its author or the Space owner) and return the refreshed catalog.',
+        parameters: [{ name: 'spaceId', description: 'the Space the Session is shared in.' }, { name: 'ownerId', description: 'the member whose host holds the Session.' }, { name: 'sessionId', description: 'the Session id.' }],
+        returns: 'the Space\'s shared Session rows.',
       },
       {
         signature: '@Remote(\'createSpace\') async createSpace(title: string, agentId?: string, parentId?: string, inheritContext?: boolean): Promise<FaberLoomOverview>',
@@ -2213,6 +2630,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'execution rows oldest first.',
       },
       {
+        signature: '@Remote(\'executionHealth\') async executionHealth(): Promise<FaberLoomHealth>',
+        description: 'The dispatcher\'s liveness — last run, failures, review backlog, retries, and the sooner wait deadline — per routine and in aggregate.',
+        parameters: [],
+        returns: 'the health snapshot.',
+      },
+      {
         signature: '@Remote(\'startRoutine\') async startRoutine(routineId: string): Promise<readonly FaberLoomExecutionRow[]>',
         description: 'Start a manual run of one active routine.',
         parameters: [{ name: 'routineId', description: 'routine to run.' }],
@@ -2319,6 +2742,187 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Delete one space-memory entry the owner controls and return the refreshed list. Deleting a space never deletes its memory; this is the only path that removes an entry, and it is explicit.',
         parameters: [{ name: 'id', description: 'memory entry id.' }],
         returns: 'the remaining memory rows, oldest first.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomWorkflows',
+    summary: 'The work flows service.',
+    description: 'The work flows service. It owns the durable versioned graph records, the graph validation, and the compilation to a routine; every operation carries the authenticated actor.',
+    methods: [
+      {
+        signature: 'async create(actor: WorkFlowActor, input: CreateWorkFlowInput): Promise<WorkFlow>',
+        description: 'Create one work flow owned by the actor. The definition is stored as given; validation is explicit and activation requires a valid graph.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'input', description: 'name, optional scope, and the initial definition.' }],
+        returns: 'the created work flow.',
+      },
+      {
+        signature: 'async list(actor: WorkFlowActor, scope?: WorkFlowScope): Promise<WorkFlow[]>',
+        description: 'List the actor\'s work flows, optionally only one scope, oldest first.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'scope', description: 'when set, only flows in this scope.' }],
+        returns: 'the actor\'s work flows.',
+      },
+      {
+        signature: 'async get(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>',
+        description: 'Read one work flow the actor owns.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the work flow.',
+        throws: ['when the flow is absent or owned by another identity.'],
+      },
+      {
+        signature: 'async update(actor: WorkFlowActor, id: WorkFlowId, patch: UpdateWorkFlowInput): Promise<WorkFlow>',
+        description: 'Apply a mutable patch to one work flow the actor owns, bumping the version.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'patch', description: 'fields to change.' }],
+        returns: 'the updated work flow.',
+      },
+      {
+        signature: 'async versions(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly WorkFlowVersionRecord[]>',
+        description: 'List one work flow\'s version history, newest first.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the versions.',
+      },
+      {
+        signature: 'async restore(actor: WorkFlowActor, id: WorkFlowId, version: number): Promise<WorkFlow>',
+        description: 'Restore one work flow to an earlier version, bumping the version and reconciling an active flow\'s compiled routine.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'version', description: 'the version to restore.' }],
+        returns: 'the restored work flow.',
+      },
+      {
+        signature: 'async pendingChanges(actor: WorkFlowActor): Promise<readonly WorkFlowPendingChange[]>',
+        description: 'List the staged revisions on the work flows the actor owns, newest first, each with its base and proposed graph for the approval diff.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }],
+        returns: 'the staged revisions.',
+      },
+      {
+        signature: 'async acceptPending(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>',
+        description: 'Accept one staged revision: apply it to the live flow, bump the version, reconcile an active flow\'s routine, and clear the stage. Owner only.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the updated work flow.',
+      },
+      {
+        signature: 'async rejectPending(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>',
+        description: 'Reject one staged revision: drop it, leaving the live flow unchanged. Owner only.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the unchanged work flow.',
+      },
+      {
+        signature: 'async addNode( actor: WorkFlowActor, id: WorkFlowId, input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>',
+        description: 'Append one node to a work flow the actor owns.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'input', description: 'node title, kind, optional config, and optional id.' }],
+        returns: 'the updated work flow.',
+        throws: ['when the node id repeats an existing node.'],
+      },
+      {
+        signature: 'async updateNode( actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId, patch: { title?: string | undefined; kind?: WorkFlowNodeKind | undefined; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>',
+        description: 'Change one node\'s title, kind, or config values (merged into its config).',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'nodeId', description: 'the node to change.' }, { name: 'patch', description: 'fields to change; `config` merges over the node\'s config.' }],
+        returns: 'the updated work flow.',
+        throws: ['when the node does not exist.'],
+      },
+      {
+        signature: 'async removeNode(actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId): Promise<WorkFlow>',
+        description: 'Remove one node and every edge incident to it.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'nodeId', description: 'the node to remove.' }],
+        returns: 'the updated work flow.',
+        throws: ['when the node does not exist.'],
+      },
+      {
+        signature: 'async connect( actor: WorkFlowActor, id: WorkFlowId, input: { from: WorkFlowNodeId; to: WorkFlowNodeId; condition?: string | undefined }, ): Promise<WorkFlow>',
+        description: 'Add a directed edge between two existing nodes.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'input', description: 'source, target, and optional branch condition.' }],
+        returns: 'the updated work flow.',
+        throws: ['when a referenced node does not exist.'],
+      },
+      {
+        signature: 'async disconnect(actor: WorkFlowActor, id: WorkFlowId, edgeId: WorkFlowEdgeId): Promise<WorkFlow>',
+        description: 'Remove one edge.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'edgeId', description: 'the edge to remove.' }],
+        returns: 'the updated work flow.',
+        throws: ['when the edge does not exist.'],
+      },
+      {
+        signature: 'async setTrigger( actor: WorkFlowActor, id: WorkFlowId, input: { kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>',
+        description: 'Replace the flow\'s trigger with one new trigger node of the given kind, dropping edges that referenced the removed triggers.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'input', description: 'trigger kind and optional config.' }],
+        returns: 'the updated work flow.',
+        throws: ['when the kind is not a trigger kind.'],
+      },
+      {
+        signature: 'async setStatus(actor: WorkFlowActor, id: WorkFlowId, status: WorkFlowStatus): Promise<WorkFlow>',
+        description: 'Change one work flow\'s lifecycle. Activating validates the graph and resolves the compiled routine id; an invalid graph is refused.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'status', description: 'the new status.' }],
+        returns: 'the updated work flow.',
+        throws: ['when the graph is invalid and the target status is `active`.'],
+      },
+      {
+        signature: 'async setConcurrency(actor: WorkFlowActor, id: WorkFlowId, maxConcurrency: number | null): Promise<WorkFlow>',
+        description: 'Set or clear one work flow\'s concurrency cap, recompiling an active flow so the dispatcher sees the new limit.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'maxConcurrency', description: 'the cap, or null to clear it.' }],
+        returns: 'the updated work flow.',
+      },
+      {
+        signature: 'async validate(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlowValidation>',
+        description: 'Validate one work flow\'s graph without mutating it.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the verdict.',
+      },
+      {
+        signature: 'async compile(actor: WorkFlowActor, id: WorkFlowId): Promise<RoutineDefinitionInput>',
+        description: 'Compile one work flow to a routine definition without mutating it.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the routine definition input.',
+      },
+      {
+        signature: 'templates(): readonly WorkFlowTemplate[]',
+        description: 'The built-in templates a user can start from.',
+        parameters: [],
+        returns: 'the template catalog, in gallery order.',
+      },
+      {
+        signature: 'async createFromTemplate(actor: WorkFlowActor, templateId: string, name?: string): Promise<WorkFlow>',
+        description: 'Create one owned work flow from a built-in template.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'templateId', description: 'the template id.' }, { name: 'name', description: 'optional display name; the template\'s name is used otherwise.' }],
+        returns: 'the created work flow.',
+        throws: ['when the template id is unknown.'],
+      },
+      {
+        signature: 'async exportFlow(actor: WorkFlowActor, id: WorkFlowId): Promise<string>',
+        description: 'Export one work flow as portable JSON the gallery, the knowledge hub, and another deployment can import.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the JSON text.',
+      },
+      {
+        signature: 'async importFlow(actor: WorkFlowActor, json: string, name?: string): Promise<WorkFlow>',
+        description: 'Import portable Work Flow JSON as a new owned work flow; the graph is validated before it is stored.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'json', description: 'the JSON text.' }, { name: 'name', description: 'optional display name overriding the export\'s.' }],
+        returns: 'the created work flow.',
+        throws: ['when the JSON is malformed, mislabelled, or its graph is invalid.'],
+      },
+      {
+        signature: 'async remove(actor: WorkFlowActor, id: WorkFlowId): Promise<boolean>',
+        description: 'Remove one work flow the actor owns.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'whether the stored record was deleted.',
+      },
+      {
+        signature: 'async runNow(actor: WorkFlowActor, id: WorkFlowId): Promise<{ executionId: string; deduped: boolean }>',
+        description: 'Start one manual execution of an active work flow.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the started execution id and whether the engine deduped it.',
+        throws: ['when the flow has no activated routine.'],
+      },
+      {
+        signature: 'async invoke( actor: WorkFlowActor, id: WorkFlowId, request: { idempotencyKey: string }, ): Promise<{ executionId: string; deduped: boolean }>',
+        description: 'Start one run of an active work flow on behalf of a collaborator — a routine step that invokes this flow — deduping by the caller\'s key.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'request', description: 'the caller\'s idempotency key.' }],
+        returns: 'the started execution id and whether the engine deduped it.',
+        throws: ['when the flow has no activated routine.'],
+      },
+      {
+        signature: 'async runs(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly Execution[]>',
+        description: 'List one work flow\'s executions, oldest first.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
+        returns: 'the executions, or an empty list when the flow has no routine.',
       },
     ],
   },
@@ -5212,6 +5816,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     description: 'A workspace record was deleted from the durable registry. Consumers that mirror a workspace — a product Space, for example — drop their record too.',
     parameters: [{ name: 'workspaceId', description: 'the removed workspace.' }, { name: 'path', description: 'the removed workspace\'s filesystem path.' }],
   },
+  {
+    name: 'workspace/renamed',
+    mode: 'emit',
+    signature: '\'workspace/renamed\'(workspaceId: WorkspaceId, title: string): void',
+    summary: 'A workspace record\'s display title changed durably.',
+    description: 'A workspace record\'s display title changed durably. Consumers that mirror a workspace — a product Space, for example — adopt the new name.',
+    parameters: [{ name: 'workspaceId', description: 'the renamed workspace.' }, { name: 'title', description: 'the new display title.' }],
+  },
 ]
 
 /** Shapes of every exported type the Service and Event signatures reference (transitively), sorted by name. */
@@ -5757,6 +6369,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateTeamTaskRequest {\n    readonly subject: string;\n    readonly description: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n}',
   },
   {
+    name: 'CreateWorkFlowInput',
+    declaration: 'export interface CreateWorkFlowInput {\n    readonly name: string;\n    readonly scope?: WorkFlowScope | undefined;\n    readonly definition: WorkFlowDefinition;\n}',
+  },
+  {
     name: 'CredentialInfo',
     declaration: 'export interface CredentialInfo {\n    configured: boolean;\n    source?: string;\n    writable: boolean;\n}',
   },
@@ -5993,6 +6609,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ExecutionEvidence {\n    readonly channel: string;\n    readonly eventKey: string | null;\n    readonly at: string;\n}',
   },
   {
+    name: 'ExecutionReview',
+    declaration: 'export interface ExecutionReview {\n    readonly executionId: string;\n    readonly routineId: string;\n    readonly ownerId: string;\n    readonly stepId: string | null;\n    readonly reason: string;\n    readonly attempts: number;\n    readonly at: string;\n}',
+  },
+  {
     name: 'ExecutionStatus',
     declaration: 'export type ExecutionStatus = \'running\' | \'waiting\' | \'completed\' | \'failed\' | \'needs_review\';',
   },
@@ -6065,6 +6685,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomConnection {\n    readonly id: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host: string | null;\n    readonly port: number | null;\n    readonly secure: boolean | null;\n    readonly starttls: boolean;\n    readonly primary: boolean;\n    readonly username: string | null;\n    readonly hasSecret: boolean;\n    readonly destination: string | null;\n    readonly retentionDays: number | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
+    name: 'FaberLoomContextActor',
+    declaration: 'export interface FaberLoomContextActor {\n    readonly id: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextEdit',
+    declaration: 'export interface FaberLoomContextEdit {\n    readonly title?: string | undefined;\n    readonly body?: string | undefined;\n}',
+  },
+  {
+    name: 'FaberLoomContextEntry',
+    declaration: 'export interface FaberLoomContextEntry {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly title: string;\n    readonly body: string;\n    readonly version: number;\n    readonly visibility: FaberLoomContextVisibility;\n    readonly authorId: string;\n    readonly ownerId: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextInput',
+    declaration: 'export interface FaberLoomContextInput {\n    readonly spaceId?: string | null | undefined;\n    readonly title: string;\n    readonly body: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextRow',
+    declaration: 'export interface FaberLoomContextRow {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly title: string;\n    readonly body: string;\n    readonly version: number;\n    readonly visibility: string;\n    readonly authorId: string;\n    readonly ownerId: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextVersion',
+    declaration: 'export interface FaberLoomContextVersion {\n    readonly version: number;\n    readonly title: string;\n    readonly body: string;\n    readonly authorId: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextVersionRow',
+    declaration: 'export interface FaberLoomContextVersionRow {\n    readonly version: number;\n    readonly title: string;\n    readonly body: string;\n    readonly authorId: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextVisibility',
+    declaration: 'export type FaberLoomContextVisibility = \'local\' | \'pending\' | \'shared\';',
+  },
+  {
     name: 'FaberLoomCostRow',
     declaration: 'export interface FaberLoomCostRow {\n    readonly key: string;\n    readonly cost: number;\n    readonly records: number;\n    readonly partial: boolean;\n}',
   },
@@ -6127,6 +6779,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomInboxRow',
     declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomJsonValue',
+    declaration: 'export type FaberLoomJsonValue = string | number | boolean | null | readonly FaberLoomJsonValue[] | {\n    readonly [key: string]: FaberLoomJsonValue;\n};',
   },
   {
     name: 'FaberLoomLinkPreview',
@@ -6226,7 +6882,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutineDetail',
-    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n}',
+    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly triggerTimezone: string | null;\n    readonly triggerDays: readonly number[];\n    readonly triggerWindowFrom: number | null;\n    readonly triggerWindowTo: number | null;\n    readonly triggerBusinessDays: boolean;\n    readonly maxConcurrency: number | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n}',
   },
   {
     name: 'FaberLoomRoutineId',
@@ -6241,16 +6897,68 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomRoutineStepRow {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n}',
   },
   {
-    name: 'FaberLoomSharePayload',
-    declaration: 'export interface FaberLoomSharePayload {\n    readonly responsibility?: string;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly markdown?: string;\n    readonly provider?: string | null;\n    readonly model?: string | null;\n}',
+    name: 'FaberLoomSessionActor',
+    declaration: 'export interface FaberLoomSessionActor {\n    readonly id: string;\n}',
   },
   {
-    name: 'FaberLoomShareRow',
-    declaration: 'export interface FaberLoomShareRow {\n    readonly id: string;\n    readonly kind: \'agent\' | \'skill\';\n    readonly owner_email: string;\n    readonly name: string;\n    readonly payload: FaberLoomSharePayload;\n    readonly share_all: boolean;\n    readonly shared_emails: readonly string[];\n}',
+    name: 'FaberLoomSharedSession',
+    declaration: 'export interface FaberLoomSharedSession {\n    readonly sessionId: string;\n    readonly ownerId: string;\n    readonly spaceId: string;\n    readonly title: string;\n    readonly workspaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly messageCount: number;\n    readonly origin: FaberLoomSharedSessionOrigin;\n}',
   },
   {
-    name: 'FaberLoomShares',
-    declaration: 'export interface FaberLoomShares {\n    readonly configured: boolean;\n    readonly outgoing: readonly FaberLoomShareRow[];\n    readonly incoming: readonly FaberLoomShareRow[];\n}',
+    name: 'FaberLoomSharedSessionCapture',
+    declaration: 'export interface FaberLoomSharedSessionCapture {\n    readonly spaceId: string;\n    readonly sessionId: string;\n    readonly title: string;\n    readonly workspaceId?: string | null;\n    readonly createdAt?: string;\n    readonly updatedAt?: string;\n    readonly messageCount?: number;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'FaberLoomSharedSessionContent',
+    declaration: 'export interface FaberLoomSharedSessionContent extends FaberLoomSharedSession {\n    readonly content: string;\n}',
+  },
+  {
+    name: 'FaberLoomSharedSessionContentRow',
+    declaration: 'export interface FaberLoomSharedSessionContentRow extends FaberLoomSharedSessionRow {\n    readonly content: string;\n}',
+  },
+  {
+    name: 'FaberLoomSharedSessionOrigin',
+    declaration: 'export type FaberLoomSharedSessionOrigin = \'owner\' | \'console\';',
+  },
+  {
+    name: 'FaberLoomSharedSessionRef',
+    declaration: 'export interface FaberLoomSharedSessionRef {\n    readonly id: string;\n    readonly title: string;\n}',
+  },
+  {
+    name: 'FaberLoomSharedSessionRow',
+    declaration: 'export interface FaberLoomSharedSessionRow {\n    readonly sessionId: string;\n    readonly ownerId: string;\n    readonly spaceId: string;\n    readonly title: string;\n    readonly workspaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly messageCount: number;\n    readonly origin: string;\n}',
+  },
+  {
+    name: 'FaberLoomShareGrant',
+    declaration: 'export interface FaberLoomShareGrant {\n    readonly id: string;\n    readonly resource: FaberLoomShareResource;\n    readonly resourceName: string;\n    readonly ownerId: string;\n    readonly granteeEmail: string;\n    readonly permissions: readonly FaberLoomSharePermission[];\n    readonly status: FaberLoomShareStatus;\n    readonly createdAt: string;\n    readonly acceptedAt: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomShareGrantRow',
+    declaration: 'export interface FaberLoomShareGrantRow {\n    readonly id: string;\n    readonly resourceKind: string;\n    readonly resourceId: string;\n    readonly resourceName: string;\n    readonly ownerId: string;\n    readonly granteeEmail: string;\n    readonly permissions: readonly string[];\n    readonly permissionLabel: string;\n    readonly status: string;\n    readonly createdAt: string;\n    readonly acceptedAt: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomShareInput',
+    declaration: 'export interface FaberLoomShareInput {\n    readonly resource: FaberLoomShareResource;\n    readonly resourceName: string;\n    readonly granteeEmail: string;\n    readonly permissions: readonly string[];\n    readonly snapshot?: Record<string, unknown> | undefined;\n}',
+  },
+  {
+    name: 'FaberLoomShareList',
+    declaration: 'export interface FaberLoomShareList {\n    readonly outgoing: readonly FaberLoomShareGrant[];\n    readonly incoming: readonly FaberLoomShareGrant[];\n}',
+  },
+  {
+    name: 'FaberLoomSharePermission',
+    declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'create-context\' | \'index-context\' | \'share\' | \'manage-members\';',
+  },
+  {
+    name: 'FaberLoomShareResource',
+    declaration: 'export interface FaberLoomShareResource {\n    readonly kind: FaberLoomShareResourceKind;\n    readonly id: string;\n}',
+  },
+  {
+    name: 'FaberLoomShareResourceKind',
+    declaration: 'export type FaberLoomShareResourceKind = \'space\' | \'workflow\';',
+  },
+  {
+    name: 'FaberLoomShareStatus',
+    declaration: 'export type FaberLoomShareStatus = \'pending\' | \'active\' | \'revoked\';',
   },
   {
     name: 'FaberLoomSkillRow',
@@ -6271,6 +6979,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomSpaceId',
     declaration: 'export type FaberLoomSpaceId = Branded<\'FaberLoomSpaceId\'>;',
+  },
+  {
+    name: 'FaberLoomSpaceMap',
+    declaration: 'export interface FaberLoomSpaceMap {\n    readonly spaces: readonly FaberLoomSpaceMapSpace[];\n    readonly agents: readonly FaberLoomSpaceMapAgent[];\n    readonly connections: readonly FaberLoomSpaceMapConnection[];\n    readonly workspaces: readonly FaberLoomSpaceMapWorkspace[];\n}',
+  },
+  {
+    name: 'FaberLoomSpaceMapAgent',
+    declaration: 'export interface FaberLoomSpaceMapAgent {\n    readonly id: string;\n    readonly name: string;\n    readonly spaceId: string | null;\n    readonly skills: readonly string[];\n    readonly mcp: {\n        readonly mwt: boolean;\n        readonly sicop: boolean;\n    };\n    readonly webAccess: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomSpaceMapConnection',
+    declaration: 'export interface FaberLoomSpaceMapConnection {\n    readonly id: string;\n    readonly kind: string;\n    readonly label: string;\n}',
+  },
+  {
+    name: 'FaberLoomSpaceMapSpace',
+    declaration: 'export interface FaberLoomSpaceMapSpace {\n    readonly id: string;\n    readonly title: string;\n    readonly agentId: string | null;\n    readonly workspaceId: string | null;\n    readonly context: Readonly<Record<string, string>>;\n}',
+  },
+  {
+    name: 'FaberLoomSpaceMapWorkspace',
+    declaration: 'export interface FaberLoomSpaceMapWorkspace {\n    readonly id: string;\n    readonly path: string;\n    readonly title: string;\n}',
   },
   {
     name: 'FaberLoomSpaceMemory',
@@ -6299,6 +7027,58 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomTeachingRow',
     declaration: 'export interface FaberLoomTeachingRow {\n    readonly id: string;\n    readonly scope: string;\n    readonly spaceId: string | null;\n    readonly agentId: string | null;\n    readonly skill: string | null;\n    readonly task: string | null;\n    readonly text: string;\n    readonly source: string;\n    readonly author: string;\n    readonly status: string;\n    readonly version: number;\n    readonly uses: readonly string[];\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowDetail',
+    declaration: 'export interface FaberLoomWorkflowDetail extends FaberLoomWorkflowRow {\n    readonly valid: boolean;\n    readonly problems: readonly string[];\n    readonly maxConcurrency: number | null;\n    readonly nodesList: readonly FaberLoomWorkflowNodeRow[];\n    readonly edgesList: readonly FaberLoomWorkflowEdgeRow[];\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowEdgeRow',
+    declaration: 'export interface FaberLoomWorkflowEdgeRow {\n    readonly id: string;\n    readonly from: string;\n    readonly to: string;\n    readonly condition: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowExport',
+    declaration: 'export interface FaberLoomWorkflowExport {\n    readonly format: string;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowGraph',
+    declaration: 'export interface FaberLoomWorkflowGraph {\n    readonly nodes: readonly FaberLoomWorkflowGraphNode[];\n    readonly edges: readonly FaberLoomWorkflowGraphEdge[];\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowGraphEdge',
+    declaration: 'export interface FaberLoomWorkflowGraphEdge {\n    readonly id: string;\n    readonly from: string;\n    readonly to: string;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowGraphNode',
+    declaration: 'export interface FaberLoomWorkflowGraphNode {\n    readonly id: string;\n    readonly title: string;\n    readonly kind: string;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowLink',
+    declaration: 'export interface FaberLoomWorkflowLink {\n    readonly routineId: string;\n    readonly routineName: string;\n    readonly workflowId: string;\n    readonly workflowName: string;\n    readonly direction: \'routine-to-workflow\' | \'workflow-to-routine\';\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowNodeRow',
+    declaration: 'export interface FaberLoomWorkflowNodeRow {\n    readonly id: string;\n    readonly kind: string;\n    readonly title: string;\n    readonly x: number;\n    readonly y: number;\n    readonly config: Readonly<Record<string, FaberLoomJsonValue>>;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowPendingRow',
+    declaration: 'export interface FaberLoomWorkflowPendingRow {\n    readonly workflowId: string;\n    readonly ownerId: string;\n    readonly proposerId: string;\n    readonly name: string;\n    readonly baseVersion: number;\n    readonly createdAt: string;\n    readonly base: FaberLoomWorkflowGraph;\n    readonly proposed: FaberLoomWorkflowGraph;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowRow',
+    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowRunRow',
+    declaration: 'export interface FaberLoomWorkflowRunRow {\n    readonly id: string;\n    readonly status: string;\n    readonly routineVersion: number;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowTemplateRow',
+    declaration: 'export interface FaberLoomWorkflowTemplateRow {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly nodes: number;\n    readonly edges: number;\n}',
+  },
+  {
+    name: 'FaberLoomWorkflowVersionRow',
+    declaration: 'export interface FaberLoomWorkflowVersionRow {\n    readonly version: number;\n    readonly name: string;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'FaberLoomWorkProposal',
@@ -7222,11 +8002,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineDefinition',
-    declaration: 'export interface RoutineDefinition {\n    readonly intent: string;\n    readonly triggers: readonly RoutineTrigger[];\n    readonly steps: readonly RoutineStep[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: \'stop\' | \'continue\' | \'review\';\n}',
+    declaration: 'export interface RoutineDefinition {\n    readonly intent: string;\n    readonly triggers: readonly RoutineTrigger[];\n    readonly steps: readonly RoutineStep[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: \'stop\' | \'continue\' | \'review\';\n    readonly maxConcurrency: number | null;\n}',
   },
   {
     name: 'RoutineDefinitionInput',
-    declaration: 'export interface RoutineDefinitionInput {\n    readonly intent: string;\n    readonly triggers: readonly RoutineTriggerInput[];\n    readonly steps: readonly RoutineStepInput[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: \'stop\' | \'continue\' | \'review\';\n}',
+    declaration: 'export interface RoutineDefinitionInput {\n    readonly intent: string;\n    readonly triggers: readonly RoutineTriggerInput[];\n    readonly steps: readonly RoutineStepInput[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: \'stop\' | \'continue\' | \'review\';\n    readonly maxConcurrency?: number;\n}',
   },
   {
     name: 'RoutineInput',
@@ -7234,7 +8014,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineSaveInput',
-    declaration: 'export interface RoutineSaveInput {\n    readonly name?: string;\n    readonly intent?: string;\n    readonly triggerKind?: string;\n    readonly triggerMatch?: string | null;\n    readonly steps?: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult?: string;\n    readonly permissions?: readonly string[];\n    readonly failurePolicy?: string;\n}',
+    declaration: 'export interface RoutineSaveInput {\n    readonly name?: string;\n    readonly intent?: string;\n    readonly triggerKind?: string;\n    readonly triggerMatch?: string | null;\n    readonly triggerTimezone?: string | null;\n    readonly triggerDays?: readonly number[];\n    readonly triggerWindow?: {\n        readonly from: number;\n        readonly to: number;\n    } | null;\n    readonly triggerBusinessDays?: boolean;\n    readonly maxConcurrency?: number | null;\n    readonly steps?: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult?: string;\n    readonly permissions?: readonly string[];\n    readonly failurePolicy?: string;\n}',
   },
   {
     name: 'RoutineStatus',
@@ -7242,19 +8022,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineStep',
-    declaration: 'export interface RoutineStep {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n    readonly revalidateKey: string | null;\n    readonly revalidateExpect: string | null;\n}',
+    declaration: 'export interface RoutineStep {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly config: Readonly<Record<string, unknown>>;\n    readonly gateStepId: string | null;\n    readonly gateExpect: boolean | null;\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n    readonly revalidateKey: string | null;\n    readonly revalidateExpect: string | null;\n    readonly maxAttempts: number;\n}',
   },
   {
     name: 'RoutineStepInput',
-    declaration: 'export interface RoutineStepInput {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn?: readonly string[];\n    readonly waitFor?: string;\n    readonly effect?: boolean;\n    readonly revalidateKey?: string;\n    readonly revalidateExpect?: string;\n}',
+    declaration: 'export interface RoutineStepInput {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn?: readonly string[];\n    readonly config?: Readonly<Record<string, unknown>>;\n    readonly gate?: {\n        readonly stepId: string;\n        readonly expect: boolean;\n    } | undefined;\n    readonly waitFor?: string;\n    readonly effect?: boolean;\n    readonly revalidateKey?: string;\n    readonly revalidateExpect?: string;\n    readonly maxAttempts?: number;\n}',
   },
   {
     name: 'RoutineTrigger',
-    declaration: 'export interface RoutineTrigger {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match: string | null;\n}',
+    declaration: 'export interface RoutineTrigger {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match: string | null;\n    readonly timezone: string | null;\n    readonly days: readonly number[];\n    readonly windowFrom: number | null;\n    readonly windowTo: number | null;\n    readonly businessDays: boolean;\n}',
   },
   {
     name: 'RoutineTriggerInput',
-    declaration: 'export interface RoutineTriggerInput {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match?: string;\n}',
+    declaration: 'export interface RoutineTriggerInput {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match?: string;\n    readonly timezone?: string;\n    readonly days?: readonly number[];\n    readonly window?: {\n        readonly from: number;\n        readonly to: number;\n    };\n    readonly businessDays?: boolean;\n}',
   },
   {
     name: 'RunnerFailureRule',
@@ -8094,15 +8874,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StepContext',
-    declaration: 'export interface StepContext {\n    readonly executionId: string;\n    readonly routineId: FaberLoomRoutineId;\n    readonly stepId: string;\n    readonly input: unknown;\n    readonly event: IngestEvent | undefined;\n    readonly results: Readonly<Record<string, unknown>>;\n    readonly events: readonly IngestEvent[];\n}',
+    declaration: 'export interface StepContext {\n    readonly executionId: string;\n    readonly routineId: FaberLoomRoutineId;\n    readonly stepId: string;\n    readonly input: unknown;\n    readonly event: IngestEvent | undefined;\n    readonly config: Readonly<Record<string, unknown>>;\n    readonly results: Readonly<Record<string, unknown>>;\n    readonly events: readonly IngestEvent[];\n}',
   },
   {
     name: 'StepHandler',
-    declaration: 'export type StepHandler = (context: StepContext) => unknown | Promise<unknown>;',
+    declaration: 'export type StepHandler = (context: StepContext) => unknown;',
   },
   {
     name: 'StepState',
-    declaration: 'export interface StepState {\n    readonly status: \'pending\' | \'running\' | \'waiting\' | \'completed\' | \'failed\';\n    readonly result: unknown;\n    readonly reason: string | null;\n}',
+    declaration: 'export interface StepState {\n    readonly status: \'pending\' | \'running\' | \'waiting\' | \'completed\' | \'failed\' | \'skipped\';\n    readonly result: unknown;\n    readonly reason: string | null;\n    readonly attempts: number;\n}',
   },
   {
     name: 'StorageBackend',
@@ -8725,6 +9505,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
   },
   {
+    name: 'UpdateWorkFlowInput',
+    declaration: 'export interface UpdateWorkFlowInput {\n    readonly name?: string | undefined;\n    readonly scope?: WorkFlowScope | undefined;\n    readonly definition?: WorkFlowDefinition | undefined;\n}',
+  },
+  {
     name: 'UserMessage',
     declaration: 'export interface UserMessage extends Message {\n    readonly role: \'user\';\n}',
   },
@@ -8853,6 +9637,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkdirReference {\n    readonly kind: \'opaque\';\n    readonly ref: string;\n}',
   },
   {
+    name: 'WorkFlow',
+    declaration: 'export interface WorkFlow {\n    readonly id: WorkFlowId;\n    readonly ownerId: string;\n    readonly scope: WorkFlowScope;\n    readonly name: string;\n    readonly status: WorkFlowStatus;\n    readonly version: number;\n    readonly definition: WorkFlowDefinition;\n    readonly routineId: string | undefined;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'WorkFlowActor',
+    declaration: 'export interface WorkFlowActor {\n    readonly id: string;\n}',
+  },
+  {
     name: 'WorkflowAgentEndInfo',
     declaration: 'export interface WorkflowAgentEndInfo extends WorkflowAgentInfo {\n    outcome: WorkflowAgentOutcome;\n}',
   },
@@ -8865,8 +9657,52 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type WorkflowAgentOutcome = \'completed\' | \'failed\' | \'cancelled\';',
   },
   {
+    name: 'WorkFlowDefinition',
+    declaration: 'export interface WorkFlowDefinition {\n    readonly intent: string;\n    readonly nodes: readonly WorkFlowNode[];\n    readonly edges: readonly WorkFlowEdge[];\n    readonly permissions: readonly string[];\n    readonly failurePolicy: WorkFlowFailurePolicy;\n    readonly maxConcurrency?: number | undefined;\n}',
+  },
+  {
+    name: 'WorkFlowEdge',
+    declaration: 'export interface WorkFlowEdge {\n    readonly id: WorkFlowEdgeId;\n    readonly from: WorkFlowNodeId;\n    readonly to: WorkFlowNodeId;\n    readonly condition?: string | undefined;\n}',
+  },
+  {
+    name: 'WorkFlowEdgeId',
+    declaration: 'export type WorkFlowEdgeId = Branded<\'WorkFlowEdgeId\'>;',
+  },
+  {
+    name: 'WorkFlowFailurePolicy',
+    declaration: 'export type WorkFlowFailurePolicy = \'stop\' | \'continue\' | \'review\';',
+  },
+  {
+    name: 'WorkFlowId',
+    declaration: 'export type WorkFlowId = Branded<\'WorkFlowId\'>;',
+  },
+  {
     name: 'WorkflowMeta',
     declaration: 'export interface WorkflowMeta {\n    name: string;\n    description: string;\n    whenToUse?: string;\n    phases?: WorkflowPhase[];\n}',
+  },
+  {
+    name: 'WorkFlowNode',
+    declaration: 'export type WorkFlowNode = WorkFlowNodeBase & {\n    [K in WorkFlowNodeKind]: {\n        readonly kind: K;\n        readonly config: WorkFlowNodeConfigMap[K];\n    };\n}[WorkFlowNodeKind];',
+  },
+  {
+    name: 'WorkFlowNodeBase',
+    declaration: 'export interface WorkFlowNodeBase {\n    readonly id: WorkFlowNodeId;\n    readonly title: string;\n    readonly position: {\n        readonly x: number;\n        readonly y: number;\n    };\n}',
+  },
+  {
+    name: 'WorkFlowNodeConfigMap',
+    declaration: 'export interface WorkFlowNodeConfigMap {\n    \'trigger.manual\': Record<string, never>;\n    \'trigger.schedule\': {\n        readonly recurrence: string;\n        readonly timezone?: string | undefined;\n        readonly days?: readonly number[] | undefined;\n        readonly window?: {\n            readonly from: number;\n            readonly to: number;\n        } | undefined;\n        readonly businessDays?: boolean | undefined;\n    };\n    \'trigger.email\': {\n        readonly connectionId?: string | undefined;\n        readonly mailbox?: string | undefined;\n        readonly match?: string | undefined;\n        readonly unseenOnly?: boolean | undefined;\n    };\n    \'trigger.event\': {\n        readonly sourceId?: string | undefined;\n        readonly match?: string | undefined;\n    };\n    \'trigger.board\': {\n        readonly itemId?: string | undefined;\n        readonly status?: string | undefined;\n    };\n    \'agent\': {\n        readonly agentId: string;\n        readonly instruction: string;\n        readonly useSpaceContext?: boolean | undefined;\n    };\n    \'skill\': {\n        readonly skillName: string;\n        readonly arguments?: string | undefined;\n    };\n    \'mcp.call\': {\n        readonly server: string;\n        readonly tool: string;\n        readonly arguments?: Record<string, unknown> | undefined;\n    };\n    \'imap.action\': {\n        readonly connectionId?: string | undefined;\n        readonly op: \'search\' | \'read\' | \'mark\' | \'move\' | \'delete\' | \'flag\';\n        readonly query?: string | un /* …truncated — full shape in source */',
+  },
+  {
+    name: 'WorkFlowNodeId',
+    declaration: 'export type WorkFlowNodeId = Branded<\'WorkFlowNodeId\'>;',
+  },
+  {
+    name: 'WorkFlowNodeKind',
+    declaration: 'export type WorkFlowNodeKind = keyof WorkFlowNodeConfigMap;',
+  },
+  {
+    name: 'WorkFlowPendingChange',
+    declaration: 'export interface WorkFlowPendingChange {\n    readonly workflowId: string;\n    readonly ownerId: string;\n    readonly proposerId: string;\n    readonly name: string;\n    readonly scope: WorkFlowScope;\n    readonly baseVersion: number;\n    readonly createdAt: string;\n    readonly base: WorkFlowDefinition;\n    readonly proposed: WorkFlowDefinition;\n}',
   },
   {
     name: 'WorkflowPhase',
@@ -8893,12 +9729,32 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkflowRunInfo {\n    id: WorkflowRunId;\n    meta: WorkflowMeta;\n}',
   },
   {
+    name: 'WorkFlowScope',
+    declaration: 'export type WorkFlowScope = {\n    readonly kind: \'personal\';\n} | {\n    readonly kind: \'space\';\n    readonly spaceId: string;\n};',
+  },
+  {
     name: 'WorkflowStartRequest',
     declaration: 'export interface WorkflowStartRequest {\n    script: string;\n    meta: WorkflowMeta;\n    args?: unknown;\n    subagentProvider?: string;\n    maxTotalAgents?: number;\n    parent: Agent;\n    signal?: AbortSignal;\n}',
   },
   {
+    name: 'WorkFlowStatus',
+    declaration: 'export type WorkFlowStatus = \'draft\' | \'active\' | \'paused\';',
+  },
+  {
     name: 'WorkflowStopReason',
     declaration: 'export type WorkflowStopReason = \'completed\' | \'cancelled\' | \'error\';',
+  },
+  {
+    name: 'WorkFlowTemplate',
+    declaration: 'export interface WorkFlowTemplate {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly definition: WorkFlowDefinition;\n}',
+  },
+  {
+    name: 'WorkFlowValidation',
+    declaration: 'export interface WorkFlowValidation {\n    readonly ok: boolean;\n    readonly problems: readonly string[];\n}',
+  },
+  {
+    name: 'WorkFlowVersionRecord',
+    declaration: 'export interface WorkFlowVersionRecord {\n    readonly workflowId: string;\n    readonly version: number;\n    readonly name: string;\n    readonly scope: WorkFlowScope;\n    readonly definition: WorkFlowDefinition;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'Workspace',

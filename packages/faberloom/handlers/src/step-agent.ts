@@ -53,10 +53,17 @@ export class RoutineStepSessions {
    * Deliver one prompt to the execution's Session and resolve when its turn settles.
    * @param executionId - execution whose Session owns the step.
    * @param prompt - model-facing step prompt.
+   * @param options - creation options applied when this call owns the Session; a
+   *   `cwd` overrides the deployment working directory, and `agentOptions` the
+   *   default model selection.
    * @returns what the settled turn produced.
    */
-  async run(executionId: string, prompt: string): Promise<RoutineStepRun> {
-    const agent = (await this.handle(executionId)).agent
+  async run(
+    executionId: string,
+    prompt: string,
+    options: { cwd?: string | undefined; agentOptions?: AgentOptions | undefined } = {},
+  ): Promise<RoutineStepRun> {
+    const agent = (await this.handle(executionId, options)).agent
     const from = agent.session.seq
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: prompt }],
@@ -85,10 +92,13 @@ export class RoutineStepSessions {
     }
   }
 
-  private handle(executionId: string): Promise<AgentHandle> {
+  private handle(
+    executionId: string,
+    options: { cwd?: string | undefined; agentOptions?: AgentOptions | undefined } = {},
+  ): Promise<AgentHandle> {
     let pending = this.handles.get(executionId)
     if (pending === undefined) {
-      pending = this.create()
+      pending = this.create(options)
       this.handles.set(executionId, pending)
       // A failed creation must not pin the execution to a rejected promise.
       void pending.catch(() => {
@@ -98,20 +108,22 @@ export class RoutineStepSessions {
     return pending
   }
 
-  private async create(): Promise<AgentHandle> {
+  private async create(options: { cwd?: string | undefined; agentOptions?: AgentOptions | undefined } = {}): Promise<AgentHandle> {
     const agents = this.ctx.get('agents')
     if (agents === undefined) throw new Error('faberloom: routine agent steps need the agents service')
-    const selection = this.ctx.get('agentDefaultModel')?.currentSelection()
-    const agentOptions: AgentOptions | undefined = selection === undefined
+    const selected = options.agentOptions ?? this.ctx.get('agentDefaultModel')?.currentSelection()
+    const agentOptions: AgentOptions | undefined = selected === undefined
+      || typeof selected.provider !== 'string'
+      || typeof selected.model !== 'string'
       ? undefined
       : {
-        provider: selection.provider,
-        model: selection.model,
-        ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+        provider: selected.provider,
+        model: selected.model,
+        ...selected.reasoningEffort === undefined ? {} : { reasoningEffort: selected.reasoningEffort },
       }
     return await agents.create({
       sessionId: brandString<SessionId>(`faberloom-step-${randomUUID()}`),
-      meta: { cwd: await this.cwd(), origin: 'subagent' },
+      meta: { cwd: options.cwd ?? await this.cwd(), origin: 'subagent' },
       ...agentOptions === undefined ? {} : { agentOptions },
     })
   }

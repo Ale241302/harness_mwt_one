@@ -52,6 +52,27 @@
     },
     {
       "path": "../mcp-server"
+    },
+    {
+      "path": "../workflows"
+    },
+    {
+      "path": "../shares"
+    },
+    {
+      "path": "../execution"
+    },
+    {
+      "path": "../context"
+    },
+    {
+      "path": "../session-shares"
+    },
+    {
+      "path": "../../session-query/session-query/tsconfig.json"
+    },
+    {
+      "path": "../../core/session/tsconfig.json"
     }
   ]
 }

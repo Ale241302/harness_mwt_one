@@ -1,5 +1,5 @@
 ---
-description: "FaberLoom surface for the Web GUI: the identity tokens, the brand name, and the global panels (Conversar, Mesa de trabajo, Espacios, Agentes, Rutinas, Memoria, Conexiones) that the faberloom profile serves; for users and maintainers of the FaberLoom workspace."
+description: "FaberLoom surface for the Web GUI: the identity tokens, the brand name, and the global panels (Conversar, Mesa de trabajo, Espacios, Agentes, Rutinas, Flujos, Memoria, Conexiones) that the faberloom profile serves; for users and maintainers of the FaberLoom workspace."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The FaberLoom surface turns the shared Web shell into the FaberLoom workspace: it overrides the accent token with the FaberLoom identity, labels the sidebar brand, and registers one global panel per FaberLoom section. Every panel reads one shared overview from a declared store; Espacios and Agentes create and rename their records through `ctx.remote.faberloomView`, and each write republishes the refreshed overview so all panels update at once. The Conversar panel hands the user to the harness conversation, which owns the composer. The package is mounted only by the `faberloom` profile.
+The FaberLoom surface turns the shared Web shell into the FaberLoom workspace: it overrides the accent token with the FaberLoom identity, labels the sidebar brand, and registers one global panel per FaberLoom section. Every panel reads one shared overview from a declared store; Espacios and Agentes create and rename their records through `ctx.remote.faberloomView`, and each write republishes the refreshed overview so all panels update at once. The Conversar panel hands the user to the harness conversation, which owns the composer. The Flujos panel draws the Work Flow graph. The package is mounted only by the `faberloom` profile.
 
 ## Table of Contents
 
@@ -27,7 +27,7 @@ Mount this plugin where `ctx.slots`, `ctx.locale`, and `ctx.theme` are present. 
 
 - an accent layer through `ctx.theme.overrideTokens`, which follows light and dark;
 - the `sidebar.brand.name`, `sidebar.brand.mark`, and `conversation.hero.brand.mark` occupant;
-- ten `sidebar.panellist` rows and their matching `main` panels, addressed by the shared `MainPanelId`;
+- eleven `sidebar.panellist` rows and their matching `main` panels, addressed by the shared `MainPanelId`;
 - the chat gestures: an `@` trigger source that lists the owner's active agents (a pick inserts `@name`) and a `/routine` command contribution with a popup that starts the picked routine, both fed by the workspace overview through `ctx.remote.faberloomView`.
 
 The Spaces detail links the business space to the harness workspace: `spaceWorkspace` projects the space's conversation area (its `fw_` workdir registered as a workspace, titled after the space) and "New conversation in this space" opens a session in it, so the sidebar's workspace group and the space stay the same thing. The Work bench reviews with a note, submits new prepared revisions, moves items through the exception states (request data, fail, complete), and lists recorded effects with detail and date.

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** FaberLoom surface: identity tokens, brand name, real workspace reads, and panel switching. */
 import type { Context } from '@deepseek-ai/cordis'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -16,6 +16,7 @@ const BOARD = 'faberloom-board' as MainPanelId
 const SPACES = 'faberloom-spaces' as MainPanelId
 const MEMORY = 'faberloom-memory' as MainPanelId
 const EMAIL = 'faberloom-email' as MainPanelId
+const WORKFLOWS = 'faberloom-workflows' as MainPanelId
 
 const OVERVIEW = {
   spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null, agentId: 'agent-1', agentName: 'Proformas', workspaceId: 'ws-1' }],
@@ -99,9 +100,53 @@ async function bench(
   const saveSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const saveRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const connections = vi.fn(async () => ({ ok: true, value: [] }))
+  const skills = vi.fn(async () => ({ ok: true, value: [] }))
   const saveConnection = vi.fn(async () => ({ ok: true, value: [] }))
   const removeConnection = vi.fn(async () => ({ ok: true, value: [] }))
   const probeConnection = vi.fn(async () => ({ ok: true, value: { ok: true, detail: 'ok' } }))
+  const workflowOverview = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const workflowDetail = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: {
+      id: 'wf1', name: 'flujo', status: 'draft', version: 1, routineId: null,
+      valid: true, problems: [], maxConcurrency: null, nodesList: [], edgesList: [],
+    },
+  }))
+  const createWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const saveWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const addNode = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const updateNode = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const removeNode = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const connectNode = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const disconnectNode = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const setWorkflowStatus = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const workflowRuns = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const spaceTopology = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: { spaces: [], agents: [], connections: [], workspaces: [] },
+  }))
+  const exportWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { format: 'json', content: '{}' } }))
+  const routineWorkflowLinks = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const setWorkflowConcurrency = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const shareWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const shareSpace = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const resourceShares = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const revokeShareGrant = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const executionHealth = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { ownerId: '', routines: [], totals: { runs: 0, failures: 0, needsReview: 0, waiting: 0, retries: 0, deadLettered: 0, alerts: 0 } } }))
+  const workflowTemplates = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const createWorkflowFromTemplate = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const importWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const captureSpaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const spaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const spaceSessionContent = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: { sessionId: 's1', ownerId: 'o@x', spaceId: 'sp', title: 't', workspaceId: null, createdAt: 'c', updatedAt: 'u', messageCount: 0, origin: 'owner', content: '' },
+  }))
+  const removeSpaceSession = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const syncContext = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const workflowPendingChanges = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const acceptWorkflowChange = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const rejectWorkflowChange = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
@@ -109,7 +154,15 @@ async function bench(
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
+    skills,
     spaceMemory, deleteSpaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
+    workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
+    connect: connectNode, disconnect: disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
+    routineWorkflowLinks, setWorkflowConcurrency,
+    shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
+    workflowTemplates, createWorkflowFromTemplate, importWorkflow,
+    captureSpaceSessions, spaceSessions, spaceSessionContent, removeSpaceSession,
+    syncContext, workflowPendingChanges, acceptWorkflowChange, rejectWorkflowChange,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -148,6 +201,11 @@ async function bench(
     runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace,
     deleteBoardItem, emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view,
+    workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
+    connectNode, disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
+    routineWorkflowLinks, setWorkflowConcurrency,
+    shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
+    workflowTemplates, createWorkflowFromTemplate, importWorkflow,
   }
 }
 
@@ -166,7 +224,10 @@ describe('faberloom surface', () => {
       'faberloom-agents',
       'faberloom-skills',
       'faberloom-routines',
+      'faberloom-workflows',
       'faberloom-memory',
+      'faberloom-context',
+      'faberloom-approvals',
       'faberloom-connections',
       'faberloom-email',
     ])
@@ -177,7 +238,10 @@ describe('faberloom surface', () => {
       'faberloom-agents',
       'faberloom-skills',
       'faberloom-routines',
+      'faberloom-workflows',
       'faberloom-memory',
+      'faberloom-context',
+      'faberloom-approvals',
       'faberloom-connections',
       'faberloom-email',
     ])
@@ -374,5 +438,332 @@ describe('faberloom surface', () => {
     fireEvent.change(input, { target: { value: 'Propio' } })
     fireEvent.click(view.getByRole('button', { name: 'Create' }))
     await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Propio', undefined, undefined, true) })
+  })
+})
+
+describe('faberloom work-flow canvas', () => {
+  // jsdom omits PointerEvent; the panel listens to pointer events for dragging.
+  beforeAll(() => {
+    if (window.PointerEvent === undefined) {
+      Object.defineProperty(window, 'PointerEvent', { value: window.MouseEvent, configurable: true })
+    }
+  })
+
+  const row = { id: 'wf1', name: 'Anti-spam', status: 'draft', version: 1, nodes: 2, edges: 1, routineId: null, spaceId: 's1' }
+
+  it('lists, selects, edits, connects, drags, and removes graph nodes', async () => {
+    const {
+      runtime, view, workflowOverview, workflowDetail, workflowRuns,
+      addNode, updateNode, removeNode, connectNode, disconnectNode,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    const detailValue = {
+      ...row, valid: true, problems: [],
+      nodesList: [
+        { id: 'n1', kind: 'trigger.email', title: 'correo', x: 0, y: 0, config: {} },
+        { id: 'n2', kind: 'agent', title: 'clasifica', x: 260, y: 0, config: { agentId: 'agent-1' } },
+      ],
+      edgesList: [{ id: 'e1', from: 'n1', to: 'n2', condition: 'spam == true' }],
+    }
+    const refreshed = { ok: true, value: detailValue }
+    workflowDetail.mockResolvedValue(refreshed)
+    addNode.mockResolvedValue(refreshed)
+    updateNode.mockResolvedValue(refreshed)
+    removeNode.mockResolvedValue(refreshed)
+    connectNode.mockResolvedValue(refreshed)
+    disconnectNode.mockResolvedValue(refreshed)
+    workflowRuns.mockResolvedValue({
+      ok: true,
+      value: [{ id: 'ex1', status: 'completed', routineVersion: 1, createdAt: 'now', updatedAt: 'now' }],
+    })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(await view.findByText(/Anti-spam/))
+    expect(await view.findByText('correo')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Logs' }))
+    expect(await view.findByText('completed')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Close' }))
+
+    fireEvent.click(view.getByText('correo'))
+    fireEvent.change(view.getByPlaceholderText('Title'), { target: { value: 'nuevo' } })
+    fireEvent.click(view.getByRole('button', { name: 'Save' }))
+    await waitFor(() => { expect(updateNode).toHaveBeenCalledWith('wf1', 'n1', 'nuevo', 'trigger.email', '{"match":""}') })
+
+    fireEvent.change(view.getByRole('combobox', { name: 'Node kind' }), { target: { value: 'imap.action' } })
+    fireEvent.click(view.getByRole('button', { name: 'Add node' }))
+    await waitFor(() => { expect(addNode).toHaveBeenCalledWith('wf1', 'imap.action', 'nuevo', '{"op":"search"}', undefined) })
+    fireEvent.click(view.getByRole('button', { name: 'Remove node' }))
+    await waitFor(() => { expect(removeNode).toHaveBeenCalledWith('wf1', 'n1') })
+
+    fireEvent.keyDown(window, { key: 'Delete' })
+    fireEvent.keyDown(window, { key: 'Enter' })
+    await waitFor(() => { expect(removeNode).toHaveBeenCalledTimes(2) })
+
+    fireEvent.click(view.getByRole('button', { name: 'Connections' }))
+    fireEvent.click(view.getByRole('button', { name: /Disconnect/ }))
+    await waitFor(() => { expect(disconnectNode).toHaveBeenCalledWith('wf1', 'e1') })
+
+    fireEvent.click(view.getByText('correo'))
+    fireEvent.click(view.getByRole('button', { name: 'Connect' }))
+    fireEvent.click(view.getByText('clasifica'))
+    await waitFor(() => { expect(connectNode).toHaveBeenCalledWith('wf1', 'n1', 'n2', undefined) })
+
+    const svg = view.container.querySelector('svg[viewBox="0 0 900 320"]') as SVGSVGElement
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 900, height: 320, right: 900, bottom: 320, x: 0, y: 0, toJSON: () => ({}),
+    })
+    fireEvent.pointerDown(view.getByText('correo'))
+    fireEvent.pointerMove(svg, { clientX: 300, clientY: 160 })
+    fireEvent.pointerUp(svg)
+    fireEvent.pointerMove(svg, { clientX: 400, clientY: 160 })
+    await waitFor(() => { expect(svg.textContent).toContain('correo') })
+  })
+
+  it('auto-selects a flow created from a template so its graph appears', async () => {
+    const {
+      runtime, view, workflowOverview, workflowDetail, workflowTemplates, createWorkflowFromTemplate,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [] })
+    workflowTemplates.mockResolvedValue({
+      ok: true,
+      value: [{ id: 'anti-spam', name: 'Anti-spam', description: 'clasifica', nodes: 1, edges: 0 }],
+    })
+    createWorkflowFromTemplate.mockResolvedValue({
+      ok: true,
+      value: [{ id: 'wf2', name: 'Anti-spam', status: 'draft', version: 1, nodes: 1, edges: 0, routineId: null }],
+    })
+    workflowDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        id: 'wf2', name: 'Anti-spam', status: 'draft', version: 1, routineId: null,
+        valid: true, problems: [], maxConcurrency: null,
+        nodesList: [{ id: 'n1', kind: 'trigger.email', title: 'correo', x: 0, y: 0, config: {} }],
+        edgesList: [],
+      },
+    })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(view.getByRole('button', { name: 'Templates' }))
+    await view.findByRole('option', { name: 'Anti-spam' })
+    fireEvent.change(view.getByRole('combobox', { name: 'Templates' }), { target: { value: 'anti-spam' } })
+    await waitFor(() => {
+      expect((view.getByRole('combobox', { name: 'Templates' }) as HTMLSelectElement).value).toBe('anti-spam')
+    })
+    fireEvent.click(view.getByRole('button', { name: 'Use template' }))
+
+    await waitFor(() => { expect(workflowDetail).toHaveBeenCalledWith('wf2') })
+    expect(await view.findByText('correo')).toBeTruthy()
+  })
+
+  it('creates, activates, exports, and points nodes at an agent and a connection', async () => {
+    const {
+      runtime, view, workflowOverview, workflowDetail, createWorkflow,
+      setWorkflowStatus, exportWorkflow, updateNode, spaceTopology,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    const detailValue = {
+      ...row, valid: true, problems: [], edgesList: [],
+      nodesList: [
+        { id: 'n1', kind: 'agent', title: 'clasifica', x: 0, y: 0, config: {} },
+        { id: 'n2', kind: 'imap.action', title: 'borra', x: 260, y: 0, config: {} },
+      ],
+    }
+    const refreshed = { ok: true, value: detailValue }
+    workflowDetail.mockResolvedValue(refreshed)
+    setWorkflowStatus.mockResolvedValue(refreshed)
+    updateNode.mockResolvedValue(refreshed)
+    spaceTopology.mockResolvedValue({
+      ok: true,
+      value: {
+        spaces: [{ id: 's1', title: 'Marluvas' }],
+        agents: [{ id: 'agent-1', name: 'Proformas' }],
+        connections: [{ id: 'c1', label: 'IMAP' }],
+        workspaces: [],
+      },
+    })
+    createWorkflow.mockResolvedValue({ ok: true, value: [{ ...row, nodes: 2, edges: 0 }] })
+    exportWorkflow.mockResolvedValue({ ok: true, value: { format: 'json', content: '{}' } })
+    const open = vi.fn(() => null)
+    const originalOpen = window.open
+    window.open = open
+    const urlAny = URL as unknown as { createObjectURL?: (blob: Blob) => string }
+    const originalCreate = urlAny.createObjectURL
+    urlAny.createObjectURL = vi.fn(() => 'blob:x')
+    try {
+      act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+      // The first flow is selected on load, so its graph is on screen.
+      expect(await view.findByText(/Anti-spam/)).toBeTruthy()
+      expect(await view.findByText('clasifica')).toBeTruthy()
+
+      fireEvent.click(view.getByRole('button', { name: 'New flow' }))
+      expect(createWorkflow).not.toHaveBeenCalled()
+      fireEvent.change(view.getByPlaceholderText('Flow name'), { target: { value: 'Anti-spam' } })
+      fireEvent.click(view.getByRole('button', { name: 'New flow' }))
+      await waitFor(() => { expect(createWorkflow).toHaveBeenCalledWith('Anti-spam') })
+
+      fireEvent.click(await view.findByText(/Anti-spam/))
+      fireEvent.click(await view.findByRole('button', { name: 'Activate' }))
+      await waitFor(() => { expect(setWorkflowStatus).toHaveBeenCalledWith('wf1', 'active') })
+      fireEvent.click(view.getByRole('button', { name: 'Pause' }))
+      await waitFor(() => { expect(setWorkflowStatus).toHaveBeenCalledWith('wf1', 'paused') })
+      fireEvent.click(view.getByRole('button', { name: 'Export JSON' }))
+      await waitFor(() => { expect(exportWorkflow).toHaveBeenCalledWith('wf1', 'json') })
+      expect(open).toHaveBeenCalled()
+
+      fireEvent.click(view.getByText('clasifica'))
+      fireEvent.change(view.getByRole('combobox', { name: 'Agent' }), { target: { value: 'agent-1' } })
+      await waitFor(() => {
+        expect(updateNode).toHaveBeenCalledWith('wf1', 'n1', 'clasifica', 'agent', JSON.stringify({ agentId: 'agent-1' }))
+      })
+
+      fireEvent.click(view.getByText('borra'))
+      fireEvent.change(view.getByRole('combobox', { name: 'Connection' }), { target: { value: 'c1' } })
+      await waitFor(() => {
+        expect(updateNode).toHaveBeenCalledWith('wf1', 'n2', 'borra', 'imap.action', JSON.stringify({ connectionId: 'c1' }))
+      })
+      expect(view.getByText(/Marluvas/)).toBeTruthy()
+    } finally {
+      window.open = originalOpen
+      if (originalCreate === undefined) delete urlAny.createObjectURL
+      else urlAny.createObjectURL = originalCreate
+    }
+  })
+
+  it('surfaces detail, create, export, and rejected-action failures', async () => {
+    const {
+      runtime, view, workflowOverview, workflowDetail, createWorkflow, exportWorkflow, addNode,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    workflowDetail.mockResolvedValue({ ok: false, error: { message: 'detail-down' } })
+    createWorkflow.mockResolvedValue({ ok: false, error: { message: 'create-down' } })
+    exportWorkflow.mockResolvedValue({ ok: false, error: { message: 'export-down' } })
+    addNode.mockRejectedValueOnce(new Error('boom'))
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(await view.findByText(/Anti-spam/))
+    expect(await view.findByText('detail-down')).toBeTruthy()
+
+    fireEvent.change(view.getByPlaceholderText('Flow name'), { target: { value: 'X' } })
+    fireEvent.click(view.getByRole('button', { name: 'New flow' }))
+    expect(await view.findByText('create-down')).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: 'Add node' }))
+    expect(await view.findByText(/boom/)).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: 'Export JSON' }))
+    await waitFor(() => { expect(exportWorkflow).toHaveBeenCalledWith('wf1', 'json') })
+  })
+
+  it('creates a flow from the template gallery and imports a JSON export', async () => {
+    const {
+      runtime, view, workflowOverview, workflowTemplates, createWorkflowFromTemplate, importWorkflow,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    workflowTemplates.mockResolvedValue({
+      ok: true,
+      value: [{ id: 'anti-spam', name: 'Anti-spam', description: 'clasifica', nodes: 5, edges: 5 }],
+    })
+    createWorkflowFromTemplate.mockResolvedValue({ ok: true, value: [row] })
+    importWorkflow.mockResolvedValue({ ok: true, value: [row] })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    await waitFor(() => { expect(workflowTemplates).toHaveBeenCalled() })
+
+    fireEvent.click(view.getByRole('button', { name: 'Templates' }))
+    // Using the gallery without picking a template does nothing.
+    fireEvent.click(view.getByRole('button', { name: 'Use template' }))
+    expect(createWorkflowFromTemplate).not.toHaveBeenCalled()
+    await view.findByRole('option', { name: 'Anti-spam' })
+    fireEvent.change(view.getByRole('combobox', { name: 'Templates' }), { target: { value: 'anti-spam' } })
+    await waitFor(() => {
+      expect((view.getByRole('combobox', { name: 'Templates' }) as HTMLSelectElement).value).toBe('anti-spam')
+    })
+    fireEvent.click(view.getByRole('button', { name: 'Use template' }))
+    await waitFor(() => { expect(createWorkflowFromTemplate).toHaveBeenCalledWith('anti-spam', undefined) })
+
+    fireEvent.click(view.getByRole('button', { name: 'Templates' }))
+    const file = { text: async () => '{"format":"faberloom-workflow"}' } as unknown as File
+    fireEvent.change(view.getByLabelText('Import JSON'), { target: { files: [file] } })
+    await waitFor(() => { expect(importWorkflow).toHaveBeenCalledWith('{"format":"faberloom-workflow"}', undefined) })
+  })
+
+  it('stays usable when the overview and topology reads fail', async () => {
+    const { runtime, view, workflowOverview, spaceTopology } = await bench()
+    workflowOverview.mockRejectedValueOnce(new Error('down'))
+    spaceTopology.mockRejectedValueOnce(new Error('down'))
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    expect(await view.findByText('No flows yet')).toBeTruthy()
+  })
+
+  it('edits a schedule trigger, the concurrency cap, and shows routine links', async () => {
+    const {
+      runtime, view, workflowOverview, workflowDetail, updateNode,
+      setWorkflowConcurrency, routineWorkflowLinks,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    const detail = {
+      ...row, valid: true, problems: [], maxConcurrency: 2, edgesList: [],
+      nodesList: [{
+        id: 'n1', kind: 'trigger.schedule', title: 'cada 12 h', x: 0, y: 0,
+        config: { recurrence: 'every:12h', timezone: 'Europe/Madrid', window: { from: 8, to: 18 }, days: [1, 2, 3], businessDays: true },
+      }],
+    }
+    const refreshed = { ok: true, value: detail }
+    workflowDetail.mockResolvedValue(refreshed)
+    updateNode.mockResolvedValue(refreshed)
+    setWorkflowConcurrency.mockResolvedValue(refreshed)
+    routineWorkflowLinks.mockResolvedValue({
+      ok: true,
+      value: [{ routineId: 'r1', routineName: 'Vigía', workflowId: 'wf1', workflowName: 'Anti-spam', direction: 'routine-to-workflow' }],
+    })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(await view.findByRole('button', { name: /Anti-spam · draft/ }))
+    fireEvent.click(await view.findByText('cada 12 h'))
+    fireEvent.click(view.getByRole('button', { name: 'Routines' }))
+    expect(await view.findByText('Vigía → Anti-spam')).toBeTruthy()
+
+    const concurrencyBox = view.getByRole('textbox', { name: 'Max concurrency' }) as HTMLInputElement
+    expect(concurrencyBox.value).toBe('2')
+    fireEvent.change(concurrencyBox, { target: { value: '3' } })
+    fireEvent.click(view.getByRole('button', { name: 'Save concurrency' }))
+    await waitFor(() => { expect(setWorkflowConcurrency).toHaveBeenCalledWith('wf1', 3) })
+
+    fireEvent.click(view.getByText('cada 12 h'))
+    fireEvent.change(view.getByRole('textbox', { name: 'Cadence or cron' }), { target: { value: '0 7 * * *' } })
+    fireEvent.click(view.getByRole('button', { name: 'Save schedule' }))
+    await waitFor(() => {
+      expect(updateNode).toHaveBeenCalledWith('wf1', 'n1', 'cada 12 h', 'trigger.schedule', expect.stringContaining('0 7 * * *'))
+    })
+  })
+
+  it('shares the selected flow with an email and revokes the grant', async () => {
+    const {
+      runtime, view, workflowOverview, workflowDetail, resourceShares, shareWorkflow, revokeShareGrant,
+    } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    const detailValue = { ...row, valid: true, problems: [], maxConcurrency: null, nodesList: [], edgesList: [] }
+    workflowDetail.mockResolvedValue({ ok: true, value: detailValue })
+    const grant = {
+      id: 'g1', resourceKind: 'workflow', resourceId: 'wf1', resourceName: 'Anti-spam', ownerId: 'owner@muitowork.com',
+      granteeEmail: 'guest@proveedor.com', permissions: ['view'], permissionLabel: 'view', status: 'pending',
+      createdAt: 'now', acceptedAt: null,
+    }
+    resourceShares.mockResolvedValue({ ok: true, value: [grant] })
+    shareWorkflow.mockResolvedValue({ ok: true, value: [{ ...grant, id: 'g2', granteeEmail: 'nuevo@proveedor.com' }] })
+    revokeShareGrant.mockResolvedValue({ ok: true, value: [] })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(await view.findByText(/Anti-spam/))
+    fireEvent.click(view.getByRole('button', { name: 'Share' }))
+    expect(await view.findByText('guest@proveedor.com')).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: 'Revoke' }))
+    await waitFor(() => { expect(revokeShareGrant).toHaveBeenCalledWith('g1') })
+
+    fireEvent.change(view.getByRole('textbox', { name: 'Guest email' }), { target: { value: 'nuevo@proveedor.com' } })
+    fireEvent.click(view.getByRole('button', { name: 'Send invite' }))
+    await waitFor(() => { expect(shareWorkflow).toHaveBeenCalledWith('wf1', ['nuevo@proveedor.com'], ['view']) })
+    expect(await view.findByText('nuevo@proveedor.com')).toBeTruthy()
   })
 })

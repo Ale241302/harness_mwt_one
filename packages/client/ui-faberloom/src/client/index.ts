@@ -26,6 +26,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { FaberloomBrandName, FaberloomBrandMark, FABERLOOM_SECTIONS, type FaberloomPanelInjected } from './panels.tsx'
+import { WorkspaceShareDialog, WorkspaceShareMenuItem, createWorkspaceShareStore, type WorkspaceShareInjected } from './workspace-share.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
 import { runTaskChat } from './task-chat.ts'
@@ -251,6 +252,56 @@ export function apply(ctx: ClientContext): void {
       tickRoutine: routineId => ctx.remote.faberloomView.tickRoutine(routineId),
       reconcileExecution: id => ctx.remote.faberloomView.reconcileExecution(id),
       cancelExecutionEffect: (id, stepId) => ctx.remote.faberloomView.cancelExecutionEffect(id, stepId),
+      workflows: {
+        overview: () => ctx.remote.faberloomView.workflowOverview(),
+        detail: id => ctx.remote.faberloomView.workflowDetail(id),
+        create: name => ctx.remote.faberloomView.createWorkflow(name),
+        save: (id, name) => ctx.remote.faberloomView.saveWorkflow(id, name),
+        addNode: (id, kind, title, configJson, nodeId) => ctx.remote.faberloomView.addNode(id, kind, title, configJson, nodeId),
+        updateNode: (id, nodeId, title, kind, configJson) => ctx.remote.faberloomView.updateNode(id, nodeId, title, kind, configJson),
+        removeNode: (id, nodeId) => ctx.remote.faberloomView.removeNode(id, nodeId),
+        connect: (id, from, to, condition) => ctx.remote.faberloomView.connect(id, from, to, condition),
+        disconnect: (id, edgeId) => ctx.remote.faberloomView.disconnect(id, edgeId),
+        setStatus: (id, status) => ctx.remote.faberloomView.setWorkflowStatus(id, status),
+        setConcurrency: (id, maxConcurrency) => ctx.remote.faberloomView.setWorkflowConcurrency(id, maxConcurrency),
+        runs: id => ctx.remote.faberloomView.workflowRuns(id),
+        topology: () => ctx.remote.faberloomView.spaceTopology(),
+        links: () => ctx.remote.faberloomView.routineWorkflowLinks(),
+        shareWorkflow: (id, emails, permissions) => ctx.remote.faberloomView.shareWorkflow(id, emails, permissions),
+        shareSpace: (id, emails, permissions) => ctx.remote.faberloomView.shareSpace(id, emails, permissions),
+        resourceShares: (kind, id) => ctx.remote.faberloomView.resourceShares(kind, id),
+        revokeShareGrant: grantId => ctx.remote.faberloomView.revokeShareGrant(grantId),
+        health: () => ctx.remote.faberloomView.executionHealth(),
+        exportFlow: (id, format) => ctx.remote.faberloomView.exportWorkflow(id, format),
+        templates: () => ctx.remote.faberloomView.workflowTemplates(),
+        createFromTemplate: (templateId, name) => ctx.remote.faberloomView.createWorkflowFromTemplate(templateId, name),
+        importFlow: (json, name) => ctx.remote.faberloomView.importWorkflow(json, name),
+        workflowVersions: id => ctx.remote.faberloomView.workflowVersions(id),
+        restoreWorkflow: (id, version) => ctx.remote.faberloomView.restoreWorkflow(id, version),
+      },
+      context: {
+        entries: () => ctx.remote.faberloomView.contextEntries(),
+        create: (title, body, spaceId) => ctx.remote.faberloomView.createContext(title, body, spaceId),
+        update: (id, title, body) => ctx.remote.faberloomView.updateContext(id, title, body),
+        versions: id => ctx.remote.faberloomView.contextVersions(id),
+        restore: (id, version) => ctx.remote.faberloomView.restoreContext(id, version),
+        approve: id => ctx.remote.faberloomView.approveContext(id),
+        reject: id => ctx.remote.faberloomView.rejectContext(id),
+        remove: id => ctx.remote.faberloomView.removeContext(id),
+      },
+      sessionsShare: {
+        capture: (spaceId, sessions) => ctx.remote.faberloomView.captureSpaceSessions(spaceId, sessions),
+        list: spaceId => ctx.remote.faberloomView.spaceSessions(spaceId),
+        content: (spaceId, ownerId, sessionId) => ctx.remote.faberloomView.spaceSessionContent(spaceId, ownerId, sessionId),
+        remove: (spaceId, ownerId, sessionId) => ctx.remote.faberloomView.removeSpaceSession(spaceId, ownerId, sessionId),
+      },
+      approvals: {
+        contextEntries: () => ctx.remote.faberloomView.contextEntries(),
+        syncContext: () => ctx.remote.faberloomView.syncContext(),
+        workflowChanges: () => ctx.remote.faberloomView.workflowPendingChanges(),
+        acceptWorkflow: id => ctx.remote.faberloomView.acceptWorkflowChange(id),
+        rejectWorkflow: id => ctx.remote.faberloomView.rejectWorkflowChange(id),
+      },
     }
   }
 
@@ -289,6 +340,31 @@ export function apply(ctx: ClientContext): void {
       inject: () => ({}),
     }, section.Icon))
   }
+
+  // Share a Workspace's mirrored Space from the sidebar row menu. The overlay
+  // host owns the dialog so it outlives the dropdown; both registrations share
+  // one store handle.
+  const workspaceShare = createWorkspaceShareStore()
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'faberloom-workspace-share',
+    store: workspaceShare,
+    locale: NS,
+    inject: (): WorkspaceShareInjected => ({
+      share: async (workspaceId, emails, permissions) => {
+        const result = await ctx.remote.faberloomView.shareSpaceByWorkspace(workspaceId, emails, permissions)
+        return result.ok ? { ok: true, message: '' } : { ok: false, message: result.error.message }
+      },
+    }),
+  }, WorkspaceShareDialog))
+  ctx.slots.inject('sidebar.workspaces.rowMenu', () => ctx.slots.register({
+    name: 'sidebar.workspaces.rowMenu',
+    id: 'faberloom-share',
+    order: -100,
+    store: workspaceShare,
+    locale: NS,
+    inject: () => ({}),
+  }, WorkspaceShareMenuItem))
 
   // Event-driven refresh: the harness forwards session activity, so a space or
   // agent created during a conversation appears without a reload. Throttled so a

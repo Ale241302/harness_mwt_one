@@ -200,6 +200,22 @@ describe('DomainFacility.open', () => {
       code: 'version-mismatch',
     })
   })
+
+  it('reads a store written before an additive table when the version is unchanged', async () => {
+    const pool = new MemoryMediaPool()
+    pool.versions.set('demo', 1)
+    pool.media.set('demo', { tables: new Map([['items', new Map([['a', { label: 'x', count: 1 }]])]]), global: { theme: 'plain' } })
+    const evolved = defineDomain({
+      name: 'demo',
+      version: 1,
+      global: { schema: settingsSchema, initial: { theme: 'plain' } },
+      tables: { items: domainTable<string, Item>(itemSchema), extra: domainTable<string, Item>(itemSchema) },
+    })
+    const { facility } = await harness({ pool })
+    const domain = await facility.open(evolved)
+    expect(domain.table('items').get('a')).toEqual({ label: 'x', count: 1 })
+    expect([...domain.table('extra').entries()]).toEqual([])
+  })
 })
 
 describe('plugin apply', () => {

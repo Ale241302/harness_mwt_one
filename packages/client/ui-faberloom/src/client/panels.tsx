@@ -5,7 +5,7 @@
  * overview and expose their own row actions. The Conversar panel hands the user
  * to the harness conversation, which owns the composer.
  */
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: declares the sidebar shell's `sidebar.panellist` owner props.
@@ -14,7 +14,9 @@ import {
   IconAgentPresetOutline16,
   IconAlarmClockOutline16,
   IconApiOutline14,
+  IconBranchOutline16,
   IconChecklistOutline14,
+  IconContextInjectionOutline16,
   IconSendOutline14,
   IconDatabaseOutline16,
   IconFolderOpenOutline16,
@@ -33,8 +35,14 @@ import type {
   FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
+  FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
+  FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomWorkflowTemplateRow,
+  FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
+  FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
+  FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
+import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -247,6 +255,68 @@ export interface FaberloomPanelInjected {
   reconcileExecution: (id: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
   /** Cancel one step's recorded effect. */
   cancelExecutionEffect: (id: string, stepId: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
+  /** The Work Flow editor surface: graph CRUD, runs, topology, and export. */
+  workflows: {
+    overview: () => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    detail: (id: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    create: (name: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    save: (id: string, name: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    addNode: (id: string, kind: string, title: string, configJson: string, nodeId?: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    updateNode: (id: string, nodeId: string, title: string, kind: string, configJson: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    removeNode: (id: string, nodeId: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    connect: (id: string, from: string, to: string, condition?: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    disconnect: (id: string, edgeId: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    setStatus: (id: string, status: string) => Promise<Result<FaberLoomWorkflowDetail>>
+    setConcurrency: (id: string, maxConcurrency: number | null) => Promise<Result<FaberLoomWorkflowDetail>>
+    runs: (id: string) => Promise<Result<readonly FaberLoomWorkflowRunRow[]>>
+    topology: () => Promise<Result<FaberLoomSpaceMap>>
+    links: () => Promise<Result<readonly FaberLoomWorkflowLink[]>>
+    shareWorkflow: (
+      id: string,
+      emails: readonly string[],
+      permissions: readonly string[],
+    ) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
+    shareSpace: (
+      id: string,
+      emails: readonly string[],
+      permissions: readonly string[],
+    ) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
+    resourceShares: (kind: string, id: string) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
+    revokeShareGrant: (grantId: string) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
+    health: () => Promise<Result<FaberLoomHealth>>
+    exportFlow: (id: string, format: string) => Promise<Result<FaberLoomWorkflowExport>>
+    templates: () => Promise<Result<readonly FaberLoomWorkflowTemplateRow[]>>
+    createFromTemplate: (templateId: string, name?: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    importFlow: (json: string, name?: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    workflowVersions: (id: string) => Promise<Result<readonly FaberLoomWorkflowVersionRow[]>>
+    restoreWorkflow: (id: string, version: number) => Promise<Result<FaberLoomWorkflowDetail>>
+  }
+  /** The Workspace/Space Context surface. */
+  context: {
+    entries: () => Promise<Result<readonly FaberLoomContextRow[]>>
+    create: (title: string, body: string, spaceId?: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+    update: (id: string, title: string, body: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+    versions: (id: string) => Promise<Result<readonly FaberLoomContextVersionRow[]>>
+    restore: (id: string, version: number) => Promise<Result<readonly FaberLoomContextRow[]>>
+    approve: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+    reject: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+    remove: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+  }
+  /** The shared Session catalog surface. */
+  sessionsShare: {
+    capture: (spaceId: string, sessions: readonly FaberLoomSharedSessionRef[]) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
+    list: (spaceId: string) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
+    content: (spaceId: string, ownerId: string, sessionId: string) => Promise<Result<FaberLoomSharedSessionContentRow>>
+    remove: (spaceId: string, ownerId: string, sessionId: string) => Promise<Result<readonly FaberLoomSharedSessionRow[]>>
+  }
+  /** The approval inbox surface. */
+  approvals: {
+    contextEntries: () => Promise<Result<readonly FaberLoomContextRow[]>>
+    syncContext: () => Promise<Result<readonly FaberLoomContextRow[]>>
+    workflowChanges: () => Promise<Result<readonly FaberLoomWorkflowPendingRow[]>>
+    acceptWorkflow: (id: string) => Promise<Result<readonly FaberLoomWorkflowPendingRow[]>>
+    rejectWorkflow: (id: string) => Promise<Result<readonly FaberLoomWorkflowPendingRow[]>>
+  }
 }
 
 /** Binds one glyph to the sidebar panellist owner props. */
@@ -262,6 +332,7 @@ function panelIcon(Glyph: ComponentType<{ size: number }>) {
 
 /** Component props shared by every module screen. */
 type ScreenProps = PropsLocale<'faberloom'>
+  & PropsRuntime<'main'>
   & PropsStore<ReturnType<typeof createWorkspaceStore>>
   & InjectFace<FaberloomPanelInjected>
 
@@ -310,9 +381,50 @@ function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null 
 }
 
 /** Espacios: list, create, and rename. */
+/**
+ * Render one shared-Session snapshot as readable text. The stored content is the
+ * query service's snapshot JSON; text blocks of the first-party events are
+ * surfaced, and an unparseable body falls back to the raw text.
+ * @param content - stored snapshot JSON.
+ * @returns the transcript text.
+ */
+function sharedTranscript(content: string): string {
+  let parsed: unknown
+  try { parsed = JSON.parse(content) } catch { return content }
+  if (parsed === null || typeof parsed !== 'object') return content
+  const events = (parsed as { events?: unknown }).events
+  if (!Array.isArray(events)) return content
+  const lines: string[] = []
+  for (const event of events) lines.push(...sharedEventText(event))
+  return lines.length === 0 ? content : lines.join('\n\n')
+}
+
+/** The text blocks of one stored event, tagged by its type. */
+function sharedEventText(event: unknown): string[] {
+  if (event === null || typeof event !== 'object') return []
+  const record = event as Record<string, unknown>
+  const data = record['data']
+  if (data === null || typeof data !== 'object') return []
+  const frame = data as Record<string, unknown>
+  const message = frame['message']
+  const blocks = frame['content']
+    ?? (message !== null && typeof message === 'object' ? (message as Record<string, unknown>)['content'] : undefined)
+  if (!Array.isArray(blocks)) return []
+  const text = blocks.flatMap((block) => {
+    if (block === null || typeof block !== 'object') return []
+    const blockRecord = block as Record<string, unknown>
+    return blockRecord['type'] === 'text' && typeof blockRecord['text'] === 'string' ? [blockRecord['text']] : []
+  }).join('\n')
+  const type = typeof record['type'] === 'string' ? record['type'] : 'event'
+  return text.length === 0 ? [] : [`${type}:\n${text}`]
+}
+
 function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
-    const { t, createSpace, deleteSpace, goToWorkspace, spaceDetail, saveSpace, spaceWorkspace, startSpaceSession } = props
+    const {
+      t, createSpace, deleteSpace, goToWorkspace, spaceDetail, saveSpace, spaceWorkspace, startSpaceSession,
+      sessionsShare, useSessions, useWorkspaces,
+    } = props
     const { overview, status, error } = useOverview(props)
     const [draft, setDraft] = useState('')
     const [agentId, setAgentId] = useState('')
@@ -326,6 +438,11 @@ function spacesScreen() {
     const [parentId, setParentId] = useState('')
     const [newInherit, setNewInherit] = useState(true)
     const [creating, setCreating] = useState(false)
+    const [shared, setShared] = useState<readonly FaberLoomSharedSessionRow[]>([])
+    const [sharedOpen, setSharedOpen] = useState(false)
+    const [sharedContent, setSharedContent] = useState('')
+    const sessionList = useSessions(state => state)
+    const workspaceItems = useWorkspaces(state => state.items)
     const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
     const rows = useMemo(
       () => (overview?.spaces ?? []).filter(space => space.title.toLowerCase().includes(query.trim().toLowerCase())),
@@ -349,6 +466,46 @@ function spacesScreen() {
       setSpaceAgentId(detail.value.agentId ?? '')
       setMessage(null)
     }, [detail])
+
+    // The Space's shared Sessions refresh with the selection and after each sync.
+    useEffect(() => {
+      if (selected === null) { setShared([]); return }
+      void sessionsShare.list(selected).then((result) => { if (result.ok) setShared(result.value) })
+    }, [selected, sessionsShare])
+
+    /** Capture this host's Sessions of the Space's area, then re-list. */
+    const syncShared = (spaceId: string): void => {
+      setMessage(null)
+      const space = (overview?.spaces ?? []).find(row => row.id === spaceId)
+      const workspaceId = space?.workspaceId ?? null
+      const workspace = workspaceId === null ? undefined : workspaceItems.find(item => String(item.workspaceId) === workspaceId)
+      const refs: FaberLoomSharedSessionRef[] = []
+      for (const id of workspace?.sessionIds ?? []) {
+        const node = sessionList.byId[id]
+        if (node === undefined || node.blank) continue
+        refs.push({ id, title: node.title ?? '' })
+      }
+      void sessionsShare.capture(spaceId, refs).then((result) => {
+        if (result.ok) setShared(result.value)
+        else setMessage(result.error.message)
+      })
+    }
+
+    /** Open one shared Session's read-only transcript. */
+    const openShared = (session: FaberLoomSharedSessionRow): void => {
+      void sessionsShare.content(session.spaceId, session.ownerId, session.sessionId).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setSharedContent(result.value.content)
+        setSharedOpen(true)
+      })
+    }
+
+    /** Drop one shared Session (its author or this Space's owner). */
+    const removeShared = (session: FaberLoomSharedSessionRow): void => {
+      void sessionsShare.remove(session.spaceId, session.ownerId, session.sessionId).then((result) => {
+        if (result.ok) setShared(result.value)
+      })
+    }
 
     const columns: readonly Column<FaberLoomOverview['spaces'][number]>[] = [
       {
@@ -458,6 +615,24 @@ function spacesScreen() {
                             <button className={styles.secondary} type="button" disabled={detailValue === undefined} onClick={() => { if (detailValue !== undefined) startSpaceSession(detailValue.id) }}>{t('spaces.newInSpace')}</button>
                           </span>
                         </Field>
+                        <Field label={t('spaces.sharedSessions')} hint={t('spaces.sharedSessionsHint')}>
+                          <span className={styles.tools}>
+                            <button className={styles.secondary} type="button" disabled={detailValue === undefined} onClick={() => { if (detailValue !== undefined) syncShared(detailValue.id) }}>{t('spaces.syncSessions')}</button>
+                          </span>
+                          {shared.length === 0
+                            ? <span className={styles.cellMuted}>{t('spaces.noSharedSessions')}</span>
+                            : shared.map(session => (
+                              <div key={`${session.ownerId}:${session.sessionId}`} className={styles.grid2}>
+                                <span className={styles.cellMuted}>
+                                  {session.title} · {session.ownerId} · {String(session.messageCount)}
+                                </span>
+                                <span className={styles.tools}>
+                                  <button className={styles.ghost} type="button" onClick={() => { openShared(session) }}>{t('spaces.viewSession')}</button>
+                                  <button className={styles.ghost} type="button" onClick={() => { removeShared(session) }}>{t('action.delete')}</button>
+                                </span>
+                              </div>
+                            ))}
+                        </Field>
                       </>
                     )}
           </Inspector>
@@ -492,6 +667,9 @@ function spacesScreen() {
               <option value="no">{t('spaces.inheritNo')}</option>
             </select>
           </Field>
+        </Modal>
+        <Modal open={sharedOpen} onClose={() => { setSharedOpen(false) }} title={t('spaces.sessionContent')} closeLabel={t('action.close')}>
+          <pre className={styles.sharedSessionLog}>{sharedTranscript(sharedContent)}</pre>
         </Modal>
       </Screen>
     )
@@ -1202,7 +1380,7 @@ function emailScreen() {
                   {mailBody.value.attachments.map((attachment, index) => (
                     <button className={styles.rowAction} type="button" key={`${attachment.name}-${String(index)}`}
                       onClick={() => { downloadAttachment(selected ?? '', index, attachment.name) }}>
-                      {`${attachment.name} · ${String(attachment.size)} B`}
+                      {`${attachment.name} · ${String(attachment.size)}`}{' B'}
                     </button>
                   ))}
                 </div>
@@ -2594,6 +2772,9 @@ function MwtBlock(props: {
   )
 }
 
+/** The MCP endpoint path the panel shows for token setup; a wire path, not product copy. */
+const MCP_ENDPOINT_PATH = '/mcp'
+
 /** The tools a token may be scoped to, in catalogue order. */
 const MCP_TOOL_NAMES = [
   'faberloom_overview',
@@ -2708,7 +2889,7 @@ function McpBlock(props: {
         <DataTable columns={columns} rows={tableRows} selectedId={null} onSelect={() => {}}
           emptyTitle={t('mcp.empty')} emptyText={t('mcp.emptyText')} labels={tableLabels(t)} />
         <Inspector title={t('mcp.detail')}>
-          <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{`${typeof window === 'undefined' ? '' : window.location.origin}/mcp`}</span></Field>
+          <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{`${typeof window === 'undefined' ? '' : window.location.origin}${MCP_ENDPOINT_PATH}`}</span></Field>
           <Field label={t('mcp.how')} hint={t('mcp.howHint')}><span className={styles.cellMuted}>{t('mcp.howText')}</span></Field>
           <div className={styles.steps}>
             {rows.filter(row => row.revokedAt === null).map(row => (
@@ -2936,15 +3117,1021 @@ export interface FaberloomSection {
   Page: FaberloomPanelBody
 }
 
+/** Every node kind the Work Flow inspector offers. */
+const WORKFLOW_KINDS = [
+  'trigger.manual', 'trigger.schedule', 'trigger.email', 'trigger.event', 'trigger.board',
+  'agent', 'skill', 'mcp.call', 'imap.action', 'smtp.send', 'memory.remember', 'memory.teach',
+  'board.create', 'space.reference', 'routine.invoke', 'condition', 'transform', 'wait', 'notify', 'deadletter',
+] as const
+
+/** Permission checkboxes the Compartir form offers (Work Flow share modal and the Workspace row share dialog). */
+export const SHARE_PERMISSION_OPTIONS = ['view', 'run', 'edit-graph', 'add-nodes', 'remove-nodes', 'edit-agents', 'manage-triggers', 'share'] as const
+
+/** The IMAP operations the mail node offers. */
+const WORKFLOW_IMAP_OPS = ['search', 'move', 'delete', 'markRead'] as const
+
+/**
+ * The colour category one node kind paints its left accent with, so the canvas
+ * tells triggers, control steps, agents, and effects apart at a glance.
+ * @param kind - node kind.
+ * @returns the tone key.
+ */
+function workflowKindTone(kind: string): 'trigger' | 'control' | 'agent' | 'effect' {
+  if (kind.startsWith('trigger.')) return 'trigger'
+  if (kind === 'condition' || kind === 'transform' || kind === 'wait') return 'control'
+  if (kind === 'agent' || kind === 'skill' || kind === 'routine.invoke' || kind === 'mcp.call') return 'agent'
+  return 'effect'
+}
+
+/** The accent colour class each node tone paints its left bar with. */
+const WORKFLOW_ACCENT_CLASSES: Readonly<Record<ReturnType<typeof workflowKindTone>, string | undefined>> = {
+  trigger: styles.workflowAccentTrigger,
+  control: styles.workflowAccentControl,
+  agent: styles.workflowAccentAgent,
+  effect: styles.workflowAccentEffect,
+}
+
+/** Open a read-only export in a new tab. */
+function openWorkflowExport(value: FaberLoomWorkflowExport): void {
+  const blob = new Blob([value.content], { type: value.format === 'json' ? 'application/json' : 'text/html' })
+  window.open(URL.createObjectURL(blob), '_blank')
+}
+
+/**
+ * Project one node's stored config onto the inspector's named text fields, so the
+ * form opens on the node's current values instead of raw JSON.
+ * @param kind - node kind.
+ * @param config - stored node config.
+ * @returns the field values keyed by field name.
+ */
+function workflowFields(kind: string, config: Readonly<Record<string, FaberLoomJsonValue>>): Record<string, string> {
+  const text = (key: string): string => {
+    const raw = config[key]
+    return typeof raw === 'string' ? raw : ''
+  }
+  switch (kind) {
+    case 'agent': return { agentId: text('agentId'), instruction: text('instruction'), useSpaceContext: config['useSpaceContext'] === false ? '' : 'true' }
+    case 'skill': return { skillName: text('skillName'), instruction: text('instruction') }
+    case 'routine.invoke': return { routineId: text('routineId'), input: text('input') }
+    case 'mcp.call': return { server: text('server'), tool: text('tool') }
+    case 'imap.action': return { connectionId: text('connectionId'), op: text('op') || 'search', folder: text('folder') }
+    case 'smtp.send': return { connectionId: text('connectionId'), subject: text('subject') }
+    case 'memory.remember': return { spaceId: text('spaceId'), text: text('text') }
+    case 'memory.teach': return { spaceId: text('spaceId'), text: text('text') }
+    case 'board.create': return { title: text('title'), summary: text('summary') }
+    case 'space.reference': return { spaceId: text('spaceId') }
+    case 'condition': return { expression: text('expression') }
+    case 'transform': return { expression: text('expression') }
+    case 'wait': {
+      const seconds = config['seconds']
+      return { seconds: typeof seconds === 'number' ? String(seconds) : '0' }
+    }
+    case 'notify': return { connectionId: text('connectionId'), text: text('text') }
+    case 'trigger.email': return { match: text('match') }
+    default: return {}
+  }
+}
+
+/**
+ * Compose the config to store from the inspector's named fields for one kind.
+ * @param kind - node kind.
+ * @param fields - field values.
+ * @returns the config object to persist.
+ */
+function workflowConfig(kind: string, fields: Readonly<Record<string, string>>): Record<string, unknown> {
+  const value = (key: string): string => fields[key] ?? ''
+  switch (kind) {
+    case 'agent': return { agentId: value('agentId'), instruction: value('instruction'), useSpaceContext: value('useSpaceContext') !== '' }
+    case 'skill': return { skillName: value('skillName'), instruction: value('instruction') }
+    case 'routine.invoke': return { routineId: value('routineId'), input: value('input') }
+    case 'mcp.call': return { server: value('server'), tool: value('tool') }
+    case 'imap.action': return { connectionId: value('connectionId'), op: value('op') || 'search', folder: value('folder') }
+    case 'smtp.send': return { connectionId: value('connectionId'), subject: value('subject') }
+    case 'memory.remember': return { spaceId: value('spaceId'), text: value('text') }
+    case 'memory.teach': return { spaceId: value('spaceId'), text: value('text'), scope: 'case', source: '' }
+    case 'board.create': return { title: value('title'), summary: value('summary') }
+    case 'space.reference': return { spaceId: value('spaceId') }
+    case 'condition': return { expression: value('expression') }
+    case 'transform': return { expression: value('expression') }
+    case 'wait': return { seconds: Number(value('seconds')) || 0 }
+    case 'notify': return { connectionId: value('connectionId'), text: value('text') }
+    case 'trigger.email': return { match: value('match') }
+    default: return defaultConfigFor(kind)
+  }
+}
+
+/** The minimal config a relationship field writes when the user picks a value. */
+const WORKFLOW_RELATION_FIELDS: Readonly<Record<string, (value: string) => Record<string, unknown>>> = {
+  agentId: value => ({ agentId: value }),
+  skillName: value => ({ skillName: value }),
+  routineId: value => ({ routineId: value }),
+  connectionId: value => ({ connectionId: value }),
+  spaceId: value => ({ spaceId: value }),
+}
+
+/** One labeled select bound to a catalog relation (agent, skill, routine, connection, space). */
+function RelationSelect({ label, value, options, onChange }: {
+  label: string
+  value: string
+  options: readonly { id: string; label: string }[]
+  onChange: (value: string) => void
+}) {
+  return (
+    <Field label={label}>
+      <select aria-label={label} value={value} onChange={(event) => { onChange(event.target.value) }}>
+        <option value="">—</option>
+        {options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+      </select>
+    </Field>
+  )
+}
+
+/** Work Flows: the SVG graph canvas, the node inspector, run history, Space map, and export. */
+function workflowsScreen() {
+  return function FaberloomWorkflows(props: ScreenProps) {
+    const { t, workflows } = props
+    const { overview } = useOverview(props)
+    const skillsState = useLazy(() => props.skills(), [])
+    const [flows, setFlows] = useState<readonly FaberLoomWorkflowRow[]>([])
+    const [selected, setSelected] = useState<string | null>(null)
+    const [detail, setDetail] = useState<FaberLoomWorkflowDetail | null>(null)
+    const [runs, setRuns] = useState<readonly FaberLoomWorkflowRunRow[]>([])
+    const [topology, setTopology] = useState<FaberLoomSpaceMap | null>(null)
+    const [message, setMessage] = useState<string | null>(null)
+    const [nodeId, setNodeId] = useState<string | null>(null)
+    const [connectFrom, setConnectFrom] = useState<string | null>(null)
+    const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
+    const [view, setView] = useState({ x: 0, y: 0, k: 1 })
+    const panning = useRef<{ x: number; y: number } | null>(null)
+    const [kind, setKind] = useState('agent')
+    const [title, setTitle] = useState('')
+    const [flowName, setFlowName] = useState('')
+    const [scheduleRecurrence, setScheduleRecurrence] = useState('')
+    const [scheduleTimezone, setScheduleTimezone] = useState('')
+    const [scheduleFrom, setScheduleFrom] = useState('')
+    const [scheduleTo, setScheduleTo] = useState('')
+    const [scheduleDays, setScheduleDays] = useState('')
+    const [scheduleBusinessDays, setScheduleBusinessDays] = useState(false)
+    const [concurrency, setConcurrency] = useState('')
+    const [links, setLinks] = useState<readonly FaberLoomWorkflowLink[]>([])
+    const [grants, setGrants] = useState<readonly FaberLoomShareGrantRow[]>([])
+    const [health, setHealth] = useState<FaberLoomHealth | null>(null)
+    const [templates, setTemplates] = useState<readonly FaberLoomWorkflowTemplateRow[]>([])
+    const [templateId, setTemplateId] = useState('')
+    const [shareEmail, setShareEmail] = useState('')
+    const [sharePermissions, setSharePermissions] = useState<readonly string[]>(['view'])
+    const [fields, setFields] = useState<Record<string, string>>({})
+    const [logsOpen, setLogsOpen] = useState(false)
+    const [shareOpen, setShareOpen] = useState(false)
+    const [nodeOpen, setNodeOpen] = useState(false)
+    const [templatesOpen, setTemplatesOpen] = useState(false)
+    const [nodeTab, setNodeTab] = useState<'node' | 'connections' | 'routines'>('node')
+    const [routinePick, setRoutinePick] = useState('')
+    const [versionsOpen, setVersionsOpen] = useState(false)
+    const [flowVersions, setFlowVersions] = useState<readonly FaberLoomWorkflowVersionRow[]>([])
+    const dragging = useRef<string | null>(null)
+    const dragged = useRef(false)
+
+    const accept = (result: Result<FaberLoomWorkflowDetail>): void => {
+      if (result.ok) {
+        setDetail(result.value)
+        setMessage(null)
+        setConcurrency(result.value.maxConcurrency === null ? '' : String(result.value.maxConcurrency))
+      } else setMessage(result.error.message)
+    }
+
+    // Refresh the list and select the flow that was just added, so its graph is
+    // on screen instead of the "Select a flow" placeholder.
+    const acceptFlows = (result: Result<readonly FaberLoomWorkflowRow[]>): void => {
+      if (!result.ok) { setMessage(result.error.message); return }
+      const created = result.value.find(flow => !flows.some(previous => previous.id === flow.id))
+      setFlows(result.value)
+      setMessage(null)
+      if (created !== undefined) setSelected(created.id)
+    }
+
+    useEffect(() => {
+      void workflows.overview().then((result) => {
+        if (!result.ok) return
+        setFlows(result.value)
+        const first = result.value[0]
+        if (first !== undefined) setSelected(current => current ?? first.id)
+      }).catch(() => undefined)
+      void workflows.topology().then((result) => { if (result.ok) setTopology(result.value) }).catch(() => undefined)
+      void workflows.links().then((result) => { if (result.ok) setLinks(result.value) }).catch(() => undefined)
+      void workflows.health().then((result) => { if (result.ok) setHealth(result.value) }).catch(() => undefined)
+      void workflows.templates().then((result) => { if (result.ok) setTemplates(result.value) }).catch(() => undefined)
+    }, [])
+    useEffect(() => {
+      if (selected === null) { setDetail(null); setRuns([]); return }
+      void workflows.detail(selected).then(accept)
+      void workflows.runs(selected).then((result) => { if (result.ok) setRuns(result.value) })
+      void workflows.links().then((result) => { if (result.ok) setLinks(result.value) })
+      void workflows.resourceShares('workflow', selected).then((result) => { if (result.ok) setGrants(result.value) })
+    }, [selected])
+    useEffect(() => {
+      if (detail === null) { setPositions({}); return }
+      const laid = layoutNodes(detail.nodesList.map(node => ({ id: node.id, kind: node.kind, title: node.title, x: node.x, y: node.y })))
+      const next: Record<string, { x: number; y: number }> = {}
+      for (const node of laid) next[node.id] = { x: node.x, y: node.y }
+      setPositions(next)
+      setNodeId(null)
+    }, [detail])
+    useEffect(() => {
+      const onKey = (event: KeyboardEvent): void => {
+        if (event.key === 'Delete' && selected !== null && nodeId !== null) void workflows.removeNode(selected, nodeId).then(accept)
+      }
+      window.addEventListener('keydown', onKey)
+      return () => { window.removeEventListener('keydown', onKey) }
+    })
+
+    const base = detail === null
+      ? []
+      : layoutNodes(detail.nodesList.map(node => ({ id: node.id, kind: node.kind, title: node.title, x: node.x, y: node.y })))
+    const nodes = base.map(node => ({ ...node, ...(positions[node.id] ?? {}) }))
+    const byId = new Map(nodes.map(node => [node.id, node]))
+    const agentOptions = topology?.agents ?? []
+    const connectionOptions = topology?.connections ?? []
+    const spaceOptions = topology?.spaces ?? []
+    const skillOptions = skillsState.kind === 'ready' ? skillsState.value : []
+    const routineOptions = overview?.routines ?? []
+    const selectedHealth = detail?.routineId === undefined || health === null
+      ? null
+      : health.routines.find(row => row.routineId === detail.routineId) ?? null
+    const selectedSpaceId = flows.find(flow => flow.id === selected)?.spaceId ?? null
+    const selectedSpaceName = selectedSpaceId === null
+      ? null
+      : topology?.spaces.find(space => space.id === selectedSpaceId)?.title ?? selectedSpaceId
+
+    const pick = (id: string): void => {
+      if (connectFrom !== null && connectFrom !== id) {
+        if (selected !== null) void workflows.connect(selected, connectFrom, id).then(accept)
+        setConnectFrom(null)
+        return
+      }
+      setNodeId(id)
+      const node = detail?.nodesList.find(entry => entry.id === id)
+      if (node !== undefined) {
+        setKind(node.kind)
+        setTitle(node.title)
+        setFields(workflowFields(node.kind, node.config))
+        const config = node.config
+        setScheduleRecurrence(typeof config['recurrence'] === 'string' ? config['recurrence'] : '')
+        setScheduleTimezone(typeof config['timezone'] === 'string' ? config['timezone'] : '')
+        const window = config['window']
+        const windowObject = window !== null && typeof window === 'object' && !Array.isArray(window)
+          ? window as Readonly<Record<string, FaberLoomJsonValue>>
+          : undefined
+        setScheduleFrom(windowObject !== undefined && typeof windowObject['from'] === 'number' ? String(windowObject['from']) : '')
+        setScheduleTo(windowObject !== undefined && typeof windowObject['to'] === 'number' ? String(windowObject['to']) : '')
+        const days = config['days']
+        setScheduleDays(Array.isArray(days) ? days.filter((value): value is number => typeof value === 'number').join(', ') : '')
+        setScheduleBusinessDays(config['businessDays'] === true)
+      }
+      if (!dragged.current) { setNodeTab('node'); setNodeOpen(true) }
+    }
+
+    /** Open the node editor modal for one node. */
+    const openNode = (id: string): void => {
+      pick(id)
+      setNodeTab('node')
+      setNodeOpen(true)
+    }
+
+    const act = (run: () => Promise<Result<FaberLoomWorkflowDetail>>): void => {
+      void run().then(accept).catch((error: unknown) => { setMessage(String(error)) })
+    }
+    /** Append a node of the inspector's kind and select it (disconnected). */
+    const addNode = (flowId: string): void => {
+      const before = new Set((detail?.nodesList ?? []).map(node => node.id))
+      void workflows.addNode(flowId, kind, title.length === 0 ? kind : title, JSON.stringify(defaultConfigFor(kind))).then((result) => {
+        accept(result)
+        if (!result.ok) return
+        const added = result.value.nodesList.find(node => !before.has(node.id))
+        if (added !== undefined) {
+          setNodeId(added.id)
+          setTitle(added.title)
+          setKind(added.kind)
+          setFields(workflowFields(added.kind, added.config))
+          setNodeTab('node')
+          setNodeOpen(true)
+        }
+      }).catch((error: unknown) => { setMessage(String(error)) })
+    }
+    /** Append a routine.invoke node bound to one existing routine. */
+    const addRoutineNode = (flowId: string, routineId: string): void => {
+      const routine = routineOptions.find(entry => entry.id === routineId)
+      const before = new Set((detail?.nodesList ?? []).map(node => node.id))
+      void workflows.addNode(flowId, 'routine.invoke', routine?.name ?? 'routine.invoke', JSON.stringify({ routineId, input: '' })).then((result) => {
+        accept(result)
+        if (!result.ok) return
+        const added = result.value.nodesList.find(node => !before.has(node.id))
+        if (added === undefined) return
+        setNodeId(added.id)
+        setTitle(added.title)
+        setKind(added.kind)
+        setFields(workflowFields(added.kind, added.config))
+        setNodeTab('node')
+        setNodeOpen(true)
+      }).catch((error: unknown) => { setMessage(String(error)) })
+    }
+    /** Persist the inspector's form onto the picked node. */
+    const saveNode = (flowId: string, id: string): void => {
+      act(() => workflows.updateNode(flowId, id, title, kind, JSON.stringify(workflowConfig(kind, fields))))
+    }
+    /** Change the picked node's kind and apply it, resetting its fields. */
+    const changeKind = (flowId: string, id: string, nextKind: string): void => {
+      setKind(nextKind)
+      setFields(workflowFields(nextKind, {}))
+      act(() => workflows.updateNode(flowId, id, title, nextKind, JSON.stringify(defaultConfigFor(nextKind))))
+    }
+    /** Drop the picked node and its edges. */
+    const deleteNode = (flowId: string, id: string): void => {
+      act(() => workflows.removeNode(flowId, id))
+    }
+    /** Remove one edge by id. */
+    const dropEdge = (flowId: string, edgeId: string): void => {
+      act(() => workflows.disconnect(flowId, edgeId))
+    }
+    /** Write one relationship field and apply it to the picked node. */
+    const setRelation = (flowId: string, id: string, key: string, value: string): void => {
+      setFields(current => ({ ...current, [key]: value }))
+      const build = WORKFLOW_RELATION_FIELDS[key]
+      if (build !== undefined) act(() => workflows.updateNode(flowId, id, title, kind, JSON.stringify(build(value))))
+    }
+    /** Persist the schedule sub-form onto the picked trigger node. */
+    const saveSchedule = (flowId: string, id: string): void => {
+      const days = scheduleDays.split(',').map(part => Number(part.trim())).filter(value => Number.isInteger(value) && value >= 0 && value <= 6)
+      const from = scheduleFrom.trim().length === 0 ? undefined : Number(scheduleFrom)
+      const to = scheduleTo.trim().length === 0 ? undefined : Number(scheduleTo)
+      const config: Record<string, unknown> = { recurrence: scheduleRecurrence.trim().length === 0 ? '1h' : scheduleRecurrence.trim() }
+      const timezone = scheduleTimezone.trim()
+      if (timezone.length > 0) config['timezone'] = timezone
+      if (from !== undefined && to !== undefined && !Number.isNaN(from) && !Number.isNaN(to)) config['window'] = { from, to }
+      if (days.length > 0) config['days'] = days
+      if (scheduleBusinessDays) config['businessDays'] = true
+      act(() => workflows.updateNode(flowId, id, title, kind, JSON.stringify(config)))
+    }
+    /** Persist the flow's concurrency cap. */
+    const saveConcurrency = (flowId: string): void => {
+      const trimmed = concurrency.trim()
+      const value = trimmed.length === 0 ? null : Number(trimmed)
+      if (value !== null && (!Number.isSafeInteger(value) || value < 1)) {
+        setMessage(t('wf.concurrency.invalid'))
+        return
+      }
+      act(() => workflows.setConcurrency(flowId, value))
+    }
+    /** Create a flow from the selected gallery template. */
+    const useTemplate = (): void => {
+      if (templateId.length === 0) return
+      void workflows.createFromTemplate(templateId).then((result) => {
+        if (result.ok) setTemplateId('')
+        acceptFlows(result)
+      })
+    }
+    /** Toggle one permission in the Compartir form. */
+    const togglePermission = (permission: string): void => {
+      setSharePermissions(current => current.includes(permission)
+        ? current.filter(value => value !== permission)
+        : [...current, permission])
+    }
+    /** Share the selected flow with the entered email and checked permissions. */
+    const shareFlow = (flowId: string): void => {
+      const email = shareEmail.trim()
+      if (email.length === 0 || sharePermissions.length === 0) return
+      void workflows.shareWorkflow(flowId, [email], sharePermissions).then((result) => {
+        if (result.ok) { setGrants(result.value); setShareEmail(''); setMessage(null) } else setMessage(result.error.message)
+      })
+    }
+    /** Revoke one grant and drop its row. */
+    const revokeGrant = (grantId: string): void => {
+      void workflows.revokeShareGrant(grantId).then((result) => {
+        if (result.ok) {
+          setGrants(current => current.filter(row => row.id !== grantId))
+          setMessage(null)
+        } else setMessage(result.error.message)
+      })
+    }
+    /** The localized label of one grant status. */
+    const statusLabel = (status: string): string => status === 'active'
+      ? t('wf.share.status.active')
+      : status === 'revoked' ? t('wf.share.status.revoked') : t('wf.share.status.pending')
+    const STATUS_CLASSES: Readonly<Record<ReturnType<typeof statusTone>, string | undefined>> = {
+      running: styles.workflowStatusRunning,
+      waiting: styles.workflowStatusWaiting,
+      completed: styles.workflowStatusCompleted,
+      failed: styles.workflowStatusFailed,
+      idle: styles.workflowStatusIdle,
+    }
+
+    /** One inspector field value. */
+    const field = (key: string): string => fields[key] ?? ''
+    /** Write one inspector field value. */
+    const setField = (key: string, value: string): void => { setFields(current => ({ ...current, [key]: value })) }
+    /** The display name of one node id. */
+    const nodeName = (id: string): string => detail?.nodesList.find(node => node.id === id)?.title ?? id
+    /** The edges incident to the picked node, incoming or outgoing. */
+    const incidentEdges = (detail?.edgesList ?? []).filter(edge => edge.from === nodeId || edge.to === nodeId)
+
+    return (
+      <div className={styles.workflowScreen}>
+        <aside className={styles.workflowSidebar}>
+          <h3 className={styles.h2}>{t('wf.title')}</h3>
+          <input value={flowName} placeholder={t('wf.namePlaceholder')} onChange={(event) => { setFlowName(event.target.value) }} />
+          <button type="button" className={styles.primary} onClick={() => {
+            if (flowName.trim().length === 0) return
+            void workflows.create(flowName.trim()).then((result) => { acceptFlows(result); if (result.ok) setFlowName('') })
+          }}>{t('wf.create')}</button>
+          <button type="button" onClick={() => { setTemplatesOpen(true) }}>{t('wf.templates')}</button>
+          {flows.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.empty')}</span> : null}
+          {flows.map(flow => (
+            <button key={flow.id} type="button" className={`${styles.workflowFlowButton} ${selected === flow.id ? styles.workflowFlowButtonActive : ''}`} onClick={() => { setSelected(flow.id) }}>
+              {flow.name} · {flow.status} · {flow.nodes}/{flow.edges}
+            </button>
+          ))}
+        </aside>
+        <main className={styles.workflowMain}>
+          {message !== null ? <div className={styles.workflowMessage}>{message}</div> : null}
+          {selected === null ? <span>{t('wf.select')}</span> : (
+            <>
+              <div className={styles.workflowToolbar}>
+                <button type="button" className={styles.primary} onClick={() => { act(() => workflows.setStatus(selected, 'active')) }}>{t('wf.activate')}</button>
+                <button type="button" onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
+                <button type="button" className={styles.primary} onClick={() => { addNode(selected) }}>{t('wf.addNode')}</button>
+                <button type="button" onClick={() => { setLogsOpen(true) }}>{t('wf.logs')}</button>
+                <button type="button" onClick={() => { void workflows.workflowVersions(selected).then((result) => { if (result.ok) { setFlowVersions(result.value); setVersionsOpen(true) } }) }}>{t('wf.versions')}</button>
+                <button type="button" onClick={() => { setShareOpen(true) }}>{t('wf.share')}</button>
+                <button type="button" onClick={() => { void workflows.exportFlow(selected, 'json').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportJson')}</button>
+                <button type="button" onClick={() => { void workflows.exportFlow(selected, 'archify').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportArchify')}</button>
+                <input aria-label={t('wf.concurrency')} placeholder={t('wf.concurrency')} value={concurrency}
+                  onChange={(event) => { setConcurrency(event.target.value) }} />
+                <button type="button" onClick={() => { saveConcurrency(selected) }}>{t('wf.concurrency.save')}</button>
+                {selectedSpaceName === null
+                  ? <span className={styles.workflowSpaceLabel}>{t('wf.space')}: {t('wf.personal')}</span>
+                  : <span className={styles.workflowSpaceLabel}>{t('wf.space')}: {selectedSpaceName}</span>}
+              </div>
+              {selectedHealth === null ? null : (
+                <div className={styles.workflowInspector}>
+                  <span>{t('wf.health')}</span>
+                  <span>{t('wf.health.runs')}: {selectedHealth.runs}</span>
+                  <span>{t('wf.health.failures')}: {selectedHealth.failures}</span>
+                  <span>{t('wf.health.review')}: {selectedHealth.needsReview}</span>
+                  <span>{t('wf.health.retries')}: {selectedHealth.retries}</span>
+                  {selectedHealth.deadlineAt === null ? null : <span>{t('wf.health.deadline')}: {selectedHealth.deadlineAt}</span>}
+                </div>
+              )}
+              <div className={styles.workflowCanvasWrap}>
+                <svg className={styles.workflowCanvas} viewBox="0 0 900 320"
+                  onPointerDown={(event) => { panning.current = { x: event.clientX, y: event.clientY } }}
+                  onPointerMove={(event) => {
+                    const id = dragging.current
+                    if (id !== null) {
+                      dragged.current = true
+                      const rect = (event.currentTarget).getBoundingClientRect()
+                      const x = ((event.clientX - rect.left) / rect.width) * 900
+                      const y = ((event.clientY - rect.top) / rect.height) * 320
+                      setPositions(current => ({ ...current, [id]: { x: x - NODE_WIDTH / 2, y: y - NODE_HEIGHT / 2 } }))
+                      return
+                    }
+                    const start = panning.current
+                    if (start === null) return
+                    const dx = event.clientX - start.x
+                    const dy = event.clientY - start.y
+                    panning.current = { x: event.clientX, y: event.clientY }
+                    setView(current => ({ ...current, x: current.x + dx, y: current.y + dy }))
+                  }}
+                  onPointerUp={() => { dragging.current = null; panning.current = null }}
+                  onPointerLeave={() => { dragging.current = null; panning.current = null }}
+                  onWheel={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect()
+                    const px = ((event.clientX - rect.left) / rect.width) * 900
+                    const py = ((event.clientY - rect.top) / rect.height) * 320
+                    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1
+                    setView((current) => {
+                      const k = Math.min(3, Math.max(0.3, current.k * factor))
+                      const scale = k / current.k
+                      return { k, x: px - (px - current.x) * scale, y: py - (py - current.y) * scale }
+                    })
+                  }}>
+                  <defs>
+                    <marker id="wf-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                      <path d="M 0 0 L 10 5 L 0 10 z" className={styles.workflowArrowHead} />
+                    </marker>
+                    <marker id="wf-arrow-cond" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                      <path d="M 0 0 L 10 5 L 0 10 z" className={styles.workflowArrowHeadConditional} />
+                    </marker>
+                  </defs>
+                  <g transform={`translate(${String(view.x)}, ${String(view.y)}) scale(${String(view.k)})`}>
+                    {detail?.edgesList.map((edge) => {
+                      const from = byId.get(edge.from)
+                      const to = byId.get(edge.to)
+                      if (from === undefined || to === undefined) return null
+                      const line = edgeLine(from, to)
+                      return (
+                        <line key={edge.id} className={edge.condition === null ? styles.workflowEdge : styles.workflowEdgeConditional}
+                          markerEnd={edge.condition === null ? 'url(#wf-arrow)' : 'url(#wf-arrow-cond)'} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} />
+                      )
+                    })}
+                    {nodes.map(node => (
+                      <g key={node.id} className={styles.workflowNode} transform={`translate(${String(node.x)}, ${String(node.y)})`} onPointerDown={(event) => { event.stopPropagation(); dragging.current = node.id; dragged.current = false }} onClick={() => { pick(node.id) }}>
+                        <rect className={`${styles.workflowNodeBody} ${kindIsTrigger(node.kind) ? styles.workflowNodeBodyTrigger : ''} ${nodeId === node.id ? styles.workflowNodeBodySelected : ''} ${connectFrom === node.id ? styles.workflowNodeBodyConnecting : ''}`} width={NODE_WIDTH} height={NODE_HEIGHT} rx={10} />
+                        <rect className={`${styles.workflowNodeAccent} ${WORKFLOW_ACCENT_CLASSES[workflowKindTone(node.kind)] ?? ''}`} width={4} height={NODE_HEIGHT} rx={2} />
+                        <text className={styles.workflowNodeTitle} x={12} y={24}>{node.title}</text>
+                        <text className={styles.workflowNodeKind} x={12} y={42}>{node.kind}</text>
+                        <g className={styles.workflowNodeEdit} role="button" aria-label={t('wf.editNode')} transform={`translate(${String(NODE_WIDTH - 28)}, 6)`} onPointerDown={(event) => { event.stopPropagation() }} onClick={(event) => { event.stopPropagation(); openNode(node.id) }}>
+                          <rect className={styles.workflowNodeEditBg} width={20} height={18} rx={5} />
+                          <path className={styles.workflowNodeEditGlyph} d="M5 12 L5 14.5 L7.5 14.5 L13.5 8.5 L11 6 Z" />
+                        </g>
+                      </g>
+                    ))}
+                  </g>
+                </svg>
+                <div className={styles.workflowZoom}>
+                  <button type="button" aria-label={t('wf.zoomOut')} onClick={() => { setView(current => ({ ...current, k: Math.max(0.3, current.k / 1.2) })) }}>{'-'}</button>
+                  <span>{`${String(Math.round(view.k * 100))}%`}</span>
+                  <button type="button" aria-label={t('wf.zoomIn')} onClick={() => { setView(current => ({ ...current, k: Math.min(3, current.k * 1.2) })) }}>{'+'}</button>
+                  <button type="button" onClick={() => { setView({ x: 0, y: 0, k: 1 }) }}>{t('wf.zoomReset')}</button>
+                </div>
+              </div>
+              <Modal open={nodeOpen} onClose={() => { setNodeOpen(false) }} title={t('wf.node')} closeLabel={t('action.close')} className={styles.workflowModal ?? ''} contentClassName={styles.workflowModalContent ?? ''}>
+                <div className={styles.workflowTabs}>
+                  <button type="button" className={nodeTab === 'node' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('node') }}>{t('wf.tabNode')}</button>
+                  <button type="button" className={nodeTab === 'connections' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('connections') }}>{t('wf.tabConnections')}</button>
+                  <button type="button" className={nodeTab === 'routines' ? styles.workflowTabActive : styles.workflowTab} onClick={() => { setNodeTab('routines') }}>{t('wf.tabRoutines')}</button>
+                </div>
+                {nodeTab === 'node' ? (
+                  <div className={styles.workflowTabPanel}>
+                    <Field label={t('wf.kind')}>
+                      <select aria-label={t('wf.kind')} value={kind} onChange={(event) => { if (nodeId !== null) changeKind(selected, nodeId, event.target.value); else setKind(event.target.value) }}>
+                        {WORKFLOW_KINDS.map(value => <option key={value} value={value}>{value}</option>)}
+                      </select>
+                    </Field>
+                    <Field label={t('wf.nodeTitle')}>
+                      <input value={title} placeholder={t('wf.nodeTitle')} onChange={(event) => { setTitle(event.target.value) }} />
+                    </Field>
+                    {kind === 'agent' ? (
+                      <>
+                        <RelationSelect label={t('wf.agent')} value={field('agentId')} options={agentOptions.map(agent => ({ id: agent.id, label: agent.name }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'agentId', value) }} />
+                        <Field label={t('wf.instruction')}>
+                          <textarea aria-label={t('wf.instruction')} value={field('instruction')} onChange={(event) => { setField('instruction', event.target.value) }} />
+                        </Field>
+                        <label className={styles.workflowCheck}>
+                          <input type="checkbox" checked={field('useSpaceContext') !== ''} onChange={(event) => { setField('useSpaceContext', event.target.checked ? 'true' : '') }} />
+                          {t('wf.useSpaceContext')}
+                        </label>
+                      </>
+                    ) : null}
+                    {kind === 'skill' ? (
+                      <>
+                        <RelationSelect label={t('wf.skill')} value={field('skillName')} options={skillOptions.map(skill => ({ id: skill.name, label: skill.name }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'skillName', value) }} />
+                        <Field label={t('wf.instruction')}>
+                          <textarea aria-label={t('wf.instruction')} value={field('instruction')} onChange={(event) => { setField('instruction', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'routine.invoke' ? (
+                      <>
+                        <RelationSelect label={t('wf.routine')} value={field('routineId')} options={routineOptions.map(routine => ({ id: routine.id, label: routine.name }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'routineId', value) }} />
+                        <Field label={t('wf.input')}>
+                          <input aria-label={t('wf.input')} value={field('input')} onChange={(event) => { setField('input', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'imap.action' ? (
+                      <>
+                        <RelationSelect label={t('wf.connection')} value={field('connectionId')} options={connectionOptions.map(connection => ({ id: connection.id, label: connection.label }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'connectionId', value) }} />
+                        <Field label={t('wf.op')}>
+                          <select aria-label={t('wf.op')} value={field('op') === '' ? 'search' : field('op')} onChange={(event) => { setField('op', event.target.value) }}>
+                            {WORKFLOW_IMAP_OPS.map(op => <option key={op} value={op}>{op}</option>)}
+                          </select>
+                        </Field>
+                        <Field label={t('wf.folder')}>
+                          <input aria-label={t('wf.folder')} value={field('folder')} onChange={(event) => { setField('folder', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'smtp.send' || kind === 'notify' ? (
+                      <>
+                        <RelationSelect label={t('wf.connection')} value={field('connectionId')} options={connectionOptions.map(connection => ({ id: connection.id, label: connection.label }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'connectionId', value) }} />
+                        <Field label={t('wf.text')}>
+                          <textarea aria-label={t('wf.text')} value={kind === 'smtp.send' ? field('subject') : field('text')} onChange={(event) => { setField(kind === 'smtp.send' ? 'subject' : 'text', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'memory.remember' || kind === 'memory.teach' || kind === 'space.reference' ? (
+                      <>
+                        <RelationSelect label={t('wf.space')} value={field('spaceId')} options={spaceOptions.map(space => ({ id: space.id, label: space.title }))} onChange={(value) => { if (nodeId !== null) setRelation(selected, nodeId, 'spaceId', value) }} />
+                        {kind === 'space.reference' ? null : (
+                          <Field label={t('wf.text')}>
+                            <textarea aria-label={t('wf.text')} value={field('text')} onChange={(event) => { setField('text', event.target.value) }} />
+                          </Field>
+                        )}
+                      </>
+                    ) : null}
+                    {kind === 'mcp.call' ? (
+                      <>
+                        <Field label={t('wf.server')}>
+                          <input aria-label={t('wf.server')} value={field('server')} onChange={(event) => { setField('server', event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.tool')}>
+                          <input aria-label={t('wf.tool')} value={field('tool')} onChange={(event) => { setField('tool', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'board.create' ? (
+                      <>
+                        <Field label={t('wf.nodeTitle')}>
+                          <input aria-label={t('wf.boardTitle')} value={field('title')} onChange={(event) => { setField('title', event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.summary')}>
+                          <textarea aria-label={t('wf.summary')} value={field('summary')} onChange={(event) => { setField('summary', event.target.value) }} />
+                        </Field>
+                      </>
+                    ) : null}
+                    {kind === 'condition' || kind === 'transform' ? (
+                      <Field label={t('wf.expression')}>
+                        <input aria-label={t('wf.expression')} value={field('expression')} onChange={(event) => { setField('expression', event.target.value) }} />
+                      </Field>
+                    ) : null}
+                    {kind === 'wait' ? (
+                      <Field label={t('wf.seconds')}>
+                        <input aria-label={t('wf.seconds')} inputMode="numeric" value={field('seconds')} onChange={(event) => { setField('seconds', event.target.value) }} />
+                      </Field>
+                    ) : null}
+                    {kind === 'trigger.email' ? (
+                      <Field label={t('wf.match')}>
+                        <input aria-label={t('wf.match')} value={field('match')} onChange={(event) => { setField('match', event.target.value) }} />
+                      </Field>
+                    ) : null}
+                    {kind === 'trigger.schedule' ? (
+                      <>
+                        <Field label={t('wf.schedule.recurrence')}>
+                          <input aria-label={t('wf.schedule.recurrence')} placeholder={t('wf.schedule.recurrence')} value={scheduleRecurrence}
+                            onChange={(event) => { setScheduleRecurrence(event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.schedule.timezone')}>
+                          <input aria-label={t('wf.schedule.timezone')} placeholder={t('wf.schedule.timezone')} value={scheduleTimezone}
+                            onChange={(event) => { setScheduleTimezone(event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.schedule.from')}>
+                          <input aria-label={t('wf.schedule.from')} placeholder={t('wf.schedule.from')} value={scheduleFrom}
+                            onChange={(event) => { setScheduleFrom(event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.schedule.to')}>
+                          <input aria-label={t('wf.schedule.to')} placeholder={t('wf.schedule.to')} value={scheduleTo}
+                            onChange={(event) => { setScheduleTo(event.target.value) }} />
+                        </Field>
+                        <Field label={t('wf.schedule.days')}>
+                          <input aria-label={t('wf.schedule.days')} placeholder={t('wf.schedule.days')} value={scheduleDays}
+                            onChange={(event) => { setScheduleDays(event.target.value) }} />
+                        </Field>
+                        <label className={styles.workflowCheck}>
+                          <input type="checkbox" checked={scheduleBusinessDays}
+                            onChange={(event) => { setScheduleBusinessDays(event.target.checked) }} />
+                          {t('wf.schedule.businessDays')}
+                        </label>
+                      </>
+                    ) : null}
+                    <div className={styles.workflowActions}>
+                      <button type="button" className={styles.primary} disabled={nodeId === null} onClick={() => { if (nodeId !== null) saveNode(selected, nodeId) }}>{t('wf.save')}</button>
+                      {kind === 'trigger.schedule' ? (
+                        <button type="button" disabled={nodeId === null} onClick={() => { if (nodeId !== null) saveSchedule(selected, nodeId) }}>{t('wf.schedule.save')}</button>
+                      ) : null}
+                      <button type="button" disabled={nodeId === null} onClick={() => { setConnectFrom(nodeId) }}>{t('wf.connect')}</button>
+                      <button type="button" disabled={nodeId === null} onClick={() => { if (nodeId !== null) deleteNode(selected, nodeId) }}>{t('wf.removeNode')}</button>
+                    </div>
+                    <span className={styles.workflowHint}>
+                      {connectFrom === null ? t('wf.hintEdit') : t('wf.hintConnect')}
+                    </span>
+                  </div>
+                ) : null}
+                {nodeTab === 'connections' ? (
+                  <div className={styles.workflowTabPanel}>
+                    {incidentEdges.length > 0 ? incidentEdges.map(edge => (
+                      <div key={edge.id} className={styles.workflowRunRow}>
+                        <span>{nodeName(edge.from)} → {nodeName(edge.to)}{edge.condition === null ? '' : ` · ${edge.condition}`}</span>
+                        <button type="button" onClick={() => { dropEdge(selected, edge.id) }}>{t('wf.disconnect')}</button>
+                      </div>
+                    )) : <span className={styles.workflowEmpty}>{t('wf.noConnections')}</span>}
+                  </div>
+                ) : null}
+                {nodeTab === 'routines' ? (
+                  <div className={styles.workflowTabPanel}>
+                    <Field label={t('wf.routine')}>
+                      <select aria-label={t('wf.routine')} value={routinePick} onChange={(event) => { setRoutinePick(event.target.value) }}>
+                        <option value="">—</option>
+                        {routineOptions.map(routine => <option key={routine.id} value={routine.id}>{routine.name}</option>)}
+                      </select>
+                    </Field>
+                    <button type="button" className={styles.primary} disabled={routinePick.length === 0} onClick={() => { addRoutineNode(selected, routinePick) }}>{t('wf.addRoutineNode')}</button>
+                    {links.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.links.empty')}</span> : links.map(link => (
+                      <div key={`${link.direction}:${link.routineId}:${link.workflowId}`}>
+                        {link.direction === 'routine-to-workflow'
+                          ? `${link.routineName} → ${link.workflowName}`
+                          : `${link.workflowName} → ${link.routineName}`}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </Modal>
+              <Modal open={versionsOpen} onClose={() => { setVersionsOpen(false) }} title={t('wf.versions')} closeLabel={t('action.close')}>
+                {flowVersions.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.noVersions')}</span> : flowVersions.map(version => (
+                  <div key={version.version} className={styles.workflowRunRow}>
+                    <span>{String(version.version)} · {version.name} · {version.nodes}/{version.edges} · {version.createdAt}</span>
+                    <button type="button" onClick={() => { act(() => workflows.restoreWorkflow(selected, version.version)); setVersionsOpen(false) }}>{t('ctx.restore')}</button>
+                  </div>
+                ))}
+              </Modal>
+              {/* Run history and health live in the Logs modal. */}
+              <Modal open={logsOpen} onClose={() => { setLogsOpen(false) }} title={t('wf.runs')} closeLabel={t('action.close')}>
+                {selectedHealth === null ? null : (
+                  <div className={styles.workflowHealthRow}>
+                    <span>{t('wf.health.runs')}: {selectedHealth.runs}</span>
+                    <span>{t('wf.health.failures')}: {selectedHealth.failures}</span>
+                    <span>{t('wf.health.review')}: {selectedHealth.needsReview}</span>
+                    <span>{t('wf.health.retries')}: {selectedHealth.retries}</span>
+                    {selectedHealth.deadlineAt === null ? null : <span>{t('wf.health.deadline')}: {selectedHealth.deadlineAt}</span>}
+                  </div>
+                )}
+                {runs.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.noRuns')}</span> : runs.map(run => (
+                  <div key={run.id} className={styles.workflowRunRow}>
+                    <span className={`${styles.workflowStatusDot} ${STATUS_CLASSES[statusTone(run.status)]}`} />
+                    <span>{run.status}</span><span className={styles.workflowRunWhen}>{run.createdAt}</span>
+                  </div>
+                ))}
+              </Modal>
+              <Modal open={shareOpen} onClose={() => { setShareOpen(false) }} title={t('wf.share')} closeLabel={t('action.close')}>
+                <div className={styles.workflowForm}>
+                  <Field label={t('wf.share.email')}>
+                    <input aria-label={t('wf.share.email')} placeholder={t('wf.share.email')} value={shareEmail}
+                      onChange={(event) => { setShareEmail(event.target.value) }} />
+                  </Field>
+                  <Field label={t('wf.share.permissions')}>
+                    <div className={styles.workflowPermissions}>
+                      {SHARE_PERMISSION_OPTIONS.map(permission => (
+                        <label key={permission} className={`${styles.workflowPermission} ${sharePermissions.includes(permission) ? styles.workflowPermissionOn : ''}`}>
+                          <input type="checkbox" checked={sharePermissions.includes(permission)}
+                            onChange={() => { togglePermission(permission) }} />
+                          {permission}
+                        </label>
+                      ))}
+                    </div>
+                  </Field>
+                  <button type="button" className={styles.primary} onClick={() => { shareFlow(selected) }}>{t('wf.share.submit')}</button>
+                </div>
+                {grants.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.share.none')}</span> : grants.map(grant => (
+                  <div key={grant.id} className={styles.workflowRunRow}>
+                    <span>{grant.granteeEmail}</span>
+                    <span className={styles.workflowRunWhen}>{grant.permissionLabel}</span>
+                    <span>{statusLabel(grant.status)}</span>
+                    <button type="button" onClick={() => { revokeGrant(grant.id) }}>{t('wf.share.revoke')}</button>
+                  </div>
+                ))}
+              </Modal>
+            </>
+          )}
+          <Modal open={templatesOpen} onClose={() => { setTemplatesOpen(false) }} title={t('wf.templates')} closeLabel={t('action.close')}>
+            <div className={styles.workflowForm}>
+              <Field label={t('wf.templates')}>
+                <select aria-label={t('wf.templates')} value={templateId} onChange={(event) => { setTemplateId(event.target.value) }}>
+                  <option value="">{t('wf.templates.pick')}</option>
+                  {templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
+                </select>
+              </Field>
+              <button type="button" className={styles.primary} disabled={templateId.length === 0} onClick={() => { useTemplate(); setTemplatesOpen(false) }}>{t('wf.templates.use')}</button>
+              <Field label={t('wf.import')}>
+                <input type="file" accept="application/json,.json" onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file === undefined) return
+                  void file.text().then(text => workflows.importFlow(text)).then((result) => {
+                    acceptFlows(result)
+                    setTemplatesOpen(false)
+                  })
+                  event.target.value = ''
+                }} />
+              </Field>
+            </div>
+          </Modal>
+        </main>
+      </div>
+    )
+  }
+}
+
+/** Contexto: the versioned, approvable Workspace/Space context, separate from Memory. */
+function contextScreen() {
+  return function FaberloomContext(props: ScreenProps) {
+    const { t } = props
+    const list = useLazy<readonly FaberLoomContextRow[]>(() => props.context.entries(), [])
+    const [rows, setRows] = useState<readonly FaberLoomContextRow[]>([])
+    const [selected, setSelected] = useState<string | null>(null)
+    const [title, setTitle] = useState('')
+    const [body, setBody] = useState('')
+    const [newTitle, setNewTitle] = useState('')
+    const [newBody, setNewBody] = useState('')
+    const [versions, setVersions] = useState<readonly FaberLoomContextVersionRow[]>([])
+    const [message, setMessage] = useState<string | null>(null)
+    useEffect(() => { if (list.kind === 'ready') setRows(list.value) }, [list])
+
+    const apply = (result: Result<readonly FaberLoomContextRow[]>): void => {
+      if (result.ok) { setRows(result.value); setMessage(null) } else setMessage(result.error.message)
+    }
+    const open = (row: FaberLoomContextRow): void => {
+      setSelected(row.id)
+      setTitle(row.title)
+      setBody(row.body)
+      void props.context.versions(row.id).then((result) => { if (result.ok) setVersions(result.value) })
+    }
+    const reloadVersions = (id: string): void => {
+      void props.context.versions(id).then((next) => { if (next.ok) setVersions(next.value) })
+    }
+    const create = (): void => {
+      if (newTitle.trim().length === 0) return
+      void props.context.create(newTitle.trim(), newBody).then((result) => {
+        apply(result)
+        if (result.ok) { setNewTitle(''); setNewBody('') }
+      })
+    }
+    const save = (): void => {
+      if (selected === null) return
+      void props.context.update(selected, title, body).then((result) => { apply(result); reloadVersions(selected) })
+    }
+    const restore = (version: number): void => {
+      if (selected === null) return
+      void props.context.restore(selected, version).then((result) => { apply(result); reloadVersions(selected) })
+    }
+
+    return (
+      <Screen title={t('ctx.title')} subtitle={t('ctx.subtitle')} trailing={<Feedback t={t} message={message} />}>
+        <div className={styles.workflowScreen}>
+          <aside className={styles.workflowSidebar}>
+            <input value={newTitle} placeholder={t('ctx.newPlaceholder')} onChange={(event) => { setNewTitle(event.target.value) }} />
+            <input value={newBody} placeholder={t('ctx.bodyPlaceholder')} onChange={(event) => { setNewBody(event.target.value) }} />
+            <button type="button" className={styles.primary} onClick={() => { create() }}>{t('ctx.create')}</button>
+            {rows.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.empty')}</span> : rows.map(row => (
+              <button key={row.id} type="button" className={`${styles.workflowFlowButton} ${selected === row.id ? styles.workflowFlowButtonActive : ''}`} onClick={() => { open(row) }}>
+                {row.title} · {row.visibility} · {String(row.version)}
+              </button>
+            ))}
+          </aside>
+          <main className={styles.workflowMain}>
+            {selected === null ? <span>{t('ctx.select')}</span> : (
+              <>
+                <div className={styles.workflowForm}>
+                  <Field label={t('ctx.title')}>
+                    <input aria-label={t('ctx.title')} value={title} onChange={(event) => { setTitle(event.target.value) }} />
+                  </Field>
+                  <Field label={t('ctx.body')}>
+                    <textarea aria-label={t('ctx.body')} value={body} onChange={(event) => { setBody(event.target.value) }} />
+                  </Field>
+                  <div className={styles.workflowActions}>
+                    <button type="button" className={styles.primary} onClick={() => { save() }}>{t('ctx.save')}</button>
+                    <button type="button" onClick={() => { void props.context.approve(selected).then(apply) }}>{t('ctx.approve')}</button>
+                    <button type="button" onClick={() => { void props.context.reject(selected).then(apply) }}>{t('ctx.reject')}</button>
+                    <button type="button" onClick={() => { void props.context.remove(selected).then((result) => { apply(result); setSelected(null) }) }}>{t('ctx.remove')}</button>
+                  </div>
+                </div>
+                <section className={styles.workflowSection}>
+                  <h4>{t('ctx.versions')}</h4>
+                  {versions.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.noVersions')}</span> : versions.map(version => (
+                    <div key={version.version} className={styles.workflowRunRow}>
+                      <span>{String(version.version)} · {version.title} · {version.createdAt}</span>
+                      <button type="button" onClick={() => { restore(version.version) }}>{t('ctx.restore')}</button>
+                    </div>
+                  ))}
+                </section>
+              </>
+            )}
+          </main>
+        </div>
+      </Screen>
+    )
+  }
+}
+
+/** One line of the work-flow approval diff. */
+interface WorkflowDiffLine {
+  readonly id: string
+  readonly op: string
+  readonly labelKey: 'approvals.nodeAdd' | 'approvals.nodeRemove' | 'approvals.nodeChange' | 'approvals.edgeAdd' | 'approvals.edgeRemove'
+  readonly text: string
+}
+
+/** Compare a work-flow proposal against its base as labelled diff lines. */
+function workflowDiffLines(base: FaberLoomWorkflowGraph, proposed: FaberLoomWorkflowGraph): readonly WorkflowDiffLine[] {
+  const lines: WorkflowDiffLine[] = []
+  const baseNodes = new Map(base.nodes.map(node => [node.id, node]))
+  const proposedNodes = new Map(proposed.nodes.map(node => [node.id, node]))
+  for (const node of proposed.nodes) {
+    const before = baseNodes.get(node.id)
+    if (before === undefined) {
+      lines.push({ id: `+n${node.id}`, op: '+', labelKey: 'approvals.nodeAdd', text: `${node.title} (${node.kind})` })
+      continue
+    }
+    if (before.title !== node.title || before.kind !== node.kind) {
+      lines.push({ id: `~n${node.id}`, op: '~', labelKey: 'approvals.nodeChange', text: `${node.id}: ${before.title}/${before.kind} → ${node.title}/${node.kind}` })
+    }
+  }
+  for (const node of base.nodes) {
+    if (!proposedNodes.has(node.id)) lines.push({ id: `-n${node.id}`, op: '-', labelKey: 'approvals.nodeRemove', text: `${node.title} (${node.kind})` })
+  }
+  const edgeKey = (edge: { readonly from: string; readonly to: string }): string => `${edge.from} → ${edge.to}`
+  const baseEdges = new Set(base.edges.map(edgeKey))
+  const proposedEdges = new Set(proposed.edges.map(edgeKey))
+  for (const edge of proposed.edges) {
+    if (!baseEdges.has(edgeKey(edge))) lines.push({ id: `+e${edge.id}`, op: '+', labelKey: 'approvals.edgeAdd', text: edgeKey(edge) })
+  }
+  for (const edge of base.edges) {
+    if (!proposedEdges.has(edgeKey(edge))) lines.push({ id: `-e${edge.id}`, op: '-', labelKey: 'approvals.edgeRemove', text: edgeKey(edge) })
+  }
+  return lines
+}
+
+/** Aprobaciones: the owner's pending context and staged work-flow changes. */
+function approvalsScreen() {
+  return function FaberloomApprovals(props: ScreenProps) {
+    const { t, context, approvals } = props
+    const [contextRows, setContextRows] = useState<readonly FaberLoomContextRow[]>([])
+    const [changes, setChanges] = useState<readonly FaberLoomWorkflowPendingRow[]>([])
+    const [message, setMessage] = useState<string | null>(null)
+
+    useEffect(() => {
+      void approvals.contextEntries().then((result) => { if (result.ok) setContextRows(result.value) })
+      void approvals.workflowChanges().then((result) => { if (result.ok) setChanges(result.value) })
+    }, [approvals])
+
+    const pendingContext = contextRows.filter(row => row.visibility === 'pending')
+
+    return (
+      <Screen title={t('approvals.title')} subtitle={t('approvals.subtitle')} trailing={<Feedback t={t} message={message} />}>
+        <section className={styles.workflowSection}>
+          <h4>{t('approvals.context')}</h4>
+          <span className={styles.tools}>
+            <button className={styles.secondary} type="button" onClick={() => {
+              void approvals.syncContext().then((result) => {
+                if (result.ok) setContextRows(result.value)
+                else setMessage(result.error.message)
+              })
+            }}>{t('approvals.sync')}</button>
+          </span>
+          {pendingContext.length === 0
+            ? <span className={styles.workflowEmpty}>{t('approvals.noContext')}</span>
+            : pendingContext.map(row => (
+              <div key={row.id} className={styles.workflowRunRow}>
+                <span className={styles.cellMuted}>{row.title} · {row.authorId}</span>
+                <span className={styles.tools}>
+                  <button className={styles.primary} type="button" onClick={() => {
+                    void context.approve(row.id).then((result) => { if (result.ok) setContextRows(result.value) })
+                  }}>{t('approvals.accept')}</button>
+                  <button className={styles.ghost} type="button" onClick={() => {
+                    void context.reject(row.id).then((result) => { if (result.ok) setContextRows(result.value) })
+                  }}>{t('approvals.reject')}</button>
+                </span>
+              </div>
+            ))}
+        </section>
+        <section className={styles.workflowSection}>
+          <h4>{t('approvals.workflows')}</h4>
+          {changes.length === 0
+            ? <span className={styles.workflowEmpty}>{t('approvals.noWorkflows')}</span>
+            : changes.map(change => (
+              <div key={change.workflowId} className={styles.workflowSection}>
+                <div className={styles.workflowRunRow}>
+                  <span className={styles.cellName}>{change.name} · {t('approvals.proposedBy')} {change.proposerId} · {String(change.baseVersion)}</span>
+                  <span className={styles.tools}>
+                    <button className={styles.primary} type="button" onClick={() => {
+                      void approvals.acceptWorkflow(change.workflowId).then((result) => { if (result.ok) setChanges(result.value) })
+                    }}>{t('approvals.accept')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => {
+                      void approvals.rejectWorkflow(change.workflowId).then((result) => { if (result.ok) setChanges(result.value) })
+                    }}>{t('approvals.reject')}</button>
+                  </span>
+                </div>
+                {workflowDiffLines(change.base, change.proposed).map(line => (
+                  <div key={line.id} className={styles.workflowRunRow}>
+                    <span className={styles.cellMuted}>{line.op} {t(line.labelKey)}: {line.text}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+        </section>
+      </Screen>
+    )
+  }
+}
+
 /** The FaberLoom sections in sidebar order. */
-export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
-  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel() },
+export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel() },
   { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', Icon: panelIcon(IconChecklistOutline14), Page: boardScreen() },
   { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', Icon: panelIcon(IconFolderOpenOutline16), Page: spacesScreen() },
   { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agents', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsScreen() },
   { id: 'faberloom-skills' as MainPanelId, order: 45, labelKey: 'nav.skills', Icon: panelIcon(IconAgentPresetOutline16), Page: skillsScreen() },
   { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(IconAlarmClockOutline16), Page: routinesScreen() },
+  { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(IconBranchOutline16), Page: workflowsScreen() },
   { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(IconDatabaseOutline16), Page: memoryScreen() },
+  { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', Icon: panelIcon(IconContextInjectionOutline16), Page: contextScreen() },
+  { id: 'faberloom-approvals' as MainPanelId, order: 64, labelKey: 'nav.approvals', Icon: panelIcon(IconChecklistOutline14), Page: approvalsScreen() },
   { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', Icon: panelIcon(IconApiOutline14), Page: connectionsScreen() },
   { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', Icon: panelIcon(IconSendOutline14), Page: emailScreen() },
 ]

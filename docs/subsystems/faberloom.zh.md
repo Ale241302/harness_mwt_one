@@ -107,7 +107,7 @@ async syncPool(): Promise<{ checked: number; available: number }>
  * @param handler - sync or async handler over the call arguments.
  * @returns the disposer removing the handler.
  */
-registerExecutableTool(name: string, handler: (args: unknown) => unknown | Promise<unknown>): () => void
+registerExecutableTool(name: string, handler: (args: unknown) => unknown): () => void
 
 /**
  * List the executable tools registered in this process.
@@ -589,6 +589,98 @@ async imap(ownerId: string, id?: string): Promise<ImapCredentials | undefined>
 
 Source: [`packages/faberloom/connections/src/index.ts`](../../packages/faberloom/connections/src/index.ts)
 
+<a id="ctxfaberloomcontext--faberloomcontext"></a>
+
+### `ctx.faberloomContext` — `FaberLoomContext`
+
+The Workspace/Space Context service: versioned entries with an owner approval gate and console transport.
+
+```ts cordis-catalog
+/**
+ * Create one context entry.
+ * @param actor - the acting identity.
+ * @param input - title, body, and optional Space.
+ * @returns the created entry.
+ */
+async create(actor: FaberLoomContextActor, input: FaberLoomContextInput): Promise<FaberLoomContextEntry>
+
+/**
+ * List every context entry the actor may see, newest first.
+ * @param actor - the acting identity.
+ * @returns the visible entries.
+ */
+async list(actor: FaberLoomContextActor): Promise<readonly FaberLoomContextEntry[]>
+
+/**
+ * Read one entry.
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @returns the entry.
+ */
+async get(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>
+
+/**
+ * Edit one entry, appending a version. A member's edit returns the entry to
+ * `pending` until the owner approves it again.
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @param edit - the new title and/or body.
+ * @returns the updated entry.
+ */
+async update(actor: FaberLoomContextActor, id: string, edit: FaberLoomContextEdit): Promise<FaberLoomContextEntry>
+
+/**
+ * List one entry's version history, newest first.
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @returns the versions.
+ */
+async versions(actor: FaberLoomContextActor, id: string): Promise<readonly FaberLoomContextVersion[]>
+
+/**
+ * Restore one entry to an earlier version, appending a fresh version.
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @param version - version to restore.
+ * @returns the restored entry.
+ */
+async restore(actor: FaberLoomContextActor, id: string, version: number): Promise<FaberLoomContextEntry>
+
+/**
+ * Index one entry into the Space's shared context (owner only).
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @returns the approved entry.
+ */
+async approve(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>
+
+/**
+ * Keep one entry private to its author, out of the shared context (owner only).
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @returns the entry.
+ */
+async reject(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>
+
+/**
+ * Remove one entry and its history (author or owner).
+ * @param actor - the acting identity.
+ * @param id - entry id.
+ * @returns true when removed.
+ */
+async remove(actor: FaberLoomContextActor, id: string): Promise<boolean>
+
+/**
+ * Import the console's shared context for one owner and prune the imported
+ * rows the console no longer carries. Each imported row lands `pending` so the
+ * owner decides whether to index it. A no-op when the console is not wired.
+ * @param readerId - the Space owner importing its members' context.
+ */
+async sync(readerId: string): Promise<void>
+```
+
+Source: [`packages/faberloom/context/src/index.ts`](../../packages/faberloom/context/src/index.ts)
+
 <a id="ctxfaberloomdefaults--faberloomdefaults"></a>
 
 ### `ctx.faberloomDefaults` — `FaberLoomDefaults`
@@ -624,6 +716,12 @@ The persistent driver over the routines engine.
  * @returns what the pass did.
  */
 async runOnce(now: Date = new Date()): Promise<DispatchReport>
+
+/**
+ * The dispatcher's liveness: one row per routine plus aggregate counters.
+ * @returns the health snapshot.
+ */
+async health(): Promise<FaberLoomHealth>
 ```
 
 Source: [`packages/faberloom/execution/src/index.ts`](../../packages/faberloom/execution/src/index.ts)
@@ -866,6 +964,15 @@ registerHandler(name: string, handler: StepHandler): () => void
 listHandlers(): string[]
 
 /**
+ * Register a listener the engine calls when an execution reaches review
+ * (a failed step, a missing handler, or an expired wait), so a deployment can
+ * dead-letter it and alert the owner.
+ * @param listener - the callback.
+ * @returns the disposer removing the listener.
+ */
+registerReviewListener(listener: (review: ExecutionReview) => void): () => void
+
+/**
  * Create one routine as version 1 in draft.
  * @param ownerId - the owning identity.
  * @param input - name and definition.
@@ -1068,6 +1175,139 @@ releaseLock(): void
 
 Source: [`packages/faberloom/routines/src/index.ts`](../../packages/faberloom/routines/src/index.ts)
 
+<a id="ctxfaberloomsessionshares--faberloomsessionshares"></a>
+
+### `ctx.faberloomSessionShares` — `FaberLoomSessionShares`
+
+The shared Session catalog: durable, per-Space, and console-synced.
+
+```ts cordis-catalog
+/**
+ * Capture one local Session into its Space: store its portable log and publish
+ * it to the console when one is configured.
+ * @param actor - the acting identity, which must own the Session.
+ * @param input - Space, Session identity, title, and canonical log text.
+ * @returns the captured row.
+ */
+async capture(actor: FaberLoomSessionActor, input: FaberLoomSharedSessionCapture): Promise<FaberLoomSharedSession>
+
+/**
+ * List one Space's shared Sessions, newest first. The actor must be able to
+ * view the Space.
+ * @param actor - the acting identity.
+ * @param spaceId - the Space being listed.
+ * @returns the rows, without content.
+ */
+async list(actor: FaberLoomSessionActor, spaceId: string): Promise<readonly FaberLoomSharedSession[]>
+
+/**
+ * Read one shared Session's content.
+ * @param actor - the acting identity.
+ * @param spaceId - the Space the Session is shared in.
+ * @param ownerId - the member whose host holds the Session.
+ * @param sessionId - the Session id.
+ * @returns the row with its content.
+ */
+async content(actor: FaberLoomSessionActor, spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContent>
+
+/**
+ * Remove one captured Session the actor owns, or any Session when the actor
+ * owns the Space.
+ * @param actor - the acting identity.
+ * @param spaceId - the Space the Session is shared in.
+ * @param ownerId - the member whose host holds the Session.
+ * @param sessionId - the Session id.
+ * @returns true when a row was removed.
+ */
+async remove(actor: FaberLoomSessionActor, spaceId: string, ownerId: string, sessionId: string): Promise<boolean>
+
+/**
+ * Import the console's shared Sessions for one member and prune the local
+ * copies the console no longer carries, so a revoked share stops showing.
+ * A no-op when the console is not configured.
+ * @param readerId - the identity whose incoming Sessions are imported.
+ */
+async sync(readerId: string): Promise<void>
+```
+
+Source: [`packages/faberloom/session-shares/src/index.ts`](../../packages/faberloom/session-shares/src/index.ts)
+
+<a id="ctxfaberloomshares--faberloomshares"></a>
+
+### `ctx.faberloomShares` — `FaberLoomShares`
+
+The product sharing service: durable per-action grants with console transport and email acceptance.
+
+```ts cordis-catalog
+/**
+ * Create one share grant, notify the grantee by email, and publish it to the
+ * console when one is configured. The grant starts `pending`; only an
+ * accepted (`active`) grant authorizes an action.
+ * @param ownerId - the identity granting access.
+ * @param input - resource, resource name, grantee email, and permissions.
+ * @returns the created grant.
+ * @throws when the grantee email is empty.
+ */
+async create(ownerId: string, input: FaberLoomShareInput): Promise<FaberLoomShareGrant>
+
+/**
+ * Accept one pending grant addressed to the grantee; a pending grant becomes
+ * active and its permissions start authorizing actions.
+ * @param granteeEmail - the identity accepting.
+ * @param id - grant id.
+ * @returns the accepted grant.
+ * @throws when the grant is missing or not addressed to the grantee.
+ */
+async accept(granteeEmail: string, id: string): Promise<FaberLoomShareGrant>
+
+/**
+ * Revoke one grant the actor issued; the next permission check denies it and
+ * the console mirror is removed.
+ * @param ownerId - the identity that granted access.
+ * @param id - grant id.
+ * @returns the revoked grant.
+ * @throws when the grant is missing or the actor did not issue it.
+ */
+async revoke(ownerId: string, id: string): Promise<FaberLoomShareGrant>
+
+/**
+ * List the grants the actor issued and the ones addressed to it.
+ * @param actorId - the acting identity (owner or grantee email).
+ * @returns the outgoing and incoming grants, oldest first.
+ */
+async list(actorId: string): Promise<FaberLoomShareList>
+
+/**
+ * List the permissions one grantee holds on one resource, unioned over every
+ * active grant.
+ * @param granteeEmail - the identity acting.
+ * @param resource - the resource being touched.
+ * @returns the active permissions, in display order.
+ */
+async permissionsFor(granteeEmail: string, resource: FaberLoomShareResource): Promise<readonly FaberLoomSharePermission[]>
+
+/**
+ * Whether one grantee may perform one action on one resource. The owner is
+ * always allowed; a grantee needs an active grant carrying the permission.
+ * @param actorId - the acting identity.
+ * @param ownerId - the resource owner.
+ * @param resource - the resource being touched.
+ * @param permission - the action being authorized.
+ * @returns true when the action is authorized.
+ */
+async can(actorId: string, ownerId: string, resource: FaberLoomShareResource, permission: FaberLoomSharePermission): Promise<boolean>
+
+/**
+ * Import the grants the console holds for one grantee and prune the local
+ * copies the console no longer carries, so a revoked share stops authorizing
+ * here. A no-op when the console is not configured.
+ * @param granteeEmail - the identity whose incoming grants are imported.
+ */
+async sync(granteeEmail: string): Promise<void>
+```
+
+Source: [`packages/faberloom/shares/src/index.ts`](../../packages/faberloom/shares/src/index.ts)
+
 <a id="ctxfaberloomspaces--faberloomspaces"></a>
 
 ### `ctx.faberloomSpaces` — `FaberLoomSpaces`
@@ -1263,6 +1503,342 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns spaces, agents, board items, routines, and memory rows as plain JSON.
  */
 @Remote('overview') async overview(): Promise<FaberLoomOverview>
+
+/**
+ * Read the Space connectivity map the palette and canvas consume: every
+ * Space with its agent and mirrored workspace, every agent with its skills
+ * and MCP access, the owner's mail connections, and the registered
+ * Workspaces. Connections and Workspaces are optional, so a deployment that
+ * mounts neither still gets the map.
+ * @returns the connectivity map as plain JSON.
+ */
+@Remote('spaceMap') async spaceMap(): Promise<FaberLoomSpaceMap>
+
+/**
+ * List the owner's work flows.
+ * @returns one row per flow.
+ */
+@Remote('workflowOverview') async workflowOverview(): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
+ * Read one work flow with its graph and validation verdict.
+ * @param id - work flow id.
+ * @returns the flow detail.
+ */
+@Remote('workflowDetail') async workflowDetail(id: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Create an empty work flow and return the refreshed list.
+ * @param name - display name.
+ * @returns the refreshed rows.
+ */
+@Remote('createWorkflow') async createWorkflow(name: string): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
+ * Rename one work flow and return the refreshed list.
+ * @param id - work flow id.
+ * @param name - new display name.
+ * @returns the refreshed rows.
+ */
+@Remote('saveWorkflow') async saveWorkflow(id: string, name: string): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
+ * Append one node to a work flow.
+ * @param id - work flow id.
+ * @param kind - node kind.
+ * @param title - node title.
+ * @param configJson - node config as a JSON object string; empty for none.
+ * @param nodeId - optional stable node id.
+ * @returns the refreshed flow detail.
+ */
+@Remote('addNode') async addNode(id: string, kind: string, title: string, configJson: string, nodeId?: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Change one node's title, kind, or config.
+ * @param id - work flow id.
+ * @param nodeId - the node to change.
+ * @param title - new title, or empty to keep it.
+ * @param kind - new kind, or empty to keep it.
+ * @param configJson - config JSON merged over the node, or empty to keep it.
+ * @returns the refreshed flow detail.
+ */
+@Remote('updateNode') async updateNode(id: string, nodeId: string, title: string, kind: string, configJson: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Remove one node and its incident edges.
+ * @param id - work flow id.
+ * @param nodeId - the node to remove.
+ * @returns the refreshed flow detail.
+ */
+@Remote('removeNode') async removeNode(id: string, nodeId: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Connect two nodes.
+ * @param id - work flow id.
+ * @param from - source node id.
+ * @param to - target node id.
+ * @param condition - optional branch condition.
+ * @returns the refreshed flow detail.
+ */
+@Remote('connect') async connect(id: string, from: string, to: string, condition?: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Remove one edge.
+ * @param id - work flow id.
+ * @param edgeId - the edge to remove.
+ * @returns the refreshed flow detail.
+ */
+@Remote('disconnect') async disconnect(id: string, edgeId: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Change one work flow's lifecycle.
+ * @param id - work flow id.
+ * @param status - `active`, `paused`, or `draft`.
+ * @returns the refreshed flow detail.
+ */
+@Remote('setWorkflowStatus') async setWorkflowStatus(id: string, status: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Set or clear one work flow's concurrency cap.
+ * @param id - work flow id.
+ * @param maxConcurrency - the cap, or null to clear it.
+ * @returns the refreshed flow detail.
+ */
+@Remote('setWorkflowConcurrency') async setWorkflowConcurrency(id: string, maxConcurrency: number | null): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * List one work flow's executions.
+ * @param id - work flow id.
+ * @returns the run history rows.
+ */
+@Remote('workflowRuns') async workflowRuns(id: string): Promise<readonly FaberLoomWorkflowRunRow[]>
+
+/**
+ * List every routine ↔ work flow link the owner holds, in both directions:
+ * a routine step with handler `workflow` invoking a flow, and the compiled
+ * routine an active flow drives.
+ * @returns the links, routines first.
+ */
+@Remote('routineWorkflowLinks') async routineWorkflowLinks(): Promise<readonly FaberLoomWorkflowLink[]>
+
+/**
+ * Share one Space the owner (or an admin) manages with named emails.
+ * @param id - space id.
+ * @param emails - the grantees.
+ * @param permissions - the permission subset each grantee receives.
+ * @returns the resource's outgoing grant rows.
+ */
+@Remote('shareSpace') async shareSpace(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>
+
+/**
+ * Share the Space that mirrors one registered Workspace, resolving the Space
+ * from the sidebar Workspace the caller addresses.
+ * @param workspaceId - the Workspace whose mirrored Space is shared.
+ * @param emails - the grantees.
+ * @param permissions - the permission subset each grantee receives.
+ * @returns the Space's outgoing grant rows.
+ */
+@Remote('shareSpaceByWorkspace') async shareSpaceByWorkspace( workspaceId: string, emails: readonly string[], permissions: readonly string[], ): Promise<readonly FaberLoomShareGrantRow[]>
+
+/**
+ * Share one Work Flow the owner manages — or that the actor holds `share` on —
+ * with named emails.
+ * @param id - work flow id.
+ * @param emails - the grantees.
+ * @param permissions - the permission subset each grantee receives.
+ * @returns the flow's outgoing grant rows.
+ */
+@Remote('shareWorkflow') async shareWorkflow(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>
+
+/**
+ * List the actor's grants on one resource.
+ * @param kind - `space` or `workflow`.
+ * @param id - resource id.
+ * @returns the outgoing grant rows.
+ */
+@Remote('resourceShares') async resourceShares(kind: string, id: string): Promise<readonly FaberLoomShareGrantRow[]>
+
+/**
+ * Revoke one grant the actor issued.
+ * @param grantId - grant id.
+ * @returns the actor's refreshed outgoing grant rows.
+ */
+@Remote('revokeShareGrant') async revokeShareGrant(grantId: string): Promise<readonly FaberLoomShareGrantRow[]>
+
+/**
+ * Read the Space connectivity map for the palette and canvas.
+ * @returns the connectivity map.
+ */
+@Remote('spaceTopology') async spaceTopology(): Promise<FaberLoomSpaceMap>
+
+/**
+ * Export one work flow as read-only Archify HTML or plain JSON.
+ * @param id - work flow id.
+ * @param format - `archify` or `json`.
+ * @returns the export body.
+ */
+@Remote('exportWorkflow') async exportWorkflow(id: string, format: string): Promise<FaberLoomWorkflowExport>
+
+/**
+ * The built-in Work Flow templates the gallery lists.
+ * @returns one row per template.
+ */
+@Remote('workflowTemplates') workflowTemplates(): Promise<readonly FaberLoomWorkflowTemplateRow[]>
+
+/**
+ * Create one work flow from a built-in template and return the refreshed list.
+ * @param templateId - template id.
+ * @param name - optional display name.
+ * @returns the refreshed rows.
+ */
+@Remote('createWorkflowFromTemplate') async createWorkflowFromTemplate(templateId: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
+ * Import portable Work Flow JSON as a new work flow and return the refreshed
+ * list; the graph is validated before it is stored.
+ * @param json - the portable JSON text.
+ * @param name - optional display name.
+ * @returns the refreshed rows.
+ */
+@Remote('importWorkflow') async importWorkflow(json: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
+ * List one work flow's version history, newest first.
+ * @param id - work flow id.
+ * @returns the versions.
+ */
+@Remote('workflowVersions') async workflowVersions(id: string): Promise<readonly FaberLoomWorkflowVersionRow[]>
+
+/**
+ * Restore one work flow to an earlier version.
+ * @param id - work flow id.
+ * @param version - version to restore.
+ * @returns the refreshed detail.
+ */
+@Remote('restoreWorkflow') async restoreWorkflow(id: string, version: number): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * List the staged work flow revisions awaiting this owner's decision, with
+ * each proposal's base and proposed graph for the diff.
+ * @returns the staged revisions.
+ */
+@Remote('workflowPendingChanges') async workflowPendingChanges(): Promise<readonly FaberLoomWorkflowPendingRow[]>
+
+/**
+ * Accept one staged work flow revision and return the refreshed inbox.
+ * @param id - work flow id.
+ * @returns the staged revisions.
+ */
+@Remote('acceptWorkflowChange') async acceptWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]>
+
+/**
+ * Reject one staged work flow revision and return the refreshed inbox.
+ * @param id - work flow id.
+ * @returns the staged revisions.
+ */
+@Remote('rejectWorkflowChange') async rejectWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]>
+
+/**
+ * List the context entries the actor may see, newest first.
+ * @returns the visible context rows.
+ */
+@Remote('contextEntries') async contextEntries(): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Create one context entry, optionally attached to a Space.
+ * @param title - display title.
+ * @param body - context body.
+ * @param spaceId - optional Space to attach it to.
+ * @returns the refreshed rows.
+ */
+@Remote('createContext') async createContext(title: string, body: string, spaceId?: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Edit one context entry, appending a version.
+ * @param id - entry id.
+ * @param title - new title.
+ * @param body - new body.
+ * @returns the refreshed rows.
+ */
+@Remote('updateContext') async updateContext(id: string, title: string, body: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * List one context entry's version history.
+ * @param id - entry id.
+ * @returns the versions.
+ */
+@Remote('contextVersions') async contextVersions(id: string): Promise<readonly FaberLoomContextVersionRow[]>
+
+/**
+ * Restore one context entry to an earlier version.
+ * @param id - entry id.
+ * @param version - version to restore.
+ * @returns the refreshed rows.
+ */
+@Remote('restoreContext') async restoreContext(id: string, version: number): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Index one context entry into its Space's shared context.
+ * @param id - entry id.
+ * @returns the refreshed rows.
+ */
+@Remote('approveContext') async approveContext(id: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Keep one context entry private to its author.
+ * @param id - entry id.
+ * @returns the refreshed rows.
+ */
+@Remote('rejectContext') async rejectContext(id: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Remove one context entry and its history.
+ * @param id - entry id.
+ * @returns the refreshed rows.
+ */
+@Remote('removeContext') async removeContext(id: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Import the console's shared context for this owner and return the refreshed
+ * entries, so a member's Space contribution shows up for approval.
+ * @returns the visible context rows.
+ */
+@Remote('syncContext') async syncContext(): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Capture the panel's local Sessions into one Space and return the refreshed
+ * shared catalog.
+ * @param spaceId - the Space to share the Sessions in.
+ * @param sessions - the local Sessions the panel offers.
+ * @returns the Space's shared Session rows.
+ */
+@Remote('captureSpaceSessions') async captureSpaceSessions( spaceId: string, sessions: readonly FaberLoomSharedSessionRef[], ): Promise<readonly FaberLoomSharedSessionRow[]>
+
+/**
+ * Sync the console's shared Sessions and list one Space's catalog.
+ * @param spaceId - the Space to list.
+ * @returns the Space's shared Session rows.
+ */
+@Remote('spaceSessions') async spaceSessions(spaceId: string): Promise<readonly FaberLoomSharedSessionRow[]>
+
+/**
+ * Read one shared Session's portable content.
+ * @param spaceId - the Space the Session is shared in.
+ * @param ownerId - the member whose host holds the Session.
+ * @param sessionId - the Session id.
+ * @returns the row with its content.
+ */
+@Remote('spaceSessionContent') async spaceSessionContent(spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContentRow>
+
+/**
+ * Remove one shared Session (its author or the Space owner) and return the
+ * refreshed catalog.
+ * @param spaceId - the Space the Session is shared in.
+ * @param ownerId - the member whose host holds the Session.
+ * @param sessionId - the Session id.
+ * @returns the Space's shared Session rows.
+ */
+@Remote('removeSpaceSession') async removeSpaceSession(spaceId: string, ownerId: string, sessionId: string): Promise<readonly FaberLoomSharedSessionRow[]>
 
 /**
  * Create a space (root or sub-space) for the owner with an optional
@@ -1837,6 +2413,13 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 @Remote('executions') async executions(routineId?: string): Promise<readonly FaberLoomExecutionRow[]>
 
 /**
+ * The dispatcher's liveness — last run, failures, review backlog, retries, and
+ * the sooner wait deadline — per routine and in aggregate.
+ * @returns the health snapshot.
+ */
+@Remote('executionHealth') async executionHealth(): Promise<FaberLoomHealth>
+
+/**
  * Start a manual run of one active routine.
  * @param routineId - routine to run.
  * @returns the refreshed executions of that routine.
@@ -1978,6 +2561,266 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 ```
 
 Source: [`packages/faberloom/view/src/index.ts`](../../packages/faberloom/view/src/index.ts)
+
+<a id="ctxfaberloomworkflows--faberloomworkflows"></a>
+
+### `ctx.faberloomWorkflows` — `FaberLoomWorkflows`
+
+The work flows service. It owns the durable versioned graph records, the graph validation, and the compilation to a routine; every operation carries the authenticated actor.
+
+```ts cordis-catalog
+/**
+ * Create one work flow owned by the actor. The definition is stored as given;
+ * validation is explicit and activation requires a valid graph.
+ * @param actor - the acting identity.
+ * @param input - name, optional scope, and the initial definition.
+ * @returns the created work flow.
+ */
+async create(actor: WorkFlowActor, input: CreateWorkFlowInput): Promise<WorkFlow>
+
+/**
+ * List the actor's work flows, optionally only one scope, oldest first.
+ * @param actor - the acting identity.
+ * @param scope - when set, only flows in this scope.
+ * @returns the actor's work flows.
+ */
+async list(actor: WorkFlowActor, scope?: WorkFlowScope): Promise<WorkFlow[]>
+
+/**
+ * Read one work flow the actor owns.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the work flow.
+ * @throws when the flow is absent or owned by another identity.
+ */
+async get(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>
+
+/**
+ * Apply a mutable patch to one work flow the actor owns, bumping the version.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param patch - fields to change.
+ * @returns the updated work flow.
+ */
+async update(actor: WorkFlowActor, id: WorkFlowId, patch: UpdateWorkFlowInput): Promise<WorkFlow>
+
+/**
+ * List one work flow's version history, newest first.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the versions.
+ */
+async versions(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly WorkFlowVersionRecord[]>
+
+/**
+ * Restore one work flow to an earlier version, bumping the version and
+ * reconciling an active flow's compiled routine.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param version - the version to restore.
+ * @returns the restored work flow.
+ */
+async restore(actor: WorkFlowActor, id: WorkFlowId, version: number): Promise<WorkFlow>
+
+/**
+ * List the staged revisions on the work flows the actor owns, newest first,
+ * each with its base and proposed graph for the approval diff.
+ * @param actor - the acting identity.
+ * @returns the staged revisions.
+ */
+async pendingChanges(actor: WorkFlowActor): Promise<readonly WorkFlowPendingChange[]>
+
+/**
+ * Accept one staged revision: apply it to the live flow, bump the version,
+ * reconcile an active flow's routine, and clear the stage. Owner only.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the updated work flow.
+ */
+async acceptPending(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>
+
+/**
+ * Reject one staged revision: drop it, leaving the live flow unchanged.
+ * Owner only.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the unchanged work flow.
+ */
+async rejectPending(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>
+
+/**
+ * Append one node to a work flow the actor owns.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param input - node title, kind, optional config, and optional id.
+ * @returns the updated work flow.
+ * @throws when the node id repeats an existing node.
+ */
+async addNode( actor: WorkFlowActor, id: WorkFlowId, input: { id?: string | undefined; title: string; kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>
+
+/**
+ * Change one node's title, kind, or config values (merged into its config).
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param nodeId - the node to change.
+ * @param patch - fields to change; `config` merges over the node's config.
+ * @returns the updated work flow.
+ * @throws when the node does not exist.
+ */
+async updateNode( actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId, patch: { title?: string | undefined; kind?: WorkFlowNodeKind | undefined; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>
+
+/**
+ * Remove one node and every edge incident to it.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param nodeId - the node to remove.
+ * @returns the updated work flow.
+ * @throws when the node does not exist.
+ */
+async removeNode(actor: WorkFlowActor, id: WorkFlowId, nodeId: WorkFlowNodeId): Promise<WorkFlow>
+
+/**
+ * Add a directed edge between two existing nodes.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param input - source, target, and optional branch condition.
+ * @returns the updated work flow.
+ * @throws when a referenced node does not exist.
+ */
+async connect( actor: WorkFlowActor, id: WorkFlowId, input: { from: WorkFlowNodeId; to: WorkFlowNodeId; condition?: string | undefined }, ): Promise<WorkFlow>
+
+/**
+ * Remove one edge.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param edgeId - the edge to remove.
+ * @returns the updated work flow.
+ * @throws when the edge does not exist.
+ */
+async disconnect(actor: WorkFlowActor, id: WorkFlowId, edgeId: WorkFlowEdgeId): Promise<WorkFlow>
+
+/**
+ * Replace the flow's trigger with one new trigger node of the given kind,
+ * dropping edges that referenced the removed triggers.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param input - trigger kind and optional config.
+ * @returns the updated work flow.
+ * @throws when the kind is not a trigger kind.
+ */
+async setTrigger( actor: WorkFlowActor, id: WorkFlowId, input: { kind: WorkFlowNodeKind; config?: Record<string, unknown> | undefined }, ): Promise<WorkFlow>
+
+/**
+ * Change one work flow's lifecycle. Activating validates the graph and
+ * resolves the compiled routine id; an invalid graph is refused.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param status - the new status.
+ * @returns the updated work flow.
+ * @throws when the graph is invalid and the target status is `active`.
+ */
+async setStatus(actor: WorkFlowActor, id: WorkFlowId, status: WorkFlowStatus): Promise<WorkFlow>
+
+/**
+ * Set or clear one work flow's concurrency cap, recompiling an active flow so
+ * the dispatcher sees the new limit.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param maxConcurrency - the cap, or null to clear it.
+ * @returns the updated work flow.
+ */
+async setConcurrency(actor: WorkFlowActor, id: WorkFlowId, maxConcurrency: number | null): Promise<WorkFlow>
+
+/**
+ * Validate one work flow's graph without mutating it.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the verdict.
+ */
+async validate(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlowValidation>
+
+/**
+ * Compile one work flow to a routine definition without mutating it.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the routine definition input.
+ */
+async compile(actor: WorkFlowActor, id: WorkFlowId): Promise<RoutineDefinitionInput>
+
+/**
+ * The built-in templates a user can start from.
+ * @returns the template catalog, in gallery order.
+ */
+templates(): readonly WorkFlowTemplate[]
+
+/**
+ * Create one owned work flow from a built-in template.
+ * @param actor - the acting identity.
+ * @param templateId - the template id.
+ * @param name - optional display name; the template's name is used otherwise.
+ * @returns the created work flow.
+ * @throws when the template id is unknown.
+ */
+async createFromTemplate(actor: WorkFlowActor, templateId: string, name?: string): Promise<WorkFlow>
+
+/**
+ * Export one work flow as portable JSON the gallery, the knowledge hub, and
+ * another deployment can import.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the JSON text.
+ */
+async exportFlow(actor: WorkFlowActor, id: WorkFlowId): Promise<string>
+
+/**
+ * Import portable Work Flow JSON as a new owned work flow; the graph is
+ * validated before it is stored.
+ * @param actor - the acting identity.
+ * @param json - the JSON text.
+ * @param name - optional display name overriding the export's.
+ * @returns the created work flow.
+ * @throws when the JSON is malformed, mislabelled, or its graph is invalid.
+ */
+async importFlow(actor: WorkFlowActor, json: string, name?: string): Promise<WorkFlow>
+
+/**
+ * Remove one work flow the actor owns.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns whether the stored record was deleted.
+ */
+async remove(actor: WorkFlowActor, id: WorkFlowId): Promise<boolean>
+
+/**
+ * Start one manual execution of an active work flow.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the started execution id and whether the engine deduped it.
+ * @throws when the flow has no activated routine.
+ */
+async runNow(actor: WorkFlowActor, id: WorkFlowId): Promise<{ executionId: string; deduped: boolean }>
+
+/**
+ * Start one run of an active work flow on behalf of a collaborator — a
+ * routine step that invokes this flow — deduping by the caller's key.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param request - the caller's idempotency key.
+ * @returns the started execution id and whether the engine deduped it.
+ * @throws when the flow has no activated routine.
+ */
+async invoke( actor: WorkFlowActor, id: WorkFlowId, request: { idempotencyKey: string }, ): Promise<{ executionId: string; deduped: boolean }>
+
+/**
+ * List one work flow's executions, oldest first.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @returns the executions, or an empty list when the flow has no routine.
+ */
+async runs(actor: WorkFlowActor, id: WorkFlowId): Promise<readonly Execution[]>
+```
+
+Source: [`packages/faberloom/workflows/src/index.ts`](../../packages/faberloom/workflows/src/index.ts)
 
 <a id="ctxspaceindex--spaceindex"></a>
 

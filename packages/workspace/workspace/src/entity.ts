@@ -60,6 +60,14 @@ export interface WorkspaceEntityHost {
    * @param path - Canonical existing directory from the immutable header cwd.
    */
   rememberSessionPath(id: SessionId, path: string): void
+
+  /**
+   * Publish a durable title change so mirrors of the workspace — a product
+   * Space, for example — adopt the new name.
+   * @param id - The renamed workspace.
+   * @param title - The new display title.
+   */
+  renamed(id: WorkspaceId, title: string): void
 }
 
 /** Chain-slot abort sentinel thrown by the update fn when the record needs no change; only `mutate` observes it. */
@@ -104,6 +112,7 @@ export class WorkspaceEntity implements Workspace {
 
   async setTitle(title: string): Promise<void> {
     await this.mutate(record => ({ ...record, title }))
+    this.host.renamed(this.id, title)
   }
 
   async attachSession(sessionId: SessionId): Promise<void> {

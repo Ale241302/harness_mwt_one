@@ -17,10 +17,18 @@ const stepRecord = z.object({
   instruction: z.string(),
   handler: z.string(),
   dependsOn: z.array(z.string()),
+  // Kind-specific configuration; defaulted so routine versions written before
+  // the field existed keep loading under the same domain version.
+  config: z.record(z.string(), z.unknown()).default({}),
+  // Gate fields default so routine versions written before them keep loading.
+  gateStepId: z.string().nullable().default(null),
+  gateExpect: z.boolean().nullable().default(null),
   waitFor: z.string().nullable(),
   effect: z.boolean(),
   revalidateKey: z.string().nullable(),
   revalidateExpect: z.string().nullable(),
+  // Handler attempts allowed before the step fails; defaulted for pre-field rows.
+  maxAttempts: z.number().default(1),
 })
 
 /** Durable trigger. */
@@ -29,6 +37,12 @@ const triggerRecord = z.object({
     z.literal('manual'), z.literal('event'), z.literal('email'), z.literal('date'), z.literal('recurrence'),
   ]),
   match: z.string().nullable(),
+  // Schedule fields default so routine versions written before them keep loading.
+  timezone: z.string().nullable().default(null),
+  days: z.array(z.number()).default([]),
+  windowFrom: z.number().nullable().default(null),
+  windowTo: z.number().nullable().default(null),
+  businessDays: z.boolean().default(false),
 })
 
 /** Durable routine definition. */
@@ -39,6 +53,8 @@ const definitionRecord = z.object({
   expectedResult: z.string(),
   permissions: z.array(z.string()),
   failurePolicy: z.union([z.literal('stop'), z.literal('continue'), z.literal('review')]),
+  // Concurrency cap; null is unlimited. Defaulted for pre-field records.
+  maxConcurrency: z.number().nullable().default(null),
 })
 
 /** Durable routine record. */
@@ -67,9 +83,12 @@ export const routineVersionRecord = z.object({
 const stepStateRecord = z.object({
   status: z.union([
     z.literal('pending'), z.literal('running'), z.literal('waiting'), z.literal('completed'), z.literal('failed'),
+    z.literal('skipped'),
   ]),
   result: z.unknown(),
   reason: z.string().nullable(),
+  // Handler attempts made; defaulted for rows written before the field existed.
+  attempts: z.number().default(0),
 })
 
 /** Durable ingested event. */

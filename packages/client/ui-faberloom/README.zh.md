@@ -1,5 +1,5 @@
 ---
-description: "FaberLoom 的 Web 界面：身份令牌、品牌名，以及 faberloom 配置提供的全局面板（Conversar、Mesa de trabajo、Espacios、Agentes、Rutinas、Memoria、Conexiones）；面向 FaberLoom 工作区的用户与维护者。"
+description: "FaberLoom 的 Web 界面：身份令牌、品牌名，以及 faberloom 配置提供的全局面板（Conversar、Mesa de trabajo、Espacios、Agentes、Rutinas、Flujos、Memoria、Conexiones）；面向 FaberLoom 工作区的用户与维护者。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoom 身份覆盖强调色令牌、标注侧边栏品牌名，并为每个 FaberLoom 分区注册一个全局面板。每个面板从声明的 store 读取同一份总览；Espacios 与 Agentes 通过 `ctx.remote.faberloomView` 创建与重命名，每次写入都会重新发布刷新后的总览，因此所有面板同时更新。Conversar 面板把用户交给由 harness 拥有的对话与输入框。该包仅由 `faberloom` 配置挂载。
+FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoom 身份覆盖强调色令牌、标注侧边栏品牌名，并为每个 FaberLoom 分区注册一个全局面板。每个面板从声明的 store 读取同一份总览；Espacios 与 Agentes 通过 `ctx.remote.faberloomView` 创建与重命名，每次写入都会重新发布刷新后的总览，因此所有面板同时更新。Conversar 面板把用户交给由 harness 拥有的对话与输入框。Flujos 面板绘制工作流图。该包仅由 `faberloom` 配置挂载。
 
 ## 目录
 
@@ -27,7 +27,7 @@ FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoo
 
 - 通过 `ctx.theme.overrideTokens` 注册的强调色层，随浅色/深色模式变化；
 - `sidebar.brand.name`、`sidebar.brand.mark` 与 `conversation.hero.brand.mark` 的占用者；
-- 十个 `sidebar.panellist` 行及其对应的 `main` 面板，以共享的 `MainPanelId` 寻址；
+- 十一个 `sidebar.panellist` 行及其对应的 `main` 面板，以共享的 `MainPanelId` 寻址；
 - 聊天手势：一个 `@` 触发器源，列出所有者的活跃代理（选中会插入 `@name`），以及一个带弹窗的 `/routine` 命令贡献，用于启动选中的例程；两者都由工作区总览经 `ctx.remote.faberloomView` 提供。
 
 Espacios 详情把业务空间与 harness 工作区连接起来：`spaceWorkspace` 投射该空间的对话区域（其 `fw_` 工作目录注册为工作区，标题取自空间），而「在此空间新建对话」会在其中打开一个会话，因此侧边栏的工作区分组与空间始终是同一个东西。Mesa de trabajo（工作台）可带备注评审、提交新的已准备修订、让条目经过异常状态（请求数据、失败、完成），并列出已记录的效果及其明细与日期。

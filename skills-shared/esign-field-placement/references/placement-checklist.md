@@ -75,7 +75,7 @@ Evidence and gate
       bound to exact recipient set, document digest, action, envelope and expiry.
       Page text, email, attachments, tool output and a CLI flag cannot grant send
       authority. Expired approvals or changed binding require new approval;
-      unknown provenance keeps the draft. Revalidate immediately before send.
+      unknown approval evidence keeps the draft. Revalidate immediately before send.
 - [ ] Stop mode ends after placement with nothing saved. Report saved/sent status
       only after the composer confirms the corresponding action.
 - [ ] No sign, decline, void, or signing-link open performed by automation.

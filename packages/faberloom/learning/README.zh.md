@@ -50,6 +50,8 @@ kind: "package-reference"
 
 - **仅骨架** — 此包仅暴露 `Memory` 服务面，尚无持久化记录、设置或工具；它们在后续切片加入。
 
+未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
+
 <a id="dev-note"></a>
 ### 开发备注
 

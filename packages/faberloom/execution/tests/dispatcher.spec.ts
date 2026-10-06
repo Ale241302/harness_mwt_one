@@ -6,7 +6,7 @@ import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-
 import FaberLoomAccess from '../../access/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
 import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput } from '../../routines/src/index.ts'
-import FaberLoomExecutions, { MIN_INTERVAL_MS, parseInterval } from '../src/index.ts'
+import FaberLoomExecutions, { localParts, MIN_INTERVAL_MS, parseCron, parseInterval } from '../src/index.ts'
 
 const OWNER = 'compras2@sondelsa.com'
 
@@ -182,6 +182,9 @@ describe('FaberLoomExecutions dispatcher', () => {
 
   it('F22 — an empty owner or a malformed interval is refused where it can be seen', async () => {
     expect(parseInterval('every:15')).toBe(15 * 60_000)
+    expect(parseInterval('every:12h')).toBe(12 * 3_600_000)
+    expect(parseInterval('every:90m')).toBe(90 * 60_000)
+    expect(parseInterval('every:2d')).toBe(2 * 86_400_000)
     expect(parseInterval('30m')).toBe(30 * 60_000)
     expect(parseInterval('2h')).toBe(2 * 3_600_000)
     expect(parseInterval('1d')).toBe(24 * 3_600_000)
@@ -197,5 +200,173 @@ describe('FaberLoomExecutions dispatcher', () => {
 
     const noOwner = await harness({ ownerId: '' })
     expect(await noOwner.dispatcher.runOnce()).toMatchObject({ skipped: 'no owner configured', started: [] })
+  })
+
+  it('F6 — an every:12h flow starts exactly once per slot and survives a restart', async () => {
+    const pool = new MemoryMediaPool()
+    const first = await harness({}, pool)
+    await activeRoutine(first.routines, 'Correo 12h', [{ kind: 'recurrence', match: 'every:12h' }])
+
+    expect((await first.dispatcher.runOnce(new Date('2026-09-18T01:00:00.000Z'))).started).toHaveLength(1)
+    expect((await first.dispatcher.runOnce(new Date('2026-09-18T11:00:00.000Z'))).started).toEqual([])
+    expect(await first.routines.listExecutions()).toHaveLength(1)
+
+    // A fresh process over the same pool replays the same slot: no second run.
+    const second = await harness({}, pool)
+    expect((await second.dispatcher.runOnce(new Date('2026-09-18T05:30:00.000Z'))).started).toEqual([])
+    expect(await second.routines.listExecutions()).toHaveLength(1)
+
+    // The next 12h slot starts its own run.
+    expect((await second.dispatcher.runOnce(new Date('2026-09-18T13:00:00.000Z'))).started).toHaveLength(1)
+    expect(await second.routines.listExecutions()).toHaveLength(2)
+  })
+
+  it('F6 — a basic cron fires once at its local minute and again the next day', async () => {
+    const { routines, dispatcher } = await harness()
+    await activeRoutine(routines, 'Diario 7:00', [{ kind: 'recurrence', match: '0 7 * * *' }])
+
+    expect((await dispatcher.runOnce(new Date('2026-09-18T07:00:20.000Z'))).started).toHaveLength(1)
+    expect((await dispatcher.runOnce(new Date('2026-09-18T07:00:50.000Z'))).started).toEqual([])
+    expect((await dispatcher.runOnce(new Date('2026-09-18T07:01:00.000Z'))).started).toEqual([])
+    expect(await routines.listExecutions()).toHaveLength(1)
+
+    expect((await dispatcher.runOnce(new Date('2026-09-19T07:00:00.000Z'))).started).toHaveLength(1)
+    expect(await routines.listExecutions()).toHaveLength(2)
+  })
+
+  it('F6 — a timezone window keeps a cadence inside its local hours', async () => {
+    const { routines, dispatcher } = await harness()
+    // Europe/Madrid is UTC+2 in September: 09:00-11:00 local is 07:00-09:00Z.
+    await activeRoutine(routines, 'Ventana', [{ kind: 'recurrence', match: 'every:1h', timezone: 'Europe/Madrid', window: { from: 9, to: 11 } }])
+
+    expect((await dispatcher.runOnce(new Date('2026-09-18T07:30:00.000Z'))).started).toHaveLength(1)
+    expect((await dispatcher.runOnce(new Date('2026-09-18T11:30:00.000Z'))).started).toEqual([])
+    expect(await routines.listExecutions()).toHaveLength(1)
+  })
+
+  it('F6 — the business-day skip drops the local weekend', async () => {
+    const { routines, dispatcher } = await harness()
+    await activeRoutine(routines, 'Laborable', [{ kind: 'recurrence', match: 'every:1h', timezone: 'UTC', businessDays: true }])
+
+    // 2026-09-19 is a Saturday; 2026-09-18 is a Friday.
+    expect((await dispatcher.runOnce(new Date('2026-09-19T10:00:00.000Z'))).started).toEqual([])
+    expect((await dispatcher.runOnce(new Date('2026-09-18T10:00:00.000Z'))).started).toHaveLength(1)
+  })
+
+  it('F6 — an invalid timezone is reported and skipped, like a bad cadence', async () => {
+    const { ctx, routines, dispatcher } = await harness()
+    await activeRoutine(routines, 'TZ rota', [{ kind: 'recurrence', match: 'every:1h', timezone: 'Mars/Olympus' }])
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    expect((await dispatcher.runOnce(new Date('2026-09-18T10:00:00.000Z'))).started).toEqual([])
+    expect(warn.mock.calls.some(call => String(call[0]).includes('timezone:Mars/Olympus'))).toBe(true)
+    warn.mockRestore()
+  })
+
+  it('F6 — a routine at its concurrency cap skips the next slot until a run finishes', async () => {
+    const { routines, dispatcher } = await harness()
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'Limitada',
+      definition: {
+        ...definition([{ id: 's1', instruction: 'espera', handler: 'parar', waitFor: 'respuesta' }], [{ kind: 'recurrence', match: 'every:1h' }]),
+        maxConcurrency: 1,
+      },
+    })
+    await routines.activateRoutine(OWNER, routine.id)
+
+    expect((await dispatcher.runOnce(new Date('2026-09-18T10:00:00.000Z'))).started).toHaveLength(1)
+    expect((await routines.listExecutions())[0]?.status).toBe('waiting')
+    // The next slot arrives while the first run is still waiting: the cap holds.
+    expect((await dispatcher.runOnce(new Date('2026-09-18T11:00:00.000Z'))).started).toEqual([])
+    expect(await routines.listExecutions()).toHaveLength(1)
+  })
+
+  it('F6 — refuses a routine whose concurrency cap is not a positive integer', async () => {
+    const { routines } = await harness()
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'Mala',
+      definition: { ...definition([{ id: 's1', instruction: 'x', handler: 'step' }]), maxConcurrency: 0 },
+    })
+    await expect(routines.activateRoutine(OWNER, routine.id)).rejects.toThrow('BAD_MAX_CONCURRENCY')
+  })
+
+  it('F6 — parses basic cron fields and rejects a malformed expression', () => {
+    const cron = parseCron('30 8,18 1 12 1-5')
+    expect(cron?.minute.values.has(30)).toBe(true)
+    expect(cron?.hour.values.has(18)).toBe(true)
+    expect(cron?.dayOfMonth.values.has(1)).toBe(true)
+    expect(cron?.dayOfWeek.values.has(3)).toBe(true)
+    expect(parseCron('* * * * *')?.minute.any).toBe(true)
+    expect(parseCron('0 7')).toBeNull()
+    expect(parseCron('99 7 * * *')).toBeNull()
+    expect(parseCron('0 24 * * *')).toBeNull()
+    expect(parseCron('10-5 * * * *')).toBeNull()
+    expect(parseCron('0 0 0 * *')).toBeNull()
+    expect(parseCron('0 0 32 * *')).toBeNull()
+    expect(parseCron('0 * * * 8')).toBeNull()
+    expect(parseCron('a * * * *')).toBeNull()
+    expect(parseCron(null)).toBeNull()
+  })
+
+  it('F6 — resolves an instant into local wall-clock fields', () => {
+    expect(localParts(new Date('2026-09-18T07:30:00.000Z'), null))
+      .toEqual({ year: 2026, month: 9, day: 18, hour: 7, minute: 30, weekday: 5 })
+    expect(localParts(new Date('2026-09-18T07:30:00.000Z'), 'Europe/Madrid')).toMatchObject({ hour: 9, weekday: 5 })
+    expect(localParts(new Date('2026-09-20T00:00:00.000Z'), null)).toMatchObject({ hour: 0, weekday: 0 })
+  })
+
+  it('F6 — a cron restricted to a weekday runs only on that weekday', async () => {
+    const { routines, dispatcher } = await harness()
+    await activeRoutine(routines, 'Lunes a viernes', [{ kind: 'recurrence', match: '0 7 * * 1-5' }])
+    expect((await dispatcher.runOnce(new Date('2026-09-18T07:00:00.000Z'))).started).toHaveLength(1)
+    expect((await dispatcher.runOnce(new Date('2026-09-18T08:00:00.000Z'))).started).toEqual([])
+    expect((await dispatcher.runOnce(new Date('2026-09-20T07:00:00.000Z'))).started).toEqual([])
+  })
+
+  it('F6 — a cron restricted to a day of month runs only on that day', async () => {
+    const { routines, dispatcher } = await harness()
+    await activeRoutine(routines, 'Día 1', [{ kind: 'recurrence', match: '0 0 1 * *' }])
+    expect((await dispatcher.runOnce(new Date('2026-09-01T00:00:00.000Z'))).started).toHaveLength(1)
+    expect((await dispatcher.runOnce(new Date('2026-09-02T00:00:00.000Z'))).started).toEqual([])
+  })
+
+  it('F6 — a cron restricted to both day and weekday matches either, and a month filter gates it', async () => {
+    const { routines, dispatcher } = await harness()
+    await activeRoutine(routines, 'Uno o martes', [{ kind: 'recurrence', match: '0 0 1 * 2' }])
+    // 2026-09-01 is a Tuesday (both match); 2026-09-08 is a Tuesday (weekday only).
+    expect((await dispatcher.runOnce(new Date('2026-09-01T00:00:00.000Z'))).started).toHaveLength(1)
+    expect((await dispatcher.runOnce(new Date('2026-09-08T00:00:00.000Z'))).started).toHaveLength(1)
+    // 2026-09-09 is a Wednesday, day 9: neither matches.
+    expect((await dispatcher.runOnce(new Date('2026-09-09T00:00:00.000Z'))).started).toEqual([])
+  })
+
+  it('F6 — a cron month filter skips the other months', async () => {
+    const { routines, dispatcher } = await harness()
+    await activeRoutine(routines, 'Diciembre', [{ kind: 'recurrence', match: '0 0 1 12 *' }])
+    expect((await dispatcher.runOnce(new Date('2026-09-01T00:00:00.000Z'))).started).toEqual([])
+    expect((await dispatcher.runOnce(new Date('2026-12-01T00:00:00.000Z'))).started).toHaveLength(1)
+  })
+
+  it('F6 — an hour window that crosses midnight keeps its inside hours', async () => {
+    const { routines, dispatcher } = await harness()
+    await activeRoutine(routines, 'Nocturna', [{ kind: 'recurrence', match: 'every:1h', window: { from: 22, to: 6 } }])
+    expect((await dispatcher.runOnce(new Date('2026-09-18T23:00:00.000Z'))).started).toHaveLength(1)
+    expect((await dispatcher.runOnce(new Date('2026-09-18T12:00:00.000Z'))).started).toEqual([])
+  })
+
+  it('F6 — an allowed-weekday list drops the other weekdays', async () => {
+    const { routines, dispatcher } = await harness()
+    await activeRoutine(routines, 'Solo lunes', [{ kind: 'recurrence', match: 'every:1h', days: [1] }])
+    // 2026-09-21 is a Monday; 2026-09-18 is a Friday.
+    expect((await dispatcher.runOnce(new Date('2026-09-21T10:00:00.000Z'))).started).toHaveLength(1)
+    expect((await dispatcher.runOnce(new Date('2026-09-18T10:00:00.000Z'))).started).toEqual([])
+  })
+
+  it('F6 — a malformed cron is reported like a malformed interval', async () => {
+    const { ctx, routines, dispatcher } = await harness()
+    await activeRoutine(routines, 'Cron rota', [{ kind: 'recurrence', match: '99 7 * * *' }])
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    expect((await dispatcher.runOnce(new Date('2026-09-18T07:00:00.000Z'))).started).toEqual([])
+    expect(warn.mock.calls.some(call => String(call[0]).includes('99 7 * * *'))).toBe(true)
+    warn.mockRestore()
   })
 })

@@ -41,7 +41,7 @@ The output object contains `source_video` and `compiled_prompt` and works with e
     "https://example.org/reference-b.mp4",
     "https://example.org/reference-c.mp4"
   ],
-  "measured_grounding": "Supply results and provenance from actual local analysis. Do not copy another reference set's measurements."
+  "measured_grounding": "Supply results and origin from actual local analysis. Do not copy another reference set's measurements."
 }
 ```
 

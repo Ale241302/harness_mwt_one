@@ -50,6 +50,8 @@ Independent of live requests: the registration never touches a request prefix.
 
 - **Skeleton only** — this package exposes the `Access` service surface without durable records, settings, or tools; those arrive on later slices.
 
+No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
+
 <a id="dev-note"></a>
 ### Dev Note
 

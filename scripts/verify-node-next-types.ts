@@ -84,7 +84,23 @@ function linkPackage(pkg: WorkspacePackage, nodeModules: string): void {
   const parts = pkg.name.split('/')
   const link = resolve(nodeModules, ...parts)
   mkdirSync(dirname(link), { recursive: true })
-  symlinkSync(pkg.dir, link, 'dir')
+  linkDir(pkg.dir, link)
+}
+
+/**
+ * Link one directory. A Windows checkout without the symlink privilege cannot
+ * create a directory symlink; a junction needs no privilege and resolves the
+ * same package directory.
+ * @param target - absolute directory the link points at.
+ * @param link - absolute path of the link to create.
+ */
+function linkDir(target: string, link: string): void {
+  try {
+    symlinkSync(target, link, 'dir')
+  } catch (error) {
+    if (process.platform !== 'win32') throw error
+    symlinkSync(target, link, 'junction')
+  }
 }
 
 const packages = workspacePackages()
@@ -117,7 +133,7 @@ try {
   if (existsSync(rootTypes)) {
     const typesDir = resolve(nodeModules, '@types')
     mkdirSync(typesDir, { recursive: true })
-    symlinkSync(rootTypes, resolve(typesDir, 'node'), 'dir')
+    linkDir(rootTypes, resolve(typesDir, 'node'))
   }
 
   writeFileSync(resolve(tmp, 'package.json'), `${JSON.stringify({ type: 'module', private: true }, null, 2)}\n`)

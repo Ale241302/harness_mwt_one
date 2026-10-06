@@ -24,6 +24,7 @@ kind: "package-group"
 ## 包
 
 - `@deepseek-ai/dsh-faberloom-spaces` — 主题空间与有效上下文。
+- `@deepseek-ai/dsh-faberloom-workflows` — 编译为 routine 的版本化工作流图。
 - `@deepseek-ai/dsh-faberloom-agents` — 代理目录与版本化模型策略。
 - `@deepseek-ai/dsh-faberloom-board` — 工作台：版本化工单、批准与重新校验。
 - `@deepseek-ai/dsh-faberloom-routines` — 声明式版本化例程。

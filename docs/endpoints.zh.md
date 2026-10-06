@@ -55,9 +55,7 @@ Clientes externos (Claude/Cowork)
 于 2026 年 9 月 14 日核实：
 
 1. 用户进入 `https://harness.mwt.one/login`。
-2. 网关发起 `POST https://consola.mwt.one/api/auth/login/`，收到
-   `user{ id, email, full_name, role, role_name, permissions, is_active, is_staff,
-   legal_entity_ids }` + `access`/`refresh`。
+2. 网关发起 `POST https://consola.mwt.one/api/auth/login/`，收到 `user{ id, email, full_name, role, role_name, permissions, is_active, is_staff, legal_entity_ids }` + `access`/`refresh`。
 3. 网关为每个用户启动一个 `dsh`，并把**身份**（email）注入 MCP。
 4. 每次请求时，MCP 依据该身份解析公司、角色与权限并过滤工具。证据：`mwt_whoami` 返回 `role`、`role_name`、`permissions` 与 `legal_entity_ids`。
 

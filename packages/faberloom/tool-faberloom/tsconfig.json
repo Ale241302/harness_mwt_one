@@ -45,6 +45,15 @@
       "path": "../routines"
     },
     {
+      "path": "../workflows"
+    },
+    {
+      "path": "../shares"
+    },
+    {
+      "path": "../context"
+    },
+    {
       "path": "../../subprocess/subprocess"
     }
   ]

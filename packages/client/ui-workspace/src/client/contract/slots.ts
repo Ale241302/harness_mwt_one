@@ -51,12 +51,29 @@ export interface DirectoryFlowOwnerProps {
   onError: (message: string) => void
 }
 
+/**
+ * Owner share of one Workspace row's menu: the real Workspace the row addresses
+ * and a dismiss callback so a contributed action can close the dropdown. A
+ * contributor renders menu rows that read these values and call `close` before
+ * running its own action.
+ */
+export interface WorkspaceRowMenuOwnerProps {
+  /** Real Workspace the row's menu addresses. */
+  workspaceId: WorkspaceId
+  /** Current display title of that Workspace. */
+  title: string
+  /** Close the owning row's dropdown. */
+  close: () => void
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
     'sidebar.workspaces.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
+    /** Additive actions on one real Workspace row's menu, rendered above its own Rename/Delete rows. */
+    'sidebar.workspaces.rowMenu': { kind: 'list'; scope: 'root'; owner: WorkspaceRowMenuOwnerProps }
   }
 }
 
@@ -151,7 +168,7 @@ export type WorkspaceBrowserInjected = {
 /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */
 export type WorkspaceBrowserProps =
   PropsRuntime<'sidebar.workspaces'>
-  & PropsRenderSlots<'sidebar.workspaces.directoryFlow'>
+  & PropsRenderSlots<'sidebar.workspaces.directoryFlow' | 'sidebar.workspaces.rowMenu'>
   & PropsStore<ReturnType<typeof createWorkspaceViewStore>>
   & Omit<WorkspaceBrowserInjected, 'hooks'>
   & PropsHooks<WorkspaceBrowserInjected['hooks']>

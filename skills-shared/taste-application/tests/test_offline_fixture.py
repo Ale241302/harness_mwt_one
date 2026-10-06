@@ -1,4 +1,4 @@
-"""Failing-first tests: offline fixture path + documented provenance."""
+"""Failing-first tests: offline fixture path + documented origin."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(REPO_ROOT))
 
 FIXTURE = Path(__import__("tasteforge").__file__).resolve().parent / "fixtures" / "flashethereal"
-PROVENANCE_MD = REPO_ROOT.parent / "SOURCE.md"
+ORIGIN_MD = REPO_ROOT.parent / "SOURCE.md"
 
 
 class OfflineFixtureTests(unittest.TestCase):
@@ -49,9 +49,9 @@ class OfflineFixtureTests(unittest.TestCase):
         self.assertTrue(manifest["distill"]["dry_run"])
 
 
-class ProvenanceDocTests(unittest.TestCase):
-    def test_provenance_md_documents_lineage_and_exclusions(self):
-        text = PROVENANCE_MD.read_text()
+class OriginDocTests(unittest.TestCase):
+    def test_origin_md_documents_lineage_and_exclusions(self):
+        text = ORIGIN_MD.read_text()
         self.assertIn("5e0dc440df4dcf6b2082a7dd59e1d6e9cc11d10166d4e1a19dc6c96478f4d2c8", text)
         self.assertIn("Raw media", text)
 

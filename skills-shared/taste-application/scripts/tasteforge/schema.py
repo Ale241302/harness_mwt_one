@@ -359,9 +359,9 @@ APPLICATION_REPORT_SCHEMA = {
     },
 }
 
-# --- provenance records ----------------------------------------------------
+# --- origin records ----------------------------------------------------
 
-PROVENANCE_SCHEMA = {
+ORIGIN_SCHEMA = {
     "type": "object",
     "required": ["canonical_source", "generations", "claude_session"],
     "properties": {

@@ -137,8 +137,8 @@ class CliTests(unittest.TestCase):
             self.assertEqual(status, 0)
             run.assert_called_once_with(config, out)
             validate.assert_called_once_with(out)
-    def test_provenance_subcommand(self):
-        proc = run_cli("provenance", "--json")
+    def test_origin_subcommand(self):
+        proc = run_cli("origin", "--json")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         data = json.loads(proc.stdout)
         self.assertIn("generations", data)

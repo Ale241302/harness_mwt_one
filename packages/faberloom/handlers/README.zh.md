@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-处理器服务负责实现例程步骤声明的每个 `handler` 名称。例程引擎会拒绝激活步骤引用了未注册处理器的例程，因此这个包把已声明的例程变成可运行的例程。它通过 `ctx.faberloomRoutines` 注册 `wait`、`agent` 与 `mcp`，并随贡献它们的 fiber 一起移除。
+处理器服务负责实现例程步骤声明的每个 `handler` 名称。例程引擎会拒绝激活步骤引用了未注册处理器的例程，因此这个包把已声明的例程变成可运行的例程。它通过 `ctx.faberloomRoutines` 注册助手轮次（`agent`、`mcp`）、Work Flow 步骤处理器（`condition`、`transform`、`delay`、`imap`、`smtp`、`memory.remember`、`memory.teach`、`board.create`、`reference`、`subroutine`、`notify`、`deadletter`）与 `wait`，并随贡献它们的 fiber 一起移除。
 
 ## 目录
 
@@ -28,6 +28,9 @@ kind: "package-reference"
 - **`wait`** 让运行停在等待状态，直到该步骤声明的事件到来：引擎会挂起设置了 `waitFor` 的步骤，处理器在该事件到来时结束它，并记录是哪个事件恢复了运行。`waitFor` 为空的步骤是人工关卡，由处理器在有人推进运行时结束。
 - **`agent`** 以该步骤记录的 `instruction` 作为提示词，在执行所属的隐藏会话中运行一个轮次。
 - **`mcp`** 运行同一轮次，但提示词要求使用部署所暴露的 MCP 工具，并记录该轮次发起的调用。
+- **Work Flow 处理器** 从 `StepContext.config` 读取节点配置，并通过 `ctx.get` 解析可选服务，因此部署可只挂载其中的子集。`condition` 对 `event`、`input` 与先前步骤的 `result` 求值 `<path> <op> [value]`（`==`、`!=`、`contains`、`exists`、`>`、`<`）；`transform` 渲染 `{{path}}` 模板；`delay` 等待步骤的 `waitFor` 事件，或内联休眠最多 300 秒；`imap` 通过 `ctx.faberloomInbound` 标记、移动、读取或搜索 owner 的邮箱；`smtp` 通过 `ctx.faberloomConnections` 发送；`memory.remember` 与 `memory.teach` 写入 `ctx.faberloomSpaces` 与 `ctx.faberloomMemory`；`board.create`、`notify` 与 `deadletter` 在 `ctx.faberloomBoard` 建条目；`reference` 解析另一个 Space 的有效上下文；`subroutine` 幂等地启动另一个活动例程；`mcp.call` 经 `ctx.tools` 以 `mcp__<server>__<tool>` 调用一个 MCP 工具，并在挂载 `ctx.faberloomAccess` 时先按 `mcp:<server>:<tool>` 做白名单校验。
+- **`agent` 运行时** —— agent 步骤解析 Space 的有效上下文与记忆、负责的代理（`ctx.faberloomAgents.getAgent`）及其技能，以及被调用技能的正文（`ctx.skills.get`）；它加入委派指令（`faberloom_spaces_reference` / `faberloom_spaces_ask`），并在 Space 镜像的工作区路径（`space.workspaceId` → `ctx.workspaceRegistry`）中运行隐藏会话。缺少这些服务时提示词回退为仅步骤指令。
+- **`agent` 的 Space 上下文** —— 当节点设置 `config.useSpaceContext` 时，步骤提示词会在 `Contexto del Space` 标题下加入 `config.spaceId` 的有效上下文；不设置时提示词不变。
 
 执行的会话在第一个 `agent` 或 `mcp` 步骤时创建，并被同一次执行的后续步骤复用，因此多步骤例程会累积为同一段对话。步骤结果携带会话 id、最终助手文本、轮次结束类型与轮次发起的调用，读者可据此进入持久日志。
 
@@ -56,6 +59,10 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **尚无条件边。** `condition` 计算布尔值、`transform` 计算值，但例程引擎执行的是依赖图：两个分支的步骤都会运行，真正的分支与循环要等 v2 图执行器。图应跳过的效果由处理器读取的步骤结果来把关。
+- **`delay` 等待引擎时钟。** Work Flow 的 `wait` 节点带 `seconds` 时编译为保留等待 `@delay:<seconds>`：引擎挂起该步骤直到其截止时间再恢复，因此一次 pass 绝不原地休眠。处理器自带有界内联休眠仅用于直接编写、带 `seconds` 且无 `waitFor` 的步骤。
+- **效果步骤需要授权。** `imap`、`smtp`、`board.create` 与 `mcp.call` 仅在例程声明动作存在有效授权时运行（`mcp.call` 额外要求 `mcp:<server>:<tool>`），并由引擎记账。
+- **按步骤选择代理模型留待后续。** agent 步骤使用部署默认模型；目录代理的身份、技能与 Space 上下文塑造提示词，但其 provider/model 尚未覆盖该步骤。
 - **隐藏会话就是普通会话。** 它们记录部署的工作目录 —— 组装后的系统提示词会读取它 —— 并标记为 `origin: "subagent"`，工作区树正是按该分类把 owner 的会话列表过滤掉它们。读取它们只能通过步骤结果携带的 id 去读会话存储。
 - **步骤自身不指定模型、代理或权限。** 每个步骤轮次都使用部署的默认模型选择与配置的全局工具面。按步骤选择模型与权限留待后续。
 - **会话存活到处理器服务被释放为止。** 执行完成时不会释放它们，因此只要进程仍在运行，其日志一直可读。

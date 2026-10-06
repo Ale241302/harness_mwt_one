@@ -91,7 +91,15 @@ describe('FaberLoomDefaults', () => {
     expect(routine?.definition.steps.map(step => step.handler)).toEqual(['agent', 'mcp', 'agent', 'wait'])
     expect(routine?.definition.steps.at(-1)?.waitFor).toBe('aprobacion')
     expect(routine?.definition.expectedResult).toBe('Proforma con precios correctos, lista para enviar.')
-    expect(routine?.definition.triggers).toEqual([{ kind: 'email', match: 'orden de compra' }])
+    expect(routine?.definition.triggers).toEqual([{
+      kind: 'email',
+      match: 'orden de compra',
+      timezone: null,
+      days: [],
+      windowFrom: null,
+      windowTo: null,
+      businessDays: false,
+    }])
     expect(existsSync(join(home, 'faberloom-defaults.json'))).toBe(true)
   })
 

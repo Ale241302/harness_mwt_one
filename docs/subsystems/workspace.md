@@ -547,4 +547,23 @@ A workspace record was deleted from the durable registry. Consumers that mirror 
 ```
 
 Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
+
+<a id="workspacerenamed--emit"></a>
+
+#### `workspace/renamed` — emit
+
+A workspace record's display title changed durably. Consumers that mirror a workspace — a product Space, for example — adopt the new name.
+
+```ts cordis-catalog
+/**
+ * A workspace record's display title changed durably. Consumers that mirror
+ * a workspace — a product Space, for example — adopt the new name.
+ * @param workspaceId - the renamed workspace.
+ * @param title - the new display title.
+ * @mode emit
+ */
+'workspace/renamed'(workspaceId: WorkspaceId, title: string): void
+```
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
 <!-- END GENERATED cordis-surface -->

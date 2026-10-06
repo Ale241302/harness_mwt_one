@@ -25,14 +25,35 @@ export type ExecutionStatus = 'running' | 'waiting' | 'completed' | 'failed' | '
 export interface RoutineTrigger {
   /** Trigger kind. */
   readonly kind: 'manual' | 'event' | 'email' | 'date' | 'recurrence'
-  /** Case-insensitive subject pattern, or `null`. */
+  /** Case-insensitive subject pattern, cadence, cron expression, or `null`. */
   readonly match: string | null
+  /**
+   * IANA timezone the recurrence and cron cadence are evaluated in, or `null`
+   * for UTC. A `date` trigger keeps UTC.
+   */
+  readonly timezone: string | null
+  /** Allowed local weekdays (0 = Sunday … 6 = Saturday); empty allows every day. */
+  readonly days: readonly number[]
+  /** First local hour (inclusive, 0..24) the trigger may fire, or `null` for 00:00. */
+  readonly windowFrom: number | null
+  /** Last local hour (exclusive, 0..24) the trigger may fire, or `null` for 24. */
+  readonly windowTo: number | null
+  /** When true, local Saturday and Sunday are skipped. */
+  readonly businessDays: boolean
 }
 
 /** Trigger authoring input. */
 export interface RoutineTriggerInput {
   readonly kind: 'manual' | 'event' | 'email' | 'date' | 'recurrence'
   readonly match?: string
+  /** IANA timezone the cadence is evaluated in; omitted means UTC. */
+  readonly timezone?: string
+  /** Allowed local weekdays (0 = Sunday … 6 = Saturday); omitted allows every day. */
+  readonly days?: readonly number[]
+  /** Allowed local hour window; omitted allows the whole day. */
+  readonly window?: { readonly from: number; readonly to: number }
+  /** When true, local Saturday and Sunday are skipped. */
+  readonly businessDays?: boolean
 }
 
 /** One declared step of a routine (stored shape). */
@@ -45,6 +66,16 @@ export interface RoutineStep {
   readonly handler: string
   /** Steps that must complete first. */
   readonly dependsOn: readonly string[]
+  /** Kind-specific configuration the compiled routine carries; `{}` when none. */
+  readonly config: Readonly<Record<string, unknown>>
+  /**
+   * A gate step whose completed `{passed}` result decides this step: the step
+   * runs only when `passed` equals the gate expectation, and is skipped
+   * otherwise. `null` runs unconditionally.
+   */
+  readonly gateStepId: string | null
+  /** Expected `passed` value of {@link gateStepId}`s result, or `null` with no gate. */
+  readonly gateExpect: boolean | null
   /** Event key or `/regex/` pattern the step waits for, or `null`. */
   readonly waitFor: string | null
   /** Whether the step performs a ledgered external effect. */
@@ -53,6 +84,8 @@ export interface RoutineStep {
   readonly revalidateKey: string | null
   /** Expected value for {@link revalidateKey}, or `null`. */
   readonly revalidateExpect: string | null
+  /** Attempts the handler may make before the step is failed; at least 1. */
+  readonly maxAttempts: number
 }
 
 /** Step authoring input. */
@@ -61,10 +94,16 @@ export interface RoutineStepInput {
   readonly instruction: string
   readonly handler: string
   readonly dependsOn?: readonly string[]
+  /** Kind-specific configuration; defaults to `{}`. */
+  readonly config?: Readonly<Record<string, unknown>>
+  /** Gate step and expected `passed` value; omission runs unconditionally. */
+  readonly gate?: { readonly stepId: string; readonly expect: boolean } | undefined
   readonly waitFor?: string
   readonly effect?: boolean
   readonly revalidateKey?: string
   readonly revalidateExpect?: string
+  /** Attempts the handler may make before the step is failed; defaults to 1. */
+  readonly maxAttempts?: number
 }
 
 /** The stored procedure of one routine version. */
@@ -81,6 +120,12 @@ export interface RoutineDefinition {
   readonly permissions: readonly string[]
   /** What to do when a step fails. */
   readonly failurePolicy: 'stop' | 'continue' | 'review'
+  /**
+   * Most executions of this routine the dispatcher lets run (or wait at the
+   * same time; a scheduled slot is skipped while the limit is reached), or
+   * `null` for no limit.
+   */
+  readonly maxConcurrency: number | null
 }
 
 /** Definition authoring input. */
@@ -91,6 +136,8 @@ export interface RoutineDefinitionInput {
   readonly expectedResult: string
   readonly permissions: readonly string[]
   readonly failurePolicy: 'stop' | 'continue' | 'review'
+  /** Concurrency cap; omitted means no limit. */
+  readonly maxConcurrency?: number
 }
 
 /** One versioned routine as consumers read it. */
@@ -136,11 +183,31 @@ export interface ExecutionEvidence {
 /** Per-step execution state. */
 export interface StepState {
   /** Step status. */
-  readonly status: 'pending' | 'running' | 'waiting' | 'completed' | 'failed'
+  readonly status: 'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'skipped'
   /** Step result. */
   readonly result: unknown
   /** Stable reason code, or `null`. */
   readonly reason: string | null
+  /** Handler attempts made so far. */
+  readonly attempts: number
+}
+
+/** One failed step the engine handed to the dead-letter and alert path. */
+export interface ExecutionReview {
+  /** Execution that reached review. */
+  readonly executionId: string
+  /** Routine that produced it. */
+  readonly routineId: string
+  /** Owning identity. */
+  readonly ownerId: string
+  /** Step that failed, or `null` for an execution-level failure. */
+  readonly stepId: string | null
+  /** Stable reason: the handler message, `EFFECT_UNCERTAIN`, `WAIT_TIMEOUT`, or similar. */
+  readonly reason: string
+  /** Handler attempts the failing step made. */
+  readonly attempts: number
+  /** ISO-8601 instant of the review. */
+  readonly at: string
 }
 
 /** One persistent execution of a routine version. */
@@ -220,6 +287,8 @@ export interface StepContext {
   readonly input: unknown
   /** The event that resumed the step, when any. */
   readonly event: IngestEvent | undefined
+  /** The running step's kind-specific configuration. */
+  readonly config: Readonly<Record<string, unknown>>
   /** Results of completed steps, keyed by step id. */
   readonly results: Readonly<Record<string, unknown>>
   /** Every event the execution has received, oldest first. */

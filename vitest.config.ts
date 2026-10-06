@@ -33,6 +33,9 @@ const windowsUnsupportedPackages = process.platform === 'win32'
       'packages/terminal/terminal-bash',
       'packages/experimental/ptc-runtime-python',
       'packages/sandbox/sandbox-local',
+      // The stagehand-native worker fixture loads a native addon through a
+      // customization hook that throws on Windows; the Linux lanes hold it.
+      'packages/experimental/browser-use-stagehand-native',
       // OpenSSH multiplexing and Unix-socket helper streams require POSIX endpoints.
       'packages/ssh/*',
     ]
@@ -327,6 +330,13 @@ export default defineConfig({
         'packages/client/ui-sidebar/src/client/index.ts',
         'packages/client/ui-skill/src/client/index.ts',
         'packages/client/ui-workspace/src/client/index.ts',
+        // FaberLoom product screens: the assembled panels need the
+        // browser-grade lane above. The Work Flow canvas logic and its panel
+        // interactions have jsdom specs; the remaining screens carry the same
+        // GUI debt as the other feature packages.
+        // TODO(gui): cover and remove with the client test lane above.
+        'packages/client/ui-faberloom/src/index.ts',
+        'packages/client/ui-faberloom/src/client/*',
         'packages/test-support/client-runtime/src/translate.ts',
         'packages/client/ui-primitives/src/JsonTree.tsx',
         'packages/client/ui-settings-models/src/client/DeepSeekOnboardingDialog.tsx',

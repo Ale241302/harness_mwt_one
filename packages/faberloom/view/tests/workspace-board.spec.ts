@@ -14,7 +14,12 @@ afterEach(() => {
 })
 
 /** The minimal service graph the workspace and board remotes touch. */
-function harness(options: { readOnly?: boolean; registry?: boolean; role?: string } = {}) {
+function harness(options: {
+  readOnly?: boolean
+  registry?: boolean
+  role?: string
+  connections?: readonly { id: string; kind: string; label: string }[]
+} = {}) {
   const board = {
     list: vi.fn(async () => []),
     get: vi.fn(async () => ({ id: 'b1', version: 3 })),
@@ -26,7 +31,7 @@ function harness(options: { readOnly?: boolean; registry?: boolean; role?: strin
     review: vi.fn(async () => ({})),
     reopen: vi.fn(async () => ({})),
   }
-  const entities: { id: string; path: string; title: string; sessionIds: string[] }[] = []
+  const entities: { id: string; path: string; title: string; sessionIds: string[]; setTitle?: (title: string) => Promise<void> }[] = []
   const registry = {
     list: () => entities,
     get: (id: string) => entities.find(entity => entity.id === id),
@@ -99,6 +104,8 @@ function harness(options: { readOnly?: boolean; registry?: boolean; role?: strin
     createAgent: vi.fn(async () => ({})),
     removeAgent: vi.fn(async () => {}),
   }
+  const events = new Map<string, (...args: never[]) => void>()
+  const logger = { warn: vi.fn(), info: vi.fn() }
   const ctx = {
     faberloomSpaces: spaces,
     faberloomAgents: agents,
@@ -107,16 +114,20 @@ function harness(options: { readOnly?: boolean; registry?: boolean; role?: strin
     provide: () => {},
     reflect: { provide: () => {} },
     effect: (run: () => unknown) => { run(); return () => {} },
-    on: vi.fn(() => () => {}),
-    logger: { warn: vi.fn(), info: vi.fn() },
-    get: (name: string) => (name === 'workspaceRegistry' && options.registry !== false ? registry : undefined),
+    on: (event: string, handler: (...args: never[]) => void) => { events.set(event, handler); return () => {} },
+    logger,
+    get: (name: string) => {
+      if (name === 'workspaceRegistry') return options.registry === false ? undefined : registry
+      if (name === 'faberloomConnections' && options.connections !== undefined) return { list: vi.fn(async () => options.connections) }
+      return undefined
+    },
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, {
     ownerId: 'owner@muitowork.com',
     role: options.role ?? 'admin',
     readOnly: options.readOnly === true,
   })
-  return { view, board, registry, spaces, agents, entities }
+  return { view, board, registry, spaces, agents, entities, events, logger }
 }
 
 describe('FaberLoomViewService space workspace', () => {
@@ -171,6 +182,91 @@ describe('FaberLoomViewService space workspace', () => {
 
     const after = await view.spaceWorkspace('sp1')
     expect(after).toMatchObject({ registered: true, workspaceId: 'ws-1', title: 'Eguisa' })
+  })
+
+  it('builds the Space connectivity map from spaces, agents, connections, and workspaces', async () => {
+    const { view, spaces, agents, entities } = harness()
+    spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Formatos', parentId: null, agentId: 'a1', workspaceId: 'ws-1', context: { catalog: 'eguisa' } }])
+    agents.listAgents.mockResolvedValue([{
+      id: 'a1', name: 'Formatos', spaceId: 'sp1', detached: false, active: true,
+      skills: ['docx'], mwtMcp: true, sicopMcp: false, webAccess: false,
+    }] as never)
+    entities.push({ id: 'ws-1', path: 'C:/work/sicop', title: 'SICOP', sessionIds: [] })
+
+    const map = await view.spaceMap()
+    expect(map.spaces).toEqual([{ id: 'sp1', title: 'Formatos', agentId: 'a1', workspaceId: 'ws-1', context: { catalog: 'eguisa' } }])
+    expect(map.agents).toEqual([{ id: 'a1', name: 'Formatos', spaceId: 'sp1', skills: ['docx'], mcp: { mwt: true, sicop: false }, webAccess: false }])
+    expect(map.connections).toEqual([])
+    expect(map.workspaces).toEqual([{ id: 'ws-1', path: 'C:/work/sicop', title: 'SICOP' }])
+
+    const linked = harness({ registry: false, connections: [{ id: 'c1', kind: 'imap', label: 'Correo' }] })
+    linked.spaces.list.mockResolvedValue([])
+    const linkedMap = await linked.view.spaceMap()
+    expect(linkedMap.connections).toEqual([{ id: 'c1', kind: 'imap', label: 'Correo' }])
+    expect(linkedMap.workspaces).toEqual([])
+  })
+
+  it('adopts a renamed workspace into the space that mirrors it', async () => {
+    const { spaces, events } = harness()
+    spaces.list.mockResolvedValue([{ id: 'sp9', title: 'Viejo', parentId: null, workspaceId: 'ws9' }])
+    events.get('workspace/renamed')?.('ws9' as never, 'Nuevo' as never)
+    await vi.waitFor(() => {
+      expect(spaces.update).toHaveBeenCalledWith(expect.anything(), 'sp9', { title: 'Nuevo' })
+    })
+  })
+
+  it('logs when a removed or renamed workspace cannot reach its space', async () => {
+    const { spaces, events, logger } = harness()
+    spaces.list.mockRejectedValue(new Error('sin servicio'))
+    events.get('workspace/removed')?.('ws-x' as never, '/tmp/ws' as never)
+    events.get('workspace/renamed')?.('ws-x' as never, 'Nuevo' as never)
+    await vi.waitFor(() => { expect(logger.warn).toHaveBeenCalledTimes(2) })
+  })
+
+  it('leaves a rename alone without a mirror or an unchanged title', async () => {    const { view, spaces } = harness()
+    const service = view as unknown as { adoptWorkspaceTitle: (workspaceId: string, title: string) => Promise<void> }
+    spaces.list.mockResolvedValue([{ id: 'sp9', title: 'Viejo', parentId: null, workspaceId: 'ws-other' }])
+    await service.adoptWorkspaceTitle('ws9', 'Nuevo')
+    expect(spaces.update).not.toHaveBeenCalled()
+    spaces.list.mockResolvedValue([{ id: 'sp9', title: 'Igual', parentId: null, workspaceId: 'ws9' }])
+    await service.adoptWorkspaceTitle('ws9', 'Igual')
+    expect(spaces.update).not.toHaveBeenCalled()
+  })
+
+  it('renames the mirrored workspace when a space is renamed', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, entities, spaces } = harness()
+    const setTitle = vi.fn(async (title: string) => { const entity = entities[0]; if (entity !== undefined) entity.title = title })
+    entities.push({ id: 'ws-1', path: join(home, 'spaces', 'fw_abc123'), title: 'Viejo', sessionIds: [], setTitle })
+    spaces.update.mockResolvedValue({ id: 'sp1', title: 'Nuevo', parentId: null, workspaceId: 'ws-1' })
+    await view.renameSpace('sp1', 'Nuevo')
+    expect(setTitle).toHaveBeenCalledWith('Nuevo')
+  })
+
+  it('renames a space without touching a missing or already matching workspace', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, entities, spaces } = harness()
+    const setTitle = vi.fn(async () => {})
+    entities.push({ id: 'ws-1', path: join(home, 'spaces', 'fw_abc123'), title: 'Nuevo', sessionIds: [], setTitle })
+
+    // No mirrored workspace: nothing to rename.
+    spaces.update.mockResolvedValue({ id: 'sp1', title: 'Nuevo', parentId: null })
+    await view.renameSpace('sp1', 'Nuevo')
+    expect(setTitle).not.toHaveBeenCalled()
+
+    // Mirrored workspace already carries the title: no write.
+    spaces.update.mockResolvedValue({ id: 'sp2', title: 'Nuevo', parentId: null, workspaceId: 'ws-1' })
+    await view.renameSpace('sp2', 'Nuevo')
+    expect(setTitle).not.toHaveBeenCalled()
+
+    // Mirror id that resolves to no workspace: no write.
+    spaces.update.mockResolvedValue({ id: 'sp3', title: 'Otro', parentId: null, workspaceId: 'ws-missing' })
+    await expect(view.renameSpace('sp3', 'Otro')).resolves.toBeDefined()
+    expect(setTitle).not.toHaveBeenCalled()
   })
 })
 

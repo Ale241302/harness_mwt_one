@@ -1,5 +1,5 @@
 ---
-description: "FaberLoom workspace view for the browser: one Remote read of the signed-in owner's spaces, agents, board, routines, and memory, plus create and rename writes; for maintainers of the FaberLoom panels."
+description: "FaberLoom workspace view for the browser: one Remote read of the signed-in owner's spaces, agents, board, routines, memory, and Work Flow graphs, plus create, rename, graph-edit, run, topology, and export writes; for maintainers of the FaberLoom panels."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The workspace view is the one host capability the FaberLoom browser panels use. It exposes `faberloomView.overview()` over the mounted product services and returns plain JSON rows, so the panels render real records instead of placeholders, and it exposes the create and rename writes those panels need. Identity comes from deployment configuration, never from the call: the gateway injects the authenticated owner into this row exactly as it does for `tool-faberloom`, so a browser cannot request another owner's rows. Memory rows come from the agent-memory core under the same deployment identity.
+The workspace view is the one host capability the FaberLoom browser panels use. It exposes `faberloomView.overview()` and returns plain JSON rows, so the panels render real records instead of placeholders, and it exposes the writes those panels need, including the Work Flow graph-edit, run, topology, and export methods. Identity comes from deployment configuration, never from the call: the gateway injects the authenticated owner into this row, as it does for `tool-faberloom`, so a browser cannot request another owner's rows. Memory rows come from the agent-memory core under the same deployment identity.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ The workspace view is the one host capability the FaberLoom browser panels use. 
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row in a composition that already carries `ctx.faberloomSpaces`, `ctx.faberloomAgents`, `ctx.faberloomBoard`, and `ctx.faberloomRoutines`, and configure `ownerId`. Configure `memoryCoreUrl`, `memoryServiceId`, `memoryUserId`, and `memoryGatewayKey` to have the overview carry the owner's memory rows; without them the memory list is empty. The browser side mounts the generated `./remote` contribution in the client API assembly and calls `ctx.remote.faberloomView.overview()`.
+Mount this row in a composition that already carries `ctx.faberloomSpaces`, `ctx.faberloomAgents`, `ctx.faberloomBoard`, and `ctx.faberloomRoutines`, and configure `ownerId`. Configure `memoryCoreUrl`, `memoryServiceId`, `memoryUserId`, and `memoryGatewayKey` to have the overview carry the owner's memory rows; without them the memory list is empty. The browser side mounts the generated `./remote` contribution in the client API assembly and calls `ctx.remote.faberloomView.overview()`. The connectivity map is a second read: `ctx.remote.faberloomView.spaceMap()` returns every Space with its agent and mirrored workspace, every agent with its skills and MCP access, the owner's mail connections, and the registered Workspaces, feeding the palette and canvas. The Work Flow editor reads `workflowOverview()` and `workflowDetail(id)` and mutates through `createWorkflow`, `saveWorkflow`, `addNode`, `updateNode`, `removeNode`, `connect`, `disconnect`, and `setWorkflowStatus`; it lists executions with `workflowRuns(id)`, reads the palette from `spaceTopology()`, and exports with `exportWorkflow(id, 'json' | 'archify')`. It also reads `routineWorkflowLinks()` for the routine ↔ flow view and writes `setWorkflowConcurrency(id, cap | null)`; a `trigger.schedule` node carries its cadence, timezone, window, days, and business-day skip in its config. The Compartir surface adds `shareSpace`, `shareWorkflow`, `resourceShares`, and `revokeShareGrant`, which the Workflows panel drives with an email + permissions table. Starting points and portability add `workflowTemplates`, `createWorkflowFromTemplate`, and `importWorkflow`; the panel's Plantillas gallery uses a template and imports portable JSON, and `exportWorkflow(id, 'json')` returns that same portable format. The dispatcher's liveness is a further read: `executionHealth()` returns each routine's last run and status, failures, review backlog, waiting, retries, and sooner wait deadline, plus aggregate counters.
 
 -----
 
@@ -50,7 +50,8 @@ Independent of live requests: the service never touches a request prefix.
 
 - **Writes cover the panel actions, not every product operation.** The namespace creates and renames spaces and agents, deactivates agents, creates and reviews board items, creates and toggles routines, and records memory statements; board revision submission, model policy, and routine step editing stay out until their screens land.
 - **Memory writes go through the pipeline.** `remember` appends one statement to the agent-memory conversation inlet; the server distils L0 into L1 asynchronously, so the new row can appear after the next read. Reads stay read-only.
-- **No change event of its own.** The browser refreshes on the harness's forwarded session-activity event, on mount, and after every write; a dedicated change event waits for a forwarded-event allowlist entry.
+- **Change events.** The browser refreshes on the harness's forwarded session-activity event, on mount, and after every write; a dedicated change event waits for a forwarded-event allowlist entry.
+- **The connectivity map is read-only.** `spaceMap` reports links; it does not create or mutate Spaces, agents, connections, or workspaces.
 
 <a id="dev-note"></a>
 ### Dev Note

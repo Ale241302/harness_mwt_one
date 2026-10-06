@@ -52,6 +52,8 @@ kind: "package-reference"
 - **带效果的步骤需要授权。** 在运行定义中记录了效果的步骤之前，引擎询问 `ctx.faberloomAccess`：owner 是否已授予该例程声明的第一个权限（或 `faberloom.effect.<stepId>`），并以该例程为上下文。没有授权时该步骤以 `NOT_AUTHORIZED` 失败，案件进入复核，因此撤销会阻止下一次效果。
 - **删除例程会保留其历史。** `removeRoutine` 删除定义与其已存版本；它产生的执行与效果账本保留，因此已经运行过的案件仍保有其记录。
 
+未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
+
 <a id="dev-note"></a>
 ### 开发备注
 

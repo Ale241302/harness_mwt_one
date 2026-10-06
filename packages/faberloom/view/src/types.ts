@@ -20,9 +20,70 @@ export interface FaberLoomSpaceRow {
   readonly workspaceId: string | null
 }
 
-/** One catalog agent as the Agentes panel renders it. */
-export interface FaberLoomAgentRow {
+/** One Space in the connectivity map: its responsible agent and mirrored workspace. */
+export interface FaberLoomSpaceMapSpace {
+  /** Space id. */
+  readonly id: string
+  /** Display title. */
+  readonly title: string
+  /** Responsible agent id, or null. */
+  readonly agentId: string | null
+  /** Mirrored Workspace id, or null. */
+  readonly workspaceId: string | null
+  /** The Space's own context key/values. */
+  readonly context: Readonly<Record<string, string>>
+}
+
+/** One agent in the connectivity map, with its skills and MCP access. */
+export interface FaberLoomSpaceMapAgent {
   /** Agent id. */
+  readonly id: string
+  /** Display name. */
+  readonly name: string
+  /** Owning Space id, or null. */
+  readonly spaceId: string | null
+  /** Skill names the agent declares. */
+  readonly skills: readonly string[]
+  /** Which MCP servers the agent may query. */
+  readonly mcp: { readonly mwt: boolean; readonly sicop: boolean }
+  /** Whether the agent may browse the open web. */
+  readonly webAccess: boolean
+}
+
+/** One mail connection in the connectivity map. */
+export interface FaberLoomSpaceMapConnection {
+  /** Connection id. */
+  readonly id: string
+  /** Connection kind (`imap` or `smtp`). */
+  readonly kind: string
+  /** Display label. */
+  readonly label: string
+}
+
+/** One registered Workspace in the connectivity map. */
+export interface FaberLoomSpaceMapWorkspace {
+  /** Workspace id. */
+  readonly id: string
+  /** Filesystem path. */
+  readonly path: string
+  /** Display title. */
+  readonly title: string
+}
+
+/** The Space connectivity map the palette and canvas read. */
+export interface FaberLoomSpaceMap {
+  /** Spaces with their agent and workspace links. */
+  readonly spaces: readonly FaberLoomSpaceMapSpace[]
+  /** Catalog agents with their skills and MCP access. */
+  readonly agents: readonly FaberLoomSpaceMapAgent[]
+  /** The owner's mail connections. */
+  readonly connections: readonly FaberLoomSpaceMapConnection[]
+  /** The registered Workspaces. */
+  readonly workspaces: readonly FaberLoomSpaceMapWorkspace[]
+}
+
+/** One catalog agent as the Agentes panel renders it. */
+export interface FaberLoomAgentRow {  /** Agent id. */
   readonly id: string
   /** Display name. */
   readonly name: string
@@ -338,6 +399,18 @@ export interface FaberLoomRoutineDetail {
   readonly triggerKind: string
   /** Trigger match, when the kind needs one. */
   readonly triggerMatch: string | null
+  /** IANA timezone the cadence is evaluated in, or null for UTC. */
+  readonly triggerTimezone: string | null
+  /** Allowed local weekdays (0 = Sunday), empty for every day. */
+  readonly triggerDays: readonly number[]
+  /** First local hour (inclusive) the trigger may fire, or null. */
+  readonly triggerWindowFrom: number | null
+  /** Last local hour (exclusive) the trigger may fire, or null. */
+  readonly triggerWindowTo: number | null
+  /** Whether local weekends are skipped. */
+  readonly triggerBusinessDays: boolean
+  /** Most concurrent executions the dispatcher allows, or null. */
+  readonly maxConcurrency: number | null
   /** The steps in order. */
   readonly steps: readonly FaberLoomRoutineStepRow[]
   /** Expected result. */
@@ -358,6 +431,16 @@ export interface RoutineSaveInput {
   readonly triggerKind?: string
   /** Trigger match, or null. */
   readonly triggerMatch?: string | null
+  /** IANA timezone for the cadence, or null to clear. */
+  readonly triggerTimezone?: string | null
+  /** Allowed local weekdays (0 = Sunday). */
+  readonly triggerDays?: readonly number[]
+  /** Local hour window, or null to clear. */
+  readonly triggerWindow?: { readonly from: number; readonly to: number } | null
+  /** Whether local weekends are skipped. */
+  readonly triggerBusinessDays?: boolean
+  /** Concurrency cap, or null to clear. */
+  readonly maxConcurrency?: number | null
   /** Replacement steps, in order. */
   readonly steps?: readonly FaberLoomRoutineStepRow[]
   /** Expected result. */
@@ -366,6 +449,20 @@ export interface RoutineSaveInput {
   readonly permissions?: readonly string[]
   /** Failure policy. */
   readonly failurePolicy?: string
+}
+
+/** One link between a routine and a work flow, in either direction. */
+export interface FaberLoomWorkflowLink {
+  /** Routine id. */
+  readonly routineId: string
+  /** Routine display name, or empty when the routine was removed. */
+  readonly routineName: string
+  /** Work flow id. */
+  readonly workflowId: string
+  /** Work flow display name, or empty when the flow was removed. */
+  readonly workflowName: string
+  /** Which side invokes the other. */
+  readonly direction: 'routine-to-workflow' | 'workflow-to-routine'
 }
 
 /** One space with its full editable configuration. */
@@ -746,7 +843,9 @@ export interface FaberLoomModelCatalog {
   readonly providers: readonly FaberLoomProviderModels[]
 }
 
-export interface FaberLoomModelRow {  /** Pool id used by every policy field. */
+/** One row of the live provider/model catalog, as the model panels render it. */
+export interface FaberLoomModelRow {
+  /** Pool id used by every policy field. */
   readonly id: string
   /** Provider name. */
   readonly provider: string
@@ -929,4 +1028,322 @@ export interface FaberLoomLinkPreview {
   readonly newlyVisibleTo: readonly string[]
   /** Context keys the space would contribute to the linked material. */
   readonly sharedContextKeys: readonly string[]
+}
+
+/** One work flow row the Workflows panel lists. */
+export interface FaberLoomWorkflowRow {
+  /** Work flow id. */
+  readonly id: string
+  /** Display name. */
+  readonly name: string
+  /** Lifecycle status. */
+  readonly status: string
+  /** Monotonic version. */
+  readonly version: number
+  /** Node count. */
+  readonly nodes: number
+  /** Edge count. */
+  readonly edges: number
+  /** Compiled routine id, or null until activated. */
+  readonly routineId: string | null
+  /** Space the flow belongs to, or null for the personal scope. */
+  readonly spaceId: string | null
+}
+
+/** A JSON value a Remote boundary may carry. */
+export type FaberLoomJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly FaberLoomJsonValue[]
+  | { readonly [key: string]: FaberLoomJsonValue }
+
+/** One node in a work flow detail. */
+export interface FaberLoomWorkflowNodeRow {
+  /** Node id. */
+  readonly id: string
+  /** Node kind. */
+  readonly kind: string
+  /** Display title. */
+  readonly title: string
+  /** Canvas x. */
+  readonly x: number
+  /** Canvas y. */
+  readonly y: number
+  /** Kind-specific configuration. */
+  readonly config: Readonly<Record<string, FaberLoomJsonValue>>
+}
+
+/** One edge in a work flow detail. */
+export interface FaberLoomWorkflowEdgeRow {
+  /** Edge id. */
+  readonly id: string
+  /** Source node id. */
+  readonly from: string
+  /** Target node id. */
+  readonly to: string
+  /** Branch condition, or null. */
+  readonly condition: string | null
+}
+
+/** One work flow with its graph and validation verdict. */
+export interface FaberLoomWorkflowDetail extends FaberLoomWorkflowRow {
+  /** Whether the graph validates. */
+  readonly valid: boolean
+  /** Validation problems. */
+  readonly problems: readonly string[]
+  /** Concurrency cap, or null when unlimited. */
+  readonly maxConcurrency: number | null
+  /** Graph nodes. */
+  readonly nodesList: readonly FaberLoomWorkflowNodeRow[]
+  /** Graph edges. */
+  readonly edgesList: readonly FaberLoomWorkflowEdgeRow[]
+}
+
+/** One execution of a work flow, as the run history shows it. */
+export interface FaberLoomWorkflowRunRow {
+  /** Execution id. */
+  readonly id: string
+  /** Execution status. */
+  readonly status: string
+  /** Routine version the run started with. */
+  readonly routineVersion: number
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+  /** ISO-8601 last mutation instant. */
+  readonly updatedAt: string
+}
+
+/** A read-only export of one work flow. */
+export interface FaberLoomWorkflowExport {
+  /** Export format: `archify` or `json`. */
+  readonly format: string
+  /** Export body: standalone HTML for archify, JSON for json. */
+  readonly content: string
+}
+
+/** One share grant on a Space or Work Flow, as the Compartir panel renders it. */export interface FaberLoomShareGrantRow {
+  /** Grant id. */
+  readonly id: string
+  /** Resource family. */
+  readonly resourceKind: string
+  /** Resource id. */
+  readonly resourceId: string
+  /** Resource display name. */
+  readonly resourceName: string
+  /** Email of the identity that granted access. */
+  readonly ownerId: string
+  /** Email the grant is offered to. */
+  readonly granteeEmail: string
+  /** Granted permissions. */
+  readonly permissions: readonly string[]
+  /** Granted permissions as one comma-separated label, for the table cell. */
+  readonly permissionLabel: string
+  /** Grant lifecycle. */
+  readonly status: string
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+  /** ISO-8601 acceptance instant, or null while pending. */
+  readonly acceptedAt: string | null
+}
+
+/**
+ * One built-in Work Flow template the gallery lists.
+ */
+export interface FaberLoomWorkflowTemplateRow {
+  /** Template id. */
+  readonly id: string
+  /** Display name. */
+  readonly name: string
+  /** One-sentence description. */
+  readonly description: string
+  /** Node count. */
+  readonly nodes: number
+  /** Edge count. */
+  readonly edges: number
+}
+
+/**
+ * One routine's liveness as the Ejecución panel renders it. The view drops the
+ * `waiting` count the dispatcher reports; the panel shows failures and review.
+ */
+export interface FaberLoomHealthRow {
+  /** Routine id. */
+  readonly routineId: string
+  /** Display name. */
+  readonly name: string
+  /** Lifecycle status. */
+  readonly status: string
+  /** Status of the most recent execution, or null. */
+  readonly lastStatus: string | null
+  /** ISO-8601 instant of the most recent execution, or null. */
+  readonly lastAt: string | null
+  /** Executions recorded. */
+  readonly runs: number
+  /** Executions that ended failed. */
+  readonly failures: number
+  /** Executions awaiting a person. */
+  readonly needsReview: number
+  /** Handler retries made. */
+  readonly retries: number
+  /** Earliest wait deadline, or null. */
+  readonly deadlineAt: string | null
+}
+
+/** The dispatcher's aggregate liveness, as the panel reads it. */
+export interface FaberLoomHealth {
+  /** Owner the dispatcher drives. */
+  readonly ownerId: string
+  /** One row per routine. */
+  readonly routines: readonly FaberLoomHealthRow[]
+  /** Aggregate counters. */
+  readonly totals: {
+    /** Executions recorded. */
+    readonly runs: number
+    /** Executions that ended failed. */
+    readonly failures: number
+    /** Executions awaiting a person. */
+    readonly needsReview: number
+    /** Handler retries made. */
+    readonly retries: number
+    /** Executions dead-lettered to the board. */
+    readonly deadLettered: number
+    /** Owner alerts sent. */
+    readonly alerts: number
+  }
+}
+
+/** One context entry as the Contexto panel renders it. */
+export interface FaberLoomContextRow {
+  /** Entry id. */
+  readonly id: string
+  /** Space the entry belongs to, or null for the personal scope. */
+  readonly spaceId: string | null
+  /** Display title. */
+  readonly title: string
+  /** Context body. */
+  readonly body: string
+  /** Monotonic version. */
+  readonly version: number
+  /** `local`, `pending`, or `shared`. */
+  readonly visibility: string
+  /** Who wrote it. */
+  readonly authorId: string
+  /** Space owner the entry indexes to. */
+  readonly ownerId: string
+  /** ISO-8601 last-change instant. */
+  readonly updatedAt: string
+}
+
+/** One stored context version as the panel renders it. */
+export interface FaberLoomContextVersionRow {
+  /** Version number. */
+  readonly version: number
+  /** Title at that version. */
+  readonly title: string
+  /** Body at that version. */
+  readonly body: string
+  /** Who wrote that version. */
+  readonly authorId: string
+  /** ISO-8601 instant that version was written. */
+  readonly createdAt: string
+}
+
+/** One stored work flow version as the panel renders it. */
+export interface FaberLoomWorkflowVersionRow {
+  /** Version number. */
+  readonly version: number
+  /** Display name at that version. */
+  readonly name: string
+  /** Node count. */
+  readonly nodes: number
+  /** Edge count. */
+  readonly edges: number
+  /** ISO-8601 instant that version was written. */
+  readonly createdAt: string
+}
+
+/** One Session a Space shares, as the Espacios panel lists it. */
+export interface FaberLoomSharedSessionRow {
+  /** Session id on its author's host. */
+  readonly sessionId: string
+  /** Email of the member whose host holds the Session. */
+  readonly ownerId: string
+  /** Space the Session is shared in. */
+  readonly spaceId: string
+  /** Display title. */
+  readonly title: string
+  /** Workspace the Session ran in, when known. */
+  readonly workspaceId: string | null
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+  /** ISO-8601 last-change instant. */
+  readonly updatedAt: string
+  /** Committed event count. */
+  readonly messageCount: number
+  /** `owner` for a local capture, `console` for an imported row. */
+  readonly origin: string
+}
+
+/** One shared Session with its portable content. */
+export interface FaberLoomSharedSessionContentRow extends FaberLoomSharedSessionRow {
+  /** Portable snapshot JSON the read-only viewer renders. */
+  readonly content: string
+}
+
+/** One local Session the panel asks the host to capture into its Space. */
+export interface FaberLoomSharedSessionRef {
+  /** Session id. */
+  readonly id: string
+  /** Display title the panel already holds. */
+  readonly title: string
+}
+
+/** One node in a work flow's proposed/base graph, as the approval diff reads it. */
+export interface FaberLoomWorkflowGraphNode {
+  /** Node id. */
+  readonly id: string
+  /** Node title. */
+  readonly title: string
+  /** Node kind. */
+  readonly kind: string
+}
+
+/** One edge in a work flow's proposed/base graph. */
+export interface FaberLoomWorkflowGraphEdge {
+  /** Edge id. */
+  readonly id: string
+  /** Source node id. */
+  readonly from: string
+  /** Target node id. */
+  readonly to: string
+}
+
+/** The node/edge view of one work flow graph for the approval diff. */
+export interface FaberLoomWorkflowGraph {
+  /** Nodes in stored order. */
+  readonly nodes: readonly FaberLoomWorkflowGraphNode[]
+  /** Edges in stored order. */
+  readonly edges: readonly FaberLoomWorkflowGraphEdge[]
+}
+
+/** One staged work flow revision as the Aprobaciones panel renders it. */
+export interface FaberLoomWorkflowPendingRow {
+  /** Work flow the proposal targets. */
+  readonly workflowId: string
+  /** Owner who decides. */
+  readonly ownerId: string
+  /** Member who proposed the change. */
+  readonly proposerId: string
+  /** Proposed display name. */
+  readonly name: string
+  /** Version the proposal was based on. */
+  readonly baseVersion: number
+  /** ISO-8601 instant the proposal was staged. */
+  readonly createdAt: string
+  /** The live graph the proposal is compared against. */
+  readonly base: FaberLoomWorkflowGraph
+  /** The proposed graph. */
+  readonly proposed: FaberLoomWorkflowGraph
 }

@@ -19,6 +19,9 @@
     },
     {
       "path": "../../storage/storage-domain"
+    },
+    {
+      "path": "../shares"
     }
   ]
 }

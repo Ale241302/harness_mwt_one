@@ -51,6 +51,8 @@ Independent of live requests: the registration never touches a request prefix.
 - **Owner-only review** — mutations require the item owner; member-based review needs the access layer.
 - **Opaque documents** — documents are references; binary documents arrive with the blob store.
 
+No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
+
 <a id="dev-note"></a>
 ### Dev Note
 

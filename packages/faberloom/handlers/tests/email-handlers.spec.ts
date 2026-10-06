@@ -55,6 +55,7 @@ function step(overrides: Partial<StepContext>): StepContext {
     stepId: 's1',
     input: undefined,
     event: undefined,
+    config: {},
     results: {},
     events: [],
     ...overrides,

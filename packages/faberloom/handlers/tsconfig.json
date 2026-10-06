@@ -24,6 +24,33 @@
       "path": "../inbound"
     },
     {
+      "path": "../spaces"
+    },
+    {
+      "path": "../learning"
+    },
+    {
+      "path": "../board"
+    },
+    {
+      "path": "../access"
+    },
+    {
+      "path": "../agents"
+    },
+    {
+      "path": "../workflows"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../skill/skill"
+    },
+    {
+      "path": "../../workspace/workspace"
+    },
+    {
       "path": "../../core/agent"
     },
     {

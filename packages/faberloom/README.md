@@ -24,6 +24,7 @@ The subsystem reference is [docs/subsystems/faberloom.md](../../docs/subsystems/
 ## Packages
 
 - `@deepseek-ai/dsh-faberloom-spaces` — thematic spaces and effective context.
+- `@deepseek-ai/dsh-faberloom-workflows` — versioned work-flow graphs compiled to routines.
 - `@deepseek-ai/dsh-faberloom-agents` — the agent catalog and versioned model policy.
 - `@deepseek-ai/dsh-faberloom-board` — the work table: versioned items, approvals, and revalidation.
 - `@deepseek-ai/dsh-faberloom-routines` — declarative versioned routines.

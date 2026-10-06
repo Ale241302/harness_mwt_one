@@ -12,6 +12,8 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { spacesDomainSpec, type SpaceFileRecord, type SpaceMemoryRecord, type SpaceRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
+// Type-only: pulls the shares service's Context merge for the access check.
+import type {} from '@deepseek-ai/dsh-faberloom-shares'
 import type {
   CreateSpaceInput,
   FaberLoomSpaceMemory,
@@ -262,6 +264,20 @@ export class FaberLoomSpaces extends Service {
     return { table, record }
   }
 
+  /** Whether the actor may read a space: owner/member/admin, or an active `view` grant. */
+  private async mayRead(id: FaberLoomSpaceId, record: SpaceRecord, actor: SpaceActor): Promise<boolean> {
+    if (canRead(record, actor)) return true
+    const shares = this.ctx.get('faberloomShares')
+    return shares !== undefined && await shares.can(actor.id, record.ownerId, { kind: 'space', id }, 'view')
+  }
+
+  /** Whether the actor may manage a space: owner/admin, or an active `manage-members` grant. */
+  private async mayManage(id: FaberLoomSpaceId, record: SpaceRecord, actor: SpaceActor): Promise<boolean> {
+    if (canManage(record, actor)) return true
+    const shares = this.ctx.get('faberloomShares')
+    return shares !== undefined && await shares.can(actor.id, record.ownerId, { kind: 'space', id }, 'manage-members')
+  }
+
   /**
    * Create one space owned by the actor, scoped to its company, under an
    * optional parent the actor controls. Every identity may create its own
@@ -275,7 +291,7 @@ export class FaberLoomSpaces extends Service {
     if (input.parentId !== undefined) {
       const parent = table.get(input.parentId)
       if (parent === undefined) throw new Error(`faberloom: parent space ${input.parentId} not found`)
-      if (!canManage(parent, actor)) throw new Error('faberloom: identity cannot manage this space')
+      if (!await this.mayManage(input.parentId, parent, actor)) throw new Error('faberloom: identity cannot manage this space')
     }
     const now = new Date().toISOString()
     const id = brandString<FaberLoomSpaceId>(randomUUID())
@@ -309,7 +325,7 @@ export class FaberLoomSpaces extends Service {
     const table = await this.table()
     const out: FaberLoomSpace[] = []
     for (const [id, record] of table.entries()) {
-      if (canRead(record, actor)) out.push(toSpace(id, record))
+      if (await this.mayRead(id, record, actor)) out.push(toSpace(id, record))
     }
     out.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     return out
@@ -324,7 +340,7 @@ export class FaberLoomSpaces extends Service {
    */
   async get(actor: SpaceActor, id: FaberLoomSpaceId): Promise<FaberLoomSpace> {
     const { record } = await this.requireRecord(id)
-    if (!canRead(record, actor)) throw new Error('faberloom: space access denied')
+    if (!await this.mayRead(id, record, actor)) throw new Error('faberloom: space access denied')
     return toSpace(id, record)
   }
 
@@ -337,7 +353,7 @@ export class FaberLoomSpaces extends Service {
    */
   async update(actor: SpaceActor, id: FaberLoomSpaceId, patch: UpdateSpaceInput): Promise<FaberLoomSpace> {
     const { table, record } = await this.requireRecord(id)
-    if (!canManage(record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
     const next: SpaceRecord = {
       ...record,
       title: patch.title ?? record.title,
@@ -363,7 +379,7 @@ export class FaberLoomSpaces extends Service {
    */
   async archive(actor: SpaceActor, id: FaberLoomSpaceId): Promise<FaberLoomSpace> {
     const { table, record } = await this.requireRecord(id)
-    if (!canManage(record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
     const next: SpaceRecord = { ...record, archived: true, updatedAt: new Date().toISOString(), version: record.version + 1 }
     await table.update(id, () => next)
     return toSpace(id, next)
@@ -379,7 +395,7 @@ export class FaberLoomSpaces extends Service {
    */
   async remove(actor: SpaceActor, id: FaberLoomSpaceId): Promise<boolean> {
     const { table, record } = await this.requireRecord(id)
-    if (!canManage(record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
     const files = await this.files()
     for (const [fileId, file] of files.entries()) {
       if (file.spaceId === id) await files.delete(fileId)
@@ -398,7 +414,7 @@ export class FaberLoomSpaces extends Service {
   async remember(actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[]): Promise<FaberLoomSpaceMemory> {
     for (const spaceId of spaceIds) {
       const { record } = await this.requireRecord(spaceId)
-      if (!canRead(record, actor)) throw new Error('faberloom: space access denied')
+      if (!await this.mayRead(spaceId, record, actor)) throw new Error('faberloom: space access denied')
     }
     const id = randomUUID()
     const record: SpaceMemoryRecord = {
@@ -458,7 +474,7 @@ export class FaberLoomSpaces extends Service {
     let current: FaberLoomSpaceId | undefined = spaceId
     while (current !== undefined) {
       const { record } = await this.requireRecord(current)
-      if (!canRead(record, actor)) {
+      if (!await this.mayRead(current, record, actor)) {
         if (current === spaceId) throw new Error('faberloom: space access denied')
         break
       }
@@ -493,7 +509,7 @@ export class FaberLoomSpaces extends Service {
    */
   async resolveWorkdir(actor: SpaceActor, id: FaberLoomSpaceId): Promise<WorkdirReference> {
     const { record } = await this.requireRecord(id)
-    if (!canRead(record, actor)) throw new Error('faberloom: space access denied')
+    if (!await this.mayRead(id, record, actor)) throw new Error('faberloom: space access denied')
     const digest = createHash('sha256').update(`${record.ownerId}:${id}`).digest('hex').slice(0, 16)
     return { kind: 'opaque', ref: `fw_${digest}` }
   }
@@ -506,7 +522,7 @@ export class FaberLoomSpaces extends Service {
    */
   async previewLink(actor: SpaceActor, id: FaberLoomSpaceId): Promise<LinkPreview> {
     const { record } = await this.requireRecord(id)
-    if (!canRead(record, actor)) throw new Error('faberloom: space access denied')
+    if (!await this.mayRead(id, record, actor)) throw new Error('faberloom: space access denied')
     return { newlyVisibleTo: [...record.members], sharedContextKeys: Object.keys(record.context) }
   }
 
@@ -520,7 +536,7 @@ export class FaberLoomSpaces extends Service {
    */
   async effectiveContext(actor: SpaceActor, id: FaberLoomSpaceId): Promise<EffectiveContext> {
     const { table, record } = await this.requireRecord(id)
-    if (!canRead(record, actor)) throw new Error('faberloom: space access denied')
+    if (!await this.mayRead(id, record, actor)) throw new Error('faberloom: space access denied')
 
     const excluded = new Set<FaberLoomSpaceId>()
     const sources: FaberLoomSpaceId[] = []
@@ -591,7 +607,7 @@ export class FaberLoomSpaces extends Service {
   async find(actor: SpaceActor, query: string, limit: number = 10): Promise<SpaceMatch[]> {
     const entries: SpaceIndexEntry[] = []
     for (const [id, record] of (await this.table()).entries()) {
-      if (!canRead(record, actor)) continue
+      if (!await this.mayRead(id, record, actor)) continue
       if (record.archived) continue
       const memory = (await this.effectiveMemory(actor, id)).map(entry => entry.text).join(' ')
       entries.push({ id, title: record.title, context: record.context, memory, createdAt: record.createdAt })
@@ -626,7 +642,7 @@ export class FaberLoomSpaces extends Service {
    */
   async attachFile(actor: SpaceActor, spaceId: FaberLoomSpaceId, input: SpaceFileInput): Promise<SpaceFile> {
     const { record } = await this.requireRecord(spaceId)
-    if (!canManage(record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    if (!await this.mayManage(spaceId, record, actor)) throw new Error('faberloom: identity cannot manage this space')
     const bytes = Buffer.from(input.contentBase64, 'base64')
     if (bytes.byteLength > MAX_FILE_BYTES) {
       throw new Error(`faberloom: file exceeds the ${String(MAX_FILE_BYTES)}-byte inline limit`)
@@ -653,7 +669,7 @@ export class FaberLoomSpaces extends Service {
    */
   async listFiles(actor: SpaceActor, spaceId: FaberLoomSpaceId): Promise<SpaceFile[]> {
     const { record } = await this.requireRecord(spaceId)
-    if (!canRead(record, actor)) throw new Error('faberloom: space access denied')
+    if (!await this.mayRead(spaceId, record, actor)) throw new Error('faberloom: space access denied')
     const out: SpaceFile[] = []
     for (const [id, file] of (await this.files()).entries()) {
       if (file.spaceId === spaceId) out.push(toFile(id, file))
@@ -672,7 +688,7 @@ export class FaberLoomSpaces extends Service {
     const file = (await this.files()).get(fileId)
     if (file === undefined) throw new Error(`faberloom: file ${fileId} not found`)
     const { record } = await this.requireRecord(file.spaceId)
-    if (!canRead(record, actor)) throw new Error('faberloom: space access denied')
+    if (!await this.mayRead(file.spaceId, record, actor)) throw new Error('faberloom: space access denied')
     return { ...toFile(fileId, file), contentBase64: file.contentBase64 }
   }
 }

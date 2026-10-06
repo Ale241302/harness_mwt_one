@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/faberloom/agents/README.md
-README.md: b53a1bc75066aaf25646c0a1430fb1a1dccf347e
-README.zh.md: 92472f683b5a75be4653820230927d0cb32cd740
+README.md: a6694ffa739ff39389d7fe017cd4f4efcec2a428
+README.zh.md: cc67853ed6ae8a86eb7339f27e965b89b9bdc9f5

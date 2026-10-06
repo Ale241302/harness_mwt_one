@@ -9,7 +9,7 @@
  * menu in between; the flow and its error dialog live in WorkspacePicker
  * (same package — direct composition, no slot between them).
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconCloseFill14, IconPersonalizationOutline16,
@@ -20,7 +20,7 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceBrowserProps } from '../contract/slots.ts'
+import type { WorkspaceBrowserProps, WorkspaceRowMenuOwnerProps } from '../contract/slots.ts'
 import type { SessionNode, SessionOrderBy } from '../tree.ts'
 import {
   deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey,
@@ -205,6 +205,8 @@ type SessionTreeProps = Pick<
   revealSessionId?: SessionId | undefined
   /** Acknowledge that the chosen Session row has been revealed. */
   onSessionRevealed: (sessionId: SessionId) => void
+  /** Render the contributed row-menu rows above a real Workspace's own Rename/Delete. */
+  renderRowMenu: (owner: WorkspaceRowMenuOwnerProps) => ReactNode
 }
 
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
@@ -217,7 +219,7 @@ function SessionTree({
   insertWorkspaceBefore,
   groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
-  revealSessionId, onSessionRevealed,
+  revealSessionId, onSessionRevealed, renderRowMenu,
 }: SessionTreeProps) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
   const pendingInteractions = useSessionPendingInteraction(s => s)
@@ -423,6 +425,7 @@ function SessionTree({
                   }
                 }}
                 drag={workspaceDragProps}
+                renderMenu={renderRowMenu}
                 actions={group.workspaceId === undefined
                   ? undefined
                   : {
@@ -1306,6 +1309,7 @@ export function WorkspaceBrowser({
                 insertWorkspaceBefore={insertWorkspaceBefore}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
+                renderRowMenu={owner => renderSlot('sidebar.workspaces.rowMenu', owner)}
                 home={home}
                 t={t}
                 onRenameRequest={(workspaceId, currentTitle) => {

@@ -53,6 +53,8 @@ kind: "package-reference"
 - **词法引用查找（v1）** — `find` 以折叠后的词项匹配空间标题、其上下文值与记忆文本；它不搜索附件内容，且排除已归档空间。`reference` 只返回文件元数据，不含字节。
 - **可插拔排序接缝（6.1）** — 当挂载 provider 时，`find` 通过 `ctx.spaceIndex` 排序，否则使用内置词法排序器；该接缝让 embeddings 或知识中枢 provider 在不接触存储或访问控制的情况下替换排序。
 
+未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
+
 <a id="dev-note"></a>
 ### 开发备注
 

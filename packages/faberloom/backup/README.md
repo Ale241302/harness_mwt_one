@@ -52,6 +52,8 @@ Independent of live requests: the registration never touches a request prefix.
 - **No UI or scheduled surface yet.** `ctx.faberloomBackup` is a host-side service: `createBackup`, `listBackups`, `verifyBackup`, and `restoreBackup` are called by a host consumer. Wiring the Conexiones surface and the recurring run arrives on a later slice.
 - **Upsert restore.** Restore writes records back with `put`; it does not reconcile effects already produced against external systems, and it does not version the destination domains.
 
+No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
+
 <a id="dev-note"></a>
 ### Dev Note
 

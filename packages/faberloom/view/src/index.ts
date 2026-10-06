@@ -21,7 +21,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
-import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput } from '@deepseek-ai/dsh-faberloom-routines'
+import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
@@ -51,12 +51,87 @@ import type {
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
-  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow, BoardRevisionInput,
-  FaberLoomShareRow, FaberLoomShares,
+  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
+  FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
+  FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
+  FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
+  FaberLoomWorkflowTemplateRow, FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
+  FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
+  FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
+import type {
+  FaberLoomWorkflows,
+  WorkFlow,
+  WorkFlowActor,
+  WorkFlowDefinition,
+  WorkFlowEdgeId,
+  WorkFlowId,
+  WorkFlowNodeId,
+  WorkFlowNodeKind,
+  WorkFlowPendingChange,
+  WorkFlowStatus,
+} from '@deepseek-ai/dsh-faberloom-workflows'
+import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant } from '@deepseek-ai/dsh-faberloom-shares'
+import type { FaberLoomExecutions } from '@deepseek-ai/dsh-faberloom-execution'
+import type { FaberLoomContext, FaberLoomContextEntry } from '@deepseek-ai/dsh-faberloom-context'
+import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-ai/dsh-faberloom-session-shares'
+// Type-only: pulls the ctx.sessionQuery merge for cross-member Session capture.
+import type {} from '@deepseek-ai/dsh-session-query'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 export type * from './types.ts'
+
+/**
+ * Parse a node config JSON object string; empty or non-object yields `{}`.
+ * @param json - the JSON text.
+ * @returns the parsed object.
+ */
+function parseConfigJson(json: string): Record<string, unknown> {
+  if (json.trim().length === 0) return {}
+  const parsed = JSON.parse(json) as unknown
+  return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+}
+
+/** HTML entity table for the five significant characters. */
+const HTML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+
+/** Escape the five HTML-significant characters. */
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, character => HTML_ENTITIES[character] as string)
+}
+
+/**
+ * Render one work flow as a standalone read-only HTML document with an inline
+ * SVG of its nodes and edges, in the Archify export style.
+ * @param flow - the work flow to render.
+ * @returns the HTML document.
+ */
+function archifyHtml(flow: WorkFlow): string {
+  const positions = new Map<string, { x: number; y: number }>()
+  flow.definition.nodes.forEach((node, index) => {
+    positions.set(node.id, { x: 40 + (index % 4) * 220, y: 48 + Math.floor(index / 4) * 130 })
+  })
+  const edges = flow.definition.edges.map((edge) => {
+    const from = positions.get(edge.from)
+    const to = positions.get(edge.to)
+    return from === undefined || to === undefined
+      ? ''
+      : `<line x1="${String(from.x + 85)}" y1="${String(from.y + 28)}" x2="${String(to.x + 85)}" y2="${String(to.y + 28)}" stroke="#9aa0a6" stroke-width="1.5" marker-end="url(#arrow)" />`
+  }).join('')
+  const nodes = flow.definition.nodes.map((node) => {
+    const at = positions.get(node.id) as { x: number; y: number }
+    return `<g><rect x="${String(at.x)}" y="${String(at.y)}" width="170" height="56" rx="10" fill="#ffffff" stroke="#5b6470" />`
+      + `<text x="${String(at.x + 12)}" y="${String(at.y + 24)}" font-family="system-ui" font-size="12" fill="#202124">${escapeHtml(node.title)}</text>`
+      + `<text x="${String(at.x + 12)}" y="${String(at.y + 42)}" font-family="system-ui" font-size="10" fill="#5f6368">${escapeHtml(node.kind)}</text></g>`
+  }).join('')
+  return '<!doctype html>\n<html lang="es">\n<head><meta charset="utf-8">'
+    + `<title>${escapeHtml(flow.name)}</title></head>\n<body style="margin:0;background:#f6f7f9">\n`
+    + '<svg xmlns="http://www.w3.org/2000/svg" width="920" height="640" viewBox="0 0 920 640">'
+    + '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9aa0a6"/></marker></defs>'
+    + `<text x="40" y="28" font-family="system-ui" font-size="16" fill="#202124">${escapeHtml(flow.name)}</text>`
+    + `${edges}${nodes}</svg>\n</body>\n</html>`
+}
 
 /** Reads one skill root into rows, ignoring anything without a frontmatter name. */
 function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' = 'role'): FaberLoomSkillRow[] {
@@ -320,6 +395,50 @@ function teachingRow(teaching: FaberLoomTeaching): FaberLoomTeachingRow {
 }
 
 /**
+ * Rebuild a stored routine trigger's authoring input, preserving every schedule
+ * field so a save that touches nothing else keeps the cadence intact.
+ * @param trigger - the stored trigger.
+ * @returns the authoring input.
+ */
+function triggerToInput(trigger: RoutineTrigger): RoutineTriggerInput {
+  return {
+    kind: trigger.kind,
+    ...trigger.match === null || trigger.match.length === 0 ? {} : { match: trigger.match },
+    ...trigger.timezone === null ? {} : { timezone: trigger.timezone },
+    ...trigger.days.length === 0 ? {} : { days: [...trigger.days] },
+    ...trigger.windowFrom === null && trigger.windowTo === null
+      ? {}
+      : { window: { from: trigger.windowFrom ?? 0, to: trigger.windowTo ?? 24 } },
+    ...trigger.businessDays ? { businessDays: true } : {},
+  }
+}
+
+/**
+ * Build one routine trigger from the caller's fields, keeping the stored
+ * trigger's schedule values for every field the caller left absent.
+ * @param input - the caller's routine save input.
+ * @param base - the stored trigger being replaced, when any.
+ * @returns the authoring input.
+ */
+function triggerFromSave(input: RoutineSaveInput, base: RoutineTrigger | undefined): RoutineTriggerInput {
+  const timezone = input.triggerTimezone !== undefined ? input.triggerTimezone : base?.timezone ?? null
+  const days = input.triggerDays !== undefined ? input.triggerDays : base?.days ?? []
+  const from = input.triggerWindow !== undefined ? input.triggerWindow?.from ?? null : base?.windowFrom ?? null
+  const to = input.triggerWindow !== undefined ? input.triggerWindow?.to ?? null : base?.windowTo ?? null
+  const businessDays = input.triggerBusinessDays !== undefined ? input.triggerBusinessDays : base?.businessDays ?? false
+  return {
+    kind: (input.triggerKind ?? base?.kind ?? 'manual') as RoutineTriggerInput['kind'],
+    ...input.triggerMatch === undefined || input.triggerMatch === null || input.triggerMatch.length === 0
+      ? {}
+      : { match: input.triggerMatch },
+    ...timezone === null || timezone.length === 0 ? {} : { timezone },
+    ...days.length === 0 ? {} : { days: [...days] },
+    ...from === null && to === null ? {} : { window: { from: from ?? 0, to: to ?? 24 } },
+    ...businessDays ? { businessDays: true } : {},
+  }
+}
+
+/**
  * Workspace view (`ctx.faberloomView`) over the mounted product services and the
  * agent-memory core. Reads and writes both return the fresh overview so the
  * panels refresh from one value instead of recomputing.
@@ -386,6 +505,13 @@ export class FaberLoomViewService extends TypertRemoteService {
         ctx.logger.warn(`faberloom: could not drop the space for a removed workspace: ${String(error)}`)
       })
     }), 'faberloom.view.workspace-removed')
+    // The Space and its registered Workspace share one display name; renaming
+    // the sidebar Workspace must show through the Espacios module too.
+    ctx.effect(() => ctx.on('workspace/renamed', (workspaceId, title) => {
+      void this.adoptWorkspaceTitle(String(workspaceId), title).catch((error: unknown) => {
+        ctx.logger.warn(`faberloom: could not rename the space of a renamed workspace: ${String(error)}`)
+      })
+    }), 'faberloom.view.workspace-renamed')
   }
 
   /**
@@ -410,6 +536,34 @@ export class FaberLoomViewService extends TypertRemoteService {
       if (agentId !== null) await this.detachAgentIfOrphan(agentId)
       return
     }
+  }
+
+  /**
+   * Adopt a renamed Workspace's title into the Space that mirrors it, so the
+   * Espacios module and the sidebar agree on the name.
+   * @param workspaceId - the renamed Workspace's id.
+   * @param title - the new display title.
+   */
+  private async adoptWorkspaceTitle(workspaceId: string, title: string): Promise<void> {
+    const actor = this.actor()
+    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
+      if (space.workspaceId !== workspaceId || space.title === title) continue
+      await this.ctx.faberloomSpaces.update(actor, space.id, { title })
+      return
+    }
+  }
+
+  /**
+   * Resolve the product Space mirrored by one registered Workspace.
+   * @param workspaceId - the Workspace id.
+   * @returns the mirrored Space, or `undefined` when none exists yet.
+   */
+  private async spaceForWorkspace(workspaceId: string): Promise<FaberLoomSpace | undefined> {
+    const actor = this.actor()
+    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
+      if (space.workspaceId === workspaceId) return space
+    }
+    return undefined
   }
 
   /**
@@ -514,6 +668,805 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Read the Space connectivity map the palette and canvas consume: every
+   * Space with its agent and mirrored workspace, every agent with its skills
+   * and MCP access, the owner's mail connections, and the registered
+   * Workspaces. Connections and Workspaces are optional, so a deployment that
+   * mounts neither still gets the map.
+   * @returns the connectivity map as plain JSON.
+   */
+  @Remote('spaceMap')
+  async spaceMap(): Promise<FaberLoomSpaceMap> {
+    const actor = this.actor()
+    const [spaces, agents, connections] = await Promise.all([
+      this.ctx.faberloomSpaces.list(actor),
+      this.ctx.faberloomAgents.listAgents(),
+      this.ctx.get('faberloomConnections')?.list(actor.id) ?? Promise.resolve([]),
+    ])
+    return {
+      spaces: spaces.map(space => ({
+        id: space.id,
+        title: space.title,
+        agentId: space.agentId ?? null,
+        workspaceId: space.workspaceId ?? null,
+        context: space.context,
+      })),
+      agents: agents.map(agent => ({
+        id: agent.id,
+        name: agent.name,
+        spaceId: agent.spaceId ?? null,
+        skills: agent.skills,
+        mcp: { mwt: agent.mwtMcp, sicop: agent.sicopMcp },
+        webAccess: agent.webAccess,
+      })),
+      connections: connections.map(connection => ({ id: connection.id, kind: connection.kind, label: connection.label })),
+      workspaces: (this.workspaceRegistryOrUndefined()?.list() ?? []).map(workspace => ({
+        id: String(workspace.id),
+        path: workspace.path,
+        title: workspace.title,
+      })),
+    }
+  }
+
+  /** Resolve the mounted workflows service, or fail loud. */
+  private workflowsService(): FaberLoomWorkflows {
+    const service = this.ctx.get('faberloomWorkflows')
+    if (service === undefined) throw new Error('faberloom: el servicio de Workflows no está montado')
+    return service
+  }
+
+  /** Resolve the mounted context service, or fail loud. */
+  private contextService(): FaberLoomContext {
+    const service = this.ctx.get('faberloomContext')
+    if (service === undefined) throw new Error('faberloom: el servicio de Contexto no está montado')
+    return service
+  }
+
+  /** Map one stored context entry to its panel row. */
+  private contextRow(entry: FaberLoomContextEntry): FaberLoomContextRow {
+    return {
+      id: entry.id,
+      spaceId: entry.spaceId,
+      title: entry.title,
+      body: entry.body,
+      version: entry.version,
+      visibility: entry.visibility,
+      authorId: entry.authorId,
+      ownerId: entry.ownerId,
+      updatedAt: entry.updatedAt,
+    }
+  }
+
+  /** Resolve the mounted shared-Session catalog, or fail loud. */
+  private sessionSharesService(): FaberLoomSessionShares {
+    const service = this.ctx.get('faberloomSessionShares')
+    if (service === undefined) throw new Error('faberloom: el servicio de sesiones compartidas no está montado')
+    return service
+  }
+
+  /** Map one shared Session to its panel row. */
+  private sharedSessionRow(session: FaberLoomSharedSession): FaberLoomSharedSessionRow {
+    return {
+      sessionId: session.sessionId,
+      ownerId: session.ownerId,
+      spaceId: session.spaceId,
+      title: session.title,
+      workspaceId: session.workspaceId,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      messageCount: session.messageCount,
+      origin: session.origin,
+    }
+  }
+
+  /** Project one work flow definition to the node/edge graph the diff reads. */
+  private workflowGraph(definition: WorkFlowDefinition): FaberLoomWorkflowGraph {
+    return {
+      nodes: definition.nodes.map(node => ({ id: String(node.id), title: node.title, kind: node.kind })),
+      edges: definition.edges.map(edge => ({ id: String(edge.id), from: String(edge.from), to: String(edge.to) })),
+    }
+  }
+
+  /** Map one staged work flow revision to its approval row. */
+  private workflowPendingRow(change: WorkFlowPendingChange): FaberLoomWorkflowPendingRow {
+    return {
+      workflowId: change.workflowId,
+      ownerId: change.ownerId,
+      proposerId: change.proposerId,
+      name: change.name,
+      baseVersion: change.baseVersion,
+      createdAt: change.createdAt,
+      base: this.workflowGraph(change.base),
+      proposed: this.workflowGraph(change.proposed),
+    }
+  }
+
+  /**
+   * Read one local Session's portable snapshot through the query service. An
+   * absent query service yields an empty artifact, so a bare composition still
+   * records the row.
+   * @param sessionId - the Session to read.
+   * @returns the folded title, event count, and snapshot JSON.
+   */
+  private async readSessionArtifact(sessionId: string): Promise<{ title?: string; messageCount: number; content: string }> {
+    const query = this.ctx.get('sessionQuery')
+    if (query === undefined) return { messageCount: 0, content: '' }
+    const id = sessionId as SessionId
+    const snapshot = await query.readSession(id)
+    const title = (await query.readTitle(id).catch(() => undefined))?.title
+    return {
+      ...(title === undefined || title.length === 0 ? {} : { title }),
+      messageCount: snapshot.events.length,
+      content: JSON.stringify(snapshot),
+    }
+  }
+
+  /** The workflow actor derived from the signed-in identity. */
+  private workflowActor(): WorkFlowActor { return { id: this.actor().id } }
+
+  /** Map one stored flow to its panel row. */
+  private workflowRow(flow: WorkFlow): FaberLoomWorkflowRow {
+    return {
+      id: flow.id,
+      name: flow.name,
+      status: flow.status,
+      version: flow.version,
+      nodes: flow.definition.nodes.length,
+      edges: flow.definition.edges.length,
+      routineId: flow.routineId ?? null,
+      spaceId: flow.scope.kind === 'space' ? flow.scope.spaceId : null,
+    }
+  }
+
+  /** Map one stored flow with its graph and validation verdict. */
+  private async workflowDetailOf(id: string): Promise<FaberLoomWorkflowDetail> {
+    const actor = this.workflowActor()
+    const flow = await this.workflowsService().get(actor, id as WorkFlowId)
+    const verdict = await this.workflowsService().validate(actor, id as WorkFlowId)
+    return {
+      ...this.workflowRow(flow),
+      valid: verdict.ok,
+      problems: [...verdict.problems],
+      maxConcurrency: flow.definition.maxConcurrency ?? null,
+      nodesList: flow.definition.nodes.map(node => ({
+        id: node.id,
+        kind: node.kind,
+        title: node.title,
+        x: node.position.x,
+        y: node.position.y,
+        config: node.config as Readonly<Record<string, FaberLoomJsonValue>>,
+      })),
+      edgesList: flow.definition.edges.map(edge => ({ id: edge.id, from: edge.from, to: edge.to, condition: edge.condition ?? null })),
+    }
+  }
+
+  /**
+   * List the owner's work flows.
+   * @returns one row per flow.
+   */
+  @Remote('workflowOverview')
+  async workflowOverview(): Promise<readonly FaberLoomWorkflowRow[]> {
+    return (await this.workflowsService().list(this.workflowActor())).map(flow => this.workflowRow(flow))
+  }
+
+  /**
+   * Read one work flow with its graph and validation verdict.
+   * @param id - work flow id.
+   * @returns the flow detail.
+   */
+  @Remote('workflowDetail')
+  async workflowDetail(id: string): Promise<FaberLoomWorkflowDetail> {
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Create an empty work flow and return the refreshed list.
+   * @param name - display name.
+   * @returns the refreshed rows.
+   */
+  @Remote('createWorkflow')
+  async createWorkflow(name: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.workflowsService().create(this.workflowActor(), {
+      name,
+      definition: { intent: name, nodes: [], edges: [], permissions: [], failurePolicy: 'stop' },
+    })
+    return await this.workflowOverview()
+  }
+
+  /**
+   * Rename one work flow and return the refreshed list.
+   * @param id - work flow id.
+   * @param name - new display name.
+   * @returns the refreshed rows.
+   */
+  @Remote('saveWorkflow')
+  async saveWorkflow(id: string, name: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.workflowsService().update(this.workflowActor(), id as WorkFlowId, { name })
+    return await this.workflowOverview()
+  }
+
+  /**
+   * Append one node to a work flow.
+   * @param id - work flow id.
+   * @param kind - node kind.
+   * @param title - node title.
+   * @param configJson - node config as a JSON object string; empty for none.
+   * @param nodeId - optional stable node id.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('addNode')
+  async addNode(id: string, kind: string, title: string, configJson: string, nodeId?: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().addNode(this.workflowActor(), id as WorkFlowId, {
+      kind: kind as WorkFlowNodeKind,
+      title,
+      config: parseConfigJson(configJson),
+      ...nodeId === undefined || nodeId.length === 0 ? {} : { id: nodeId },
+    })
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Change one node's title, kind, or config.
+   * @param id - work flow id.
+   * @param nodeId - the node to change.
+   * @param title - new title, or empty to keep it.
+   * @param kind - new kind, or empty to keep it.
+   * @param configJson - config JSON merged over the node, or empty to keep it.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('updateNode')
+  async updateNode(id: string, nodeId: string, title: string, kind: string, configJson: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().updateNode(this.workflowActor(), id as WorkFlowId, nodeId as WorkFlowNodeId, {
+      ...title.length === 0 ? {} : { title },
+      ...kind.length === 0 ? {} : { kind: kind as WorkFlowNodeKind },
+      ...configJson.trim().length === 0 ? {} : { config: parseConfigJson(configJson) },
+    })
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Remove one node and its incident edges.
+   * @param id - work flow id.
+   * @param nodeId - the node to remove.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('removeNode')
+  async removeNode(id: string, nodeId: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().removeNode(this.workflowActor(), id as WorkFlowId, nodeId as WorkFlowNodeId)
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Connect two nodes.
+   * @param id - work flow id.
+   * @param from - source node id.
+   * @param to - target node id.
+   * @param condition - optional branch condition.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('connect')
+  async connect(id: string, from: string, to: string, condition?: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().connect(this.workflowActor(), id as WorkFlowId, {
+      from: from as WorkFlowNodeId,
+      to: to as WorkFlowNodeId,
+      ...condition === undefined || condition.length === 0 ? {} : { condition },
+    })
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Remove one edge.
+   * @param id - work flow id.
+   * @param edgeId - the edge to remove.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('disconnect')
+  async disconnect(id: string, edgeId: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().disconnect(this.workflowActor(), id as WorkFlowId, edgeId as WorkFlowEdgeId)
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Change one work flow's lifecycle.
+   * @param id - work flow id.
+   * @param status - `active`, `paused`, or `draft`.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('setWorkflowStatus')
+  async setWorkflowStatus(id: string, status: string): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().setStatus(this.workflowActor(), id as WorkFlowId, status as WorkFlowStatus)
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Set or clear one work flow's concurrency cap.
+   * @param id - work flow id.
+   * @param maxConcurrency - the cap, or null to clear it.
+   * @returns the refreshed flow detail.
+   */
+  @Remote('setWorkflowConcurrency')
+  async setWorkflowConcurrency(id: string, maxConcurrency: number | null): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().setConcurrency(this.workflowActor(), id as WorkFlowId, maxConcurrency)
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * List one work flow's executions.
+   * @param id - work flow id.
+   * @returns the run history rows.
+   */
+  @Remote('workflowRuns')
+  async workflowRuns(id: string): Promise<readonly FaberLoomWorkflowRunRow[]> {
+    return (await this.workflowsService().runs(this.workflowActor(), id as WorkFlowId)).map(run => ({
+      id: run.id,
+      status: run.status,
+      routineVersion: run.routineVersion,
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+    }))
+  }
+
+  /**
+   * List every routine ↔ work flow link the owner holds, in both directions:
+   * a routine step with handler `workflow` invoking a flow, and the compiled
+   * routine an active flow drives.
+   * @returns the links, routines first.
+   */
+  @Remote('routineWorkflowLinks')
+  async routineWorkflowLinks(): Promise<readonly FaberLoomWorkflowLink[]> {
+    const actor = this.workflowActor()
+    const [flows, routines] = await Promise.all([
+      this.workflowsService().list(actor),
+      this.ctx.faberloomRoutines.listRoutines(actor.id),
+    ])
+    const routineNameById = new Map(routines.map(routine => [String(routine.id), routine.name]))
+    const flowNameById = new Map(flows.map(flow => [String(flow.id), flow.name]))
+    const links: FaberLoomWorkflowLink[] = []
+    for (const routine of routines) {
+      for (const step of routine.definition.steps) {
+        if (step.handler !== 'workflow') continue
+        const workflowId = step.config['workflowId']
+        if (typeof workflowId !== 'string' || workflowId.length === 0) continue
+        links.push({
+          routineId: String(routine.id),
+          routineName: routine.name,
+          workflowId,
+          workflowName: flowNameById.get(workflowId) ?? '',
+          direction: 'routine-to-workflow',
+        })
+      }
+    }
+    for (const flow of flows) {
+      if (flow.routineId === undefined) continue
+      links.push({
+        routineId: flow.routineId,
+        routineName: routineNameById.get(flow.routineId) ?? '',
+        workflowId: String(flow.id),
+        workflowName: flow.name,
+        direction: 'workflow-to-routine',
+      })
+    }
+    return links
+  }
+
+  /** Resolve the mounted shares service, or fail loud. */
+  private sharesService(): FaberLoomSharesService {
+    const service = this.ctx.get('faberloomShares')
+    if (service === undefined) throw new Error('faberloom: el servicio de compartir no está montado')
+    return service
+  }
+
+  /** Map one share grant to its panel row. */
+  private shareGrantRow(grant: FaberLoomShareGrant): FaberLoomShareGrantRow {
+    return {
+      id: grant.id,
+      resourceKind: grant.resource.kind,
+      resourceId: grant.resource.id,
+      resourceName: grant.resourceName,
+      ownerId: grant.ownerId,
+      granteeEmail: grant.granteeEmail,
+      permissions: [...grant.permissions],
+      permissionLabel: grant.permissions.join(', '),
+      status: grant.status,
+      createdAt: grant.createdAt,
+      acceptedAt: grant.acceptedAt,
+    }
+  }
+
+  /** The actor's outgoing grants, optionally narrowed to one resource. */
+  private async outgoingGrantRows(kind?: string, id?: string): Promise<readonly FaberLoomShareGrantRow[]> {
+    const rows: FaberLoomShareGrantRow[] = []
+    for (const grant of (await this.sharesService().list(this.actor().id)).outgoing) {
+      if (kind !== undefined && grant.resource.kind !== kind) continue
+      if (id !== undefined && grant.resource.id !== id) continue
+      rows.push(this.shareGrantRow(grant))
+    }
+    return rows
+  }
+
+  /**
+   * Share one Space the owner (or an admin) manages with named emails.
+   * @param id - space id.
+   * @param emails - the grantees.
+   * @param permissions - the permission subset each grantee receives.
+   * @returns the resource's outgoing grant rows.
+   */
+  @Remote('shareSpace')
+  async shareSpace(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot share')
+    const space = await this.ctx.faberloomSpaces.get(this.actor(), id as FaberLoomSpaceId)
+    if (space.ownerId !== this.actor().id && !this.isPrivileged()) {
+      throw new Error('faberloom: only the owner or an admin can share this space')
+    }
+    const shares = this.sharesService()
+    for (const email of emails) {
+      await shares.create(this.actor().id, { resource: { kind: 'space', id }, resourceName: space.title, granteeEmail: email, permissions })
+    }
+    return await this.outgoingGrantRows('space', id)
+  }
+
+  /**
+   * Share the Space that mirrors one registered Workspace, resolving the Space
+   * from the sidebar Workspace the caller addresses.
+   * @param workspaceId - the Workspace whose mirrored Space is shared.
+   * @param emails - the grantees.
+   * @param permissions - the permission subset each grantee receives.
+   * @returns the Space's outgoing grant rows.
+   */
+  @Remote('shareSpaceByWorkspace')
+  async shareSpaceByWorkspace(
+    workspaceId: string, emails: readonly string[], permissions: readonly string[],
+  ): Promise<readonly FaberLoomShareGrantRow[]> {
+    const space = await this.spaceForWorkspace(workspaceId)
+    if (space === undefined) throw new Error('faberloom: no hay un espacio para esta área de conversación')
+    return await this.shareSpace(space.id, emails, permissions)
+  }
+
+  /**
+   * Share one Work Flow the owner manages — or that the actor holds `share` on —
+   * with named emails.
+   * @param id - work flow id.
+   * @param emails - the grantees.
+   * @param permissions - the permission subset each grantee receives.
+   * @returns the flow's outgoing grant rows.
+   */
+  @Remote('shareWorkflow')
+  async shareWorkflow(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot share')
+    const shares = this.sharesService()
+    const flow = await this.workflowsService().get(this.workflowActor(), id as WorkFlowId)
+    const allowed = flow.ownerId === this.actor().id || this.isPrivileged()
+      || await shares.can(this.actor().id, flow.ownerId, { kind: 'workflow', id }, 'share')
+    if (!allowed) throw new Error('faberloom: no puedes compartir este flujo')
+    for (const email of emails) {
+      await shares.create(this.actor().id, { resource: { kind: 'workflow', id }, resourceName: flow.name, granteeEmail: email, permissions })
+    }
+    return await this.outgoingGrantRows('workflow', id)
+  }
+
+  /**
+   * List the actor's grants on one resource.
+   * @param kind - `space` or `workflow`.
+   * @param id - resource id.
+   * @returns the outgoing grant rows.
+   */
+  @Remote('resourceShares')
+  async resourceShares(kind: string, id: string): Promise<readonly FaberLoomShareGrantRow[]> {
+    return await this.outgoingGrantRows(kind, id)
+  }
+
+  /**
+   * Revoke one grant the actor issued.
+   * @param grantId - grant id.
+   * @returns the actor's refreshed outgoing grant rows.
+   */
+  @Remote('revokeShareGrant')
+  async revokeShareGrant(grantId: string): Promise<readonly FaberLoomShareGrantRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot share')
+    await this.sharesService().revoke(this.actor().id, grantId)
+    return await this.outgoingGrantRows()
+  }
+
+  /**
+   * Read the Space connectivity map for the palette and canvas.
+   * @returns the connectivity map.
+   */
+  @Remote('spaceTopology')
+  async spaceTopology(): Promise<FaberLoomSpaceMap> {
+    return await this.spaceMap()
+  }
+
+  /**
+   * Export one work flow as read-only Archify HTML or plain JSON.
+   * @param id - work flow id.
+   * @param format - `archify` or `json`.
+   * @returns the export body.
+   */
+  @Remote('exportWorkflow')
+  async exportWorkflow(id: string, format: string): Promise<FaberLoomWorkflowExport> {
+    const flow = await this.workflowsService().get(this.workflowActor(), id as WorkFlowId)
+    return format === 'json'
+      ? { format: 'json', content: await this.workflowsService().exportFlow(this.workflowActor(), id as WorkFlowId) }
+      : { format: 'archify', content: archifyHtml(flow) }
+  }
+
+  /**
+   * The built-in Work Flow templates the gallery lists.
+   * @returns one row per template.
+   */
+  @Remote('workflowTemplates')
+  workflowTemplates(): Promise<readonly FaberLoomWorkflowTemplateRow[]> {
+    return Promise.resolve(this.workflowsService().templates().map(template => ({
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      nodes: template.definition.nodes.length,
+      edges: template.definition.edges.length,
+    })))
+  }
+
+  /**
+   * Create one work flow from a built-in template and return the refreshed list.
+   * @param templateId - template id.
+   * @param name - optional display name.
+   * @returns the refreshed rows.
+   */
+  @Remote('createWorkflowFromTemplate')
+  async createWorkflowFromTemplate(templateId: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.workflowsService().createFromTemplate(this.workflowActor(), templateId, name)
+    return await this.workflowOverview()
+  }
+
+  /**
+   * Import portable Work Flow JSON as a new work flow and return the refreshed
+   * list; the graph is validated before it is stored.
+   * @param json - the portable JSON text.
+   * @param name - optional display name.
+   * @returns the refreshed rows.
+   */
+  @Remote('importWorkflow')
+  async importWorkflow(json: string, name?: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.workflowsService().importFlow(this.workflowActor(), json, name)
+    return await this.workflowOverview()
+  }
+
+  /**
+   * List one work flow's version history, newest first.
+   * @param id - work flow id.
+   * @returns the versions.
+   */
+  @Remote('workflowVersions')
+  async workflowVersions(id: string): Promise<readonly FaberLoomWorkflowVersionRow[]> {
+    const rows = await this.workflowsService().versions(this.workflowActor(), id as WorkFlowId)
+    return rows.map(row => ({
+      version: row.version,
+      name: row.name,
+      nodes: row.definition.nodes.length,
+      edges: row.definition.edges.length,
+      createdAt: row.createdAt,
+    }))
+  }
+
+  /**
+   * Restore one work flow to an earlier version.
+   * @param id - work flow id.
+   * @param version - version to restore.
+   * @returns the refreshed detail.
+   */
+  @Remote('restoreWorkflow')
+  async restoreWorkflow(id: string, version: number): Promise<FaberLoomWorkflowDetail> {
+    await this.workflowsService().restore(this.workflowActor(), id as WorkFlowId, version)
+    return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * List the staged work flow revisions awaiting this owner's decision, with
+   * each proposal's base and proposed graph for the diff.
+   * @returns the staged revisions.
+   */
+  @Remote('workflowPendingChanges')
+  async workflowPendingChanges(): Promise<readonly FaberLoomWorkflowPendingRow[]> {
+    return (await this.workflowsService().pendingChanges(this.workflowActor())).map(change => this.workflowPendingRow(change))
+  }
+
+  /**
+   * Accept one staged work flow revision and return the refreshed inbox.
+   * @param id - work flow id.
+   * @returns the staged revisions.
+   */
+  @Remote('acceptWorkflowChange')
+  async acceptWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]> {
+    await this.workflowsService().acceptPending(this.workflowActor(), id as WorkFlowId)
+    return await this.workflowPendingChanges()
+  }
+
+  /**
+   * Reject one staged work flow revision and return the refreshed inbox.
+   * @param id - work flow id.
+   * @returns the staged revisions.
+   */
+  @Remote('rejectWorkflowChange')
+  async rejectWorkflowChange(id: string): Promise<readonly FaberLoomWorkflowPendingRow[]> {
+    await this.workflowsService().rejectPending(this.workflowActor(), id as WorkFlowId)
+    return await this.workflowPendingChanges()
+  }
+
+  /**
+   * List the context entries the actor may see, newest first.
+   * @returns the visible context rows.
+   */
+  @Remote('contextEntries')
+  async contextEntries(): Promise<readonly FaberLoomContextRow[]> {
+    return (await this.contextService().list({ id: this.actor().id })).map(row => this.contextRow(row))
+  }
+
+  /**
+   * Create one context entry, optionally attached to a Space.
+   * @param title - display title.
+   * @param body - context body.
+   * @param spaceId - optional Space to attach it to.
+   * @returns the refreshed rows.
+   */
+  @Remote('createContext')
+  async createContext(title: string, body: string, spaceId?: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().create({ id: this.actor().id }, {
+      title,
+      body,
+      spaceId: spaceId === undefined || spaceId.length === 0 ? null : spaceId,
+    })
+    return await this.contextEntries()
+  }
+
+  /**
+   * Edit one context entry, appending a version.
+   * @param id - entry id.
+   * @param title - new title.
+   * @param body - new body.
+   * @returns the refreshed rows.
+   */
+  @Remote('updateContext')
+  async updateContext(id: string, title: string, body: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().update({ id: this.actor().id }, id, { title, body })
+    return await this.contextEntries()
+  }
+
+  /**
+   * List one context entry's version history.
+   * @param id - entry id.
+   * @returns the versions.
+   */
+  @Remote('contextVersions')
+  async contextVersions(id: string): Promise<readonly FaberLoomContextVersionRow[]> {
+    const rows = await this.contextService().versions({ id: this.actor().id }, id)
+    return rows.map(row => ({
+      version: row.version, title: row.title, body: row.body, authorId: row.authorId, createdAt: row.createdAt,
+    }))
+  }
+
+  /**
+   * Restore one context entry to an earlier version.
+   * @param id - entry id.
+   * @param version - version to restore.
+   * @returns the refreshed rows.
+   */
+  @Remote('restoreContext')
+  async restoreContext(id: string, version: number): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().restore({ id: this.actor().id }, id, version)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Index one context entry into its Space's shared context.
+   * @param id - entry id.
+   * @returns the refreshed rows.
+   */
+  @Remote('approveContext')
+  async approveContext(id: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().approve({ id: this.actor().id }, id)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Keep one context entry private to its author.
+   * @param id - entry id.
+   * @returns the refreshed rows.
+   */
+  @Remote('rejectContext')
+  async rejectContext(id: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().reject({ id: this.actor().id }, id)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Remove one context entry and its history.
+   * @param id - entry id.
+   * @returns the refreshed rows.
+   */
+  @Remote('removeContext')
+  async removeContext(id: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().remove({ id: this.actor().id }, id)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Import the console's shared context for this owner and return the refreshed
+   * entries, so a member's Space contribution shows up for approval.
+   * @returns the visible context rows.
+   */
+  @Remote('syncContext')
+  async syncContext(): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().sync(this.actor().id)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Capture the panel's local Sessions into one Space and return the refreshed
+   * shared catalog.
+   * @param spaceId - the Space to share the Sessions in.
+   * @param sessions - the local Sessions the panel offers.
+   * @returns the Space's shared Session rows.
+   */
+  @Remote('captureSpaceSessions')
+  async captureSpaceSessions(
+    spaceId: string, sessions: readonly FaberLoomSharedSessionRef[],
+  ): Promise<readonly FaberLoomSharedSessionRow[]> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    for (const session of sessions) {
+      const artifact = await this.readSessionArtifact(session.id)
+      await this.sessionSharesService().capture({ id: actor.id }, {
+        spaceId,
+        sessionId: session.id,
+        title: artifact.title ?? (session.title.length > 0 ? session.title : session.id),
+        workspaceId: space.workspaceId ?? null,
+        messageCount: artifact.messageCount,
+        content: artifact.content,
+      })
+    }
+    return await this.spaceSessions(spaceId)
+  }
+
+  /**
+   * Sync the console's shared Sessions and list one Space's catalog.
+   * @param spaceId - the Space to list.
+   * @returns the Space's shared Session rows.
+   */
+  @Remote('spaceSessions')
+  async spaceSessions(spaceId: string): Promise<readonly FaberLoomSharedSessionRow[]> {
+    const service = this.sessionSharesService()
+    const actor = this.actor()
+    await service.sync(actor.id)
+    return (await service.list({ id: actor.id }, spaceId)).map(row => this.sharedSessionRow(row))
+  }
+
+  /**
+   * Read one shared Session's portable content.
+   * @param spaceId - the Space the Session is shared in.
+   * @param ownerId - the member whose host holds the Session.
+   * @param sessionId - the Session id.
+   * @returns the row with its content.
+   */
+  @Remote('spaceSessionContent')
+  async spaceSessionContent(spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContentRow> {
+    const row = await this.sessionSharesService().content({ id: this.actor().id }, spaceId, ownerId, sessionId)
+    return { ...this.sharedSessionRow(row), content: row.content }
+  }
+
+  /**
+   * Remove one shared Session (its author or the Space owner) and return the
+   * refreshed catalog.
+   * @param spaceId - the Space the Session is shared in.
+   * @param ownerId - the member whose host holds the Session.
+   * @param sessionId - the Session id.
+   * @returns the Space's shared Session rows.
+   */
+  @Remote('removeSpaceSession')
+  async removeSpaceSession(spaceId: string, ownerId: string, sessionId: string): Promise<readonly FaberLoomSharedSessionRow[]> {
+    await this.sessionSharesService().remove({ id: this.actor().id }, spaceId, ownerId, sessionId)
+    return await this.spaceSessions(spaceId)
+  }
+
+  /**
    * Create a space (root or sub-space) for the owner with an optional
    * responsible agent, and register its conversation area as a Workspace so
    * the sidebar and the Espacios panel show the same thing.
@@ -571,7 +1524,13 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('renameSpace')
   async renameSpace(id: string, title: string): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomSpaces.update(this.actor(), id as FaberLoomSpaceId, { title })
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.update(actor, id as FaberLoomSpaceId, { title })
+    // The mirrored Workspace carries the same display name in the sidebar.
+    if (space.workspaceId !== undefined) {
+      const workspace = this.workspaceRegistryOrUndefined()?.get(space.workspaceId as WorkspaceId)
+      if (workspace !== undefined && workspace.title !== title) await workspace.setTitle(title)
+    }
     return await this.overview()
   }
 
@@ -2321,6 +3280,12 @@ export class FaberLoomViewService extends TypertRemoteService {
       intent: routine.definition.intent,
       triggerKind: trigger?.kind ?? 'manual',
       triggerMatch: trigger?.match ?? null,
+      triggerTimezone: trigger?.timezone ?? null,
+      triggerDays: trigger === undefined ? [] : [...trigger.days],
+      triggerWindowFrom: trigger?.windowFrom ?? null,
+      triggerWindowTo: trigger?.windowTo ?? null,
+      triggerBusinessDays: trigger?.businessDays ?? false,
+      maxConcurrency: routine.definition.maxConcurrency,
       steps: routine.definition.steps.map(step => ({
         id: step.id,
         instruction: step.instruction,
@@ -2361,20 +3326,15 @@ export class FaberLoomViewService extends TypertRemoteService {
       definition: {
         intent: input.intent ?? current.intent,
         triggers: input.triggerKind === undefined && input.triggerMatch === undefined
-          ? current.triggers.map(trigger => ({
-            kind: trigger.kind,
-            ...trigger.match === null || trigger.match.length === 0 ? {} : { match: trigger.match },
-          }))
-          : [{
-            kind: (input.triggerKind ?? current.triggers[0]?.kind ?? 'manual') as 'manual' | 'event' | 'email' | 'date' | 'recurrence',
-            ...(input.triggerMatch === undefined || input.triggerMatch === null || input.triggerMatch.length === 0
-              ? {}
-              : { match: input.triggerMatch }),
-          }],
+          ? current.triggers.map(triggerToInput)
+          : [triggerFromSave(input, current.triggers[0])],
         steps: input.steps === undefined ? current.steps.map(mapStep) : input.steps.map(mapStep),
         expectedResult: input.expectedResult ?? current.expectedResult,
         permissions: input.permissions === undefined ? [...current.permissions] : [...input.permissions],
         failurePolicy: (input.failurePolicy ?? current.failurePolicy) as 'stop' | 'continue' | 'review',
+        ...(input.maxConcurrency === undefined
+          ? current.maxConcurrency === null ? {} : { maxConcurrency: current.maxConcurrency }
+          : input.maxConcurrency === null ? {} : { maxConcurrency: input.maxConcurrency }),
       },
     })
     return await this.overview()
@@ -2409,6 +3369,48 @@ export class FaberLoomViewService extends TypertRemoteService {
       new Set(routine.definition.steps.filter(step => step.effect).map(step => step.id)),
     ]))
     return rows.map(row => this.executionRow(row, names, effects))
+  }
+
+  /**
+   * The dispatcher's liveness — last run, failures, review backlog, retries, and
+   * the sooner wait deadline — per routine and in aggregate.
+   * @returns the health snapshot.
+   */
+  @Remote('executionHealth')
+  async executionHealth(): Promise<FaberLoomHealth> {
+    const executions: FaberLoomExecutions | undefined = this.ctx.get('faberloomExecutions')
+    if (executions === undefined) {
+      return {
+        ownerId: this.actor().id,
+        routines: [],
+        totals: { runs: 0, failures: 0, needsReview: 0, retries: 0, deadLettered: 0, alerts: 0 },
+      }
+    }
+    const health = await executions.health()
+    const routines: FaberLoomHealthRow[] = health.routines.map(row => ({
+      routineId: row.routineId,
+      name: row.name,
+      status: row.status,
+      lastStatus: row.lastStatus,
+      lastAt: row.lastAt,
+      runs: row.runs,
+      failures: row.failures,
+      needsReview: row.needsReview,
+      retries: row.retries,
+      deadlineAt: row.deadlineAt,
+    }))
+    return {
+      ownerId: health.ownerId,
+      routines,
+      totals: {
+        runs: health.totals.runs,
+        failures: health.totals.failures,
+        needsReview: health.totals.needsReview,
+        retries: health.totals.retries,
+        deadLettered: health.totals.deadLettered,
+        alerts: health.totals.alerts,
+      },
+    }
   }
 
   /**
