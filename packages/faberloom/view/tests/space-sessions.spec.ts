@@ -52,6 +52,7 @@ function harness(options: { query?: boolean; workspaceId?: string | null } = {})
     reflect: { provide: () => {} },
     on: vi.fn(() => () => {}),
     effect: (run: () => unknown) => { run(); return () => {} },
+    emit: vi.fn(),
     logger: { warn: vi.fn(), info: vi.fn() },
     get: (name: string) => {
       if (name === 'faberloomSessionShares') return catalog
@@ -64,7 +65,7 @@ function harness(options: { query?: boolean; workspaceId?: string | null } = {})
     },
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
-  return { view, catalog, query, shares, registry, persistence }
+  return { view, catalog, query, shares, registry, persistence, emit: ctx.emit as unknown as ReturnType<typeof vi.fn> }
 }
 
 describe('FaberLoomViewService shared Sessions', () => {
@@ -144,7 +145,7 @@ describe('FaberLoomViewService shared Sessions', () => {
   })
 
   it('materializes a shared Session as the member own Session under the area', async () => {
-    const { view, catalog, persistence } = harness()
+    const { view, catalog, persistence, emit } = harness()
     const shared = row({ ownerId: 'publisher@muitowork.com', sessionId: 'sess-remote' })
     catalog.list.mockResolvedValue([shared])
     catalog.content.mockResolvedValue({
@@ -157,6 +158,11 @@ describe('FaberLoomViewService shared Sessions', () => {
     await view.spaceSessions('sp-1')
     await vi.waitFor(() => expect(persistence.create).toHaveBeenCalled())
     expect(persistence.create).toHaveBeenCalledWith(expect.objectContaining({ id: 'sess-remote', cwd: '/data/owner/spaces/shared/3a4d6839' }))
+    // The copy is announced to the client's Session list, so a reload that
+    // fetched the list before this mirror still shows it.
+    expect(emit).toHaveBeenCalledWith('api-session/added', expect.objectContaining({
+      sessionId: 'sess-remote', blank: false, cwd: '/data/owner/spaces/shared/3a4d6839',
+    }))
   })
 
   it('fails loud when the shared-Session catalog is not mounted', async () => {    const ctx = {

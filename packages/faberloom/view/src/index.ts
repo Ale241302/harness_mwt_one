@@ -1567,6 +1567,19 @@ export class FaberLoomViewService extends TypertRemoteService {
         // Warm the title projection so the sidebar shows the author's title
         // instead of falling back to the area id until the Session is opened.
         await this.ctx.get('sessionQuery')?.readTitle(header.id).catch(() => undefined)
+        // Announce the copy to the client's Session list now: a reload fetches
+        // the list before this mirror runs, so without the event the copy only
+        // appears on the following reload. `api-session/added` is a Remote Event
+        // the session-controller already relays; a structural cast avoids a
+        // type-only dependency on the API package.
+        const announce = this.ctx as unknown as { emit: (name: string, payload: unknown) => void }
+        announce.emit('api-session/added', {
+          sessionId: header.id,
+          updatedAt: Date.parse(row.updatedAt) || Date.now(),
+          running: false,
+          blank: false,
+          cwd: workspace.path,
+        })
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: no se pudo materializar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
       }
