@@ -1699,6 +1699,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     const registry = this.workspaceRegistryOrUndefined()
     const workspace = registry?.get(workspaceId as WorkspaceId)
     if (persistence === undefined || catalog === undefined || workspace === undefined) return
+    // Read the ids mirrored before the sync: a row the console drops must still
+    // prune its local copy, even when that copy was detached from the area.
+    const preSync = new Set(
+      (await catalog.list({ id: actor.id }, spaceId)).filter(row => row.ownerId !== actor.id).map(row => row.sessionId),
+    )
     if (syncCatalog) await catalog.sync(actor.id)
     // A Session the member archived stays hidden; re-materializing it would
     // resurrect a conversation the member removed from the sidebar.
@@ -1776,6 +1781,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     // publishes before this runs, so the actor's own Sessions are already ownIds.
     const candidates = new Set<string>([...workspace.sessionIds].map(String))
     for (const id of previous) candidates.add(id)
+    for (const id of preSync) candidates.add(id)
     for (const id of candidates) {
       if (ownIds.has(id) || wanted.has(id)) continue
       if (await persistence.stat(id as SessionId) === undefined) continue

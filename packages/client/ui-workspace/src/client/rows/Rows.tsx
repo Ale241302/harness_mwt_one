@@ -444,7 +444,9 @@ export function SessionNodeItem({
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
     // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
     { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
-    { id: 'delete', label: t('menu.deleteSession'), icon: <IconTrashOutline16 />, danger: true },
+    // A Session mirrored from another member's shared Space belongs to its
+    // author, so this row stays read-only and hides the destructive action.
+    ...row.shared ? [] : [{ id: 'delete', label: t('menu.deleteSession'), icon: <IconTrashOutline16 />, danger: true }],
   ]
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
   const ownRow = (

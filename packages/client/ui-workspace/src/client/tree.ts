@@ -55,6 +55,8 @@ export interface SessionNode {
   /** The current list projection contains at least one active Schedule record. */
   hasActiveSchedule: boolean
   updatedAt: number
+  /** True when the Session lives in a shared Space mirrored from another member (read-only here). */
+  shared?: boolean
 }
 
 /** Session order selected by the Workspace browser. */
@@ -321,8 +323,21 @@ function sessionNode(
     completed: s.completed === true,
     hasActiveSchedule: hasActiveSchedule(s),
     updatedAt: s.updatedAt,
+    shared: isSharedAreaSession(s.cwd),
     ...(pendingInteraction === undefined ? {} : { pendingInteraction }),
   }
+}
+
+/**
+ * Whether a Session lives in the area another member's shared Space mirrors
+ * here (`<home>/spaces/shared/<spaceId>`). Its author owns it, so it is
+ * read-only: the row hides the destructive actions.
+ * @param cwd - the Session working directory, or undefined.
+ * @returns true when the directory is a shared-Space mirror.
+ */
+export function isSharedAreaSession(cwd: string | undefined): boolean {
+  if (cwd === undefined || cwd === '') return false
+  return cwd.replaceAll('\\', '/').includes('/spaces/shared/')
 }
 
 /**
