@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-readonly-own-content` (commit `c052ffeeb4d90dc24b129f0805c75b2aaa454d39`: un miembro `readOnly` puede borrar sus propios flujos y rutinas —el gate es la propiedad o el permiso granular `delete-workflows`/`delete-routines`, no el rol—, igual que ya podía crearlos. Sobre `7ffede3076`).
-**Imagen desplegada actual:** build de `main` @ `c052ffeeb4d90dc24b129f0805c75b2aaa454d39` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-07-sidebar-agents-skills` (commit `714b74392e26209db1df988824d618cd05a2d654`: el sidebar ya no muestra la fila Chat; Agents y Skills comparten una sola fila con pestañas (los paneles siguen enrutados); la sesión en blanco «New Session» ya no aparece bajo Ungrouped. Sobre `c052ffeeb4`).
+**Imagen desplegada actual:** build de `main` @ `714b74392e26209db1df988824d618cd05a2d654` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
