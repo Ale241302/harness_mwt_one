@@ -165,6 +165,8 @@ export interface FaberLoomRoutineRow {
   readonly status: string
   /** True when another member shared the routine; it is read-only here. */
   readonly shared?: boolean
+  /** True when the actor holds the module permission to remove this shared item. */
+  readonly canDelete?: boolean
 }
 
 /** One space-scoped memory entry the Memoria panel renders. */
@@ -179,6 +181,8 @@ export interface FaberLoomSpaceMemoryRow {
   readonly createdAt: string
   /** True when another member shared the entry; it is read-only here. */
   readonly shared?: boolean
+  /** True when the actor holds the module permission to remove this shared item. */
+  readonly canDelete?: boolean
 }
 
 /** One mailbox envelope the Email panel lists. */
@@ -1054,6 +1058,8 @@ export interface FaberLoomWorkflowRow {
   readonly spaceId: string | null
   /** True when another member shared the flow; it is read-only here. */
   readonly shared?: boolean
+  /** True when the actor holds the module permission to remove this shared item. */
+  readonly canDelete?: boolean
 }
 
 /** A JSON value a Remote boundary may carry. */
@@ -1242,6 +1248,8 @@ export interface FaberLoomContextRow {
   readonly updatedAt: string
   /** True when another member shared the entry; it is read-only here. */
   readonly shared?: boolean
+  /** True when the actor holds the module permission to remove this shared item. */
+  readonly canDelete?: boolean
 }
 
 /** One stored context version as the panel renders it. */

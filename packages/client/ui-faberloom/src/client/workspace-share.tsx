@@ -128,6 +128,7 @@ export function WorkspaceShareDialog({ useStore, actions, share, t }: ShareDialo
     <Modal
       open
       onClose={close}
+      className={styles.shareDialogWide ?? ''}
       title={request.title.length === 0 ? t('workspaces.shareTitle') : request.title}
       closeLabel={t('action.close')}
       footer={(

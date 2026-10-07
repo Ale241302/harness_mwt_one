@@ -1055,6 +1055,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   FaberLoomShares: 'product consumer type is owned by packages/faberloom/view/src/types.ts',
   FaberLoomShareRepublishInput: 'product consumer type is owned by packages/faberloom/shares/src/types.ts',
   FaberLoomSharedContentInput: 'product consumer type is owned by packages/faberloom/shares/src/types.ts',
+  FaberLoomSharedContentKind: 'product consumer type is owned by packages/faberloom/shares/src/types.ts',
   FaberLoomSharedContentRow: 'product consumer type is owned by packages/faberloom/shares/src/types.ts',
   FaberLoomSpaceFromEmail: 'product consumer type is owned by packages/faberloom/view/src/types.ts',
   FaberLoomSpaceMemory: 'product consumer type is owned by packages/faberloom/spaces/src/types.ts',

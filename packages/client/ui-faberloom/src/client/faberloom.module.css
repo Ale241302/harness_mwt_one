@@ -1037,6 +1037,11 @@
   max-width: 640px;
 }
 
+/* Share dialog: the permission grid needs more room than the default 380px. */
+.shareDialogWide {
+  min-width: min(680px, 94vw);
+}
+
 .workflowActions {
   display: flex;
   gap: 8px;

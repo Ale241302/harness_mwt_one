@@ -1365,6 +1365,15 @@ async importedContentKeys(actorId: string, spaceId: string): Promise<ReadonlySet
 async importedLocalIds(actorId: string): Promise<ReadonlySet<string>>
 
 /**
+ * The local copies this member materialized for other members' items, keyed
+ * by local copy id, so a panel can decide whether the member holds the
+ * module permission that lets it remove the copy.
+ * @param actorId - the member reading.
+ * @returns local copy id → its Space and resource family.
+ */
+async importedLocalCopies( actorId: string, ): Promise<ReadonlyMap<string, { spaceId: string; kind: FaberLoomSharedContentKind }>>
+
+/**
  * Record the id of the local copy a member materialized for one imported
  * console row, so a later sync removes the copy when its author withdraws the
  * item. A missing row is ignored.

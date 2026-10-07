@@ -2074,7 +2074,7 @@ function routinesScreen() {
                 <span className={styles.tools}>
                   {drafting ? null : (
                     <>
-                      {chosen?.shared === true ? null : (
+                      {chosen?.shared === true && chosen?.canDelete !== true ? null : (
                         <button className={styles.danger} type="button" onClick={() => {
                           if (selected === null) return
                           setMessage(null)
@@ -2266,7 +2266,7 @@ function memoryScreen() {
           footer={(
             <>
               <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
-              {chosen?.shared === true ? null : (
+              {chosen?.shared === true && chosen?.canDelete !== true ? null : (
                 <button className={styles.danger} type="button" onClick={() => {
                   if (chosen === null) return
                   setMessage(null)
@@ -3106,7 +3106,10 @@ const WORKFLOW_KINDS = [
 ] as const
 
 /** Permission checkboxes the Compartir form offers (Work Flow share modal and the Workspace row share dialog). */
-export const SHARE_PERMISSION_OPTIONS = ['view', 'run', 'edit-graph', 'add-nodes', 'remove-nodes', 'edit-agents', 'manage-triggers', 'share'] as const
+export const SHARE_PERMISSION_OPTIONS = [
+  'view', 'run', 'edit-graph', 'add-nodes', 'remove-nodes', 'edit-agents', 'manage-triggers', 'share',
+  'memory', 'context', 'workflows', 'routines',
+] as const
 
 /** The IMAP operations the mail node offers. */
 const WORKFLOW_IMAP_OPS = ['search', 'move', 'delete', 'markRead'] as const
@@ -3348,7 +3351,8 @@ function workflowsScreen() {
       ? null
       : health.routines.find(row => row.routineId === detail.routineId) ?? null
     const selectedSpaceId = flows.find(flow => flow.id === selected)?.spaceId ?? null
-    const selectedFlowShared = flows.find(flow => flow.id === selected)?.shared === true
+    const selectedFlow = flows.find(flow => flow.id === selected)
+    const selectedFlowShared = selectedFlow?.shared === true && selectedFlow.canDelete !== true
     const selectedSpaceName = selectedSpaceId === null
       ? null
       : topology?.spaces.find(space => space.id === selectedSpaceId)?.title ?? selectedSpaceId
@@ -3865,7 +3869,7 @@ function workflowsScreen() {
                   </div>
                 ))}
               </Modal>
-              <Modal open={shareOpen} onClose={() => { setShareOpen(false) }} title={t('wf.share')} closeLabel={t('action.close')}>
+              <Modal open={shareOpen} onClose={() => { setShareOpen(false) }} title={t('wf.share')} closeLabel={t('action.close')} className={styles.shareDialogWide ?? ''}>
                 <div className={styles.workflowForm}>
                   <Field label={t('wf.share.email')}>
                     <input aria-label={t('wf.share.email')} placeholder={t('wf.share.email')} value={shareEmail}
@@ -4006,7 +4010,7 @@ function contextScreen() {
             footer={selected === null ? undefined : (
               <>
                 <span className={styles.tools}>
-                  {chosen?.shared === true ? null : (
+                  {chosen?.shared === true && chosen?.canDelete !== true ? null : (
                     <button className={styles.danger} type="button" onClick={() => {
                       if (selected === null) return
                       void props.context.remove(selected).then((result) => { if (result.ok) setSelected(null); refresh(result) })

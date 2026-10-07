@@ -543,6 +543,25 @@ export class FaberLoomShares extends Service {
   }
 
   /**
+   * The local copies this member materialized for other members' items, keyed
+   * by local copy id, so a panel can decide whether the member holds the
+   * module permission that lets it remove the copy.
+   * @param actorId - the member reading.
+   * @returns local copy id → its Space and resource family.
+   */
+  async importedLocalCopies(
+    actorId: string,
+  ): Promise<ReadonlyMap<string, { spaceId: string; kind: FaberLoomSharedContentKind }>> {
+    const prefix = importedContentPrefix(actorId)
+    const out = new Map<string, { spaceId: string; kind: FaberLoomSharedContentKind }>()
+    for (const [key, record] of (await this.contentTable()).entries()) {
+      if (record.origin !== 'console' || !key.startsWith(prefix)) continue
+      if (record.localId !== null) out.set(record.localId, { spaceId: record.spaceId, kind: record.kind })
+    }
+    return out
+  }
+
+  /**
    * Record the id of the local copy a member materialized for one imported
    * console row, so a later sync removes the copy when its author withdraws the
    * item. A missing row is ignored.
