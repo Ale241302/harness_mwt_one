@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-shared-content-readonly` (commit `0067de6659b8fcb5f47dc17c0f3dc2cb073104af`: Memory, Context, Work Flows y Routines que comparte otro miembro son de solo lectura —la UI oculta Eliminar y el host rechaza el borrado— y al retirar una sesión compartida se poda también la copia desligada, para que no quede en Ungrouped).
-**Imagen desplegada actual:** build de `main` @ `0067de6659b8fcb5f47dc17c0f3dc2cb073104af` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-07-workflows-space-and-instant` (commit `e60730d09fd0d081ffaac6ef0d191a73ae5565d1`: el panel de Workflows permite elegir el Space al crear, borrar un flujo (oculto si otro miembro lo compartió) y publicar el alta/baja de inmediato; el intercambio periódico baja a 10 s. Sobre la ronda anterior: Memory/Context/Workflows/Routines de otro miembro son de solo lectura y las sesiones de un Space ajeno también).
+**Imagen desplegada actual:** build de `main` @ `e60730d09fd0d081ffaac6ef0d191a73ae5565d1` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
