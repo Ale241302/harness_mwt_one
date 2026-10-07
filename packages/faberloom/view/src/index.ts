@@ -558,8 +558,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     return documents.map(document => `Documento «${document.name}»:\n${document.markdown}`).join('\n\n')
   }
 
-  /** Last time this process mirrored the shared Spaces' Sessions (throttle). */
-  private sessionsSyncedAt = 0
+  /** Guards one shared-Space Session mirror pass against overlapping runs. */
+  private mirroring = false
 
   /** Last time this process refreshed shared Context/Workflows/Routines (throttle). */
   private contentRefreshedAt = 0
@@ -613,6 +613,19 @@ export class FaberLoomViewService extends TypertRemoteService {
         }
       }
     }, 'faberloom.view.session-disposed')
+    // Mirror shared Space Sessions periodically while this identity is
+    // connected, so a membership change reaches the sidebar without opening a
+    // FaberLoom panel (the read path alone runs only on demand).
+    ctx.effect(() => {
+      const run = (): void => {
+        void this.mirrorSharedSpaces().catch((error: unknown) => {
+          ctx.logger.warn(`faberloom: no se pudo espejar las sesiones compartidas: ${String(error)}`)
+        })
+      }
+      const timer = setInterval(run, 20_000)
+      timer.unref()
+      return () => clearInterval(timer)
+    }, 'faberloom.view.session-mirror-timer')
   }
 
   /** Debounce a shared-Session reconcile so a burst of disposals runs it once. */
@@ -809,40 +822,9 @@ export class FaberLoomViewService extends TypertRemoteService {
       this.readMemory(),
     ])
     const registry = this.workspaceRegistryOrUndefined()
-    // Mirror each shared Space's Sessions into this host once, so a member sees
-    // the owner's transcripts and the owner sees the member's.
-    if (Date.now() - this.sessionsSyncedAt > 30_000) {
-      this.sessionsSyncedAt = Date.now()
-      const catalog = this.ctx.get('faberloomSessionShares')
-      if (catalog !== undefined) {
-        const outgoing = await this.sharesService().list(actor.id)
-          .then(list => new Set(list.outgoing.filter(grant => grant.resource.kind === 'space').map(grant => grant.resource.id)))
-          .catch(() => new Set<string>())
-        // Mirror only shared areas: an imported Space, or one the actor shared.
-        const shared = spaces.filter(space => space.workspaceId !== undefined
-          && !(space.ownerId === actor.id && !outgoing.has(space.id)))
-        // Read the ids this host already mirrors before the sync drops a row the
-        // console no longer carries: the copy then prunes, and the publish below
-        // never re-publishes it under this identity.
-        const mirroredBySpace = new Map<string, Set<string>>()
-        for (const space of shared) {
-          const rows = await catalog.list({ id: actor.id }, space.id).catch(() => [])
-          mirroredBySpace.set(space.id, new Set(rows.filter(row => row.ownerId !== actor.id).map(row => row.sessionId)))
-        }
-        await catalog.sync(actor.id).catch((error: unknown) => {
-          this.ctx.logger.warn(`faberloom: no se pudieron sincronizar las sesiones compartidas: ${String(error)}`)
-        })
-        for (const space of shared) {
-          const mirrored = mirroredBySpace.get(space.id) ?? new Set<string>()
-          await this.publishSpaceSessions(actor, space, mirrored).catch((error: unknown) => {
-            this.ctx.logger.warn(`faberloom: no se pudieron publicar las sesiones del espacio '${space.title}': ${String(error)}`)
-          })
-          await this.materializeSharedSessions(actor, space.id, space.workspaceId, false).catch((error: unknown) => {
-            this.ctx.logger.warn(`faberloom: no se pudieron espejar las sesiones del espacio '${space.title}': ${String(error)}`)
-          })
-        }
-      }
-    }
+    // Mirror each shared Space's Sessions into this host, so a member sees the
+    // owner's transcripts and the owner sees the member's.
+    await this.mirrorSharedSpaces()
     // The responsible agent lives on the space, so the same agent may lead
     // several spaces (a parent and its sub-spaces). The space's Workspace is
     // keyed by its opaque workdir.
@@ -1517,6 +1499,52 @@ export class FaberLoomViewService extends TypertRemoteService {
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: no se pudo importar la Routine compartida '${name}': ${error instanceof Error ? error.message : String(error)}`)
       }
+    }
+  }
+
+  /**
+   * Mirror every shared Space's Sessions between this host and the console:
+   * sync the catalog, publish this identity's own Sessions, and materialize the
+   * other members'. Runs from the periodic timer and the read path, so a
+   * membership change reaches the sidebar without opening a panel. Guarded
+   * against overlapping passes.
+   */
+  async mirrorSharedSpaces(): Promise<void> {
+    if (this.mirroring) return
+    this.mirroring = true
+    try {
+      const actor = this.actor()
+      const catalog = this.ctx.get('faberloomSessionShares')
+      if (catalog === undefined) return
+      const outgoing = await this.sharesService().list(actor.id)
+        .then(list => new Set(list.outgoing.filter(grant => grant.resource.kind === 'space').map(grant => grant.resource.id)))
+        .catch(() => new Set<string>())
+      const spaces = await this.ctx.faberloomSpaces.list(actor)
+      // Mirror only shared areas: an imported Space, or one the actor shared.
+      const shared = spaces.filter(space => space.workspaceId !== undefined
+        && !(space.ownerId === actor.id && !outgoing.has(space.id)))
+      // Read the ids this host already mirrors before the sync drops a row the
+      // console no longer carries: the copy then prunes, and the publish below
+      // never re-publishes it under this identity.
+      const mirroredBySpace = new Map<string, Set<string>>()
+      for (const space of shared) {
+        const rows = await catalog.list({ id: actor.id }, space.id).catch(() => [])
+        mirroredBySpace.set(space.id, new Set(rows.filter(row => row.ownerId !== actor.id).map(row => row.sessionId)))
+      }
+      await catalog.sync(actor.id).catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: no se pudieron sincronizar las sesiones compartidas: ${String(error)}`)
+      })
+      for (const space of shared) {
+        const mirrored = mirroredBySpace.get(space.id) ?? new Set<string>()
+        await this.publishSpaceSessions(actor, space, mirrored).catch((error: unknown) => {
+          this.ctx.logger.warn(`faberloom: no se pudieron publicar las sesiones del espacio '${space.title}': ${String(error)}`)
+        })
+        await this.materializeSharedSessions(actor, space.id, space.workspaceId, false).catch((error: unknown) => {
+          this.ctx.logger.warn(`faberloom: no se pudieron espejar las sesiones del espacio '${space.title}': ${String(error)}`)
+        })
+      }
+    } finally {
+      this.mirroring = false
     }
   }
 
