@@ -1835,6 +1835,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the imported `kind\\itemKey` keys.',
       },
       {
+        signature: 'async importedLocalIds(actorId: string): Promise<ReadonlySet<string>>',
+        description: 'The ids of the local copies this member materialized for the items other members shared, across every Space. A panel marks those rows read-only, so a member cannot delete content the author still owns.',
+        parameters: [{ name: 'actorId', description: 'the member reading.' }],
+        returns: 'the imported local copy ids.',
+      },
+      {
         signature: 'async noteContentLocal(readerId: string, consoleId: string, localId: string): Promise<void>',
         description: 'Record the id of the local copy a member materialized for one imported console row, so a later sync removes the copy when its author withdraws the item. A missing row is ignored.',
         parameters: [{ name: 'readerId', description: 'the member that materialized the copy.' }, { name: 'consoleId', description: 'the console-side row id.' }, { name: 'localId', description: 'the id of the local copy.' }],
@@ -6763,7 +6769,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomContextRow',
-    declaration: 'export interface FaberLoomContextRow {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly title: string;\n    readonly body: string;\n    readonly version: number;\n    readonly visibility: string;\n    readonly authorId: string;\n    readonly ownerId: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface FaberLoomContextRow {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly title: string;\n    readonly body: string;\n    readonly version: number;\n    readonly visibility: string;\n    readonly authorId: string;\n    readonly ownerId: string;\n    readonly updatedAt: string;\n    readonly shared?: boolean;\n}',
   },
   {
     name: 'FaberLoomContextVersion',
@@ -6951,7 +6957,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutineRow',
-    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n}',
+    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly shared?: boolean;\n}',
   },
   {
     name: 'FaberLoomRoutineStepRow',
@@ -7083,7 +7089,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSpaceMemoryRow',
-    declaration: 'export interface FaberLoomSpaceMemoryRow {\n    readonly id: string;\n    readonly text: string;\n    readonly spaceIds: readonly string[];\n    readonly createdAt: string;\n}',
+    declaration: 'export interface FaberLoomSpaceMemoryRow {\n    readonly id: string;\n    readonly text: string;\n    readonly spaceIds: readonly string[];\n    readonly createdAt: string;\n    readonly shared?: boolean;\n}',
   },
   {
     name: 'FaberLoomSpaceRow',
@@ -7143,7 +7149,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomWorkflowRow',
-    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n}',
+    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly shared?: boolean;\n}',
   },
   {
     name: 'FaberLoomWorkflowRunRow',

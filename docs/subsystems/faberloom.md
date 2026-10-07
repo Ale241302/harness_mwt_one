@@ -1356,6 +1356,15 @@ async listContent(actorId: string, spaceId: string): Promise<readonly FaberLoomS
 async importedContentKeys(actorId: string, spaceId: string): Promise<ReadonlySet<string>>
 
 /**
+ * The ids of the local copies this member materialized for the items other
+ * members shared, across every Space. A panel marks those rows read-only, so
+ * a member cannot delete content the author still owns.
+ * @param actorId - the member reading.
+ * @returns the imported local copy ids.
+ */
+async importedLocalIds(actorId: string): Promise<ReadonlySet<string>>
+
+/**
  * Record the id of the local copy a member materialized for one imported
  * console row, so a later sync removes the copy when its author withdraws the
  * item. A missing row is ignored.

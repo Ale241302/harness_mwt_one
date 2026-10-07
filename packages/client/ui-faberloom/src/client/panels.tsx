@@ -2073,13 +2073,15 @@ function routinesScreen() {
                 <span className={styles.tools}>
                   {drafting ? null : (
                     <>
-                      <button className={styles.danger} type="button" onClick={() => {
-                        if (selected === null) return
-                        setMessage(null)
-                        void removeRoutine(selected)
-                          .then((result) => { if (!result.ok) setMessage(result.error.message); else setSelected(null) })
-                          .catch((cause: unknown) => { setMessage(String(cause)) })
-                      }}>{t('action.delete')}</button>
+                      {chosen?.shared === true ? null : (
+                        <button className={styles.danger} type="button" onClick={() => {
+                          if (selected === null) return
+                          setMessage(null)
+                          void removeRoutine(selected)
+                            .then((result) => { if (!result.ok) setMessage(result.error.message); else setSelected(null) })
+                            .catch((cause: unknown) => { setMessage(String(cause)) })
+                        }}>{t('action.delete')}</button>
+                      )}
                       <button className={styles.primary} type="button" onClick={() => { if (selected !== null) setRoutineActive(selected, true) }}>{t('action.activate')}</button>
                       <button className={styles.secondary} type="button" onClick={() => { if (selected !== null) setRoutineActive(selected, false) }}>{t('action.pause')}</button>
                       <button className={styles.primary} type="button" onClick={() => { if (selected !== null) applyRun(startRoutine(selected)) }}>{t('routines.start')}</button>
@@ -2263,15 +2265,17 @@ function memoryScreen() {
           footer={(
             <>
               <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
-              <button className={styles.danger} type="button" onClick={() => {
-                if (chosen === null) return
-                setMessage(null)
-                void deleteSpaceMemory(chosen.id).then((result) => {
-                  if (!result.ok) { setMessage(result.error.message); return }
-                  setSelected(null)
-                  setReload(value => value + 1)
-                }).catch((cause: unknown) => { setMessage(String(cause)) })
-              }}>{t('memory.delete')}</button>
+              {chosen?.shared === true ? null : (
+                <button className={styles.danger} type="button" onClick={() => {
+                  if (chosen === null) return
+                  setMessage(null)
+                  void deleteSpaceMemory(chosen.id).then((result) => {
+                    if (!result.ok) { setMessage(result.error.message); return }
+                    setSelected(null)
+                    setReload(value => value + 1)
+                  }).catch((cause: unknown) => { setMessage(String(cause)) })
+                }}>{t('memory.delete')}</button>
+              )}
             </>
           )}>
           <Field label={t('memory.fullText')}><span className={styles.cellMuted}>{chosen?.text ?? ''}</span></Field>
@@ -3978,10 +3982,12 @@ function contextScreen() {
             footer={selected === null ? undefined : (
               <>
                 <span className={styles.tools}>
-                  <button className={styles.danger} type="button" onClick={() => {
-                    if (selected === null) return
-                    void props.context.remove(selected).then((result) => { if (result.ok) setSelected(null); refresh(result) })
-                  }}>{t('ctx.remove')}</button>
+                  {chosen?.shared === true ? null : (
+                    <button className={styles.danger} type="button" onClick={() => {
+                      if (selected === null) return
+                      void props.context.remove(selected).then((result) => { if (result.ok) setSelected(null); refresh(result) })
+                    }}>{t('ctx.remove')}</button>
+                  )}
                   <button className={styles.secondary} type="button" onClick={() => {
                     if (selected === null) return
                     void props.context.approve(selected).then((result) => {

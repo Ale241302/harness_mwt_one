@@ -163,6 +163,8 @@ export interface FaberLoomRoutineRow {
   readonly name: string
   /** Current status token. */
   readonly status: string
+  /** True when another member shared the routine; it is read-only here. */
+  readonly shared?: boolean
 }
 
 /** One space-scoped memory entry the Memoria panel renders. */
@@ -175,6 +177,8 @@ export interface FaberLoomSpaceMemoryRow {
   readonly spaceIds: readonly string[]
   /** ISO-8601 creation instant. */
   readonly createdAt: string
+  /** True when another member shared the entry; it is read-only here. */
+  readonly shared?: boolean
 }
 
 /** One mailbox envelope the Email panel lists. */
@@ -1048,6 +1052,8 @@ export interface FaberLoomWorkflowRow {
   readonly routineId: string | null
   /** Space the flow belongs to, or null for the personal scope. */
   readonly spaceId: string | null
+  /** True when another member shared the flow; it is read-only here. */
+  readonly shared?: boolean
 }
 
 /** A JSON value a Remote boundary may carry. */
@@ -1234,6 +1240,8 @@ export interface FaberLoomContextRow {
   readonly ownerId: string
   /** ISO-8601 last-change instant. */
   readonly updatedAt: string
+  /** True when another member shared the entry; it is read-only here. */
+  readonly shared?: boolean
 }
 
 /** One stored context version as the panel renders it. */

@@ -864,6 +864,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         workspaceId: workspace === undefined ? null : String(workspace.id),
       }
     }))
+    const sharedRoutineIds = await this.sharedLocalIds()
     return {
       spaces: rows,
       agents: agents.map((agent) => {
@@ -879,7 +880,10 @@ export class FaberLoomViewService extends TypertRemoteService {
         }
       }),
       board: board.map(item => ({ id: item.id, title: item.title, status: item.status, routineId: item.routineId })),
-      routines: routines.map(routine => ({ id: routine.id, name: routine.name, status: routine.status })),
+      routines: routines.map(routine => ({
+        id: routine.id, name: routine.name, status: routine.status,
+        ...sharedRoutineIds.has(String(routine.id)) ? { shared: true } : {},
+      })),
       memory,
       canWrite: !actor.readOnly,
     }
@@ -1064,7 +1068,9 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('workflowOverview')
   async workflowOverview(): Promise<readonly FaberLoomWorkflowRow[]> {
-    return (await this.workflowsService().list(this.workflowActor())).map(flow => this.workflowRow(flow))
+    const shared = await this.sharedLocalIds()
+    return (await this.workflowsService().list(this.workflowActor()))
+      .map(flow => ({ ...this.workflowRow(flow), ...shared.has(String(flow.id)) ? { shared: true } : {} }))
   }
 
   /**
@@ -1272,6 +1278,18 @@ export class FaberLoomViewService extends TypertRemoteService {
     const service = this.ctx.get('faberloomShares')
     if (service === undefined) throw new Error('faberloom: el servicio de compartir no está montado')
     return service
+  }
+
+  /**
+   * The ids of the local copies this identity materialized for the items other
+   * members shared. Those rows are read-only here: only their author removes
+   * them, and that removal reaches this member on the next sync.
+   * @returns the imported copy ids.
+   */
+  private async sharedLocalIds(): Promise<ReadonlySet<string>> {
+    const shares = this.ctx.get('faberloomShares')
+    if (shares === undefined || typeof shares.importedLocalIds !== 'function') return new Set<string>()
+    return await shares.importedLocalIds(this.actor().id).catch(() => new Set<string>())
   }
 
   /** Map one share grant to its panel row. */
@@ -1650,7 +1668,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         await this.publishSpaceSessions(actor, space, mirrored).catch((error: unknown) => {
           this.ctx.logger.warn(`faberloom: no se pudieron publicar las sesiones del espacio '${space.title}': ${String(error)}`)
         })
-        await this.materializeSharedSessions(actor, space.id, space.workspaceId, false).catch((error: unknown) => {
+        await this.materializeSharedSessions(actor, space.id, space.workspaceId, false, mirrored).catch((error: unknown) => {
           this.ctx.logger.warn(`faberloom: no se pudieron espejar las sesiones del espacio '${space.title}': ${String(error)}`)
         })
       }
@@ -1673,6 +1691,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   private async materializeSharedSessions(
     actor: SpaceActor, spaceId: string, workspaceId: string | undefined, syncCatalog = true,
+    previous: ReadonlySet<string> = new Set(),
   ): Promise<void> {
     if (workspaceId === undefined) return
     const persistence = this.ctx.get('sessionPersistence')
@@ -1749,12 +1768,15 @@ export class FaberLoomViewService extends TypertRemoteService {
         this.ctx.logger.warn(`faberloom: no se pudo materializar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
       }
     }
-    // Reconcile removals: a Session in this area that the actor neither owns
-    // (its own capture) nor the catalog still offers is a stale mirror of an
-    // author's deleted or archived Session, so it leaves here too. The caller
+    // Reconcile removals: a Session that the actor neither owns (its own
+    // capture) nor the catalog still offers is a stale mirror of an author's
+    // deleted or archived Session, so it leaves here too. `previous` carries the
+    // ids this host mirrored before the sync, which also catches a copy that was
+    // detached from the area — otherwise it lingers under Ungrouped. The caller
     // publishes before this runs, so the actor's own Sessions are already ownIds.
-    for (const sessionId of [...workspace.sessionIds]) {
-      const id = String(sessionId)
+    const candidates = new Set<string>([...workspace.sessionIds].map(String))
+    for (const id of previous) candidates.add(id)
+    for (const id of candidates) {
       if (ownIds.has(id) || wanted.has(id)) continue
       if (await persistence.stat(id as SessionId) === undefined) continue
       try {
@@ -2053,7 +2075,9 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('contextEntries')
   async contextEntries(): Promise<readonly FaberLoomContextRow[]> {
-    return (await this.contextService().list({ id: this.actor().id })).map(row => this.contextRow(row))
+    const shared = await this.sharedLocalIds()
+    return (await this.contextService().list({ id: this.actor().id }))
+      .map(row => ({ ...this.contextRow(row), ...shared.has(row.id) ? { shared: true } : {} }))
   }
 
   /**
@@ -2140,6 +2164,9 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('removeContext')
   async removeContext(id: string): Promise<readonly FaberLoomContextRow[]> {
+    if ((await this.sharedLocalIds()).has(id)) {
+      throw new Error('faberloom: ese contexto lo compartió otro miembro; solo su autor puede eliminarlo')
+    }
     await this.contextService().remove({ id: this.actor().id }, id)
     return await this.contextEntries()
   }
@@ -4103,6 +4130,9 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('removeRoutine')
   async removeRoutine(id: string): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove routines')
+    if ((await this.sharedLocalIds()).has(id)) {
+      throw new Error('faberloom: esa rutina la compartió otro miembro; solo su autor puede eliminarla')
+    }
     await this.ctx.faberloomRoutines.removeRoutine(this.actor().id, id as FaberLoomRoutineId)
     return await this.overview()
   }
@@ -4488,11 +4518,13 @@ export class FaberLoomViewService extends TypertRemoteService {
     const entries = spaceId === undefined || spaceId.length === 0
       ? await this.ctx.faberloomSpaces.listMemory(actor)
       : await this.ctx.faberloomSpaces.effectiveMemory(actor, spaceId as FaberLoomSpaceId)
+    const shared = await this.sharedLocalIds()
     return entries.map(entry => ({
       id: entry.id,
       text: entry.text,
       spaceIds: entry.spaceIds.map(String),
       createdAt: entry.createdAt,
+      ...shared.has(entry.id) ? { shared: true } : {},
     }))
   }
 
@@ -4505,6 +4537,9 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('deleteSpaceMemory')
   async deleteSpaceMemory(id: string): Promise<readonly FaberLoomSpaceMemoryRow[]> {
+    if ((await this.sharedLocalIds()).has(id)) {
+      throw new Error('faberloom: esa memoria la compartió otro miembro; solo su autor puede eliminarla')
+    }
     await this.ctx.faberloomSpaces.forgetMemory(this.actor(), id)
     return await this.spaceMemory()
   }

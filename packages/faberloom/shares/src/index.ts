@@ -526,6 +526,23 @@ export class FaberLoomShares extends Service {
   }
 
   /**
+   * The ids of the local copies this member materialized for the items other
+   * members shared, across every Space. A panel marks those rows read-only, so
+   * a member cannot delete content the author still owns.
+   * @param actorId - the member reading.
+   * @returns the imported local copy ids.
+   */
+  async importedLocalIds(actorId: string): Promise<ReadonlySet<string>> {
+    const prefix = importedContentPrefix(actorId)
+    const ids = new Set<string>()
+    for (const [key, record] of (await this.contentTable()).entries()) {
+      if (record.origin !== 'console' || !key.startsWith(prefix)) continue
+      if (record.localId !== null) ids.add(record.localId)
+    }
+    return ids
+  }
+
+  /**
    * Record the id of the local copy a member materialized for one imported
    * console row, so a later sync removes the copy when its author withdraws the
    * item. A missing row is ignored.
