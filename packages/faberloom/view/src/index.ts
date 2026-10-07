@@ -1599,21 +1599,15 @@ export class FaberLoomViewService extends TypertRemoteService {
     const context = this.ctx.get('faberloomContext')
     if (context !== undefined) {
       for (const entry of await context.list({ id: actor.id })) {
-        if (entry.spaceId !== space.id) continue
         add({ kind: 'context', itemKey: entry.title, payload: { title: entry.title, body: entry.body } })
       }
     }
-    const flows = (await this.workflowsService().list(this.workflowActor()))
-      .filter(flow => flow.scope.kind === 'space' && flow.scope.spaceId === space.id)
-    for (const flow of flows) {
+    // Every Work Flow and Routine the member owns travels to the other members,
+    // as the one-way snapshot already did; the copies are excluded by name.
+    for (const flow of await this.workflowsService().list(this.workflowActor())) {
       add({ kind: 'workflow', itemKey: flow.name, payload: { name: flow.name, definition: flow.definition as unknown as Record<string, unknown> } })
     }
-    const allRoutines = await this.ctx.faberloomRoutines.listRoutines(actor.id)
-    const routines = new Map(allRoutines.map(routine => [String(routine.id), routine] as const))
-    for (const flow of flows) {
-      if (flow.routineId === undefined) continue
-      const routine = routines.get(String(flow.routineId))
-      if (routine === undefined) continue
+    for (const routine of await this.ctx.faberloomRoutines.listRoutines(actor.id)) {
       add({ kind: 'routine', itemKey: routine.name, payload: { name: routine.name, definition: routine.definition as unknown as Record<string, unknown> } })
     }
     await this.sharesService().publishContent(actor.id, space.id, items)
