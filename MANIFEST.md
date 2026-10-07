@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-sidebar-agents-skills` (commit `714b74392e26209db1df988824d618cd05a2d654`: el sidebar ya no muestra la fila Chat; Agents y Skills comparten una sola fila con pestañas (los paneles siguen enrutados); la sesión en blanco «New Session» ya no aparece bajo Ungrouped. Sobre `c052ffeeb4`).
-**Imagen desplegada actual:** build de `main` @ `714b74392e26209db1df988824d618cd05a2d654` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-07-tombstones-edit-agents-skills` (commit `148006210382d3e9bd5cf643686971926664469f`: borrado bidireccional real de contenido ajeno mediante tombstones (columna `deleted_at` en la consola, `M4`), enforcement de `edit-<módulo>` sobre copias compartidas, y Agents+Skills en un único panel con pestañas locales (una sola fila de sidebar, resaltado correcto). Sobre `714b74392e`).
+**Imagen desplegada actual:** build de `main` @ `148006210382d3e9bd5cf643686971926664469f` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
