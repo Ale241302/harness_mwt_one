@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-06-announce-mirrored-sessions` (commit `ea127e1ad3725ac11fc0a66a191e0b18bed7afbd`: sobre la sincronización, al materializar una sesión de otro miembro el view ahora **emite `api-session/added`**, de modo que el cliente la añade a su lista y el sidebar la muestra en la misma carga —antes solo aparecía en una segunda recarga, porque el cliente pide la lista antes de que corra el espejo).
-**Imagen desplegada actual:** build de `main` @ `ea127e1ad3725ac11fc0a66a191e0b18bed7afbd` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-06-announce-mirrored-sessions` (commit `fa5e64debfd9440736fdacc487fa9641cd0200ca`: sobre la sincronización, al materializar una sesión de otro miembro el view ahora **emite `api-session/added`**, de modo que el cliente la añade a su lista y el sidebar la muestra en la misma carga —antes solo aparecía en una segunda recarga, porque el cliente pide la lista antes de que corra el espejo).
+**Imagen desplegada actual:** build de `main` @ `fa5e64debfd9440736fdacc487fa9641cd0200ca` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones

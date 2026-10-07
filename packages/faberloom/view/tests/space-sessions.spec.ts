@@ -152,16 +152,21 @@ describe('FaberLoomViewService shared Sessions', () => {
       ...shared,
       content: JSON.stringify({
         session: { version: 3, id: 'sess-remote', createdAt: 1, cwd: '/root/SICOP', isSeeded: false, delegationDepth: 0, agentPreset: 'standard' },
-        events: [{ type: 'user/message', seq: 0, time: 1, data: {} }],
+        events: [
+          { type: 'turn/start', seq: 1, time: 1, data: {} },
+          { type: 'user/message', seq: 2, time: 2, data: {} },
+        ],
       }),
     })
     await view.spaceSessions('sp-1')
     await vi.waitFor(() => expect(persistence.create).toHaveBeenCalled())
     expect(persistence.create).toHaveBeenCalledWith(expect.objectContaining({ id: 'sess-remote', cwd: '/data/owner/spaces/shared/3a4d6839' }))
-    // The copy is announced to the client's Session list, so a reload that
-    // fetched the list before this mirror still shows it.
+    // The copy is announced to the client's Session list with its title and a
+    // non-blank marker, so a reload that fetched the list before this mirror
+    // still shows it under its area.
     expect(emit).toHaveBeenCalledWith('api-session/added', expect.objectContaining({
       sessionId: 'sess-remote', blank: false, cwd: '/data/owner/spaces/shared/3a4d6839',
+      projections: { values: { title: 'Consulta' }, asOfSeq: 2 },
     }))
   })
 
