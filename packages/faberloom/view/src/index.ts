@@ -628,7 +628,7 @@ export class FaberLoomViewService extends TypertRemoteService {
           ctx.logger.warn(`faberloom: no se pudo refrescar el contenido compartido: ${String(error)}`)
         })
       }
-      const timer = setInterval(run, 20_000)
+      const timer = setInterval(run, 10_000)
       timer.unref()
       return () => clearInterval(timer)
     }, 'faberloom.view.session-mirror-timer')
@@ -822,7 +822,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     // Refresh the owner's published content and re-read every shared Space's
     // Context/Workflows/Routines, so a reload shows the author's current set.
-    if (Date.now() - this.contentRefreshedAt > 20_000) {
+    if (Date.now() - this.contentRefreshedAt > 10_000) {
       this.contentRefreshedAt = Date.now()
       await this.refreshSharedContent(actor).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: shared content refresh failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -1086,15 +1086,59 @@ export class FaberLoomViewService extends TypertRemoteService {
   /**
    * Create an empty work flow and return the refreshed list.
    * @param name - display name.
+   * @param spaceId - the Space the flow belongs to, or absent for the personal scope.
    * @returns the refreshed rows.
    */
   @Remote('createWorkflow')
-  async createWorkflow(name: string): Promise<readonly FaberLoomWorkflowRow[]> {
+  async createWorkflow(name: string, spaceId?: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    const scope: WorkFlowScope = spaceId === undefined || spaceId.length === 0
+      ? { kind: 'personal' }
+      : { kind: 'space', spaceId }
     await this.workflowsService().create(this.workflowActor(), {
       name,
+      scope,
       definition: { intent: name, nodes: [], edges: [], permissions: [], failurePolicy: 'stop' },
     })
+    // Publish immediately so a shared Space's members see the new flow without
+    // waiting for the next mirror pass.
+    if (scope.kind === 'space') await this.pushSpaceContent(scope.spaceId)
     return await this.workflowOverview()
+  }
+
+  /**
+   * Remove one work flow the actor owns and return the refreshed list. A flow
+   * another member shared stays read-only here. Deleting a Space flow publishes
+   * the removal at once, so its members drop their copy without waiting.
+   * @param id - work flow id.
+   * @returns the refreshed rows.
+   */
+  @Remote('deleteWorkflow')
+  async deleteWorkflow(id: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove work flows')
+    if ((await this.sharedLocalIds()).has(id)) {
+      throw new Error('faberloom: ese flujo lo compartió otro miembro; solo su autor puede eliminarlo')
+    }
+    const flow = await this.workflowsService().get(this.workflowActor(), id as WorkFlowId)
+    const spaceId = flow.scope.kind === 'space' ? flow.scope.spaceId : undefined
+    await this.workflowsService().remove(this.workflowActor(), id as WorkFlowId)
+    if (spaceId !== undefined) await this.pushSpaceContent(spaceId)
+    return await this.workflowOverview()
+  }
+
+  /**
+   * Publish one Space's content now, so a member's create or delete reaches the
+   * other members before the next periodic exchange. A no-op without the
+   * console, or for a Space this identity does not mirror.
+   * @param spaceId - the Space whose content is published.
+   */
+  private async pushSpaceContent(spaceId: string): Promise<void> {
+    if (this.consoleBase() === undefined || this.consoleToken() === undefined) return
+    const actor = this.actor()
+    const space = (await this.ctx.faberloomSpaces.list(actor)).find(candidate => candidate.id === spaceId)
+    if (space === undefined) return
+    await this.publishSpaceContent(actor, space).catch((error: unknown) => {
+      this.ctx.logger.warn(`faberloom: no se pudo publicar el contenido del espacio '${space.title}': ${error instanceof Error ? error.message : String(error)}`)
+    })
   }
 
   /**

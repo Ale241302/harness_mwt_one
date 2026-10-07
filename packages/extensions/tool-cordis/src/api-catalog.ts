@@ -2020,9 +2020,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the flow detail.',
       },
       {
-        signature: '@Remote(\'createWorkflow\') async createWorkflow(name: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        signature: '@Remote(\'createWorkflow\') async createWorkflow(name: string, spaceId?: string): Promise<readonly FaberLoomWorkflowRow[]>',
         description: 'Create an empty work flow and return the refreshed list.',
-        parameters: [{ name: 'name', description: 'display name.' }],
+        parameters: [{ name: 'name', description: 'display name.' }, { name: 'spaceId', description: 'the Space the flow belongs to, or absent for the personal scope.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'deleteWorkflow\') async deleteWorkflow(id: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Remove one work flow the actor owns and return the refreshed list. A flow another member shared stays read-only here. Deleting a Space flow publishes the removal at once, so its members drop their copy without waiting.',
+        parameters: [{ name: 'id', description: 'work flow id.' }],
         returns: 'the refreshed rows.',
       },
       {

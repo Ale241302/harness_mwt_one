@@ -504,6 +504,19 @@ describe('workspace browser rows', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
+  it('a session mirrored from a shared Space hides the destructive delete action', () => {
+    const node: SessionNode = {
+      id: sid('s-shared'), title: 'Del dueño', blank: false, running: false,
+      runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0, shared: true,
+    }
+    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onDelete={vi.fn()} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: '会话“Del dueño”的操作' }))
+    // The author owns it: archive stays, delete does not.
+    expect(screen.getByRole('menuitem', { name: '归档会话' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: '删除会话' })).toBeNull()
+  })
+
 
   it('shows the hover card after the dwell and suppresses it while the row menu is open', () => {
     vi.useFakeTimers()

@@ -1631,9 +1631,19 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
 /**
  * Create an empty work flow and return the refreshed list.
  * @param name - display name.
+ * @param spaceId - the Space the flow belongs to, or absent for the personal scope.
  * @returns the refreshed rows.
  */
-@Remote('createWorkflow') async createWorkflow(name: string): Promise<readonly FaberLoomWorkflowRow[]>
+@Remote('createWorkflow') async createWorkflow(name: string, spaceId?: string): Promise<readonly FaberLoomWorkflowRow[]>
+
+/**
+ * Remove one work flow the actor owns and return the refreshed list. A flow
+ * another member shared stays read-only here. Deleting a Space flow publishes
+ * the removal at once, so its members drop their copy without waiting.
+ * @param id - work flow id.
+ * @returns the refreshed rows.
+ */
+@Remote('deleteWorkflow') async deleteWorkflow(id: string): Promise<readonly FaberLoomWorkflowRow[]>
 
 /**
  * Rename one work flow and return the refreshed list.

@@ -259,7 +259,8 @@ export interface FaberloomPanelInjected {
   workflows: {
     overview: () => Promise<Result<readonly FaberLoomWorkflowRow[]>>
     detail: (id: string) => Promise<Result<FaberLoomWorkflowDetail>>
-    create: (name: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    create: (name: string, spaceId?: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+    remove: (id: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
     save: (id: string, name: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
     addNode: (id: string, kind: string, title: string, configJson: string, nodeId?: string) => Promise<Result<FaberLoomWorkflowDetail>>
     updateNode: (id: string, nodeId: string, title: string, kind: string, configJson: string) => Promise<Result<FaberLoomWorkflowDetail>>
@@ -3246,6 +3247,7 @@ function workflowsScreen() {
     const [kind, setKind] = useState('agent')
     const [title, setTitle] = useState('')
     const [flowName, setFlowName] = useState('')
+    const [flowSpaceId, setFlowSpaceId] = useState('')
     const [scheduleRecurrence, setScheduleRecurrence] = useState('')
     const [scheduleTimezone, setScheduleTimezone] = useState('')
     const [scheduleFrom, setScheduleFrom] = useState('')
@@ -3339,6 +3341,7 @@ function workflowsScreen() {
       ? null
       : health.routines.find(row => row.routineId === detail.routineId) ?? null
     const selectedSpaceId = flows.find(flow => flow.id === selected)?.spaceId ?? null
+    const selectedFlowShared = flows.find(flow => flow.id === selected)?.shared === true
     const selectedSpaceName = selectedSpaceId === null
       ? null
       : topology?.spaces.find(space => space.id === selectedSpaceId)?.title ?? selectedSpaceId
@@ -3519,9 +3522,13 @@ function workflowsScreen() {
         <aside className={styles.workflowSidebar}>
           <h3 className={styles.h2}>{t('wf.title')}</h3>
           <input value={flowName} placeholder={t('wf.namePlaceholder')} onChange={(event) => { setFlowName(event.target.value) }} />
+          <select aria-label={t('wf.space')} value={flowSpaceId} onChange={(event) => { setFlowSpaceId(event.target.value) }}>
+            <option value="">{t('wf.personal')}</option>
+            {spaceOptions.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+          </select>
           <button type="button" className={styles.primary} onClick={() => {
             if (flowName.trim().length === 0) return
-            void workflows.create(flowName.trim()).then((result) => { acceptFlows(result); if (result.ok) setFlowName('') })
+            void workflows.create(flowName.trim(), flowSpaceId.length === 0 ? undefined : flowSpaceId).then((result) => { acceptFlows(result); if (result.ok) setFlowName('') })
           }}>{t('wf.create')}</button>
           <button type="button" onClick={() => { setTemplatesOpen(true) }}>{t('wf.templates')}</button>
           {flows.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.empty')}</span> : null}
@@ -3538,6 +3545,17 @@ function workflowsScreen() {
               <div className={styles.workflowToolbar}>
                 <button type="button" className={styles.primary} onClick={() => { act(() => workflows.setStatus(selected, 'active')) }}>{t('wf.activate')}</button>
                 <button type="button" onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
+                {selectedFlowShared ? null : (
+                  <button type="button" className={styles.danger} onClick={() => {
+                    if (selected === null) return
+                    void workflows.remove(selected).then((result) => {
+                      if (!result.ok) { setMessage(result.error.message); return }
+                      setSelected(null)
+                      setFlows(result.value)
+                      setMessage(null)
+                    })
+                  }}>{t('action.delete')}</button>
+                )}
                 <button type="button" className={styles.primary} onClick={() => { addNode(selected) }}>{t('wf.addNode')}</button>
                 <button type="button" onClick={() => { setLogsOpen(true) }}>{t('wf.logs')}</button>
                 <button type="button" onClick={() => { void workflows.workflowVersions(selected).then((result) => { if (result.ok) { setFlowVersions(result.value); setVersionsOpen(true) } }) }}>{t('wf.versions')}</button>

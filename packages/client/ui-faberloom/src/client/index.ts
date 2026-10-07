@@ -255,7 +255,8 @@ export function apply(ctx: ClientContext): void {
       workflows: {
         overview: () => ctx.remote.faberloomView.workflowOverview(),
         detail: id => ctx.remote.faberloomView.workflowDetail(id),
-        create: name => ctx.remote.faberloomView.createWorkflow(name),
+        create: (name, spaceId) => ctx.remote.faberloomView.createWorkflow(name, spaceId),
+        remove: id => ctx.remote.faberloomView.deleteWorkflow(id),
         save: (id, name) => ctx.remote.faberloomView.saveWorkflow(id, name),
         addNode: (id, kind, title, configJson, nodeId) => ctx.remote.faberloomView.addNode(id, kind, title, configJson, nodeId),
         updateNode: (id, nodeId, title, kind, configJson) => ctx.remote.faberloomView.updateNode(id, nodeId, title, kind, configJson),

@@ -599,7 +599,7 @@ describe('faberloom work-flow canvas', () => {
       expect(createWorkflow).not.toHaveBeenCalled()
       fireEvent.change(view.getByPlaceholderText('Flow name'), { target: { value: 'Anti-spam' } })
       fireEvent.click(view.getByRole('button', { name: 'New flow' }))
-      await waitFor(() => { expect(createWorkflow).toHaveBeenCalledWith('Anti-spam') })
+      await waitFor(() => { expect(createWorkflow).toHaveBeenCalledWith('Anti-spam', undefined) })
 
       fireEvent.click(await view.findByText(/Anti-spam/))
       fireEvent.click(await view.findByRole('button', { name: 'Activate' }))
@@ -621,7 +621,7 @@ describe('faberloom work-flow canvas', () => {
       await waitFor(() => {
         expect(updateNode).toHaveBeenCalledWith('wf1', 'n2', 'borra', 'imap.action', JSON.stringify({ connectionId: 'c1' }))
       })
-      expect(view.getByText(/Marluvas/)).toBeTruthy()
+      expect(view.getAllByText(/Marluvas/).length).toBeGreaterThan(0)
     } finally {
       window.open = originalOpen
       if (originalCreate === undefined) delete urlAny.createObjectURL
