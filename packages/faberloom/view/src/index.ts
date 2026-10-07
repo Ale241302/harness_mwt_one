@@ -1343,15 +1343,36 @@ export class FaberLoomViewService extends TypertRemoteService {
     return await shares.importedLocalIds(this.actor().id).catch(() => new Set<string>())
   }
 
-  /** The module permission that allows removing one shared resource family. */
-  private static readonly modulePermission: Readonly<Record<FaberLoomSharedContentKind, string>> = {
+  /** The module name behind one shared resource family, for its permission tokens. */
+  private static readonly moduleName: Readonly<Record<FaberLoomSharedContentKind, string>> = {
     memory: 'memory', context: 'context', workflow: 'workflows', routine: 'routines',
   }
 
   /**
-   * The ids of the shared copies the actor may remove: another member's item
-   * that lives in a Space whose grant carries the module permission (memory,
-   * context, workflows, routines). The author's own items are always removable.
+   * Whether the actor holds one module action (`view`, `create`, `edit`,
+   * `delete`) on a Space. The Space owner always passes; a member needs an active
+   * grant carrying `<action>-<module>`.
+   * @param actor - the acting identity.
+   * @param spaceId - the Space the module lives in.
+   * @param kind - the shared resource family.
+   * @param action - the module action.
+   * @returns true when the action is authorized.
+   */
+  private async canModule(
+    actor: SpaceActor, spaceId: string, kind: FaberLoomSharedContentKind, action: string,
+  ): Promise<boolean> {
+    const shares = this.ctx.get('faberloomShares')
+    if (shares === undefined || typeof shares.can !== 'function') return false
+    const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId).catch(() => undefined)
+    if (space === undefined) return false
+    const permission = `${action}-${FaberLoomViewService.moduleName[kind]}`
+    return await shares.can(actor.id, space.ownerId, { kind: 'space', id: spaceId }, permission as never).catch(() => false)
+  }
+
+  /**
+   * The ids of the shared copies the actor may remove: another member's item that
+   * lives in a Space whose grant carries `delete-<module>`. The author's own
+   * items are always removable.
    * @returns the removable imported copy ids.
    */
   private async deletableSharedIds(): Promise<ReadonlySet<string>> {
@@ -1361,11 +1382,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const actor = this.actor()
     for (const [localId, copy] of await shares.importedLocalCopies(actor.id)
       .catch((): ReadonlyMap<string, { spaceId: string; kind: FaberLoomSharedContentKind }> => new Map())) {
-      const space = await this.ctx.faberloomSpaces.get(actor, copy.spaceId as FaberLoomSpaceId).catch(() => undefined)
-      if (space === undefined) continue
-      const permission = FaberLoomViewService.modulePermission[copy.kind]
-      const allowed = await shares.can(actor.id, space.ownerId, { kind: 'space', id: copy.spaceId }, permission as never).catch(() => false)
-      if (allowed) ids.add(localId)
+      if (await this.canModule(actor, copy.spaceId, copy.kind, 'delete')) ids.add(localId)
     }
     return ids
   }
@@ -1513,7 +1530,19 @@ export class FaberLoomViewService extends TypertRemoteService {
     for (const space of spaces) {
       const rows = (await shares.listContent(actor.id, space.id).catch(() => []))
         .filter(row => row.origin === 'console')
-      await this.materializeSharedContent(actor, space, rows)
+      // Materialize only the modules the member may view; a module it may not
+      // view loses its copy, so a revoked `view-<module>` stops showing the
+      // author's records here.
+      const viewable: FaberLoomSharedContentRow[] = []
+      for (const row of rows) {
+        if (await this.canModule(actor, space.id, row.kind, 'view')) { viewable.push(row); continue }
+        if (row.localId === null) continue
+        await this.forgetSharedContent(actor, row).catch((error: unknown) => {
+          this.ctx.logger.warn(`faberloom: no se pudo retirar el contenido compartido de '${space.title}': ${error instanceof Error ? error.message : String(error)}`)
+        })
+        if (row.consoleId !== null) await shares.clearContentLocal(actor.id, row.consoleId).catch(() => undefined)
+      }
+      await this.materializeSharedContent(actor, space, viewable)
       const live = new Set(rows.map(row => row.consoleId).filter((id): id is string => id !== null))
       for (const row of before.get(space.id) ?? []) {
         if (row.consoleId !== null && live.has(row.consoleId)) continue
@@ -1679,11 +1708,16 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   private async publishSpaceContent(actor: SpaceActor, space: FaberLoomSpace): Promise<void> {
     const imported = await this.sharesService().importedContentKeys(actor.id, space.id)
+    const canCreate = new Map<FaberLoomSharedContentKind, boolean>()
+    for (const kind of ['memory', 'context', 'workflow', 'routine'] as const) {
+      canCreate.set(kind, await this.canModule(actor, space.id, kind, 'create'))
+    }
     const items: FaberLoomSharedContentInput[] = []
     // The console stores `item_key` trimmed, so both the key and the payload
     // field it mirrors are trimmed here; otherwise an imported copy could be
     // mistaken for a local item and echoed back.
     const add = (item: FaberLoomSharedContentInput): void => {
+      if (canCreate.get(item.kind) !== true) return
       const field = item.kind === 'memory' ? 'text' : item.kind === 'context' ? 'title' : 'name'
       const itemKey = item.itemKey.trim()
       if (itemKey.length === 0 || imported.has(`${item.kind}\u0000${itemKey}`)) return

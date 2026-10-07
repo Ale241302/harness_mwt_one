@@ -137,6 +137,7 @@ function harness(options: {
       _actorId: string, _spaceId: string, _items: readonly { kind: string; itemKey: string }[],
     ): Promise<void> => undefined),
     noteContentLocal: vi.fn(async (): Promise<void> => undefined),
+    can: vi.fn(async (): Promise<boolean> => true),
   }
   const events = new Map<string, (...args: never[]) => void>()
   const logger = { warn: vi.fn(), info: vi.fn() }

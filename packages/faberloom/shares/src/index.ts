@@ -577,6 +577,20 @@ export class FaberLoomShares extends Service {
   }
 
   /**
+   * Forget the local copy a member materialized for one imported console row, so
+   * a later sync materializes it again once the member regains the view
+   * permission. A missing row is ignored.
+   * @param readerId - the member that materialized the copy.
+   * @param consoleId - the console-side row id.
+   */
+  async clearContentLocal(readerId: string, consoleId: string): Promise<void> {
+    const table = await this.contentTable()
+    const key = `${importedContentPrefix(readerId)}${consoleId}`
+    if (table.get(key) === undefined) return
+    await table.update(key, record => ({ ...record, localId: null }))
+  }
+
+  /**
    * Import the console's shared-content rows for one member and prune the local
    * rows the console no longer carries, so a withdrawn item stops showing. A
    * no-op when the console is not configured. The reader reads back the removed

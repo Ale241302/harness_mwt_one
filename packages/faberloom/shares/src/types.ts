@@ -34,16 +34,30 @@ export type FaberLoomSharePermission =
   | 'index-context'
   | 'share'
   | 'manage-members'
-  | 'memory'
-  | 'context'
-  | 'workflows'
-  | 'routines'
+  | 'view-memory'
+  | 'create-memory'
+  | 'edit-memory'
+  | 'delete-memory'
+  | 'view-context'
+  | 'edit-context'
+  | 'delete-context'
+  | 'view-workflows'
+  | 'create-workflows'
+  | 'edit-workflows'
+  | 'delete-workflows'
+  | 'view-routines'
+  | 'create-routines'
+  | 'edit-routines'
+  | 'delete-routines'
 
 /** Every permission, in display order. */
 export const SHARE_PERMISSIONS: readonly FaberLoomSharePermission[] = [
   'view', 'run', 'edit-graph', 'add-nodes', 'remove-nodes', 'edit-agents',
   'manage-triggers', 'manage-connections', 'approve-effects', 'create-context', 'index-context', 'share', 'manage-members',
-  'memory', 'context', 'workflows', 'routines',
+  'view-memory', 'create-memory', 'edit-memory', 'delete-memory',
+  'view-context', 'edit-context', 'delete-context',
+  'view-workflows', 'create-workflows', 'edit-workflows', 'delete-workflows',
+  'view-routines', 'create-routines', 'edit-routines', 'delete-routines',
 ]
 
 /** Grant lifecycle: the grantee has not accepted yet, accepted, or revoked. */

@@ -1852,6 +1852,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'readerId', description: 'the member that materialized the copy.' }, { name: 'consoleId', description: 'the console-side row id.' }, { name: 'localId', description: 'the id of the local copy.' }],
       },
       {
+        signature: 'async clearContentLocal(readerId: string, consoleId: string): Promise<void>',
+        description: 'Forget the local copy a member materialized for one imported console row, so a later sync materializes it again once the member regains the view permission. A missing row is ignored.',
+        parameters: [{ name: 'readerId', description: 'the member that materialized the copy.' }, { name: 'consoleId', description: 'the console-side row id.' }],
+      },
+      {
         signature: 'async syncContent(readerId: string): Promise<void>',
         description: 'Import the console\'s shared-content rows for one member and prune the local rows the console no longer carries, so a withdrawn item stops showing. A no-op when the console is not configured. The reader reads back the removed rows (with their `localId`) before this runs, so it can delete the materialized copies.',
         parameters: [{ name: 'readerId', description: 'the identity whose incoming items are imported.' }],
@@ -7037,7 +7042,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSharePermission',
-    declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'create-context\' | \'index-context\' | \'share\' | \'manage-members\' | \'memory\' | \'context\' | \'workflows\' | \'routines\';',
+    declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'create-context\' | \'index-context\' | \'share\' | \'manage-members\' | \'view-memory\' | \'create-memory\' | \'edit-memory\' | \'delete-memory\' | \'view-context\' | \'edit-context\' | \'delete-context\' | \'view-workflows\' | \'create-workflows\' | \'edit-workflows\' | \'delete-workflows\' | \'view-routines\' | \'create-routines\' | \'edit-routines\' | \'delete-routines\';',
   },
   {
     name: 'FaberLoomShareRepublishInput',
