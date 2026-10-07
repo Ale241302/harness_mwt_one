@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-mirror-self-heal` (commit `8ae3431676e243dc9e20987913e1aefabf06a41e`: el espejo periódico de sesiones se recupera si un pase queda colgado —un guard en `true` podía bloquearlo para siempre en una cuenta, mientras la vía de contenido seguía— y avisa si falta el área espejo; sobre `d00aa8bcdb` del selector de Space).
-**Imagen desplegada actual:** build de `main` @ `8ae3431676e243dc9e20987913e1aefabf06a41e` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-07-share-module-permissions` (commit `30b300eb9104fa43c11580fbee7cad9393d63ade`: al compartir se conceden permisos por módulo —Memory, Context, Workflows, Routines— y el receptor solo borra lo compartido de ese módulo si lo tiene; el modal de compartir es más ancho. Sobre `8ae3431676` del espejo auto-recuperable).
+**Imagen desplegada actual:** build de `main` @ `30b300eb9104fa43c11580fbee7cad9393d63ade` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
