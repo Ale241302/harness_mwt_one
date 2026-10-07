@@ -65,12 +65,17 @@ export type SpaceFileRecord = z.infer<typeof spaceFileRecord>
 
 /**
  * Durable shape of one space-scoped memory entry: the owner, the spaces it is
- * attached to (one or more), its text, and its creation instant.
+ * attached to (one or more), its text, and its creation instant. `sessionId`
+ * records the Session that captured the entry, so deleting that Session removes
+ * the entry here and, through the shared-content catalog, on every member.
  */
 export const spaceMemoryRecord = z.object({
   ownerId: z.string(),
   spaceIds: z.array(spaceId),
   text: z.string(),
+  // Defaulted so entries captured before the Session link keep loading under
+  // the same domain version.
+  sessionId: z.string().nullable().default(null),
   createdAt: z.string(),
 })
 

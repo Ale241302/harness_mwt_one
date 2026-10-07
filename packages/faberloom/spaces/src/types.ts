@@ -176,6 +176,8 @@ export interface FaberLoomSpaceMemory {
   readonly spaceIds: readonly FaberLoomSpaceId[]
   /** The remembered text. */
   readonly text: string
+  /** Session that captured the entry, or null when it was written by hand. */
+  readonly sessionId: string | null
   /** ISO-8601 creation instant. */
   readonly createdAt: string
 }

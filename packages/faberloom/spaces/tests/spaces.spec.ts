@@ -95,6 +95,20 @@ describe('FaberLoomSpaces', () => {
     await expect(spaces.remember(SONEPAR, 'x', [parent.id])).rejects.toThrow('access denied')
   })
 
+  it('links memory to the Session that captured it and drops it when that Session is deleted', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'SICOP' })
+    const captured = await spaces.remember(SONDEL, 'factura 505433', [space.id], 'sess-1')
+    expect(captured.sessionId).toBe('sess-1')
+    await spaces.remember(SONDEL, 'nota a mano', [space.id])
+    await spaces.remember(SONDEL, 'otra sesión', [space.id], 'sess-2')
+
+    // Only the entries captured from that Session go.
+    expect(await spaces.forgetMemoryBySession(SONDEL, 'sess-1')).toBe(1)
+    expect((await spaces.listMemory(SONDEL, space.id)).map(entry => entry.text)).toEqual(['nota a mano', 'otra sesión'])
+    expect(await spaces.forgetMemoryBySession(SONDEL, 'sess-1')).toBe(0)
+  })
+
   it('F02 · inheritance off omits the parent context; on includes it', async () => {
     const { spaces } = await harness()
     const parent = await spaces.create(SONDEL, { title: 'Marluvas' })

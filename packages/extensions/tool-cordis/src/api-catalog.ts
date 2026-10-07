@@ -1367,7 +1367,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async seed(): Promise<SeedReport>',
-        description: 'Seed the catalogue once for this owner.\n\nA pass is a no-op when the identity is read-only, when it has no owner, or when the marker exists. Items are matched by name, so a retry after a partial pass never duplicates what already landed.',
+        description: 'Seed the catalogue once for this owner.\n\nA pass seeds the deployment\'s shared agents for every identity, and the owner\'s plan agents once (no-op while the marker exists). A read-only identity still receives the shared agents but no plan agents or routines. Items are matched by name, so a retry after a partial pass never duplicates what already landed.',
         parameters: [],
         returns: 'what the pass created.',
       },
@@ -1790,6 +1790,17 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the outgoing and incoming grants, oldest first.',
       },
       {
+        signature: 'async snapshotFor(granteeEmail: string, grantId: string): Promise<Record<string, unknown> | null>',
+        description: 'The portable snapshot attached to one grant the actor holds, so a consumer can materialize the shared resource without a second console read.',
+        parameters: [{ name: 'granteeEmail', description: 'the identity that holds the grant.' }, { name: 'grantId', description: 'grant id (the id `list` returned for the incoming grant).' }],
+        returns: 'the resource snapshot, or null when the actor holds no such grant.',
+      },
+      {
+        signature: 'async republish(input: FaberLoomShareRepublishInput): Promise<void>',
+        description: 'Replace the portable snapshot the console holds for one of the actor\'s Space/Work Flow grants, so a grantee\'s next sync reads the current content. The grant lifecycle and permissions are untouched. A no-op when the console is not configured, so a local-only deployment keeps working.',
+        parameters: [{ name: 'input', description: 'resource, display name, and the current snapshot.' }],
+      },
+      {
         signature: 'async permissionsFor(granteeEmail: string, resource: FaberLoomShareResource): Promise<readonly FaberLoomSharePermission[]>',
         description: 'List the permissions one grantee holds on one resource, unioned over every active grant.',
         parameters: [{ name: 'granteeEmail', description: 'the identity acting.' }, { name: 'resource', description: 'the resource being touched.' }],
@@ -1806,6 +1817,33 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Import the grants the console holds for one grantee and prune the local copies the console no longer carries, so a revoked share stops authorizing here. A no-op when the console is not configured.',
         parameters: [{ name: 'granteeEmail', description: 'the identity whose incoming grants are imported.' }],
       },
+      {
+        signature: 'async publishContent(actorId: string, spaceId: string, items: readonly FaberLoomSharedContentInput[]): Promise<void>',
+        description: 'Publish one Space\'s own Memory/Context/Work Flow/Routine items to the console as this member\'s full set, so the other members read them, and keep the durable owner rows current. The console write replaces the author\'s set for the Space, so an item dropped here stops reaching the other members.',
+        parameters: [{ name: 'actorId', description: 'the publishing identity.' }, { name: 'spaceId', description: 'the Space the items belong to.' }, { name: 'items', description: 'the member\'s current items for the Space.' }],
+      },
+      {
+        signature: 'async listContent(actorId: string, spaceId: string): Promise<readonly FaberLoomSharedContentRow[]>',
+        description: 'List the shared-content items one Space carries for one member: the member\'s own items and the ones imported for it from the console.',
+        parameters: [{ name: 'actorId', description: 'the member reading.' }, { name: 'spaceId', description: 'the Space being read.' }],
+        returns: 'the rows.',
+      },
+      {
+        signature: 'async importedContentKeys(actorId: string, spaceId: string): Promise<ReadonlySet<string>>',
+        description: 'The logical keys other members published in one Space and this member imported. A member excludes them when publishing, so an imported copy is never echoed back as its own.',
+        parameters: [{ name: 'actorId', description: 'the member reading.' }, { name: 'spaceId', description: 'the Space being read.' }],
+        returns: 'the imported `kind\\itemKey` keys.',
+      },
+      {
+        signature: 'async noteContentLocal(readerId: string, consoleId: string, localId: string): Promise<void>',
+        description: 'Record the id of the local copy a member materialized for one imported console row, so a later sync removes the copy when its author withdraws the item. A missing row is ignored.',
+        parameters: [{ name: 'readerId', description: 'the member that materialized the copy.' }, { name: 'consoleId', description: 'the console-side row id.' }, { name: 'localId', description: 'the id of the local copy.' }],
+      },
+      {
+        signature: 'async syncContent(readerId: string): Promise<void>',
+        description: 'Import the console\'s shared-content rows for one member and prune the local rows the console no longer carries, so a withdrawn item stops showing. A no-op when the console is not configured. The reader reads back the removed rows (with their `localId`) before this runs, so it can delete the materialized copies.',
+        parameters: [{ name: 'readerId', description: 'the identity whose incoming items are imported.' }],
+      },
     ],
   },
   {
@@ -1818,6 +1856,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Create one space owned by the actor, scoped to its company, under an optional parent the actor controls. Every identity may create its own space, including a console read-only role.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'input', description: 'title and optional parent.' }],
         returns: 'the created space.',
+      },
+      {
+        signature: 'async importShared(input: ImportSharedSpaceInput): Promise<FaberLoomSpace>',
+        description: 'Materialize a Space another identity shared, under the remote id so the imported record resolves the same `view`/`manage-members` grants. Idempotent: an existing record is returned untouched, so a repeated sync never clobbers the member\'s own state. The record is owned by the publisher, so the member can never manage or delete it, and it is never a sub-space of a local parent.',
+        parameters: [{ name: 'input', description: 'remote id, publisher email, title, and the shared context.' }],
+        returns: 'the imported (or already present) space.',
       },
       {
         signature: 'async list(actor: SpaceActor): Promise<FaberLoomSpace[]>',
@@ -1852,10 +1896,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when the space is absent or not manageable.'],
       },
       {
-        signature: 'async remember(actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[]): Promise<FaberLoomSpaceMemory>',
+        signature: 'async remember( actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[], sessionId?: string, ): Promise<FaberLoomSpaceMemory>',
         description: 'Attach one memory entry to one or more spaces the actor may read. A sub-space with inheritance on later reads its ancestors\' entries too.',
-        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'text', description: 'the remembered text.' }, { name: 'spaceIds', description: 'the spaces the entry is attached to.' }],
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'text', description: 'the remembered text.' }, { name: 'spaceIds', description: 'the spaces the entry is attached to.' }, { name: 'sessionId', description: 'the Session that captured the entry, when it came from one.' }],
         returns: 'the created entry.',
+      },
+      {
+        signature: 'async forgetMemoryBySession(actor: SpaceActor, sessionId: string): Promise<number>',
+        description: 'Delete every memory entry the actor captured from one Session, so deleting a Session also removes the facts it left behind and the shared-content catalog can propagate the removal to every member.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'sessionId', description: 'the Session whose captured entries are removed.' }],
+        returns: 'the removed entry count.',
       },
       {
         signature: 'async forgetMemory(actor: SpaceActor, id: string): Promise<boolean>',
@@ -2028,6 +2078,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List every routine ↔ work flow link the owner holds, in both directions: a routine step with handler `workflow` invoking a flow, and the compiled routine an active flow drives.',
         parameters: [],
         returns: 'the links, routines first.',
+      },
+      {
+        signature: 'async mirrorSharedSpaces(): Promise<void>',
+        description: 'Mirror every shared Space\'s Sessions between this host and the console: sync the catalog, publish this identity\'s own Sessions, and materialize the other members\'. Runs from the periodic timer and the read path, so a membership change reaches the sidebar without opening a panel. Guarded against overlapping passes.',
+        parameters: [],
       },
       {
         signature: '@Remote(\'shareSpace\') async shareSpace(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>',
@@ -2755,6 +2810,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Create one work flow owned by the actor. The definition is stored as given; validation is explicit and activation requires a valid graph.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'input', description: 'name, optional scope, and the initial definition.' }],
         returns: 'the created work flow.',
+      },
+      {
+        signature: 'async importShared(input: ImportSharedWorkFlowInput): Promise<WorkFlow>',
+        description: 'Materialize a Work Flow another identity shared, under the remote id so the imported record resolves the same grants. Idempotent: an existing record is returned untouched, so a repeated sync never clobbers the member\'s state. The record is owned by the publisher and stays `draft`; no routine is created here, so a shared flow is readable and editable per grant but does not start executing on the member\'s host.',
+        parameters: [{ name: 'input', description: 'remote id, publisher email, name, scope, and shared definition.' }],
+        returns: 'the imported (or already present) work flow.',
       },
       {
         signature: 'async list(actor: WorkFlowActor, scope?: WorkFlowScope): Promise<WorkFlow[]>',
@@ -6901,6 +6962,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomSessionActor {\n    readonly id: string;\n}',
   },
   {
+    name: 'FaberLoomSharedContentInput',
+    declaration: 'export interface FaberLoomSharedContentInput {\n    readonly kind: FaberLoomSharedContentKind;\n    readonly itemKey: string;\n    readonly payload: Record<string, unknown>;\n}',
+  },
+  {
+    name: 'FaberLoomSharedContentKind',
+    declaration: 'export type FaberLoomSharedContentKind = \'memory\' | \'context\' | \'workflow\' | \'routine\';',
+  },
+  {
+    name: 'FaberLoomSharedContentRow',
+    declaration: 'export interface FaberLoomSharedContentRow extends FaberLoomSharedContentInput {\n    readonly spaceId: string;\n    readonly authorId: string;\n    readonly origin: \'owner\' | \'console\';\n    readonly consoleId: string | null;\n    readonly localId: string | null;\n}',
+  },
+  {
     name: 'FaberLoomSharedSession',
     declaration: 'export interface FaberLoomSharedSession {\n    readonly sessionId: string;\n    readonly ownerId: string;\n    readonly spaceId: string;\n    readonly title: string;\n    readonly workspaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly messageCount: number;\n    readonly origin: FaberLoomSharedSessionOrigin;\n}',
   },
@@ -6947,6 +7020,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomSharePermission',
     declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'create-context\' | \'index-context\' | \'share\' | \'manage-members\';',
+  },
+  {
+    name: 'FaberLoomShareRepublishInput',
+    declaration: 'export interface FaberLoomShareRepublishInput {\n    readonly resource: FaberLoomShareResource;\n    readonly resourceName: string;\n    readonly snapshot?: Record<string, unknown> | undefined;\n}',
   },
   {
     name: 'FaberLoomShareResource',
@@ -7002,7 +7079,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSpaceMemory',
-    declaration: 'export interface FaberLoomSpaceMemory {\n    readonly id: string;\n    readonly spaceIds: readonly FaberLoomSpaceId[];\n    readonly text: string;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface FaberLoomSpaceMemory {\n    readonly id: string;\n    readonly spaceIds: readonly FaberLoomSpaceId[];\n    readonly text: string;\n    readonly sessionId: string | null;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'FaberLoomSpaceMemoryRow',
@@ -7279,6 +7356,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ImapMessageContent',
     declaration: 'export interface ImapMessageContent {\n    readonly text: string;\n    readonly html: string | null;\n    readonly attachments: readonly ImapAttachment[];\n}',
+  },
+  {
+    name: 'ImportSharedSpaceInput',
+    declaration: 'export interface ImportSharedSpaceInput {\n    readonly id: string;\n    readonly ownerId: string;\n    readonly title: string;\n    readonly context?: SpaceContext | undefined;\n    readonly workspaceId?: string | undefined;\n}',
+  },
+  {
+    name: 'ImportSharedWorkFlowInput',
+    declaration: 'export interface ImportSharedWorkFlowInput {\n    readonly id: string;\n    readonly ownerId: string;\n    readonly name: string;\n    readonly scope?: WorkFlowScope | undefined;\n    readonly definition: WorkFlowDefinition;\n}',
   },
   {
     name: 'InboundReport',

@@ -691,9 +691,11 @@ FaberLoom's own default agents and routines for one owner.
 /**
  * Seed the catalogue once for this owner.
  *
- * A pass is a no-op when the identity is read-only, when it has no owner, or
- * when the marker exists. Items are matched by name, so a retry after a
- * partial pass never duplicates what already landed.
+ * A pass seeds the deployment's shared agents for every identity, and the
+ * owner's plan agents once (no-op while the marker exists). A read-only
+ * identity still receives the shared agents but no plan agents or routines.
+ * Items are matched by name, so a retry after a partial pass never duplicates
+ * what already landed.
  * @returns what the pass created.
  */
 async seed(): Promise<SeedReport>
@@ -1278,6 +1280,24 @@ async revoke(ownerId: string, id: string): Promise<FaberLoomShareGrant>
 async list(actorId: string): Promise<FaberLoomShareList>
 
 /**
+ * The portable snapshot attached to one grant the actor holds, so a consumer
+ * can materialize the shared resource without a second console read.
+ * @param granteeEmail - the identity that holds the grant.
+ * @param grantId - grant id (the id `list` returned for the incoming grant).
+ * @returns the resource snapshot, or null when the actor holds no such grant.
+ */
+async snapshotFor(granteeEmail: string, grantId: string): Promise<Record<string, unknown> | null>
+
+/**
+ * Replace the portable snapshot the console holds for one of the actor's
+ * Space/Work Flow grants, so a grantee's next sync reads the current content.
+ * The grant lifecycle and permissions are untouched. A no-op when the console
+ * is not configured, so a local-only deployment keeps working.
+ * @param input - resource, display name, and the current snapshot.
+ */
+async republish(input: FaberLoomShareRepublishInput): Promise<void>
+
+/**
  * List the permissions one grantee holds on one resource, unioned over every
  * active grant.
  * @param granteeEmail - the identity acting.
@@ -1304,6 +1324,56 @@ async can(actorId: string, ownerId: string, resource: FaberLoomShareResource, pe
  * @param granteeEmail - the identity whose incoming grants are imported.
  */
 async sync(granteeEmail: string): Promise<void>
+
+/**
+ * Publish one Space's own Memory/Context/Work Flow/Routine items to the
+ * console as this member's full set, so the other members read them, and keep
+ * the durable owner rows current. The console write replaces the author's set
+ * for the Space, so an item dropped here stops reaching the other members.
+ * @param actorId - the publishing identity.
+ * @param spaceId - the Space the items belong to.
+ * @param items - the member's current items for the Space.
+ */
+async publishContent(actorId: string, spaceId: string, items: readonly FaberLoomSharedContentInput[]): Promise<void>
+
+/**
+ * List the shared-content items one Space carries for one member: the
+ * member's own items and the ones imported for it from the console.
+ * @param actorId - the member reading.
+ * @param spaceId - the Space being read.
+ * @returns the rows.
+ */
+async listContent(actorId: string, spaceId: string): Promise<readonly FaberLoomSharedContentRow[]>
+
+/**
+ * The logical keys other members published in one Space and this member
+ * imported. A member excludes them when publishing, so an imported copy is
+ * never echoed back as its own.
+ * @param actorId - the member reading.
+ * @param spaceId - the Space being read.
+ * @returns the imported `kind\itemKey` keys.
+ */
+async importedContentKeys(actorId: string, spaceId: string): Promise<ReadonlySet<string>>
+
+/**
+ * Record the id of the local copy a member materialized for one imported
+ * console row, so a later sync removes the copy when its author withdraws the
+ * item. A missing row is ignored.
+ * @param readerId - the member that materialized the copy.
+ * @param consoleId - the console-side row id.
+ * @param localId - the id of the local copy.
+ */
+async noteContentLocal(readerId: string, consoleId: string, localId: string): Promise<void>
+
+/**
+ * Import the console's shared-content rows for one member and prune the local
+ * rows the console no longer carries, so a withdrawn item stops showing. A
+ * no-op when the console is not configured. The reader reads back the removed
+ * rows (with their `localId`) before this runs, so it can delete the
+ * materialized copies.
+ * @param readerId - the identity whose incoming items are imported.
+ */
+async syncContent(readerId: string): Promise<void>
 ```
 
 Source: [`packages/faberloom/shares/src/index.ts`](../../packages/faberloom/shares/src/index.ts)
@@ -1324,6 +1394,17 @@ The product spaces service. It owns the durable space records, the effective con
  * @returns the created space.
  */
 async create(actor: SpaceActor, input: CreateSpaceInput): Promise<FaberLoomSpace>
+
+/**
+ * Materialize a Space another identity shared, under the remote id so the
+ * imported record resolves the same `view`/`manage-members` grants. Idempotent:
+ * an existing record is returned untouched, so a repeated sync never clobbers
+ * the member's own state. The record is owned by the publisher, so the member
+ * can never manage or delete it, and it is never a sub-space of a local parent.
+ * @param input - remote id, publisher email, title, and the shared context.
+ * @returns the imported (or already present) space.
+ */
+async importShared(input: ImportSharedSpaceInput): Promise<FaberLoomSpace>
 
 /**
  * List the spaces the actor may read, oldest first.
@@ -1374,9 +1455,20 @@ async remove(actor: SpaceActor, id: FaberLoomSpaceId): Promise<boolean>
  * @param actor - the acting identity.
  * @param text - the remembered text.
  * @param spaceIds - the spaces the entry is attached to.
+ * @param sessionId - the Session that captured the entry, when it came from one.
  * @returns the created entry.
  */
-async remember(actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[]): Promise<FaberLoomSpaceMemory>
+async remember( actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[], sessionId?: string, ): Promise<FaberLoomSpaceMemory>
+
+/**
+ * Delete every memory entry the actor captured from one Session, so deleting
+ * a Session also removes the facts it left behind and the shared-content
+ * catalog can propagate the removal to every member.
+ * @param actor - the acting identity.
+ * @param sessionId - the Session whose captured entries are removed.
+ * @returns the removed entry count.
+ */
+async forgetMemoryBySession(actor: SpaceActor, sessionId: string): Promise<number>
 
 /**
  * Delete one memory entry the actor owns. Deleting a space deliberately does
@@ -1620,6 +1712,15 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns the links, routines first.
  */
 @Remote('routineWorkflowLinks') async routineWorkflowLinks(): Promise<readonly FaberLoomWorkflowLink[]>
+
+/**
+ * Mirror every shared Space's Sessions between this host and the console:
+ * sync the catalog, publish this identity's own Sessions, and materialize the
+ * other members'. Runs from the periodic timer and the read path, so a
+ * membership change reaches the sidebar without opening a panel. Guarded
+ * against overlapping passes.
+ */
+async mirrorSharedSpaces(): Promise<void>
 
 /**
  * Share one Space the owner (or an admin) manages with named emails.
@@ -2577,6 +2678,18 @@ The work flows service. It owns the durable versioned graph records, the graph v
  * @returns the created work flow.
  */
 async create(actor: WorkFlowActor, input: CreateWorkFlowInput): Promise<WorkFlow>
+
+/**
+ * Materialize a Work Flow another identity shared, under the remote id so the
+ * imported record resolves the same grants. Idempotent: an existing record is
+ * returned untouched, so a repeated sync never clobbers the member's state.
+ * The record is owned by the publisher and stays `draft`; no routine is
+ * created here, so a shared flow is readable and editable per grant but does
+ * not start executing on the member's host.
+ * @param input - remote id, publisher email, name, scope, and shared definition.
+ * @returns the imported (or already present) work flow.
+ */
+async importShared(input: ImportSharedWorkFlowInput): Promise<WorkFlow>
 
 /**
  * List the actor's work flows, optionally only one scope, oldest first.

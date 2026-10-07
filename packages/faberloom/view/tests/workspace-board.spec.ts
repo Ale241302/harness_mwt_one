@@ -47,6 +47,7 @@ function harness(options: {
     id: string
     title: string
     parentId: string | null
+    ownerId?: string
     agentId?: string
     workspaceId?: string
     inheritContext?: boolean
@@ -91,6 +92,7 @@ function harness(options: {
     effectiveMemory: vi.fn(async (): Promise<readonly { id: string; spaceIds: string[]; text: string; createdAt: string }[]> => []),
     importShared: vi.fn(async (input: { id: string; title: string }): Promise<MockSpace> =>
       ({ id: input.id, title: input.title, parentId: null })),
+    forgetMemory: vi.fn(async (): Promise<boolean> => true),
   }
   const agents = {
     listAgents: vi.fn(async (): Promise<readonly {
@@ -109,18 +111,32 @@ function harness(options: {
   const workflows = {
     importShared: vi.fn(async (input: { id: string; name: string }) => ({ id: input.id, name: input.name })),
     create: vi.fn(async () => ({})),
+    remove: vi.fn(async () => true),
     list: vi.fn(async () => [] as unknown[]),
   }
   const routines = {
     listRoutines: vi.fn(async () => []),
     createRoutine: vi.fn(async () => ({})),
+    removeRoutine: vi.fn(async () => true),
     getRoutine: vi.fn(async () => ({ id: 'r1', name: 'R', definition: { intent: '', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop' } })),
   }
-  const context = { create: vi.fn(async () => ({})), list: vi.fn(async () => [] as unknown[]) }
+  const context = {
+    create: vi.fn(async () => ({})),
+    update: vi.fn(async () => ({})),
+    list: vi.fn(async () => [] as unknown[]),
+    remove: vi.fn(async () => true),
+  }
   const shares = {
     sync: vi.fn(async (): Promise<void> => undefined),
     list: vi.fn(async (): Promise<{ outgoing: readonly unknown[]; incoming: readonly unknown[] }> => ({ outgoing: [], incoming: [] })),
     snapshotFor: vi.fn(async (_email: string, _grantId: string): Promise<Record<string, unknown> | null> => null),
+    syncContent: vi.fn(async (): Promise<void> => undefined),
+    listContent: vi.fn(async (): Promise<readonly unknown[]> => []),
+    importedContentKeys: vi.fn(async (): Promise<ReadonlySet<string>> => new Set<string>()),
+    publishContent: vi.fn(async (
+      _actorId: string, _spaceId: string, _items: readonly { kind: string; itemKey: string }[],
+    ): Promise<void> => undefined),
+    noteContentLocal: vi.fn(async (): Promise<void> => undefined),
   }
   const events = new Map<string, (...args: never[]) => void>()
   const logger = { warn: vi.fn(), info: vi.fn() }
@@ -664,11 +680,11 @@ describe('FaberLoomViewService board actions', () => {
     expect(board.review).not.toHaveBeenCalled()
   })
 
-  it('imports a shared Space with its workspace, Memory, Context, Work Flows, and Routines', async () => {
+  it('imports a shared Space with its workspace', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-space-'))
     homes.push(home)
     vi.stubEnv('DSH_HOME', home)
-    const { view, spaces, workflows, routines, context, shares, registry } = harness()
+    const { view, spaces, shares, registry } = harness()
     shares.list.mockResolvedValue({
       outgoing: [],
       incoming: [{
@@ -677,14 +693,7 @@ describe('FaberLoomViewService board actions', () => {
         status: 'active', createdAt: '2026-01-01T00:00:00Z', acceptedAt: null,
       }],
     })
-    shares.snapshotFor.mockResolvedValue({
-      title: 'SICOP',
-      context: { area: 'compras' },
-      memory: [{ text: 'cliente Sondel', createdAt: '2026-01-01T00:00:00Z' }],
-      contextEntries: [{ title: 'Regla', body: 'factura' }],
-      workflows: [{ name: 'Anti-spam', scope: { kind: 'space', spaceId: 'sp-remote' }, definition: { intent: 'i', nodes: [], edges: [], permissions: [], failurePolicy: 'stop' } }],
-      routines: [{ name: 'Rutina', definition: { intent: 'i', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop' } }],
-    })
+    shares.snapshotFor.mockResolvedValue({ title: 'SICOP', context: { area: 'compras' } })
 
     await view.overview()
 
@@ -693,10 +702,38 @@ describe('FaberLoomViewService board actions', () => {
     expect(spaces.importShared).toHaveBeenCalledWith(expect.objectContaining({
       id: 'sp-remote', ownerId: 'ana@sondelsa.com', title: 'SICOP', context: { area: 'compras' }, workspaceId: expect.any(String),
     }))
+  })
+
+  it('materializes and prunes the shared content of a Space in both directions', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-content-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, context, shares } = harness()
+    spaces.list.mockResolvedValue([{ id: 'sp-remote', title: 'SICOP', parentId: null, workspaceId: 'ws-1', ownerId: 'ana@sondelsa.com' }])
+    spaces.listMemory.mockResolvedValue([{ id: 'm-own', spaceIds: ['sp-remote'], text: 'propia', createdAt: '2026-01-01T00:00:00Z' }])
+    spaces.remember.mockResolvedValue({ id: 'm-copy', spaceIds: ['sp-remote'], text: 'cliente Sondel', createdAt: '2026-01-01T00:00:00Z' })
+    context.list.mockResolvedValue([])
+    const imported = (over: Record<string, unknown> = {}) => ({
+      spaceId: 'sp-remote', kind: 'memory', itemKey: 'cliente Sondel', authorId: 'ana@sondelsa.com',
+      payload: { text: 'cliente Sondel' }, origin: 'console', consoleId: 'c1', localId: null, ...over,
+    })
+    // The row present before the sync (with its materialized copy) is gone after
+    // it, so its copy is pruned; the fresh row is materialized.
+    shares.listContent
+      .mockResolvedValueOnce([imported({ consoleId: 'c-old', localId: 'm-old' })])
+      .mockResolvedValue([imported()])
+    shares.importedContentKeys.mockResolvedValue(new Set(['memory\u0000cliente Sondel']))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ incoming: [] }) })))
+    vi.stubEnv('CONSOLA_API_BASE', 'https://consola.test/api')
+    vi.stubEnv('CONSOLA_TOKEN', 'tok')
+
+    await view.overview()
+
     expect(spaces.remember).toHaveBeenCalledWith(expect.anything(), 'cliente Sondel', ['sp-remote'])
-    expect(context.create).toHaveBeenCalledWith(expect.anything(), { spaceId: 'sp-remote', title: 'Regla', body: 'factura' })
-    expect(workflows.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ name: 'Anti-spam', scope: { kind: 'space', spaceId: 'sp-remote' } }))
-    expect(routines.createRoutine).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ name: 'Rutina' }))
+    expect(shares.noteContentLocal).toHaveBeenCalledWith('owner@muitowork.com', 'c1', 'm-copy')
+    expect(spaces.forgetMemory).toHaveBeenCalledWith(expect.anything(), 'm-old')
+    const published = shares.publishContent.mock.calls.at(-1)?.[2] as readonly { itemKey: string }[]
+    expect(published.map(item => item.itemKey)).toEqual(['propia'])
   })
 
   it('imports a Work Flow snapshot and skips a pending grant, an empty snapshot, or a missing graph', async () => {

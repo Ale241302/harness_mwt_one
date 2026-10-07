@@ -12,8 +12,8 @@
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SHARE_PERMISSIONS, type FaberLoomShareGrant, type FaberLoomShareInput, type FaberLoomShareList, type FaberLoomSharePermission, type FaberLoomShareRepublishInput, type FaberLoomShareResource } from './types.ts'
-import { sharesDomainSpec, type ShareGrantRecord } from './spec.ts'
+import { SHARE_PERMISSIONS, type FaberLoomShareGrant, type FaberLoomShareInput, type FaberLoomShareList, type FaberLoomSharePermission, type FaberLoomShareRepublishInput, type FaberLoomShareResource, type FaberLoomSharedContentInput, type FaberLoomSharedContentKind, type FaberLoomSharedContentRow } from './types.ts'
+import { sharesDomainSpec, type ShareGrantRecord, type SharedContentRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 
@@ -45,6 +45,9 @@ export const Config: z<Config> = z.object({
 /** The known permissions, as a set for input filtering. */
 const KNOWN_PERMISSIONS = new Set<string>(SHARE_PERMISSIONS)
 
+/** The closed set of shared-content families. */
+const CONTENT_KINDS = new Set<string>(['memory', 'context', 'workflow', 'routine'])
+
 /** Map one durable record to the consumer-facing grant. */
 function toGrant(id: string, record: ShareGrantRecord): FaberLoomShareGrant {
   return {
@@ -63,6 +66,35 @@ function toGrant(id: string, record: ShareGrantRecord): FaberLoomShareGrant {
 /** Whether two resources name the same target. */
 function sameResource(left: FaberLoomShareResource, right: FaberLoomShareResource): boolean {
   return left.kind === right.kind && left.id === right.id
+}
+
+/** One shared-content item's logical key within its Space. */
+function contentKey(kind: FaberLoomSharedContentKind, itemKey: string): string {
+  return `${kind}\u0000${itemKey}`
+}
+
+/** The local-capture row key for one shared-content item. */
+function ownedContentKey(spaceId: string, kind: FaberLoomSharedContentKind, itemKey: string): string {
+  return `owner:${spaceId}\u0000${kind}\u0000${itemKey}`
+}
+
+/** The imported-row key prefix for one reader. */
+function importedContentPrefix(readerId: string): string {
+  return `console:${readerId}\u0000`
+}
+
+/** Map one durable shared-content record to the consumer-facing row. */
+function toContentRow(record: SharedContentRecord): FaberLoomSharedContentRow {
+  return {
+    spaceId: record.spaceId,
+    kind: record.kind,
+    itemKey: record.itemKey,
+    authorId: record.authorId,
+    payload: record.payload,
+    origin: record.origin,
+    consoleId: record.consoleId,
+    localId: record.localId,
+  }
 }
 
 /**
@@ -114,6 +146,11 @@ export class FaberLoomShares extends Service {
     return (await this.domain()).table('grants')
   }
 
+  /** The shared-content table handle. */
+  private async contentTable(): Promise<KvTable<string, SharedContentRecord>> {
+    return (await this.domain()).table('content')
+  }
+
   /** The console base URL, from config or the gateway's environment. */
   private consoleBase(): string | undefined {
     const base = this.config.consoleBase !== undefined && this.config.consoleBase.length > 0
@@ -150,6 +187,22 @@ export class FaberLoomShares extends Service {
       signal: AbortSignal.timeout(20_000),
     })
     if (!response.ok) throw new Error(`faberloom: la consola rechazó la operación de compartir (${String(response.status)})`)
+    if (response.status === 204) return undefined
+    return await response.json()
+  }
+
+  /** Call the console shared-content API with the owner's token, or return undefined when unwired. */
+  private async consoleContent(suffix: string, init?: { method?: string; body?: string }): Promise<unknown> {
+    const base = this.consoleBase()
+    const token = this.consoleToken()
+    if (base === undefined || token === undefined) return undefined
+    const response = await fetch(`${base}/harness/contents/${suffix}`, {
+      method: init?.method ?? 'GET',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      ...init?.body === undefined ? {} : { body: init.body },
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!response.ok) throw new Error(`faberloom: la consola rechazó la operación de contenido (${String(response.status)})`)
     if (response.status === 204) return undefined
     return await response.json()
   }
@@ -384,6 +437,146 @@ export class FaberLoomShares extends Service {
       await (await this.grants()).delete(id)
     }
   }
+
+  /**
+   * Publish one Space's own Memory/Context/Work Flow/Routine items to the
+   * console as this member's full set, so the other members read them, and keep
+   * the durable owner rows current. The console write replaces the author's set
+   * for the Space, so an item dropped here stops reaching the other members.
+   * @param actorId - the publishing identity.
+   * @param spaceId - the Space the items belong to.
+   * @param items - the member's current items for the Space.
+   */
+  async publishContent(actorId: string, spaceId: string, items: readonly FaberLoomSharedContentInput[]): Promise<void> {
+    const table = await this.contentTable()
+    const wanted = new Set(items.map(item => contentKey(item.kind, item.itemKey)))
+    const consoleIds = new Map<string, string>()
+    if (this.consoleBase() !== undefined && this.consoleToken() !== undefined) {
+      const data = await this.consoleContent('', {
+        method: 'POST',
+        body: JSON.stringify({
+          space_id: spaceId,
+          items: items.map(item => ({ kind: item.kind, item_key: item.itemKey, payload: item.payload })),
+        }),
+      }) as { rows?: readonly ConsoleContentRow[] } | undefined
+      for (const row of data?.rows ?? []) {
+        if (!CONTENT_KINDS.has(row.kind)) continue
+        consoleIds.set(contentKey(row.kind as FaberLoomSharedContentKind, row.item_key), row.id)
+      }
+    }
+    for (const item of items) {
+      const record: SharedContentRecord = {
+        spaceId,
+        kind: item.kind,
+        itemKey: item.itemKey,
+        authorId: actorId,
+        payload: item.payload,
+        origin: 'owner',
+        consoleId: consoleIds.get(contentKey(item.kind, item.itemKey)) ?? null,
+        localId: null,
+      }
+      await table.put(ownedContentKey(spaceId, item.kind, item.itemKey), record)
+    }
+    for (const [key, record] of table.entries()) {
+      if (record.origin !== 'owner' || record.authorId !== actorId || record.spaceId !== spaceId) continue
+      if (wanted.has(contentKey(record.kind, record.itemKey))) continue
+      await table.delete(key)
+    }
+  }
+
+  /**
+   * List the shared-content items one Space carries for one member: the
+   * member's own items and the ones imported for it from the console.
+   * @param actorId - the member reading.
+   * @param spaceId - the Space being read.
+   * @returns the rows.
+   */
+  async listContent(actorId: string, spaceId: string): Promise<readonly FaberLoomSharedContentRow[]> {
+    const prefix = importedContentPrefix(actorId)
+    const out: FaberLoomSharedContentRow[] = []
+    for (const [key, record] of (await this.contentTable()).entries()) {
+      if (record.spaceId !== spaceId) continue
+      if (record.origin === 'owner') {
+        if (record.authorId !== actorId) continue
+      } else if (!key.startsWith(prefix)) {
+        continue
+      }
+      out.push(toContentRow(record))
+    }
+    return out
+  }
+
+  /**
+   * The logical keys other members published in one Space and this member
+   * imported. A member excludes them when publishing, so an imported copy is
+   * never echoed back as its own.
+   * @param actorId - the member reading.
+   * @param spaceId - the Space being read.
+   * @returns the imported `kind\itemKey` keys.
+   */
+  async importedContentKeys(actorId: string, spaceId: string): Promise<ReadonlySet<string>> {
+    const prefix = importedContentPrefix(actorId)
+    const keys = new Set<string>()
+    for (const [key, record] of (await this.contentTable()).entries()) {
+      if (record.origin !== 'console' || record.spaceId !== spaceId) continue
+      if (!key.startsWith(prefix)) continue
+      keys.add(contentKey(record.kind, record.itemKey))
+    }
+    return keys
+  }
+
+  /**
+   * Record the id of the local copy a member materialized for one imported
+   * console row, so a later sync removes the copy when its author withdraws the
+   * item. A missing row is ignored.
+   * @param readerId - the member that materialized the copy.
+   * @param consoleId - the console-side row id.
+   * @param localId - the id of the local copy.
+   */
+  async noteContentLocal(readerId: string, consoleId: string, localId: string): Promise<void> {
+    const table = await this.contentTable()
+    const key = `${importedContentPrefix(readerId)}${consoleId}`
+    if (table.get(key) === undefined) return
+    await table.update(key, record => ({ ...record, localId }))
+  }
+
+  /**
+   * Import the console's shared-content rows for one member and prune the local
+   * rows the console no longer carries, so a withdrawn item stops showing. A
+   * no-op when the console is not configured. The reader reads back the removed
+   * rows (with their `localId`) before this runs, so it can delete the
+   * materialized copies.
+   * @param readerId - the identity whose incoming items are imported.
+   */
+  async syncContent(readerId: string): Promise<void> {
+    if (this.consoleBase() === undefined || this.consoleToken() === undefined) return
+    const data = await this.consoleContent('') as { incoming?: readonly ConsoleContentRow[] }
+    const table = await this.contentTable()
+    const prefix = importedContentPrefix(readerId)
+    const wanted = new Set<string>()
+    for (const row of data.incoming ?? []) {
+      if (!CONTENT_KINDS.has(row.kind)) continue
+      const key = `${prefix}${row.id}`
+      wanted.add(key)
+      const existing = table.get(key)
+      const record: SharedContentRecord = {
+        spaceId: row.space_id,
+        kind: row.kind as FaberLoomSharedContentKind,
+        itemKey: row.item_key,
+        authorId: row.author_email,
+        payload: readSnapshot(row.payload) ?? {},
+        origin: 'console',
+        consoleId: row.id,
+        localId: existing?.localId ?? null,
+      }
+      await table.put(key, record)
+    }
+    for (const [key] of table.entries()) {
+      if (!key.startsWith(prefix)) continue
+      if (wanted.has(key)) continue
+      await table.delete(key)
+    }
+  }
 }
 
 /** One console share row the import reads. */
@@ -404,6 +597,22 @@ interface ConsoleShareRow {
   readonly permissions?: readonly string[]
   /** Console-side status. */
   readonly status?: string
+}
+
+/** One console shared-content row the import reads. */
+interface ConsoleContentRow {
+  /** Console-side row id. */
+  readonly id: string
+  /** Space the item belongs to. */
+  readonly space_id: string
+  /** Resource family. */
+  readonly kind: string
+  /** Stable key within its family. */
+  readonly item_key: string
+  /** Author email. */
+  readonly author_email: string
+  /** Portable item content. */
+  readonly payload?: unknown
 }
 
 export default FaberLoomShares

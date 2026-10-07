@@ -327,3 +327,62 @@ describe('FaberLoomShares', () => {
     await shares.republish({ resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A' })
   })
 })
+
+describe('FaberLoomShares shared content', () => {
+  it('publishes the author full set, stores the console ids, and replaces a withdrawn set', async () => {
+    const calls: { url: string; body: string }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: { body?: string }) => {
+      calls.push({ url, body: init.body ?? '' })
+      return { ok: true, status: 201, json: async () => ({ rows: [{ id: 'c-1', kind: 'memory', item_key: 'hola' }] }) }
+    }))
+    try {
+      const { shares } = await harness({ consoleBase: 'http://console', consoleToken: 'tok' })
+      await shares.publishContent(OWNER, 'sp-1', [{ kind: 'memory', itemKey: 'hola', payload: { text: 'hola' } }])
+      expect(calls[0]?.url).toBe('http://console/harness/contents/')
+      expect(JSON.parse(calls[0]?.body ?? '{}')).toMatchObject({
+        space_id: 'sp-1', items: [{ kind: 'memory', item_key: 'hola', payload: { text: 'hola' } }],
+      })
+      expect(await shares.listContent(OWNER, 'sp-1')).toEqual([
+        expect.objectContaining({ kind: 'memory', itemKey: 'hola', origin: 'owner', consoleId: 'c-1' }),
+      ])
+      // A later publish replaces the author's set, so the withdrawn item leaves.
+      calls.length = 0
+      await shares.publishContent(OWNER, 'sp-1', [])
+      expect(JSON.parse(calls[0]?.body ?? '{}')).toMatchObject({ space_id: 'sp-1', items: [] })
+      expect(await shares.listContent(OWNER, 'sp-1')).toEqual([])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('imports the other members rows, records the local copy, and prunes the withdrawn ones', async () => {
+    const incoming = [{
+      id: 'c-1', space_id: 'sp-1', kind: 'memory', item_key: 'hola', author_email: OWNER, payload: { text: 'hola' },
+    }]
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ incoming }) })))
+    try {
+      const { shares } = await harness({ consoleBase: 'http://console', consoleToken: 'tok' })
+      await shares.syncContent(GUEST)
+      expect(await shares.listContent(GUEST, 'sp-1')).toEqual([
+        expect.objectContaining({ kind: 'memory', itemKey: 'hola', authorId: OWNER, origin: 'console', consoleId: 'c-1', localId: null }),
+      ])
+      await shares.noteContentLocal(GUEST, 'c-1', 'm-9')
+      expect((await shares.listContent(GUEST, 'sp-1'))[0]).toMatchObject({ localId: 'm-9' })
+      expect([...(await shares.importedContentKeys(GUEST, 'sp-1'))]).toEqual(['memory\u0000hola'])
+      // The author withdraws it; the import prunes the row (the caller reads the
+      // row back before this to delete the materialized copy).
+      incoming.length = 0
+      await shares.syncContent(GUEST)
+      expect(await shares.listContent(GUEST, 'sp-1')).toEqual([])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps the local set without the console transport', async () => {
+    const { shares } = await harness()
+    await shares.syncContent(GUEST)
+    await shares.publishContent(OWNER, 'sp-1', [{ kind: 'memory', itemKey: 'hola', payload: {} }])
+    expect(await shares.listContent(OWNER, 'sp-1')).toEqual([expect.objectContaining({ origin: 'owner', consoleId: null })])
+  })
+})

@@ -101,3 +101,30 @@ export interface FaberLoomShareList {
   /** Grants other identities issued to the actor. */
   readonly incoming: readonly FaberLoomShareGrant[]
 }
+
+/** Which Space resource a shared-content item carries. */
+export type FaberLoomSharedContentKind = 'memory' | 'context' | 'workflow' | 'routine'
+
+/** One item a Space member publishes for the other members to see. */
+export interface FaberLoomSharedContentInput {
+  /** Resource family. */
+  readonly kind: FaberLoomSharedContentKind
+  /** Stable key within its family (memory text, context title, flow/routine name). */
+  readonly itemKey: string
+  /** Portable content the other members materialize. */
+  readonly payload: Record<string, unknown>
+}
+
+/** One stored shared-content item as consumers read it. */
+export interface FaberLoomSharedContentRow extends FaberLoomSharedContentInput {
+  /** Space the item belongs to. */
+  readonly spaceId: string
+  /** Email of the member that authored it. */
+  readonly authorId: string
+  /** Whether this host published it or imported it from the console. */
+  readonly origin: 'owner' | 'console'
+  /** Console-side row id, when published to the console. */
+  readonly consoleId: string | null
+  /** Id of the local copy a member materialized here, or null when none yet. */
+  readonly localId: string | null
+}

@@ -30,9 +30,33 @@ export const shareGrantRecord = z.object({
 /** One stored grant, inferred from {@link shareGrantRecord}. */
 export type ShareGrantRecord = z.infer<typeof shareGrantRecord>
 
-/** The share domain spec: one `grants` table. */
+/**
+ * One durable shared-content item: a Memory, Context, Work Flow, or Routine a
+ * Space's member published (or imported) through the console. Items captured on
+ * this host and items imported from the console share one table; `localId`
+ * records the id of the copy a member materialized here, so a later sync can
+ * remove it when its author withdraws it.
+ */
+export const sharedContentRecord = z.object({
+  spaceId: z.string(),
+  kind: z.union([z.literal('memory'), z.literal('context'), z.literal('workflow'), z.literal('routine')]),
+  itemKey: z.string(),
+  authorId: z.string(),
+  payload: z.record(z.string(), z.unknown()),
+  origin: z.union([z.literal('owner'), z.literal('console')]),
+  consoleId: z.string().nullable().default(null),
+  localId: z.string().nullable().default(null),
+})
+
+/** One stored shared-content item, inferred from {@link sharedContentRecord}. */
+export type SharedContentRecord = z.infer<typeof sharedContentRecord>
+
+/** The share domain spec: the `grants` and `content` tables. */
 export const sharesDomainSpec = defineDomain({
   name: 'faberloom_shares',
   version: 1,
-  tables: { grants: domainTable<string, ShareGrantRecord>(shareGrantRecord) },
+  tables: {
+    grants: domainTable<string, ShareGrantRecord>(shareGrantRecord),
+    content: domainTable<string, SharedContentRecord>(sharedContentRecord),
+  },
 })

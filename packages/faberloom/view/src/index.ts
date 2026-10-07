@@ -73,7 +73,7 @@ import type {
   WorkFlowScope,
   WorkFlowStatus,
 } from '@deepseek-ai/dsh-faberloom-workflows'
-import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant } from '@deepseek-ai/dsh-faberloom-shares'
+import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant, FaberLoomSharedContentInput, FaberLoomSharedContentRow } from '@deepseek-ai/dsh-faberloom-shares'
 import type { FaberLoomExecutions } from '@deepseek-ai/dsh-faberloom-execution'
 import type { FaberLoomContext, FaberLoomContextEntry } from '@deepseek-ai/dsh-faberloom-context'
 import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-ai/dsh-faberloom-session-shares'
@@ -450,11 +450,6 @@ function readObject(value: unknown): Record<string, unknown> | undefined {
   return isRecord(value) ? value : undefined
 }
 
-/** Read an array of JSON objects, dropping entries that are not objects. */
-function readObjectArray(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value) ? value.filter(isRecord) : []
-}
-
 /** Read a non-empty string value, or undefined. */
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
@@ -604,7 +599,15 @@ export class FaberLoomViewService extends TypertRemoteService {
     // shortly after the disposal, when the log is gone; a plain close keeps the
     // log and prunes nothing.
     ctx.effect(() => {
-      const off = ctx.on('session/disposed', () => { this.scheduleSessionReconcile() }, { global: true })
+      const off = ctx.on('session/disposed', (session) => {
+        this.scheduleSessionReconcile()
+        // A deleted Session must not leave its captured facts behind: drop the
+        // memory it wrote, and let the next content exchange propagate the
+        // removal to every member's copy.
+        void this.forgetSessionMemory(String(session.id)).catch((error: unknown) => {
+          ctx.logger.warn(`faberloom: no se pudo limpiar la memoria de una sesión eliminada: ${String(error)}`)
+        })
+      }, { global: true })
       return () => {
         off()
         if (this.sessionReconcileTimer !== undefined) {
@@ -682,7 +685,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (text.length === 0) return
     const existing = await this.ctx.faberloomSpaces.listMemory(actor, space.id)
     if (!existing.some(entry => entry.text === text)) {
-      await this.ctx.faberloomSpaces.remember(actor, text, [space.id])
+      await this.ctx.faberloomSpaces.remember(actor, text, [space.id], session.id)
     }
     // Keep the Space's members in sync: publish this Session so the other side
     // reads it, and pull theirs so this side's sidebar mirrors the area.
@@ -698,6 +701,16 @@ export class FaberLoomViewService extends TypertRemoteService {
       await this.captureSpaceSessions(space.id, [{ id: session.id, title: '' }])
     }
     await this.materializeSharedSessions(actor, space.id, workspace.id)
+  }
+
+  /**
+   * Remove the memory one deleted Session left in its Space, so a fact does not
+   * outlive the conversation that produced it. The next content exchange
+   * publishes the removal, which prunes every member's copy. Best effort.
+   * @param sessionId - the disposed Session id.
+   */
+  private async forgetSessionMemory(sessionId: string): Promise<void> {
+    await this.ctx.faberloomSpaces.forgetMemoryBySession(this.actor(), sessionId)
   }
 
   /**
@@ -1314,7 +1327,6 @@ export class FaberLoomViewService extends TypertRemoteService {
           context: readStringMap(snapshot.context),
           workspaceId,
         })
-        await this.materializeSharedContent(actor, grant.resource.id, snapshot)
         await this.materializeSharedSessions(actor, grant.resource.id, workspaceId)
         continue
       }
@@ -1331,37 +1343,15 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * The portable content one Space publishes to its grantees: the Space's
-   * memory, and the owner's Context entries, Work Flows, and the Routines those
-   * flows compile to. The grantee materializes them as copies, so a shared
-   * Space never leaves the guest with an empty panel.
-   * @param actor - the Space's owner.
+   * The portable snapshot one Space publishes with its grant: its display title
+   * and context map. The member's Memory, Context, Work Flows, and Routines
+   * travel through the shared-content catalog instead, so they stay
+   * bidirectional between every member.
    * @param space - the Space being shared or refreshed.
    * @returns the snapshot that travels to the console.
    */
-  private async buildSpaceSnapshot(actor: SpaceActor, space: FaberLoomSpace): Promise<Record<string, unknown>> {
-    const memory = (await this.ctx.faberloomSpaces.listMemory(actor, space.id))
-      .map(entry => ({ text: entry.text, createdAt: entry.createdAt }))
-    const context = this.ctx.get('faberloomContext')
-    const contextEntries = context === undefined
-      ? []
-      : (await context.list({ id: actor.id })).map(entry => ({ title: entry.title, body: entry.body, spaceId: entry.spaceId }))
-    const workflows = await this.workflowsService().list(this.workflowActor())
-    const routines: { name: string; definition: RoutineInput['definition'] }[] = []
-    for (const flow of workflows) {
-      if (flow.routineId === undefined) continue
-      const routine = await this.ctx.faberloomRoutines.getRoutine(flow.routineId as FaberLoomRoutineId).catch(() => undefined)
-      if (routine === undefined) continue
-      routines.push({ name: routine.name, definition: routine.definition as unknown as RoutineInput['definition'] })
-    }
-    return {
-      title: space.title,
-      context: space.context,
-      memory,
-      contextEntries,
-      workflows: workflows.map(flow => ({ name: flow.name, scope: flow.scope, definition: flow.definition })),
-      routines,
-    }
+  private buildSpaceSnapshot(space: FaberLoomSpace): Record<string, unknown> {
+    return { title: space.title, context: space.context }
   }
 
   /**
@@ -1380,7 +1370,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       seen.add(grant.resource.id)
       const space = await this.ctx.faberloomSpaces.get(actor, grant.resource.id as FaberLoomSpaceId).catch(() => undefined)
       if (space === undefined || space.ownerId !== actor.id) continue
-      const snapshot = await this.buildSpaceSnapshot(actor, space)
+      const snapshot = this.buildSpaceSnapshot(space)
       await shares.republish({ resource: { kind: 'space', id: space.id }, resourceName: space.title, snapshot }).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: no se pudo refrescar el snapshot del espacio '${space.title}': ${error instanceof Error ? error.message : String(error)}`)
       })
@@ -1388,24 +1378,57 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Pull the current shared Space snapshots and materialize each owner's
-   * Context, Work Flows, and Routines as this member's copies, then republish
-   * this identity's own Space snapshots. Best-effort: the caller logs a failure
-   * instead of failing the read.
+   * Pull the console's grants, exchange every shared Space's Memory, Context,
+   * Work Flows, and Routines in both directions, then republish this identity's
+   * own Space snapshots. Best-effort: the caller logs a failure instead of
+   * failing the read.
    * @param actor - the acting identity.
    */
   private async refreshSharedContent(actor: SpaceActor): Promise<void> {
     if (this.consoleBase() !== undefined) {
-      const shares = this.sharesService()
-      await shares.sync(actor.id)
-      for (const grant of (await shares.list(actor.id)).incoming) {
-        if (grant.status !== 'active' || grant.resource.kind !== 'space') continue
-        const snapshot = await shares.snapshotFor(actor.id, grant.id)
-        if (snapshot === null) continue
-        await this.materializeSharedContent(actor, grant.resource.id, snapshot)
-      }
+      await this.sharesService().sync(actor.id)
     }
+    await this.exchangeSharedContent(actor)
     await this.publishSpaceSnapshots(actor)
+  }
+
+  /**
+   * Exchange every shared Space's Memory, Context, Work Flows, and Routines
+   * between this host and the console: pull the other members' items, publish
+   * this identity's own, and prune the copies whose item was withdrawn. Both
+   * directions run from the same pass, so the owner reads a guest's items and
+   * the guest reads the owner's. A no-op without the console transport.
+   * @param actor - the acting identity.
+   */
+  private async exchangeSharedContent(actor: SpaceActor): Promise<void> {
+    if (this.consoleBase() === undefined || this.consoleToken() === undefined) return
+    const shares = this.sharesService()
+    const spaces = (await this.ctx.faberloomSpaces.list(actor))
+      .filter(space => space.workspaceId !== undefined)
+    if (spaces.length === 0) return
+    // Read the imported rows before the sync drops the withdrawn ones, so their
+    // local copies can be removed once the author stops offering them.
+    const before = new Map<string, readonly FaberLoomSharedContentRow[]>()
+    for (const space of spaces) {
+      const rows = await shares.listContent(actor.id, space.id).catch(() => [])
+      before.set(space.id, rows.filter(row => row.origin === 'console'))
+    }
+    await shares.syncContent(actor.id)
+    for (const space of spaces) {
+      const rows = (await shares.listContent(actor.id, space.id).catch(() => []))
+        .filter(row => row.origin === 'console')
+      await this.materializeSharedContent(actor, space, rows)
+      const live = new Set(rows.map(row => row.consoleId).filter((id): id is string => id !== null))
+      for (const row of before.get(space.id) ?? []) {
+        if (row.consoleId !== null && live.has(row.consoleId)) continue
+        await this.forgetSharedContent(actor, row).catch((error: unknown) => {
+          this.ctx.logger.warn(`faberloom: no se pudo retirar el contenido compartido de '${space.title}': ${error instanceof Error ? error.message : String(error)}`)
+        })
+      }
+      await this.publishSpaceContent(actor, space).catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: no se pudo publicar el contenido del espacio '${space.title}': ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }
   }
 
   /**
@@ -1432,77 +1455,168 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Materialize the Memory, Context entries, Work Flows, and Routines another
-   * identity published with a shared Space, as this member's copies. Adding a
-   * missing item and converging an existing one by title/name keeps the guest's
-   * panels current on every refresh; each item is best-effort and a failure is
-   * logged instead of failing the read.
+   * Materialize the other members' shared-content rows for one Space as this
+   * member's copies, recording each local id so a later pass removes the copy
+   * when its author withdraws the item. An item this member already holds by its
+   * key is left as its own, so a materialized copy never replaces local work.
    * @param actor - the acting identity.
-   * @param spaceId - the imported space id.
-   * @param snapshot - the portable content published with the grant.
+   * @param space - the shared Space.
+   * @param rows - the imported console rows for the Space.
    */
-  private async materializeSharedContent(actor: SpaceActor, spaceId: string, snapshot: Record<string, unknown>): Promise<void> {
-    const memoryTexts = new Set((await this.ctx.faberloomSpaces.listMemory(actor, spaceId as FaberLoomSpaceId)).map(entry => entry.text))
-    for (const entry of readObjectArray(snapshot.memory)) {
-      const text = readString(entry.text)
-      if (text === undefined || memoryTexts.has(text)) continue
-      memoryTexts.add(text)
-      await this.ctx.faberloomSpaces.remember(actor, text, [spaceId as FaberLoomSpaceId])
+  private async materializeSharedContent(
+    actor: SpaceActor, space: FaberLoomSpace, rows: readonly FaberLoomSharedContentRow[],
+  ): Promise<void> {
+    const shares = this.sharesService()
+    for (const row of rows) {
+      if (row.localId !== null || row.consoleId === null) continue
+      let localId: string | undefined
+      try {
+        if (row.kind === 'memory') localId = await this.materializeSharedMemory(actor, space.id as FaberLoomSpaceId, row)
+        else if (row.kind === 'context') localId = await this.materializeSharedContext(actor, space.id, row)
+        else if (row.kind === 'workflow') localId = await this.materializeSharedWorkflow(space.id, row)
+        else localId = await this.materializeSharedRoutine(actor.id, row)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: no se pudo importar el contenido compartido '${row.itemKey}': ${error instanceof Error ? error.message : String(error)}`)
+        continue
+      }
+      if (localId !== undefined) await shares.noteContentLocal(actor.id, row.consoleId, localId)
+    }
+  }
+
+  /**
+   * Materialize one shared Memory item unless this member already holds a
+   * memory entry with the same text.
+   * @returns the new entry's id, or undefined when one already exists.
+   */
+  private async materializeSharedMemory(
+    actor: SpaceActor, spaceId: FaberLoomSpaceId, row: FaberLoomSharedContentRow,
+  ): Promise<string | undefined> {
+    const text = readString(row.payload.text)
+    if (text === undefined) return undefined
+    const existing = await this.ctx.faberloomSpaces.listMemory(actor, spaceId)
+    if (existing.some(entry => entry.text === text)) return undefined
+    const entry = await this.ctx.faberloomSpaces.remember(actor, text, [spaceId])
+    return String(entry.id)
+  }
+
+  /**
+   * Materialize one shared Context item unless this member already holds a
+   * context entry with the same title.
+   * @returns the new entry's id, or undefined when one already exists.
+   */
+  private async materializeSharedContext(actor: SpaceActor, spaceId: string, row: FaberLoomSharedContentRow): Promise<string | undefined> {
+    const context = this.ctx.get('faberloomContext')
+    if (context === undefined) return undefined
+    const title = readString(row.payload.title)
+    const body = readString(row.payload.body)
+    if (title === undefined || body === undefined) return undefined
+    const existing = (await context.list({ id: actor.id })).find(entry => entry.title === title)
+    if (existing !== undefined) return undefined
+    const entry = await context.create({ id: actor.id }, { spaceId, title, body })
+    return String(entry.id)
+  }
+
+  /**
+   * Materialize one shared Work Flow unless this member already holds a flow
+   * with the same name.
+   * @returns the new flow's id, or undefined when one already exists.
+   */
+  private async materializeSharedWorkflow(spaceId: string, row: FaberLoomSharedContentRow): Promise<string | undefined> {
+    const name = readString(row.payload.name)
+    const definition = readObject(row.payload.definition)
+    if (name === undefined || definition === undefined) return undefined
+    const existing = (await this.workflowsService().list(this.workflowActor())).find(flow => flow.name === name)
+    if (existing !== undefined) return undefined
+    const flow = await this.workflowsService().create(this.workflowActor(), {
+      name,
+      scope: { kind: 'space', spaceId },
+      definition: definition as unknown as WorkFlowDefinition,
+    })
+    return String(flow.id)
+  }
+
+  /**
+   * Materialize one shared Routine unless this member already holds a routine
+   * with the same name.
+   * @returns the new routine's id, or undefined when one already exists.
+   */
+  private async materializeSharedRoutine(ownerId: string, row: FaberLoomSharedContentRow): Promise<string | undefined> {
+    const name = readString(row.payload.name)
+    const definition = readObject(row.payload.definition)
+    if (name === undefined || definition === undefined) return undefined
+    const existing = (await this.ctx.faberloomRoutines.listRoutines(ownerId)).find(routine => routine.name === name)
+    if (existing !== undefined) return undefined
+    const routine = await this.ctx.faberloomRoutines.createRoutine(ownerId, { name, definition: definition as unknown as RoutineInput['definition'] })
+    return String(routine.id)
+  }
+
+  /**
+   * Remove the local copy one withdrawn shared-content row materialized here.
+   * @param actor - the acting identity.
+   * @param row - the imported row that left the console.
+   */
+  private async forgetSharedContent(actor: SpaceActor, row: FaberLoomSharedContentRow): Promise<void> {
+    if (row.localId === null) return
+    if (row.kind === 'memory') {
+      await this.ctx.faberloomSpaces.forgetMemory(actor, row.localId)
+      return
+    }
+    if (row.kind === 'context') {
+      const context = this.ctx.get('faberloomContext')
+      if (context !== undefined) await context.remove({ id: actor.id }, row.localId)
+      return
+    }
+    if (row.kind === 'workflow') {
+      await this.workflowsService().remove(this.workflowActor(), row.localId as WorkFlowId)
+      return
+    }
+    await this.ctx.faberloomRoutines.removeRoutine(actor.id, row.localId as FaberLoomRoutineId)
+  }
+
+  /**
+   * Publish this member's own Memory, Context, Work Flows, and Routines of one
+   * shared Space to the console, excluding the copies imported from other
+   * members so nothing is echoed back. The console replaces the author's set,
+   * so an item removed here stops reaching the other members.
+   * @param actor - the acting identity.
+   * @param space - the shared Space.
+   */
+  private async publishSpaceContent(actor: SpaceActor, space: FaberLoomSpace): Promise<void> {
+    const imported = await this.sharesService().importedContentKeys(actor.id, space.id)
+    const items: FaberLoomSharedContentInput[] = []
+    // The console stores `item_key` trimmed, so both the key and the payload
+    // field it mirrors are trimmed here; otherwise an imported copy could be
+    // mistaken for a local item and echoed back.
+    const add = (item: FaberLoomSharedContentInput): void => {
+      const field = item.kind === 'memory' ? 'text' : item.kind === 'context' ? 'title' : 'name'
+      const itemKey = item.itemKey.trim()
+      if (itemKey.length === 0 || imported.has(`${item.kind}\u0000${itemKey}`)) return
+      items.push({ kind: item.kind, itemKey, payload: { ...item.payload, [field]: itemKey } })
+    }
+    for (const entry of await this.ctx.faberloomSpaces.listMemory(actor, space.id as FaberLoomSpaceId)) {
+      add({ kind: 'memory', itemKey: entry.text, payload: { text: entry.text, createdAt: entry.createdAt } })
     }
     const context = this.ctx.get('faberloomContext')
     if (context !== undefined) {
-      const byTitle = new Map((await context.list({ id: actor.id })).map(entry => [entry.title, entry] as const))
-      for (const entry of readObjectArray(snapshot.contextEntries)) {
-        const title = readString(entry.title)
-        const body = readString(entry.body)
-        if (title === undefined || body === undefined) continue
-        const existing = byTitle.get(title)
-        try {
-          if (existing === undefined) {
-            await context.create({ id: actor.id }, { spaceId, title, body })
-          } else if (existing.body !== body) {
-            await context.update({ id: actor.id }, existing.id, { body })
-          }
-        } catch (error: unknown) {
-          this.ctx.logger.warn(`faberloom: no se pudo importar el contexto compartido '${title}': ${error instanceof Error ? error.message : String(error)}`)
-        }
+      for (const entry of await context.list({ id: actor.id })) {
+        if (entry.spaceId !== space.id) continue
+        add({ kind: 'context', itemKey: entry.title, payload: { title: entry.title, body: entry.body } })
       }
     }
-    const scope: WorkFlowScope = { kind: 'space', spaceId }
-    const flowByName = new Map((await this.workflowsService().list(this.workflowActor())).map(flow => [flow.name, flow] as const))
-    for (const flow of readObjectArray(snapshot.workflows)) {
-      const name = readString(flow.name)
-      const definition = readObject(flow.definition)
-      if (name === undefined || definition === undefined) continue
-      const existing = flowByName.get(name)
-      const flowDefinition = definition as unknown as WorkFlowDefinition
-      try {
-        if (existing === undefined) {
-          await this.workflowsService().create(this.workflowActor(), { name, scope, definition: flowDefinition })
-        } else if (JSON.stringify(existing.definition) !== JSON.stringify(definition)) {
-          await this.workflowsService().update(this.workflowActor(), existing.id as WorkFlowId, { definition: flowDefinition })
-        }
-      } catch (error: unknown) {
-        this.ctx.logger.warn(`faberloom: no se pudo importar el Work Flow compartido '${name}': ${error instanceof Error ? error.message : String(error)}`)
-      }
+    const flows = (await this.workflowsService().list(this.workflowActor()))
+      .filter(flow => flow.scope.kind === 'space' && flow.scope.spaceId === space.id)
+    for (const flow of flows) {
+      add({ kind: 'workflow', itemKey: flow.name, payload: { name: flow.name, definition: flow.definition as unknown as Record<string, unknown> } })
     }
-    const routines = await this.ctx.faberloomRoutines.listRoutines(actor.id)
-    const routineByName = new Map(routines.map(routine => [routine.name, routine] as const))
-    for (const routine of readObjectArray(snapshot.routines)) {
-      const name = readString(routine.name)
-      const definition = readObject(routine.definition)
-      if (name === undefined || definition === undefined) continue
-      const existing = routineByName.get(name)
-      try {
-        if (existing === undefined) {
-          await this.ctx.faberloomRoutines.createRoutine(actor.id, { name, definition: definition as unknown as RoutineInput['definition'] })
-        } else if (JSON.stringify(existing.definition) !== JSON.stringify(definition)) {
-          await this.ctx.faberloomRoutines.updateRoutine(actor.id, existing.id as FaberLoomRoutineId, { name, definition: definition as unknown as RoutineInput['definition'] })
-        }
-      } catch (error: unknown) {
-        this.ctx.logger.warn(`faberloom: no se pudo importar la Routine compartida '${name}': ${error instanceof Error ? error.message : String(error)}`)
-      }
+    const allRoutines = await this.ctx.faberloomRoutines.listRoutines(actor.id)
+    const routines = new Map(allRoutines.map(routine => [String(routine.id), routine] as const))
+    for (const flow of flows) {
+      if (flow.routineId === undefined) continue
+      const routine = routines.get(String(flow.routineId))
+      if (routine === undefined) continue
+      add({ kind: 'routine', itemKey: routine.name, payload: { name: routine.name, definition: routine.definition as unknown as Record<string, unknown> } })
     }
+    await this.sharesService().publishContent(actor.id, space.id, items)
   }
 
   /**
@@ -1674,7 +1788,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     const shares = this.sharesService()
     const actor = this.actor()
-    const snapshot = await this.buildSpaceSnapshot(actor, space)
+    const snapshot = this.buildSpaceSnapshot(space)
     for (const email of emails) {
       await shares.create(actor.id, { resource: { kind: 'space', id }, resourceName: space.title, granteeEmail: email, permissions, snapshot })
     }

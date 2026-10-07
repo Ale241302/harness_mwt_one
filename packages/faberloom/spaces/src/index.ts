@@ -152,6 +152,7 @@ function toMemory(id: string, record: SpaceMemoryRecord): FaberLoomSpaceMemory {
     id,
     spaceIds: record.spaceIds,
     text: record.text,
+    sessionId: record.sessionId,
     createdAt: record.createdAt,
   }
 }
@@ -460,9 +461,12 @@ export class FaberLoomSpaces extends Service {
    * @param actor - the acting identity.
    * @param text - the remembered text.
    * @param spaceIds - the spaces the entry is attached to.
+   * @param sessionId - the Session that captured the entry, when it came from one.
    * @returns the created entry.
    */
-  async remember(actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[]): Promise<FaberLoomSpaceMemory> {
+  async remember(
+    actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[], sessionId?: string,
+  ): Promise<FaberLoomSpaceMemory> {
     for (const spaceId of spaceIds) {
       const { record } = await this.requireRecord(spaceId)
       if (!await this.mayRead(spaceId, record, actor)) throw new Error('faberloom: space access denied')
@@ -472,10 +476,29 @@ export class FaberLoomSpaces extends Service {
       ownerId: actor.id,
       spaceIds: [...spaceIds],
       text,
+      sessionId: sessionId ?? null,
       createdAt: new Date().toISOString(),
     }
     await (await this.memory()).put(id, record)
     return toMemory(id, record)
+  }
+
+  /**
+   * Delete every memory entry the actor captured from one Session, so deleting
+   * a Session also removes the facts it left behind and the shared-content
+   * catalog can propagate the removal to every member.
+   * @param actor - the acting identity.
+   * @param sessionId - the Session whose captured entries are removed.
+   * @returns the removed entry count.
+   */
+  async forgetMemoryBySession(actor: SpaceActor, sessionId: string): Promise<number> {
+    const table = await this.memory()
+    let removed = 0
+    for (const [id, record] of table.entries()) {
+      if (record.ownerId !== actor.id || record.sessionId !== sessionId) continue
+      if (await table.delete(id)) removed += 1
+    }
+    return removed
   }
 
   /**
