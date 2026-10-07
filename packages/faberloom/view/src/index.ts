@@ -1553,7 +1553,18 @@ export class FaberLoomViewService extends TypertRemoteService {
       wanted.add(row.sessionId)
       if (archived.has(row.sessionId)) continue
       try {
-        if (await persistence.stat(row.sessionId as SessionId) !== undefined) continue
+        // A copy is frozen at the log it was built from, so a Session whose
+        // author kept writing stays stale — even blank. Re-apply it whenever the
+        // console row carries more events than the local copy.
+        const existing = await persistence.stat(row.sessionId as SessionId)
+        if (existing !== undefined) {
+          const query = this.ctx.get('sessionQuery')
+          const localCount = query === undefined
+            ? 0
+            : (await query.readSession(row.sessionId as SessionId).catch(() => undefined))?.events.length ?? 0
+          if (row.messageCount <= localCount) continue
+          await persistence.delete(row.sessionId as SessionId)
+        }
         const shared = await catalog.content({ id: actor.id }, spaceId, row.ownerId, row.sessionId)
         const parsed = JSON.parse(shared.content) as { session: SessionHeader; events: readonly SessionEvent[] }
         const header: SessionHeader = { ...parsed.session, id: row.sessionId as SessionId, cwd: workspace.path }
@@ -1563,6 +1574,9 @@ export class FaberLoomViewService extends TypertRemoteService {
         } finally {
           await handle.close()
         }
+        // Fold the projections from the applied log so the client's Session list
+        // reads the real title and blank state instead of a stale checkpoint.
+        this.ctx.get('sessionProjectionCache')?.coldSnapshot(header, 0 as never, parsed.events)
         await workspace.attachSession(header.id)
         // Warm the title projection so the sidebar shows the author's title
         // instead of falling back to the area id until the Session is opened.
