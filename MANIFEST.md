@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-spaces-ui-sesion-compartidos` (commit `02042c889c79b20ad626aa7bca43295aee6450c4`: la vista de Espacios abre la sesión compartida como chat en lugar de un modal de contenido, lista los usuarios con quienes se comparte cada Space con lápiz (editar permisos por módulo sin re-invitar) y X (revocar el acceso), y añade `setSpacePermissions` para cambiar permisos de un grant activo. Sobre `12a0569d24`).
-**Imagen desplegada actual:** build de `main` @ `02042c889c79b20ad626aa7bca43295aee6450c4` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-07-grants-dedupe-sesiones-vacias` (commit `7ffede307626fdc1f902cf0db6e499e429cd189c`: la lista Compartir colapsa los grants duplicados por (recurso, invitado) y el re-compartir actualiza un único grant conservando su estado; el modal de permisos y la fila muestran nombres legibles; no se publican sesiones sin turnos y el dueño del Space retira los ecos vacíos. Sobre `02042c889c`).
+**Imagen desplegada actual:** build de `main` @ `7ffede307626fdc1f902cf0db6e499e429cd189c` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
