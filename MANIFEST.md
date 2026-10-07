@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-workflows-space-select` (commit `d00aa8bcdb26558ca3380095780a206b72b6289d`: el selector de Space del panel de Workflows solo lista Spaces —sin la opción Personal— y apunta por defecto al primer Space, sobre `e60730d09f` que añadió crear-en-Space, borrar y la propagación casi inmediata).
-**Imagen desplegada actual:** build de `main` @ `d00aa8bcdb26558ca3380095780a206b72b6289d` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-07-mirror-self-heal` (commit `8ae3431676e243dc9e20987913e1aefabf06a41e`: el espejo periódico de sesiones se recupera si un pase queda colgado —un guard en `true` podía bloquearlo para siempre en una cuenta, mientras la vía de contenido seguía— y avisa si falta el área espejo; sobre `d00aa8bcdb` del selector de Space).
+**Imagen desplegada actual:** build de `main` @ `8ae3431676e243dc9e20987913e1aefabf06a41e` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
