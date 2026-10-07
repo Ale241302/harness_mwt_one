@@ -618,8 +618,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     // FaberLoom panel (the read path alone runs only on demand).
     ctx.effect(() => {
       const run = (): void => {
-        void this.mirrorSharedSpaces().catch((error: unknown) => {
-          ctx.logger.warn(`faberloom: no se pudo espejar las sesiones compartidas: ${String(error)}`)
+        void (async () => {
+          await this.mirrorSharedSpaces()
+          await this.refreshSharedContent(this.actor())
+        })().catch((error: unknown) => {
+          ctx.logger.warn(`faberloom: no se pudo refrescar el contenido compartido: ${String(error)}`)
         })
       }
       const timer = setInterval(run, 20_000)
