@@ -193,6 +193,7 @@ export function apply(ctx: ClientContext): void {
       routineFromEmail: (uid, name, instruction, subject, from) =>
         ctx.remote.faberloomView.routineFromEmail(uid, name, instruction, subject ?? undefined, from ?? undefined),
       openRoutines: () => { ctx.layout.selectPanel('faberloom-routines' as never) },
+      selectPanel: (id) => { ctx.layout.selectPanel(id as never) },
       learnFromEmail: uid => ctx.remote.faberloomView.learnFromEmail(uid),
       emailDrafts: () => ctx.remote.faberloomView.emailDrafts(),
       saveEmailDraft: input => ctx.remote.faberloomView.saveEmailDraft(input),
@@ -336,6 +337,9 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: injected,
     }, section.Page))
+    // A section may keep its panel reachable without listing a sidebar row (the
+    // Chat landing, or Skills folded into the Agents tab).
+    if (section.sidebar === false) continue
     ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
       name: 'sidebar.panellist',
       id: section.id,

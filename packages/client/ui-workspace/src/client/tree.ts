@@ -1,7 +1,7 @@
 /**
  * Derives the workspace browser tree from caller-projected Workspace and
- * Session order. Unassigned Sessions trail under Ungrouped; only the selected
- * blank Session remains visible.
+ * Session order. Unassigned Sessions trail under Ungrouped; a blank provisional
+ * Session never shows there (only the selected one under its own Workspace).
  */
 import {
   type SessionListState, type SessionSearchResultItem, type SessionSummary,
@@ -281,8 +281,10 @@ function groupByWorkspace(
   }
   const stray = list.ids
     .map(id => list.byId[id])
+    // A loose blank Session is just the provisional New Session with no area to
+    // group under; hiding it keeps Ungrouped to real conversations.
     .filter((s): s is SessionSummary =>
-      s !== undefined && !accounted.has(s.id) && sessionVisible(s, list.current, archived))
+      s !== undefined && !accounted.has(s.id) && !s.blank && sessionVisible(s, list.current, archived))
   if (stray.length > 0) {
     groups.push(buildGroup(
       UNGROUPED_KEY,

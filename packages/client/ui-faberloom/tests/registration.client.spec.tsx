@@ -218,11 +218,9 @@ describe('faberloom surface', () => {
     expect(Object.keys(tokens)).toEqual(['--dsw-alias-brand-primary-new-colorprimary-new-color'])
 
     expect(runtime.slots.entries('sidebar.panellist').map(row => row.options.id)).toEqual([
-      'faberloom-conversar',
       'faberloom-board',
       'faberloom-spaces',
       'faberloom-agents',
-      'faberloom-skills',
       'faberloom-routines',
       'faberloom-workflows',
       'faberloom-memory',

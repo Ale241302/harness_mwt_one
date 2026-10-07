@@ -185,6 +185,8 @@ export interface FaberloomPanelInjected {
   ) => Promise<Result<FaberLoomRoutineCreated>>
   /** Jump to the Routines panel. */
   openRoutines: () => void
+  /** Switch the shell to another panel by id, or null for the conversation. */
+  selectPanel: (id: MainPanelId | null) => void
   /** Extract expediente facts from one email into Space memory. */
   learnFromEmail: (uid: string) => Promise<Result<FaberLoomEmailFacts>>
   /** List the email drafts awaiting approval. */
@@ -379,6 +381,22 @@ function useOverview(props: ScreenProps) {
       <Toolbar title={title} subtitle={subtitle} trailing={trailing} />
       {children}
     </section>
+  )
+}
+
+/** The Agents/Skills tab switch both screens share, so one sidebar row covers both. */
+function AgentsSkillsTabs({ t, selectPanel, active }: {
+  t: ScreenProps['t']
+  selectPanel: (id: MainPanelId | null) => void
+  active: 'agents' | 'skills'
+}) {
+  return (
+    <span className={styles.tools}>
+      <button className={active === 'agents' ? styles.primary : styles.secondary} type="button"
+        onClick={() => { selectPanel('faberloom-agents' as MainPanelId) }}>{t('panel.agents.title')}</button>
+      <button className={active === 'skills' ? styles.primary : styles.secondary} type="button"
+        onClick={() => { selectPanel('faberloom-skills' as MainPanelId) }}>{t('panel.skills.title')}</button>
+    </span>
   )
 }
 
@@ -696,7 +714,7 @@ function agentsScreen() {
   return function FaberloomAgents(props: ScreenProps) {
     const {
       t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, connections,
-      shareAgent, shares, unshareShare, modelCatalog,
+      shareAgent, shares, unshareShare, modelCatalog, selectPanel,
     } = props
     const { overview, error } = useOverview(props)
     const [selected, setSelected] = useState<string | null>(null)
@@ -870,6 +888,7 @@ function agentsScreen() {
       <Screen title={t('panel.agents.title')} subtitle={t('panel.agents.intro')}
         trailing={(
           <>
+            <AgentsSkillsTabs t={t} selectPanel={selectPanel} active="agents" />
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <button className={styles.primary} type="button" onClick={openDraft}>{t('agents.createTitle')}</button>
           </>
@@ -1520,7 +1539,7 @@ function emailScreen() {
 /** Skills: the role catalog plus the owner's uploads. */
 function skillsScreen() {
   return function FaberloomSkills(props: ScreenProps) {
-    const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare } = props
+    const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare, selectPanel } = props
     const [list, setList] = useState<readonly FaberLoomSkillRow[] | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -1587,6 +1606,7 @@ function skillsScreen() {
       <Screen title={t('panel.skills.title')} subtitle={t('panel.skills.intro')}
         trailing={(
           <>
+            <AgentsSkillsTabs t={t} selectPanel={selectPanel} active="skills" />
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <select className={styles.paneSearch} style={{ width: 170, padding: '8px 10px' }} value={moduleFilter} onChange={(event) => { setModuleFilter(event.target.value) }}>
               <option value="">{t('skills.allModules')}</option>
@@ -3134,6 +3154,8 @@ export interface FaberloomSection {
   Icon: FaberloomPanelIconType
   /** Main-panel occupant. */
   Page: FaberloomPanelBody
+  /** Whether the sidebar lists a row for the panel (default true). */
+  sidebar?: boolean
 }
 
 /** Every node kind the Work Flow inspector offers. */
@@ -4264,11 +4286,15 @@ function approvalsScreen() {
 }
 
 /** The FaberLoom sections in sidebar order. */
-export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel() },
+export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
+  // The Chat landing keeps its route but no sidebar row (the New Session button
+  // and the conversation cover it).
+  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel(), sidebar: false },
   { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', Icon: panelIcon(IconChecklistOutline14), Page: boardScreen() },
   { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', Icon: panelIcon(IconFolderOpenOutline16), Page: spacesScreen() },
-  { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agents', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsScreen() },
-  { id: 'faberloom-skills' as MainPanelId, order: 45, labelKey: 'nav.skills', Icon: panelIcon(IconAgentPresetOutline16), Page: skillsScreen() },
+  // Agents and Skills share one sidebar row; each screen's tab switches panels.
+  { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agentsAndSkills', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsScreen() },
+  { id: 'faberloom-skills' as MainPanelId, order: 45, labelKey: 'nav.skills', Icon: panelIcon(IconAgentPresetOutline16), Page: skillsScreen(), sidebar: false },
   { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(IconAlarmClockOutline16), Page: routinesScreen() },
   { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(IconBranchOutline16), Page: workflowsScreen() },
   { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(IconDatabaseOutline16), Page: memoryScreen() },

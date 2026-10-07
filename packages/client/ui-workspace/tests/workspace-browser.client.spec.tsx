@@ -303,7 +303,9 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([old, blank], { current: blank.id })),
       useWorkspaces: hook({ ...groups(['old', 'blank']), state: 'loading' }),
     })
-    expect(names()).toEqual([expect.stringContaining('新会话'), expect.stringContaining('old')])
+    expect(names()).toEqual(mode === 'ungrouped'
+      ? [expect.stringContaining('old')]
+      : [expect.stringContaining('新会话'), expect.stringContaining('old')])
     expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old', 'absent'])
 
     rerender(b, {
@@ -786,13 +788,13 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('新会话')).toBeNull()
   })
 
-  it.each(['workspace', 'flat', 'ungrouped'] as const)('keeps a new blank first across %s mode switches and enables drag after the first prompt', (mode) => {
+  it.each(['workspace', 'flat'] as const)('keeps a new blank first across %s mode switches and enables drag after the first prompt', (mode) => {
     localStorage.clear()
     const preferences = createWorkspaceViewStore().create()
     preferences.actions.setGroupBy(mode === 'flat' ? 'flat' : 'workspace')
-    const account = mode === 'flat' ? FLAT_SESSION_ORDER_KEY : mode === 'ungrouped' ? UNGROUPED_KEY : 'alpha'
+    const account = mode === 'flat' ? FLAT_SESSION_ORDER_KEY : 'alpha'
     preferences.actions.setGroupExpanded(account, true)
-    const groups = (ids: string[]) => hook(workspaceState(mode === 'ungrouped' ? [] : [workspace('alpha', ids)]))
+    const groups = (ids: string[]) => hook(workspaceState([workspace('alpha', ids)]))
     const b = mount({
       useSessions: hook(sessionState([summary('old', 100), summary('mid', 200)])),
       useWorkspaces: groups(['old', 'mid']),
@@ -850,6 +852,30 @@ describe('WorkspaceBrowser', () => {
     expect(names()).toEqual(['新会话', 'blank', 'mid', 'old'])
     pick('手动排序')
     expect(names()).toEqual(['新会话', 'blank', 'mid', 'old'])
+  })
+
+  it('hides a loose blank New Session in the ungrouped bucket, and shows it once it has content', () => {
+    const preferences = createWorkspaceViewStore().create()
+    preferences.actions.setGroupBy('workspace')
+    preferences.actions.setGroupExpanded(UNGROUPED_KEY, true)
+    const old = summary('old', 10)
+    const blank = summary('blank', 1, { blank: true })
+    const b = mount({
+      useSessions: hook(sessionState([old])),
+      useWorkspaces: hook(workspaceState([])),
+    })
+    const names = () => screen.getAllByRole('treeitem')
+      .filter(row => row.getAttribute('aria-expanded') === null)
+      .map(row => (row.textContent ?? '').trim())
+    rerender(b, {
+      useSessions: hook(sessionState([old, blank], { current: blank.id })),
+    })
+    // The loose blank row is hidden; the real conversation remains.
+    expect(names()).toEqual([expect.stringContaining('old')])
+    rerender(b, {
+      useSessions: hook(sessionState([old, { ...blank, blank: false, updatedAt: 20 }], { current: blank.id })),
+    })
+    expect(names()).toEqual([expect.stringContaining('blank'), expect.stringContaining('old')])
   })
 
   it('shows local metadata matches immediately, then clears back to the grouped tree', async () => {
