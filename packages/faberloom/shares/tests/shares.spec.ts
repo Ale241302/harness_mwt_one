@@ -21,7 +21,7 @@ async function harness(config: Config = {}, withConnections = true) {
   const sendMail = vi.fn(async (_ownerId: string, _message: { to: readonly string[]; subject: string; text: string }) => ({ messageId: 'm-1' }))
   if (withConnections) ctx.provide('faberloomConnections', { sendMail } as never)
   const fiber = await ctx.plugin(FaberLoomShares, config)
-  return { ctx, shares: ctx.faberloomShares, sendMail, fiber }
+  return { ctx, shares: ctx.faberloomShares, sendMail, fiber, facility }
 }
 
 describe('FaberLoomShares', () => {
@@ -325,6 +325,49 @@ describe('FaberLoomShares', () => {
     // A console-less deployment never reaches the network.
     const { shares } = await harness()
     await shares.republish({ resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A' })
+  })
+
+  it('re-sharing one grantee updates a single grant and keeps it active', async () => {
+    const { shares, sendMail } = await harness({ acceptBase: 'https://app.test/accept' })
+    const first = await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view'] })
+    await shares.accept(GUEST, first.id)
+    sendMail.mockClear()
+    const second = await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view', 'run'] })
+    expect(second.id).toBe(first.id)
+    expect(second.status).toBe('active')
+    expect(second.permissions).toEqual(['view', 'run'])
+    // An update to an active grant does not re-invite.
+    expect(sendMail).not.toHaveBeenCalled()
+    expect((await shares.list(OWNER)).outgoing).toHaveLength(1)
+  })
+
+  it('collapses legacy duplicates per (resource, grantee), and revoke and edit touch them all', async () => {
+    const { shares, facility } = await harness()
+    // Touch the service first so it opens the domain, then seed two legacy rows.
+    await shares.list(OWNER)
+    const domain = facility.get('faberloom_shares')
+    if (domain === undefined) throw new Error('the shares domain did not open')
+    const table = domain.table('grants')
+    const base = {
+      ownerId: OWNER, resourceKind: 'space' as const, resourceId: 'sp-1', resourceName: 'A', granteeEmail: GUEST,
+      status: 'active' as const, snapshot: null, consoleId: null, acceptedAt: null,
+    }
+    await table.put('legacy-1', { ...base, permissions: ['view'], createdAt: '2020-01-01T00:00:00.000Z' })
+    await table.put('legacy-2', { ...base, permissions: ['run'], createdAt: '2020-01-02T00:00:00.000Z' })
+
+    const outgoing = (await shares.list(OWNER)).outgoing
+    expect(outgoing).toHaveLength(1)
+    expect(outgoing[0]?.permissions).toEqual(['view', 'run'])
+    expect(outgoing[0]?.status).toBe('active')
+
+    await shares.updatePermissions(OWNER, { kind: 'space', id: 'sp-1' }, 'A', GUEST, ['view'])
+    expect((await shares.list(OWNER)).outgoing[0]?.permissions).toEqual(['view'])
+
+    await shares.revoke(OWNER, outgoing[0]?.id ?? '')
+    const after = (await shares.list(OWNER)).outgoing
+    expect(after).toHaveLength(1)
+    expect(after[0]?.status).toBe('revoked')
+    expect(await shares.can(GUEST, OWNER, { kind: 'space', id: 'sp-1' }, 'view')).toBe(false)
   })
 })
 

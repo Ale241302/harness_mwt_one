@@ -620,7 +620,7 @@ function spacesScreen() {
                             ? <span className={styles.cellMuted}>{t('spaces.noSharedWith')}</span>
                             : grants.map(grant => (
                               <div key={grant.id} className={styles.grid2}>
-                                <span className={styles.cellMuted}>{grant.granteeEmail} · {grant.permissionLabel}</span>
+                                <span className={styles.cellMuted}>{grant.granteeEmail} · {grant.permissions.map(permission => sharePermissionLabel(t, permission)).join(', ')}</span>
                                 <span className={styles.tools}>
                                   <button className={styles.ghost} type="button" title={t('spaces.editPermissions')}
                                     onClick={() => { editGrant(grant) }}><span aria-hidden="true">✎</span></button>
@@ -680,7 +680,7 @@ function spacesScreen() {
                 <label key={permission} className={`${styles.workflowPermission} ${grantPermissions.includes(permission) ? styles.workflowPermissionOn : ''}`}>
                   <input type="checkbox" checked={grantPermissions.includes(permission)}
                     onChange={() => { toggleGrantPermission(permission) }} />
-                  {permission}
+                  {sharePermissionLabel(t, permission)}
                 </label>
               ))}
             </div>
@@ -3152,6 +3152,32 @@ export const SHARE_PERMISSION_OPTIONS = [
   'view-routines', 'create-routines', 'edit-routines', 'delete-routines',
 ] as const
 
+/**
+ * The localized, human-readable label of one share-permission token. The base
+ * Work Flow actions have their own names; a `<action>-<module>` token reads as
+ * the action followed by the module (for example "Ver memoria").
+ * @param t - the panel translator.
+ * @param permission - the permission token.
+ * @returns the label to show.
+ */
+function sharePermissionLabel(t: PropsLocale<'faberloom'>['t'], permission: string): string {
+  const base: Readonly<Record<string, FaberloomKey>> = {
+    view: 'perm.view',
+    run: 'perm.run',
+    share: 'perm.share',
+    'edit-graph': 'perm.editGraph',
+    'add-nodes': 'perm.addNodes',
+    'remove-nodes': 'perm.removeNodes',
+    'edit-agents': 'perm.editAgents',
+    'manage-triggers': 'perm.manageTriggers',
+  }
+  const mapped = base[permission]
+  if (mapped !== undefined) return t(mapped)
+  const match = /^(view|create|edit|delete)-(memory|context|workflows|routines)$/.exec(permission)
+  if (match === null) return permission
+  return `${t(`perm.${match[1]}` as FaberloomKey)} ${t(`perm.${match[2]}` as FaberloomKey)}`
+}
+
 /** The IMAP operations the mail node offers. */
 const WORKFLOW_IMAP_OPS = ['search', 'move', 'delete', 'markRead'] as const
 
@@ -3922,7 +3948,7 @@ function workflowsScreen() {
                         <label key={permission} className={`${styles.workflowPermission} ${sharePermissions.includes(permission) ? styles.workflowPermissionOn : ''}`}>
                           <input type="checkbox" checked={sharePermissions.includes(permission)}
                             onChange={() => { togglePermission(permission) }} />
-                          {permission}
+                          {sharePermissionLabel(t, permission)}
                         </label>
                       ))}
                     </div>
@@ -3932,7 +3958,7 @@ function workflowsScreen() {
                 {grants.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.share.none')}</span> : grants.map(grant => (
                   <div key={grant.id} className={styles.workflowRunRow}>
                     <span>{grant.granteeEmail}</span>
-                    <span className={styles.workflowRunWhen}>{grant.permissionLabel}</span>
+                    <span className={styles.workflowRunWhen}>{grant.permissions.map(permission => sharePermissionLabel(t, permission)).join(', ')}</span>
                     <span>{statusLabel(grant.status)}</span>
                     <button type="button" onClick={() => { revokeGrant(grant.id) }}>{t('wf.share.revoke')}</button>
                   </div>

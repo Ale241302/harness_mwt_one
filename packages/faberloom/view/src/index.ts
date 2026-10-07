@@ -492,6 +492,22 @@ function sessionTurnMemory(events: readonly SessionEvent[]): string {
   return parts.join('\n\n').slice(0, 4000)
 }
 
+/**
+ * Whether a portable Session snapshot carries at least one conversation turn.
+ * A seed-only log (an abandoned "new conversation") has none, so it is not worth
+ * sharing and is retired instead.
+ * @param content - the stored snapshot JSON.
+ * @returns true when the log holds a `turn/start` event.
+ */
+function snapshotHasTurn(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content) as { events?: readonly { type?: unknown }[] }
+    return (parsed.events ?? []).some(event => event.type === 'turn/start')
+  } catch {
+    return false
+  }
+}
+
 /** Read a Work Flow scope value, or undefined when it is not one. */
 function readScope(value: unknown): WorkFlowScope | undefined {
   const scope = readObject(value)
@@ -1018,9 +1034,11 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param sessionId - the Session to read.
    * @returns the folded title, event count, and snapshot JSON.
    */
-  private async readSessionArtifact(sessionId: string): Promise<{ title?: string; messageCount: number; content: string }> {
+  private async readSessionArtifact(
+    sessionId: string,
+  ): Promise<{ title?: string; messageCount: number; content: string; hasTurn: boolean }> {
     const query = this.ctx.get('sessionQuery')
-    if (query === undefined) return { messageCount: 0, content: '' }
+    if (query === undefined) return { messageCount: 0, content: '', hasTurn: false }
     const id = sessionId as SessionId
     const snapshot = await query.readSession(id)
     const title = (await query.readTitle(id).catch(() => undefined))?.title
@@ -1028,6 +1046,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...(title === undefined || title.length === 0 ? {} : { title }),
       messageCount: snapshot.events.length,
       content: JSON.stringify(snapshot),
+      hasTurn: snapshot.events.some(event => event.type === 'turn/start'),
     }
   }
 
@@ -2009,10 +2028,14 @@ export class FaberLoomViewService extends TypertRemoteService {
     // Any Session the catalog already knows — this actor's own capture or an
     // imported copy of another member's — is not captured again.
     const known = new Set(rows.map(row => row.sessionId))
+    const ownIds = new Set(rows.filter(row => row.ownerId === actor.id).map(row => row.sessionId))
     for (const sessionId of workspace.sessionIds) {
       const id = String(sessionId)
       if (!live.has(id) || known.has(id) || mirrored.has(id)) continue
       const artifact = await this.readSessionArtifact(sessionId)
+      // A seed-only Session has no conversation; publishing it would show an
+      // empty `session-…` row to every member.
+      if (!artifact.hasTurn) continue
       await catalog.capture({ id: actor.id }, {
         spaceId: space.id,
         sessionId,
@@ -2022,11 +2045,33 @@ export class FaberLoomViewService extends TypertRemoteService {
         content: artifact.content,
       })
     }
-    // A Session this actor captured but no longer offers — removed from the
-    // area, archived, or its log deleted — leaves the catalog so a member's
-    // copy stops showing.
+    const spaceOwner = space.ownerId
     for (const row of rows) {
-      if (row.ownerId !== actor.id || live.has(row.sessionId)) continue
+      if (row.ownerId !== actor.id) {
+        // An imported row reusing one of this actor's own Session ids is a
+        // member's echo of this actor's Session, so the foreign copy goes. The
+        // Space's owner also retires an empty imported row, so an abandoned
+        // Session never lingers in every member's list.
+        let drop = ownIds.has(row.sessionId)
+        if (!drop && spaceOwner === actor.id) {
+          try {
+            const shared = await catalog.content({ id: actor.id }, space.id, row.ownerId, row.sessionId)
+            drop = !snapshotHasTurn(shared.content)
+          } catch (error: unknown) {
+            this.ctx.logger.warn(`faberloom: no se pudo leer la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
+          }
+        }
+        if (!drop) continue
+        await catalog.remove({ id: actor.id }, space.id, row.ownerId, row.sessionId).catch((error: unknown) => {
+          this.ctx.logger.warn(`faberloom: no se pudo retirar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
+        })
+        continue
+      }
+      // A Session this actor captured but no longer offers — removed from the
+      // area, archived, its log deleted, or never holding a turn — leaves the
+      // catalog so a member's copy stops showing.
+      const wanted = live.has(row.sessionId) && (await this.readSessionArtifact(row.sessionId)).hasTurn
+      if (wanted) continue
       await catalog.remove({ id: actor.id }, space.id, actor.id, row.sessionId).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: no se pudo retirar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
       })
@@ -2353,6 +2398,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
     for (const session of sessions) {
       const artifact = await this.readSessionArtifact(session.id)
+      // A seed-only Session has no conversation; sharing it would add an empty
+      // `session-…` row to every member's list.
+      if (!artifact.hasTurn) continue
       await this.sessionSharesService().capture({ id: actor.id }, {
         spaceId,
         sessionId: session.id,

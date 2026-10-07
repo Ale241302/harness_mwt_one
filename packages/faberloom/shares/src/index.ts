@@ -68,6 +68,45 @@ function sameResource(left: FaberLoomShareResource, right: FaberLoomShareResourc
   return left.kind === right.kind && left.id === right.id
 }
 
+/**
+ * The stable local key for one (resource, grantee) pair, so re-sharing an
+ * already-shared grantee updates one record instead of piling up copies.
+ * @param resource - the shared resource.
+ * @param granteeEmail - the lowercased grantee.
+ * @returns the deterministic grant key.
+ */
+function shareKey(resource: FaberLoomShareResource, granteeEmail: string): string {
+  return `${resource.kind}:${resource.id}:${granteeEmail}`
+}
+
+/**
+ * Collapse grants that name the same owner, resource, and grantee — the residue
+ * of re-sharing before the local key became stable — into one, unioning their
+ * permissions and treating the tuple as active when any copy is.
+ * @param grants - the actor's outgoing or incoming grants.
+ * @returns one grant per (owner, resource, grantee), first copy order preserved.
+ */
+function collapseGrants(grants: readonly FaberLoomShareGrant[]): FaberLoomShareGrant[] {
+  const byKey = new Map<string, FaberLoomShareGrant>()
+  for (const grant of grants) {
+    const key = `${grant.ownerId}\u0000${shareKey(grant.resource, grant.granteeEmail)}`
+    const prior = byKey.get(key)
+    if (prior === undefined) {
+      byKey.set(key, grant)
+      continue
+    }
+    const held = new Set<string>([...prior.permissions, ...grant.permissions])
+    byKey.set(key, {
+      ...prior,
+      permissions: SHARE_PERMISSIONS.filter(permission => held.has(permission)),
+      status: prior.status === 'active' || grant.status === 'active' ? 'active' : prior.status,
+      createdAt: prior.createdAt <= grant.createdAt ? prior.createdAt : grant.createdAt,
+      acceptedAt: prior.acceptedAt ?? grant.acceptedAt,
+    })
+  }
+  return [...byKey.values()]
+}
+
 /** One shared-content item's logical key within its Space. */
 function contentKey(kind: FaberLoomSharedContentKind, itemKey: string): string {
   return `${kind}\u0000${itemKey}`
@@ -208,12 +247,14 @@ export class FaberLoomShares extends Service {
   }
 
   /**
-   * Create one share grant, notify the grantee by email, and publish it to the
-   * console when one is configured. The grant starts `pending`; only an
-   * accepted (`active`) grant authorizes an action.
+   * Create or update one share grant for a (resource, grantee) pair, notify a
+   * new grantee by email, and publish it to the console when one is configured.
+   * A new grant starts `pending`; re-sharing an already-accepted grant only moves
+   * its permissions and stays `active`. Only an `active` grant authorizes an
+   * action.
    * @param ownerId - the identity granting access.
    * @param input - resource, resource name, grantee email, and permissions.
-   * @returns the created grant.
+   * @returns the created or updated grant.
    * @throws when the grantee email is empty.
    */
   async create(ownerId: string, input: FaberLoomShareInput): Promise<FaberLoomShareGrant> {
@@ -221,7 +262,23 @@ export class FaberLoomShares extends Service {
     if (granteeEmail.length === 0) throw new Error('faberloom: share needs a grantee email')
     const permissions = input.permissions.filter(permission => KNOWN_PERMISSIONS.has(permission))
     if (permissions.length === 0) throw new Error('faberloom: share needs at least one permission')
-    const id = randomUUID()
+    const table = await this.grants()
+    // Reuse an existing record for this (owner, resource, grantee) tuple — a
+    // legacy random key or the stable one — so re-sharing updates one grant
+    // instead of piling up duplicates.
+    let id: string | undefined
+    let existing: ShareGrantRecord | undefined
+    for (const [candidateId, candidate] of table.entries()) {
+      if (candidate.ownerId !== ownerId || candidate.granteeEmail !== granteeEmail) continue
+      if (!sameResource({ kind: candidate.resourceKind, id: candidate.resourceId }, input.resource)) continue
+      id = candidateId
+      existing = candidate
+      break
+    }
+    id ??= randomUUID()
+    // Re-sharing a grant the grantee already accepted keeps it active instead of
+    // bouncing back to pending and forcing a second acceptance.
+    const staysActive = existing?.status === 'active'
     let record: ShareGrantRecord = {
       ownerId,
       resourceKind: input.resource.kind,
@@ -229,11 +286,11 @@ export class FaberLoomShares extends Service {
       resourceName: input.resourceName,
       granteeEmail,
       permissions,
-      status: 'pending',
-      snapshot: input.snapshot ?? null,
-      consoleId: null,
-      createdAt: new Date().toISOString(),
-      acceptedAt: null,
+      status: staysActive ? 'active' : 'pending',
+      snapshot: input.snapshot ?? existing?.snapshot ?? null,
+      consoleId: existing?.consoleId ?? null,
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+      acceptedAt: existing?.acceptedAt ?? null,
     }
     const published = await this.consoleShare('', {
       method: 'POST',
@@ -243,21 +300,25 @@ export class FaberLoomShares extends Service {
         // grantee importa el grant contra el recurso real y no contra su nombre.
         resource_id: input.resource.id,
         name: input.resourceName,
-        payload: input.snapshot ?? {},
+        payload: record.snapshot ?? {},
         shared_emails: [granteeEmail],
         permissions,
-        status: 'pending',
+        status: record.status,
       }),
     })
     const consoleId = published !== null && typeof published === 'object' && typeof (published as { id?: unknown }).id === 'string'
       ? (published as { id: string }).id
-      : null
+      : existing?.consoleId ?? null
     record = { ...record, consoleId }
-    await (await this.grants()).put(id, record)
-    // El enlace de aceptación apunta a la fila de la consola (id remoto), que es
-    // el único identificador que el invitado puede resolver en su propia consola;
-    // el id local sólo existe en el proceso del dueño.
-    await this.notify(ownerId, toGrant(id, record), this.acceptUrl(record.consoleId ?? id))
+    await table.put(id, record)
+    // Only a fresh invite needs the acceptance link; an update to an active
+    // grant already carries its acceptance.
+    if (!staysActive) {
+      // El enlace de aceptación apunta a la fila de la consola (id remoto), que es
+      // el único identificador que el invitado puede resolver en su propia consola;
+      // el id local sólo existe en el proceso del dueño.
+      await this.notify(ownerId, toGrant(id, record), this.acceptUrl(record.consoleId ?? id))
+    }
     return toGrant(id, record)
   }
 
@@ -300,10 +361,27 @@ export class FaberLoomShares extends Service {
     const record = table.get(id)
     if (record === undefined) throw new Error(`faberloom: share grant ${id} not found`)
     if (record.ownerId !== ownerId) throw new Error('faberloom: only the grantor can revoke this share')
+    // Revoke every local copy for the same (resource, grantee) tuple, so a legacy
+    // duplicate set stops authorizing instead of leaving an active sibling behind.
+    const siblings: string[] = []
+    const consoleIds = new Set<string>()
+    if (record.consoleId !== null) consoleIds.add(record.consoleId)
+    for (const [otherId, other] of table.entries()) {
+      if (otherId === id) continue
+      if (other.ownerId !== ownerId || other.granteeEmail !== record.granteeEmail) continue
+      if (!sameResource({ kind: other.resourceKind, id: other.resourceId }, { kind: record.resourceKind, id: record.resourceId })) continue
+      if (other.consoleId !== null) consoleIds.add(other.consoleId)
+      if (other.status !== 'revoked') siblings.push(otherId)
+    }
     const next: ShareGrantRecord = { ...record, status: 'revoked' }
     await table.update(id, () => next)
-    if (record.consoleId !== null) {
-      await this.consoleShare(`${encodeURIComponent(record.consoleId)}/`, { method: 'DELETE' }).catch(() => undefined)
+    for (const siblingId of siblings) {
+      const sibling = table.get(siblingId)
+      if (sibling === undefined) continue
+      await table.update(siblingId, () => ({ ...sibling, status: 'revoked' }))
+    }
+    for (const consoleId of consoleIds) {
+      await this.consoleShare(`${encodeURIComponent(consoleId)}/`, { method: 'DELETE' }).catch(() => undefined)
     }
     return toGrant(id, next)
   }
@@ -322,9 +400,10 @@ export class FaberLoomShares extends Service {
       if (record.ownerId === actorId) outgoing.push(grant)
       if (record.granteeEmail === email) incoming.push(grant)
     }
-    outgoing.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-    incoming.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-    return { outgoing, incoming }
+    return {
+      outgoing: collapseGrants(outgoing).sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
+      incoming: collapseGrants(incoming).sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
+    }
   }
 
   /**
@@ -378,14 +457,15 @@ export class FaberLoomShares extends Service {
     const email = granteeEmail.trim().toLowerCase()
     const next = permissions.filter(permission => KNOWN_PERMISSIONS.has(permission))
     const table = await this.grants()
-    let existing: { id: string; record: ShareGrantRecord } | undefined
+    // Every local copy for the tuple moves together, so a legacy duplicate never
+    // keeps stale permissions after one is edited.
+    const matches: { id: string; record: ShareGrantRecord }[] = []
     for (const [id, record] of table.entries()) {
       if (record.ownerId !== ownerId || record.granteeEmail !== email) continue
       if (!sameResource({ kind: record.resourceKind, id: record.resourceId }, resource)) continue
-      existing = { id, record }
-      break
+      matches.push({ id, record })
     }
-    const payload = readSnapshot(existing?.record.snapshot ?? null) ?? {}
+    const payload = readSnapshot(matches[0]?.record.snapshot ?? null) ?? {}
     const published = await this.consoleShare('', {
       method: 'POST',
       body: JSON.stringify({
@@ -400,10 +480,10 @@ export class FaberLoomShares extends Service {
     })
     const consoleId = published !== null && typeof published === 'object' && typeof (published as { id?: unknown }).id === 'string'
       ? (published as { id: string }).id
-      : existing?.record.consoleId ?? null
-    if (existing !== undefined) {
-      const record: ShareGrantRecord = { ...existing.record, permissions: next, status: 'active', consoleId }
-      await table.update(existing.id, () => record)
+      : matches[0]?.record.consoleId ?? null
+    for (const match of matches) {
+      const record: ShareGrantRecord = { ...match.record, permissions: next, status: 'active', consoleId: consoleId ?? match.record.consoleId }
+      await table.update(match.id, () => record)
     }
   }
 

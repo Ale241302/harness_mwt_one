@@ -20,7 +20,7 @@ function harness(options: { query?: boolean; workspaceId?: string | null } = {})
     remove: vi.fn(async (_actor: { id: string }, _spaceId: string, _ownerId: string, _sessionId: string) => true),
     sync: vi.fn(async (_readerId: string) => undefined),
   }
-  const query = { readSession: vi.fn(async () => ({ session: { id: 's1' }, events: [{ type: 'user/message' }] })), readTitle: vi.fn(async () => ({ title: 'Título del log' })) }
+  const query = { readSession: vi.fn(async () => ({ session: { id: 's1' }, events: [{ type: 'turn/start' }, { type: 'user/message' }] })), readTitle: vi.fn(async () => ({ title: 'Título del log' })) }
   const shares = {
     list: vi.fn(async () => ({ outgoing: [] as unknown[], incoming: [] as unknown[] })),
     create: vi.fn(async () => ({})),
@@ -75,7 +75,7 @@ describe('FaberLoomViewService shared Sessions', () => {
     expect(catalog.capture).toHaveBeenCalledWith(
       { id: 'owner@muitowork.com' },
       expect.objectContaining({
-        spaceId: 'sp-1', sessionId: 's1', title: 'Título del log', workspaceId: 'ws-1', messageCount: 1,
+        spaceId: 'sp-1', sessionId: 's1', title: 'Título del log', workspaceId: 'ws-1', messageCount: 2,
       }),
     )
     expect(String(catalog.capture.mock.calls[0]?.[1]?.['content'])).toContain('user/message')
@@ -83,10 +83,11 @@ describe('FaberLoomViewService shared Sessions', () => {
     expect(rows).toEqual([expect.objectContaining({ sessionId: 's1' })])
   })
 
-  it('falls back to the offered title when the query service or its title is absent', async () => {
+  it('falla en silencio cuando falta el servicio de consulta, y usa el título ofrecido si falta el del log', async () => {
+    // Sin servicio de consulta no se puede leer el log, así que no se comparte.
     const noQuery = harness({ query: false })
     await noQuery.view.captureSpaceSessions('sp-1', [{ id: 's1', title: 'Preliminar' }])
-    expect(noQuery.catalog.capture.mock.calls[0]?.[1]).toMatchObject({ title: 'Preliminar', messageCount: 0, content: '' })
+    expect(noQuery.catalog.capture).not.toHaveBeenCalled()
 
     const noTitle = harness()
     noTitle.query.readTitle.mockResolvedValue(undefined as never)
@@ -168,6 +169,22 @@ describe('FaberLoomViewService shared Sessions', () => {
       sessionId: 'sess-remote', blank: false, cwd: '/data/owner/spaces/shared/3a4d6839',
       projections: { values: { title: 'Consulta' }, asOfSeq: 2 },
     }))
+  })
+
+  it('skips a Session with no turn and lets the owner drop a member empty row', async () => {
+    const { view, catalog, query } = harness()
+    query.readSession.mockResolvedValue({ session: { id: 's1' }, events: [{ type: 'permission/preset' }] } as never)
+    await view.captureSpaceSessions('sp-1', [{ id: 's1', title: 'X' }])
+    expect(catalog.capture).not.toHaveBeenCalled()
+
+    // The owner's sweep retires a member's imported row that carries no turn.
+    const empty = row({ ownerId: 'guest@x', sessionId: 's-empty', messageCount: 4 })
+    catalog.list.mockResolvedValue([empty])
+    catalog.content.mockResolvedValue({ ...empty, content: JSON.stringify({ events: [{ type: 'session/end-seed' }] }) })
+    await view.shareSpace('sp-1', ['guest@x'], ['view'])
+    await vi.waitFor(() => expect(catalog.remove).toHaveBeenCalledWith(
+      { id: 'owner@muitowork.com' }, 'sp-1', 'guest@x', 's-empty',
+    ))
   })
 
   it('fails loud when the shared-Session catalog is not mounted', async () => {    const ctx = {

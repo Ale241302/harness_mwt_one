@@ -1242,12 +1242,14 @@ The product sharing service: durable per-action grants with console transport an
 
 ```ts cordis-catalog
 /**
- * Create one share grant, notify the grantee by email, and publish it to the
- * console when one is configured. The grant starts `pending`; only an
- * accepted (`active`) grant authorizes an action.
+ * Create or update one share grant for a (resource, grantee) pair, notify a
+ * new grantee by email, and publish it to the console when one is configured.
+ * A new grant starts `pending`; re-sharing an already-accepted grant only moves
+ * its permissions and stays `active`. Only an `active` grant authorizes an
+ * action.
  * @param ownerId - the identity granting access.
  * @param input - resource, resource name, grantee email, and permissions.
- * @returns the created grant.
+ * @returns the created or updated grant.
  * @throws when the grantee email is empty.
  */
 async create(ownerId: string, input: FaberLoomShareInput): Promise<FaberLoomShareGrant>
