@@ -1554,17 +1554,19 @@ export class FaberLoomViewService extends TypertRemoteService {
       if (archived.has(row.sessionId)) continue
       try {
         // A copy is frozen at the log it was built from, so a Session whose
-        // author kept writing stays stale — even blank. Re-apply it whenever the
-        // console row carries more events than the local copy.
+        // author kept writing stays stale — even blank. Refresh it whenever the
+        // console row carries more events, and re-fold the projections from the
+        // current log either way so a corrected blank/title applies.
         const existing = await persistence.stat(row.sessionId as SessionId)
-        if (existing !== undefined) {
-          const query = this.ctx.get('sessionQuery')
-          const localCount = query === undefined
-            ? 0
-            : (await query.readSession(row.sessionId as SessionId).catch(() => undefined))?.events.length ?? 0
-          if (row.messageCount <= localCount) continue
-          await persistence.delete(row.sessionId as SessionId)
+        const query = this.ctx.get('sessionQuery')
+        const local = existing !== undefined && query !== undefined
+          ? await query.readSession(row.sessionId as SessionId).catch(() => undefined)
+          : undefined
+        if (local !== undefined && local.events.length >= row.messageCount) {
+          this.ctx.get('sessionProjectionCache')?.coldSnapshot(local.session as SessionHeader, 0 as never, local.events as readonly SessionEvent[])
+          continue
         }
+        if (existing !== undefined) await persistence.delete(row.sessionId as SessionId)
         const shared = await catalog.content({ id: actor.id }, spaceId, row.ownerId, row.sessionId)
         const parsed = JSON.parse(shared.content) as { session: SessionHeader; events: readonly SessionEvent[] }
         const header: SessionHeader = { ...parsed.session, id: row.sessionId as SessionId, cwd: workspace.path }
