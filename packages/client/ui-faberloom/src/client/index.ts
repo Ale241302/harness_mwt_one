@@ -222,6 +222,11 @@ export function apply(ctx: ClientContext): void {
             .then((sessionId) => { ctx.sessions.open(sessionId); ctx.layout.selectPanel(null) })
         })
       },
+      openSharedSession: (sessionId) => {
+        ctx.sessions.open(sessionId as never)
+        ctx.layout.selectPanel(null)
+      },
+      setSpacePermissions: (spaceId, email, permissions) => ctx.remote.faberloomView.setSpacePermissions(spaceId, email, [...permissions]),
       routineDetail: id => ctx.remote.faberloomView.routineDetail(id),
       saveRoutine: (id, input) => {
         const run = ctx.remote.faberloomView.saveRoutine(id, input)

@@ -686,9 +686,13 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (space === undefined) return
     const text = sessionTurnMemory(session.snapshotEvents())
     if (text.length === 0) return
-    const existing = await this.ctx.faberloomSpaces.listMemory(actor, space.id)
-    if (!existing.some(entry => entry.text === text)) {
-      await this.ctx.faberloomSpaces.remember(actor, text, [space.id], session.id)
+    // A member without `create-memory` on the Space leaves no record here: the
+    // module is theirs to read, not to write.
+    if (await this.canModule(actor, space.id, 'memory', 'create')) {
+      const existing = await this.ctx.faberloomSpaces.listMemory(actor, space.id)
+      if (!existing.some(entry => entry.text === text)) {
+        await this.ctx.faberloomSpaces.remember(actor, text, [space.id], session.id)
+      }
     }
     // Keep the Space's members in sync: publish this Session so the other side
     // reads it, and pull theirs so this side's sidebar mirrors the area.
@@ -1101,6 +1105,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     const scope: WorkFlowScope = spaceId === undefined || spaceId.length === 0
       ? { kind: 'personal' }
       : { kind: 'space', spaceId }
+    if (scope.kind === 'space' && !await this.canModule(this.actor(), scope.spaceId, 'workflow', 'create')) {
+      throw new Error('faberloom: no tienes permiso para crear Workflows en este espacio')
+    }
     await this.workflowsService().create(this.workflowActor(), {
       name,
       scope,
@@ -1943,6 +1950,25 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Replace the permissions one grantee holds on a Space, keeping the grant
+   * active (no re-invite). The owner or a privileged role may change it.
+   * @param id - space id.
+   * @param email - the grantee whose permissions change.
+   * @param permissions - the new permission set.
+   * @returns the resource's outgoing grant rows.
+   */
+  @Remote('setSpacePermissions')
+  async setSpacePermissions(id: string, email: string, permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot share')
+    const space = await this.ctx.faberloomSpaces.get(this.actor(), id as FaberLoomSpaceId)
+    if (space.ownerId !== this.actor().id && !this.isPrivileged()) {
+      throw new Error('faberloom: only the owner or an admin can change this space')
+    }
+    await this.sharesService().updatePermissions(this.actor().id, { kind: 'space', id }, space.title, email, permissions)
+    return await this.outgoingGrantRows('space', id)
+  }
+
+  /**
    * Publish a Space's conversation Sessions to the shared catalog so the grantee
    * reads them under the Space. A deployment without the shared-Session catalog,
    * or a Space with no area, publishes none.
@@ -2215,10 +2241,14 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('createContext')
   async createContext(title: string, body: string, spaceId?: string): Promise<readonly FaberLoomContextRow[]> {
+    const target = spaceId === undefined || spaceId.length === 0 ? null : spaceId
+    if (target !== null && !await this.canModule(this.actor(), target, 'context', 'create')) {
+      throw new Error('faberloom: no tienes permiso para crear Contexto en este espacio')
+    }
     await this.contextService().create({ id: this.actor().id }, {
       title,
       body,
-      spaceId: spaceId === undefined || spaceId.length === 0 ? null : spaceId,
+      spaceId: target,
     })
     return await this.contextEntries()
   }

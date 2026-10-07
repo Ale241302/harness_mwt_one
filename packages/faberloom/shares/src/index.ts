@@ -362,6 +362,52 @@ export class FaberLoomShares extends Service {
   }
 
   /**
+   * Change the permissions one existing grant carries without re-inviting the
+   * grantee: the console upsert keeps the grant active and only the permission
+   * set moves, and the published snapshot is preserved. A no-op when the console
+   * is not configured.
+   * @param ownerId - the identity that owns the resource.
+   * @param resource - the resource the grant names.
+   * @param resourceName - the resource display name.
+   * @param granteeEmail - the grantee whose permissions change.
+   * @param permissions - the new permission set.
+   */
+  async updatePermissions(
+    ownerId: string, resource: FaberLoomShareResource, resourceName: string, granteeEmail: string, permissions: readonly string[],
+  ): Promise<void> {
+    const email = granteeEmail.trim().toLowerCase()
+    const next = permissions.filter(permission => KNOWN_PERMISSIONS.has(permission))
+    const table = await this.grants()
+    let existing: { id: string; record: ShareGrantRecord } | undefined
+    for (const [id, record] of table.entries()) {
+      if (record.ownerId !== ownerId || record.granteeEmail !== email) continue
+      if (!sameResource({ kind: record.resourceKind, id: record.resourceId }, resource)) continue
+      existing = { id, record }
+      break
+    }
+    const payload = readSnapshot(existing?.record.snapshot ?? null) ?? {}
+    const published = await this.consoleShare('', {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: resource.kind,
+        resource_id: resource.id,
+        name: resourceName,
+        payload,
+        shared_emails: [email],
+        permissions: next,
+        status: 'active',
+      }),
+    })
+    const consoleId = published !== null && typeof published === 'object' && typeof (published as { id?: unknown }).id === 'string'
+      ? (published as { id: string }).id
+      : existing?.record.consoleId ?? null
+    if (existing !== undefined) {
+      const record: ShareGrantRecord = { ...existing.record, permissions: next, status: 'active', consoleId }
+      await table.update(existing.id, () => record)
+    }
+  }
+
+  /**
    * List the permissions one grantee holds on one resource, unioned over every
    * active grant.
    * @param granteeEmail - the identity acting.

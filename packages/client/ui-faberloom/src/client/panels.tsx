@@ -231,6 +231,14 @@ export interface FaberloomPanelInjected {
   spaceWorkspace: (id: string) => Promise<Result<FaberLoomSpaceWorkspace>>
   /** Start a new conversation in a space's own area. */
   startSpaceSession: (spaceId: string) => void
+  /** Open one chat session (a local or mirrored Session) in the conversation view. */
+  openSharedSession: (sessionId: string) => void
+  /** Replace the permissions one grantee holds on a Space, keeping it active. */
+  setSpacePermissions: (
+    id: string,
+    email: string,
+    permissions: readonly string[],
+  ) => Promise<Result<readonly FaberLoomShareGrantRow[]>>
   /** Read one routine's editable definition. */
   routineDetail: (id: string) => Promise<Result<FaberLoomRoutineDetail | undefined>>
   /** Save one routine's editable definition. */
@@ -381,49 +389,11 @@ function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null 
 }
 
 /** Espacios: list, create, and rename. */
-/**
- * Render one shared-Session snapshot as readable text. The stored content is the
- * query service's snapshot JSON; text blocks of the first-party events are
- * surfaced, and an unparseable body falls back to the raw text.
- * @param content - stored snapshot JSON.
- * @returns the transcript text.
- */
-function sharedTranscript(content: string): string {
-  let parsed: unknown
-  try { parsed = JSON.parse(content) } catch { return content }
-  if (parsed === null || typeof parsed !== 'object') return content
-  const events = (parsed as { events?: unknown }).events
-  if (!Array.isArray(events)) return content
-  const lines: string[] = []
-  for (const event of events) lines.push(...sharedEventText(event))
-  return lines.length === 0 ? content : lines.join('\n\n')
-}
-
-/** The text blocks of one stored event, tagged by its type. */
-function sharedEventText(event: unknown): string[] {
-  if (event === null || typeof event !== 'object') return []
-  const record = event as Record<string, unknown>
-  const data = record['data']
-  if (data === null || typeof data !== 'object') return []
-  const frame = data as Record<string, unknown>
-  const message = frame['message']
-  const blocks = frame['content']
-    ?? (message !== null && typeof message === 'object' ? (message as Record<string, unknown>)['content'] : undefined)
-  if (!Array.isArray(blocks)) return []
-  const text = blocks.flatMap((block) => {
-    if (block === null || typeof block !== 'object') return []
-    const blockRecord = block as Record<string, unknown>
-    return blockRecord['type'] === 'text' && typeof blockRecord['text'] === 'string' ? [blockRecord['text']] : []
-  }).join('\n')
-  const type = typeof record['type'] === 'string' ? record['type'] : 'event'
-  return text.length === 0 ? [] : [`${type}:\n${text}`]
-}
-
 function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
     const {
       t, createSpace, deleteSpace, goToWorkspace, spaceDetail, saveSpace, spaceWorkspace, startSpaceSession,
-      sessionsShare,
+      sessionsShare, openSharedSession, setSpacePermissions, workflows,
     } = props
     const { overview, status, error } = useOverview(props)
     const [draft, setDraft] = useState('')
@@ -439,8 +409,10 @@ function spacesScreen() {
     const [newInherit, setNewInherit] = useState(true)
     const [creating, setCreating] = useState(false)
     const [shared, setShared] = useState<readonly FaberLoomSharedSessionRow[]>([])
-    const [sharedOpen, setSharedOpen] = useState(false)
-    const [sharedContent, setSharedContent] = useState('')
+    const [grants, setGrants] = useState<readonly FaberLoomShareGrantRow[]>([])
+    const [grantOpen, setGrantOpen] = useState(false)
+    const [grantEmail, setGrantEmail] = useState('')
+    const [grantPermissions, setGrantPermissions] = useState<readonly string[]>([])
     const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
     const rows = useMemo(
       () => (overview?.spaces ?? []).filter(space => space.title.toLowerCase().includes(query.trim().toLowerCase())),
@@ -471,12 +443,45 @@ function spacesScreen() {
       void sessionsShare.list(selected).then((result) => { if (result.ok) setShared(result.value) })
     }, [selected, sessionsShare])
 
-    /** Open one shared Session's read-only transcript. */
-    const openShared = (session: FaberLoomSharedSessionRow): void => {
-      void sessionsShare.content(session.spaceId, session.ownerId, session.sessionId).then((result) => {
+    // The Space's outgoing grants refresh with the selection and after each edit.
+    useEffect(() => {
+      if (selected === null) { setGrants([]); return }
+      void workflows.resourceShares('space', selected).then((result) => { if (result.ok) setGrants(result.value) })
+    }, [selected, workflows])
+
+    /** Open one shared Session as the chat view, following its mirrored local copy. */
+    const openShared = (session: FaberLoomSharedSessionRow): void => { openSharedSession(session.sessionId) }
+
+    /** Open the module-permission editor for one identity the Space is shared with. */
+    const editGrant = (grant: FaberLoomShareGrantRow): void => {
+      setGrantEmail(grant.granteeEmail)
+      setGrantPermissions(grant.permissions)
+      setGrantOpen(true)
+    }
+
+    /** Toggle one permission in the Space permission editor. */
+    const toggleGrantPermission = (permission: string): void => {
+      setGrantPermissions(current => current.includes(permission)
+        ? current.filter(value => value !== permission)
+        : [...current, permission])
+    }
+
+    /** Save one grantee's module permissions, keeping the grant active. */
+    const saveGrant = (): void => {
+      if (selected === null || grantEmail.trim().length === 0) return
+      void setSpacePermissions(selected, grantEmail.trim(), grantPermissions).then((result) => {
+        if (result.ok) { setGrants(result.value); setGrantOpen(false); setMessage(null) } else setMessage(result.error.message)
+      })
+    }
+
+    /** Revoke one grantee's access, so the Space no longer appears for them. */
+    const removeGrant = (grantId: string): void => {
+      void workflows.revokeShareGrant(grantId).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
-        setSharedContent(result.value.content)
-        setSharedOpen(true)
+        if (selected === null) return
+        void workflows.resourceShares('space', selected).then((refreshed) => {
+          if (refreshed.ok) setGrants(refreshed.value)
+        })
       })
     }
 
@@ -610,6 +615,21 @@ function spacesScreen() {
                               </div>
                             ))}
                         </Field>
+                        <Field label={t('spaces.sharedWith')} hint={t('spaces.sharedWithHint')}>
+                          {grants.length === 0
+                            ? <span className={styles.cellMuted}>{t('spaces.noSharedWith')}</span>
+                            : grants.map(grant => (
+                              <div key={grant.id} className={styles.grid2}>
+                                <span className={styles.cellMuted}>{grant.granteeEmail} · {grant.permissionLabel}</span>
+                                <span className={styles.tools}>
+                                  <button className={styles.ghost} type="button" title={t('spaces.editPermissions')}
+                                    onClick={() => { editGrant(grant) }}><span aria-hidden="true">✎</span></button>
+                                  <button className={styles.ghost} type="button" title={t('action.delete')}
+                                    onClick={() => { removeGrant(grant.id) }}><span aria-hidden="true">✕</span></button>
+                                </span>
+                              </div>
+                            ))}
+                        </Field>
                       </>
                     )}
           </Inspector>
@@ -645,8 +665,26 @@ function spacesScreen() {
             </select>
           </Field>
         </Modal>
-        <Modal open={sharedOpen} onClose={() => { setSharedOpen(false) }} title={t('spaces.sessionContent')} closeLabel={t('action.close')}>
-          <pre className={styles.sharedSessionLog}>{sharedTranscript(sharedContent)}</pre>
+        <Modal open={grantOpen} onClose={() => { setGrantOpen(false) }} title={t('spaces.editPermissions')} closeLabel={t('action.close')}
+          className={styles.shareDialogWide ?? ''}
+          footer={(
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setGrantOpen(false) }}>{t('action.cancel')}</button>
+              <button className={styles.primary} type="button" onClick={saveGrant}>{t('action.save')}</button>
+            </>
+          )}>
+          <Field label={t('wf.share.email')}><span className={styles.cellMuted}>{grantEmail}</span></Field>
+          <Field label={t('wf.share.permissions')}>
+            <div className={styles.workflowPermissions}>
+              {SHARE_PERMISSION_OPTIONS.map(permission => (
+                <label key={permission} className={`${styles.workflowPermission} ${grantPermissions.includes(permission) ? styles.workflowPermissionOn : ''}`}>
+                  <input type="checkbox" checked={grantPermissions.includes(permission)}
+                    onChange={() => { toggleGrantPermission(permission) }} />
+                  {permission}
+                </label>
+              ))}
+            </div>
+          </Field>
         </Modal>
       </Screen>
     )
@@ -3959,6 +3997,10 @@ function contextScreen() {
         : visibility === 'pending' ? t('ctx.visibility.pending')
           : t('ctx.visibility.local')
 
+    const versionLabel = (version: number): string => `${t('ctx.versionLabel')}${String(version)}`
+    const versionDetail = (version: FaberLoomContextVersionRow): string =>
+      `${versionLabel(version.version)} · ${version.authorId} · ${version.createdAt}`
+
     const refresh = (result: Result<readonly FaberLoomContextRow[]>): void => {
       if (result.ok) { setMessage(null); setReload(value => value + 1) } else setMessage(result.error.message)
     }
@@ -3978,7 +4020,7 @@ function contextScreen() {
       { key: 'title', header: t('col.title'), cell: row => <span className={styles.cellName}>{row.title}</span> },
       { key: 'visibility', header: t('ctx.visibility'), cell: row => <Chip>{visibilityLabel(row.visibility)}</Chip> },
       { key: 'space', header: t('col.space'), cell: row => <span className={styles.cellMuted}>{contextSpaceName(t, overview?.spaces ?? [], row.spaceId)}</span> },
-      { key: 'version', header: t('ctx.version'), cell: row => <span className={styles.cellMuted}>{`v${String(row.version)}`}</span> },
+      { key: 'version', header: t('ctx.version'), cell: row => <span className={styles.cellMuted}>{versionLabel(row.version)}</span> },
       { key: 'updated', header: t('col.date'), cell: row => <span className={styles.cellMuted}>{row.updatedAt}</span> },
     ]
 
@@ -4051,7 +4093,7 @@ function contextScreen() {
                   <h4>{t('ctx.versions')}</h4>
                   {versions.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.noVersions')}</span> : versions.map(version => (
                     <div key={version.version} className={styles.workflowRunRow}>
-                      <span className={styles.cellMuted}>{`v${String(version.version)} · ${version.authorId} · ${version.createdAt}`}</span>
+                      <span className={styles.cellMuted}>{versionDetail(version)}</span>
                       <button className={styles.ghost} type="button" onClick={() => {
                         if (selected === null) return
                         void props.context.restore(selected, version.version).then((result) => {
