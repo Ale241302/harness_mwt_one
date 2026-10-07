@@ -556,6 +556,9 @@ export class FaberLoomViewService extends TypertRemoteService {
   /** Guards one shared-Space Session mirror pass against overlapping runs. */
   private mirroring = false
 
+  /** When the in-flight mirror pass started, so a stalled pass cannot block forever. */
+  private mirrorStartedAt = 0
+
   /** Last time this process refreshed shared Context/Workflows/Routines (throttle). */
   private contentRefreshedAt = 0
 
@@ -1683,8 +1686,11 @@ export class FaberLoomViewService extends TypertRemoteService {
    * against overlapping passes.
    */
   async mirrorSharedSpaces(): Promise<void> {
-    if (this.mirroring) return
+    // A pass may stall on a slow console transport; a minute without finishing
+    // must not stop the mirror forever, so a stale in-flight flag is replaced.
+    if (this.mirroring && Date.now() - this.mirrorStartedAt < 60_000) return
     this.mirroring = true
+    this.mirrorStartedAt = Date.now()
     try {
       const actor = this.actor()
       const catalog = this.ctx.get('faberloomSessionShares')
@@ -1742,7 +1748,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     const catalog = this.ctx.get('faberloomSessionShares')
     const registry = this.workspaceRegistryOrUndefined()
     const workspace = registry?.get(workspaceId as WorkspaceId)
-    if (persistence === undefined || catalog === undefined || workspace === undefined) return
+    if (persistence === undefined || catalog === undefined) return
+    if (workspace === undefined) {
+      this.ctx.logger.warn(`faberloom: el área espejo ${workspaceId} no está registrada; no se espejan sus sesiones`)
+      return
+    }
     // Read the ids mirrored before the sync: a row the console drops must still
     // prune its local copy, even when that copy was detached from the area.
     const preSync = new Set(
