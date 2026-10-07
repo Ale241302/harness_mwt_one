@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-bidirectional-space-content` (commit `2a0188dc50c675726ab6b4c856c5aaf7dba0904b`: Memory, Context, Work Flows y Routines de un Space ahora viajan en **ambos sentidos** por la consola —cada miembro publica los suyos en `core.harness_shared_content` y materializa los de los demás como copias— con poda cuando el autor retira un ítem; además, borrar una sesión elimina la memoria que dejó y propaga el borrado).
-**Imagen desplegada actual:** build de `main` @ `2a0188dc50c675726ab6b4c856c5aaf7dba0904b` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-07-bidirectional-space-content` (commit `d5380c3932b050f55d8939c688ad1dc037618e95`: Memory, Context, Work Flows y Routines de un Space ahora viajan en **ambos sentidos** por la consola —cada miembro publica los suyos en `core.harness_shared_content` y materializa los de los demás como copias— con poda cuando el autor retira un ítem; además, borrar una sesión elimina la memoria que dejó y propaga el borrado).
+**Imagen desplegada actual:** build de `main` @ `d5380c3932b050f55d8939c688ad1dc037618e95` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
