@@ -3335,6 +3335,13 @@ function workflowsScreen() {
     const agentOptions = topology?.agents ?? []
     const connectionOptions = topology?.connections ?? []
     const spaceOptions = topology?.spaces ?? []
+    // The Space picker lists only real Spaces; default to the first one so a new
+    // flow always has a target once the topology arrives.
+    useEffect(() => {
+      const spaces = topology?.spaces ?? []
+      if (spaces.length === 0) return
+      setFlowSpaceId(current => spaces.some(space => space.id === current) ? current : spaces[0]?.id ?? '')
+    }, [topology])
     const skillOptions = skillsState.kind === 'ready' ? skillsState.value : []
     const routineOptions = overview?.routines ?? []
     const selectedHealth = detail?.routineId === undefined || health === null
@@ -3523,7 +3530,6 @@ function workflowsScreen() {
           <h3 className={styles.h2}>{t('wf.title')}</h3>
           <input value={flowName} placeholder={t('wf.namePlaceholder')} onChange={(event) => { setFlowName(event.target.value) }} />
           <select aria-label={t('wf.space')} value={flowSpaceId} onChange={(event) => { setFlowSpaceId(event.target.value) }}>
-            <option value="">{t('wf.personal')}</option>
             {spaceOptions.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
           </select>
           <button type="button" className={styles.primary} onClick={() => {

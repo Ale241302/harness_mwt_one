@@ -599,7 +599,7 @@ describe('faberloom work-flow canvas', () => {
       expect(createWorkflow).not.toHaveBeenCalled()
       fireEvent.change(view.getByPlaceholderText('Flow name'), { target: { value: 'Anti-spam' } })
       fireEvent.click(view.getByRole('button', { name: 'New flow' }))
-      await waitFor(() => { expect(createWorkflow).toHaveBeenCalledWith('Anti-spam', undefined) })
+      await waitFor(() => { expect(createWorkflow).toHaveBeenCalledWith('Anti-spam', 's1') })
 
       fireEvent.click(await view.findByText(/Anti-spam/))
       fireEvent.click(await view.findByRole('button', { name: 'Activate' }))
