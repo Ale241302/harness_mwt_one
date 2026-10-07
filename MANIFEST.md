@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-grants-dedupe-sesiones-vacias` (commit `7ffede307626fdc1f902cf0db6e499e429cd189c`: la lista Compartir colapsa los grants duplicados por (recurso, invitado) y el re-compartir actualiza un único grant conservando su estado; el modal de permisos y la fila muestran nombres legibles; no se publican sesiones sin turnos y el dueño del Space retira los ecos vacíos. Sobre `02042c889c`).
-**Imagen desplegada actual:** build de `main` @ `7ffede307626fdc1f902cf0db6e499e429cd189c` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-07-readonly-own-content` (commit `c052ffeeb4d90dc24b129f0805c75b2aaa454d39`: un miembro `readOnly` puede borrar sus propios flujos y rutinas —el gate es la propiedad o el permiso granular `delete-workflows`/`delete-routines`, no el rol—, igual que ya podía crearlos. Sobre `7ffede3076`).
+**Imagen desplegada actual:** build de `main` @ `c052ffeeb4d90dc24b129f0805c75b2aaa454d39` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
