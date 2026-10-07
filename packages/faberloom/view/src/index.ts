@@ -1592,6 +1592,9 @@ export class FaberLoomViewService extends TypertRemoteService {
           : undefined
         if (local !== undefined && local.events.length >= row.messageCount) {
           this.ctx.get('sessionProjectionCache')?.coldSnapshot(local.session as SessionHeader, 0 as never, local.events as readonly SessionEvent[])
+          // Re-attach in case the copy was detached while its log was briefly
+          // absent (a publish prune); otherwise it lingers under Ungrouped.
+          await workspace.attachSession(row.sessionId as SessionId).catch(() => undefined)
           continue
         }
         if (existing !== undefined) await persistence.delete(row.sessionId as SessionId)
