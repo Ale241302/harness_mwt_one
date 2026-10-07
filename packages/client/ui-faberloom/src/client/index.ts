@@ -193,7 +193,6 @@ export function apply(ctx: ClientContext): void {
       routineFromEmail: (uid, name, instruction, subject, from) =>
         ctx.remote.faberloomView.routineFromEmail(uid, name, instruction, subject ?? undefined, from ?? undefined),
       openRoutines: () => { ctx.layout.selectPanel('faberloom-routines' as never) },
-      selectPanel: (id) => { ctx.layout.selectPanel(id as never) },
       learnFromEmail: uid => ctx.remote.faberloomView.learnFromEmail(uid),
       emailDrafts: () => ctx.remote.faberloomView.emailDrafts(),
       saveEmailDraft: input => ctx.remote.faberloomView.saveEmailDraft(input),

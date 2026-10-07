@@ -753,6 +753,32 @@ export class FaberLoomShares extends Service {
       await table.delete(key)
     }
   }
+
+  /**
+   * Retire one item another member shared in a Space, on this member's behalf:
+   * tombstone its console row so the author's next publish does not resurrect
+   * it, and drop the local import so it stops showing here and for every member
+   * on their next sync. A no-op when the id is not an imported copy this member
+   * holds, or the console is not configured.
+   * @param actorId - the member retiring the item.
+   * @param localId - the local copy id the retiring action names.
+   * @returns true when an imported console row was retired.
+   */
+  async deleteImported(actorId: string, localId: string): Promise<boolean> {
+    const table = await this.contentTable()
+    const prefix = importedContentPrefix(actorId)
+    for (const [key, record] of table.entries()) {
+      if (record.origin !== 'console' || record.localId !== localId || !key.startsWith(prefix)) continue
+      if (record.consoleId !== null) {
+        // The console tombstones an authorized member's delete, so the author's
+        // full-set publish keeps the row retired instead of recreating it.
+        await this.consoleContent(`${encodeURIComponent(record.consoleId)}/`, { method: 'DELETE' }).catch(() => undefined)
+      }
+      await table.delete(key)
+      return true
+    }
+    return false
+  }
 }
 
 /** One console share row the import reads. */

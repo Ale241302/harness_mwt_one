@@ -1866,6 +1866,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Import the console\'s shared-content rows for one member and prune the local rows the console no longer carries, so a withdrawn item stops showing. A no-op when the console is not configured. The reader reads back the removed rows (with their `localId`) before this runs, so it can delete the materialized copies.',
         parameters: [{ name: 'readerId', description: 'the identity whose incoming items are imported.' }],
       },
+      {
+        signature: 'async deleteImported(actorId: string, localId: string): Promise<boolean>',
+        description: 'Retire one item another member shared in a Space, on this member\'s behalf: tombstone its console row so the author\'s next publish does not resurrect it, and drop the local import so it stops showing here and for every member on their next sync. A no-op when the id is not an imported copy this member holds, or the console is not configured.',
+        parameters: [{ name: 'actorId', description: 'the member retiring the item.' }, { name: 'localId', description: 'the local copy id the retiring action names.' }],
+        returns: 'true when an imported console row was retired.',
+      },
     ],
   },
   {
@@ -7177,7 +7183,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomWorkflowRow',
-    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
+    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n    readonly canEdit?: boolean;\n}',
   },
   {
     name: 'FaberLoomWorkflowRunRow',

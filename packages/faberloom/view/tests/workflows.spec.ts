@@ -51,6 +51,8 @@ function harness(detail = flow([], []), options: { readOnly?: boolean } = {}) {
     create: vi.fn(async () => ({})),
     revoke: vi.fn(async () => ({})),
     can: vi.fn(async () => false),
+    importedLocalIds: vi.fn(async () => new Set<string>()),
+    importedLocalCopies: vi.fn(async () => new Map<string, { spaceId: string; kind: string }>()),
   }
   const executions = {
     health: vi.fn(async () => ({
@@ -103,6 +105,18 @@ describe('FaberLoomViewService workflows', () => {
     const rows = await view.deleteWorkflow('wf1')
     expect(workflows.remove).toHaveBeenCalledWith(expect.anything(), 'wf1')
     expect(rows).toEqual([expect.objectContaining({ id: 'wf1' })])
+  })
+
+  it('denies editing another member shared flow without edit-workflows', async () => {
+    const { view, workflows, shares } = harness()
+    shares.importedLocalCopies = vi.fn(async () => new Map([['wf1', { spaceId: 'sp-1', kind: 'workflow' }]]))
+    shares.can = vi.fn(async () => false)
+    await expect(view.saveWorkflow('wf1', 'x')).rejects.toThrow('editar contenido compartido')
+    expect(workflows.update).not.toHaveBeenCalled()
+    // With the module permission the edit reaches the service.
+    shares.can = vi.fn(async () => true)
+    await view.saveWorkflow('wf1', 'x')
+    expect(workflows.update).toHaveBeenCalled()
   })
 
   it('saves, adds, updates, removes, connects, disconnects, and sets status through the service', async () => {

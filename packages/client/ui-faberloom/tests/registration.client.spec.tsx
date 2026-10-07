@@ -234,7 +234,6 @@ describe('faberloom surface', () => {
       'faberloom-board',
       'faberloom-spaces',
       'faberloom-agents',
-      'faberloom-skills',
       'faberloom-routines',
       'faberloom-workflows',
       'faberloom-memory',

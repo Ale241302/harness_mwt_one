@@ -1060,6 +1060,8 @@ export interface FaberLoomWorkflowRow {
   readonly shared?: boolean
   /** True when the actor holds the module permission to remove this shared item. */
   readonly canDelete?: boolean
+  /** True when the actor holds the module permission to edit this shared item. */
+  readonly canEdit?: boolean
 }
 
 /** A JSON value a Remote boundary may carry. */

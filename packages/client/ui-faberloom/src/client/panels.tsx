@@ -185,8 +185,6 @@ export interface FaberloomPanelInjected {
   ) => Promise<Result<FaberLoomRoutineCreated>>
   /** Jump to the Routines panel. */
   openRoutines: () => void
-  /** Switch the shell to another panel by id, or null for the conversation. */
-  selectPanel: (id: MainPanelId | null) => void
   /** Extract expediente facts from one email into Space memory. */
   learnFromEmail: (uid: string) => Promise<Result<FaberLoomEmailFacts>>
   /** List the email drafts awaiting approval. */
@@ -385,17 +383,17 @@ function useOverview(props: ScreenProps) {
 }
 
 /** The Agents/Skills tab switch both screens share, so one sidebar row covers both. */
-function AgentsSkillsTabs({ t, selectPanel, active }: {
+function AgentsSkillsTabs({ t, active, onSelect }: {
   t: ScreenProps['t']
-  selectPanel: (id: MainPanelId | null) => void
   active: 'agents' | 'skills'
+  onSelect: (tab: 'agents' | 'skills') => void
 }) {
   return (
     <span className={styles.tools}>
       <button className={active === 'agents' ? styles.primary : styles.secondary} type="button"
-        onClick={() => { selectPanel('faberloom-agents' as MainPanelId) }}>{t('panel.agents.title')}</button>
+        onClick={() => { onSelect('agents') }}>{t('panel.agents.title')}</button>
       <button className={active === 'skills' ? styles.primary : styles.secondary} type="button"
-        onClick={() => { selectPanel('faberloom-skills' as MainPanelId) }}>{t('panel.skills.title')}</button>
+        onClick={() => { onSelect('skills') }}>{t('panel.skills.title')}</button>
     </span>
   )
 }
@@ -711,10 +709,10 @@ function spacesScreen() {
 
 /** Agentes: table plus the full editor. */
 function agentsScreen() {
-  return function FaberloomAgents(props: ScreenProps) {
+  return function FaberloomAgents(props: ScreenProps & { tabs?: ReactNode }) {
     const {
       t, agentDetail, saveAgent, deactivateAgent, purgeAgent, createAgent, connections,
-      shareAgent, shares, unshareShare, modelCatalog, selectPanel,
+      shareAgent, shares, unshareShare, modelCatalog,
     } = props
     const { overview, error } = useOverview(props)
     const [selected, setSelected] = useState<string | null>(null)
@@ -888,7 +886,7 @@ function agentsScreen() {
       <Screen title={t('panel.agents.title')} subtitle={t('panel.agents.intro')}
         trailing={(
           <>
-            <AgentsSkillsTabs t={t} selectPanel={selectPanel} active="agents" />
+            {props.tabs}
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <button className={styles.primary} type="button" onClick={openDraft}>{t('agents.createTitle')}</button>
           </>
@@ -1538,8 +1536,8 @@ function emailScreen() {
 
 /** Skills: the role catalog plus the owner's uploads. */
 function skillsScreen() {
-  return function FaberloomSkills(props: ScreenProps) {
-    const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare, selectPanel } = props
+  return function FaberloomSkills(props: ScreenProps & { tabs?: ReactNode }) {
+    const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare } = props
     const [list, setList] = useState<readonly FaberLoomSkillRow[] | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -1606,7 +1604,7 @@ function skillsScreen() {
       <Screen title={t('panel.skills.title')} subtitle={t('panel.skills.intro')}
         trailing={(
           <>
-            <AgentsSkillsTabs t={t} selectPanel={selectPanel} active="skills" />
+            {props.tabs}
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <select className={styles.paneSearch} style={{ width: 170, padding: '8px 10px' }} value={moduleFilter} onChange={(event) => { setModuleFilter(event.target.value) }}>
               <option value="">{t('skills.allModules')}</option>
@@ -3442,6 +3440,7 @@ function workflowsScreen() {
     const selectedSpaceId = flows.find(flow => flow.id === selected)?.spaceId ?? null
     const selectedFlow = flows.find(flow => flow.id === selected)
     const selectedFlowShared = selectedFlow?.shared === true && selectedFlow.canDelete !== true
+    const selectedFlowReadOnly = selectedFlow?.shared === true && selectedFlow.canEdit !== true
     const selectedSpaceName = selectedSpaceId === null
       ? null
       : topology?.spaces.find(space => space.id === selectedSpaceId)?.title ?? selectedSpaceId
@@ -3642,8 +3641,9 @@ function workflowsScreen() {
           {selected === null ? <span>{t('wf.select')}</span> : (
             <>
               <div className={styles.workflowToolbar}>
-                <button type="button" className={styles.primary} onClick={() => { act(() => workflows.setStatus(selected, 'active')) }}>{t('wf.activate')}</button>
-                <button type="button" onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
+                {selectedFlowReadOnly ? <span className={styles.cellMuted}>{t('wf.readOnly')}</span> : null}
+                <button type="button" className={styles.primary} disabled={selectedFlowReadOnly} onClick={() => { act(() => workflows.setStatus(selected, 'active')) }}>{t('wf.activate')}</button>
+                <button type="button" disabled={selectedFlowReadOnly} onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
                 {selectedFlowShared ? null : (
                   <button type="button" className={styles.danger} onClick={() => {
                     if (selected === null) return
@@ -3655,7 +3655,7 @@ function workflowsScreen() {
                     })
                   }}>{t('action.delete')}</button>
                 )}
-                <button type="button" className={styles.primary} onClick={() => { addNode(selected) }}>{t('wf.addNode')}</button>
+                <button type="button" className={styles.primary} disabled={selectedFlowReadOnly} onClick={() => { addNode(selected) }}>{t('wf.addNode')}</button>
                 <button type="button" onClick={() => { setLogsOpen(true) }}>{t('wf.logs')}</button>
                 <button type="button" onClick={() => { void workflows.workflowVersions(selected).then((result) => { if (result.ok) { setFlowVersions(result.value); setVersionsOpen(true) } }) }}>{t('wf.versions')}</button>
                 <button type="button" onClick={() => { setShareOpen(true) }}>{t('wf.share')}</button>
@@ -3663,7 +3663,7 @@ function workflowsScreen() {
                 <button type="button" onClick={() => { void workflows.exportFlow(selected, 'archify').then((result) => { if (result.ok) openWorkflowExport(result.value) }) }}>{t('wf.exportArchify')}</button>
                 <input aria-label={t('wf.concurrency')} placeholder={t('wf.concurrency')} value={concurrency}
                   onChange={(event) => { setConcurrency(event.target.value) }} />
-                <button type="button" onClick={() => { saveConcurrency(selected) }}>{t('wf.concurrency.save')}</button>
+                <button type="button" disabled={selectedFlowReadOnly} onClick={() => { saveConcurrency(selected) }}>{t('wf.concurrency.save')}</button>
                 {selectedSpaceName === null
                   ? <span className={styles.workflowSpaceLabel}>{t('wf.space')}: {t('wf.personal')}</span>
                   : <span className={styles.workflowSpaceLabel}>{t('wf.space')}: {selectedSpaceName}</span>}
@@ -4285,6 +4285,17 @@ function approvalsScreen() {
   }
 }
 
+/** Agents and Skills in one panel, switched by a tab, so the sidebar lists one row. */
+function agentsAndSkillsScreen() {
+  const AgentsPage = agentsScreen()
+  const SkillsPage = skillsScreen()
+  return function FaberloomAgentsAndSkills(props: ScreenProps) {
+    const [tab, setTab] = useState<'agents' | 'skills'>('agents')
+    const tabs = <AgentsSkillsTabs t={props.t} active={tab} onSelect={setTab} />
+    return tab === 'agents' ? <AgentsPage {...props} tabs={tabs} /> : <SkillsPage {...props} tabs={tabs} />
+  }
+}
+
 /** The FaberLoom sections in sidebar order. */
 export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   // The Chat landing keeps its route but no sidebar row (the New Session button
@@ -4292,9 +4303,8 @@ export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel(), sidebar: false },
   { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', Icon: panelIcon(IconChecklistOutline14), Page: boardScreen() },
   { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', Icon: panelIcon(IconFolderOpenOutline16), Page: spacesScreen() },
-  // Agents and Skills share one sidebar row; each screen's tab switches panels.
-  { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agentsAndSkills', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsScreen() },
-  { id: 'faberloom-skills' as MainPanelId, order: 45, labelKey: 'nav.skills', Icon: panelIcon(IconAgentPresetOutline16), Page: skillsScreen(), sidebar: false },
+  // Agents and Skills share one sidebar row; the panel's own tab switches them.
+  { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agentsAndSkills', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsAndSkillsScreen() },
   { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(IconAlarmClockOutline16), Page: routinesScreen() },
   { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(IconBranchOutline16), Page: workflowsScreen() },
   { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(IconDatabaseOutline16), Page: memoryScreen() },

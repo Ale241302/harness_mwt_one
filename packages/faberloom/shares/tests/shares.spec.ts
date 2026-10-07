@@ -428,4 +428,33 @@ describe('FaberLoomShares shared content', () => {
     await shares.publishContent(OWNER, 'sp-1', [{ kind: 'memory', itemKey: 'hola', payload: {} }])
     expect(await shares.listContent(OWNER, 'sp-1')).toEqual([expect.objectContaining({ origin: 'owner', consoleId: null })])
   })
+
+  it('retires an imported item on the console and drops its local copy', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: { method?: string }) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`)
+      if ((init?.method ?? 'GET') === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            incoming: [{ id: 'c-1', space_id: 'sp-1', kind: 'workflow', item_key: 'wf-1', author_email: OWNER, payload: {} }],
+          }),
+        }
+      }
+      return { ok: true, status: 204, json: async () => undefined }
+    }))
+    try {
+      const { shares } = await harness({ consoleBase: 'http://console', consoleToken: 'tok' })
+      await shares.syncContent(GUEST)
+      await shares.noteContentLocal(GUEST, 'c-1', 'wf-1')
+      expect(await shares.deleteImported(GUEST, 'wf-1')).toBe(true)
+      expect(calls).toContain('DELETE http://console/harness/contents/c-1/')
+      expect(await shares.listContent(GUEST, 'sp-1')).toEqual([])
+      // An id that is not an imported copy this member holds is a no-op.
+      expect(await shares.deleteImported(GUEST, 'nope')).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

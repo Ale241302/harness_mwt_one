@@ -1097,9 +1097,13 @@ export class FaberLoomViewService extends TypertRemoteService {
   async workflowOverview(): Promise<readonly FaberLoomWorkflowRow[]> {
     const shared = await this.sharedLocalIds()
     const deletable = await this.deletableSharedIds()
+    const editable = await this.editableSharedIds()
     return (await this.workflowsService().list(this.workflowActor())).map((flow) => {
       const id = String(flow.id)
-      return { ...this.workflowRow(flow), ...shared.has(id) ? { shared: true, canDelete: deletable.has(id) } : {} }
+      const grants = shared.has(id)
+        ? { shared: true, canDelete: deletable.has(id), canEdit: editable.has(id) }
+        : {}
+      return { ...this.workflowRow(flow), ...grants }
     })
   }
 
@@ -1149,13 +1153,17 @@ export class FaberLoomViewService extends TypertRemoteService {
   async deleteWorkflow(id: string): Promise<readonly FaberLoomWorkflowRow[]> {
     // The actor may remove its own flow; a member's imported copy needs the
     // Space's `delete-workflows`, so the read-only identity is not the gate here.
-    if ((await this.sharedLocalIds()).has(id) && !(await this.deletableSharedIds()).has(id)) {
+    const shared = (await this.sharedLocalIds()).has(id)
+    if (shared && !(await this.deletableSharedIds()).has(id)) {
       throw new Error('faberloom: ese flujo lo compartió otro miembro; solo su autor o quien tenga el permiso puede eliminarlo')
     }
     const flow = await this.workflowsService().get(this.workflowActor(), id as WorkFlowId)
     const spaceId = flow.scope.kind === 'space' ? flow.scope.spaceId : undefined
     await this.workflowsService().remove(this.workflowActor(), id as WorkFlowId)
-    if (spaceId !== undefined) await this.pushSpaceContent(spaceId)
+    // An imported copy is retired on the console so the author's publish cannot
+    // resurrect it; the actor's own flow publishes its removal to the members.
+    if (shared) await this.retireImported(id)
+    else if (spaceId !== undefined) await this.pushSpaceContent(spaceId)
     return await this.workflowOverview()
   }
 
@@ -1183,6 +1191,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('saveWorkflow')
   async saveWorkflow(id: string, name: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.assertCanEditShared(id)
     await this.workflowsService().update(this.workflowActor(), id as WorkFlowId, { name })
     return await this.workflowOverview()
   }
@@ -1198,6 +1207,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('addNode')
   async addNode(id: string, kind: string, title: string, configJson: string, nodeId?: string): Promise<FaberLoomWorkflowDetail> {
+    await this.assertCanEditShared(id)
     await this.workflowsService().addNode(this.workflowActor(), id as WorkFlowId, {
       kind: kind as WorkFlowNodeKind,
       title,
@@ -1218,6 +1228,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('updateNode')
   async updateNode(id: string, nodeId: string, title: string, kind: string, configJson: string): Promise<FaberLoomWorkflowDetail> {
+    await this.assertCanEditShared(id)
     await this.workflowsService().updateNode(this.workflowActor(), id as WorkFlowId, nodeId as WorkFlowNodeId, {
       ...title.length === 0 ? {} : { title },
       ...kind.length === 0 ? {} : { kind: kind as WorkFlowNodeKind },
@@ -1234,6 +1245,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('removeNode')
   async removeNode(id: string, nodeId: string): Promise<FaberLoomWorkflowDetail> {
+    await this.assertCanEditShared(id)
     await this.workflowsService().removeNode(this.workflowActor(), id as WorkFlowId, nodeId as WorkFlowNodeId)
     return await this.workflowDetailOf(id)
   }
@@ -1248,6 +1260,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('connect')
   async connect(id: string, from: string, to: string, condition?: string): Promise<FaberLoomWorkflowDetail> {
+    await this.assertCanEditShared(id)
     await this.workflowsService().connect(this.workflowActor(), id as WorkFlowId, {
       from: from as WorkFlowNodeId,
       to: to as WorkFlowNodeId,
@@ -1264,6 +1277,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('disconnect')
   async disconnect(id: string, edgeId: string): Promise<FaberLoomWorkflowDetail> {
+    await this.assertCanEditShared(id)
     await this.workflowsService().disconnect(this.workflowActor(), id as WorkFlowId, edgeId as WorkFlowEdgeId)
     return await this.workflowDetailOf(id)
   }
@@ -1276,6 +1290,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('setWorkflowStatus')
   async setWorkflowStatus(id: string, status: string): Promise<FaberLoomWorkflowDetail> {
+    await this.assertCanEditShared(id)
     await this.workflowsService().setStatus(this.workflowActor(), id as WorkFlowId, status as WorkFlowStatus)
     return await this.workflowDetailOf(id)
   }
@@ -1288,6 +1303,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('setWorkflowConcurrency')
   async setWorkflowConcurrency(id: string, maxConcurrency: number | null): Promise<FaberLoomWorkflowDetail> {
+    await this.assertCanEditShared(id)
     await this.workflowsService().setConcurrency(this.workflowActor(), id as WorkFlowId, maxConcurrency)
     return await this.workflowDetailOf(id)
   }
@@ -1412,6 +1428,56 @@ export class FaberLoomViewService extends TypertRemoteService {
       if (await this.canModule(actor, copy.spaceId, copy.kind, 'delete')) ids.add(localId)
     }
     return ids
+  }
+
+  /**
+   * The ids of the shared copies the actor may edit: another member's item whose
+   * Space grant carries `edit-<module>`.
+   * @returns the editable imported copy ids.
+   */
+  private async editableSharedIds(): Promise<ReadonlySet<string>> {
+    const shares = this.ctx.get('faberloomShares')
+    const ids = new Set<string>()
+    if (shares === undefined || typeof shares.importedLocalCopies !== 'function') return ids
+    const actor = this.actor()
+    for (const [localId, copy] of await shares.importedLocalCopies(actor.id)
+      .catch((): ReadonlyMap<string, { spaceId: string; kind: FaberLoomSharedContentKind }> => new Map())) {
+      if (await this.canModule(actor, copy.spaceId, copy.kind, 'edit')) ids.add(localId)
+    }
+    return ids
+  }
+
+  /**
+   * Deny an edit to a foreign shared copy when its Space grant lacks
+   * `edit-<module>`. The actor's own items pass; a member's imported copy needs
+   * the edit permission, mirroring creation and deletion.
+   * @param localId - the local item id the edit names.
+   * @throws when the item is an imported copy without the edit permission.
+   */
+  private async assertCanEditShared(localId: string): Promise<void> {
+    const shares = this.ctx.get('faberloomShares')
+    if (shares === undefined || typeof shares.importedLocalCopies !== 'function') return
+    const actor = this.actor()
+    const copies = await shares.importedLocalCopies(actor.id)
+      .catch((): ReadonlyMap<string, { spaceId: string; kind: FaberLoomSharedContentKind }> => new Map())
+    const copy = copies.get(localId)
+    if (copy === undefined) return
+    if (await this.canModule(actor, copy.spaceId, copy.kind, 'edit')) return
+    throw new Error('faberloom: no tienes permiso para editar contenido compartido por otro miembro')
+  }
+
+  /**
+   * Retire a foreign shared copy on the console catalog, best effort: the console
+   * tombstones it so the author's next publish does not resurrect it, and every
+   * member drops it on the next sync.
+   * @param localId - the local copy id the retiring action names.
+   */
+  private async retireImported(localId: string): Promise<void> {
+    const shares = this.ctx.get('faberloomShares')
+    if (shares === undefined || typeof shares.deleteImported !== 'function') return
+    await shares.deleteImported(this.actor().id, localId).catch((error: unknown) => {
+      this.ctx.logger.warn(`faberloom: no se pudo retirar el contenido compartido '${localId}': ${error instanceof Error ? error.message : String(error)}`)
+    })
   }
 
   /** Map one share grant to its panel row. */
@@ -2308,6 +2374,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('updateContext')
   async updateContext(id: string, title: string, body: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.assertCanEditShared(id)
     await this.contextService().update({ id: this.actor().id }, id, { title, body })
     return await this.contextEntries()
   }
@@ -2366,10 +2433,12 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('removeContext')
   async removeContext(id: string): Promise<readonly FaberLoomContextRow[]> {
-    if ((await this.sharedLocalIds()).has(id) && !(await this.deletableSharedIds()).has(id)) {
+    const shared = (await this.sharedLocalIds()).has(id)
+    if (shared && !(await this.deletableSharedIds()).has(id)) {
       throw new Error('faberloom: ese contexto lo compartió otro miembro; solo su autor o quien tenga el permiso puede eliminarlo')
     }
     await this.contextService().remove({ id: this.actor().id }, id)
+    if (shared) await this.retireImported(id)
     return await this.contextEntries()
   }
 
@@ -4295,6 +4364,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('saveRoutine')
   async saveRoutine(id: string, input: RoutineSaveInput): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is readonly and cannot change routines')
+    await this.assertCanEditShared(id)
     const ownerId = this.actor().id
     const routine = (await this.ctx.faberloomRoutines.listRoutines(ownerId)).find(entry => entry.id === id)
     if (routine === undefined) throw new Error('faberloom: routine not found')
@@ -4335,10 +4405,12 @@ export class FaberLoomViewService extends TypertRemoteService {
   async removeRoutine(id: string): Promise<FaberLoomOverview> {
     // The actor may remove its own routine; a member's imported copy needs the
     // Space's `delete-routines`, so the read-only identity is not the gate here.
-    if ((await this.sharedLocalIds()).has(id) && !(await this.deletableSharedIds()).has(id)) {
+    const shared = (await this.sharedLocalIds()).has(id)
+    if (shared && !(await this.deletableSharedIds()).has(id)) {
       throw new Error('faberloom: esa rutina la compartió otro miembro; solo su autor o quien tenga el permiso puede eliminarla')
     }
     await this.ctx.faberloomRoutines.removeRoutine(this.actor().id, id as FaberLoomRoutineId)
+    if (shared) await this.retireImported(id)
     return await this.overview()
   }
 
@@ -4743,10 +4815,12 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('deleteSpaceMemory')
   async deleteSpaceMemory(id: string): Promise<readonly FaberLoomSpaceMemoryRow[]> {
-    if ((await this.sharedLocalIds()).has(id) && !(await this.deletableSharedIds()).has(id)) {
+    const shared = (await this.sharedLocalIds()).has(id)
+    if (shared && !(await this.deletableSharedIds()).has(id)) {
       throw new Error('faberloom: esa memoria la compartió otro miembro; solo su autor o quien tenga el permiso puede eliminarla')
     }
     await this.ctx.faberloomSpaces.forgetMemory(this.actor(), id)
+    if (shared) await this.retireImported(id)
     return await this.spaceMemory()
   }
 

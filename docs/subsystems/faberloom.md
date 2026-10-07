@@ -1416,6 +1416,18 @@ async clearContentLocal(readerId: string, consoleId: string): Promise<void>
  * @param readerId - the identity whose incoming items are imported.
  */
 async syncContent(readerId: string): Promise<void>
+
+/**
+ * Retire one item another member shared in a Space, on this member's behalf:
+ * tombstone its console row so the author's next publish does not resurrect
+ * it, and drop the local import so it stops showing here and for every member
+ * on their next sync. A no-op when the id is not an imported copy this member
+ * holds, or the console is not configured.
+ * @param actorId - the member retiring the item.
+ * @param localId - the local copy id the retiring action names.
+ * @returns true when an imported console row was retired.
+ */
+async deleteImported(actorId: string, localId: string): Promise<boolean>
 ```
 
 Source: [`packages/faberloom/shares/src/index.ts`](../../packages/faberloom/shares/src/index.ts)
