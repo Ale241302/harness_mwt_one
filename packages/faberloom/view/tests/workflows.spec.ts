@@ -38,11 +38,12 @@ function fakeWorkflows(detail = flow([], [])) {
     createFromTemplate: vi.fn(async () => {}),
     exportFlow: vi.fn(async () => '{"format":"faberloom-workflow","version":1,"name":"Anti-spam","definition":{"intent":"","nodes":[],"edges":[],"permissions":[],"failurePolicy":"stop"}}'),
     importFlow: vi.fn(async () => {}),
+    remove: vi.fn(async () => {}),
   }
 }
 
 /** Boot the view service over a minimal hand-built context. */
-function harness(detail = flow([], [])) {
+function harness(detail = flow([], []), options: { readOnly?: boolean } = {}) {
   const workflows = fakeWorkflows(detail)
   const routines = { listRoutines: vi.fn(async () => [] as unknown[]), getRoutine: vi.fn(async () => ({ id: 'r1', name: 'R', definition: { intent: '', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop' } })), createRoutine: vi.fn(async () => ({})) }
   const shares = {
@@ -75,7 +76,7 @@ function harness(detail = flow([], [])) {
     effect: (run: () => unknown) => { run(); return () => {} },
     logger: { warn: vi.fn(), info: vi.fn() },
   } as unknown as Context
-  const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
+  const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: options.readOnly === true })
   return { view, workflows, routines, shares, executions, spaces }
 }
 
@@ -95,6 +96,13 @@ describe('FaberLoomViewService workflows', () => {
     expect(read).toMatchObject({ id: 'wf1', valid: true, routineId: 'r1' })
     expect(read.nodesList).toHaveLength(2)
     expect(read.edgesList).toEqual([{ id: 'e1', from: 'n1', to: 'n2', condition: 'spam == true' }])
+  })
+
+  it('removes a flow for a read-only identity, since ownership is the gate', async () => {
+    const { view, workflows } = harness(flow([], []), { readOnly: true })
+    const rows = await view.deleteWorkflow('wf1')
+    expect(workflows.remove).toHaveBeenCalledWith(expect.anything(), 'wf1')
+    expect(rows).toEqual([expect.objectContaining({ id: 'wf1' })])
   })
 
   it('saves, adds, updates, removes, connects, disconnects, and sets status through the service', async () => {

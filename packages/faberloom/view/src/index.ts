@@ -1147,7 +1147,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('deleteWorkflow')
   async deleteWorkflow(id: string): Promise<readonly FaberLoomWorkflowRow[]> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove work flows')
+    // The actor may remove its own flow; a member's imported copy needs the
+    // Space's `delete-workflows`, so the read-only identity is not the gate here.
     if ((await this.sharedLocalIds()).has(id) && !(await this.deletableSharedIds()).has(id)) {
       throw new Error('faberloom: ese flujo lo compartió otro miembro; solo su autor o quien tenga el permiso puede eliminarlo')
     }
@@ -3739,7 +3740,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('createRoutineFromWork')
   async createRoutineFromWork(text: string, name: string): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create routines')
     const intent = text.trim()
     await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
       name: name.trim(),
@@ -4333,7 +4333,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('removeRoutine')
   async removeRoutine(id: string): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove routines')
+    // The actor may remove its own routine; a member's imported copy needs the
+    // Space's `delete-routines`, so the read-only identity is not the gate here.
     if ((await this.sharedLocalIds()).has(id) && !(await this.deletableSharedIds()).has(id)) {
       throw new Error('faberloom: esa rutina la compartió otro miembro; solo su autor o quien tenga el permiso puede eliminarla')
     }
