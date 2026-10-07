@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-share-module-permissions` (commit `30b300eb9104fa43c11580fbee7cad9393d63ade`: al compartir se conceden permisos por módulo —Memory, Context, Workflows, Routines— y el receptor solo borra lo compartido de ese módulo si lo tiene; el modal de compartir es más ancho. Sobre `8ae3431676` del espejo auto-recuperable).
-**Imagen desplegada actual:** build de `main` @ `30b300eb9104fa43c11580fbee7cad9393d63ade` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-07-spaces-ui-sesion-compartidos` (commit `02042c889c79b20ad626aa7bca43295aee6450c4`: la vista de Espacios abre la sesión compartida como chat en lugar de un modal de contenido, lista los usuarios con quienes se comparte cada Space con lápiz (editar permisos por módulo sin re-invitar) y X (revocar el acceso), y añade `setSpacePermissions` para cambiar permisos de un grant activo. Sobre `12a0569d24`).
+**Imagen desplegada actual:** build de `main` @ `02042c889c79b20ad626aa7bca43295aee6450c4` (deploy caliente).
 **Verificado en el VPS:** 5 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones

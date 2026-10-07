@@ -1298,6 +1298,19 @@ async snapshotFor(granteeEmail: string, grantId: string): Promise<Record<string,
 async republish(input: FaberLoomShareRepublishInput): Promise<void>
 
 /**
+ * Change the permissions one existing grant carries without re-inviting the
+ * grantee: the console upsert keeps the grant active and only the permission
+ * set moves, and the published snapshot is preserved. A no-op when the console
+ * is not configured.
+ * @param ownerId - the identity that owns the resource.
+ * @param resource - the resource the grant names.
+ * @param resourceName - the resource display name.
+ * @param granteeEmail - the grantee whose permissions change.
+ * @param permissions - the new permission set.
+ */
+async updatePermissions( ownerId: string, resource: FaberLoomShareResource, resourceName: string, granteeEmail: string, permissions: readonly string[], ): Promise<void>
+
+/**
  * List the permissions one grantee holds on one resource, unioned over every
  * active grant.
  * @param granteeEmail - the identity acting.
@@ -1767,6 +1780,16 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the resource's outgoing grant rows.
  */
 @Remote('shareSpace') async shareSpace(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>
+
+/**
+ * Replace the permissions one grantee holds on a Space, keeping the grant
+ * active (no re-invite). The owner or a privileged role may change it.
+ * @param id - space id.
+ * @param email - the grantee whose permissions change.
+ * @param permissions - the new permission set.
+ * @returns the resource's outgoing grant rows.
+ */
+@Remote('setSpacePermissions') async setSpacePermissions(id: string, email: string, permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>
 
 /**
  * Share the Space that mirrors one registered Workspace, resolving the Space

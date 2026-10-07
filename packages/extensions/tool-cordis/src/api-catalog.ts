@@ -1801,6 +1801,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'input', description: 'resource, display name, and the current snapshot.' }],
       },
       {
+        signature: 'async updatePermissions( ownerId: string, resource: FaberLoomShareResource, resourceName: string, granteeEmail: string, permissions: readonly string[], ): Promise<void>',
+        description: 'Change the permissions one existing grant carries without re-inviting the grantee: the console upsert keeps the grant active and only the permission set moves, and the published snapshot is preserved. A no-op when the console is not configured.',
+        parameters: [{ name: 'ownerId', description: 'the identity that owns the resource.' }, { name: 'resource', description: 'the resource the grant names.' }, { name: 'resourceName', description: 'the resource display name.' }, { name: 'granteeEmail', description: 'the grantee whose permissions change.' }, { name: 'permissions', description: 'the new permission set.' }],
+      },
+      {
         signature: 'async permissionsFor(granteeEmail: string, resource: FaberLoomShareResource): Promise<readonly FaberLoomSharePermission[]>',
         description: 'List the permissions one grantee holds on one resource, unioned over every active grant.',
         parameters: [{ name: 'granteeEmail', description: 'the identity acting.' }, { name: 'resource', description: 'the resource being touched.' }],
@@ -2111,6 +2116,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: '@Remote(\'shareSpace\') async shareSpace(id: string, emails: readonly string[], permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>',
         description: 'Share one Space the owner (or an admin) manages with named emails.',
         parameters: [{ name: 'id', description: 'space id.' }, { name: 'emails', description: 'the grantees.' }, { name: 'permissions', description: 'the permission subset each grantee receives.' }],
+        returns: 'the resource\'s outgoing grant rows.',
+      },
+      {
+        signature: '@Remote(\'setSpacePermissions\') async setSpacePermissions(id: string, email: string, permissions: readonly string[]): Promise<readonly FaberLoomShareGrantRow[]>',
+        description: 'Replace the permissions one grantee holds on a Space, keeping the grant active (no re-invite). The owner or a privileged role may change it.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'email', description: 'the grantee whose permissions change.' }, { name: 'permissions', description: 'the new permission set.' }],
         returns: 'the resource\'s outgoing grant rows.',
       },
       {
