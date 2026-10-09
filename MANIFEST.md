@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-09-faberloom-context-agents` (commit `3bd18502c11330f6802f2e245284650e0cdc426b`: contexto y agentes entre Spaces (P0–P7) — puente Contexto↔Spaces, plano de capacidades por agente, sesión del Space como su agente, consulta durable (`continuable`+`followup`), export/import/replace del registro de contexto y búsqueda con embeddings/Knowledge Hub; endurecimiento por revisión ECC. Sobre `148006210382d3e9bd5cf643686971926664469f`).
-**Imagen desplegada actual:** build de `main` @ `3bd18502c11330f6802f2e245284650e0cdc426b` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-09-faberloom-context-agents` (commit `0ad08d19d09e593b318d29ee735607e86b32ac23`: contexto y agentes entre Spaces (P0–P7) — puente Contexto↔Spaces, plano de capacidades por agente, sesión del Space como su agente, consulta durable (`continuable`+`followup`), export/import/replace del registro de contexto y búsqueda con embeddings/Knowledge Hub; endurecimiento por revisión ECC. Sobre `148006210382d3e9bd5cf643686971926664469f`).
+**Imagen desplegada actual:** build de `main` @ `0ad08d19d09e593b318d29ee735607e86b32ac23` (deploy caliente).
 **Verificado en el VPS:** 9 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -109,7 +109,7 @@ sola `DEEPSEEK_API_KEY` compartida**. El tramo Cloudflare→origen sigue en TLS
 
 ## Contexto y agentes entre Spaces (E14, desplegado)
 
-El fork desplegado incluye los paquetes de contexto y agentes entre Spaces: `faberloom/context` (registro versionado, aprobable, `export`/`import`/`replace`), `faberloom/spaces` (entradas curadas y texto de adjuntos en `find`), `faberloom/agent-plane` (plano de capacidades por agente), `faberloom/session-agent` (la sesión de un Space corre como su agente), `faberloom/agent-runtime` (consultas durables), `faberloom/knowledge-index` (búsqueda: embeddings + Knowledge Hub + léxico), `faberloom/tool-faberloom` (tools `faberloom_context_*`, `faberloom_spaces_followup`, enforcement de plano y fail-closed), `faberloom/view` y `client/ui-faberloom` (Export/Import de contexto). El commit del fork (`3bd18502c1`) es el `build.forkSha` que publica `/healthz`, y `MANIFEST.md` lo cita para que `manifestDrift` quede en `false`.
+El fork desplegado incluye los paquetes de contexto y agentes entre Spaces: `faberloom/context` (registro versionado, aprobable, `export`/`import`/`replace`), `faberloom/spaces` (entradas curadas y texto de adjuntos en `find`), `faberloom/agent-plane` (plano de capacidades por agente), `faberloom/session-agent` (la sesión de un Space corre como su agente), `faberloom/agent-runtime` (consultas durables), `faberloom/knowledge-index` (búsqueda: embeddings + Knowledge Hub + léxico), `faberloom/tool-faberloom` (tools `faberloom_context_*`, `faberloom_spaces_followup`, enforcement de plano y fail-closed), `faberloom/view` y `client/ui-faberloom` (Export/Import de contexto). El commit del fork (`0ad08d19d0`) es el `build.forkSha` que publica `/healthz`, y `MANIFEST.md` lo cita para que `manifestDrift` quede en `false`.
 
 Pendiente en el VPS/CI: el smoke manual SONDEL→SICOP (F50) con el MCP `sicop` real, y en CI el lane de snapshots POSIX y `test:coverage`.
 
