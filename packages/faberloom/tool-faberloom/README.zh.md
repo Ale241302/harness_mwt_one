@@ -50,8 +50,8 @@ kind: "package-reference"
 
 - **租户路由器把副作用交给控制台裁决。** `faberloom_mwt_call` 与 `faberloom_mwt_find` 只约束租户（绝不超出用户的公司）；一个工具是读还是写由 MWT.ONE 控制台的 RBAC 决定，而不是 FaberLoom 侧的允许名单。
 - **公司名即 id。** 控制台返回的 `legal_entity_ids` 是不透明 id；显示名映射推迟到控制台提供为止。
-- **词法空间查找（v1）。** `faberloom_spaces_find` 按折叠词项对空间标题、上下文与记忆排序；它不读取附件内容，空查询列出最近创建的可读空间。`faberloom_spaces_reference` 只返回文件元数据，不含字节。
-- **委托咨询（v1）。** `faberloom_spaces_ask` 通过 `askProvider`（默认 `spawn`）运行一次一次性委托；`continuable` 会被拒绝，委托深度适用，子代理继承父级合并后的工具面。子代理在父级工作区中运行，因为 `resolveWorkdir` 返回的是不透明引用而非路径；在空间真实工作目录中运行推迟到后续。
+- **空间查找。** `faberloom_spaces_find` 按折叠词项对空间标题、上下文、记忆与该空间的精选上下文条目排序；当挂载 `ctx.spaceIndex` 排序器时，它也会对该空间附件的可读文本排序。空查询列出最近创建的可读空间。`faberloom_spaces_reference` 只返回文件元数据，不含字节。
+- **委托咨询。** `faberloom_spaces_ask` 通过 `askProvider`（默认 `spawn`）运行一次委托并返回其答复；`continuable: true` 会启动一个持久子会话，由 `faberloom_spaces_followup` 继续。委托深度适用，子代理继承负责代理的工具面。子代理在父级工作区中运行，因为 `resolveWorkdir` 返回的是不透明引用而非路径；在空间真实工作目录中运行推迟到后续。
 - **记忆工具为可选启用。** `memoryTools`（默认关闭）注册空间记忆（`faberloom_spaces_remember`/`_memory_list`/`_forget`）与 teaching（`faberloom_memory_teach`/`_teachings`/`_revoke`/`_retrieve`）工具；默认关闭是因为它们会增加常驻请求 schema。这一显式且带版本的层归 FaberLoom 所有；自动情景记忆由外部记忆服务器蒸馏（见 `MANIFEST.md`），不是这些工具。
 - **Work Flow 工具为可选启用。** `workflowTools`（默认关闭）注册图工具（`faberloom_workflows_list`/`_get`/`_create`/`_add_node`/`_update_node`/`_remove_node`/`_connect`/`_disconnect`/`_set_trigger`/`_validate`/`_activate`/`_pause`/`_run_now`/`_runs`）以及"把自动化编辑为图并在激活前校验"的指令。默认关闭是因为它们会增加常驻请求 schema。
 

@@ -24,6 +24,7 @@ export function apply(ctx: Context): void {
           directives: ['Directiva MWT: consulta el MCP de MWT.ONE para la empresa co-sondel.'],
         },
         memory: [{ id: 'm1', spaceIds: [id], text: 'usar encabezado institucional', createdAt: '2026-10-03T00:00:00.000Z' }],
+        entries: [{ id: 'e1', title: 'Regla de plantilla', body: 'La plantilla mensual manda para el reporte de Sondel.', version: 3, authorId: 'snapshot@muitowork.com', updatedAt: '2026-10-03T00:00:00.000Z' }],
         files: [],
         agentId: 'agent-formatos',
         workspaceId: undefined,

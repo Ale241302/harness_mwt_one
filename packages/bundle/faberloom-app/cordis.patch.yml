@@ -10,6 +10,24 @@
     - id: faberloom-agents
       name: '@deepseek-ai/dsh-faberloom-agents'
 
+    # Plano de capacidades del agente: convierte mwtMcp/sicopMcp/webAccess en un
+    # filtro real del plano de tools del agente (hijo delegado y sesión del Space).
+    - id: faberloom-agent-plane
+      name: '@deepseek-ai/dsh-faberloom-agent-plane'
+
+    # La sesión de un Space corre como su agente responsable (persona/plano/skills).
+    - id: faberloom-session-agent
+      name: '@deepseek-ai/dsh-faberloom-session-agent'
+
+    # Consultas durables con el agente de un Space (ask continuable + follow-up).
+    - id: faberloom-agent-runtime
+      name: '@deepseek-ai/dsh-faberloom-agent-runtime'
+
+    # Índice de búsqueda del Space: embeddings + Knowledge Hub + fallback léxico
+    # sobre título, contexto, entradas curadas, memoria y texto de adjuntos.
+    - id: faberloom-knowledge-index
+      name: '@deepseek-ai/dsh-faberloom-knowledge-index'
+
     - id: faberloom-board
       name: '@deepseek-ai/dsh-faberloom-board'
 

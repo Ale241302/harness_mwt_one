@@ -27,6 +27,7 @@ import type {
   SpaceActor,
   SpaceContext,
   SpaceFile,
+  SpaceEntryRef,
   SpaceFileContent,
   SpaceFileInput,
   SpaceIndex,
@@ -40,6 +41,12 @@ import type {
 
 /** Largest file this slice stores inline in the domain (1 MiB). */
 const MAX_FILE_BYTES = 1_000_000
+
+/** Largest total text read out of a Space's attached files for the index. */
+const MAX_INDEX_FILE_BYTES = 50_000
+
+/** Media types whose bytes are read as ranking text. */
+const INDEX_TEXT_MEDIA = /^text\/|^application\/(json|xml)$|\+json$|\+xml$/
 
 /** Score added when a query token matches the space title. */
 const TITLE_WEIGHT = 3
@@ -70,23 +77,55 @@ function normalizeTerms(query: string): string[] {
 type SpaceScoreTarget = { title: string; context: SpaceContext }
 
 /**
+ * The subset of the optional `ctx.faberloomContext` service the spaces service
+ * reads to enrich cross-Space results. Declared structurally so spaces stays
+ * independent of the context package; when the service is absent, no curated
+ * entries contribute and every result keeps its map-and-memory behavior.
+ */
+interface ContextEntriesSource {
+  /**
+   * List the Space's curated entries the actor may read, newest first.
+   * @param actor - the acting identity.
+   * @param spaceId - the Space whose entries are read.
+   * @returns the visible entries of that Space.
+   */
+  listForSpace(actor: SpaceActor, spaceId: string): Promise<readonly SpaceEntryRef[]>
+  /**
+   * List every curated entry the actor may read, each carrying its Space id, so
+   * a search reads the actor's entries once instead of once per Space.
+   * @param actor - the acting identity.
+   * @returns the visible entries across Spaces.
+   */
+  list(actor: SpaceActor): Promise<readonly (SpaceEntryRef & { readonly spaceId: string | null })[]>
+}
+
+/**
  * Score one space against the query terms: each term contributes the title
- * weight for a title hit and the context weight for a context or memory hit.
- * @param target - the space title and context to score.
+ * weight for a title hit and the context weight for a context-map, curated
+ * context-entry, or memory hit.
+ * @param target - the space title and context map to score.
  * @param memoryText - the folded text of the space's effective memory.
+ * @param entriesText - the folded text of the space's curated context entries.
  * @param tokens - the folded query terms.
  * @returns the total score and the matched field names.
  */
-function scoreSpace(target: SpaceScoreTarget, memoryText: string, tokens: readonly string[]): { score: number; reasons: string[] } {
+function scoreSpace(
+  target: SpaceScoreTarget,
+  memoryText: string,
+  entriesText: string,
+  tokens: readonly string[],
+): { score: number; reasons: string[] } {
   const title = foldText(target.title)
   const context = foldText(Object.values(target.context).join(' '))
   const memory = foldText(memoryText)
+  const entries = foldText(entriesText)
   let score = 0
   const reasons = new Set<string>()
   for (const token of tokens) {
     if (title.includes(token)) { score += TITLE_WEIGHT; reasons.add('title') }
     if (context.includes(token)) { score += CONTEXT_WEIGHT; reasons.add('context') }
     if (memory.includes(token)) { score += CONTEXT_WEIGHT; reasons.add('memory') }
+    if (entries.includes(token)) { score += CONTEXT_WEIGHT; reasons.add('context-entries') }
   }
   return { score, reasons: [...reasons] }
 }
@@ -102,7 +141,7 @@ function scoreSpace(target: SpaceScoreTarget, memoryText: string, tokens: readon
 function rankLexically(entries: readonly SpaceIndexEntry[], query: string, limit: number): SpaceMatch[] {
   const tokens = normalizeTerms(query)
   const scored: { match: SpaceMatch; createdAt: string }[] = entries.map((entry) => {
-    const { score, reasons } = scoreSpace(entry, entry.memory, tokens)
+    const { score, reasons } = scoreSpace(entry, entry.memory, entry.contextEntries, tokens)
     return { match: { id: entry.id, title: entry.title, score, reasons }, createdAt: entry.createdAt }
   })
   const matches = tokens.length > 0 ? scored.filter(entry => entry.match.score > 0) : scored
@@ -677,25 +716,72 @@ export class FaberLoomSpaces extends Service {
     }
   }
 
+  /** The optional curated-context service, read structurally by service name. */
+  private contextEntriesSource(): ContextEntriesSource | undefined {
+    return this.ctx.get('faberloomContext') as ContextEntriesSource | undefined
+  }
+
+  /** The Space's curated context entries visible to the actor, newest first. */
+  private async contextEntries(actor: SpaceActor, id: FaberLoomSpaceId): Promise<SpaceEntryRef[]> {
+    const source = this.contextEntriesSource()
+    if (source === undefined) return []
+    return [...await source.listForSpace(actor, id)]
+  }
+
+  /** The readable text of the Space's attached files, bounded to the index budget. */
+  private async filesText(actor: SpaceActor, id: FaberLoomSpaceId): Promise<string> {
+    const parts: string[] = []
+    let budget = MAX_INDEX_FILE_BYTES
+    for (const file of await this.listFiles(actor, id)) {
+      if (budget <= 0) break
+      if (!INDEX_TEXT_MEDIA.test(file.mediaType)) continue
+      const record = (await this.files()).get(file.id)
+      if (record === undefined) continue
+      const bytes = Buffer.from(record.contentBase64, 'base64').subarray(0, budget)
+      parts.push(bytes.toString('utf8'))
+      budget -= bytes.byteLength
+    }
+    return parts.join(' ')
+  }
+
   /**
    * Rank the actor's readable spaces for a query. It ranks through
    * `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in
    * lexical ranker. An empty query returns the actor's readable, non-archived
    * spaces most recently created first; archived spaces are always excluded.
+   * A readable Space's curated context entries (`ctx.faberloomContext`) join
+   * the scored text so a Space is found by what its context remembers, not
+   * only by its title, map, and memory.
    * @param actor - the acting identity.
    * @param query - free-text query; an empty query lists the recent spaces.
    * @param limit - most results to return.
    * @returns matched spaces, best score first, then most recent first.
    */
   async find(actor: SpaceActor, query: string, limit: number = 10): Promise<SpaceMatch[]> {
+    const index = this.ctx.get('spaceIndex')
+    // Read the actor's curated context entries once and group them by Space,
+    // instead of one list per Space.
+    const entriesBySpace = new Map<string, string[]>()
+    const source = this.contextEntriesSource()
+    if (source !== undefined) {
+      for (const entry of await source.list(actor)) {
+        if (entry.spaceId === null) continue
+        const text = `${entry.title} ${entry.body}`
+        const list = entriesBySpace.get(entry.spaceId)
+        if (list === undefined) entriesBySpace.set(entry.spaceId, [text])
+        else list.push(text)
+      }
+    }
     const entries: SpaceIndexEntry[] = []
     for (const [id, record] of (await this.table()).entries()) {
       if (!await this.mayRead(id, record, actor)) continue
       if (record.archived) continue
       const memory = (await this.effectiveMemory(actor, id)).map(entry => entry.text).join(' ')
-      entries.push({ id, title: record.title, context: record.context, memory, createdAt: record.createdAt })
+      const contextEntries = (entriesBySpace.get(id) ?? []).join(' ')
+      // The attached-file text is read only when a provider is mounted to rank it.
+      const filesText = index === undefined ? '' : await this.filesText(actor, id)
+      entries.push({ id, title: record.title, context: record.context, memory, contextEntries, filesText, createdAt: record.createdAt })
     }
-    const index = this.ctx.get('spaceIndex')
     return index === undefined ? rankLexically(entries, query, limit) : index.rank(entries, query, limit)
   }
 
@@ -711,8 +797,9 @@ export class FaberLoomSpaces extends Service {
     const space = await this.get(actor, id)
     const context = await this.effectiveContext(actor, id)
     const memory = await this.effectiveMemory(actor, id)
+    const entries = await this.contextEntries(actor, id)
     const files = await this.listFiles(actor, id)
-    return { space, context, memory, files, agentId: space.agentId, workspaceId: space.workspaceId }
+    return { space, context, memory, entries, files, agentId: space.agentId, workspaceId: space.workspaceId }
   }
 
   /**

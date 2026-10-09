@@ -37,7 +37,7 @@ import type {
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
   FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomWorkflowTemplateRow,
-  FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
+  FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomContextExportRow, FaberLoomWorkflowVersionRow,
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow,
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
 } from '@deepseek-ai/dsh-faberloom-view/types'
@@ -310,6 +310,9 @@ export interface FaberloomPanelInjected {
     approve: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
     reject: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
     remove: (id: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+    export: (spaceId?: string, format?: string) => Promise<Result<FaberLoomContextExportRow>>
+    import: (payload: string) => Promise<Result<readonly FaberLoomContextRow[]>>
+    replace: (spaceId: string, entriesJson: string) => Promise<Result<readonly FaberLoomContextRow[]>>
   }
   /** The shared Session catalog surface. */
   sessionsShare: {
@@ -2130,7 +2133,7 @@ function routinesScreen() {
                 <span className={styles.tools}>
                   {drafting ? null : (
                     <>
-                      {chosen?.shared === true && chosen?.canDelete !== true ? null : (
+                      {chosen?.shared === true && chosen.canDelete !== true ? null : (
                         <button className={styles.danger} type="button" onClick={() => {
                           if (selected === null) return
                           setMessage(null)
@@ -2322,7 +2325,7 @@ function memoryScreen() {
           footer={(
             <>
               <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
-              {chosen?.shared === true && chosen?.canDelete !== true ? null : (
+              {chosen?.shared === true && chosen.canDelete !== true ? null : (
                 <button className={styles.danger} type="button" onClick={() => {
                   if (chosen === null) return
                   setMessage(null)
@@ -3646,7 +3649,6 @@ function workflowsScreen() {
                 <button type="button" disabled={selectedFlowReadOnly} onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
                 {selectedFlowShared ? null : (
                   <button type="button" className={styles.danger} onClick={() => {
-                    if (selected === null) return
                     void workflows.remove(selected).then((result) => {
                       if (!result.ok) { setMessage(result.error.message); return }
                       setSelected(null)
@@ -4091,6 +4093,27 @@ function contextScreen() {
                 refresh(result)
               })
             }}>{t('ctx.create')}</button>
+            <button className={styles.secondary} type="button" onClick={() => {
+              void props.context.export(spaceId.length === 0 ? undefined : spaceId, 'json').then((result) => {
+                if (!result.ok) { setMessage(result.error.message); return }
+                const blob = new Blob([result.value.content], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const anchor = document.createElement('a')
+                anchor.href = url
+                anchor.download = result.value.filename
+                anchor.click()
+                URL.revokeObjectURL(url)
+              })
+            }}>{t('ctx.export')}</button>
+            <label className={styles.secondary} style={{ cursor: 'pointer' }}>
+              {t('ctx.import')}
+              <input type="file" accept="application/json,.json" style={{ display: 'none' }} aria-label={t('ctx.import')} onChange={(event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file === undefined) return
+                void file.text().then(text => props.context.import(text)).then(refresh)
+              }} />
+            </label>
           </>
         )}>
         <Feedback t={t} message={list.kind === 'error' ? list.message : message} />
@@ -4103,20 +4126,17 @@ function contextScreen() {
             footer={selected === null ? undefined : (
               <>
                 <span className={styles.tools}>
-                  {chosen?.shared === true && chosen?.canDelete !== true ? null : (
+                  {chosen?.shared === true && chosen.canDelete !== true ? null : (
                     <button className={styles.danger} type="button" onClick={() => {
-                      if (selected === null) return
                       void props.context.remove(selected).then((result) => { if (result.ok) setSelected(null); refresh(result) })
                     }}>{t('ctx.remove')}</button>
                   )}
                   <button className={styles.secondary} type="button" onClick={() => {
-                    if (selected === null) return
                     void props.context.approve(selected).then((result) => {
                       refresh(result); reloadVersions(selected)
                     })
                   }}>{t('ctx.approve')}</button>
                   <button className={styles.secondary} type="button" onClick={() => {
-                    if (selected === null) return
                     void props.context.reject(selected).then((result) => {
                       refresh(result); reloadVersions(selected)
                     })
@@ -4125,7 +4145,6 @@ function contextScreen() {
                 <span className={styles.tools}>
                   <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
                   <button className={styles.primary} type="button" onClick={() => {
-                    if (selected === null) return
                     void props.context.update(selected, title, body).then((result) => { refresh(result); reloadVersions(selected) })
                   }}>{t('ctx.save')}</button>
                 </span>
@@ -4143,7 +4162,6 @@ function contextScreen() {
                     <div key={version.version} className={styles.workflowRunRow}>
                       <span className={styles.cellMuted}>{versionDetail(version)}</span>
                       <button className={styles.ghost} type="button" onClick={() => {
-                        if (selected === null) return
                         void props.context.restore(selected, version.version).then((result) => {
                           refresh(result); reloadVersions(selected)
                         })

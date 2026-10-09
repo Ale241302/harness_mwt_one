@@ -26,6 +26,10 @@ The subsystem reference is [docs/subsystems/faberloom.md](../../docs/subsystems/
 - `@deepseek-ai/dsh-faberloom-spaces` — thematic spaces and effective context.
 - `@deepseek-ai/dsh-faberloom-workflows` — versioned work-flow graphs compiled to routines.
 - `@deepseek-ai/dsh-faberloom-agents` — the agent catalog and versioned model policy.
+- `@deepseek-ai/dsh-faberloom-agent-plane` — the enforced tool mask and delegation allowlist of one catalog agent.
+- `@deepseek-ai/dsh-faberloom-session-agent` — the composition a Space session runs under: its agent's persona, tool plane, and skills.
+- `@deepseek-ai/dsh-faberloom-agent-runtime` — the durable consultations between a caller session and a Space agent.
+- `@deepseek-ai/dsh-faberloom-knowledge-index` — the space search ranker: embeddings, the Knowledge Hub corpus, and a lexical fallback.
 - `@deepseek-ai/dsh-faberloom-board` — the work table: versioned items, approvals, and revalidation.
 - `@deepseek-ai/dsh-faberloom-routines` — declarative versioned routines.
 - `@deepseek-ai/dsh-faberloom-execution` — persistent execution, waits, and the effects ledger.

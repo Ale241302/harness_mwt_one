@@ -245,6 +245,22 @@ flowchart LR
   svc_faberloomBoard["ctx.faberloomBoard<br/>Product work table and review"]
   pkg_spaces["spaces"]
   svc_faberloomSpaces["ctx.faberloomSpaces<br/>Product spaces and effective context"]
+  svc_spaceIndex["ctx.spaceIndex<br/>Space search ranker"]
+  pkg_knowledge_index["knowledge-index"]
+  pkg_context["context"]
+  svc_faberloomContext["ctx.faberloomContext<br/>Versioned Space/Workspace context"]
+  pkg_shares["shares"]
+  svc_faberloomShares["ctx.faberloomShares<br/>Cross-identity content shares"]
+  pkg_session_shares["session-shares"]
+  svc_faberloomSessionShares["ctx.faberloomSessionShares<br/>Shared session projections"]
+  pkg_workflows["workflows"]
+  svc_faberloomWorkflows["ctx.faberloomWorkflows<br/>Declarative workflows"]
+  pkg_agent_plane["agent-plane"]
+  svc_faberloomAgentPlane["ctx.faberloomAgentPlane<br/>Per-agent capability plane"]
+  pkg_session_agent["session-agent"]
+  svc_faberloomSessionAgent["ctx.faberloomSessionAgent<br/>Space session composition"]
+  pkg_agent_runtime["agent-runtime"]
+  svc_faberloomAgentRuntime["ctx.faberloomAgentRuntime<br/>Durable Space-agent consultations"]
   pkg_agents["agents"]
   svc_faberloomAgents["ctx.faberloomAgents<br/>Product agent catalog and model policy"]
   pkg_routines["routines"]
@@ -273,7 +289,9 @@ flowchart LR
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
   pkg_agent_loop --> svc_agentLoop
+  pkg_agent_plane --> svc_faberloomAgentPlane
   pkg_agent_presets --> svc_agentPresets
+  pkg_agent_runtime --> svc_faberloomAgentRuntime
   pkg_agents --> svc_faberloomAgents
   pkg_api_gateway --> svc_typertGateway
   pkg_api_session_controller --> svc_sessionController
@@ -302,6 +320,7 @@ flowchart LR
   pkg_compaction_tool_result_pruner --> svc_toolResultPruner
   pkg_computer_use --> svc_computerUse
   pkg_connections --> svc_faberloomConnections
+  pkg_context --> svc_faberloomContext
   pkg_cordis_host_runner --> svc_cordisInspect
   pkg_cordis_host_runner --> svc_dynamicCordisRunner
   pkg_credentials --> svc_credentials
@@ -333,6 +352,7 @@ flowchart LR
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
+  pkg_knowledge_index --> svc_spaceIndex
   pkg_learning --> svc_faberloomMemory
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
@@ -356,6 +376,7 @@ flowchart LR
   pkg_sandbox_policy --> svc_sandboxPolicy
   pkg_sandbox_ssh --> svc_sandbox
   pkg_session --> svc_sessions
+  pkg_session_agent --> svc_faberloomSessionAgent
   pkg_session_log_deepseek --> svc_deepseekLlmApiExtensions
   pkg_session_persistence --> svc_sessionPersistence
   pkg_session_persistence_jsonl --> svc_sessionPersistence
@@ -364,6 +385,7 @@ flowchart LR
   pkg_session_query --> svc_sessionQuery
   pkg_session_query_sqlite --> svc_sessionQuery
   pkg_session_reference --> svc_sessionReferenceResolver
+  pkg_session_shares --> svc_faberloomSessionShares
   pkg_session_telemetry --> svc_sessionTelemetry
   pkg_session_telemetry_otel --> svc_sessionTelemetry
   pkg_session_title --> svc_sessionTitle
@@ -371,12 +393,14 @@ flowchart LR
   pkg_session_title_first_prompt_llm --> svc_sessionTitle
   pkg_settings --> svc_settings
   pkg_settings_file --> svc_settings
+  pkg_shares --> svc_faberloomShares
   pkg_shell --> svc_shell
   pkg_shell_env --> svc_shellEnv
   pkg_skill --> svc_skills
   pkg_skill_badge --> svc_skills
   pkg_skill_filesystem --> svc_skills
   pkg_spaces --> svc_faberloomSpaces
+  pkg_spaces --> svc_spaceIndex
   pkg_spill --> svc_spillStore
   pkg_spill_local --> svc_spillStore
   pkg_ssh --> svc_ssh
@@ -412,6 +436,7 @@ flowchart LR
   pkg_webhook --> svc_webhookRuntime
   pkg_workflow --> svc_workflowEngine
   pkg_workflow_ptc --> svc_workflowEngine
+  pkg_workflows --> svc_faberloomWorkflows
   pkg_workspace --> svc_workspaceRegistry
   svc_agentDefaultModel --> pkg_api_session_controller
   svc_agentDefaultModel --> pkg_headless
@@ -500,6 +525,7 @@ flowchart LR
   svc_shellEnv --> pkg_tool_bash
   svc_shellEnv --> pkg_tool_pwsh
   svc_skills --> pkg_tool_skill
+  svc_spaceIndex --> pkg_spaces
   svc_spillStore --> pkg_spill_policy
   svc_ssh --> pkg_fs_ssh
   svc_ssh --> pkg_sandbox_ssh
@@ -630,6 +656,14 @@ flowchart LR
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 注册 Host inspect 提供方、镜像 Client 提供方 manifest，并通过动态 Cordis 传输路由 Client 查询。 |
 | `ctx.faberloomBoard` | `core` | `board` | - | - | - | 拥有版本化工单：需证据的提交、绑定精确版本的批准、变更后的重新校验，以及需显式授权的效应，因此批准永不发送。 |
 | `ctx.faberloomSpaces` | `core` | `spaces` | - | - | - | 拥有主题空间、子空间、可配置继承、显式排除、隔离的个人范围，以及不透明的工作目录引用；持久化记录使用领域存储形式。 |
+| `ctx.spaceIndex` | `seam` | `spaces` | `knowledge-index` | `spaces` | - | 每个部署一个排序器；spaces 服务通过 ctx.get 读取它，未挂载时回退到其内置的词法排序器。 |
+| `ctx.faberloomContext` | `core` | `context` | - | - | - | 拥有持久、可版本化、可审批的上下文条目，含按所有者的索引、恢复，以及可导出/导入的 JSON/Markdown 记录；`shared` 条目仅对其 Space 的读者可读。 |
+| `ctx.faberloomShares` | `core` | `shares` | - | - | - | 拥有授权与导入的本地副本，使一个身份能在按模块的权限下读取或操作另一 Space 的内容。 |
+| `ctx.faberloomSessionShares` | `core` | `session-shares` | - | - | - | 拥有另一身份共享的会话在读者侧的投影，并以控制台为事实来源进行裁剪。 |
+| `ctx.faberloomWorkflows` | `core` | `workflows` | - | - | - | 拥有可版本化、经校验的工作流定义及其在例程与执行接缝之上的持久运行。 |
+| `ctx.faberloomAgentPlane` | `core` | `agent-plane` | - | - | - | 依据一个目录代理声明的 MWT/SICOP-MCP 与 web 标志，解析其人格、工具掩码、技能与子代理 allowlist，并对被委托的子会话强制执行该掩码。 |
+| `ctx.faberloomSessionAgent` | `core` | `session-agent` | - | - | - | 把工作目录为某个 Space 的会话组合为该 Space 的负责代理，每个根会话安装一次其人格、工具掩码与技能。 |
+| `ctx.faberloomAgentRuntime` | `core` | `agent-runtime` | - | - | - | 拥有调用方会话与 Space 代理之间已记录的可持续咨询，使后续追问延续同一子会话。 |
 | `ctx.faberloomAgents` | `core` | `agents` | - | - | - | 拥有版本化代理目录、三条创建路径、版本化模型策略（主模型、排他、备选、升级、预算）、共享解析器，以及按可用结果成本计算的推荐器。 |
 | `ctx.faberloomRoutines` | `core` | `routines` | - | - | - | 拥有例程定义与版本、触发器、步骤依赖与激活校验；执行状态属于执行服务。 |
 | `ctx.faberloomExecutions` | `core` | `execution` | - | - | - | 拥有持久化执行状态、等待、幂等键、效应账本与超时对账，确保在响应丢失后不会重复效应。 |

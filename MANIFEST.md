@@ -107,6 +107,15 @@ sola `DEEPSEEK_API_KEY` compartida**. El tramo Cloudflare→origen sigue en TLS
 **Flexible** (M8 pendiente: certificado de origen + Full strict; ver
 `README.mwt-one.md`).
 
+## Pendiente de despliegue (en el árbol, no en la imagen desplegada)
+
+Esta sección registra trabajo ya integrado en el árbol de `deepseek-harness` que **no** está en la imagen desplegada; se retira al desplegar y anotar el nuevo tag.
+
+- **Contexto y agentes entre Spaces** (paquetes nuevos o ampliados): `faberloom/context` (registro versionado, aprobable, `export`/`import`/`replace`), `faberloom/spaces` (entradas curadas y texto de adjuntos en `find`), `faberloom/agent-plane` (plano de capacidades por agente), `faberloom/session-agent` (la sesión de un Space corre como su agente), `faberloom/agent-runtime` (consultas durables), `faberloom/knowledge-index` (búsqueda: embeddings + Knowledge Hub + léxico), `faberloom/tool-faberloom` (tools `faberloom_context_*`, `faberloom_spaces_followup`, enforcement de plano y fail-closed), `faberloom/view` y `client/ui-faberloom` (Export/Import de contexto), y el montaje en `bundle/faberloom-app` + `gateway/server.mjs` (identidad por usuario para `session-agent`).
+- **Verificación local (Windows)**: `typecheck`, `lint` y `test:docs` en verde; unidades focales verdes; `verify-catalog`/`verify-export-jsdoc`/`verify-translation-pairing` OK.
+- **Pendiente en el VPS/CI**: lane de snapshots POSIX, `test:coverage` y el smoke manual SONDEL→SICOP (F50) con el MCP `sicop` real.
+- **Al desplegar**: construir `main` con estos paquetes, fijar el nuevo `DSH_FORK_SHA` por `/healthz` y ejecutar F50.
+
 ## Cómo verificar el despliegue
 
 ```bash

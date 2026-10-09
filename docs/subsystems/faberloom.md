@@ -53,6 +53,83 @@ async check(request: GrantCheck): Promise<GrantDecision>
 
 Source: [`packages/faberloom/access/src/index.ts`](../../packages/faberloom/access/src/index.ts)
 
+<a id="ctxfaberloomagentplane--faberloomagentplane"></a>
+
+### `ctx.faberloomAgentPlane` — `FaberLoomAgentPlane`
+
+The agent capability plane service: resolves one agent's enforced tool mask and its delegation allowlist.
+
+```ts cordis-catalog
+/**
+ * Resolve one catalog agent's enforced plane. A source the agent may not use
+ * denies exactly the registered tool names that source publishes; a source
+ * the agent may use, or a source with no registered names, contributes no
+ * mask. The mask is omitted entirely when nothing is denied, so a caller
+ * never passes an empty-restriction no-op.
+ * @param agent - the catalog agent whose capabilities are enforced.
+ * @param sources - the registered tool names grouped by source.
+ * @returns the agent's persona, tool mask, model route, and skills.
+ */
+resolve(agent: FaberLoomAgent, sources: AgentToolSources): AgentPlane
+
+/**
+ * Whether one agent may consult another. An empty allowlist means the agent
+ * is unrestricted; a non-empty allowlist authorizes only its listed agent
+ * ids.
+ * @param agent - the consulting agent.
+ * @param targetAgentId - the catalog agent id the agent wants to consult.
+ * @returns `true` when the consultation is authorized.
+ */
+allowsSubagent(agent: FaberLoomAgent, targetAgentId: string): boolean
+```
+
+Source: [`packages/faberloom/agent-plane/src/index.ts`](../../packages/faberloom/agent-plane/src/index.ts)
+
+<a id="ctxfaberloomagentruntime--faberloomagentruntime"></a>
+
+### `ctx.faberloomAgentRuntime` — `FaberLoomAgentRuntime`
+
+The agent runtime service: durable consultations between caller sessions and Space agents.
+
+```ts cordis-catalog
+/**
+ * Record one consultation, replacing the caller's earlier child for the same
+ * Space and preserving its creation instant.
+ * @param ownerId - the identity the consultation belongs to.
+ * @param input - the Space, caller session, child, and label.
+ * @returns the recorded consultation.
+ */
+async record(ownerId: string, input: AgentConsultationInput): Promise<AgentConsultation>
+
+/**
+ * Read the consultation one caller session holds with one Space.
+ * @param ownerId - the identity the consultation belongs to.
+ * @param spaceId - the consulted Space.
+ * @param callerSessionId - the caller session.
+ * @returns the consultation, or `undefined`.
+ */
+async consultation(ownerId: string, spaceId: string, callerSessionId: string): Promise<AgentConsultation | undefined>
+
+/**
+ * List every consultation a Space holds for one owner, newest first.
+ * @param ownerId - the identity the consultations belong to.
+ * @param spaceId - the Space whose consultations are read.
+ * @returns the consultations.
+ */
+async listForSpace(ownerId: string, spaceId: string): Promise<readonly AgentConsultation[]>
+
+/**
+ * Remove one consultation.
+ * @param ownerId - the identity the consultation belongs to.
+ * @param spaceId - the consulted Space.
+ * @param callerSessionId - the caller session.
+ * @returns true when a consultation was removed.
+ */
+async remove(ownerId: string, spaceId: string, callerSessionId: string): Promise<boolean>
+```
+
+Source: [`packages/faberloom/agent-runtime/src/index.ts`](../../packages/faberloom/agent-runtime/src/index.ts)
+
 <a id="ctxfaberloomagents--faberloomagents"></a>
 
 ### `ctx.faberloomAgents` — `FaberLoomAgents`
@@ -612,6 +689,17 @@ async create(actor: FaberLoomContextActor, input: FaberLoomContextInput): Promis
 async list(actor: FaberLoomContextActor): Promise<readonly FaberLoomContextEntry[]>
 
 /**
+ * List the context entries attached to one Space that the actor may read,
+ * newest first. Visibility is the same as {@link list}: a `shared` entry is
+ * visible to any reader, while a `local` or `pending` entry is visible only
+ * to its author and the Space owner.
+ * @param actor - the acting identity.
+ * @param spaceId - the Space whose entries are read.
+ * @returns the visible entries of that Space.
+ */
+async listForSpace(actor: FaberLoomContextActor, spaceId: string): Promise<readonly FaberLoomContextEntry[]>
+
+/**
  * Read one entry.
  * @param actor - the acting identity.
  * @param id - entry id.
@@ -669,6 +757,38 @@ async reject(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContext
  * @returns true when removed.
  */
 async remove(actor: FaberLoomContextActor, id: string): Promise<boolean>
+
+/**
+ * Export one context record: the entries the actor may read, optionally
+ * restricted to one Space, with each entry's version history. JSON is the
+ * default; Markdown renders one section per entry.
+ * @param actor - the acting identity.
+ * @param options - the optional Space and format.
+ * @returns the export body and suggested file name.
+ */
+async export(actor: FaberLoomContextActor, options: FaberLoomContextExportOptions = {}): Promise<FaberLoomContextExport>
+
+/**
+ * Import a context record produced by {@link export}. Each entry whose title
+ * does not already exist in its Space is created under the actor's placement
+ * (an owner writes shared, a member's entry starts pending); an equal title
+ * is skipped, so importing the same record twice is idempotent.
+ * @param actor - the acting identity.
+ * @param payload - the export body.
+ * @returns the created and skipped counts.
+ */
+async import(actor: FaberLoomContextActor, payload: string): Promise<FaberLoomContextImportResult>
+
+/**
+ * Replace one Space's context record wholesale (owner only): entries whose
+ * title is not in the new set are removed, a retained title gets a new
+ * version, and a new title is created.
+ * @param actor - the acting identity.
+ * @param spaceId - the Space whose record is replaced.
+ * @param entries - the new full set of title and body.
+ * @returns the resulting entries.
+ */
+async replace( actor: FaberLoomContextActor, spaceId: string, entries: readonly FaberLoomContextReplaceEntry[], ): Promise<readonly FaberLoomContextEntry[]>
 
 /**
  * Import the console's shared context for one owner and prune the imported
@@ -1177,6 +1297,14 @@ releaseLock(): void
 
 Source: [`packages/faberloom/routines/src/index.ts`](../../packages/faberloom/routines/src/index.ts)
 
+<a id="ctxfaberloomsessionagent--faberloomsessionagent"></a>
+
+### `ctx.faberloomSessionAgent` — `FaberLoomSessionAgent`
+
+The Space session composition service: resolves one session's Space agent and installs its persona, tool mask, and skills.
+
+Source: [`packages/faberloom/session-agent/src/index.ts`](../../packages/faberloom/session-agent/src/index.ts)
+
 <a id="ctxfaberloomsessionshares--faberloomsessionshares"></a>
 
 ### `ctx.faberloomSessionShares` — `FaberLoomSessionShares`
@@ -1591,6 +1719,9 @@ async effectiveContext(actor: SpaceActor, id: FaberLoomSpaceId): Promise<Effecti
  * `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in
  * lexical ranker. An empty query returns the actor's readable, non-archived
  * spaces most recently created first; archived spaces are always excluded.
+ * A readable Space's curated context entries (`ctx.faberloomContext`) join
+ * the scored text so a Space is found by what its context remembers, not
+ * only by its title, map, and memory.
  * @param actor - the acting identity.
  * @param query - free-text query; an empty query lists the recent spaces.
  * @param limit - most results to return.
@@ -1659,6 +1790,14 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns the connectivity map as plain JSON.
  */
 @Remote('spaceMap') async spaceMap(): Promise<FaberLoomSpaceMap>
+
+/**
+ * List the durable consultations a Space holds for this owner, newest first,
+ * so the panel can report the Space's live agents.
+ * @param spaceId - the Space whose consultations are read.
+ * @returns one row per caller session consulting the Space.
+ */
+@Remote('spaceAgentRuntime') async spaceAgentRuntime(spaceId: string): Promise<readonly FaberLoomConsultationRow[]>
 
 /**
  * List the owner's work flows.
@@ -1979,6 +2118,29 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the visible context rows.
  */
 @Remote('syncContext') async syncContext(): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Export the workspace/space context record for the browser to download.
+ * @param spaceId - a Space to restrict to, or undefined for the personal scope plus every Space.
+ * @param format - `json` (default) or `markdown`.
+ * @returns the export body and file name.
+ */
+@Remote('exportContext') async exportContext(spaceId?: string, format?: string): Promise<FaberLoomContextExportRow>
+
+/**
+ * Import a context record and return the refreshed entries.
+ * @param payload - the exported JSON body.
+ * @returns the refreshed rows.
+ */
+@Remote('importContext') async importContext(payload: string): Promise<readonly FaberLoomContextRow[]>
+
+/**
+ * Replace one Space's context record wholesale (owner only) and return the refreshed rows.
+ * @param spaceId - the Space whose record is replaced.
+ * @param entriesJson - the new entries as a JSON array of `{ title, body }`.
+ * @returns the refreshed rows.
+ */
+@Remote('replaceContext') async replaceContext(spaceId: string, entriesJson: string): Promise<readonly FaberLoomContextRow[]>
 
 /**
  * Capture the panel's local Sessions into one Space and return the refreshed

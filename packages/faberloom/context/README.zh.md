@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-在已具备 `ctx.storageDomain` 的组合中挂载此行；`ctx.faberloomSpaces` 与 `ctx.faberloomShares` 是可选的，仅用于更精确地决定归属。该服务打开 `faberloom_context` 域、注册 `ctx.faberloomContext`，并暴露 `create`、`list`、`get`、`update`、`versions`、`restore`、`approve`、`reject` 与 `remove`。`create(actor, { title, body, spaceId })` 决定可见性：个人条目保持 `local`；Space 条目对其所有者（或持有有效 `index-context` 授权的成员）为 `shared`，否则为 `pending`。`update` 追加版本并把成员的编辑退回 `pending`；`restore(actor, id, version)` 将更早的版本前移为一个新版本。
+在已具备 `ctx.storageDomain` 的组合中挂载此行；`ctx.faberloomSpaces` 与 `ctx.faberloomShares` 是可选的，仅用于更精确地决定归属。该服务打开 `faberloom_context` 域、注册 `ctx.faberloomContext`，并暴露 `create`、`list`、`get`、`listForSpace`、`update`、`versions`、`restore`、`approve`、`reject`、`remove`、`export`、`import` 与 `replace`。`listForSpace(actor, spaceId)` 返回某一空间下该行为者可读的条目；`ctx.faberloomSpaces.find` 与 `reference` 据此呈现另一空间的精选上下文。`create(actor, { title, body, spaceId })` 决定可见性：个人条目保持 `local`；Space 条目对其所有者（或持有有效 `index-context` 授权的成员）为 `shared`，否则为 `pending`。放入行为者不可读的 Space 会被拒绝。`update` 追加版本并把成员的编辑退回 `pending`；`restore(actor, id, version)` 将更早的版本前移为一个新版本。
 
 -----
 
@@ -48,7 +48,7 @@ kind: "package-reference"
 
 <a id="known-limited"></a>
 
-- **归属需要 Space 或授权** — 没有 `ctx.faberloomSpaces` 时服务把执行者当作所有者；没有 `ctx.faberloomShares` 时成员的条目总是落到 `pending`；挂载这两个服务后授权即可解析。
+- **归属需要 Space 或授权** — 挂载 `ctx.faberloomSpaces` 时，条目只能放入行为者可读的 Space（不可读的 Space 会被拒绝）；没有 `ctx.faberloomShares` 时非所有者成员的条目总是落到 `pending`。没有 spaces 服务的裸组合把执行者当作所有者。
 - **审批是按条目而非按行** — 所有者索引或拒绝整条记录；没有字段级合并。
 
 未发布 invariant companion，因为该服务的单元测试已断言其生命周期、可见性矩阵与版本历史。
@@ -59,6 +59,6 @@ kind: "package-reference"
 <details>
 <summary>维护者工作上下文 —— 点击展开</summary>
 
-可见性在写入时依据 Space 所有者与 `index-context` 授权一次性决定；读取时按 `shared`、`authorId` 或 `ownerId` 过滤。版本行以 `${entryId}:${version}` 为键且只追加，因此 `restore` 从不改写历史。该域惰性打开、随调用 fiber 关闭，与其他 FaberLoom 服务一致。
+可见性在写入时依据 Space 所有者与 `index-context` 授权一次性决定。读取时，行为者自己写入或拥有的条目，或所属 Space 对行为者可读的 `shared` 条目会被放行；此外的 `local` 或 `pending` 条目保持隐藏。版本行以 `${entryId}:${version}` 为键且只追加，因此 `restore` 从不改写历史。该域惰性打开、随调用 fiber 关闭，与其他 FaberLoom 服务一致。
 
 </details>

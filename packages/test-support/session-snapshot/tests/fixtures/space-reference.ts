@@ -34,6 +34,14 @@ export function apply(ctx: Context): void {
           text: 'usar encabezado institucional',
           createdAt: '2026-10-03T00:00:00.000Z',
         }],
+        entries: [{
+          id: 'e1',
+          title: 'Regla de plantilla',
+          body: 'La plantilla mensual manda para el reporte de Sondel.',
+          version: 3,
+          authorId: 'snapshot@muitowork.com',
+          updatedAt: '2026-10-03T00:00:00.000Z',
+        }],
         files: [{
           id: 'f1',
           spaceId: id,

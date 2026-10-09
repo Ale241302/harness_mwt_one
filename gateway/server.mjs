@@ -901,6 +901,15 @@ function renderPatch(home, user, memory) {
         ]
       : []),
     '',
+    // La sesión de un Space corre como su agente responsable: la identidad
+    // autenticada es el actor con el que se leen los Spaces de este usuario.
+    '- id: faberloom-session-agent',
+    '  config:',
+    `    ownerId: ${yamlScalar(user.email)}`,
+    `    role: ${yamlScalar(user.role || 'client_b2b')}`,
+    ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
+    `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
+    '',
     // La siembra inicial usa la misma identidad y la misma raíz de skills: crea
     // una vez los agentes y la rutina del plan, con las skills del rol.
     '- id: faberloom-defaults',

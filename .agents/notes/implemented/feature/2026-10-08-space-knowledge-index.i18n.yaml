@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-08-space-knowledge-index.md
+2026-10-08-space-knowledge-index.md: 1154f54b0fb7961053d11d16a588aadb6486249a
+2026-10-08-space-knowledge-index.zh.md: 633ea9829dbee39ce854605406b12fddb5ba0ea1

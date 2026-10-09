@@ -30,6 +30,15 @@
       "path": "../agents"
     },
     {
+      "path": "../agent-plane"
+    },
+    {
+      "path": "../agent-runtime"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
       "path": "../board"
     },
     {

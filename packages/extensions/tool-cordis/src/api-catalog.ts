@@ -906,6 +906,56 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomAgentPlane',
+    summary: 'The agent capability plane service: resolves one agent\'s enforced tool mask and its delegation allowlist.',
+    description: 'The agent capability plane service: resolves one agent\'s enforced tool mask and its delegation allowlist.',
+    methods: [
+      {
+        signature: 'resolve(agent: FaberLoomAgent, sources: AgentToolSources): AgentPlane',
+        description: 'Resolve one catalog agent\'s enforced plane. A source the agent may not use denies exactly the registered tool names that source publishes; a source the agent may use, or a source with no registered names, contributes no mask. The mask is omitted entirely when nothing is denied, so a caller never passes an empty-restriction no-op.',
+        parameters: [{ name: 'agent', description: 'the catalog agent whose capabilities are enforced.' }, { name: 'sources', description: 'the registered tool names grouped by source.' }],
+        returns: 'the agent\'s persona, tool mask, model route, and skills.',
+      },
+      {
+        signature: 'allowsSubagent(agent: FaberLoomAgent, targetAgentId: string): boolean',
+        description: 'Whether one agent may consult another. An empty allowlist means the agent is unrestricted; a non-empty allowlist authorizes only its listed agent ids.',
+        parameters: [{ name: 'agent', description: 'the consulting agent.' }, { name: 'targetAgentId', description: 'the catalog agent id the agent wants to consult.' }],
+        returns: '`true` when the consultation is authorized.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomAgentRuntime',
+    summary: 'The agent runtime service: durable consultations between caller sessions and Space agents.',
+    description: 'The agent runtime service: durable consultations between caller sessions and Space agents.',
+    methods: [
+      {
+        signature: 'async record(ownerId: string, input: AgentConsultationInput): Promise<AgentConsultation>',
+        description: 'Record one consultation, replacing the caller\'s earlier child for the same Space and preserving its creation instant.',
+        parameters: [{ name: 'ownerId', description: 'the identity the consultation belongs to.' }, { name: 'input', description: 'the Space, caller session, child, and label.' }],
+        returns: 'the recorded consultation.',
+      },
+      {
+        signature: 'async consultation(ownerId: string, spaceId: string, callerSessionId: string): Promise<AgentConsultation | undefined>',
+        description: 'Read the consultation one caller session holds with one Space.',
+        parameters: [{ name: 'ownerId', description: 'the identity the consultation belongs to.' }, { name: 'spaceId', description: 'the consulted Space.' }, { name: 'callerSessionId', description: 'the caller session.' }],
+        returns: 'the consultation, or `undefined`.',
+      },
+      {
+        signature: 'async listForSpace(ownerId: string, spaceId: string): Promise<readonly AgentConsultation[]>',
+        description: 'List every consultation a Space holds for one owner, newest first.',
+        parameters: [{ name: 'ownerId', description: 'the identity the consultations belong to.' }, { name: 'spaceId', description: 'the Space whose consultations are read.' }],
+        returns: 'the consultations.',
+      },
+      {
+        signature: 'async remove(ownerId: string, spaceId: string, callerSessionId: string): Promise<boolean>',
+        description: 'Remove one consultation.',
+        parameters: [{ name: 'ownerId', description: 'the identity the consultation belongs to.' }, { name: 'spaceId', description: 'the consulted Space.' }, { name: 'callerSessionId', description: 'the caller session.' }],
+        returns: 'true when a consultation was removed.',
+      },
+    ],
+  },
+  {
     key: 'faberloomAgents',
     summary: 'The product agents service: model pool, agent catalog, model policy resolver and recommender, selection records, contextual evidence, and delegation.',
     description: 'The product agents service: model pool, agent catalog, model policy resolver and recommender, selection records, contextual evidence, and delegation.',
@@ -1312,6 +1362,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the visible entries.',
       },
       {
+        signature: 'async listForSpace(actor: FaberLoomContextActor, spaceId: string): Promise<readonly FaberLoomContextEntry[]>',
+        description: 'List the context entries attached to one Space that the actor may read, newest first. Visibility is the same as list: a `shared` entry is visible to any reader, while a `local` or `pending` entry is visible only to its author and the Space owner.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space whose entries are read.' }],
+        returns: 'the visible entries of that Space.',
+      },
+      {
         signature: 'async get(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>',
         description: 'Read one entry.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
@@ -1352,6 +1408,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one entry and its history (author or owner).',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
         returns: 'true when removed.',
+      },
+      {
+        signature: 'async export(actor: FaberLoomContextActor, options: FaberLoomContextExportOptions = {}): Promise<FaberLoomContextExport>',
+        description: 'Export one context record: the entries the actor may read, optionally restricted to one Space, with each entry\'s version history. JSON is the default; Markdown renders one section per entry.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'options', description: 'the optional Space and format.' }],
+        returns: 'the export body and suggested file name.',
+      },
+      {
+        signature: 'async import(actor: FaberLoomContextActor, payload: string): Promise<FaberLoomContextImportResult>',
+        description: 'Import a context record produced by export. Each entry whose title does not already exist in its Space is created under the actor\'s placement (an owner writes shared, a member\'s entry starts pending); an equal title is skipped, so importing the same record twice is idempotent.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'payload', description: 'the export body.' }],
+        returns: 'the created and skipped counts.',
+      },
+      {
+        signature: 'async replace( actor: FaberLoomContextActor, spaceId: string, entries: readonly FaberLoomContextReplaceEntry[], ): Promise<readonly FaberLoomContextEntry[]>',
+        description: 'Replace one Space\'s context record wholesale (owner only): entries whose title is not in the new set are removed, a retained title gets a new version, and a new title is created.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space whose record is replaced.' }, { name: 'entries', description: 'the new full set of title and body.' }],
+        returns: 'the resulting entries.',
       },
       {
         signature: 'async sync(readerId: string): Promise<void>',
@@ -1722,6 +1796,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomSessionAgent',
+    summary: 'The Space session composition service: resolves one session\'s Space agent and installs its persona, tool mask, and skills.',
+    description: 'The Space session composition service: resolves one session\'s Space agent and installs its persona, tool mask, and skills.',
+    methods: [],
+  },
+  {
     key: 'faberloomSessionShares',
     summary: 'The shared Session catalog: durable, per-Space, and console-synced.',
     description: 'The shared Session catalog: durable, per-Space, and console-synced.',
@@ -1981,7 +2061,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async find(actor: SpaceActor, query: string, limit: number = 10): Promise<SpaceMatch[]>',
-        description: 'Rank the actor\'s readable spaces for a query. It ranks through `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in lexical ranker. An empty query returns the actor\'s readable, non-archived spaces most recently created first; archived spaces are always excluded.',
+        description: 'Rank the actor\'s readable spaces for a query. It ranks through `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in lexical ranker. An empty query returns the actor\'s readable, non-archived spaces most recently created first; archived spaces are always excluded. A readable Space\'s curated context entries (`ctx.faberloomContext`) join the scored text so a Space is found by what its context remembers, not only by its title, map, and memory.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'query', description: 'free-text query; an empty query lists the recent spaces.' }, { name: 'limit', description: 'most results to return.' }],
         returns: 'matched spaces, best score first, then most recent first.',
       },
@@ -2028,6 +2108,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read the Space connectivity map the palette and canvas consume: every Space with its agent and mirrored workspace, every agent with its skills and MCP access, the owner\'s mail connections, and the registered Workspaces. Connections and Workspaces are optional, so a deployment that mounts neither still gets the map.',
         parameters: [],
         returns: 'the connectivity map as plain JSON.',
+      },
+      {
+        signature: '@Remote(\'spaceAgentRuntime\') async spaceAgentRuntime(spaceId: string): Promise<readonly FaberLoomConsultationRow[]>',
+        description: 'List the durable consultations a Space holds for this owner, newest first, so the panel can report the Space\'s live agents.',
+        parameters: [{ name: 'spaceId', description: 'the Space whose consultations are read.' }],
+        returns: 'one row per caller session consulting the Space.',
       },
       {
         signature: '@Remote(\'workflowOverview\') async workflowOverview(): Promise<readonly FaberLoomWorkflowRow[]>',
@@ -2267,6 +2353,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Import the console\'s shared context for this owner and return the refreshed entries, so a member\'s Space contribution shows up for approval.',
         parameters: [],
         returns: 'the visible context rows.',
+      },
+      {
+        signature: '@Remote(\'exportContext\') async exportContext(spaceId?: string, format?: string): Promise<FaberLoomContextExportRow>',
+        description: 'Export the workspace/space context record for the browser to download.',
+        parameters: [{ name: 'spaceId', description: 'a Space to restrict to, or undefined for the personal scope plus every Space.' }, { name: 'format', description: '`json` (default) or `markdown`.' }],
+        returns: 'the export body and file name.',
+      },
+      {
+        signature: '@Remote(\'importContext\') async importContext(payload: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Import a context record and return the refreshed entries.',
+        parameters: [{ name: 'payload', description: 'the exported JSON body.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'replaceContext\') async replaceContext(spaceId: string, entriesJson: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Replace one Space\'s context record wholesale (owner only) and return the refreshed rows.',
+        parameters: [{ name: 'spaceId', description: 'the Space whose record is replaced.' }, { name: 'entriesJson', description: 'the new entries as a JSON array of `{ title, body }`.' }],
+        returns: 'the refreshed rows.',
       },
       {
         signature: '@Remote(\'captureSpaceSessions\') async captureSpaceSessions( spaceId: string, sessions: readonly FaberLoomSharedSessionRef[], ): Promise<readonly FaberLoomSharedSessionRow[]>',
@@ -5950,6 +6054,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentCancelCause = {\n    readonly kind: \'user\';\n} | {\n    readonly kind: \'parent\';\n} | {\n    readonly kind: \'hook\';\n    readonly reason: string;\n} | {\n    readonly kind: \'disposed\';\n};',
   },
   {
+    name: 'AgentConsultation',
+    declaration: 'export interface AgentConsultation {\n    readonly spaceId: string;\n    readonly callerSessionId: string;\n    readonly childSessionId: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'AgentConsultationInput',
+    declaration: 'export interface AgentConsultationInput {\n    readonly spaceId: string;\n    readonly callerSessionId: string;\n    readonly childSessionId: string;\n    readonly label: string;\n}',
+  },
+  {
     name: 'AgentEscalationInput',
     declaration: 'export interface AgentEscalationInput {\n    readonly authorized: readonly string[];\n    readonly conditions: readonly string[];\n    readonly mode: string;\n}',
   },
@@ -5972,6 +6084,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentPatch',
     declaration: 'export interface AgentPatch {\n    readonly name?: string;\n    readonly responsibility?: string;\n    readonly spaceId?: string | null;\n    readonly detached?: boolean;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly subagents?: readonly {\n        readonly name: string;\n        readonly agentId: FaberLoomAgentId;\n    }[];\n    readonly provider?: string | null;\n    readonly model?: string | null;\n    readonly apiKey?: string | null;\n    readonly webAccess?: boolean;\n    readonly mwtMcp?: boolean;\n    readonly sicopMcp?: boolean;\n    readonly mailConnectionIds?: readonly string[];\n    readonly lessons?: readonly string[];\n    readonly policy?: PolicyPatch;\n}',
+  },
+  {
+    name: 'AgentPlane',
+    declaration: 'export interface AgentPlane {\n    readonly persona: string;\n    readonly toolFilter: ToolRestriction | undefined;\n    readonly provider: string | undefined;\n    readonly model: string | undefined;\n    readonly skills: readonly string[];\n}',
   },
   {
     name: 'AgentPreset',
@@ -6020,6 +6136,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentStatus',
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
+  },
+  {
+    name: 'AgentToolSources',
+    declaration: 'export interface AgentToolSources {\n    readonly mcp: Readonly<Record<string, readonly string[]>>;\n    readonly web: readonly string[];\n}',
   },
   {
     name: 'ApiKeyRecord',
@@ -6786,6 +6906,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomConnection {\n    readonly id: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host: string | null;\n    readonly port: number | null;\n    readonly secure: boolean | null;\n    readonly starttls: boolean;\n    readonly primary: boolean;\n    readonly username: string | null;\n    readonly hasSecret: boolean;\n    readonly destination: string | null;\n    readonly retentionDays: number | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
+    name: 'FaberLoomConsultationRow',
+    declaration: 'export interface FaberLoomConsultationRow {\n    readonly spaceId: string;\n    readonly callerSessionId: string;\n    readonly childSessionId: string;\n    readonly label: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
     name: 'FaberLoomContextActor',
     declaration: 'export interface FaberLoomContextActor {\n    readonly id: string;\n}',
   },
@@ -6798,8 +6922,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomContextEntry {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly title: string;\n    readonly body: string;\n    readonly version: number;\n    readonly visibility: FaberLoomContextVisibility;\n    readonly authorId: string;\n    readonly ownerId: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
+    name: 'FaberLoomContextExport',
+    declaration: 'export interface FaberLoomContextExport {\n    readonly filename: string;\n    readonly content: string;\n    readonly entries: number;\n}',
+  },
+  {
+    name: 'FaberLoomContextExportOptions',
+    declaration: 'export interface FaberLoomContextExportOptions {\n    readonly spaceId?: string | undefined;\n    readonly format?: \'json\' | \'markdown\' | undefined;\n}',
+  },
+  {
+    name: 'FaberLoomContextExportRow',
+    declaration: 'export interface FaberLoomContextExportRow {\n    readonly filename: string;\n    readonly content: string;\n    readonly entries: number;\n}',
+  },
+  {
+    name: 'FaberLoomContextImportResult',
+    declaration: 'export interface FaberLoomContextImportResult {\n    readonly created: number;\n    readonly skipped: number;\n}',
+  },
+  {
     name: 'FaberLoomContextInput',
     declaration: 'export interface FaberLoomContextInput {\n    readonly spaceId?: string | null | undefined;\n    readonly title: string;\n    readonly body: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextReplaceEntry',
+    declaration: 'export interface FaberLoomContextReplaceEntry {\n    readonly title: string;\n    readonly body: string;\n}',
   },
   {
     name: 'FaberLoomContextRow',
@@ -8930,6 +9074,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SpaceContext = Record<string, string>;',
   },
   {
+    name: 'SpaceEntryRef',
+    declaration: 'export interface SpaceEntryRef {\n    readonly id: string;\n    readonly title: string;\n    readonly body: string;\n    readonly version: number;\n    readonly authorId: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
     name: 'SpaceFile',
     declaration: 'export interface SpaceFile {\n    readonly id: string;\n    readonly spaceId: FaberLoomSpaceId;\n    readonly name: string;\n    readonly mediaType: string;\n    readonly size: number;\n    readonly sha256: string;\n    readonly createdAt: string;\n}',
   },
@@ -8943,7 +9091,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpaceIndexEntry',
-    declaration: 'export interface SpaceIndexEntry {\n    readonly id: FaberLoomSpaceId;\n    readonly title: string;\n    readonly context: SpaceContext;\n    readonly memory: string;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface SpaceIndexEntry {\n    readonly id: FaberLoomSpaceId;\n    readonly title: string;\n    readonly context: SpaceContext;\n    readonly memory: string;\n    readonly contextEntries: string;\n    readonly filesText: string;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'SpaceMatch',
@@ -8951,7 +9099,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpaceReference',
-    declaration: 'export interface SpaceReference {\n    readonly space: FaberLoomSpace;\n    readonly context: EffectiveContext;\n    readonly memory: readonly FaberLoomSpaceMemory[];\n    readonly files: readonly SpaceFile[];\n    readonly agentId: string | undefined;\n    readonly workspaceId: string | undefined;\n}',
+    declaration: 'export interface SpaceReference {\n    readonly space: FaberLoomSpace;\n    readonly context: EffectiveContext;\n    readonly memory: readonly FaberLoomSpaceMemory[];\n    readonly entries: readonly SpaceEntryRef[];\n    readonly files: readonly SpaceFile[];\n    readonly agentId: string | undefined;\n    readonly workspaceId: string | undefined;\n}',
   },
   {
     name: 'SpaceSaveInput',

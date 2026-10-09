@@ -45,6 +45,7 @@ function fakeSpaces() {
       directives: ['Directiva MWT: consulta el MCP de MWT.ONE para el SKU SKU-1.'],
     },
     memory: [{ id: 'm1', spaceIds: ['sp-1'], text: 'usar encabezado institucional', createdAt: '2026-10-03T00:00:00.000Z' }],
+    entries: [{ id: 'e1', title: 'Regla de tono', body: 'El tono es formal.', version: 2, authorId: 'compras2@sondelsa.com', updatedAt: '2026-10-03T00:00:00.000Z' }],
     files: [{ id: 'f1', spaceId: 'sp-1', name: 'modelo.txt', mediaType: 'text/plain', size: 10, sha256: 'abc', createdAt: '2026-10-03T00:00:00.000Z' }],
     agentId: 'agent-1',
     workspaceId: 'ws-1',
@@ -105,6 +106,7 @@ describe('faberloom spaces reference tools', () => {
       resolved: [{ key: 'tono', value: 'formal' }, { key: 'plantilla', value: 'informe' }],
       conflicts: ['tono'],
       memory: ['usar encabezado institucional'],
+      entries: [{ id: 'e1', title: 'Regla de tono', body: 'El tono es formal.', version: 2 }],
       files: [{ name: 'modelo.txt', mediaType: 'text/plain', size: 10 }],
       agentId: 'agent-1',
       workspaceId: 'ws-1',
@@ -113,6 +115,7 @@ describe('faberloom spaces reference tools', () => {
     const text = reference.output.render({} as never, result as never)[0]?.text ?? ''
     expect(text).toContain('tono=formal')
     expect(text).toContain('usar encabezado institucional')
+    expect(text).toContain('Regla de tono: El tono es formal.')
     expect(text).toContain('modelo.txt (text/plain, 10 bytes)')
     expect(text).toContain('agent-1')
   })
@@ -123,6 +126,7 @@ describe('faberloom spaces reference tools', () => {
       space: { id: 'sp-9', title: 'Vacío' },
       context: { resolved: {}, conflicts: [], sources: [], excluded: [], dataSources: [], directives: [] },
       memory: [],
+      entries: [],
       files: [],
       agentId: undefined,
       workspaceId: undefined,
@@ -132,6 +136,7 @@ describe('faberloom spaces reference tools', () => {
     const result = await reference.execute({ id: 'sp-9' } as never)
     const text = reference.output.render({} as never, result as never)[0]?.text ?? ''
     expect(text).toContain('Contexto: ninguno')
+    expect(text).toContain('Contexto curado: ninguno')
     expect(text).toContain('Archivos: ninguno')
     expect(text).toContain('Agente responsable: ninguno')
   })

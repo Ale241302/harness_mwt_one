@@ -12,12 +12,19 @@ import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { registerWorkflowTools } from './workflows.ts'
 import { registerContextTools } from './context.ts'
+import { planeStartFields, resolveCallerAgentId, toolSourcesOf } from './plane.ts'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
 import type { FaberLoomSpaceId, FaberLoomSpaces, SpaceActor, SpaceContext, SpaceReference, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the agents service, read through ctx.get like the spaces service.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomAgents, FaberLoomModelId, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
-// Type-only: resolves the ctx.subagents declaration used through ctx.get.
-import type {} from '@deepseek-ai/dsh-subagent'
+// Type-only: resolves the ctx.faberloomAgentPlane declaration used through ctx.get.
+import type {} from '@deepseek-ai/dsh-faberloom-agent-plane'
+// Type-only: resolves the ctx.faberloomAgentRuntime declaration used through ctx.get.
+import type {} from '@deepseek-ai/dsh-faberloom-agent-runtime'
+// Type-only: the durable session id a continuable follow-up targets.
+import type { SessionId } from '@deepseek-ai/dsh-session'
+// Type-only: resolves the ctx.subagents declaration and the start-request type.
+import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 // Type-only: the product memory service and its teaching vocabulary, read through ctx.get.
 import type { FaberLoomMemory, FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 // Type-only: the board service and its vocabulary, read through ctx.get.
@@ -423,6 +430,7 @@ function toContext(entries: readonly { key: string; value: string }[] | undefine
 function askBrief(reference: SpaceReference, agent: FaberLoomAgent, question: string): string {
   const context = Object.entries(reference.context.resolved).map(([key, value]) => `${key}=${value}`).join(', ') || 'ninguno'
   const memory = reference.memory.map(entry => entry.text).join(' | ') || 'ninguna'
+  const entries = reference.entries.map(entry => `${entry.title}: ${entry.body}`).join(' | ') || 'ninguno'
   const directives = reference.context.directives.join(' | ') || 'ninguna'
   return [
     `Eres ${agent.name}, responsable de: ${agent.responsibility}`,
@@ -430,6 +438,7 @@ function askBrief(reference: SpaceReference, agent: FaberLoomAgent, question: st
     `Trabajas sobre el Space "${reference.space.title}" (${reference.space.id}).`,
     `Contexto resuelto: ${context}.`,
     `Memoria del Space: ${memory}.`,
+    `Contexto curado: ${entries}.`,
     `Directivas: ${directives}.`,
     `Otro agente te consulta: ${question}`,
     'Responde en el idioma de la pregunta, solo con lo que este contexto permita; si falta información, dilo.',
@@ -979,6 +988,20 @@ export function apply(ctx: Context, config: Config): void {
           },
           conflicts: { type: 'array', required: true, items: { type: 'string' } },
           memory: { type: 'array', required: true, items: { type: 'string' } },
+          entries: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                id: { type: 'string', required: true },
+                title: { type: 'string', required: true },
+                body: { type: 'string', required: true },
+                version: { type: 'integer', required: true },
+              },
+            },
+          },
           files: {
             type: 'array',
             required: true,
@@ -1004,6 +1027,7 @@ export function apply(ctx: Context, config: Config): void {
           `Contexto: ${value.resolved.map(entry => `${entry.key}=${entry.value}`).join(', ') || 'ninguno'}.`,
           `Conflictos: ${value.conflicts.join(', ') || 'ninguno'}.`,
           `Memoria: ${value.memory.join(' | ') || 'ninguna'}.`,
+          `Contexto curado: ${value.entries.map(entry => `${entry.title}: ${entry.body}`).join(' | ') || 'ninguno'}.`,
           `Archivos: ${value.files.map(file => `${file.name} (${file.mediaType}, ${String(file.size)} bytes)`).join(', ') || 'ninguno'}.`,
           `Agente responsable: ${value.agentId || 'ninguno'}. Workspace: ${value.workspaceId || 'ninguno'}.`,
           `Directivas: ${value.directives.join(' | ') || 'ninguna'}.`,
@@ -1018,6 +1042,7 @@ export function apply(ctx: Context, config: Config): void {
         resolved: Object.entries(reference.context.resolved).map(([key, value]) => ({ key, value })),
         conflicts: reference.context.conflicts.map(conflict => conflict.key),
         memory: reference.memory.map(entry => entry.text),
+        entries: reference.entries.map(entry => ({ id: entry.id, title: entry.title, body: entry.body, version: entry.version })),
         files: reference.files.map(file => ({ name: file.name, mediaType: file.mediaType, size: file.size })),
         agentId: reference.agentId ?? '',
         workspaceId: reference.workspaceId ?? '',
@@ -1034,7 +1059,7 @@ export function apply(ctx: Context, config: Config): void {
       spaceId: { type: 'string', required: true, description: 'Target space id; resolve it with faberloom_spaces_find first when unknown.' },
       question: { type: 'string', required: true, description: 'What to ask the responsible agent.' },
       agentId: { type: 'string', description: 'Override the responsible agent; otherwise the space assigned agent answers.' },
-      continuable: { type: 'boolean', description: 'Reserved; only false (one-shot) is supported in this slice.' },
+      continuable: { type: 'boolean', description: 'When true, start a durable consultation and continue it later with faberloom_spaces_followup; when false (default) run one turn and return its answer.' },
     },
     output: {
       schema: {
@@ -1054,15 +1079,13 @@ export function apply(ctx: Context, config: Config): void {
       }],
     },
     execute: async (args, exec) => {
-      if (args.continuable === true) {
-        throw new Error('faberloom: continuable consultations are deferred; ask one-shot for now')
-      }
       const parent = exec.agent
       if (parent === undefined) throw new Error('faberloom: faberloom_spaces_ask requires a calling agent')
       const runtime = ctx.get('subagents')
       if (runtime === undefined) throw new Error('faberloom: the subagents service is not mounted')
       const provider = config.askProvider ?? 'spawn'
-      if (runtime.getProvider(provider) === undefined) {
+      const providerHandle = runtime.getProvider(provider)
+      if (providerHandle === undefined) {
         throw new Error(`faberloom: subagent provider "${provider}" is not registered`)
       }
       const reference = await spaces(ctx).reference(actor(config), args.spaceId as FaberLoomSpaceId)
@@ -1073,14 +1096,69 @@ export function apply(ctx: Context, config: Config): void {
       const fleet = ctx.get('faberloomAgents')
       if (fleet === undefined) throw new Error('faberloom: the agents service is not mounted')
       const agent = await fleet.getAgent(agentId as FaberLoomAgentId)
+      // The plane service is optional; without it the child keeps the parent's
+      // plane and no caller-side allowlist is enforced.
+      const plane = ctx.get('faberloomAgentPlane')
+      // Caller-side allowlist: a session running in a Space may consult only the
+      // targets its responsible agent lists. The caller's identity is the Space
+      // agent that owns its working directory.
+      const headerCwd = (exec.agent as { session?: { header?: { cwd?: string } } } | undefined)?.session?.header?.cwd
+      const registry = ctx.get('workspaceRegistry') as { list(): readonly { readonly id: string; readonly path: string }[] } | undefined
+      if (plane !== undefined && headerCwd !== undefined && registry !== undefined) {
+        const callerId = resolveCallerAgentId(await spaces(ctx).list(actor(config)), registry.list(), headerCwd)
+        if (callerId !== undefined && callerId !== agentId) {
+          const caller = await fleet.getAgent(callerId as FaberLoomAgentId)
+          if (!plane.allowsSubagent(caller, agentId)) {
+            throw new Error(`faberloom: el agente ${caller.name} no tiene permitido consultar a ${agentId}`)
+          }
+        }
+      }
+      // The responsible agent's capability plane is enforced on the child: a
+      // disabled source (MWT/SICOP MCP, open web) never reaches it.
+      const planeFields = plane === undefined
+        ? {}
+        : planeStartFields(plane.resolve(agent, toolSourcesOf(ctx.get('tools')?.schemas() ?? [])), providerHandle.capabilities)
+      const label = `Consulta al Space ${reference.space.title}`
+      // A continuable consultation establishes a durable child and records it,
+      // so a follow-up continues the same conversation; a one-shot run waits.
+      if (args.continuable === true) {
+        const started = await runtime.startContinuable({
+          provider,
+          label,
+          request: { prompt: [{ type: 'text', text: askBrief(reference, agent, args.question) }], parent, ...planeFields },
+          signal: exec.signal,
+        })
+        const agentRuntime = ctx.get('faberloomAgentRuntime')
+        if (agentRuntime !== undefined) {
+          await agentRuntime.record(actor(config).id, {
+            spaceId: reference.space.id,
+            callerSessionId: String(parent.session.id),
+            childSessionId: String(started.childId),
+            label,
+          })
+        }
+        return {
+          spaceId: reference.space.id,
+          agentId,
+          answer: 'Consulta continuable iniciada; continúala con faberloom_spaces_followup.',
+          childSessionId: String(started.childId),
+          stopReason: 'continuable',
+        }
+      }
       const run = await runtime.start(provider, {
-        label: `Consulta al Space ${reference.space.title}`,
+        label,
         prompt: [{ type: 'text', text: askBrief(reference, agent, args.question) }],
         parent,
         signal: exec.signal,
-      })
+        ...planeFields,
+      } satisfies SubagentStartRequest)
       try {
         const result = await run.result
+        // A run that did not complete (aborted, budget exhausted) is not an
+        // answer: fail loud rather than present a partial turn as the response.
+        if (result.stopReason !== 'completed') {
+          throw new Error(`faberloom: el agente del Space no completó la respuesta (${result.stopReason})`)
+        }
         const answer = result.output.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
         return {
           spaceId: reference.space.id,
@@ -1094,6 +1172,42 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Ask the space agent', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_spaces_followup',
+    description: 'Continue a durable consultation with a product space agent that faberloom_spaces_ask started with continuable=true: send one more message to the same child session.',
+    parameters: {
+      spaceId: { type: 'string', required: true, description: 'Target space id.' },
+      question: { type: 'string', required: true, description: 'What to ask next.' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          spaceId: { type: 'string', required: true },
+          childSessionId: { type: 'string', required: true },
+          status: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Consulta continuada con el Space ${value.spaceId} (${value.status}).` }],
+    },
+    execute: async (args, exec) => {
+      const parent = exec.agent
+      if (parent === undefined) throw new Error('faberloom: faberloom_spaces_followup requires a calling agent')
+      const runtime = ctx.get('subagents')
+      if (runtime === undefined) throw new Error('faberloom: the subagents service is not mounted')
+      const agentRuntime = ctx.get('faberloomAgentRuntime')
+      if (agentRuntime === undefined) throw new Error('faberloom: the agent runtime service is not mounted')
+      const existing = await agentRuntime.consultation(actor(config).id, args.spaceId, String(parent.session.id))
+      if (existing === undefined) {
+        throw new Error('faberloom: no hay una consulta continuable con ese Space; usa faberloom_spaces_ask con continuable=true primero')
+      }
+      await runtime.sendMessage(parent, existing.childSessionId as SessionId, [{ type: 'text' as const, text: args.question }], { signal: exec.signal })
+      return { spaceId: args.spaceId, childSessionId: existing.childSessionId, status: 'sent' }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Follow up with the space agent', kind: 'other', rawInput: args }),
   }))
 
   // The explicit, versioned memory layer is opt-in: it adds permanent request

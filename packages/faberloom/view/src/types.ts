@@ -1268,6 +1268,16 @@ export interface FaberLoomContextVersionRow {
   readonly createdAt: string
 }
 
+/** One exported context record as the panel downloads it. */
+export interface FaberLoomContextExportRow {
+  /** Suggested file name. */
+  readonly filename: string
+  /** Export body: JSON or Markdown. */
+  readonly content: string
+  /** Number of entries exported. */
+  readonly entries: number
+}
+
 /** One stored work flow version as the panel renders it. */
 export interface FaberLoomWorkflowVersionRow {
   /** Version number. */
@@ -1364,4 +1374,18 @@ export interface FaberLoomWorkflowPendingRow {
   readonly base: FaberLoomWorkflowGraph
   /** The proposed graph. */
   readonly proposed: FaberLoomWorkflowGraph
+}
+
+/** One durable consultation a caller session holds with a Space agent, as the view reports it. */
+export interface FaberLoomConsultationRow {
+  /** The Space the consulted agent leads. */
+  readonly spaceId: string
+  /** The caller session that started the consultation. */
+  readonly callerSessionId: string
+  /** The durable child session answering the consultation. */
+  readonly childSessionId: string
+  /** Display label recorded at start. */
+  readonly label: string
+  /** ISO-8601 last-change instant. */
+  readonly updatedAt: string
 }

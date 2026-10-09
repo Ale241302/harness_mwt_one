@@ -1761,6 +1761,12 @@ importers:
       '@deepseek-ai/dsh-faberloom-access':
         specifier: workspace:^
         version: link:../../faberloom/access
+      '@deepseek-ai/dsh-faberloom-agent-plane':
+        specifier: workspace:^
+        version: link:../../faberloom/agent-plane
+      '@deepseek-ai/dsh-faberloom-agent-runtime':
+        specifier: workspace:^
+        version: link:../../faberloom/agent-runtime
       '@deepseek-ai/dsh-faberloom-agents':
         specifier: workspace:^
         version: link:../../faberloom/agents
@@ -1788,6 +1794,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-inbound':
         specifier: workspace:^
         version: link:../../faberloom/inbound
+      '@deepseek-ai/dsh-faberloom-knowledge-index':
+        specifier: workspace:^
+        version: link:../../faberloom/knowledge-index
       '@deepseek-ai/dsh-faberloom-learning':
         specifier: workspace:^
         version: link:../../faberloom/learning
@@ -1797,6 +1806,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../../faberloom/routines
+      '@deepseek-ai/dsh-faberloom-session-agent':
+        specifier: workspace:^
+        version: link:../../faberloom/session-agent
       '@deepseek-ai/dsh-faberloom-session-shares':
         specifier: workspace:^
         version: link:../../faberloom/session-shares
@@ -6712,6 +6724,35 @@ importers:
         specifier: workspace:^
         version: link:../../storage/storage-domain
 
+  packages/faberloom/agent-plane:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-agents':
+        specifier: workspace:^
+        version: link:../agents
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
+
+  packages/faberloom/agent-runtime:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+
   packages/faberloom/agents:
     dependencies:
       zod:
@@ -6922,6 +6963,19 @@ importers:
         specifier: workspace:^
         version: link:../../subprocess/subprocess
 
+  packages/faberloom/knowledge-index:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-spaces':
+        specifier: workspace:^
+        version: link:../spaces
+
   packages/faberloom/learning:
     dependencies:
       zod:
@@ -6997,6 +7051,34 @@ importers:
         specifier: workspace:^
         version: link:../../storage/storage-domain
 
+  packages/faberloom/session-agent:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-faberloom-agent-plane':
+        specifier: workspace:^
+        version: link:../agent-plane
+      '@deepseek-ai/dsh-faberloom-agents':
+        specifier: workspace:^
+        version: link:../agents
+      '@deepseek-ai/dsh-faberloom-spaces':
+        specifier: workspace:^
+        version: link:../spaces
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
+
   packages/faberloom/session-shares:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -7066,6 +7148,12 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-agent-plane':
+        specifier: workspace:^
+        version: link:../agent-plane
+      '@deepseek-ai/dsh-faberloom-agent-runtime':
+        specifier: workspace:^
+        version: link:../agent-runtime
       '@deepseek-ai/dsh-faberloom-agents':
         specifier: workspace:^
         version: link:../agents
@@ -7096,6 +7184,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-workflows':
         specifier: workspace:^
         version: link:../workflows
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
       '@deepseek-ai/dsh-subagent':
         specifier: workspace:^
         version: link:../../subagent/subagent
@@ -7121,6 +7212,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-access':
         specifier: workspace:^
         version: link:../access
+      '@deepseek-ai/dsh-faberloom-agent-runtime':
+        specifier: workspace:^
+        version: link:../agent-runtime
       '@deepseek-ai/dsh-faberloom-agents':
         specifier: workspace:^
         version: link:../agents

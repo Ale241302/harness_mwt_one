@@ -21,9 +21,25 @@ import { contextDomainSpec, type ContextEntryRecord, type ContextVersionRecord }
 import type {
   FaberLoomContextEdit,
   FaberLoomContextEntry,
+  FaberLoomContextExport,
+  FaberLoomContextExportEntry,
+  FaberLoomContextExportOptions,
+  FaberLoomContextImportResult,
   FaberLoomContextInput,
+  FaberLoomContextReplaceEntry,
   FaberLoomContextVersion,
 } from './types.ts'
+
+/**
+ * Render one context record as Markdown: a heading per entry with its title and
+ * version, then its body.
+ * @param entries - the exported entries.
+ * @returns the Markdown body.
+ */
+function renderMarkdown(entries: readonly FaberLoomContextExportEntry[]): string {
+  const sections = entries.map(entry => `## ${entry.title} (v${String(entry.version)})\n\n${entry.body}\n`)
+  return ['# FaberLoom · contexto', '', ...sections].join('\n')
+}
 
 export type * from './types.ts'
 
@@ -80,9 +96,12 @@ function toVersion(record: ContextVersionRecord): FaberLoomContextVersion {
   }
 }
 
-/** Whether an actor may read one entry. */
-function visible(record: ContextEntryRecord, actorId: string): boolean {
-  return record.visibility === 'shared' || record.authorId === actorId || record.ownerId === actorId
+/** Whether an actor may read one entry: its author, its owner, or a readable Space's shared entry. */
+function visible(record: ContextEntryRecord, actorId: string, readable: ReadonlySet<string> | undefined): boolean {
+  if (record.authorId === actorId || record.ownerId === actorId) return true
+  if (record.visibility !== 'shared') return false
+  if (record.spaceId === null) return true
+  return readable === undefined || readable.has(record.spaceId)
 }
 
 /** The imported-row key prefix for one reader. */
@@ -210,19 +229,41 @@ export class FaberLoomContext extends Service {
   private async placement(actor: FaberLoomContextActor, spaceId: string | null): Promise<{ visibility: ContextEntryRecord['visibility']; ownerId: string }> {
     if (spaceId === null) return { visibility: 'local', ownerId: actor.id }
     const spaces = this.ctx.get('faberloomSpaces')
-    const space = spaces === undefined ? undefined : await spaces.get(actor as never, spaceId as never).catch(() => undefined)
-    const ownerId = space?.ownerId ?? actor.id
+    // Without the spaces service there is no owner to resolve; the bare
+    // composition keeps the historical actor-is-owner behavior.
+    if (spaces === undefined) return { visibility: 'shared', ownerId: actor.id }
+    // Resolve the Space through its read ACL: an entry cannot be placed into a
+    // Space the actor may not read, so a non-member never becomes its owner.
+    const space = await spaces.get(actor as never, spaceId as never)
+    const ownerId = space.ownerId
     if (ownerId === actor.id) return { visibility: 'shared', ownerId }
     const shares = this.ctx.get('faberloomShares')
     const allowed = shares === undefined ? false : await shares.can(actor.id, ownerId, { kind: 'space', id: spaceId }, 'index-context')
     return { visibility: allowed ? 'shared' : 'pending', ownerId }
   }
 
+  /**
+   * The Space ids whose entries the actor may read, or `undefined` when no
+   * spaces service is mounted (the bare composition reads every shared entry).
+   */
+  private async readableSpaces(actor: FaberLoomContextActor): Promise<ReadonlySet<string> | undefined> {
+    const spaces = this.ctx.get('faberloomSpaces')
+    if (spaces === undefined) return undefined
+    const readable = new Set<string>()
+    for (const [, record] of (await this.entries()).entries()) {
+      const spaceId = record.spaceId
+      if (spaceId === null || readable.has(spaceId)) continue
+      const space = await spaces.get(actor as never, spaceId as never).catch(() => undefined)
+      if (space !== undefined) readable.add(spaceId)
+    }
+    return readable
+  }
+
   /** Read one entry the actor may see, or fail loud. */
   private async requireVisible(actor: FaberLoomContextActor, id: string): Promise<ContextEntryRecord> {
     const record = (await this.entries()).get(id)
     if (record === undefined) throw new Error(`faberloom: context ${id} not found`)
-    if (!visible(record, actor.id)) throw new Error('faberloom: context access denied')
+    if (!visible(record, actor.id, await this.readableSpaces(actor))) throw new Error('faberloom: context access denied')
     return record
   }
 
@@ -256,11 +297,25 @@ export class FaberLoomContext extends Service {
    * @returns the visible entries.
    */
   async list(actor: FaberLoomContextActor): Promise<readonly FaberLoomContextEntry[]> {
+    const readable = await this.readableSpaces(actor)
     const rows: FaberLoomContextEntry[] = []
     for (const [id, record] of (await this.entries()).entries()) {
-      if (visible(record, actor.id)) rows.push(toEntry(id, record))
+      if (visible(record, actor.id, readable)) rows.push(toEntry(id, record))
     }
     return rows.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  }
+
+  /**
+   * List the context entries attached to one Space that the actor may read,
+   * newest first. Visibility is the same as {@link list}: a `shared` entry is
+   * visible to any reader, while a `local` or `pending` entry is visible only
+   * to its author and the Space owner.
+   * @param actor - the acting identity.
+   * @param spaceId - the Space whose entries are read.
+   * @returns the visible entries of that Space.
+   */
+  async listForSpace(actor: FaberLoomContextActor, spaceId: string): Promise<readonly FaberLoomContextEntry[]> {
+    return (await this.list(actor)).filter(entry => entry.spaceId === spaceId)
   }
 
   /**
@@ -387,6 +442,106 @@ export class FaberLoomContext extends Service {
       if (version.entryId === id) await (await this.versionsTable()).delete(key)
     }
     return true
+  }
+
+  /**
+   * Export one context record: the entries the actor may read, optionally
+   * restricted to one Space, with each entry's version history. JSON is the
+   * default; Markdown renders one section per entry.
+   * @param actor - the acting identity.
+   * @param options - the optional Space and format.
+   * @returns the export body and suggested file name.
+   */
+  async export(actor: FaberLoomContextActor, options: FaberLoomContextExportOptions = {}): Promise<FaberLoomContextExport> {
+    const scoped = (await this.list(actor)).filter(entry => options.spaceId === undefined || entry.spaceId === options.spaceId)
+    const entries: FaberLoomContextExportEntry[] = []
+    for (const entry of scoped) {
+      entries.push({
+        id: entry.id,
+        spaceId: entry.spaceId,
+        title: entry.title,
+        body: entry.body,
+        version: entry.version,
+        authorId: entry.authorId,
+        updatedAt: entry.updatedAt,
+        versions: await this.versions(actor, entry.id),
+      })
+    }
+    const format = options.format ?? 'json'
+    const content = format === 'markdown'
+      ? renderMarkdown(entries)
+      : JSON.stringify({ schemaVersion: 1, spaceId: options.spaceId ?? null, exportedAt: new Date().toISOString(), entries }, null, 2)
+    return {
+      filename: `faberloom-context-${options.spaceId ?? 'personal'}.${format === 'markdown' ? 'md' : 'json'}`,
+      content,
+      entries: entries.length,
+    }
+  }
+
+  /**
+   * Import a context record produced by {@link export}. Each entry whose title
+   * does not already exist in its Space is created under the actor's placement
+   * (an owner writes shared, a member's entry starts pending); an equal title
+   * is skipped, so importing the same record twice is idempotent.
+   * @param actor - the acting identity.
+   * @param payload - the export body.
+   * @returns the created and skipped counts.
+   */
+  async import(actor: FaberLoomContextActor, payload: string): Promise<FaberLoomContextImportResult> {
+    let parsed: unknown
+    try { parsed = JSON.parse(payload) } catch { throw new Error('faberloom: el contexto importado no es JSON válido') }
+    const data = parsed as { schemaVersion?: unknown; entries?: unknown }
+    if (data.schemaVersion !== 1 || !Array.isArray(data.entries)) throw new Error('faberloom: el formato del contexto importado no está soportado')
+    const existing = await this.list(actor)
+    // Track titles seen in the existing record and earlier in this payload, so a
+    // payload repeating a title imports it once.
+    const seen = new Set(existing.map(entry => `${entry.spaceId ?? ''}\u0000${entry.title}`))
+    let created = 0
+    let skipped = 0
+    for (const row of data.entries as readonly { title?: unknown; body?: unknown; spaceId?: unknown }[]) {
+      const title = typeof row.title === 'string' ? row.title : ''
+      const body = typeof row.body === 'string' ? row.body : ''
+      const spaceId = typeof row.spaceId === 'string' ? row.spaceId : null
+      const key = `${spaceId ?? ''}\u0000${title}`
+      if (title.length === 0 || seen.has(key)) {
+        skipped += 1
+        continue
+      }
+      await this.create(actor, { title, body, spaceId })
+      seen.add(key)
+      created += 1
+    }
+    return { created, skipped }
+  }
+
+  /**
+   * Replace one Space's context record wholesale (owner only): entries whose
+   * title is not in the new set are removed, a retained title gets a new
+   * version, and a new title is created.
+   * @param actor - the acting identity.
+   * @param spaceId - the Space whose record is replaced.
+   * @param entries - the new full set of title and body.
+   * @returns the resulting entries.
+   */
+  async replace(
+    actor: FaberLoomContextActor,
+    spaceId: string,
+    entries: readonly FaberLoomContextReplaceEntry[],
+  ): Promise<readonly FaberLoomContextEntry[]> {
+    const { ownerId } = await this.placement(actor, spaceId)
+    if (ownerId !== actor.id) throw new Error('faberloom: only the Space owner may replace context')
+    const wanted = new Set(entries.map(entry => entry.title))
+    for (const existing of (await this.list(actor)).filter(entry => entry.spaceId === spaceId)) {
+      if (!wanted.has(existing.title)) await this.remove(actor, existing.id)
+    }
+    const result: FaberLoomContextEntry[] = []
+    for (const input of entries) {
+      const existing = (await this.list(actor)).find(entry => entry.spaceId === spaceId && entry.title === input.title)
+      result.push(existing === undefined
+        ? await this.create(actor, { spaceId, title: input.title, body: input.body })
+        : await this.update(actor, existing.id, { body: input.body }))
+    }
+    return result
   }
 
   /**

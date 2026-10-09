@@ -68,3 +68,57 @@ export interface FaberLoomContextEdit {
   /** New body. */
   readonly body?: string | undefined
 }
+
+/** One exported context entry with its full version history. */
+export interface FaberLoomContextExportEntry {
+  /** Stable entry id. */
+  readonly id: string
+  /** Space the entry belongs to, or null for the personal scope. */
+  readonly spaceId: string | null
+  /** Display title. */
+  readonly title: string
+  /** Current body. */
+  readonly body: string
+  /** Current version. */
+  readonly version: number
+  /** Author of the current version. */
+  readonly authorId: string
+  /** ISO-8601 last-change instant. */
+  readonly updatedAt: string
+  /** Every stored version, newest first. */
+  readonly versions: readonly FaberLoomContextVersion[]
+}
+
+/** The portable export of a context record. */
+export interface FaberLoomContextExport {
+  /** Suggested file name. */
+  readonly filename: string
+  /** Export body: JSON or Markdown. */
+  readonly content: string
+  /** Number of entries exported. */
+  readonly entries: number
+}
+
+/** Options accepted when exporting a context record. */
+export interface FaberLoomContextExportOptions {
+  /** Restrict the export to one Space; absent exports the personal scope plus every Space. */
+  readonly spaceId?: string | undefined
+  /** Output format; defaults to `json`. */
+  readonly format?: 'json' | 'markdown' | undefined
+}
+
+/** One entry input of a wholesale replace. */
+export interface FaberLoomContextReplaceEntry {
+  /** Display title. */
+  readonly title: string
+  /** Context body. */
+  readonly body: string
+}
+
+/** The result of importing a context record. */
+export interface FaberLoomContextImportResult {
+  /** Entries created. */
+  readonly created: number
+  /** Entries skipped because an equal title already existed. */
+  readonly skipped: number
+}

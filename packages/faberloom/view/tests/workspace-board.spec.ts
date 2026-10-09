@@ -125,6 +125,9 @@ function harness(options: {
     update: vi.fn(async () => ({})),
     list: vi.fn(async () => [] as unknown[]),
     remove: vi.fn(async () => true),
+    export: vi.fn(async () => ({ filename: 'f.json', content: '{}', entries: 0 })),
+    import: vi.fn(async () => [] as unknown[]),
+    replace: vi.fn(async () => [] as unknown[]),
   }
   const shares = {
     sync: vi.fn(async (): Promise<void> => undefined),
@@ -701,7 +704,7 @@ describe('FaberLoomViewService board actions', () => {
     expect(shares.sync).toHaveBeenCalledWith('owner@muitowork.com')
     expect(registry.create).toHaveBeenCalled()
     expect(spaces.importShared).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'sp-remote', ownerId: 'ana@sondelsa.com', title: 'SICOP', context: { area: 'compras' }, workspaceId: expect.any(String),
+      id: 'sp-remote', ownerId: 'ana@sondelsa.com', title: 'SICOP', context: { area: 'compras' }, workspaceId: expect.any(String) as unknown,
     }))
   })
 
@@ -770,5 +773,23 @@ describe('FaberLoomViewService board actions', () => {
     }))
     expect(workflows.importShared).toHaveBeenCalledTimes(1)
     expect(spaces.importShared).not.toHaveBeenCalled()
+  })
+})
+
+describe('FaberLoomViewService context record', () => {
+  it('exports, imports, and replaces the context record', async () => {
+    const { view, context } = harness()
+    expect(await view.exportContext('sp1', 'json')).toMatchObject({ filename: 'f.json', entries: 0 })
+    expect(await view.importContext('{"schemaVersion":1,"entries":[]}')).toEqual([])
+    expect(await view.replaceContext('sp1', '[{"title":"A","body":"B"}]')).toEqual([])
+    expect(context.export).toHaveBeenCalledWith({ id: 'owner@muitowork.com' }, { spaceId: 'sp1' })
+    expect(context.import).toHaveBeenCalledWith({ id: 'owner@muitowork.com' }, '{"schemaVersion":1,"entries":[]}')
+    expect(context.replace).toHaveBeenCalledWith({ id: 'owner@muitowork.com' }, 'sp1', [{ title: 'A', body: 'B' }])
+  })
+
+  it('rejects a malformed replace payload', async () => {
+    const { view } = harness()
+    await expect(view.replaceContext('sp1', 'not json')).rejects.toThrow('no son JSON válido')
+    await expect(view.replaceContext('sp1', '{}')).rejects.toThrow('deben ser un arreglo JSON')
   })
 })

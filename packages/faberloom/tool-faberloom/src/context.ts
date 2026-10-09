@@ -19,7 +19,7 @@ function summarize(entry: FaberLoomContextEntry): Record<string, unknown> {
   return {
     entryId: entry.id,
     title: entry.title,
-    spaceId: entry.spaceId,
+    spaceId: entry.spaceId ?? '',
     visibility: entry.visibility,
     version: entry.version,
     authorId: entry.authorId,
@@ -40,9 +40,19 @@ const CONTEXT_OUTPUT = {
       authorId: { type: 'string' },
       count: { type: 'number' },
       entries: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      filename: { type: 'string' },
+      content: { type: 'string' },
+      created: { type: 'number' },
+      skipped: { type: 'number' },
     },
   },
   render: (_args: unknown, value: Record<string, unknown>) => {
+    if (typeof value['content'] === 'string') {
+      return [{ type: 'text' as const, text: `Contexto exportado en ${asText(value['filename'])}:\n${value['content']}` }]
+    }
+    if (typeof value['created'] === 'number') {
+      return [{ type: 'text' as const, text: `Contexto importado: ${String(value['created'])} creadas, ${asText(value['skipped'])} omitidas.` }]
+    }
     if (Array.isArray(value['entries'])) {
       const entries = value['entries'] as readonly Record<string, unknown>[]
       if (entries.length === 0) return [{ type: 'text' as const, text: 'No context entries.' }]
@@ -156,6 +166,32 @@ const CONTEXT_TOOLS: readonly ContextTool[] = [
     run: async (service, actor, args) => {
       await service.remove({ id: actor.id }, String(args.entryId))
       return { entryId: String(args.entryId), title: '', version: 0, visibility: 'removed' }
+    },
+  },
+  {
+    name: 'faberloom_context_export',
+    description: 'Export the workspace/space context record as JSON or Markdown, with every version. Restrict it to one Space, or omit the Space for the personal scope plus every Space.',
+    parameters: {
+      spaceId: { type: 'string', description: 'Space to export; omit for the personal scope plus every Space.' },
+      format: { type: 'string', enum: ['json', 'markdown'], description: 'Output format; defaults to json.' },
+    },
+    run: async (service, actor, args) => {
+      const exported = await service.export({ id: actor.id }, {
+        ...typeof args.spaceId === 'string' && args.spaceId.length > 0 ? { spaceId: args.spaceId } : {},
+        ...args.format === 'markdown' ? { format: 'markdown' as const } : {},
+      })
+      return { filename: exported.filename, content: exported.content, count: exported.entries }
+    },
+  },
+  {
+    name: 'faberloom_context_import',
+    description: 'Import a context record produced by faberloom_context_export. An entry whose title already exists in its Space is skipped, so importing twice is idempotent.',
+    parameters: {
+      payload: { type: 'string', required: true, description: 'The exported JSON body.' },
+    },
+    run: async (service, actor, args) => {
+      const result = await service.import({ id: actor.id }, asText(args.payload))
+      return { created: result.created, skipped: result.skipped }
     },
   },
 ]

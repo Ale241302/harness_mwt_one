@@ -23,7 +23,7 @@ The context service (`ctx.faberloomContext`) owns durable, versioned context ent
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row in a composition that already carries `ctx.storageDomain`; `ctx.faberloomSpaces` and `ctx.faberloomShares` are optional and only sharpen the placement decision. The service opens the `faberloom_context` domain, registers `ctx.faberloomContext`, and exposes `create`, `list`, `get`, `update`, `versions`, `restore`, `approve`, `reject`, and `remove`. `create(actor, { title, body, spaceId })` decides visibility: a personal entry stays `local`; a Space entry is `shared` for its owner (or a member with an active `index-context` grant) and `pending` otherwise. `update` appends a version and returns a member's edit to `pending`; `restore(actor, id, version)` copies an earlier version forward as a fresh one.
+Mount this row in a composition that already carries `ctx.storageDomain`; `ctx.faberloomSpaces` and `ctx.faberloomShares` are optional and only sharpen the placement decision. The service opens the `faberloom_context` domain, registers `ctx.faberloomContext`, and exposes `create`, `list`, `get`, `listForSpace`, `update`, `versions`, `restore`, `approve`, `reject`, `remove`, `export`, `import`, and `replace`. `listForSpace(actor, spaceId)` returns the entries attached to one Space that the actor may read; `ctx.faberloomSpaces.find` and `reference` use it to surface another Space's curated context. `create(actor, { title, body, spaceId })` decides visibility: a personal entry stays `local`; a Space entry is `shared` for its owner (or a member with an active `index-context` grant) and `pending` otherwise. Placing into a Space the actor may not read is refused. `update` appends a version and returns a member's edit to `pending`; `restore(actor, id, version)` copies an earlier version forward as a fresh one.
 
 -----
 
@@ -48,7 +48,7 @@ Independent of live requests: the registration never touches a request prefix.
 
 <a id="known-limited"></a>
 
-- **Placement needs the Space or a grant** — without `ctx.faberloomSpaces` the service treats the actor as the owner, and without `ctx.faberloomShares` a member's entry always lands `pending`; the authorization still resolves once those services are mounted.
+- **Placement needs the Space or a grant** — with `ctx.faberloomSpaces` mounted, an entry can only be placed into a Space the actor may read (a non-readable Space is refused), and without `ctx.faberloomShares` a non-owner member's entry always lands `pending`. A bare composition with no spaces service treats the actor as the owner.
 - **Approval is per entry, not per line** — the owner indexes or rejects a whole entry; there is no field-level merge.
 
 No invariant companion is published because the service's unit specs already assert the lifecycle, the visibility matrix, and the version history.
@@ -59,6 +59,6 @@ No invariant companion is published because the service's unit specs already ass
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-Visibility is decided once, at write time, from the Space owner and the `index-context` grant; reads then filter by `shared`, `authorId`, or `ownerId`. Version rows are keyed `${entryId}:${version}` and are append-only, so `restore` never rewrites history. The domain is opened lazily and closed with the calling fiber, like the other FaberLoom services.
+Visibility is decided once, at write time, from the Space owner and the `index-context` grant. A read admits an entry written or owned by the actor, or a `shared` entry whose Space the actor may read; a `local` or `pending` entry outside that stays hidden. Version rows are keyed `${entryId}:${version}` and are append-only, so `restore` never rewrites history. The domain is opened lazily and closed with the calling fiber, like the other FaberLoom services.
 
 </details>

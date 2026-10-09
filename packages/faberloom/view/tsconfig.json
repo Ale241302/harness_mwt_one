@@ -66,6 +66,9 @@
       "path": "../context"
     },
     {
+      "path": "../agent-runtime"
+    },
+    {
       "path": "../session-shares"
     },
     {

@@ -32,6 +32,8 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-agent-plane": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-agent-runtime": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
     "@deepseek-ai/dsh-faberloom-inbound": "workspace:^",
@@ -41,6 +43,7 @@
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
     "@deepseek-ai/dsh-faberloom-workflows": "workspace:^",
     "@deepseek-ai/dsh-faberloom-shares": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-subagent": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
@@ -49,6 +52,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-agent-plane": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-agent-runtime": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
     "@deepseek-ai/dsh-faberloom-inbound": "workspace:^",
@@ -58,6 +63,7 @@
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
     "@deepseek-ai/dsh-faberloom-workflows": "workspace:^",
     "@deepseek-ai/dsh-faberloom-shares": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-subagent": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",

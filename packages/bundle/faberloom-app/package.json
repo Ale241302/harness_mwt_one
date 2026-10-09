@@ -36,6 +36,10 @@
   "dependencies": {
     "@deepseek-ai/dsh-faberloom-access": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-agent-plane": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-session-agent": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-agent-runtime": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-knowledge-index": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
     "@deepseek-ai/dsh-faberloom-defaults": "workspace:^",

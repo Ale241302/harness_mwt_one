@@ -43,6 +43,8 @@ function fakeContext() {
     approve: vi.fn(async () => entry({ visibility: 'shared' })),
     reject: vi.fn(async () => entry({ visibility: 'local' })),
     remove: vi.fn(async () => true),
+    export: vi.fn(async () => ({ filename: 'f.json', content: '{"schemaVersion":1}', entries: 1 })),
+    import: vi.fn(async () => ({ created: 1, skipped: 0 })),
   }
 }
 
@@ -84,6 +86,21 @@ describe('faberloom context tools', () => {
     expect((await tools.get('faberloom_context_reject')!.execute({ entryId: 'c1' } as never))).toMatchObject({ visibility: 'local' })
     expect(await tools.get('faberloom_context_remove')!.execute({ entryId: 'c1' } as never)).toMatchObject({ visibility: 'removed' })
     expect(service.remove).toHaveBeenCalledWith(actor, 'c1')
+  })
+
+  it('exports and imports the context record', async () => {
+    const service = fakeContext()
+    const tools = harness(CONFIG, { faberloomContext: service })
+    const actor = { id: OWNER }
+
+    const exported = await tools.get('faberloom_context_export')!.execute({ spaceId: 'sp-1', format: 'markdown' } as never)
+    expect(service.export).toHaveBeenCalledWith(actor, { spaceId: 'sp-1', format: 'markdown' })
+    expect(render(tools.get('faberloom_context_export')!, exported as Record<string, unknown>)).toContain('Contexto exportado')
+
+    const imported = await tools.get('faberloom_context_import')!.execute({ payload: '{"schemaVersion":1,"entries":[]}' } as never)
+    expect(service.import).toHaveBeenCalledWith(actor, '{"schemaVersion":1,"entries":[]}')
+    expect(imported).toMatchObject({ created: 1, skipped: 0 })
+    expect(render(tools.get('faberloom_context_import')!, imported as Record<string, unknown>)).toContain('Contexto importado')
   })
 
   it('fails loud when the context service is not mounted', async () => {

@@ -57,7 +57,7 @@ import type {
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
   FaberLoomWorkflowTemplateRow, FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
-  FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
+  FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph, FaberLoomConsultationRow, FaberLoomContextExportRow,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -76,6 +76,8 @@ import type {
 import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant, FaberLoomSharedContentInput, FaberLoomSharedContentKind, FaberLoomSharedContentRow } from '@deepseek-ai/dsh-faberloom-shares'
 import type { FaberLoomExecutions } from '@deepseek-ai/dsh-faberloom-execution'
 import type { FaberLoomContext, FaberLoomContextEntry } from '@deepseek-ai/dsh-faberloom-context'
+// Type-only: resolves the ctx.faberloomAgentRuntime declaration used through ctx.get.
+import type {} from '@deepseek-ai/dsh-faberloom-agent-runtime'
 import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-ai/dsh-faberloom-session-shares'
 // Type-only: pulls the ctx.sessionQuery merge for cross-member Session capture.
 import type {} from '@deepseek-ai/dsh-session-query'
@@ -649,7 +651,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       }
       const timer = setInterval(run, 10_000)
       timer.unref()
-      return () => clearInterval(timer)
+      return () => { clearInterval(timer) }
     }, 'faberloom.view.session-mirror-timer')
   }
 
@@ -700,6 +702,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const space = (await this.ctx.faberloomSpaces.list(actor))
       .find(candidate => candidate.workspaceId === String(workspace.id))
     if (space === undefined) return
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const text = sessionTurnMemory(session.snapshotEvents())
     if (text.length === 0) return
     // A member without `create-memory` on the Space leaves no record here: the
@@ -952,6 +955,25 @@ export class FaberLoomViewService extends TypertRemoteService {
         title: workspace.title,
       })),
     }
+  }
+
+  /**
+   * List the durable consultations a Space holds for this owner, newest first,
+   * so the panel can report the Space's live agents.
+   * @param spaceId - the Space whose consultations are read.
+   * @returns one row per caller session consulting the Space.
+   */
+  @Remote('spaceAgentRuntime')
+  async spaceAgentRuntime(spaceId: string): Promise<readonly FaberLoomConsultationRow[]> {
+    const runtime = this.ctx.get('faberloomAgentRuntime')
+    if (runtime === undefined) return []
+    return (await runtime.listForSpace(this.actor().id, spaceId)).map(row => ({
+      spaceId: row.spaceId,
+      callerSessionId: row.callerSessionId,
+      childSessionId: row.childSessionId,
+      label: row.label,
+      updatedAt: row.updatedAt,
+    }))
   }
 
   /** Resolve the mounted workflows service, or fail loud. */
@@ -1689,7 +1711,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       if (row.localId !== null || row.consoleId === null) continue
       let localId: string | undefined
       try {
-        if (row.kind === 'memory') localId = await this.materializeSharedMemory(actor, space.id as FaberLoomSpaceId, row)
+        if (row.kind === 'memory') localId = await this.materializeSharedMemory(actor, space.id, row)
         else if (row.kind === 'context') localId = await this.materializeSharedContext(actor, space.id, row)
         else if (row.kind === 'workflow') localId = await this.materializeSharedWorkflow(space.id, row)
         else localId = await this.materializeSharedRoutine(actor.id, row)
@@ -1714,7 +1736,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const existing = await this.ctx.faberloomSpaces.listMemory(actor, spaceId)
     if (existing.some(entry => entry.text === text)) return undefined
     const entry = await this.ctx.faberloomSpaces.remember(actor, text, [spaceId])
-    return String(entry.id)
+    return entry.id
   }
 
   /**
@@ -1731,7 +1753,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const existing = (await context.list({ id: actor.id })).find(entry => entry.title === title)
     if (existing !== undefined) return undefined
     const entry = await context.create({ id: actor.id }, { spaceId, title, body })
-    return String(entry.id)
+    return entry.id
   }
 
   /**
@@ -1816,7 +1838,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       if (itemKey.length === 0 || imported.has(`${item.kind}\u0000${itemKey}`)) return
       items.push({ kind: item.kind, itemKey, payload: { ...item.payload, [field]: itemKey } })
     }
-    for (const entry of await this.ctx.faberloomSpaces.listMemory(actor, space.id as FaberLoomSpaceId)) {
+    for (const entry of await this.ctx.faberloomSpaces.listMemory(actor, space.id)) {
       add({ kind: 'memory', itemKey: entry.text, payload: { text: entry.text, createdAt: entry.createdAt } })
     }
     const context = this.ctx.get('faberloomContext')
@@ -1828,10 +1850,10 @@ export class FaberLoomViewService extends TypertRemoteService {
     // Every Work Flow and Routine the member owns travels to the other members,
     // as the one-way snapshot already did; the copies are excluded by name.
     for (const flow of await this.workflowsService().list(this.workflowActor())) {
-      add({ kind: 'workflow', itemKey: flow.name, payload: { name: flow.name, definition: flow.definition as unknown as Record<string, unknown> } })
+      add({ kind: 'workflow', itemKey: flow.name, payload: { name: flow.name, definition: flow.definition } })
     }
     for (const routine of await this.ctx.faberloomRoutines.listRoutines(actor.id)) {
-      add({ kind: 'routine', itemKey: routine.name, payload: { name: routine.name, definition: routine.definition as unknown as Record<string, unknown> } })
+      add({ kind: 'routine', itemKey: routine.name, payload: { name: routine.name, definition: routine.definition } })
     }
     await this.sharesService().publishContent(actor.id, space.id, items)
   }
@@ -1938,7 +1960,7 @@ export class FaberLoomViewService extends TypertRemoteService {
           ? await query.readSession(row.sessionId as SessionId).catch(() => undefined)
           : undefined
         if (local !== undefined && local.events.length >= row.messageCount) {
-          this.ctx.get('sessionProjectionCache')?.coldSnapshot(local.session as SessionHeader, 0 as never, local.events as readonly SessionEvent[])
+          this.ctx.get('sessionProjectionCache')?.coldSnapshot(local.session, 0 as never, local.events)
           // Re-attach in case the copy was detached while its log was briefly
           // absent (a publish prune); otherwise it lingers under Ungrouped.
           await workspace.attachSession(row.sessionId as SessionId).catch(() => undefined)
@@ -1968,7 +1990,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         // the session-controller already relays; a structural cast avoids a
         // type-only dependency on the API package.
         const events = parsed.events
-        const lastSeq = events.reduce((max, event) => Math.max(max, event.seq ?? 0), 0)
+        const lastSeq = events.reduce((max, event) => Math.max(max, event.seq), 0)
         const title = row.title.length > 0 ? row.title : undefined
         const announce = this.ctx as unknown as { emit: (name: string, payload: unknown) => void }
         announce.emit('api-session/added', {
@@ -2450,6 +2472,51 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('syncContext')
   async syncContext(): Promise<readonly FaberLoomContextRow[]> {
     await this.contextService().sync(this.actor().id)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Export the workspace/space context record for the browser to download.
+   * @param spaceId - a Space to restrict to, or undefined for the personal scope plus every Space.
+   * @param format - `json` (default) or `markdown`.
+   * @returns the export body and file name.
+   */
+  @Remote('exportContext')
+  async exportContext(spaceId?: string, format?: string): Promise<FaberLoomContextExportRow> {
+    const exported = await this.contextService().export({ id: this.actor().id }, {
+      ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
+      ...format === 'markdown' ? { format: 'markdown' as const } : {},
+    })
+    return { filename: exported.filename, content: exported.content, entries: exported.entries }
+  }
+
+  /**
+   * Import a context record and return the refreshed entries.
+   * @param payload - the exported JSON body.
+   * @returns the refreshed rows.
+   */
+  @Remote('importContext')
+  async importContext(payload: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().import({ id: this.actor().id }, payload)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Replace one Space's context record wholesale (owner only) and return the refreshed rows.
+   * @param spaceId - the Space whose record is replaced.
+   * @param entriesJson - the new entries as a JSON array of `{ title, body }`.
+   * @returns the refreshed rows.
+   */
+  @Remote('replaceContext')
+  async replaceContext(spaceId: string, entriesJson: string): Promise<readonly FaberLoomContextRow[]> {
+    let parsed: unknown
+    try { parsed = JSON.parse(entriesJson) } catch { throw new Error('faberloom: las entradas del contexto no son JSON válido') }
+    if (!Array.isArray(parsed)) throw new Error('faberloom: las entradas del contexto deben ser un arreglo JSON')
+    const entries = (parsed as readonly { title?: unknown; body?: unknown }[]).map(entry => ({
+      title: typeof entry.title === 'string' ? entry.title : '',
+      body: typeof entry.body === 'string' ? entry.body : '',
+    }))
+    await this.contextService().replace({ id: this.actor().id }, spaceId, entries)
     return await this.contextEntries()
   }
 

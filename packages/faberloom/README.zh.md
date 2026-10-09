@@ -26,6 +26,10 @@ kind: "package-group"
 - `@deepseek-ai/dsh-faberloom-spaces` — 主题空间与有效上下文。
 - `@deepseek-ai/dsh-faberloom-workflows` — 编译为 routine 的版本化工作流图。
 - `@deepseek-ai/dsh-faberloom-agents` — 代理目录与版本化模型策略。
+- `@deepseek-ai/dsh-faberloom-agent-plane` — 某个目录代理被强制执行的工具掩码与委托允许名单。
+- `@deepseek-ai/dsh-faberloom-session-agent` — Space 会话所运行的组合：其代理的 persona、工具平面与技能。
+- `@deepseek-ai/dsh-faberloom-agent-runtime` — 调用方会话与 Space 代理之间的持久化咨询。
+- `@deepseek-ai/dsh-faberloom-knowledge-index` — 空间搜索排序器：embeddings、Knowledge Hub 语料与词法回退。
 - `@deepseek-ai/dsh-faberloom-board` — 工作台：版本化工单、批准与重新校验。
 - `@deepseek-ai/dsh-faberloom-routines` — 声明式版本化例程。
 - `@deepseek-ai/dsh-faberloom-execution` — 持久化执行、等待与效应账本。
