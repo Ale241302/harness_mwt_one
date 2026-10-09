@@ -1,8 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-tombstones-edit-agents-skills` (commit `148006210382d3e9bd5cf643686971926664469f`: borrado bidireccional real de contenido ajeno mediante tombstones (columna `deleted_at` en la consola, `M4`), enforcement de `edit-<módulo>` sobre copias compartidas, y Agents+Skills en un único panel con pestañas locales (una sola fila de sidebar, resaltado correcto). Sobre `714b74392e`).
-**Imagen desplegada actual:** build de `main` @ `148006210382d3e9bd5cf643686971926664469f` (deploy caliente).
-**Verificado en el VPS:** 5 de octubre de 2026.
+**Tag de despliegue:** `deploy-2026-10-09-faberloom-context-agents` (commit `3bd18502c11330f6802f2e245284650e0cdc426b`: contexto y agentes entre Spaces (P0–P7) — puente Contexto↔Spaces, plano de capacidades por agente, sesión del Space como su agente, consulta durable (`continuable`+`followup`), export/import/replace del registro de contexto y búsqueda con embeddings/Knowledge Hub; endurecimiento por revisión ECC. Sobre `148006210382d3e9bd5cf643686971926664469f`).
+**Imagen desplegada actual:** build de `main` @ `3bd18502c11330f6802f2e245284650e0cdc426b` (deploy caliente).
+**Verificado en el VPS:** 9 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
@@ -107,14 +107,11 @@ sola `DEEPSEEK_API_KEY` compartida**. El tramo Cloudflare→origen sigue en TLS
 **Flexible** (M8 pendiente: certificado de origen + Full strict; ver
 `README.mwt-one.md`).
 
-## Pendiente de despliegue (en el árbol, no en la imagen desplegada)
+## Contexto y agentes entre Spaces (E14, desplegado)
 
-Esta sección registra trabajo ya integrado en el árbol de `deepseek-harness` que **no** está en la imagen desplegada; se retira al desplegar y anotar el nuevo tag.
+El fork desplegado incluye los paquetes de contexto y agentes entre Spaces: `faberloom/context` (registro versionado, aprobable, `export`/`import`/`replace`), `faberloom/spaces` (entradas curadas y texto de adjuntos en `find`), `faberloom/agent-plane` (plano de capacidades por agente), `faberloom/session-agent` (la sesión de un Space corre como su agente), `faberloom/agent-runtime` (consultas durables), `faberloom/knowledge-index` (búsqueda: embeddings + Knowledge Hub + léxico), `faberloom/tool-faberloom` (tools `faberloom_context_*`, `faberloom_spaces_followup`, enforcement de plano y fail-closed), `faberloom/view` y `client/ui-faberloom` (Export/Import de contexto). El commit del fork (`3bd18502c1`) es el `build.forkSha` que publica `/healthz`, y `MANIFEST.md` lo cita para que `manifestDrift` quede en `false`.
 
-- **Contexto y agentes entre Spaces** (paquetes nuevos o ampliados): `faberloom/context` (registro versionado, aprobable, `export`/`import`/`replace`), `faberloom/spaces` (entradas curadas y texto de adjuntos en `find`), `faberloom/agent-plane` (plano de capacidades por agente), `faberloom/session-agent` (la sesión de un Space corre como su agente), `faberloom/agent-runtime` (consultas durables), `faberloom/knowledge-index` (búsqueda: embeddings + Knowledge Hub + léxico), `faberloom/tool-faberloom` (tools `faberloom_context_*`, `faberloom_spaces_followup`, enforcement de plano y fail-closed), `faberloom/view` y `client/ui-faberloom` (Export/Import de contexto), y el montaje en `bundle/faberloom-app` + `gateway/server.mjs` (identidad por usuario para `session-agent`).
-- **Verificación local (Windows)**: `typecheck`, `lint` y `test:docs` en verde; unidades focales verdes; `verify-catalog`/`verify-export-jsdoc`/`verify-translation-pairing` OK.
-- **Pendiente en el VPS/CI**: lane de snapshots POSIX, `test:coverage` y el smoke manual SONDEL→SICOP (F50) con el MCP `sicop` real.
-- **Al desplegar**: construir `main` con estos paquetes, fijar el nuevo `DSH_FORK_SHA` por `/healthz` y ejecutar F50.
+Pendiente en el VPS/CI: el smoke manual SONDEL→SICOP (F50) con el MCP `sicop` real, y en CI el lane de snapshots POSIX y `test:coverage`.
 
 ## Cómo verificar el despliegue
 
