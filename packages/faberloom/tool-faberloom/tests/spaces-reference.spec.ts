@@ -176,3 +176,24 @@ describe('faberloom spaces reference tools', () => {
     expect(spaces!.text).toContain('faberloom_spaces_reference')
   })
 })
+
+describe('faberloom spaces update and agent capability flags', () => {
+  it('assigns and clears the responsible agent through spaces update', async () => {
+    const update = vi.fn(async (_actor: unknown, id: string, _patch: unknown) => ({ id, version: 3 }))
+    const tools = harness(CONFIG, { faberloomSpaces: { update } })
+    await tools.get('faberloom_spaces_update')!.execute({ id: 'sp-1', agentId: 'agent-9' } as never)
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ id: 'compras2@sondelsa.com' }), 'sp-1', { agentId: 'agent-9' })
+    await tools.get('faberloom_spaces_update')!.execute({ id: 'sp-1', agentId: '' } as never)
+    expect(update).toHaveBeenLastCalledWith(expect.anything(), 'sp-1', { agentId: null })
+  })
+
+  it('passes the capability-plane flags on agent create and update', async () => {
+    const createAgent = vi.fn(async (_input: unknown) => ({ id: 'a-1', version: 1 }))
+    const updateAgent = vi.fn(async (id: string, _patch: unknown) => ({ id, version: 2 }))
+    const tools = harness(CONFIG, { faberloomAgents: { createAgent, updateAgent } })
+    await tools.get('faberloom_agents_create')!.execute({ name: 'SICOP', responsibility: 'r', webAccess: false, mwtMcp: false, sicopMcp: true } as never)
+    expect(createAgent).toHaveBeenCalledWith(expect.objectContaining({ webAccess: false, mwtMcp: false, sicopMcp: true }))
+    await tools.get('faberloom_agents_update')!.execute({ id: 'a-1', mwtMcp: false } as never)
+    expect(updateAgent).toHaveBeenCalledWith('a-1', expect.objectContaining({ mwtMcp: false }))
+  })
+})

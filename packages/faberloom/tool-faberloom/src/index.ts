@@ -618,10 +618,11 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_spaces_update',
-    description: 'Update one product space: title, inheritance, exclusions, members, or context.',
+    description: 'Update one product space: title, responsible agent, inheritance, exclusions, members, or context.',
     parameters: {
       id: ID_PARAM,
       title: { type: 'string', description: 'New display title.' },
+      agentId: { type: 'string', description: 'Responsible catalog agent id; an empty string clears the assignment.' },
       inheritContext: { type: 'boolean', description: 'Whether the space inherits ancestors context.' },
       excluded: { type: 'array', description: 'Ancestor space ids whose context must not be inherited.', items: { type: 'string' } },
       members: { type: 'array', description: 'Identities allowed to read the space.', items: { type: 'string' } },
@@ -653,6 +654,7 @@ export function apply(ctx: Context, config: Config): void {
     execute: async (args) => {
       const patch: {
         title?: string
+        agentId?: string | null
         inheritContext?: boolean
         excluded?: FaberLoomSpaceId[]
         members?: string[]
@@ -660,6 +662,7 @@ export function apply(ctx: Context, config: Config): void {
         sources?: SpaceSource[]
       } = {}
       if (args.title !== undefined) patch.title = args.title
+      if (args.agentId !== undefined) patch.agentId = args.agentId.length > 0 ? args.agentId : null
       if (args.inheritContext !== undefined) patch.inheritContext = args.inheritContext
       if (args.excluded !== undefined) patch.excluded = args.excluded as FaberLoomSpaceId[]
       if (args.members !== undefined) patch.members = args.members
@@ -1577,6 +1580,9 @@ export function apply(ctx: Context, config: Config): void {
       spaceId: { type: 'string', description: 'Owning space id.' },
       skills: { type: 'array', description: 'Skill names.', items: { type: 'string' } },
       tools: { type: 'array', description: 'Tool names the agent may execute.', items: { type: 'string' } },
+      webAccess: { type: 'boolean', description: 'Whether the agent may use the open web; defaults to false.' },
+      mwtMcp: { type: 'boolean', description: 'Whether the agent may use the MWT.ONE MCP; defaults to true.' },
+      sicopMcp: { type: 'boolean', description: 'Whether the agent may use the SICOP MCP; defaults to true.' },
       ...POLICY_PARAMS,
     },
     /* jscpd:ignore-start -- the id/version output schema repeats between agent create and update; each tool owns its render text */
@@ -1598,6 +1604,9 @@ export function apply(ctx: Context, config: Config): void {
         ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
         ...args.skills === undefined ? {} : { skills: args.skills },
         ...args.tools === undefined ? {} : { tools: args.tools },
+        ...args.webAccess === undefined ? {} : { webAccess: args.webAccess },
+        ...args.mwtMcp === undefined ? {} : { mwtMcp: args.mwtMcp },
+        ...args.sicopMcp === undefined ? {} : { sicopMcp: args.sicopMcp },
         ...policy === undefined ? {} : { policy },
       })
       return { id: agent.id, version: agent.version }
@@ -1648,6 +1657,9 @@ export function apply(ctx: Context, config: Config): void {
       responsibility: { type: 'string', description: 'New responsibility.' },
       skills: { type: 'array', description: 'New skill names.', items: { type: 'string' } },
       tools: { type: 'array', description: 'New tool names.', items: { type: 'string' } },
+      webAccess: { type: 'boolean', description: 'Whether the agent may use the open web.' },
+      mwtMcp: { type: 'boolean', description: 'Whether the agent may use the MWT.ONE MCP.' },
+      sicopMcp: { type: 'boolean', description: 'Whether the agent may use the SICOP MCP.' },
       lessons: { type: 'array', description: 'New portable teachings.', items: { type: 'string' } },
       subagents: {
         type: 'array',
@@ -1678,6 +1690,9 @@ export function apply(ctx: Context, config: Config): void {
         ...args.responsibility === undefined ? {} : { responsibility: args.responsibility },
         ...args.skills === undefined ? {} : { skills: args.skills },
         ...args.tools === undefined ? {} : { tools: args.tools },
+        ...args.webAccess === undefined ? {} : { webAccess: args.webAccess },
+        ...args.mwtMcp === undefined ? {} : { mwtMcp: args.mwtMcp },
+        ...args.sicopMcp === undefined ? {} : { sicopMcp: args.sicopMcp },
         ...args.lessons === undefined ? {} : { lessons: args.lessons },
         ...args.subagents === undefined
           ? {}

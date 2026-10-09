@@ -1445,6 +1445,18 @@ Create a product agent from scratch, from the pool, or from a task, with its mod
         "type": "string"
       }
     },
+    "webAccess": {
+      "type": "boolean",
+      "description": "Whether the agent may use the open web; defaults to false."
+    },
+    "mwtMcp": {
+      "type": "boolean",
+      "description": "Whether the agent may use the MWT.ONE MCP; defaults to true."
+    },
+    "sicopMcp": {
+      "type": "boolean",
+      "description": "Whether the agent may use the SICOP MCP; defaults to true."
+    },
     "primary": {
       "type": "string",
       "description": "Primary model id; empty string clears it."
@@ -1877,6 +1889,18 @@ Edit a product agent: responsibility, skills, tools, subagents, lessons, and mod
       "items": {
         "type": "string"
       }
+    },
+    "webAccess": {
+      "type": "boolean",
+      "description": "Whether the agent may use the open web."
+    },
+    "mwtMcp": {
+      "type": "boolean",
+      "description": "Whether the agent may use the MWT.ONE MCP."
+    },
+    "sicopMcp": {
+      "type": "boolean",
+      "description": "Whether the agent may use the SICOP MCP."
     },
     "lessons": {
       "type": "array",
@@ -3349,7 +3373,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_update`
 
-Update one product space: title, inheritance, exclusions, members, or context.
+Update one product space: title, responsible agent, inheritance, exclusions, members, or context.
 
 ```json
 {
@@ -3362,6 +3386,10 @@ Update one product space: title, inheritance, exclusions, members, or context.
     "title": {
       "type": "string",
       "description": "New display title."
+    },
+    "agentId": {
+      "type": "string",
+      "description": "Responsible catalog agent id; an empty string clears the assignment."
     },
     "inheritContext": {
       "type": "boolean",
