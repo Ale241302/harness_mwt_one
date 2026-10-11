@@ -13,7 +13,10 @@ export interface DesktopElectronBuilderConfig {
     { readonly from: string, readonly to: 'dsh/node_modules', readonly filter: readonly ['**/*'] },
   ]
   readonly asarUnpack: readonly string[]
-  readonly extraResources: readonly [{ readonly from: string, readonly to: 'runtime' }]
+  readonly extraResources: readonly [
+    { readonly from: string, readonly to: 'runtime' },
+    ...{ readonly from: string, readonly to: 'desktop-home-env.json' }[],
+  ]
   readonly mac: {
     readonly identity: string | undefined
     readonly forceCodeSigning: boolean

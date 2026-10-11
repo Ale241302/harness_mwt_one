@@ -75,6 +75,11 @@ export function createElectronBuilderConfig(
     ],
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
+      // Deployment defaults for the first-run Harness-home `.env`, injected at
+      // packaging time so no value lives in the repository.
+      ...env.DSH_DESKTOP_HOME_ENV_FILE === undefined || env.DSH_DESKTOP_HOME_ENV_FILE === ''
+        ? []
+        : [{ from: env.DSH_DESKTOP_HOME_ENV_FILE, to: 'desktop-home-env.json' }],
     ],
     mac: {
       category: 'public.app-category.developer-tools',

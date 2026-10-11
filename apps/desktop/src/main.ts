@@ -12,7 +12,9 @@ import {
   protocol,
   type IpcMainInvokeEvent,
 } from 'electron'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { resolveDesktopPaths } from './paths.ts'
+import { ensureHomeEnvFile, resolveHomeEnvDefaults } from './home-env.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
 import { DesktopBackendController, type DesktopBackendState } from './backend-controller.ts'
@@ -154,6 +156,10 @@ async function serveShellAsset(request: Request): Promise<Response> {
 async function main(): Promise<void> {
   const resources = runtimeResources()
   const paths = resolveDesktopPaths()
+  // Complete the Harness-home `.env` layer before the Host boots from it, using
+  // the deployment defaults injected at packaging time, so a fresh installation
+  // already reaches the official DeepSeek route.
+  ensureHomeEnvFile(resolveDshHome(), resolveHomeEnvDefaults(process.env, process.resourcesPath))
   const development = app.isPackaged ? undefined : join(app.getAppPath(), '.desktop-build', 'development', 'project')
   const activeProject = development ?? paths.profile
   const manager = new DesktopProjectManager(paths, resources)

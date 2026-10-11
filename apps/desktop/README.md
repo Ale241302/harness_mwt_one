@@ -25,6 +25,8 @@ Electron owns `$DSH_HOME/profiles/desktop`. Its `dependencies` contains only ins
 
 The local startup page exposes startup status and available recovery actions; the loaded dsh renderer receives only the desktop protocol marker. The separate plugin window receives structured list, install, remove, update, and update-check operations; neither renderer receives filesystem access, raw Electron IPC, a shell, or arbitrary pnpm arguments.
 
+The Desktop completes the shared Harness-home `.env` layer before the Host boots: it appends every name from the deployment's defaults document that layer does not already assign, so a fresh installation reaches the official DeepSeek route without the first-run Models prompt. The document is injected at packaging time (`DSH_DESKTOP_HOME_ENV_FILE`, bundled as `desktop-home-env.json`) or through the launching environment (`DSH_DESKTOP_HOME_ENV`); no value lives in the repository. Existing assignments, the writable `$DSH_HOME/.credentials.yaml` store, and the inherited process environment all outrank this layer, so a key written through Settings → Models or supplied by the launching environment is never displaced.
+
 Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 
 ### Runtime and plugin activation
@@ -52,6 +54,8 @@ pnpm run dev:desktop
 ```
 
 Development Harness state defaults to `apps/desktop/.desktop-build/development/home`, the disposable npm project lives at `apps/desktop/.desktop-build/development/project`, and Electron browser data lives at `apps/desktop/.desktop-build/development/electron-user-data`. Sessions, settings, credentials, package links, and browser data therefore stay out of the user's normal Harness home. An explicit `DSH_HOME` replaces only the development Harness home. Renderer DevTools opens automatically; Main, Renderer, and dsh Host debugging listen on ports 9229, 9222, and 9230. `DSH_DESKTOP_MAIN_INSPECT_PORT`, `DSH_DESKTOP_RENDERER_DEBUG_PORT`, and `DSH_DESKTOP_HOST_INSPECT_PORT` replace those ports, while `DSH_DESKTOP_OPEN_DEVTOOLS=0` keeps the detached Renderer tools closed.
+
+Set `DSH_DESKTOP_HOME_ENV` (an inline JSON object) or `DSH_DESKTOP_HOME_ENV_FILE` (its path) to complete the development Harness-home `.env` with the same deployment defaults a packaged build ships, for example `DEEPSEEK_API_KEY` so the first-run Models prompt stays away.
 
 After an explicit build, `start:desktop` reconstructs the disposable project and launches the existing artifacts without building again:
 
@@ -89,6 +93,8 @@ pnpm run package:desktop:win:x64
 ```
 
 The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on Intel macOS or Apple Silicon with Rosetta. The Windows x64 command requires Windows x64. Linux is not a supported Desktop release target.
+
+Point `DSH_DESKTOP_HOME_ENV_FILE` at a JSON object of deployment defaults to bundle it as `desktop-home-env.json`; each installation appends the names its Harness-home `.env` lacks on first launch. Keep that document outside the repository and rotate any credential it carries.
 
 Each target owns its packed package inputs, prepared runtime, package set, dsh tree, pnpm preparation state, unpacked application, update metadata, and final artifacts under `apps/desktop/.desktop-build/targets/<target>/`. The Node.js archive cache remains shared under `.desktop-build/downloads` because every archive name includes its version, platform, and architecture and is verified before extraction. A target build never consumes another target's mutable preparation state.
 
