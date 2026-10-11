@@ -27,10 +27,15 @@ function portablePath(value: string): string {
   return value.replaceAll('\\', '/')
 }
 
+// The electron-builder config module graph is large; transforming it on a cold
+// cache can exceed the default 5s per-test timeout, so warm it once in this hook.
+const COLD_IMPORT_TIMEOUT_MS = 60_000
+
 describe('desktop macOS release signature', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     for (const [name, value] of Object.entries(RELEASE_ENVIRONMENT)) vi.stubEnv(name, value)
-  })
+    await import('../electron-builder.config.mjs')
+  }, COLD_IMPORT_TIMEOUT_MS)
 
   afterAll(() => {
     vi.unstubAllEnvs()

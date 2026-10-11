@@ -47,6 +47,10 @@ function observedAgent(ctx: Context, id: string, observe: (type: string, data: u
 
 const testToolSignal = new AbortController().signal
 
+// The spill lane advances on microtask and log-append timing, so a forked worker
+// under load can exceed vi.waitFor's 1s default before the observed state lands.
+const DISPATCH_SETTLE_TIMEOUT_MS = 10_000
+
 /** A stub spill backend recording its saves; `fail` exercises the best-effort fallback. */
 class StubStore extends SpillStore {
   saves: SaveTextSpill[] = []
@@ -251,7 +255,7 @@ describe('read skip', () => {
   })
 })
 
-describe('the durable dispatch-log arm', () => {
+describe('the durable dispatch-log arm', { timeout: 20_000 }, () => {
   /** Boot code mode + the policy + the Node runtime; run one program via the real bridge. */
   async function runCodeWith(program: string, maxInlineBytes: number, extraTools: ToolDefinition[] = []) {
     const ctx = new Context()
@@ -366,7 +370,7 @@ describe('the durable dispatch-log arm', () => {
       smallAfterHuge = events.some(event => event.type === 'tool/ptc-dispatch-start'
         && (event.data as { name: string }).name === 'small_read')
       if (!smallAfterHuge) throw new Error('small_read not started yet')
-    })
+    }, { timeout: DISPATCH_SETTLE_TIMEOUT_MS })
     releaseSave()
     const result = await runPromise
     expect(result.isError).toBe(false)
@@ -410,14 +414,14 @@ describe('the durable dispatch-log arm', () => {
     // starting dispatch 3.
     await vi.waitFor(() => {
       if (releases.length < 2) throw new Error('second hung save not reached yet')
-    })
+    }, { timeout: DISPATCH_SETTLE_TIMEOUT_MS })
     expect(started(2)).toBe(true)
     expect(started(3)).toBe(false)
     releases.shift()!()
     // Draining one pending save releases the lane; dispatch 3 starts.
     await vi.waitFor(() => {
       if (!started(3)) throw new Error('third dispatch not started yet')
-    })
+    }, { timeout: DISPATCH_SETTLE_TIMEOUT_MS })
     while (releases.length > 0) releases.shift()!()
     const result = await runPromise
     expect(result.isError).toBe(false)
@@ -426,7 +430,7 @@ describe('the durable dispatch-log arm', () => {
       if (events.filter(event => event.type === 'tool/ptc-dispatch').length !== 3) {
         throw new Error('settle events still pending')
       }
-    })
+    }, { timeout: DISPATCH_SETTLE_TIMEOUT_MS })
   })
 
   it('a saveText failure keeps the complete content in the durable log (best-effort)', async () => {

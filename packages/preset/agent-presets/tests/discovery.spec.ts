@@ -1,9 +1,27 @@
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSITION_FILE, discoverPresets, scanRoot } from '@deepseek-ai/dsh-agent-presets'
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-presets-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 const fsHarness = vi.hoisted(() => ({
   nextReadError: undefined as NodeJS.ErrnoException | undefined,
@@ -338,7 +356,7 @@ describe('rows naming a plugin that cannot be resolved', () => {
     expect(preset?.broken).toBeUndefined()
   })
 
-  it('reports a package whose install link dangles', async () => {
+  it.skipIf(!canSymlinkFiles)('reports a package whose install link dangles', async () => {
     // What a stale profile install leaves behind: the name is still in
     // `node_modules`, pointing at a checkout that is gone.
     const home = await mkdtemp(join(tmpdir(), 'dsh-presets-dangling-'))
