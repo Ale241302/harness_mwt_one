@@ -14,3 +14,10 @@ button:focus-visible { outline: 2px solid #4d6bfe; outline-offset: 3px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-color-scheme: dark) { :root { color: #ededf0; background: #171719; } p { color: #aaaab3; } #error { border-color: #38383f; } #spinner { border-color: #38383f; border-top-color: #6a85ff; } }
 @media (prefers-reduced-motion: reduce) { #spinner { animation: none; } }
+#signin { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; text-align: left; }
+#signin label { margin-top: 12px; font-size: 13px; font-weight: 600; }
+#signin input { padding: 10px 12px; border: 1px solid #c8c8d0; border-radius: 8px; background: transparent; color: inherit; font: inherit; }
+#signin input:focus-visible { outline: 2px solid #4d6bfe; outline-offset: 2px; }
+#signin-submit { margin: 20px 0 0; }
+#signin-error { margin-top: 12px; color: #b3261e; }
+@media (prefers-color-scheme: dark) { #signin input { border-color: #38383f; } #signin-error { color: #ff8a80; } }

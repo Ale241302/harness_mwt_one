@@ -95,6 +95,13 @@ interface PackageManifest {
 }
 
 const DESKTOP_PATCH = fileURLToPath(new URL('../config/desktop.cordis.patch.yml', import.meta.url))
+/**
+ * Environment name Electron sets to the signed-in identity patch. It is applied
+ * last so the signed-in `ownerId` overrides every bundle default; the file is
+ * absent until the Desktop signs in. The name avoids the `DSH_DESKTOP_` prefix
+ * the Host process strips from its inherited environment.
+ */
+const IDENTITY_PATCH_ENV = 'DSH_IDENTITY_PATCH'
 const ROOT_CONFIG = '# Electron desktop composition root; package transactions own this file.\n[]\n'
 const ROOT_CONFIG_FILENAME = 'desktop.cordis.yml'
 const DESKTOP_STREAM_PATH = '/.dsh/remote-stream'
@@ -176,6 +183,10 @@ function desktopComposition(
     profile.patches,
     loadOverlayPatches('dsh desktop', DESKTOP_PATCH),
   ]
+  const identityPatch = process.env[IDENTITY_PATCH_ENV]
+  if (identityPatch !== undefined && identityPatch !== '' && existsSync(identityPatch)) {
+    layers.push(loadOverlayPatches('dsh desktop identity', identityPatch))
+  }
   const rows = new Map(composeEntries(layers).flatMap(row => typeof row.id === 'string' ? [[row.id, row] as const] : []))
   const agentPresets = rows.get('agent-presets')
   if (agentPresets !== undefined) {

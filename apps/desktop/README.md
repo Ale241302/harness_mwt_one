@@ -27,6 +27,10 @@ The local startup page exposes startup status and available recovery actions; th
 
 The Desktop completes the shared Harness-home `.env` layer before the Host boots: it appends every name from the deployment's defaults document that layer does not already assign, so a fresh installation reaches the official DeepSeek route without the first-run Models prompt. The document is injected at packaging time (`DSH_DESKTOP_HOME_ENV_FILE`, bundled as `desktop-home-env.json`) or through the launching environment (`DSH_DESKTOP_HOME_ENV`); no value lives in the repository. Existing assignments, the writable `$DSH_HOME/.credentials.yaml` store, and the inherited process environment all outrank this layer, so a key written through Settings → Models or supplied by the launching environment is never displaced.
 
+### Sign-in
+
+The Desktop signs in before it boots a Host. While signed out, the shell renders a sign-in form instead of a loading page and the backend never starts. Submitting authenticates against the console (`POST {CONSOLA_API_BASE}/auth/login/`) and writes two files into the shared Harness home: the console base and token into `.env`, and `desktop-identity.patch.yml`, a Cordis patch that configures every product row with the signed-in `ownerId`, role, and read-only flag. `runDesktopHost` applies that patch as its last composition layer, so `faberloom-defaults` seeds the owner's agents and routines instead of returning `no owner configured`. Signing out deletes the patch and the identity record and clears the console token. Spaces, sessions, skills, and every other per-home record stay local to this installation: the console transports only what a user explicitly shares.
+
 Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 
 ### Runtime and plugin activation

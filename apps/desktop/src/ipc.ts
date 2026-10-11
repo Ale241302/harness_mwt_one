@@ -18,6 +18,9 @@ export const DESKTOP_IPC = {
   applicationRestart: 'dsh-desktop:application-restart',
   configurationReset: 'dsh-desktop:configuration-reset',
   backendState: 'dsh-desktop:backend-state',
+  identityStatus: 'dsh-desktop:identity-status',
+  identityLogin: 'dsh-desktop:identity-login',
+  identitySignOut: 'dsh-desktop:identity-sign-out',
   updatesCheck: 'dsh-desktop:updates-check',
   updatesInstall: 'dsh-desktop:updates-install',
   updatesState: 'dsh-desktop:updates-state',
@@ -27,6 +30,21 @@ export const DESKTOP_IPC = {
 export interface DesktopUpdateState {
   readonly phase: 'idle' | 'checking' | 'available' | 'installing' | 'ready' | 'error'
   readonly version?: string
+  readonly message?: string
+}
+
+/** Sign-in state presented to Desktop-owned UI; never carries the console token. */
+export interface DesktopIdentityStatus {
+  readonly signedIn: boolean
+  readonly consolaBase: string
+  readonly email?: string
+  readonly role?: string
+  readonly fullName?: string
+}
+
+/** Outcome of one sign-in attempt; a refusal is not an IPC failure. */
+export interface DesktopSignInResult {
+  readonly ok: boolean
   readonly message?: string
 }
 
@@ -47,6 +65,11 @@ export interface DshDesktopApi {
     retry(): Promise<void>
     subscribe(listener: (state: DesktopBackendState) => void): () => void
   }
+  readonly identity: {
+    status(): Promise<DesktopIdentityStatus>
+    login(usuario: string, password: string): Promise<DesktopSignInResult>
+    signOut(): Promise<DesktopIdentityStatus>
+  }
   readonly updates: {
     check(): Promise<DesktopUpdateState>
     install(): Promise<void>
@@ -55,7 +78,7 @@ export interface DshDesktopApi {
 }
 
 /** Startup-page controls, unavailable to backend-provided application documents. */
-export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale'> {
+export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale' | 'identity'> {
   readonly backend: Omit<DshDesktopApi['backend'], 'retry'>
   disablePlugins(): Promise<void>
   restart(): Promise<void>

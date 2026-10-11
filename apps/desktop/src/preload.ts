@@ -24,6 +24,11 @@ const api: DshDesktopApi = {
       return () => { ipcRenderer.off(DESKTOP_IPC.backendState, handle) }
     },
   },
+  identity: {
+    status: () => ipcRenderer.invoke(DESKTOP_IPC.identityStatus) as ReturnType<DshDesktopApi['identity']['status']>,
+    login: (usuario, password) => ipcRenderer.invoke(DESKTOP_IPC.identityLogin, usuario, password) as ReturnType<DshDesktopApi['identity']['login']>,
+    signOut: () => ipcRenderer.invoke(DESKTOP_IPC.identitySignOut) as ReturnType<DshDesktopApi['identity']['signOut']>,
+  },
   updates: {
     check: () => ipcRenderer.invoke(DESKTOP_IPC.updatesCheck) as Promise<DesktopUpdateState>,
     install: () => ipcRenderer.invoke(DESKTOP_IPC.updatesInstall) as Promise<void>,

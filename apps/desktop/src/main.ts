@@ -15,10 +15,18 @@ import {
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { resolveDesktopPaths } from './paths.ts'
 import { ensureHomeEnvFile, resolveHomeEnvDefaults } from './home-env.ts'
+import {
+  DEFAULT_CONSOLA_API_BASE,
+  IDENTITY_PATCH_FILENAME,
+  readIdentity,
+  signInToConsole,
+  signOut,
+  writeIdentity,
+} from './identity.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
 import { DesktopBackendController, type DesktopBackendState } from './backend-controller.ts'
-import { DESKTOP_IPC, type DesktopUpdateState } from './ipc.ts'
+import { DESKTOP_IPC, type DesktopIdentityStatus, type DesktopSignInResult, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
@@ -156,10 +164,24 @@ async function serveShellAsset(request: Request): Promise<Response> {
 async function main(): Promise<void> {
   const resources = runtimeResources()
   const paths = resolveDesktopPaths()
+  const home = resolveDshHome()
   // Complete the Harness-home `.env` layer before the Host boots from it, using
   // the deployment defaults injected at packaging time, so a fresh installation
   // already reaches the official DeepSeek route.
-  ensureHomeEnvFile(resolveDshHome(), resolveHomeEnvDefaults(process.env, process.resourcesPath))
+  ensureHomeEnvFile(home, resolveHomeEnvDefaults(process.env, process.resourcesPath))
+  const identityPatchPath = join(home, IDENTITY_PATCH_FILENAME)
+  const consolaBase = process.env.DSH_DESKTOP_CONSOLA_API_BASE ?? DEFAULT_CONSOLA_API_BASE
+  const identityStatus = (): DesktopIdentityStatus => {
+    const identity = readIdentity(home)
+    if (identity === undefined) return { signedIn: false, consolaBase }
+    return {
+      signedIn: true,
+      consolaBase: identity.consolaBase,
+      email: identity.email,
+      role: identity.role,
+      ...(identity.fullName === undefined ? {} : { fullName: identity.fullName }),
+    }
+  }
   const development = app.isPackaged ? undefined : join(app.getAppPath(), '.desktop-build', 'development', 'project')
   const activeProject = development ?? paths.profile
   const manager = new DesktopProjectManager(paths, resources)
@@ -214,7 +236,7 @@ async function main(): Promise<void> {
     if (development === undefined) manager.assertProfileRuntime(activeProject)
     const hostInspectPort = developmentHostInspectPort(development !== undefined)
     const host = new DesktopHostProcess(resources.node, development ?? resources.dsh, activeProject,
-      hostInspectPort, process.env, onFailure)
+      hostInspectPort, { ...process.env, DSH_HOME: home, DSH_IDENTITY_PATCH: identityPatchPath }, onFailure)
     return {
       start: () => host.start(),
       stop: () => host.stop(),
@@ -269,6 +291,12 @@ async function main(): Promise<void> {
     startup ??= (async () => {
       pageError = undefined
       await navigateMain(startupUrl)
+      if (readIdentity(home) === undefined) {
+        // Signed out: the shell renders the sign-in form instead of starting a
+        // Host that would seed nothing without an owner.
+        publishBackend(backendState())
+        return
+      }
       await backend.start(async () => {
         if (development === undefined) {
           await manager.applyRelease()
@@ -280,6 +308,18 @@ async function main(): Promise<void> {
       throw error
     }).finally(() => { startup = undefined })
     return startup
+  }
+
+  const signOutIdentity = async (): Promise<DesktopIdentityStatus> => {
+    if (readIdentity(home) === undefined) return identityStatus()
+    await startup?.catch(() => undefined)
+    await backend.stop()
+    signOut(home)
+    pageError = undefined
+    navigation = undefined
+    await navigateMain(startupUrl)
+    publishBackend(backendState())
+    return identityStatus()
   }
 
   const updates = new DesktopUpdateCoordinator(
@@ -357,6 +397,29 @@ async function main(): Promise<void> {
     assertDesktopSender(event, ['shell'])
     await reconcileBackend()
     focusPrimaryWindow()
+  })
+  ipcMain.handle(DESKTOP_IPC.identityStatus, (event): DesktopIdentityStatus => {
+    assertDesktopSender(event, ['shell'])
+    return identityStatus()
+  })
+  ipcMain.handle(DESKTOP_IPC.identityLogin, async (event, usuario: unknown, password: unknown): Promise<DesktopSignInResult> => {
+    assertDesktopSender(event, ['shell'])
+    if (typeof usuario !== 'string' || usuario.trim() === '' || typeof password !== 'string' || password === '') {
+      return { ok: false, message: messages.signInFailed }
+    }
+    try {
+      const base = readIdentity(home)?.consolaBase ?? consolaBase
+      const { identity, credentials } = await signInToConsole(base, usuario.trim(), password)
+      writeIdentity(home, identity, credentials)
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
+    await reconcileBackend()
+    return { ok: true }
+  })
+  ipcMain.handle(DESKTOP_IPC.identitySignOut, async (event): Promise<DesktopIdentityStatus> => {
+    assertDesktopSender(event, ['shell'])
+    return await signOutIdentity()
   })
   ipcMain.handle(DESKTOP_IPC.applicationRestart, async (event) => {
     assertDesktopSender(event, ['shell'])
@@ -453,6 +516,7 @@ async function main(): Promise<void> {
         enabled: development === undefined,
         click: openPluginWindow,
       },
+      { label: messages.signOutMenu, click: () => { void signOutIdentity().catch((error: unknown) => { console.error(error) }) } },
       { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
       { type: 'separator' },
       { role: 'quit' },

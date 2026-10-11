@@ -124,6 +124,14 @@ vi.mock('../src/project-manager.ts', () => ({
 }))
 vi.mock('../src/host-process.ts', () => ({ DesktopHostProcess: harness.FakeHost }))
 vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: vi.fn() }))
+vi.mock('../src/identity.ts', () => ({
+  DEFAULT_CONSOLA_API_BASE: 'https://consola.mwt.one/api',
+  IDENTITY_PATCH_FILENAME: 'desktop-identity.patch.yml',
+  readIdentity: () => ({ email: 'test@example.test', role: 'admin', readOnly: false, consolaBase: 'https://consola.mwt.one/api' }),
+  signInToConsole: vi.fn(),
+  signOut: vi.fn(),
+  writeIdentity: vi.fn(),
+}))
 
 function invoke(channel: string): unknown {
   const handler = harness.handlers.get(channel)

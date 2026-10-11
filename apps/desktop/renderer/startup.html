@@ -20,6 +20,15 @@
         <button id="disable-plugins" type="button"></button>
         <button id="reset-configuration" type="button"></button>
       </div>
+      <form id="signin" hidden>
+        <p id="signin-description"></p>
+        <label for="signin-user" id="signin-user-label"></label>
+        <input id="signin-user" name="usuario" type="text" autocomplete="username" required>
+        <label for="signin-password" id="signin-password-label"></label>
+        <input id="signin-password" name="password" type="password" autocomplete="current-password" required>
+        <p id="signin-error" role="alert" hidden></p>
+        <button id="signin-submit" type="submit"></button>
+      </form>
     </main>
     <script src="startup.js"></script>
   </body>

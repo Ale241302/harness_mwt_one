@@ -8,7 +8,7 @@ import type { DshDesktopStartupApi } from '../src/ipc.ts'
 import { resolveDesktopLocale } from '../src/locale.ts'
 import { startupFailureDocument } from '../src/startup-document.ts'
 
-function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.resolve({ phase: 'starting' })) {
+function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.resolve({ phase: 'starting' }), signedIn = true) {
   const dom = new JSDOM(readFileSync(new URL('../renderer/startup.html', import.meta.url), 'utf8'), { runScripts: 'outside-only' })
   onTestFinished(() => {
     dom.window.dispatchEvent(new dom.window.Event('pagehide'))
@@ -19,6 +19,7 @@ function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.r
   const disablePlugins = vi.fn(async () => {})
   const resetConfiguration = vi.fn(async () => {})
   const restart = vi.fn(async () => {})
+  const login = vi.fn(async () => ({ ok: true }))
   const queried = Promise.withResolvers<undefined>()
   const api: DshDesktopStartupApi = {
     protocolVersion: 1,
@@ -26,6 +27,11 @@ function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.r
     backend: {
       status: () => { queried.resolve(undefined); return status },
       subscribe: (listener) => { listeners.add(listener); return unsubscribe },
+    },
+    identity: {
+      status: async () => ({ signedIn, consolaBase: 'https://consola.mwt.one/api', ...(signedIn ? { email: 'a@b.c', role: 'admin' } : {}) }),
+      login,
+      signOut: async () => ({ signedIn: false, consolaBase: 'https://consola.mwt.one/api' }),
     },
     disablePlugins, resetConfiguration, restart,
   }
@@ -50,8 +56,18 @@ function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.r
         : [element(selector).textContent]),
   ].join('\n')
   return { dom, document, element, button, publish, copy,
-    disablePlugins, resetConfiguration, restart, unsubscribe, queried: queried.promise }
+    disablePlugins, resetConfiguration, restart, unsubscribe, login, queried: queried.promise }
 }
+
+it('renders the sign-in form instead of loading while signed out', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await expect.poll(() => page.element('#title').textContent).not.toBe('')
+  expect(page.element('#title').textContent).toBe('Sign in to MWT.ONE')
+  expect(page.element('#signin').hidden).toBe(false)
+  expect(page.element('#spinner').hidden).toBe(true)
+  expect(page.element('#signin-user-label').textContent).toBe('User')
+  expect(page.element('#signin-submit').textContent).toBe('Sign in')
+})
 
 it('shows English loading and recovery actions without a Host document', async () => {
   const page = startup()

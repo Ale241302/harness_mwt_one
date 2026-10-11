@@ -49,6 +49,15 @@ export const en = {
   refreshing: 'Refreshing…',
   refreshed: 'Plugin list refreshed.',
   loadingPlugins: 'Reading Desktop plugins…',
+  signInTitle: 'Sign in to MWT.ONE',
+  signInDescription: 'Use your MWT.ONE console account. Your agents, skills, and Spaces load for this identity.',
+  signInUser: 'User',
+  signInPassword: 'Password',
+  signInSubmit: 'Sign in',
+  signInBusy: 'Signing in…',
+  signInFailed: 'Sign-in failed',
+  signedInAs: 'Signed in as {email}',
+  signOutMenu: 'Sign out',
 } as const
 
 /** Every Desktop locale supplies the complete English key set. */
@@ -103,6 +112,15 @@ export const zh = {
   refreshing: '正在刷新…',
   refreshed: '插件列表已刷新。',
   loadingPlugins: '正在读取桌面插件…',
+  signInTitle: '登录 MWT.ONE',
+  signInDescription: '使用你的 MWT.ONE 控制台账号。Agent、技能和 Space 会按该身份加载。',
+  signInUser: '账号',
+  signInPassword: '密码',
+  signInSubmit: '登录',
+  signInBusy: '正在登录…',
+  signInFailed: '登录失败',
+  signedInAs: '已登录：{email}',
+  signOutMenu: '退出登录',
 } as const satisfies DesktopMessages
 
 /** Locale payload exposed to the Desktop-owned renderer. */
