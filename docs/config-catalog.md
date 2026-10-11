@@ -848,7 +848,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/context/src/index.ts:59`](../packages/faberloom/context/src/index.ts)
+Source: [`packages/faberloom/context/src/index.ts:60`](../packages/faberloom/context/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-defaults"></a>
 
@@ -1002,7 +1002,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/routines/src/index.ts:56`](../packages/faberloom/routines/src/index.ts)
+Source: [`packages/faberloom/routines/src/index.ts:57`](../packages/faberloom/routines/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-agent"></a>
 
@@ -3231,7 +3231,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts:58`](../packages/faberloom/tool-faberloom/src/index.ts)
+Source: [`packages/faberloom/tool-faberloom/src/index.ts:59`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
