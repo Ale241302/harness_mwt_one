@@ -64,6 +64,10 @@ export const routineRecord = z.object({
   status: z.union([z.literal('draft'), z.literal('active'), z.literal('paused')]),
   version: z.number(),
   definition: definitionRecord,
+  // Who may see the routine. `private` keeps it to its owner: it is never
+  // published to a shared Space and no other member, or their agent, reads or
+  // edits it. Defaulted so routines written before the field keep loading.
+  visibility: z.enum(['shared', 'private']).default('shared'),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

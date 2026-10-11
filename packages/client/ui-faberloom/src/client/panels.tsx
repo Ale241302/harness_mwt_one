@@ -105,6 +105,12 @@ export interface FaberloomPanelInjected {
   spaceMemory: (spaceId?: string) => Promise<Result<readonly FaberLoomSpaceMemoryRow[]>>
   /** Delete one space-memory entry and return the refreshed list. */
   deleteSpaceMemory: (id: string) => Promise<Result<readonly FaberLoomSpaceMemoryRow[]>>
+  /** Set who may see one memory entry (owner only). */
+  setMemoryVisibility: (id: string, visibility: string) => Promise<Result<readonly FaberLoomSpaceMemoryRow[]>>
+  /** Set who may see one work flow (owner only). */
+  setWorkflowVisibility: (id: string, visibility: string) => Promise<Result<readonly FaberLoomWorkflowRow[]>>
+  /** Set who may see one routine (owner only). */
+  setRoutineVisibility: (id: string, visibility: string) => void
   /** Read one agent's full editable configuration. */
   agentDetail: (id: string) => Promise<Result<FaberLoomAgentDetail | undefined>>
   /** List the model pool the panels assign from. */
@@ -2016,7 +2022,7 @@ function routinesScreen() {
   return function FaberloomRoutines(props: ScreenProps) {
     const {
       t, createRoutine, setRoutineActive, routineDetail, saveRoutine, removeRoutine, executions,
-      startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
+      startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect, setRoutineVisibility,
     } = props
     const { overview, error } = useOverview(props)
     const [selected, setSelected] = useState<string | null>(null)
@@ -2142,6 +2148,11 @@ function routinesScreen() {
                             .catch((cause: unknown) => { setMessage(String(cause)) })
                         }}>{t('action.delete')}</button>
                       )}
+                      {chosen?.shared !== true ? (
+                        <button className={styles.secondary} type="button" onClick={() => {
+                          if (selected !== null) setRoutineVisibility(selected, chosen?.visibility === 'private' ? 'shared' : 'private')
+                        }}>{chosen?.visibility === 'private' ? t('action.makeShared') : t('action.makePrivate')}</button>
+                      ) : null}
                       <button className={styles.primary} type="button" onClick={() => { if (selected !== null) setRoutineActive(selected, true) }}>{t('action.activate')}</button>
                       <button className={styles.secondary} type="button" onClick={() => { if (selected !== null) setRoutineActive(selected, false) }}>{t('action.pause')}</button>
                       <button className={styles.primary} type="button" onClick={() => { if (selected !== null) applyRun(startRoutine(selected)) }}>{t('routines.start')}</button>
@@ -2256,7 +2267,7 @@ function routinesScreen() {
 /** Memoria: the owner's rows from the agent-memory server plus the recall form. */
 function memoryScreen() {
   return function FaberloomMemory(props: ScreenProps) {
-    const { t, remember, spaceMemory, deleteSpaceMemory } = props
+    const { t, remember, spaceMemory, deleteSpaceMemory, setMemoryVisibility } = props
     const { overview, error } = useOverview(props)
     const [draft, setDraft] = useState('')
     const [spaceId, setSpaceId] = useState('')
@@ -2325,6 +2336,15 @@ function memoryScreen() {
           footer={(
             <>
               <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+              {chosen !== null && chosen.shared !== true ? (
+                <button className={styles.secondary} type="button" onClick={() => {
+                  setMessage(null)
+                  void setMemoryVisibility(chosen.id, chosen.visibility === 'private' ? 'shared' : 'private').then((result) => {
+                    if (!result.ok) { setMessage(result.error.message); return }
+                    setReload(value => value + 1)
+                  }).catch((cause: unknown) => { setMessage(String(cause)) })
+                }}>{chosen.visibility === 'private' ? t('action.makeShared') : t('action.makePrivate')}</button>
+              ) : null}
               {chosen?.shared === true && chosen.canDelete !== true ? null : (
                 <button className={styles.danger} type="button" onClick={() => {
                   if (chosen === null) return
@@ -3323,7 +3343,7 @@ function RelationSelect({ label, value, options, onChange }: {
 /** Work Flows: the SVG graph canvas, the node inspector, run history, Space map, and export. */
 function workflowsScreen() {
   return function FaberloomWorkflows(props: ScreenProps) {
-    const { t, workflows } = props
+    const { t, workflows, setWorkflowVisibility } = props
     const { overview } = useOverview(props)
     const skillsState = useLazy(() => props.skills(), [])
     const [flows, setFlows] = useState<readonly FaberLoomWorkflowRow[]>([])
@@ -3656,6 +3676,15 @@ function workflowsScreen() {
                       setMessage(null)
                     })
                   }}>{t('action.delete')}</button>
+                )}
+                {selectedFlowShared ? null : (
+                  <button type="button" onClick={() => {
+                    // A private flow stops being shared: no other member, and no
+                    // other member's agent, reads or edits it.
+                    void setWorkflowVisibility(selected, selectedFlow?.visibility === 'private' ? 'shared' : 'private')
+                      .then((result) => { if (result.ok) setFlows(result.value); else setMessage(result.error.message) })
+                      .catch((error: unknown) => { setMessage(String(error)) })
+                  }}>{selectedFlow?.visibility === 'private' ? t('action.makeShared') : t('action.makePrivate')}</button>
                 )}
                 <button type="button" className={styles.primary} disabled={selectedFlowReadOnly} onClick={() => { addNode(selected) }}>{t('wf.addNode')}</button>
                 <button type="button" onClick={() => { setLogsOpen(true) }}>{t('wf.logs')}</button>

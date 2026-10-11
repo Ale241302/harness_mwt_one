@@ -50,6 +50,7 @@ Independent of live requests: the registration never touches a request prefix.
 
 - **The console is a transport seam** — publishing and importing need the MWT.ONE console endpoints; without them the service stays local and email-only.
 - **Acceptance is an explicit call** — the emailed link is handled by the console, which flips the grant to active; the local `accept` exists for the same-process and test path.
+- **A private item never publishes** — `publishContent` drops any item whose payload carries `visibility: 'private'`, and `syncContent` skips such a row on import, so a record the owner kept back never reaches the console or another identity, whatever a caller passes.
 
 No invariant companion is published because the service's unit specs already assert the permission matrix and the lifecycle.
 

@@ -23,6 +23,15 @@ export type WorkFlowStatus = 'draft' | 'active' | 'paused'
 /** What happens to the run when a step fails. */
 export type WorkFlowFailurePolicy = 'stop' | 'continue' | 'review'
 
+/**
+ * Who may see one work flow:
+ * - `shared` — a Space flow is published to its members and a directly shared
+ *   flow is readable per grant,
+ * - `private` — kept to its owner; never shared, so no other member, or their
+ *   agent, reads or edits it even while holding every module permission.
+ */
+export type WorkFlowVisibility = 'shared' | 'private'
+
 /** Whether a work flow belongs to one Space or to the personal scope. */
 export type WorkFlowScope =
   | { readonly kind: 'personal' }
@@ -154,6 +163,8 @@ export interface WorkFlow {
   readonly definition: WorkFlowDefinition
   /** The compiled routine id, or `undefined` until the flow is activated. */
   readonly routineId: string | undefined
+  /** Who may see the flow. */
+  readonly visibility: WorkFlowVisibility
   /** ISO-8601 creation instant. */
   readonly createdAt: string
   /** ISO-8601 instant of the last durable mutation. */
@@ -180,6 +191,8 @@ export interface WorkFlowRecord {
   readonly definition: WorkFlowDefinition
   /** Compiled routine id, or `null` until the flow is activated. */
   readonly routineId: string | null
+  /** Who may see the flow. */
+  readonly visibility: WorkFlowVisibility
   /** ISO-8601 creation instant. */
   readonly createdAt: string
   /** ISO-8601 instant of the last durable mutation. */

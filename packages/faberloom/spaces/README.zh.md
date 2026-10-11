@@ -52,6 +52,7 @@ kind: "package-reference"
 - **工作区镜像** — 当某个工作区被采纳为空间时，空间可存储它镜像的 harness 工作区 id；服务只保留 id（绝不保留路径），由 view 通过工作区注册表解析它。没有镜像的空间使用确定性的 `<DSH_HOME>/spaces/<ref>` 区域。
 - **词法引用查找（v1）** — `find` 以折叠后的词项匹配空间标题、其上下文值与记忆文本；它不搜索附件内容，且排除已归档空间。`reference` 只返回文件元数据，不含字节。当挂载 `ctx.faberloomContext` 时，`find` 也会对该空间的精选上下文条目（`shared`，加上读者自己的）排序，`reference` 也会返回它们；空间的 `context` 映射与带版本的条目仍是两层。当挂载 `ctx.spaceIndex` 排序器时，`find` 也会对该空间附件的可读文本排序，上限 50 KB。
 - **可插拔排序接缝（6.1）** — 当挂载 provider 时，`find` 通过 `ctx.spaceIndex` 排序，否则使用内置词法排序器；该接缝让 embeddings 或知识中枢 provider 在不接触存储或访问控制的情况下替换排序。
+- **私有记忆** — 空间记忆条目带有 `visibility`（默认 `shared`，或 `private`）。只有所有者可通过 `setMemoryVisibility` 切换；`private` 条目留在其所有者处——视图的发布跳过它，且 `listMemory` 对可读该空间的成员隐藏另一位所有者的私有条目。
 
 未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
 

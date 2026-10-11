@@ -95,6 +95,26 @@ describe('FaberLoomSpaces', () => {
     await expect(spaces.remember(SONEPAR, 'x', [parent.id])).rejects.toThrow('access denied')
   })
 
+  it('keeps a private memory entry to its owner and hides it from every other reader', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'SICOP' })
+    const shared = await spaces.remember(SONDEL, 'dato compartido', [space.id])
+    const secret = await spaces.remember(SONDEL, 'dato privado', [space.id])
+    expect(shared.visibility).toBe('shared')
+    expect(secret.visibility).toBe('shared')
+
+    await spaces.setMemoryVisibility(SONDEL, secret.id, 'private')
+    // The owner still reads both of its own entries.
+    expect((await spaces.listMemory(SONDEL, space.id)).map(entry => entry.text))
+      .toEqual(['dato compartido', 'dato privado'])
+    // A reader with access to the Space reads only the shared one.
+    expect((await spaces.listMemory(ADMIN, space.id)).map(entry => entry.text)).toEqual(['dato compartido'])
+
+    await expect(spaces.setMemoryVisibility(ADMIN, secret.id, 'shared')).rejects.toThrow('memory access denied')
+    await expect(spaces.setMemoryVisibility(SONDEL, 'missing', 'private')).rejects.toThrow('not found')
+    expect((await spaces.setMemoryVisibility(SONDEL, secret.id, 'shared')).visibility).toBe('shared')
+  })
+
   it('links memory to the Session that captured it and drops it when that Session is deleted', async () => {
     const { spaces } = await harness()
     const space = await spaces.create(SONDEL, { title: 'SICOP' })

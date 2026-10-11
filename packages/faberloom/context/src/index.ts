@@ -2,8 +2,9 @@
  * Workspace/Space Context (`ctx.faberloomContext`): a durable, versioned and
  * approvable store of the facts and rules a Space shares, separate from the
  * episodic Memory. The Space owner indexes a member's contribution into the
- * shared context (`shared`), leaves it private to the member (`local`), or sees
- * it waiting for a decision (`pending`); every change appends an immutable
+ * shared context (`shared`), leaves it private to the member (`local`, which
+ * neither the owner nor another member reads), or sees it waiting for a
+ * decision (`pending`); every change appends an immutable
  * version so any earlier context can be restored. A member's Space entry is
  * published to the MWT.ONE console and the owner's process imports it as
  * `pending`, so approval crosses hosts. Records are durable through
@@ -96,9 +97,12 @@ function toVersion(record: ContextVersionRecord): FaberLoomContextVersion {
   }
 }
 
-/** Whether an actor may read one entry: its author, its owner, or a readable Space's shared entry. */
+/** Whether an actor may read one entry: its author, or a `pending` owner's decision, or a shared Space. */
 function visible(record: ContextEntryRecord, actorId: string, readable: ReadonlySet<string> | undefined): boolean {
-  if (record.authorId === actorId || record.ownerId === actorId) return true
+  // The author always reads its own entry. The Space owner reads a `pending`
+  // one to decide it, but a `local` one is private to its author alone.
+  if (record.authorId === actorId) return true
+  if (record.visibility === 'pending') return record.ownerId === actorId
   if (record.visibility !== 'shared') return false
   if (record.spaceId === null) return true
   return readable === undefined || readable.has(record.spaceId)
@@ -558,6 +562,9 @@ export class FaberLoomContext extends Service {
     /* jscpd:ignore-start -- mirrors the session-shares import and prune: the
        same upsert-and-prune shape over one reader's imported rows. */
     for (const row of data.incoming ?? []) {
+      // A `local` row is private to its author; the owner never stores it, and
+      // the prune below removes any copy an earlier sync left behind.
+      if (row.status === 'local') continue
       wanted.add(`${readerId}\u0000${row.id}`)
       const existing = table.get(`${importedPrefix(readerId)}${row.id}`)
       const at = new Date().toISOString()
@@ -566,7 +573,7 @@ export class FaberLoomContext extends Service {
         title: row.title ?? '',
         body: row.body ?? '',
         version: typeof row.version === 'number' ? row.version : 1,
-        visibility: row.status === 'shared' ? 'shared' : row.status === 'local' ? 'local' : 'pending',
+        visibility: row.status === 'shared' ? 'shared' : 'pending',
         authorId: row.author_email,
         ownerId: readerId,
         createdAt: existing?.createdAt ?? at,

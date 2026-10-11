@@ -163,6 +163,8 @@ export interface FaberLoomRoutineRow {
   readonly name: string
   /** Current status token. */
   readonly status: string
+  /** `shared` or `private`; a private routine stays to its owner. */
+  readonly visibility?: string
   /** True when another member shared the routine; it is read-only here. */
   readonly shared?: boolean
   /** True when the actor holds the module permission to remove this shared item. */
@@ -179,6 +181,8 @@ export interface FaberLoomSpaceMemoryRow {
   readonly spaceIds: readonly string[]
   /** ISO-8601 creation instant. */
   readonly createdAt: string
+  /** `shared` or `private`; a private entry stays to its owner. */
+  readonly visibility?: string
   /** True when another member shared the entry; it is read-only here. */
   readonly shared?: boolean
   /** True when the actor holds the module permission to remove this shared item. */
@@ -1056,6 +1060,8 @@ export interface FaberLoomWorkflowRow {
   readonly routineId: string | null
   /** Space the flow belongs to, or null for the personal scope. */
   readonly spaceId: string | null
+  /** `shared` or `private`; a private flow stays to its owner. */
+  readonly visibility?: string
   /** True when another member shared the flow; it is read-only here. */
   readonly shared?: boolean
   /** True when the actor holds the module permission to remove this shared item. */

@@ -1103,6 +1103,19 @@ registerReviewListener(listener: (review: ExecutionReview) => void): () => void
 async createRoutine(ownerId: string, input: RoutineInput): Promise<FaberLoomRoutine>
 
 /**
+ * Set who may see one routine. Only its owner may change it: a `private`
+ * routine stops being published to its Space, so no other member, or their
+ * agent, reads or edits it even while holding every module permission. The
+ * definition version is untouched.
+ * @param ownerId - the acting identity.
+ * @param id - routine id.
+ * @param visibility - `shared` or `private`.
+ * @returns the updated routine.
+ * @throws when the routine is absent or owned by another identity.
+ */
+async setRoutineVisibility(ownerId: string, id: FaberLoomRoutineId, visibility: RoutineVisibility): Promise<FaberLoomRoutine>
+
+/**
  * Read one routine.
  * @param id - routine id.
  * @returns the routine.
@@ -1643,6 +1656,18 @@ async remove(actor: SpaceActor, id: FaberLoomSpaceId): Promise<boolean>
 async remember( actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[], sessionId?: string, ): Promise<FaberLoomSpaceMemory>
 
 /**
+ * Set who may see one memory entry. Only its owner may change it: a `private`
+ * entry stops being published to its Spaces, so no other member, or their
+ * agent, reads or edits it even while holding every module permission.
+ * @param actor - the acting identity.
+ * @param id - memory entry id.
+ * @param visibility - `shared` or `private`.
+ * @returns the updated entry.
+ * @throws when the entry is absent or owned by another identity.
+ */
+async setMemoryVisibility( actor: SpaceActor, id: string, visibility: FaberLoomMemoryVisibility, ): Promise<FaberLoomSpaceMemory>
+
+/**
  * Delete every memory entry the actor captured from one Session, so deleting
  * a Session also removes the facts it left behind and the shared-content
  * catalog can propagate the removal to every member.
@@ -1811,6 +1836,15 @@ Workspace view (`ctx.faberloomView`) over the mounted product services and the a
  * @returns the flow detail.
  */
 @Remote('workflowDetail') async workflowDetail(id: string): Promise<FaberLoomWorkflowDetail>
+
+/**
+ * Set who may see one work flow (owner only). A `private` flow stops being
+ * shared: no other member, and no other member's agent, reads or edits it.
+ * @param id - work flow id.
+ * @param visibility - `shared` or `private`.
+ * @returns the refreshed rows.
+ */
+@Remote('setWorkflowVisibility') async setWorkflowVisibility(id: string, visibility: string): Promise<readonly FaberLoomWorkflowRow[]>
 
 /**
  * Create an empty work flow and return the refreshed list.
@@ -2871,6 +2905,15 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('setRoutineActive') async setRoutineActive(id: string, active: boolean): Promise<FaberLoomOverview>
 
 /**
+ * Set who may see one routine (owner only). A `private` routine stops being
+ * published: no other member, and no other member's agent, reads or edits it.
+ * @param id - routine id.
+ * @param visibility - `shared` or `private`.
+ * @returns the refreshed overview.
+ */
+@Remote('setRoutineVisibility') async setRoutineVisibility(id: string, visibility: string): Promise<FaberLoomOverview>
+
+/**
  * Remember one statement, attached to a space or to no space. The entry is
  * durable and space-scoped, so a sub-space with inheritance sees it.
  * @param text - the statement to remember.
@@ -2895,6 +2938,16 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the remaining memory rows, oldest first.
  */
 @Remote('deleteSpaceMemory') async deleteSpaceMemory(id: string): Promise<readonly FaberLoomSpaceMemoryRow[]>
+
+/**
+ * Set who may see one memory entry (owner only). A `private` entry stops
+ * being published: no other member, and no other member's agent, reads or
+ * edits it.
+ * @param id - memory entry id.
+ * @param visibility - `shared` or `private`.
+ * @returns the refreshed memory rows, oldest first.
+ */
+@Remote('setMemoryVisibility') async setMemoryVisibility(id: string, visibility: string): Promise<readonly FaberLoomSpaceMemoryRow[]>
 ```
 
 Source: [`packages/faberloom/view/src/index.ts`](../../packages/faberloom/view/src/index.ts)
@@ -2943,6 +2996,21 @@ async list(actor: WorkFlowActor, scope?: WorkFlowScope): Promise<WorkFlow[]>
  * @throws when the flow is absent or owned by another identity.
  */
 async get(actor: WorkFlowActor, id: WorkFlowId): Promise<WorkFlow>
+
+/**
+ * Set who may see one work flow. Only its owner may change it: a `private`
+ * flow stops being shared or published, so no other member, or their agent,
+ * reads or edits it even while holding every module permission. Setting it
+ * private also revokes its outgoing direct grants, because a grantee's
+ * imported copy carries its own visibility and must stop resolving. The graph
+ * version is untouched, so a staged change stays based on the same version.
+ * @param actor - the acting identity.
+ * @param id - work flow id.
+ * @param visibility - `shared` or `private`.
+ * @returns the updated work flow.
+ * @throws when the flow is absent or owned by another identity.
+ */
+async setVisibility(actor: WorkFlowActor, id: WorkFlowId, visibility: WorkFlowVisibility): Promise<WorkFlow>
 
 /**
  * Apply a mutable patch to one work flow the actor owns, bumping the version.

@@ -17,6 +17,7 @@ const SPACES = 'faberloom-spaces' as MainPanelId
 const MEMORY = 'faberloom-memory' as MainPanelId
 const EMAIL = 'faberloom-email' as MainPanelId
 const WORKFLOWS = 'faberloom-workflows' as MainPanelId
+const ROUTINES = 'faberloom-routines' as MainPanelId
 
 const OVERVIEW = {
   spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null, agentId: 'agent-1', agentName: 'Proformas', workspaceId: 'ws-1' }],
@@ -99,6 +100,12 @@ async function bench(
   }))
   const saveSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const saveRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const removeRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const executions = vi.fn(async () => ({ ok: true, value: [] }))
+  const startRoutine = vi.fn(async () => ({ ok: true, value: [] }))
+  const tickRoutine = vi.fn(async () => ({ ok: true, value: [] }))
+  const reconcileExecution = vi.fn(async () => ({ ok: true, value: [] }))
+  const cancelExecutionEffect = vi.fn(async () => ({ ok: true, value: [] }))
   const connections = vi.fn(async () => ({ ok: true, value: [] }))
   const skills = vi.fn(async () => ({ ok: true, value: [] }))
   const saveConnection = vi.fn(async () => ({ ok: true, value: [] }))
@@ -136,6 +143,9 @@ async function bench(
   const workflowTemplates = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const createWorkflowFromTemplate = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const importWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const setMemoryVisibility = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const setWorkflowVisibility = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const setRoutineVisibility = vi.fn(async (): Promise<unknown> => ({ ok: true, value: OVERVIEW }))
   const captureSpaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const spaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const spaceSessionContent = vi.fn(async (): Promise<unknown> => ({
@@ -151,6 +161,7 @@ async function bench(
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, setBoardRoutine,
+    removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
@@ -163,6 +174,7 @@ async function bench(
     workflowTemplates, createWorkflowFromTemplate, importWorkflow,
     captureSpaceSessions, spaceSessions, spaceSessionContent, removeSpaceSession,
     syncContext, workflowPendingChanges, acceptWorkflowChange, rejectWorkflowChange,
+    setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -206,6 +218,7 @@ async function bench(
     routineWorkflowLinks, setWorkflowConcurrency,
     shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
     workflowTemplates, createWorkflowFromTemplate, importWorkflow,
+    setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
   }
 }
 
@@ -367,10 +380,10 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(emailTrash).toHaveBeenCalledWith('42', 'proveedor@mwt.one', 'OC 505433') })
   })
 
-  it('shows the space name and a snippet, and deletes the memory from a modal', async () => {
-    const named = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', text: `Correo «PO 505433»: ${'x'.repeat(400)}` }
-    const orphan = { id: 'm2', spaceIds: ['gone'], createdAt: '2026-09-26T00:00:00Z', text: 'Documento «PF 1.pdf»: resumen' }
-    const { runtime, deleteSpaceMemory, view } = await bench(
+  it('shows the space name and a snippet, toggles visibility, and deletes the memory from a modal', async () => {
+    const named = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', visibility: 'private', text: `Correo «PO 505433»: ${'x'.repeat(400)}` }
+    const orphan = { id: 'm2', spaceIds: ['gone'], createdAt: '2026-09-26T00:00:00Z', visibility: 'shared', text: 'Documento «PF 1.pdf»: resumen' }
+    const { runtime, deleteSpaceMemory, setMemoryVisibility, view } = await bench(
       { ok: true, value: OVERVIEW }, undefined, {}, [named, orphan],
     )
     act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
@@ -380,8 +393,33 @@ describe('faberloom surface', () => {
 
     const target = view.getAllByRole('row').find(row => row.textContent?.includes('Correo «PO 505433»'))
     fireEvent.click(target as HTMLTableRowElement)
+    // A private entry offers to become shared again.
+    fireEvent.click(await view.findByRole('button', { name: 'Make shared' }))
+    await waitFor(() => { expect(setMemoryVisibility).toHaveBeenCalledWith('m1', 'shared') })
+
+    const other = view.getAllByRole('row').find(row => row.textContent?.includes('Documento «PF 1.pdf»'))
+    fireEvent.click(other as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Make private' }))
+    await waitFor(() => { expect(setMemoryVisibility).toHaveBeenCalledWith('m2', 'private') })
+
+    fireEvent.click(target as HTMLTableRowElement)
     fireEvent.click(await view.findByRole('button', { name: 'Delete memory' }))
     await waitFor(() => { expect(deleteSpaceMemory).toHaveBeenCalledWith('m1') })
+  })
+
+  it('surfaces a memory visibility failure, resolved and rejected', async () => {
+    const entry = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', text: 'Correo «PO 1»' }
+    const { runtime, view, setMemoryVisibility } = await bench({ ok: true, value: OVERVIEW }, undefined, {}, [entry])
+    setMemoryVisibility.mockResolvedValueOnce({ ok: false, error: { message: 'vis-down' } })
+    act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
+    const target = (await view.findAllByRole('row')).find(row => row.textContent?.includes('Correo «PO 1»'))
+    fireEvent.click(target as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Make private' }))
+    expect(await view.findByText('vis-down')).toBeTruthy()
+
+    setMemoryVisibility.mockRejectedValueOnce(new Error('vis-boom'))
+    fireEvent.click(view.getByRole('button', { name: 'Make private' }))
+    expect(await view.findByText(/vis-boom/)).toBeTruthy()
   })
 
   it('marks read and trashes a message from the Email panel', async () => {
@@ -762,5 +800,63 @@ describe('faberloom work-flow canvas', () => {
     fireEvent.click(view.getByRole('button', { name: 'Send invite' }))
     await waitFor(() => { expect(shareWorkflow).toHaveBeenCalledWith('wf1', ['nuevo@proveedor.com'], ['view']) })
     expect(await view.findByText('nuevo@proveedor.com')).toBeTruthy()
+  })
+
+  it('sets a flow private and back to shared from the toolbar', async () => {
+    const { runtime, view, workflowOverview, workflowDetail, setWorkflowVisibility } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    const detailValue = { ...row, valid: true, problems: [], maxConcurrency: null, nodesList: [], edgesList: [] }
+    workflowDetail.mockResolvedValue({ ok: true, value: detailValue })
+    setWorkflowVisibility.mockResolvedValue({ ok: true, value: [{ ...row, visibility: 'private' }] })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(await view.findByText(/Anti-spam/))
+    fireEvent.click(await view.findByRole('button', { name: 'Make private' }))
+    await waitFor(() => { expect(setWorkflowVisibility).toHaveBeenCalledWith('wf1', 'private') })
+
+    // The refreshed row is private, so the toolbar offers the opposite toggle.
+    fireEvent.click(await view.findByRole('button', { name: 'Make shared' }))
+    await waitFor(() => { expect(setWorkflowVisibility).toHaveBeenLastCalledWith('wf1', 'shared') })
+  })
+
+  it('surfaces a flow visibility failure, resolved and rejected', async () => {
+    const { runtime, view, workflowOverview, workflowDetail, setWorkflowVisibility } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    workflowDetail.mockResolvedValue({
+      ok: true, value: { ...row, valid: true, problems: [], maxConcurrency: null, nodesList: [], edgesList: [] },
+    })
+    setWorkflowVisibility.mockResolvedValueOnce({ ok: false, error: { message: 'wf-vis-down' } })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(await view.findByText(/Anti-spam/))
+    fireEvent.click(await view.findByRole('button', { name: 'Make private' }))
+    expect(await view.findByText('wf-vis-down')).toBeTruthy()
+
+    setWorkflowVisibility.mockRejectedValueOnce(new Error('wf-vis-boom'))
+    fireEvent.click(view.getByRole('button', { name: 'Make private' }))
+    expect(await view.findByText(/wf-vis-boom/)).toBeTruthy()
+  })
+})
+
+describe('faberloom routines visibility', () => {
+  it('marks a routine private from the inspector', async () => {
+    const { runtime, view, setRoutineVisibility } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: ROUTINES }) })
+    await view.findByText('Pedido a proforma')
+    fireEvent.click((await view.findAllByRole('row'))[1] as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Make private' }))
+    await waitFor(() => { expect(setRoutineVisibility).toHaveBeenCalledWith('routine-1', 'private') })
+  })
+
+  it('offers to share a routine that is already private', async () => {
+    const { runtime, view, setRoutineVisibility } = await bench({
+      ok: true,
+      value: { ...OVERVIEW, routines: [{ ...OVERVIEW.routines[0], visibility: 'private' }] },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: ROUTINES }) })
+    await view.findByText('Pedido a proforma')
+    fireEvent.click((await view.findAllByRole('row'))[1] as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Make shared' }))
+    await waitFor(() => { expect(setRoutineVisibility).toHaveBeenCalledWith('routine-1', 'shared') })
   })
 })

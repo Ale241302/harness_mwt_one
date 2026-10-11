@@ -908,7 +908,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       }),
       board: board.map(item => ({ id: item.id, title: item.title, status: item.status, routineId: item.routineId })),
       routines: routines.map(routine => ({
-        id: routine.id, name: routine.name, status: routine.status,
+        id: routine.id, name: routine.name, status: routine.status, visibility: routine.visibility,
         ...sharedRoutineIds.has(String(routine.id)) ? { shared: true, canDelete: deletableRoutineIds.has(String(routine.id)) } : {},
       })),
       memory,
@@ -1086,6 +1086,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       edges: flow.definition.edges.length,
       routineId: flow.routineId ?? null,
       spaceId: flow.scope.kind === 'space' ? flow.scope.spaceId : null,
+      visibility: flow.visibility,
     }
   }
 
@@ -1137,6 +1138,32 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('workflowDetail')
   async workflowDetail(id: string): Promise<FaberLoomWorkflowDetail> {
     return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Set who may see one work flow (owner only). A `private` flow stops being
+   * shared: no other member, and no other member's agent, reads or edits it.
+   * @param id - work flow id.
+   * @param visibility - `shared` or `private`.
+   * @returns the refreshed rows.
+   */
+  @Remote('setWorkflowVisibility')
+  async setWorkflowVisibility(id: string, visibility: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.workflowsService().setVisibility(this.workflowActor(), id as WorkFlowId, visibility === 'private' ? 'private' : 'shared')
+    await this.republishSharedNow()
+    return await this.workflowOverview()
+  }
+
+  /**
+   * Refresh the owner's published Space content after a visibility change, so a
+   * record turned private leaves the console at once and one turned shared
+   * returns. A deployment without the console transport is a no-op.
+   */
+  private async republishSharedNow(): Promise<void> {
+    if (this.consoleBase() === undefined || this.consoleToken() === undefined) return
+    await this.refreshSharedContent(this.actor()).catch((error: unknown) => {
+      this.ctx.logger.warn(`faberloom: no se pudo republicar el contenido tras cambiar la visibilidad: ${error instanceof Error ? error.message : String(error)}`)
+    })
   }
 
   /**
@@ -1709,6 +1736,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     const shares = this.sharesService()
     for (const row of rows) {
       if (row.localId !== null || row.consoleId === null) continue
+      // Defense in depth: a private record must not have been published, but if
+      // a console ever returns one it is never materialized here.
+      if (row.payload['visibility'] === 'private') continue
       let localId: string | undefined
       try {
         if (row.kind === 'memory') localId = await this.materializeSharedMemory(actor, space.id, row)
@@ -1833,27 +1863,33 @@ export class FaberLoomViewService extends TypertRemoteService {
     // mistaken for a local item and echoed back.
     const add = (item: FaberLoomSharedContentInput): void => {
       if (canCreate.get(item.kind) !== true) return
+      // A `private` record never travels: it is the owner's, so no other member
+      // materializes it and no other member's agent reads or edits it.
+      if (item.payload.visibility === 'private') return
       const field = item.kind === 'memory' ? 'text' : item.kind === 'context' ? 'title' : 'name'
       const itemKey = item.itemKey.trim()
       if (itemKey.length === 0 || imported.has(`${item.kind}\u0000${itemKey}`)) return
       items.push({ kind: item.kind, itemKey, payload: { ...item.payload, [field]: itemKey } })
     }
     for (const entry of await this.ctx.faberloomSpaces.listMemory(actor, space.id)) {
-      add({ kind: 'memory', itemKey: entry.text, payload: { text: entry.text, createdAt: entry.createdAt } })
+      add({ kind: 'memory', itemKey: entry.text, payload: { text: entry.text, createdAt: entry.createdAt, visibility: entry.visibility } })
     }
     const context = this.ctx.get('faberloomContext')
     if (context !== undefined) {
       for (const entry of await context.list({ id: actor.id })) {
-        add({ kind: 'context', itemKey: entry.title, payload: { title: entry.title, body: entry.body } })
+        // Only an entry the owner indexed into the Space's shared context
+        // travels; a `local` one is private and a `pending` one awaits approval.
+        if (entry.visibility !== 'shared') continue
+        add({ kind: 'context', itemKey: entry.title, payload: { title: entry.title, body: entry.body, visibility: entry.visibility } })
       }
     }
     // Every Work Flow and Routine the member owns travels to the other members,
     // as the one-way snapshot already did; the copies are excluded by name.
     for (const flow of await this.workflowsService().list(this.workflowActor())) {
-      add({ kind: 'workflow', itemKey: flow.name, payload: { name: flow.name, definition: flow.definition } })
+      add({ kind: 'workflow', itemKey: flow.name, payload: { name: flow.name, definition: flow.definition, visibility: flow.visibility } })
     }
     for (const routine of await this.ctx.faberloomRoutines.listRoutines(actor.id)) {
-      add({ kind: 'routine', itemKey: routine.name, payload: { name: routine.name, definition: routine.definition } })
+      add({ kind: 'routine', itemKey: routine.name, payload: { name: routine.name, definition: routine.definition, visibility: routine.visibility } })
     }
     await this.sharesService().publishContent(actor.id, space.id, items)
   }
@@ -2434,6 +2470,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('approveContext')
   async approveContext(id: string): Promise<readonly FaberLoomContextRow[]> {
     await this.contextService().approve({ id: this.actor().id }, id)
+    await this.republishSharedNow()
     return await this.contextEntries()
   }
 
@@ -2445,6 +2482,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('rejectContext')
   async rejectContext(id: string): Promise<readonly FaberLoomContextRow[]> {
     await this.contextService().reject({ id: this.actor().id }, id)
+    await this.republishSharedNow()
     return await this.contextEntries()
   }
 
@@ -4834,6 +4872,20 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Set who may see one routine (owner only). A `private` routine stops being
+   * published: no other member, and no other member's agent, reads or edits it.
+   * @param id - routine id.
+   * @param visibility - `shared` or `private`.
+   * @returns the refreshed overview.
+   */
+  @Remote('setRoutineVisibility')
+  async setRoutineVisibility(id: string, visibility: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomRoutines.setRoutineVisibility(this.actor().id, id as FaberLoomRoutineId, visibility === 'private' ? 'private' : 'shared')
+    await this.republishSharedNow()
+    return await this.overview()
+  }
+
+  /**
    * Remember one statement, attached to a space or to no space. The entry is
    * durable and space-scoped, so a sub-space with inheritance sees it.
    * @param text - the statement to remember.
@@ -4869,6 +4921,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       text: entry.text,
       spaceIds: entry.spaceIds.map(String),
       createdAt: entry.createdAt,
+      visibility: entry.visibility,
       ...shared.has(entry.id) ? { shared: true, canDelete: deletable.has(entry.id) } : {},
     }))
   }
@@ -4888,6 +4941,21 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     await this.ctx.faberloomSpaces.forgetMemory(this.actor(), id)
     if (shared) await this.retireImported(id)
+    return await this.spaceMemory()
+  }
+
+  /**
+   * Set who may see one memory entry (owner only). A `private` entry stops
+   * being published: no other member, and no other member's agent, reads or
+   * edits it.
+   * @param id - memory entry id.
+   * @param visibility - `shared` or `private`.
+   * @returns the refreshed memory rows, oldest first.
+   */
+  @Remote('setMemoryVisibility')
+  async setMemoryVisibility(id: string, visibility: string): Promise<readonly FaberLoomSpaceMemoryRow[]> {
+    await this.ctx.faberloomSpaces.setMemoryVisibility(this.actor(), id, visibility === 'private' ? 'private' : 'shared')
+    await this.republishSharedNow()
     return await this.spaceMemory()
   }
 

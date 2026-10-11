@@ -31,6 +31,7 @@ function fakeWorkflows(detail = flow([], [])) {
     disconnect: vi.fn(async () => {}),
     setStatus: vi.fn(async () => {}),
     setConcurrency: vi.fn(async () => {}),
+    setVisibility: vi.fn(async () => ({ ...detail, visibility: 'private' })),
     runs: vi.fn(async () => [{ id: 'ex1', status: 'completed', routineVersion: 1, createdAt: 'c', updatedAt: 'u' }]),
     templates: vi.fn(() => [
       { id: 'anti-spam', name: 'Anti-spam', description: 'clasifica', definition: { intent: '', nodes: [], edges: [], permissions: [], failurePolicy: 'stop' } },
@@ -117,6 +118,15 @@ describe('FaberLoomViewService workflows', () => {
     shares.can = vi.fn(async () => true)
     await view.saveWorkflow('wf1', 'x')
     expect(workflows.update).toHaveBeenCalled()
+  })
+
+  it('sets a flow private and back to shared through the service', async () => {
+    const { view, workflows } = harness()
+    await view.setWorkflowVisibility('wf1', 'private')
+    expect(workflows.setVisibility).toHaveBeenCalledWith({ id: 'owner@muitowork.com' }, 'wf1', 'private')
+
+    await view.setWorkflowVisibility('wf1', 'shared')
+    expect(workflows.setVisibility).toHaveBeenLastCalledWith({ id: 'owner@muitowork.com' }, 'wf1', 'shared')
   })
 
   it('saves, adds, updates, removes, connects, disconnects, and sets status through the service', async () => {

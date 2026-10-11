@@ -1650,6 +1650,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the created routine.',
       },
       {
+        signature: 'async setRoutineVisibility(ownerId: string, id: FaberLoomRoutineId, visibility: RoutineVisibility): Promise<FaberLoomRoutine>',
+        description: 'Set who may see one routine. Only its owner may change it: a `private` routine stops being published to its Space, so no other member, or their agent, reads or edits it even while holding every module permission. The definition version is untouched.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'routine id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the updated routine.',
+        throws: ['when the routine is absent or owned by another identity.'],
+      },
+      {
         signature: 'async getRoutine(id: FaberLoomRoutineId): Promise<FaberLoomRoutine>',
         description: 'Read one routine.',
         parameters: [{ name: 'id', description: 'routine id.' }],
@@ -2010,6 +2017,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the created entry.',
       },
       {
+        signature: 'async setMemoryVisibility( actor: SpaceActor, id: string, visibility: FaberLoomMemoryVisibility, ): Promise<FaberLoomSpaceMemory>',
+        description: 'Set who may see one memory entry. Only its owner may change it: a `private` entry stops being published to its Spaces, so no other member, or their agent, reads or edits it even while holding every module permission.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'memory entry id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the updated entry.',
+        throws: ['when the entry is absent or owned by another identity.'],
+      },
+      {
         signature: 'async forgetMemoryBySession(actor: SpaceActor, sessionId: string): Promise<number>',
         description: 'Delete every memory entry the actor captured from one Session, so deleting a Session also removes the facts it left behind and the shared-content catalog can propagate the removal to every member.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'sessionId', description: 'the Session whose captured entries are removed.' }],
@@ -2126,6 +2140,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read one work flow with its graph and validation verdict.',
         parameters: [{ name: 'id', description: 'work flow id.' }],
         returns: 'the flow detail.',
+      },
+      {
+        signature: '@Remote(\'setWorkflowVisibility\') async setWorkflowVisibility(id: string, visibility: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Set who may see one work flow (owner only). A `private` flow stops being shared: no other member, and no other member\'s agent, reads or edits it.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the refreshed rows.',
       },
       {
         signature: '@Remote(\'createWorkflow\') async createWorkflow(name: string, spaceId?: string): Promise<readonly FaberLoomWorkflowRow[]>',
@@ -2925,6 +2945,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed overview.',
       },
       {
+        signature: '@Remote(\'setRoutineVisibility\') async setRoutineVisibility(id: string, visibility: string): Promise<FaberLoomOverview>',
+        description: 'Set who may see one routine (owner only). A `private` routine stops being published: no other member, and no other member\'s agent, reads or edits it.',
+        parameters: [{ name: 'id', description: 'routine id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
         signature: '@Remote(\'remember\') async remember(text: string, spaceId?: string): Promise<FaberLoomOverview>',
         description: 'Remember one statement, attached to a space or to no space. The entry is durable and space-scoped, so a sub-space with inheritance sees it.',
         parameters: [{ name: 'text', description: 'the statement to remember.' }, { name: 'spaceId', description: 'the space to attach it to, when one is chosen.' }],
@@ -2941,6 +2967,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Delete one space-memory entry the owner controls and return the refreshed list. Deleting a space never deletes its memory; this is the only path that removes an entry, and it is explicit.',
         parameters: [{ name: 'id', description: 'memory entry id.' }],
         returns: 'the remaining memory rows, oldest first.',
+      },
+      {
+        signature: '@Remote(\'setMemoryVisibility\') async setMemoryVisibility(id: string, visibility: string): Promise<readonly FaberLoomSpaceMemoryRow[]>',
+        description: 'Set who may see one memory entry (owner only). A `private` entry stops being published: no other member, and no other member\'s agent, reads or edits it.',
+        parameters: [{ name: 'id', description: 'memory entry id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the refreshed memory rows, oldest first.',
       },
     ],
   },
@@ -2972,6 +3004,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read one work flow the actor owns.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
         returns: 'the work flow.',
+        throws: ['when the flow is absent or owned by another identity.'],
+      },
+      {
+        signature: 'async setVisibility(actor: WorkFlowActor, id: WorkFlowId, visibility: WorkFlowVisibility): Promise<WorkFlow>',
+        description: 'Set who may see one work flow. Only its owner may change it: a `private` flow stops being shared or published, so no other member, or their agent, reads or edits it even while holding every module permission. Setting it private also revokes its outgoing direct grants, because a grantee\'s imported copy carries its own visibility and must stop resolving. The graph version is untouched, so a staged change stays based on the same version.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the updated work flow.',
         throws: ['when the flow is absent or owned by another identity.'],
       },
       {
@@ -7050,6 +7089,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomMemoryRow {\n    readonly id: string;\n    readonly kind: string;\n    readonly text: string;\n    readonly at: string;\n}',
   },
   {
+    name: 'FaberLoomMemoryVisibility',
+    declaration: 'export type FaberLoomMemoryVisibility = \'shared\' | \'private\';',
+  },
+  {
     name: 'FaberLoomMigrationInfo',
     declaration: 'export interface FaberLoomMigrationInfo {\n    readonly id: string;\n    readonly domain: string;\n    readonly describe: string;\n    readonly applied: boolean;\n    readonly appliedAt: string | null;\n}',
   },
@@ -7115,7 +7158,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutine',
-    declaration: 'export interface FaberLoomRoutine {\n    readonly id: FaberLoomRoutineId;\n    readonly ownerId: string;\n    readonly name: string;\n    readonly status: RoutineStatus;\n    readonly version: number;\n    readonly definition: RoutineDefinition;\n    readonly versions: readonly number[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface FaberLoomRoutine {\n    readonly id: FaberLoomRoutineId;\n    readonly ownerId: string;\n    readonly name: string;\n    readonly status: RoutineStatus;\n    readonly version: number;\n    readonly definition: RoutineDefinition;\n    readonly versions: readonly number[];\n    readonly visibility: RoutineVisibility;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomRoutineChatMessage',
@@ -7135,7 +7178,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutineRow',
-    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
+    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly visibility?: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
   },
   {
     name: 'FaberLoomRoutineStepRow',
@@ -7263,11 +7306,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSpaceMemory',
-    declaration: 'export interface FaberLoomSpaceMemory {\n    readonly id: string;\n    readonly spaceIds: readonly FaberLoomSpaceId[];\n    readonly text: string;\n    readonly sessionId: string | null;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface FaberLoomSpaceMemory {\n    readonly id: string;\n    readonly spaceIds: readonly FaberLoomSpaceId[];\n    readonly text: string;\n    readonly sessionId: string | null;\n    readonly visibility: FaberLoomMemoryVisibility;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'FaberLoomSpaceMemoryRow',
-    declaration: 'export interface FaberLoomSpaceMemoryRow {\n    readonly id: string;\n    readonly text: string;\n    readonly spaceIds: readonly string[];\n    readonly createdAt: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
+    declaration: 'export interface FaberLoomSpaceMemoryRow {\n    readonly id: string;\n    readonly text: string;\n    readonly spaceIds: readonly string[];\n    readonly createdAt: string;\n    readonly visibility?: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
   },
   {
     name: 'FaberLoomSpaceRow',
@@ -7327,7 +7370,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomWorkflowRow',
-    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n    readonly canEdit?: boolean;\n}',
+    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly visibility?: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n    readonly canEdit?: boolean;\n}',
   },
   {
     name: 'FaberLoomWorkflowRunRow',
@@ -8304,6 +8347,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RoutineTriggerInput',
     declaration: 'export interface RoutineTriggerInput {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match?: string;\n    readonly timezone?: string;\n    readonly days?: readonly number[];\n    readonly window?: {\n        readonly from: number;\n        readonly to: number;\n    };\n    readonly businessDays?: boolean;\n}',
+  },
+  {
+    name: 'RoutineVisibility',
+    declaration: 'export type RoutineVisibility = \'shared\' | \'private\';',
   },
   {
     name: 'RunnerFailureRule',
@@ -9911,7 +9958,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkFlow',
-    declaration: 'export interface WorkFlow {\n    readonly id: WorkFlowId;\n    readonly ownerId: string;\n    readonly scope: WorkFlowScope;\n    readonly name: string;\n    readonly status: WorkFlowStatus;\n    readonly version: number;\n    readonly definition: WorkFlowDefinition;\n    readonly routineId: string | undefined;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface WorkFlow {\n    readonly id: WorkFlowId;\n    readonly ownerId: string;\n    readonly scope: WorkFlowScope;\n    readonly name: string;\n    readonly status: WorkFlowStatus;\n    readonly version: number;\n    readonly definition: WorkFlowDefinition;\n    readonly routineId: string | undefined;\n    readonly visibility: WorkFlowVisibility;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'WorkFlowActor',
@@ -10028,6 +10075,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkFlowVersionRecord',
     declaration: 'export interface WorkFlowVersionRecord {\n    readonly workflowId: string;\n    readonly version: number;\n    readonly name: string;\n    readonly scope: WorkFlowScope;\n    readonly definition: WorkFlowDefinition;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'WorkFlowVisibility',
+    declaration: 'export type WorkFlowVisibility = \'shared\' | \'private\';',
   },
   {
     name: 'Workspace',

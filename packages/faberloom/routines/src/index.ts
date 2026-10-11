@@ -34,6 +34,7 @@ import type {
   RoutineDefinitionInput,
   RoutineInput,
   RoutineStep,
+  RoutineVisibility,
   StartExecutionRequest,
   StartExecutionResult,
   StepContext,
@@ -402,6 +403,7 @@ export class FaberLoomRoutines extends Service {
       version: record.version,
       definition: record.definition,
       versions: await this.versionsOf(id),
+      visibility: record.visibility,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     }
@@ -417,10 +419,31 @@ export class FaberLoomRoutines extends Service {
     const id = brandString<FaberLoomRoutineId>(randomUUID())
     const now = new Date().toISOString()
     const definition = toStoredDefinition(normalizeDefinition(input.definition))
-    const record: RoutineRecord = { ownerId, name: input.name, status: 'draft', version: 1, definition, createdAt: now, updatedAt: now }
+    const record: RoutineRecord = { ownerId, name: input.name, status: 'draft', version: 1, definition, visibility: 'shared', createdAt: now, updatedAt: now }
     await (await this.routines()).put(id, record)
     await this.storeVersion(id, 1, definition, now)
     return this.routineView(id, record)
+  }
+
+  /**
+   * Set who may see one routine. Only its owner may change it: a `private`
+   * routine stops being published to its Space, so no other member, or their
+   * agent, reads or edits it even while holding every module permission. The
+   * definition version is untouched.
+   * @param ownerId - the acting identity.
+   * @param id - routine id.
+   * @param visibility - `shared` or `private`.
+   * @returns the updated routine.
+   * @throws when the routine is absent or owned by another identity.
+   */
+  async setRoutineVisibility(ownerId: string, id: FaberLoomRoutineId, visibility: RoutineVisibility): Promise<FaberLoomRoutine> {
+    const table = await this.routines()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: routine ${id} not found`)
+    if (record.ownerId !== ownerId) throw new Error('faberloom: only the owner can edit this routine')
+    const next: RoutineRecord = { ...record, visibility, updatedAt: new Date().toISOString() }
+    await table.update(id, () => next)
+    return this.routineView(id, next)
   }
 
   /**

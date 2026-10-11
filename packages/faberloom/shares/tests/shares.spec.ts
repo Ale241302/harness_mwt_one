@@ -422,11 +422,53 @@ describe('FaberLoomShares shared content', () => {
     }
   })
 
+  it('never imports a private shared-content row and prunes one an earlier sync stored', async () => {
+    const incoming = [
+      { id: 'c-1', space_id: 'sp-1', kind: 'memory', item_key: 'publico', author_email: OWNER, payload: { text: 'publico', visibility: 'shared' } },
+      { id: 'c-2', space_id: 'sp-1', kind: 'memory', item_key: 'secreto', author_email: OWNER, payload: { text: 'secreto', visibility: 'shared' } },
+    ]
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ incoming }) })))
+    try {
+      const { shares } = await harness({ consoleBase: 'http://console', consoleToken: 'tok' })
+      await shares.syncContent(GUEST)
+      expect((await shares.listContent(GUEST, 'sp-1')).map(row => row.itemKey).sort()).toEqual(['publico', 'secreto'])
+      // The author turns the second one private; the next sync drops it.
+      incoming[1]!.payload = { text: 'secreto', visibility: 'private' }
+      expect(incoming[1]!.payload.visibility).toBe('private')
+      await shares.syncContent(GUEST)
+      expect((await shares.listContent(GUEST, 'sp-1')).map(row => row.itemKey)).toEqual(['publico'])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('keeps the local set without the console transport', async () => {
     const { shares } = await harness()
     await shares.syncContent(GUEST)
     await shares.publishContent(OWNER, 'sp-1', [{ kind: 'memory', itemKey: 'hola', payload: {} }])
     expect(await shares.listContent(OWNER, 'sp-1')).toEqual([expect.objectContaining({ origin: 'owner', consoleId: null })])
+  })
+
+  it('never publishes a private item, whatever the caller passes', async () => {
+    const calls: { body: string }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body?: string }) => {
+      calls.push({ body: init.body ?? '' })
+      return { ok: true, status: 201, json: async () => ({ rows: [] }) }
+    }))
+    try {
+      const { shares } = await harness({ consoleBase: 'http://console', consoleToken: 'tok' })
+      await shares.publishContent(OWNER, 'sp-1', [
+        { kind: 'memory', itemKey: 'publico', payload: { text: 'publico', visibility: 'shared' } },
+        { kind: 'memory', itemKey: 'secreto', payload: { text: 'secreto', visibility: 'private' } },
+      ])
+      expect(JSON.parse(calls[0]?.body ?? '{}')).toMatchObject({
+        space_id: 'sp-1',
+        items: [{ kind: 'memory', item_key: 'publico', payload: { text: 'publico', visibility: 'shared' } }],
+      })
+      expect((await shares.listContent(OWNER, 'sp-1')).map(row => row.itemKey)).toEqual(['publico'])
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('retires an imported item on the console and drops its local copy', async () => {

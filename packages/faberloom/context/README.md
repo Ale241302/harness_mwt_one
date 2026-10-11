@@ -50,6 +50,7 @@ Independent of live requests: the registration never touches a request prefix.
 
 - **Placement needs the Space or a grant** — with `ctx.faberloomSpaces` mounted, an entry can only be placed into a Space the actor may read (a non-readable Space is refused), and without `ctx.faberloomShares` a non-owner member's entry always lands `pending`. A bare composition with no spaces service treats the actor as the owner.
 - **Approval is per entry, not per line** — the owner indexes or rejects a whole entry; there is no field-level merge.
+- **`local` is author-only** — a rejected (or member-authored private) entry is readable only by its author; the Space owner decides a `pending` entry but cannot read it once it is `local`, and `sync` skips a `local` console row.
 
 No invariant companion is published because the service's unit specs already assert the lifecycle, the visibility matrix, and the version history.
 

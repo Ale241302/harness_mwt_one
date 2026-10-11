@@ -42,6 +42,18 @@ describe('FaberLoomRoutines', () => {
     await expect(routines.getRoutineVersion(routine.id, 9)).rejects.toThrow('not found')
   })
 
+  it('sets a routine private and keeps it to its owner', async () => {
+    const { routines } = await harness()
+    const routine = await routines.createRoutine(OWNER, { name: 'privada', definition: definition([]) })
+    expect(routine.visibility).toBe('shared')
+
+    expect((await routines.setRoutineVisibility(OWNER, routine.id, 'private')).visibility).toBe('private')
+    expect((await routines.listRoutines(OWNER))[0]?.visibility).toBe('private')
+    await expect(routines.setRoutineVisibility('otro', routine.id, 'shared')).rejects.toThrow('only the owner')
+    await expect(routines.setRoutineVisibility(OWNER, 'missing' as never, 'private')).rejects.toThrow('not found')
+    expect((await routines.setRoutineVisibility(OWNER, routine.id, 'shared')).visibility).toBe('shared')
+  })
+
   it('F06 · refuses activation when a handler, dependency, or acyclic order is missing', async () => {
     const { routines } = await harness()
     const missingHandler = await routines.createRoutine(OWNER, { name: 'mh', definition: definition([{ id: 's1', instruction: 'x', handler: 'ghost' }]) })

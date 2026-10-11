@@ -93,6 +93,14 @@ function harness(options: {
     importShared: vi.fn(async (input: { id: string; title: string }): Promise<MockSpace> =>
       ({ id: input.id, title: input.title, parentId: null })),
     forgetMemory: vi.fn(async (): Promise<boolean> => true),
+    setMemoryVisibility: vi.fn(async (id: string, visibility: string): Promise<{
+      id: string
+      spaceIds: readonly string[]
+      text: string
+      sessionId: string | null
+      visibility: string
+      createdAt: string
+    }> => ({ id, spaceIds: [], text: '', sessionId: null, visibility, createdAt: '2026-01-01T00:00:00Z' })),
   }
   const agents = {
     listAgents: vi.fn(async (): Promise<readonly {
@@ -113,11 +121,13 @@ function harness(options: {
     create: vi.fn(async () => ({})),
     remove: vi.fn(async () => true),
     list: vi.fn(async () => [] as unknown[]),
+    setVisibility: vi.fn(async () => ({})),
   }
   const routines = {
     listRoutines: vi.fn(async () => []),
     createRoutine: vi.fn(async () => ({})),
     removeRoutine: vi.fn(async () => true),
+    setRoutineVisibility: vi.fn(async () => ({})),
     getRoutine: vi.fn(async () => ({ id: 'r1', name: 'R', definition: { intent: '', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop' } })),
   }
   const context = {
@@ -448,6 +458,50 @@ describe('FaberLoomViewService space lifecycle', () => {
     ])
     // The Agents panel's Space column derives from the space's responsible agent.
     expect(overview.agents).toEqual([{ id: 'a1', name: 'Recepción', spaceIds: ['sp1'], detached: false, active: true, editable: true }])
+  })
+
+  it('toggles memory, work flow, and routine visibility for the owner', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-vis-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, workflows, routines } = harness()
+    spaces.list.mockResolvedValue([])
+
+    await view.setMemoryVisibility('m1', 'private')
+    expect(spaces.setMemoryVisibility).toHaveBeenCalledWith(expect.anything(), 'm1', 'private')
+    await view.setMemoryVisibility('m1', 'shared')
+    expect(spaces.setMemoryVisibility).toHaveBeenLastCalledWith(expect.anything(), 'm1', 'shared')
+
+    await view.setWorkflowVisibility('wf1', 'private')
+    expect(workflows.setVisibility).toHaveBeenCalledWith(expect.anything(), 'wf1', 'private')
+
+    await view.setRoutineVisibility('r1', 'private')
+    expect(routines.setRoutineVisibility).toHaveBeenCalledWith('owner@muitowork.com', 'r1', 'private')
+    await view.setRoutineVisibility('r1', 'anything-else')
+    expect(routines.setRoutineVisibility).toHaveBeenLastCalledWith('owner@muitowork.com', 'r1', 'shared')
+  })
+
+  it('republishes shared content after a visibility change when the console is wired', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-vis-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('CONSOLA_API_BASE', 'http://console')
+    vi.stubEnv('CONSOLA_TOKEN', 'tok')
+    const { view, shares } = harness()
+    await view.setWorkflowVisibility('wf1', 'private')
+    expect(shares.sync).toHaveBeenCalledWith('owner@muitowork.com')
+  })
+
+  it('logs a republish failure after a visibility change', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-vis-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('CONSOLA_API_BASE', 'http://console')
+    vi.stubEnv('CONSOLA_TOKEN', 'tok')
+    const { view, shares, logger } = harness()
+    shares.sync.mockRejectedValueOnce(new Error('republish-down'))
+    await view.setMemoryVisibility('m1', 'private')
+    expect(logger.warn).toHaveBeenCalled()
   })
 
   it('reads the responsible agent from the space and saves it', async () => {

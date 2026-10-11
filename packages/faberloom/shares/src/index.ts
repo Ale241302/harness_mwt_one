@@ -575,14 +575,17 @@ export class FaberLoomShares extends Service {
    */
   async publishContent(actorId: string, spaceId: string, items: readonly FaberLoomSharedContentInput[]): Promise<void> {
     const table = await this.contentTable()
-    const wanted = new Set(items.map(item => contentKey(item.kind, item.itemKey)))
+    // A `private` record never leaves the owner's process, whatever a caller
+    // passes: it is dropped here as well as at the read that builds the set.
+    const publishable = items.filter(item => item.payload['visibility'] !== 'private')
+    const wanted = new Set(publishable.map(item => contentKey(item.kind, item.itemKey)))
     const consoleIds = new Map<string, string>()
     if (this.consoleBase() !== undefined && this.consoleToken() !== undefined) {
       const data = await this.consoleContent('', {
         method: 'POST',
         body: JSON.stringify({
           space_id: spaceId,
-          items: items.map(item => ({ kind: item.kind, item_key: item.itemKey, payload: item.payload })),
+          items: publishable.map(item => ({ kind: item.kind, item_key: item.itemKey, payload: item.payload })),
         }),
       }) as { rows?: readonly ConsoleContentRow[] } | undefined
       for (const row of data?.rows ?? []) {
@@ -590,7 +593,7 @@ export class FaberLoomShares extends Service {
         consoleIds.set(contentKey(row.kind as FaberLoomSharedContentKind, row.item_key), row.id)
       }
     }
-    for (const item of items) {
+    for (const item of publishable) {
       const record: SharedContentRecord = {
         spaceId,
         kind: item.kind,
@@ -732,6 +735,11 @@ export class FaberLoomShares extends Service {
     const wanted = new Set<string>()
     for (const row of data.incoming ?? []) {
       if (!CONTENT_KINDS.has(row.kind)) continue
+      const payload = readSnapshot(row.payload) ?? {}
+      // A `private` item must never have been published; if a console returns
+      // one, neither it nor a copy a previous sync stored is kept (the prune
+      // below drops the row an earlier pass wrote, because it is not `wanted`).
+      if (payload['visibility'] === 'private') continue
       const key = `${prefix}${row.id}`
       wanted.add(key)
       const existing = table.get(key)
@@ -740,7 +748,7 @@ export class FaberLoomShares extends Service {
         kind: row.kind as FaberLoomSharedContentKind,
         itemKey: row.item_key,
         authorId: row.author_email,
-        payload: readSnapshot(row.payload) ?? {},
+        payload,
         origin: 'console',
         consoleId: row.id,
         localId: existing?.localId ?? null,

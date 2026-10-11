@@ -76,6 +76,10 @@ export const spaceMemoryRecord = z.object({
   // Defaulted so entries captured before the Session link keep loading under
   // the same domain version.
   sessionId: z.string().nullable().default(null),
+  // Who may see the entry. `private` keeps it to its owner: it is never
+  // published to a shared Space and no other member, or their agent, reads it.
+  // Defaulted so entries written before the field keep loading as `shared`.
+  visibility: z.enum(['shared', 'private']).default('shared'),
   createdAt: z.string(),
 })
 

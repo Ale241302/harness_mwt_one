@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-shares'
 import type {
   CreateSpaceInput,
   FaberLoomSpaceMemory,
+  FaberLoomMemoryVisibility,
   EffectiveContext,
   EffectiveContextConflict,
   FaberLoomSpace,
@@ -192,6 +193,7 @@ function toMemory(id: string, record: SpaceMemoryRecord): FaberLoomSpaceMemory {
     spaceIds: record.spaceIds,
     text: record.text,
     sessionId: record.sessionId,
+    visibility: record.visibility,
     createdAt: record.createdAt,
   }
 }
@@ -516,10 +518,33 @@ export class FaberLoomSpaces extends Service {
       spaceIds: [...spaceIds],
       text,
       sessionId: sessionId ?? null,
+      visibility: 'shared',
       createdAt: new Date().toISOString(),
     }
     await (await this.memory()).put(id, record)
     return toMemory(id, record)
+  }
+
+  /**
+   * Set who may see one memory entry. Only its owner may change it: a `private`
+   * entry stops being published to its Spaces, so no other member, or their
+   * agent, reads or edits it even while holding every module permission.
+   * @param actor - the acting identity.
+   * @param id - memory entry id.
+   * @param visibility - `shared` or `private`.
+   * @returns the updated entry.
+   * @throws when the entry is absent or owned by another identity.
+   */
+  async setMemoryVisibility(
+    actor: SpaceActor, id: string, visibility: FaberLoomMemoryVisibility,
+  ): Promise<FaberLoomSpaceMemory> {
+    const table = await this.memory()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: memory ${id} not found`)
+    if (record.ownerId !== actor.id) throw new Error('faberloom: memory access denied')
+    const next: SpaceMemoryRecord = { ...record, visibility }
+    await table.update(id, () => next)
+    return toMemory(id, next)
   }
 
   /**
@@ -575,7 +600,9 @@ export class FaberLoomSpaces extends Service {
         if (record.ownerId !== actor.id) continue
       } else {
         if (!record.spaceIds.includes(spaceId)) continue
-        if (record.ownerId !== actor.id && !shared) continue
+        // A member reads the owner's entries for a Space it may read, except the
+        // owner's `private` ones, which stay to their owner.
+        if (record.ownerId !== actor.id && (!shared || record.visibility === 'private')) continue
       }
       out.push(toMemory(id, record))
     }

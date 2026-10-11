@@ -460,6 +460,8 @@ const es = {
   'action.activate': 'Activar',
   'action.pause': 'Pausar',
   'action.remember': 'Recordar',
+  'action.makePrivate': 'Hacer privado',
+  'action.makeShared': 'Hacer compartido',
 
   'agents.editor': 'Detalle del agente',
   'agents.selectTitle': 'Selecciona un agente',
@@ -1211,6 +1213,8 @@ export const en: Record<FaberloomKey, string> = {
   'action.activate': 'Activate',
   'action.pause': 'Pause',
   'action.remember': 'Remember',
+  'action.makePrivate': 'Make private',
+  'action.makeShared': 'Make shared',
 
   'agents.editor': 'Agent detail',
   'agents.selectTitle': 'Select an agent',
@@ -1955,6 +1959,8 @@ export const zh: Record<FaberloomKey, string> = {
   'action.activate': '启用',
   'action.pause': '暂停',
   'action.remember': '记住',
+  'action.makePrivate': '设为私有',
+  'action.makeShared': '设为共享',
 
   'agents.editor': '智能体详情',
   'agents.selectTitle': '选择一个智能体',

@@ -50,6 +50,7 @@ kind: "package-reference"
 
 - **控制台是传输接缝** —— 发布与导入依赖 MWT.ONE 控制台端点；没有它们时服务保持本地且仅邮件。
 - **接受是显式调用** —— 邮件链接由控制台处理并把授权置为 active；本地 `accept` 服务于同进程与测试路径。
+- **私有条目绝不发布** —— `publishContent` 丢弃任何 payload 带 `visibility: 'private'` 的条目，`syncContent` 在导入时也会跳过这样的行，因此所有者留下的记录无论如何都不会传到控制台或另一个身份。
 
 不发布 invariant 伴随文件，因为该服务的单元用例已经断言权限矩阵与生命周期。
 

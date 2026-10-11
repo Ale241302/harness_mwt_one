@@ -50,6 +50,7 @@ kind: "package-reference"
 
 - **归属需要 Space 或授权** — 挂载 `ctx.faberloomSpaces` 时，条目只能放入行为者可读的 Space（不可读的 Space 会被拒绝）；没有 `ctx.faberloomShares` 时非所有者成员的条目总是落到 `pending`。没有 spaces 服务的裸组合把执行者当作所有者。
 - **审批是按条目而非按行** — 所有者索引或拒绝整条记录；没有字段级合并。
+- **`local` 仅作者可见** — 被拒绝的（或成员自撰私有的）条目只有其作者可读；Space 所有者裁定 `pending` 条目，但一旦它变为 `local` 就读不到，同时 `sync` 会跳过 `local` 控制台行。
 
 未发布 invariant companion，因为该服务的单元测试已断言其生命周期、可见性矩阵与版本历史。
 

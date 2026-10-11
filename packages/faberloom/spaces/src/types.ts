@@ -166,6 +166,13 @@ export interface SpaceFileContent extends SpaceFile {
 }
 
 /**
+ * Who may see one memory entry:
+ * - `shared` — published to the entry's Spaces, so every member with `view-memory` reads it,
+ * - `private` — kept to its owner; never published, never readable by another member or their agent.
+ */
+export type FaberLoomMemoryVisibility = 'shared' | 'private'
+
+/**
  * One memory entry attached to one or more spaces. A sub-space whose
  * inheritance is on also sees its ancestors' entries.
  */
@@ -178,6 +185,8 @@ export interface FaberLoomSpaceMemory {
   readonly text: string
   /** Session that captured the entry, or null when it was written by hand. */
   readonly sessionId: string | null
+  /** Who may see the entry. */
+  readonly visibility: FaberLoomMemoryVisibility
   /** ISO-8601 creation instant. */
   readonly createdAt: string
 }

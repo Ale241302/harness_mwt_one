@@ -108,6 +108,20 @@ describe('FaberLoomContext', () => {
     expect(await context.list(MEMBER)).toEqual([])
     await expect(context.get(MEMBER, pending.id)).rejects.toThrow('not found')
   })
+
+  it('F10 · keeps a local entry private to its author, even from the Space owner', async () => {
+    const { context } = await harness({ spaceOwner: OWNER.id })
+    const pending = await context.create(MEMBER, { title: 'Aporta', body: 'x', spaceId: 'sp-1' })
+    // The owner decides a pending entry...
+    expect((await context.list(OWNER)).map(entry => entry.title)).toContain('Aporta')
+    await context.reject(OWNER, pending.id)
+    // ...and once it is local, neither the owner nor its list reads it.
+    expect((await context.list(OWNER)).map(entry => entry.title)).not.toContain('Aporta')
+    await expect(context.get(OWNER, pending.id)).rejects.toThrow('access denied')
+    // The author still reads and edits it.
+    expect((await context.list(MEMBER)).map(entry => entry.title)).toContain('Aporta')
+    expect((await context.update(MEMBER, pending.id, { body: 'y' })).body).toBe('y')
+  })
 })
 
 describe('FaberLoomContext console transport', () => {
@@ -149,6 +163,14 @@ describe('FaberLoomContext console transport', () => {
     expect(await context.list(OWNER)).toEqual([])
   })
 
+  it('F11 · never imports a member local row for the Space owner', async () => {
+    const incoming = [{ id: 'c9', space_id: 'sp-1', author_email: MEMBER.id, title: 'Privado', status: 'local' }]
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ incoming }) })))
+    const { context } = await harness({ spaceOwner: OWNER.id, console: true })
+    await context.sync(OWNER.id)
+    expect(await context.list(OWNER)).toEqual([])
+  })
+
   it('F11 · a bare context has no console and a console failure is loud', async () => {
     const bare = await harness({ spaceOwner: OWNER.id })
     await expect(bare.context.sync(OWNER.id)).resolves.toBeUndefined()
@@ -166,7 +188,7 @@ describe('FaberLoomContext console transport', () => {
     const answers: unknown[] = [
       { ok: true, status: 204 },
       { ok: true, status: 200, json: async () => ({ incoming: [
-        { id: 'c4', space_id: 'sp-1', author_email: MEMBER.id, status: 'local' },
+        { id: 'c4', space_id: 'sp-1', author_email: MEMBER.id, status: 'pending' },
       ] }) },
       { ok: true, status: 200, json: async () => ({ incoming: [
         { id: 'c4', space_id: 'sp-1', author_email: MEMBER.id, title: 'Luego', status: 'pending' },
@@ -180,7 +202,7 @@ describe('FaberLoomContext console transport', () => {
 
     await context.sync(OWNER.id)
     const imported = (await context.list(OWNER)).find(row => row.authorId === MEMBER.id && row.spaceId === 'sp-1')!
-    expect(imported.visibility).toBe('local')
+    expect(imported.visibility).toBe('pending')
     expect(imported.title).toBe('')
 
     await context.sync(OWNER.id)
