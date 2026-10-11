@@ -62,7 +62,7 @@ docker run --rm \
   -v "$TREE:/src" \
   -v "$BUILD_DIR/pnpm-store:/pnpm-store" \
   -e CI=1 -e PNPM_STORE_DIR=/pnpm-store -e DSH_FORK_SHA="$FORK_SHA" \
-  -e DSH_CLIENT_TITLE="Harness MWT.ONE" \
+  -e DSH_CLIENT_TITLE="Faberloom" \
   -w /src \
   mwt-one-harness/builder sh -lc '
     set -e

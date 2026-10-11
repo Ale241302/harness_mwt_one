@@ -3152,8 +3152,8 @@ export function FaberloomBrandName({ t }: PropsLocale<'faberloom'>) {
 }
 
 /**
- * The product brand mark: the MWT.ONE swoosh, white on the dark theme and green
- * on the light one. It occupies `sidebar.brand.mark` and
+ * The product brand mark: the FaberLoom 3x3 isotipo, cream on the dark theme
+ * and ink on the light one. It occupies `sidebar.brand.mark` and
  * `conversation.hero.brand.mark`, replacing the harness's own mark.
  * @param props.size - the pixel height the slot asks for.
  * @returns the theme-appropriate mark image.
@@ -3161,8 +3161,8 @@ export function FaberloomBrandName({ t }: PropsLocale<'faberloom'>) {
 export function FaberloomBrandMark({ size = 24 }: { size?: number }) {
   return (
     <span className={styles.brandMark} style={{ height: size }}>
-      <img className={styles.brandMarkDark} src="/brand-dark.png" alt="" />
-      <img className={styles.brandMarkLight} src="/brand-light.png" alt="" />
+      <img className={styles.brandMarkDark} src="/faberloom_isotipo_dark.svg" alt="" />
+      <img className={styles.brandMarkLight} src="/faberloom_isotipo_mono.svg" alt="" />
     </span>
   )
 }

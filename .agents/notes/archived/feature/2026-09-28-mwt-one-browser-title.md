@@ -1,6 +1,7 @@
 # Agent Note: the deployed browser title reads Harness MWT.ONE
 
 Status: implemented
+Archived: 2026-10-11
 
 English | [中文](2026-09-28-mwt-one-browser-title.zh.md)
 

@@ -322,7 +322,7 @@ export function apply(ctx: ClientContext): void {
     inject: () => ({}),
   }, FaberloomBrandName))
 
-  // Replace the harness's own mark with the MWT.ONE one, in both places it shows.
+  // Replace the harness's own mark with the FaberLoom isotipo, in both places it shows.
   ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.register({
     name: 'sidebar.brand.mark',
     locale: NS,

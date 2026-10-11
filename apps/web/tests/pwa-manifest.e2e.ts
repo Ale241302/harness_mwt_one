@@ -12,14 +12,19 @@ it('ships install metadata with the built web application', async () => {
   const manifest: unknown = JSON.parse(await readFile(join(DIST_ROOT, 'manifest.webmanifest'), 'utf8'))
   expect(manifest).toEqual({
     id: '/',
-    name: 'DeepSeek Harness',
-    short_name: 'DSH',
+    name: 'Faberloom',
+    short_name: 'Faberloom',
     start_url: '/',
     scope: '/',
     display: 'fullscreen',
     icons: [{
-      src: '/favicon.svg',
-      sizes: 'any',
+      src: '/faberloom_appicon512.svg',
+      sizes: '512x512',
+      type: 'image/svg+xml',
+      purpose: 'maskable',
+    }, {
+      src: '/faberloom_favicon32.svg',
+      sizes: '32x32',
       type: 'image/svg+xml',
       purpose: 'any',
     }],

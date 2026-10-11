@@ -1411,9 +1411,9 @@ app.get('/metrics', (_req, res) => {
   res.type('text/plain; version=0.0.4').send(prometheus({ instances: instances.size, faberloom: faberloomMetrics() }))
 })
 
-// Marca del producto: el favicon de la app y del login es el logo MWT.ONE.
-app.get(['/favicon.ico', '/brand-dark.png'], (_req, res) => {
-  res.sendFile(path.join(import.meta.dirname, 'assets', 'brand-dark.png'))
+// Marca del producto: el favicon de la app y del login es el isotipo FaberLoom.
+app.get(['/favicon.ico', '/faberloom_favicon32.svg'], (_req, res) => {
+  res.sendFile(path.join(import.meta.dirname, 'assets', 'faberloom_favicon32.svg'))
 })
 
 app.get('/login', (req, res) => {
@@ -1903,7 +1903,7 @@ function entityPage(sess, errCode) {
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" type="image/png" href="/brand-dark.png">
+<link rel="icon" type="image/svg+xml" href="/faberloom_favicon32.svg">
 <title>Cambiar de empresa · Harness MWT.ONE</title>
 <style>${AUTH_CSS}${AUTH_ENTITY_CSS}</style></head>
 <body>
@@ -1936,7 +1936,7 @@ function loginPage(errCode, csrf = '') {
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" type="image/png" href="/brand-dark.png">
+<link rel="icon" type="image/svg+xml" href="/faberloom_favicon32.svg">
 <title>Harness MWT.ONE</title>
 <style>${AUTH_CSS}
   a.forgot { display: inline-block; margin-top: 14px; font-size: 13px; color: #6b7894; text-decoration: none; }

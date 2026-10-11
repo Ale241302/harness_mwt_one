@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none" role="img" aria-label="FaberLoom">
+  <g stroke="#1F1E1C" stroke-width="3.5" stroke-linecap="round">
+    <path d="M14 7 V19"></path><path d="M14 29 V41"></path>
+    <path d="M24 7 V9"></path><path d="M24 19 V29"></path><path d="M24 39 V41"></path>
+    <path d="M34 7 V19"></path><path d="M34 29 V41"></path>
+    <path d="M7 14 H9"></path><path d="M19 14 H29"></path><path d="M39 14 H41"></path>
+    <path d="M7 24 H19"></path><path d="M29 24 H41"></path>
+    <path d="M7 34 H9"></path><path d="M19 34 H29"></path><path d="M39 34 H41"></path>
+  </g>
+</svg>

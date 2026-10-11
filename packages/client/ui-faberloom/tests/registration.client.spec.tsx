@@ -264,7 +264,7 @@ describe('faberloom surface', () => {
       'faberloom-connections',
       'faberloom-email',
     ])
-    expect(view.getByText('MWT.ONE')).toBeTruthy()
+    expect(view.getByText('Faberloom')).toBeTruthy()
     expect(view.getByRole('heading', { name: 'What do you want to solve today?' })).toBeTruthy()
     await surface.dispose()
   })

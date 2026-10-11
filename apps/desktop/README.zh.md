@@ -25,6 +25,16 @@ Electron 拥有 `$DSH_HOME/profiles/desktop`。其 `dependencies` 只包含已�
 
 本地启动页提供启动状态和可用恢复操作；加载后的 dsh 渲染进程仅接收桌面协议标记。独立插件窗口接收结构化的列表、安装、删除、更新和更新检查操作；两个渲染进程都无法访问文件系统、原始 Electron IPC、shell 或任意 pnpm 参数。
 
+Desktop 在 Host 启动前补全共享 Harness home 的 `.env` 层：只追加该层尚未赋值的部署默认值名称，因此全新安装无需首次运行的 Models 提示即可访问官方 DeepSeek 路由。该文档在打包时注入（`DSH_DESKTOP_HOME_ENV_FILE`，随包为 `desktop-home-env.json`），或通过启动环境（`DSH_DESKTOP_HOME_ENV`）提供；数值不进入仓库。已存在的赋值、可写的 `$DSH_HOME/.credentials.yaml` 存储以及继承的进程环境都优先于该层，因此通过 Settings → Models 写入的密钥或由启动环境提供的密钥不会被覆盖。
+
+### 登录
+
+Desktop 在启动 Host 之前先登录。未登录时，壳渲染登录表单而非加载页，后端不会启动。提交后向控制台认证（`POST {CONSOLA_API_BASE}/auth/login/`），并把两个文件写入共享 Harness home：控制台地址与令牌写入 `.env`，`desktop-identity.patch.yml` 则把已登录的 `ownerId`、角色与只读标志写入每个产品行。`runDesktopHost` 把该 patch 作为最后一层组合应用，因此 `faberloom-defaults` 会为已登录 owner 播种 agent 与 routine，而不是返回 `no owner configured`。退出登录会删除该 patch 与身份记录，并清除控制台令牌。Spaces、会话、技能及其它所有按 home 记录都保留在本机：控制台只传输用户显式共享的内容。
+
+### 后端选择
+
+`DSH_DESKTOP_GATEWAY_URL` 选择后端。默认情况下 Desktop 是共享多用户网关（`https://harness.mwt.one/`）的客户端：窗口在持久会话分区中加载该源，网关自身的登录是唯一的凭据步骤，且每个产品模块——Spaces、Workflows、Memory、Routines、Context、Approvals、Agents & Skills、Connections 与 Email——展示与 Web UI 相同的数据，因为它们共用同一个后端。应用菜单中的“退出登录”会清除该分区。`DSH_DESKTOP_GATEWAY_URL` 为空时改为选择本机单用户 harness：内置 `faberloom` profile、上文的登录表单，以及本机拥有的 Harness home 数据。
+
 Electron 根据应用 locale 选择类型化的英文或中文桌面壳文案，并以英文作为 fallback。菜单、原生对话框、启动页与插件管理渲染进程使用同一 locale 数据；仓库的 Client UI i18n gate 会检查这些桌面源文件。
 
 ### 运行时与插件激活
@@ -52,6 +62,8 @@ pnpm run dev:desktop
 ```
 
 开发 Harness 状态默认写入 `apps/desktop/.desktop-build/development/home`，一次性 npm 项目位于 `apps/desktop/.desktop-build/development/project`，Electron 浏览器数据则位于 `apps/desktop/.desktop-build/development/electron-user-data`。因此，会话、设置、凭据、包链接和浏览器数据都不会进入用户正常使用的 Harness home；显式 `DSH_HOME` 只会替换开发 Harness home。Renderer DevTools 默认自动打开，Main、Renderer 和 dsh Host 调试端口依次为 9229、9222 和 9230。`DSH_DESKTOP_MAIN_INSPECT_PORT`、`DSH_DESKTOP_RENDERER_DEBUG_PORT` 与 `DSH_DESKTOP_HOST_INSPECT_PORT` 可以替换这些端口，`DSH_DESKTOP_OPEN_DEVTOOLS=0` 则保持 Renderer 调试窗口关闭。
+
+设置 `DSH_DESKTOP_HOME_ENV`（内联 JSON 对象）或 `DSH_DESKTOP_HOME_ENV_FILE`（其路径），即可用打包构建随附的同一套部署默认值补全开发 Harness home 的 `.env`，例如 `DEEPSEEK_API_KEY`，从而不再出现首次运行的 Models 提示。
 
 显式构建完成后，`start:desktop` 会重新生成一次性项目，并跳过构建直接启动已有产物：
 
@@ -89,6 +101,8 @@ pnpm run package:desktop:win:x64
 ```
 
 macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。Linux 不是受支持的 Desktop 发布目标。
+
+将 `DSH_DESKTOP_HOME_ENV_FILE` 指向一个部署默认值 JSON 对象，即可将其随包为 `desktop-home-env.json`；每次安装在首次启动时追加其 Harness home `.env` 尚未包含的名称。请将该文档放在仓库之外，并轮换其中携带的任何凭据。
 
 每个目标都在 `apps/desktop/.desktop-build/targets/<target>/` 下持有自己的打包输入、已准备运行时、包集合、dsh 依赖树、pnpm 准备状态、未打包应用、更新元数据和最终产物。Node.js 归档缓存继续由 `.desktop-build/downloads` 共享，因为每个归档文件名都包含版本、平台和架构，并且在解包前经过验证。目标构建绝不读取其他目标的可变准备状态。
 

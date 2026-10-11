@@ -1,6 +1,7 @@
 # Agent Note: MWT.ONE 产品品牌
 
 Status: implemented
+Archived: 2026-10-11
 
 [English](2026-09-28-mwt-one-branding.md) | 中文
 
