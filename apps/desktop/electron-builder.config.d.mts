@@ -1,6 +1,9 @@
 /** Electron-builder fields asserted by the Desktop release tests. */
 export interface DesktopElectronBuilderConfig {
   readonly appId: string
+  readonly productName: string
+  readonly artifactName: string
+  readonly icon: string
   readonly directories: {
     readonly output: string
   }
@@ -29,6 +32,11 @@ export interface DesktopElectronBuilderConfig {
   }
   readonly nsis: {
     readonly include: string
+  }
+  readonly win: {
+    readonly icon: string
+    readonly forceCodeSigning: boolean
+    readonly target: readonly ['nsis']
   }
   readonly artifactBuildCompleted: (artifact: { readonly file: string }) => Promise<void> | undefined
   readonly publish: readonly [{ readonly provider: 'generic', readonly url: string }] | null

@@ -1,5 +1,5 @@
 /**
- * Harness MWT · gateway de autenticación y supervisor de dsh por usuario.
+ * Faberloom · gateway de autenticación y supervisor de dsh por usuario.
  *
  * - Valida email/password contra la consola MWT.ONE (/api/auth/login/).
  * - Arranca y supervisa un proceso `dsh` aislado por usuario (DSH_HOME propio).
@@ -1904,7 +1904,7 @@ function entityPage(sess, errCode) {
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="/faberloom_favicon32.svg">
-<title>Cambiar de empresa · Harness MWT.ONE</title>
+<title>Cambiar de empresa · Faberloom</title>
 <style>${AUTH_CSS}${AUTH_ENTITY_CSS}</style></head>
 <body>
   <form class="card" method="post" action="/entity">
@@ -1937,10 +1937,10 @@ function loginPage(errCode, csrf = '') {
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="/faberloom_favicon32.svg">
-<title>Harness MWT.ONE</title>
+<title>Faberloom</title>
 <style>${AUTH_CSS}
   a.forgot { display: inline-block; margin-top: 14px; font-size: 13px; color: #6b7894; text-decoration: none; }
-  a.forgot:hover { color: #10b981; text-decoration: underline; }
+  a.forgot:hover { color: #c96442; text-decoration: underline; }
   dialog#forgot-dialog { border: 0; border-radius: 14px; padding: 0; width: min(92vw, 380px); color: inherit; background: transparent; }
   dialog#forgot-dialog::backdrop { background: rgba(6, 12, 24, 0.62); }
   dialog#forgot-dialog form { display: flex; flex-direction: column; gap: 10px; }
@@ -1949,7 +1949,7 @@ function loginPage(errCode, csrf = '') {
 </style></head>
 <body>
   <form class="card" method="post" action="/login">
-    <h1>Harness MWT.ONE</h1>
+    <h1>Faberloom</h1>
     <p class="sub">Entra con tu usuario de la consola</p>
     <input type="hidden" name="_csrf" value="${csrf}">
     <label for="usuario">Usuario o correo</label>

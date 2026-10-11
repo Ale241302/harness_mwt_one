@@ -56,6 +56,7 @@ export function createElectronBuilderConfig(
     appId,
     productName: 'Faberloom',
     artifactName: 'faberloom-${version}-${os}-${arch}.${ext}',
+    icon: 'build/icon.png',
     directories: { output: unsigned ? join(buildPaths.root, 'unsigned-artifacts') : buildPaths.artifacts },
     asar: true,
     files: [
@@ -108,6 +109,7 @@ export function createElectronBuilderConfig(
       )
     },
     win: {
+      icon: 'build/icon.ico',
       forceCodeSigning: !unsigned,
       signtoolOptions: {
         sign: windowsSigner,
