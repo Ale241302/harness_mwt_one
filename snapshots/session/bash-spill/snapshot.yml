@@ -5,3 +5,4 @@ composition: fs
 recording: authored
 header:
   class: fs
+platform: posix

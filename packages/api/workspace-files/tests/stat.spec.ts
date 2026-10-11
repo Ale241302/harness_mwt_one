@@ -1,9 +1,28 @@
 /** The `stat` endpoint: the same gates as `read`, answering identity and freshness without content. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { mkdir, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import { failureOf, openWorkspace, signal, type Harness } from './harness.ts'
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 let harness: Harness
 
@@ -61,7 +80,7 @@ describe('workspaceFiles.stat', () => {
     expect(result).toEqual({ absolutePath: result.absolutePath, version: 'v-sizeless' })
   })
 
-  it('accepts outside files and refuses symlinks, directories, missing and empty paths', async () => {
+  it.skipIf(!canSymlinkFiles)('accepts outside files and refuses symlinks, directories, missing and empty paths', async () => {
     await writeFile(join(harness.outside, 'secret.txt'), 'no', 'utf8')
     await symlink(join(harness.outside, 'secret.txt'), join(harness.workspace, 'link.txt'))
     await mkdir(join(harness.workspace, 'src'))

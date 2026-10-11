@@ -1,9 +1,28 @@
 /** Full-file reads retain the ordinary file gates and never return a silently truncated result. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { mkdir, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import { failureOf, openWorkspace, signal, type Harness } from './harness.ts'
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 let harness: Harness
 
@@ -104,7 +123,7 @@ describe('workspaceFiles.readRelated', () => {
     expect(read).toHaveBeenCalledWith(harness.scope, expected, caller)
   })
 
-  it('rejects a related symlink rather than following it', async () => {
+  it.skipIf(!canSymlinkFiles)('rejects a related symlink rather than following it', async () => {
     await writeFile(join(harness.workspace, 'base'), 'base')
     await writeFile(join(harness.workspace, 'target'), 'target')
     await symlink('target', join(harness.workspace, 'link'))

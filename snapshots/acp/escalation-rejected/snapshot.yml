@@ -5,4 +5,5 @@ composition: acp-default
 recording: live
 header:
   class: acp-default
+platform: posix
 permission: workspace-write

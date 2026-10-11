@@ -5,3 +5,4 @@ composition: ptc
 recording: live
 header:
   class: ptc
+platform: posix

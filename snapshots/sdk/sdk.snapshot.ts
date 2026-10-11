@@ -785,8 +785,11 @@ async function verifyHeaders(
 
 describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
   for (const scenario of sdkScenarios) {
-    const scenarioTest = recording
-      && (scenario.manifest.recording === 'authored' || scenario.manifest.sessionFormat !== undefined)
+    // A POSIX-shell scenario cannot replay on Windows: its recorded tool
+    // schemas and request headers carry the bash tool, which Windows lacks.
+    const posixOnlyOnWindows = scenario.manifest.platform === 'posix' && process.platform === 'win32'
+    const scenarioTest = posixOnlyOnWindows
+      || (recording && (scenario.manifest.recording === 'authored' || scenario.manifest.sessionFormat !== undefined))
       ? it.skip
       : it
     scenarioTest(`${mode}s ${scenario.name} through dsh --profile sdk`, async () => {

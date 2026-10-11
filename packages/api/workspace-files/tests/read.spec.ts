@@ -1,9 +1,28 @@
 /** The `read` endpoint: its four gates and the line window it cuts. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FsError } from '@deepseek-ai/dsh-fs'
 import { failureOf, openWorkspace, signal, type Harness } from './harness.ts'
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 let harness: Harness
 let workspace: string
@@ -148,7 +167,7 @@ describe('workspaceFiles.read — read access and file kinds', () => {
     await expect(endpoint().read(harness.scope, join(outside, 'notes.txt'), {}, signal())).rejects.toBe(refusal)
   })
 
-  it('rejects a symlink that points out of the workspace — the case a prefix test cannot see', async () => {
+  it.skipIf(!canSymlinkFiles)('rejects a symlink that points out of the workspace — the case a prefix test cannot see', async () => {
     await writeFile(join(outside, 'secret.txt'), 'no', 'utf8')
     // The path itself is inside the workspace and would pass any string
     // comparison; only lstat (before the follow) or realpath containment catches it.
@@ -158,7 +177,7 @@ describe('workspaceFiles.read — read access and file kinds', () => {
     expect(failure.details).toMatchObject({ kind: 'symlink' })
   })
 
-  it('rejects a symlink even when it points back inside the workspace', async () => {
+  it.skipIf(!canSymlinkFiles)('rejects a symlink even when it points back inside the workspace', async () => {
     await writeFile(join(workspace, 'real.txt'), 'fine', 'utf8')
     await symlink(join(workspace, 'real.txt'), join(workspace, 'alias.txt'))
     const failure = await failureOf(endpoint().read(harness.scope, 'alias.txt', {}, signal()))
