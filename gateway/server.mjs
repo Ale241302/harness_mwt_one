@@ -1538,6 +1538,35 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
   }
 })
 
+// M10 · "Olvidé mi contraseña": el invitado sin sesión pide el enlace de
+// restablecimiento. Reenvía al endpoint público de la consola, que valida que
+// la cuenta exista y esté activa y envía el email con la misma plantilla que el
+// reset del panel de usuarios. La respuesta es neutra para no filtrar qué
+// correos existen.
+app.post('/forgot-password', express.urlencoded({ extended: false }), async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase()
+  if (!email) return res.redirect(303, '/login?e=forgot-missing')
+  if (!loginAccountLimiter(`forgot:${email}`) || !loginIpLimiter(req.ip || 'unknown')) {
+    metrics.rateLimited.login += 1
+    return res.redirect(303, '/login?e=limited')
+  }
+  if (!verifyCsrf(req)) return res.redirect(303, '/login?e=csrf')
+  try {
+    const resp = await fetch(`${cfg.consolaApi}/users/forgot-password/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ email }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!resp.ok) return res.redirect(303, '/login?e=forgot-error')
+  } catch (err) {
+    console.error('[gateway] consola forgot-password inalcanzable:', err.message)
+    return res.redirect(303, '/login?e=upstream')
+  }
+  logEvent({ ev: 'forgot-password', result: 'sent', account: email })
+  return res.redirect(303, '/login?e=forgot-sent')
+})
+
 // G7 · Empresa por defecto del usuario según la consola (`legal_entity_id` de su
 // ficha). Es best-effort: sin ella se conserva la elegida antes o no se fija
 // tenant. Evita obligar a elegir cuando la cuenta ya tiene una empresa principal.
@@ -1899,6 +1928,9 @@ function loginPage(errCode, csrf = '') {
     bye: 'Sesión cerrada.',
     limited: 'Demasiados intentos. Espera un momento e inténtalo de nuevo.',
     csrf: 'La sesión del formulario expiró. Recarga la página e inténtalo de nuevo.',
+    'forgot-sent': 'Si el correo existe y está activo, te enviamos un enlace para restablecer la contraseña.',
+    'forgot-missing': 'Escribe tu correo electrónico.',
+    'forgot-error': 'No se pudo enviar el enlace. Inténtalo de nuevo.',
   }
   const msg = messages[errCode] || ''
   return `<!DOCTYPE html>
@@ -1906,7 +1938,15 @@ function loginPage(errCode, csrf = '') {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" type="image/png" href="/brand-dark.png">
 <title>Harness MWT.ONE</title>
-<style>${AUTH_CSS}</style></head>
+<style>${AUTH_CSS}
+  a.forgot { display: inline-block; margin-top: 14px; font-size: 13px; color: #6b7894; text-decoration: none; }
+  a.forgot:hover { color: #10b981; text-decoration: underline; }
+  dialog#forgot-dialog { border: 0; border-radius: 14px; padding: 0; width: min(92vw, 380px); color: inherit; background: transparent; }
+  dialog#forgot-dialog::backdrop { background: rgba(6, 12, 24, 0.62); }
+  dialog#forgot-dialog form { display: flex; flex-direction: column; gap: 10px; }
+  dialog#forgot-dialog h2 { margin: 0 0 2px; font-size: 18px; }
+  dialog#forgot-dialog .forgot-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+</style></head>
 <body>
   <form class="card" method="post" action="/login">
     <h1>Harness MWT.ONE</h1>
@@ -1920,8 +1960,22 @@ function loginPage(errCode, csrf = '') {
       <button type="button" id="secret-toggle" aria-label="Mostrar la contraseña" aria-pressed="false" title="Mostrar la contraseña"></button>
     </span>
     <button type="submit">Entrar</button>
+    <a class="forgot" href="#" id="forgot-open">¿Olvidaste tu contraseña?</a>
     ${msg ? `<div class="err">${msg}</div>` : ''}
   </form>
+  <dialog id="forgot-dialog" aria-labelledby="forgot-title">
+    <form class="card" method="post" action="/forgot-password">
+      <h2 id="forgot-title">Recuperar contraseña</h2>
+      <p class="sub">Escribe tu correo. Si la cuenta existe y está activa, te enviamos un enlace para restablecerla.</p>
+      <input type="hidden" name="_csrf" value="${csrf}">
+      <label for="forgot-email">Correo electrónico</label>
+      <input id="forgot-email" name="email" type="email" autocomplete="email" required>
+      <div class="forgot-actions">
+        <button type="button" class="ghost" id="forgot-cancel">Cerrar</button>
+        <button type="submit">Enviar enlace</button>
+      </div>
+    </form>
+  </dialog>
   <script>
     // Reveal/hide the password without leaving the form.
     (function () {
@@ -1945,6 +1999,24 @@ function loginPage(errCode, csrf = '') {
         field.type = visible ? 'text' : 'password'
         setState(visible)
         field.focus()
+      })
+    })()
+    // Open/close the "olvidé mi contraseña" dialog without a page reload.
+    (function () {
+      var dialog = document.getElementById('forgot-dialog')
+      var open = document.getElementById('forgot-open')
+      var cancel = document.getElementById('forgot-cancel')
+      if (dialog === null) return
+      if (open !== null) open.addEventListener('click', function (event) {
+        event.preventDefault()
+        if (typeof dialog.showModal === 'function') dialog.showModal()
+        else dialog.setAttribute('open', '')
+        var field = document.getElementById('forgot-email')
+        if (field !== null) field.focus()
+      })
+      if (cancel !== null) cancel.addEventListener('click', function () {
+        if (typeof dialog.close === 'function') dialog.close()
+        else dialog.removeAttribute('open')
       })
     })()
   </script>
