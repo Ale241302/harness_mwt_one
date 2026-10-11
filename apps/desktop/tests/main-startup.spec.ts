@@ -149,6 +149,8 @@ beforeEach(() => {
   vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'test-runtime')
   vi.stubGlobal('process', { ...process, resourcesPath: 'desktop-test-resources' })
   vi.stubEnv('DSH_DESKTOP_HOST_INSPECT_PORT', undefined)
+  // These cases exercise the local harness; remote mode is covered by gateway.spec.ts.
+  vi.stubEnv('DSH_DESKTOP_GATEWAY_URL', '')
 })
 
 afterEach(async () => {

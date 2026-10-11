@@ -31,6 +31,10 @@ The Desktop completes the shared Harness-home `.env` layer before the Host boots
 
 The Desktop signs in before it boots a Host. While signed out, the shell renders a sign-in form instead of a loading page and the backend never starts. Submitting authenticates against the console (`POST {CONSOLA_API_BASE}/auth/login/`) and writes two files into the shared Harness home: the console base and token into `.env`, and `desktop-identity.patch.yml`, a Cordis patch that configures every product row with the signed-in `ownerId`, role, and read-only flag. `runDesktopHost` applies that patch as its last composition layer, so `faberloom-defaults` seeds the owner's agents and routines instead of returning `no owner configured`. Signing out deletes the patch and the identity record and clears the console token. Spaces, sessions, skills, and every other per-home record stay local to this installation: the console transports only what a user explicitly shares.
 
+### Backend selection
+
+`DSH_DESKTOP_GATEWAY_URL` selects the backend. By default the Desktop is a client of the shared multi-user gateway (`https://harness.mwt.one/`): the window loads that origin in a persistent session partition, the gateway's own sign-in is the only credential step, and every product module — Spaces, Workflows, Memory, Routines, Context, Approvals, Agents & Skills, Connections, and Email — shows the same data as the Web UI because it is the same backend. "Sign out" from the application menu clears that partition. An empty `DSH_DESKTOP_GATEWAY_URL` selects the local single-user harness instead: the bundled `faberloom` profile, the sign-in form above, and the Harness-home data owned by this machine.
+
 Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 
 ### Runtime and plugin activation

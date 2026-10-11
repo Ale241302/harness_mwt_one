@@ -10,9 +10,12 @@ import {
   ipcMain,
   Menu,
   protocol,
+  session,
+  shell,
   type IpcMainInvokeEvent,
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { resolveGatewayUrl } from './gateway.ts'
 import { resolveDesktopPaths } from './paths.ts'
 import { ensureHomeEnvFile, resolveHomeEnvDefaults } from './home-env.ts'
 import {
@@ -34,6 +37,10 @@ import { desktopErrorState } from './startup-error.ts'
 import { startupFailureDocument } from './startup-document.ts'
 
 const SCHEME = 'dsh-app'
+/** Persistent session partition holding the gateway's sign-in cookies in remote mode. */
+const GATEWAY_PARTITION = 'persist:gateway'
+/** Gateway origin allowed to navigate the window in remote mode; empty selects the local harness. */
+let gatewayOrigin: string | undefined
 let focusPrimaryWindow = (): void => {}
 type RecoveryAction = 'restart' | 'plugins' | 'reset'
 let profileRecoveryAvailable = (): boolean => false
@@ -101,7 +108,7 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
   return port
 }
 
-function createWindow(preload: string, show = false): BrowserWindow {
+function createWindow(preload: string, show = false, partition?: string): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -110,15 +117,23 @@ function createWindow(preload: string, show = false): BrowserWindow {
     show,
     webPreferences: {
       preload,
+      ...(partition === undefined ? {} : { partition }),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
     },
   })
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  // Links the gateway UI opens land in the user's browser; the window keeps the
+  // single application document.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/u.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
   window.webContents.on('will-navigate', (event, url) => {
-    if (new URL(url).protocol !== `${SCHEME}:`) event.preventDefault()
+    const target = new URL(url)
+    if (gatewayOrigin !== undefined && target.origin === gatewayOrigin) return
+    if (target.protocol !== `${SCHEME}:`) event.preventDefault()
     const page = emergencyPages.get(window)
     if (page === undefined || page.busy || window.webContents.getURL() !== page.url) return
     const action = new URL(url)
@@ -183,6 +198,8 @@ async function main(): Promise<void> {
     }
   }
   const development = app.isPackaged ? undefined : join(app.getAppPath(), '.desktop-build', 'development', 'project')
+  const gatewayUrl = resolveGatewayUrl(process.env)
+  gatewayOrigin = gatewayUrl === undefined ? undefined : new URL(gatewayUrl).origin
   const activeProject = development ?? paths.profile
   const manager = new DesktopProjectManager(paths, resources)
   profileRecoveryAvailable = () => development === undefined && manager.canRecoverProfile()
@@ -308,6 +325,14 @@ async function main(): Promise<void> {
       throw error
     }).finally(() => { startup = undefined })
     return startup
+  }
+
+  const signOutGateway = async (): Promise<void> => {
+    await session.fromPartition(GATEWAY_PARTITION).clearStorageData()
+    if (gatewayUrl !== undefined) {
+      navigation = undefined
+      await navigateMain(gatewayUrl)
+    }
   }
 
   const signOutIdentity = async (): Promise<DesktopIdentityStatus> => {
@@ -516,7 +541,13 @@ async function main(): Promise<void> {
         enabled: development === undefined,
         click: openPluginWindow,
       },
-      { label: messages.signOutMenu, click: () => { void signOutIdentity().catch((error: unknown) => { console.error(error) }) } },
+      {
+        label: messages.signOutMenu,
+        click: () => {
+          const action = gatewayUrl === undefined ? signOutIdentity() : signOutGateway()
+          void action.catch((error: unknown) => { console.error(error) })
+        },
+      },
       { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
       { type: 'separator' },
       { role: 'quit' },
@@ -524,7 +555,7 @@ async function main(): Promise<void> {
   }]))
 
   const createMainWindow = (): BrowserWindow => {
-    const window = createWindow(appPreload, true)
+    const window = createWindow(appPreload, true, gatewayUrl === undefined ? undefined : GATEWAY_PARTITION)
     mainWindow = window
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     window.webContents.on('preload-error', (_event, _path, error) => {
@@ -565,7 +596,13 @@ async function main(): Promise<void> {
   })
 
   mainWindow = createMainWindow()
-  await reconcileBackend().catch(() => undefined)
+  if (gatewayUrl === undefined) {
+    await reconcileBackend().catch(() => undefined)
+  } else {
+    // Remote mode: the window is a client of the shared gateway, so it carries
+    // the signed-in user's Spaces, sessions, and every product module.
+    await navigateMain(gatewayUrl).catch(async (error: unknown) => { await showEmergencyError(error) })
+  }
   // Window lifecycle callbacks run while backend startup is pending.
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (quitting) return
