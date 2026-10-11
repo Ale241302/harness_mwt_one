@@ -46,6 +46,9 @@ function lockfile() {
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-dependency-catalog-test-'))
   roots.push(root)
+  // npm only loads the project `.npmrc` when the directory is an npm project,
+  // which it determines from a `package.json` (or `node_modules`) marker.
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'dsh-dependency-catalog-fixture', version: '0.0.0', private: true }))
   mkdirSync(join(root, 'scripts/dependency-catalog'), { recursive: true })
   writeFileSync(join(root, 'scripts/dependency-catalog/package-lock.json'), JSON.stringify(lockfile()))
   writeFileSync(join(root, 'scripts/dependency-catalog/resolution.json'), JSON.stringify({

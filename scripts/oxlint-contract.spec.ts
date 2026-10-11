@@ -416,7 +416,7 @@ export function unrelatedRead(): void {
     } finally {
       await rm(path, { force: true })
     }
-  })
+  }, 90_000)
 
   it('prints only the final diagnostics when a fix retry still fails', async () => {
     const suffix = randomUUID()

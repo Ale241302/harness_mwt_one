@@ -52,6 +52,23 @@ import type { SpawnRunnerInternals } from '../src/spawn-runner.ts'
 
 const scratch: string[] = []
 
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-spawn-runner-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
+
 afterEach(() => {
   for (const path of scratch.splice(0)) rmSync(path, { recursive: true, force: true })
   vi.restoreAllMocks()
@@ -233,14 +250,16 @@ describe('closed runner protocol', () => {
     const link = join(tmpdir(), `dsh-runner-cleanup-link-${String(process.pid)}`)
     scratch.push(target, link)
     mkdirSync(target, { recursive: true })
-    symlinkSync(target, link)
-    cleanupLinuxLaunchFiles({
-      directory: link,
-      requestPath: join(link, 'launch-request.json'),
-      startupErrorPath: join(link, 'startup-error.json'),
-    })
-    expect(existsSync(link)).toBe(false)
-    expect(existsSync(target)).toBe(true)
+    if (canSymlinkFiles) {
+      symlinkSync(target, link)
+      cleanupLinuxLaunchFiles({
+        directory: link,
+        requestPath: join(link, 'launch-request.json'),
+        startupErrorPath: join(link, 'startup-error.json'),
+      })
+      expect(existsSync(link)).toBe(false)
+      expect(existsSync(target)).toBe(true)
+    }
 
     const blocked = track(createLinuxLaunchFiles({ cwd: '/ok', env: {} }))
     unlinkSync(blocked.requestPath)
@@ -454,10 +473,12 @@ describe('runner launch inputs', () => {
     writeFileSync(executable, '')
     mkdirSync(`${directoryCandidate}.com`)
     writeFileSync(`${directoryCandidate}.exe`, '')
-    symlinkSync(missingExecutable, danglingAlias, 'file')
     expect(resolveWindowsExecutable(executable, '', {})).toBe(executable)
     expect(resolveWindowsExecutable(directoryCandidate, '', {})).toBe(`${directoryCandidate}.exe`)
-    expect(resolveWindowsExecutable(danglingAlias, '', {})).toBe(danglingAlias)
+    if (canSymlinkFiles) {
+      symlinkSync(missingExecutable, danglingAlias, 'file')
+      expect(resolveWindowsExecutable(danglingAlias, '', {})).toBe(danglingAlias)
+    }
     expect(resolveWindowsExecutable(missingExecutable, '', {})).toBeUndefined()
   })
 })

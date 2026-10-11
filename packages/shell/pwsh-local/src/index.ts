@@ -19,7 +19,7 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
-import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessCollect, SubprocessHandle, SubprocessOutcome, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-settings'
 import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
 /* jscpd:ignore-end */
@@ -292,7 +292,23 @@ export class PwshLocalExecutor extends ShellExecutor {
       } finally { d.signal.removeEventListener('abort', abort) }
     } else { argv = argvOrPrepare }
     const handle = this.ctx.subprocess.spawn(this.spawnSpec(spec, spec.stdoutMaxBytes, d.signal, argv))
-    const outcome = await handle.done
+    let outcome: SubprocessOutcome
+    try {
+      outcome = await handle.done
+    } catch (error) {
+      // A deadline that fires during launch rejects `done` with the deadline's
+      // own reason (the Windows Job owner surfaces it as a start failure):
+      // classify it here; genuine spawn failures still propagate.
+      if (!d.signal.aborted || error !== d.signal.reason) throw error
+      const timedOut = timeoutOf(d.signal, 'BASH_TIMEOUT') !== undefined
+      return {
+        spawnRequested: true,
+        result: {
+          exitCode: null, signal: null, timedOut, aborted: !timedOut, timeoutMs: spec.timeoutMs,
+          stdout: { text: '', truncated: false }, stderr: { text: '', truncated: false },
+        },
+      }
+    }
     const collected = PwshLocalExecutor.collected(handle)
     // Only this executor's timeout reason counts as timedOut; outer deadlines count as aborts.
     const timedOut = timeoutOf(d.signal, 'BASH_TIMEOUT') !== undefined

@@ -62,6 +62,23 @@ function commandBarrier() {
 // Windows are found even when bare `pwsh` is not on PATH).
 const hasPwsh = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
 
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
+
 /** Normalize PowerShell's platform line endings (CRLF on Windows, LF elsewhere). */
 const lf = (text: string): string => text.replace(/\r\n/g, '\n')
 
@@ -159,7 +176,7 @@ describe('resolvePwshPath and candidatePwshPaths (pure, every platform)', () => 
       .toBe('pwsh')
   })
 
-  it('accepts a link-shaped PATH candidate whose target cannot be stat-ed', () => {
+  it.skipIf(!canSymlinkFiles)('accepts a link-shaped PATH candidate whose target cannot be stat-ed', () => {
     // Store app execution aliases stat as EACCES but lstat as a link; a
     // dangling symlink reproduces that split on every platform.
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-resolve-link-'))

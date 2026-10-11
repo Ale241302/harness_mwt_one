@@ -26,13 +26,15 @@ describe('workspace snapshots', () => {
     await writeFile(join(directory, 'a.txt'), 'hello\n')
     await writeFile(join(directory, 'b.bin'), Buffer.from([0xff, 0x01]))
     await mkdir(join(directory, 'empty'))
-    await symlink('a.txt', join(directory, 'link'))
+    // Windows without Developer Mode refuses a symlink with EPERM; the Linux and
+    // macOS lanes hold the symlink shape.
+    const linkable = await symlink('a.txt', join(directory, 'link')).then(() => true, () => false)
 
     expect(await captureWorkspaceSnapshot(directory)).toEqual([
       { path: 'a.txt', kind: 'text', content: 'hello\n' },
       { path: 'b.bin', kind: 'binary', base64: '/wE=' },
       { path: 'empty', kind: 'empty-directory' },
-      { path: 'link', kind: 'symlink', target: 'a.txt' },
+      ...linkable ? [{ path: 'link', kind: 'symlink', target: 'a.txt' }] : [],
     ])
   })
 
