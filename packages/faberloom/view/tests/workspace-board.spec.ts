@@ -126,6 +126,7 @@ function harness(options: {
   const routines = {
     listRoutines: vi.fn(async () => []),
     createRoutine: vi.fn(async () => ({})),
+    updateRoutine: vi.fn(async () => ({})),
     removeRoutine: vi.fn(async () => true),
     setRoutineVisibility: vi.fn(async () => ({})),
     getRoutine: vi.fn(async () => ({ id: 'r1', name: 'R', definition: { intent: '', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop' } })),
@@ -479,6 +480,24 @@ describe('FaberLoomViewService space lifecycle', () => {
     expect(routines.setRoutineVisibility).toHaveBeenCalledWith('owner@muitowork.com', 'r1', 'private')
     await view.setRoutineVisibility('r1', 'anything-else')
     expect(routines.setRoutineVisibility).toHaveBeenLastCalledWith('owner@muitowork.com', 'r1', 'shared')
+  })
+
+  it('scopes a routine to a Space through the create and save remotes', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-routine-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, routines } = harness()
+    routines.listRoutines.mockResolvedValue([{
+      id: 'r1', name: 'R', status: 'draft', version: 1, versions: [1], spaceId: 'sp-1',
+      definition: { intent: '', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop', maxConcurrency: null },
+    }] as never)
+
+    await view.createRoutine('R', 'intent', 'sp-1')
+    expect(routines.createRoutine).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ spaceId: 'sp-1' }))
+    expect((await view.routineDetail('r1'))?.spaceId).toBe('sp-1')
+
+    await view.saveRoutine('r1', { spaceId: null })
+    expect(routines.updateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'r1', expect.objectContaining({ spaceId: null }))
   })
 
   it('republishes shared content after a visibility change when the console is wired', async () => {

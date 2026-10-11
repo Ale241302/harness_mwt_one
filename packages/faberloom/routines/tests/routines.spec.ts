@@ -54,6 +54,20 @@ describe('FaberLoomRoutines', () => {
     expect((await routines.setRoutineVisibility(OWNER, routine.id, 'shared')).visibility).toBe('shared')
   })
 
+  it('scopes a routine to a Space and can move it back to personal', async () => {
+    const { routines } = await harness()
+    const scoped = await routines.createRoutine(OWNER, { name: 'en space', definition: definition([]), spaceId: 'sp-1' })
+    expect(scoped.spaceId).toBe('sp-1')
+    expect((await routines.listRoutines(OWNER)).find(entry => entry.id === scoped.id)?.spaceId).toBe('sp-1')
+
+    const personal = await routines.createRoutine(OWNER, { name: 'personal', definition: definition([]) })
+    expect(personal.spaceId).toBeNull()
+
+    expect((await routines.updateRoutine(OWNER, scoped.id, { name: 'en space', definition: definition([]), spaceId: null })).spaceId).toBeNull()
+    // Omitting spaceId keeps the current one.
+    expect((await routines.updateRoutine(OWNER, scoped.id, { name: 'en space', definition: definition([]) })).spaceId).toBeNull()
+  })
+
   it('F06 · refuses activation when a handler, dependency, or acyclic order is missing', async () => {
     const { routines } = await harness()
     const missingHandler = await routines.createRoutine(OWNER, { name: 'mh', definition: definition([{ id: 's1', instruction: 'x', handler: 'ghost' }]) })

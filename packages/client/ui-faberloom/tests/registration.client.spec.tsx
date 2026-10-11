@@ -79,7 +79,15 @@ async function bench(
   }))
   const spaceDetail = vi.fn(async () => spaceDetailResult)
   const spaceWorkspace = vi.fn(async () => ({ ok: true, value: { registered: true, workspaceId: 'ws-1', title: 'Marluvas', sessions: 0 } }))
-  const routineDetail = vi.fn(async () => ({ ok: true, value: undefined }))
+  const routineDetail = vi.fn(async () => ({
+    ok: true,
+    value: {
+      id: 'routine-1', name: 'Pedido a proforma', status: 'active', version: 1, versions: [1], spaceId: null,
+      intent: '', triggerKind: 'manual', triggerMatch: null, triggerTimezone: null, triggerDays: [],
+      triggerWindowFrom: null, triggerWindowTo: null, triggerBusinessDays: false, maxConcurrency: null,
+      steps: [], expectedResult: '', permissions: [], failurePolicy: 'review',
+    },
+  }))
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
   const setBoardRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
@@ -219,6 +227,7 @@ async function bench(
     shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
     workflowTemplates, createWorkflowFromTemplate, importWorkflow,
     setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
+    saveRoutine, createRoutine, routineDetail, removeRoutine, setRoutineActive,
   }
 }
 
@@ -858,5 +867,15 @@ describe('faberloom routines visibility', () => {
     fireEvent.click((await view.findAllByRole('row'))[1] as HTMLTableRowElement)
     fireEvent.click(await view.findByRole('button', { name: 'Make shared' }))
     await waitFor(() => { expect(setRoutineVisibility).toHaveBeenCalledWith('routine-1', 'shared') })
+  })
+
+  it('scopes a routine to a Space from the editor', async () => {
+    const { runtime, view, saveRoutine } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: ROUTINES }) })
+    await view.findByText('Pedido a proforma')
+    fireEvent.click((await view.findAllByRole('row'))[1] as HTMLTableRowElement)
+    fireEvent.change(await view.findByRole('combobox', { name: 'Space' }), { target: { value: 'space-1' } })
+    fireEvent.click(view.getByRole('button', { name: 'Save' }))
+    await waitFor(() => { expect(saveRoutine).toHaveBeenCalledWith('routine-1', expect.objectContaining({ spaceId: 'space-1' })) })
   })
 })

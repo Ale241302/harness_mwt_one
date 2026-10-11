@@ -908,7 +908,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       }),
       board: board.map(item => ({ id: item.id, title: item.title, status: item.status, routineId: item.routineId })),
       routines: routines.map(routine => ({
-        id: routine.id, name: routine.name, status: routine.status, visibility: routine.visibility,
+        id: routine.id, name: routine.name, status: routine.status, visibility: routine.visibility, spaceId: routine.spaceId,
         ...sharedRoutineIds.has(String(routine.id)) ? { shared: true, canDelete: deletableRoutineIds.has(String(routine.id)) } : {},
       })),
       memory,
@@ -1883,12 +1883,14 @@ export class FaberLoomViewService extends TypertRemoteService {
         add({ kind: 'context', itemKey: entry.title, payload: { title: entry.title, body: entry.body, visibility: entry.visibility } })
       }
     }
-    // Every Work Flow and Routine the member owns travels to the other members,
-    // as the one-way snapshot already did; the copies are excluded by name.
+    // A Work Flow publishes only into the Space it is scoped to, and a Routine
+    // only into the Space it belongs to; a personal one stays to its owner.
     for (const flow of await this.workflowsService().list(this.workflowActor())) {
+      if (flow.scope.kind !== 'space' || flow.scope.spaceId !== space.id) continue
       add({ kind: 'workflow', itemKey: flow.name, payload: { name: flow.name, definition: flow.definition, visibility: flow.visibility } })
     }
     for (const routine of await this.ctx.faberloomRoutines.listRoutines(actor.id)) {
+      if (routine.spaceId !== space.id) continue
       add({ kind: 'routine', itemKey: routine.name, payload: { name: routine.name, definition: routine.definition, visibility: routine.visibility } })
     }
     await this.sharesService().publishContent(actor.id, space.id, items)
@@ -3671,11 +3673,12 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param instruction - the workflow description.
    * @param subject - the subject, when the caller already has it.
    * @param from - the sender, when the caller already has it.
+   * @param spaceId - Space the routine belongs to; absent for the personal scope.
    * @returns the created routine.
    */
   @Remote('routineFromEmail')
   async routineFromEmail(
-    uid: string, name: string, instruction: string, subject?: string, from?: string,
+    uid: string, name: string, instruction: string, subject?: string, from?: string, spaceId?: string,
   ): Promise<FaberLoomRoutineCreated> {
     const actor = this.actor()
     const system = [
@@ -3698,6 +3701,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const parsed = parseRoutineJson(await this.completeModel(system, prompt, 2000))
     const routine = await this.ctx.faberloomRoutines.createRoutine(actor.id, {
       name: parsed.name.length > 0 ? parsed.name : title,
+      ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
       definition: {
         intent: parsed.intent,
         triggers: parsed.triggers,
@@ -3910,13 +3914,15 @@ export class FaberLoomViewService extends TypertRemoteService {
    * Create a routine draft from a proposal; it starts inactive until activated.
    * @param text - the procedure the conversation described.
    * @param name - display name for the routine.
+   * @param spaceId - Space the routine belongs to; absent for the personal scope.
    * @returns the refreshed overview.
    */
   @Remote('createRoutineFromWork')
-  async createRoutineFromWork(text: string, name: string): Promise<FaberLoomOverview> {
+  async createRoutineFromWork(text: string, name: string, spaceId?: string): Promise<FaberLoomOverview> {
     const intent = text.trim()
     await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
       name: name.trim(),
+      ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
       definition: {
         intent,
         triggers: [{ kind: 'manual' }],
@@ -4436,6 +4442,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       name: routine.name,
       status: routine.status,
       version: routine.version,
+      spaceId: routine.spaceId,
       versions: [...routine.versions],
       intent: routine.definition.intent,
       triggerKind: trigger?.kind ?? 'manual',
@@ -4497,6 +4504,7 @@ export class FaberLoomViewService extends TypertRemoteService {
           ? current.maxConcurrency === null ? {} : { maxConcurrency: current.maxConcurrency }
           : input.maxConcurrency === null ? {} : { maxConcurrency: input.maxConcurrency }),
       },
+      ...input.spaceId === undefined ? {} : { spaceId: input.spaceId },
     })
     return await this.overview()
   }
@@ -4839,12 +4847,14 @@ export class FaberLoomViewService extends TypertRemoteService {
    * Create one draft routine the owner can then activate.
    * @param name - display name.
    * @param intent - the procedure the routine performs.
+   * @param spaceId - Space the routine belongs to; empty or absent for the personal scope.
    * @returns the refreshed overview.
    */
   @Remote('createRoutine')
-  async createRoutine(name: string, intent: string): Promise<FaberLoomOverview> {
+  async createRoutine(name: string, intent: string, spaceId?: string): Promise<FaberLoomOverview> {
     await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
       name,
+      ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
       definition: {
         intent,
         triggers: [{ kind: 'manual' }],

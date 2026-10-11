@@ -21,6 +21,8 @@ A private record is enforced at the operation that reads or publishes it, not at
 
 Turning a Work Flow private also revokes its outgoing direct Work Flow grants inside `ctx.faberloomWorkflows.setVisibility` itself — the denial sits in the service, not the view — because a grantee's imported copy carries its own visibility and must stop resolving; a visibility change republishes the owner's Space content at once. The Space's members still lose a materialized copy on the next sync, because the console replaces the author's set. The Espacios Memory/Workflows/Routines panels expose the toggle and the Context panel's approve/reject pair is its private/shared control.
 
+A Work Flow and a Routine also name the Space they belong to. `publishSpaceContent` publishes each Work Flow into the Space its `scope` names and each Routine into the `spaceId` it carries, so a personal Work Flow (`scope: personal`) or a personal Routine (`spaceId: null`) never travels. `routineRecord` gains a defaulted `spaceId`; `createRoutine`/`updateRoutine` carry it, `routineDetail` and the routine rows project it, and `createRoutine`, `saveRoutine`, `routineFromEmail`, `createRoutineFromWork`, and the `faberloom_routines_create`/`faberloom_routines_update` tools accept it. The Routines panel edits it through a Space select that offers no space for the personal scope.
+
 ## Alternatives considered
 
 **A bare boolean `private` field.** Rejected: the value vocabulary matches Context's existing `visibility` and leaves room for a later `pending`.
@@ -38,6 +40,5 @@ The three new fields are additive and defaulted; every existing durable record l
 ## Deferred
 
 - **Teachings and the external memory core.** `ctx.faberloomMemory` (learning) and the agent-memory core behind `memoryCoreUrl` do not travel through the shared-content catalog, so they stay owner-scoped by construction and this flag does not apply to them. Giving teachings an explicit flag stays deferred until they are shareable at all.
-- **Per-Space granularity.** `publishSpaceContent` publishes the owner's Work Flows and Routines to every shared Space, not only the Space a flow or routine is scoped to. A private record is still excluded; the coarser scoping predates this change.
 - **Residual imported copy.** After a grant is revoked or a flow turns private, the member's imported record stays in its storage but every read path — `list`, `requireAccess`, `materializeSharedContent` — denies it.
 - **Immediate republish needs the console.** A visibility change republishes at once only when `CONSOLA_API_BASE` and `CONSOLA_TOKEN` are set; otherwise the periodic `overview` pass publishes it within about ten seconds.

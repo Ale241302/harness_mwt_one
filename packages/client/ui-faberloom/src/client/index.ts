@@ -146,7 +146,7 @@ export function apply(ctx: ClientContext): void {
         return run
       },
       boardException: (id, action) => { const run = ctx.remote.faberloomView.boardException(id, action); write(() => run); return run },
-      createRoutine: (name) => { write(() => ctx.remote.faberloomView.createRoutine(name, name)) },
+      createRoutine: (name, spaceId) => { write(() => ctx.remote.faberloomView.createRoutine(name, name, spaceId ?? undefined)) },
       setRoutineActive: (id, active) => { write(() => ctx.remote.faberloomView.setRoutineActive(id, active)) },
       remember: (text, spaceId) => { write(() => ctx.remote.faberloomView.remember(text, spaceId ?? undefined)) },
       spaceMemory: spaceId => ctx.remote.faberloomView.spaceMemory(spaceId),

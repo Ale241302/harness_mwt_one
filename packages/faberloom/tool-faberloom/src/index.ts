@@ -46,6 +46,7 @@ import type {
   FaberLoomRoutines,
   IngestEvent,
   RoutineDefinitionInput,
+  RoutineInput,
 } from '@deepseek-ai/dsh-faberloom-routines'
 
 export const name = 'tool-faberloom'
@@ -116,6 +117,19 @@ function routines(ctx: Context): FaberLoomRoutines {
   const service = ctx.get('faberloomRoutines')
   if (service === undefined) throw new Error('faberloom: the routines service is not mounted')
   return service
+}
+
+/** Build the routine create/update input the two routines tools share. */
+function routineInputFromArgs(args: {
+  readonly name: string
+  readonly definition: unknown
+  readonly spaceId?: string
+}): RoutineInput {
+  return {
+    name: args.name,
+    definition: args.definition as RoutineDefinitionInput,
+    ...args.spaceId === undefined || args.spaceId.length === 0 ? {} : { spaceId: args.spaceId },
+  }
 }
 
 /** Resolve the mounted agents service at call time, or fail loud. */
@@ -2007,16 +2021,14 @@ export function apply(ctx: Context, config: Config): void {
     parameters: {
       name: { type: 'string', required: true, description: 'Routine name.' },
       definition: { type: 'json', required: true, description: 'RoutineDefinition: intent, triggers, steps, expectedResult, permissions, failurePolicy.' },
+      spaceId: { type: 'string', description: 'Space (Workspace) the routine belongs to; omit for the personal scope.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
       render: (_args, value) => [{ type: 'text', text: `Routine ${value.id} v${String(value.version)}.` }],
     },
     execute: async (args) => {
-      const routine = await routines(ctx).createRoutine(actor(config).id, {
-        name: args.name,
-        definition: args.definition as unknown as RoutineDefinitionInput,
-      })
+      const routine = await routines(ctx).createRoutine(actor(config).id, routineInputFromArgs(args))
       return { id: routine.id, version: routine.version }
     },
     presentCall: args => ({ card: 'generic', title: 'Create routine', kind: 'other', rawInput: args }),
@@ -2029,16 +2041,14 @@ export function apply(ctx: Context, config: Config): void {
       id: ID_PARAM,
       name: { type: 'string', required: true, description: 'Routine name.' },
       definition: { type: 'json', required: true, description: 'The new RoutineDefinition.' },
+      spaceId: { type: 'string', description: 'Space (Workspace) the routine belongs to; omit to keep the current one.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
       render: (_args, value) => [{ type: 'text', text: `Routine ${value.id} now v${String(value.version)}.` }],
     },
     execute: async (args) => {
-      const routine = await routines(ctx).updateRoutine(actor(config).id, args.id as FaberLoomRoutineId, {
-        name: args.name,
-        definition: args.definition as unknown as RoutineDefinitionInput,
-      })
+      const routine = await routines(ctx).updateRoutine(actor(config).id, args.id as FaberLoomRoutineId, routineInputFromArgs(args))
       return { id: routine.id, version: routine.version }
     },
     presentCall: args => ({ card: 'generic', title: 'Update routine', kind: 'other', rawInput: args }),

@@ -2498,9 +2498,10 @@ async mirrorSharedSpaces(): Promise<void>
  * @param instruction - the workflow description.
  * @param subject - the subject, when the caller already has it.
  * @param from - the sender, when the caller already has it.
+ * @param spaceId - Space the routine belongs to; absent for the personal scope.
  * @returns the created routine.
  */
-@Remote('routineFromEmail') async routineFromEmail( uid: string, name: string, instruction: string, subject?: string, from?: string, ): Promise<FaberLoomRoutineCreated>
+@Remote('routineFromEmail') async routineFromEmail( uid: string, name: string, instruction: string, subject?: string, from?: string, spaceId?: string, ): Promise<FaberLoomRoutineCreated>
 
 /**
  * Learn the expediente facts from one email and store them as Space memory,
@@ -2589,9 +2590,10 @@ async mirrorSharedSpaces(): Promise<void>
  * Create a routine draft from a proposal; it starts inactive until activated.
  * @param text - the procedure the conversation described.
  * @param name - display name for the routine.
+ * @param spaceId - Space the routine belongs to; absent for the personal scope.
  * @returns the refreshed overview.
  */
-@Remote('createRoutineFromWork') async createRoutineFromWork(text: string, name: string): Promise<FaberLoomOverview>
+@Remote('createRoutineFromWork') async createRoutineFromWork(text: string, name: string, spaceId?: string): Promise<FaberLoomOverview>
 
 /**
  * Preview the audience and material that would change before linking work to a
@@ -2892,9 +2894,10 @@ async mirrorSharedSpaces(): Promise<void>
  * Create one draft routine the owner can then activate.
  * @param name - display name.
  * @param intent - the procedure the routine performs.
+ * @param spaceId - Space the routine belongs to; empty or absent for the personal scope.
  * @returns the refreshed overview.
  */
-@Remote('createRoutine') async createRoutine(name: string, intent: string): Promise<FaberLoomOverview>
+@Remote('createRoutine') async createRoutine(name: string, intent: string, spaceId?: string): Promise<FaberLoomOverview>
 
 /**
  * Activate or pause one routine.

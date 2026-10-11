@@ -164,6 +164,8 @@ export interface FaberLoomRoutine {
   readonly definition: RoutineDefinition
   /** Every stored version, ascending. */
   readonly versions: readonly number[]
+  /** Space the routine belongs to, or `null` for the personal scope. */
+  readonly spaceId: string | null
   /** Who may see the routine. */
   readonly visibility: RoutineVisibility
   /** ISO-8601 creation instant. */
@@ -178,6 +180,8 @@ export interface RoutineInput {
   readonly name: string
   /** The procedure. */
   readonly definition: RoutineDefinitionInput
+  /** Space the routine belongs to; omit to keep the current one (null when new). */
+  readonly spaceId?: string | null
 }
 
 /** One evidence entry attached to an execution. */

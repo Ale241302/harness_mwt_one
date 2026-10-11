@@ -2621,9 +2621,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the assistant reply.',
       },
       {
-        signature: '@Remote(\'routineFromEmail\') async routineFromEmail( uid: string, name: string, instruction: string, subject?: string, from?: string, ): Promise<FaberLoomRoutineCreated>',
+        signature: '@Remote(\'routineFromEmail\') async routineFromEmail( uid: string, name: string, instruction: string, subject?: string, from?: string, spaceId?: string, ): Promise<FaberLoomRoutineCreated>',
         description: 'Turn a described workflow into a real routine: the model returns a JSON definition, which is validated and stored as a draft routine.',
-        parameters: [{ name: 'uid', description: 'the message UID used as context.' }, { name: 'name', description: 'the routine name.' }, { name: 'instruction', description: 'the workflow description.' }, { name: 'subject', description: 'the subject, when the caller already has it.' }, { name: 'from', description: 'the sender, when the caller already has it.' }],
+        parameters: [{ name: 'uid', description: 'the message UID used as context.' }, { name: 'name', description: 'the routine name.' }, { name: 'instruction', description: 'the workflow description.' }, { name: 'subject', description: 'the subject, when the caller already has it.' }, { name: 'from', description: 'the sender, when the caller already has it.' }, { name: 'spaceId', description: 'Space the routine belongs to; absent for the personal scope.' }],
         returns: 'the created routine.',
       },
       {
@@ -2693,9 +2693,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed overview.',
       },
       {
-        signature: '@Remote(\'createRoutineFromWork\') async createRoutineFromWork(text: string, name: string): Promise<FaberLoomOverview>',
+        signature: '@Remote(\'createRoutineFromWork\') async createRoutineFromWork(text: string, name: string, spaceId?: string): Promise<FaberLoomOverview>',
         description: 'Create a routine draft from a proposal; it starts inactive until activated.',
-        parameters: [{ name: 'text', description: 'the procedure the conversation described.' }, { name: 'name', description: 'display name for the routine.' }],
+        parameters: [{ name: 'text', description: 'the procedure the conversation described.' }, { name: 'name', description: 'display name for the routine.' }, { name: 'spaceId', description: 'Space the routine belongs to; absent for the personal scope.' }],
         returns: 'the refreshed overview.',
       },
       {
@@ -2933,9 +2933,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed overview.',
       },
       {
-        signature: '@Remote(\'createRoutine\') async createRoutine(name: string, intent: string): Promise<FaberLoomOverview>',
+        signature: '@Remote(\'createRoutine\') async createRoutine(name: string, intent: string, spaceId?: string): Promise<FaberLoomOverview>',
         description: 'Create one draft routine the owner can then activate.',
-        parameters: [{ name: 'name', description: 'display name.' }, { name: 'intent', description: 'the procedure the routine performs.' }],
+        parameters: [{ name: 'name', description: 'display name.' }, { name: 'intent', description: 'the procedure the routine performs.' }, { name: 'spaceId', description: 'Space the routine belongs to; empty or absent for the personal scope.' }],
         returns: 'the refreshed overview.',
       },
       {
@@ -7158,7 +7158,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutine',
-    declaration: 'export interface FaberLoomRoutine {\n    readonly id: FaberLoomRoutineId;\n    readonly ownerId: string;\n    readonly name: string;\n    readonly status: RoutineStatus;\n    readonly version: number;\n    readonly definition: RoutineDefinition;\n    readonly versions: readonly number[];\n    readonly visibility: RoutineVisibility;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface FaberLoomRoutine {\n    readonly id: FaberLoomRoutineId;\n    readonly ownerId: string;\n    readonly name: string;\n    readonly status: RoutineStatus;\n    readonly version: number;\n    readonly definition: RoutineDefinition;\n    readonly versions: readonly number[];\n    readonly spaceId: string | null;\n    readonly visibility: RoutineVisibility;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomRoutineChatMessage',
@@ -7170,7 +7170,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutineDetail',
-    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly triggerTimezone: string | null;\n    readonly triggerDays: readonly number[];\n    readonly triggerWindowFrom: number | null;\n    readonly triggerWindowTo: number | null;\n    readonly triggerBusinessDays: boolean;\n    readonly maxConcurrency: number | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n}',
+    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly spaceId: string | null;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly triggerTimezone: string | null;\n    readonly triggerDays: readonly number[];\n    readonly triggerWindowFrom: number | null;\n    readonly triggerWindowTo: number | null;\n    readonly triggerBusinessDays: boolean;\n    readonly maxConcurrency: number | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n}',
   },
   {
     name: 'FaberLoomRoutineId',
@@ -7178,7 +7178,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutineRow',
-    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly visibility?: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
+    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly visibility?: string;\n    readonly spaceId?: string | null;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
   },
   {
     name: 'FaberLoomRoutineStepRow',
@@ -8322,11 +8322,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineInput',
-    declaration: 'export interface RoutineInput {\n    readonly name: string;\n    readonly definition: RoutineDefinitionInput;\n}',
+    declaration: 'export interface RoutineInput {\n    readonly name: string;\n    readonly definition: RoutineDefinitionInput;\n    readonly spaceId?: string | null;\n}',
   },
   {
     name: 'RoutineSaveInput',
-    declaration: 'export interface RoutineSaveInput {\n    readonly name?: string;\n    readonly intent?: string;\n    readonly triggerKind?: string;\n    readonly triggerMatch?: string | null;\n    readonly triggerTimezone?: string | null;\n    readonly triggerDays?: readonly number[];\n    readonly triggerWindow?: {\n        readonly from: number;\n        readonly to: number;\n    } | null;\n    readonly triggerBusinessDays?: boolean;\n    readonly maxConcurrency?: number | null;\n    readonly steps?: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult?: string;\n    readonly permissions?: readonly string[];\n    readonly failurePolicy?: string;\n}',
+    declaration: 'export interface RoutineSaveInput {\n    readonly name?: string;\n    readonly intent?: string;\n    readonly triggerKind?: string;\n    readonly triggerMatch?: string | null;\n    readonly triggerTimezone?: string | null;\n    readonly triggerDays?: readonly number[];\n    readonly triggerWindow?: {\n        readonly from: number;\n        readonly to: number;\n    } | null;\n    readonly triggerBusinessDays?: boolean;\n    readonly maxConcurrency?: number | null;\n    readonly steps?: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult?: string;\n    readonly permissions?: readonly string[];\n    readonly failurePolicy?: string;\n    readonly spaceId?: string | null;\n}',
   },
   {
     name: 'RoutineStatus',

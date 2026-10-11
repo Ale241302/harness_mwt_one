@@ -2895,6 +2895,10 @@ Create a product routine (version 1, draft) from a definition.
     },
     "definition": {
       "description": "RoutineDefinition: intent, triggers, steps, expectedResult, permissions, failurePolicy."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space (Workspace) the routine belongs to; omit for the personal scope."
     }
   },
   "required": [
@@ -2958,6 +2962,10 @@ Edit a product routine, producing a new version; running executions keep their v
     },
     "definition": {
       "description": "The new RoutineDefinition."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space (Workspace) the routine belongs to; omit to keep the current one."
     }
   },
   "required": [

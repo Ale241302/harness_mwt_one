@@ -403,6 +403,7 @@ export class FaberLoomRoutines extends Service {
       version: record.version,
       definition: record.definition,
       versions: await this.versionsOf(id),
+      spaceId: record.spaceId,
       visibility: record.visibility,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
@@ -419,7 +420,7 @@ export class FaberLoomRoutines extends Service {
     const id = brandString<FaberLoomRoutineId>(randomUUID())
     const now = new Date().toISOString()
     const definition = toStoredDefinition(normalizeDefinition(input.definition))
-    const record: RoutineRecord = { ownerId, name: input.name, status: 'draft', version: 1, definition, visibility: 'shared', createdAt: now, updatedAt: now }
+    const record: RoutineRecord = { ownerId, name: input.name, status: 'draft', version: 1, definition, spaceId: input.spaceId ?? null, visibility: 'shared', createdAt: now, updatedAt: now }
     await (await this.routines()).put(id, record)
     await this.storeVersion(id, 1, definition, now)
     return this.routineView(id, record)
@@ -487,7 +488,11 @@ export class FaberLoomRoutines extends Service {
     const version = record.version + 1
     const now = new Date().toISOString()
     const definition = toStoredDefinition(normalizeDefinition(input.definition))
-    const next: RoutineRecord = { ...record, name: input.name, version, definition, updatedAt: now }
+    const next: RoutineRecord = {
+      ...record, name: input.name, version, definition,
+      ...input.spaceId === undefined ? {} : { spaceId: input.spaceId },
+      updatedAt: now,
+    }
     await table.update(id, () => next)
     await this.storeVersion(id, version, definition, now)
     return this.routineView(id, next)

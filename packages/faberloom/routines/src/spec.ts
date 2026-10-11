@@ -64,6 +64,10 @@ export const routineRecord = z.object({
   status: z.union([z.literal('draft'), z.literal('active'), z.literal('paused')]),
   version: z.number(),
   definition: definitionRecord,
+  // The Space the routine belongs to, or null for the personal scope. A routine
+  // publishes only into the Space it names, so a personal one stays unshared.
+  // Defaulted so routines written before the field keep loading as personal.
+  spaceId: z.string().nullable().default(null),
   // Who may see the routine. `private` keeps it to its owner: it is never
   // published to a shared Space and no other member, or their agent, reads or
   // edits it. Defaulted so routines written before the field keep loading.

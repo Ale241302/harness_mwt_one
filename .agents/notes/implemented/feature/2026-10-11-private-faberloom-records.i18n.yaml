@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-11-private-faberloom-records.md
-2026-10-11-private-faberloom-records.md: 5f6a467a48650eccfa6f958dbf499cfe54d52ce0
-2026-10-11-private-faberloom-records.zh.md: c893c71ba7890b76c9a789c2dc5581158b555700
+2026-10-11-private-faberloom-records.md: 29e06fd6c28df108415375cb4c9bf9b779c41ce2
+2026-10-11-private-faberloom-records.zh.md: 1315ca3890712b1362ed278d4e6aa0c3e7905b8f

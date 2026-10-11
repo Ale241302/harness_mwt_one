@@ -95,8 +95,8 @@ export interface FaberloomPanelInjected {
   submitBoardRevision: (id: string, input: { summary: string; evidence: readonly string[] }) => Promise<Result<FaberLoomOverview>>
   /** Move a board item into an exception state: request_data, fail, or complete. */
   boardException: (id: string, action: 'request_data' | 'fail' | 'complete') => Promise<Result<FaberLoomOverview>>
-  /** Create a draft routine. */
-  createRoutine: (name: string) => void
+  /** Create a draft routine, optionally scoped to a Space. */
+  createRoutine: (name: string, spaceId: string | null) => void
   /** Activate or pause one routine. */
   setRoutineActive: (id: string, active: boolean) => void
   /** Remember one statement, attached to a space or to no space. */
@@ -2037,6 +2037,7 @@ function routinesScreen() {
     const [expectedResult, setExpectedResult] = useState('')
     const [permissions, setPermissions] = useState('')
     const [failurePolicy, setFailurePolicy] = useState('review')
+    const [spaceId, setSpaceId] = useState('')
     const rows = overview?.routines ?? []
     const chosen = rows.find(row => row.id === selected) ?? null
     const detail = useLazy<FaberLoomRoutineDetail | undefined>(
@@ -2071,6 +2072,7 @@ function routinesScreen() {
       setExpectedResult(detail.value.expectedResult)
       setPermissions(detail.value.permissions.join(', '))
       setFailurePolicy(detail.value.failurePolicy)
+      setSpaceId(detail.value.spaceId ?? '')
       setMessage(null)
     }, [detail])
 
@@ -2095,13 +2097,14 @@ function routinesScreen() {
       setExpectedResult('')
       setPermissions('')
       setFailurePolicy('review')
+      setSpaceId('')
       setMessage(null)
     }
 
     const save = (): void => {
       setMessage(null)
       if (drafting) {
-        createRoutine(name.trim().length === 0 ? t('routines.untitled') : name.trim())
+        createRoutine(name.trim().length === 0 ? t('routines.untitled') : name.trim(), spaceId.length === 0 ? null : spaceId)
         setDrafting(false)
         return
       }
@@ -2115,6 +2118,7 @@ function routinesScreen() {
         expectedResult,
         permissions: permissions.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
         failurePolicy,
+        spaceId: spaceId.length === 0 ? null : spaceId,
       })
         .then((result) => { if (!result.ok) setMessage(result.error.message) })
         .catch((cause: unknown) => { setMessage(String(cause)) })
@@ -2176,6 +2180,12 @@ function routinesScreen() {
                     ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
                     : (
                       <>
+                        <Field label={t('routines.space')} hint={t('routines.spaceHint')}>
+                          <select aria-label={t('routines.space')} value={spaceId} onChange={(event) => { setSpaceId(event.target.value) }}>
+                            <option value="">{t('routines.noSpace')}</option>
+                            {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+                          </select>
+                        </Field>
                         <Field label={t('field.name')}><input type="text" value={name} onChange={(event) => { setName(event.target.value) }} /></Field>
                         <Field label={t('field.intent')} hint={t('routines.intentHint')}><textarea value={intent} onChange={(event) => { setIntent(event.target.value) }} /></Field>
                         <Field label={t('field.trigger')}>

@@ -21,6 +21,8 @@ Memory、Work Flow 与 Routine 新增持久的 `visibility: 'shared' | 'private'
 
 将 Work Flow 设为私有还会在 `ctx.faberloomWorkflows.setVisibility` 内部撤销其对外直连的 Work Flow 授权——拒绝落在服务里，而不是视图——因为受邀者导入的副本带有自己的可见性，必须停止解析；可见性变更会立即重新发布所有者的 Space 内容。Space 的成员仍会在下一次同步时失去已物化的副本，因为控制台会替换作者的全集。Espacios 的 Memory/Workflows/Routines 面板提供切换，Context 面板的 approve/reject 组合即其私有/共享控制。
 
+Work Flow 与 Routine 也会标明它们所属的 Space。`publishSpaceContent` 把每个 Work Flow 发布到其 `scope` 指定的 Space、把每个 Routine 发布到其携带的 `spaceId`，因此个人 Work Flow（`scope: personal`）或个人 Routine（`spaceId: null`）绝不传播。`routineRecord` 新增带默认值的 `spaceId`；`createRoutine`/`updateRoutine` 携带它，`routineDetail` 与例程行投射它，`createRoutine`、`saveRoutine`、`routineFromEmail`、`createRoutineFromWork`，以及 `faberloom_routines_create`/`faberloom_routines_update` 工具都接受它。Routines 面板通过一个 Space 选择器编辑它，并为个人范围提供“无空间”。
+
 ## Alternatives considered
 
 **一个裸布尔 `private` 字段。** 否决：值词表与 Context 既有的 `visibility` 一致，并为日后的 `pending` 留出空间。
@@ -38,6 +40,5 @@ Memory、Work Flow 与 Routine 新增持久的 `visibility: 'shared' | 'private'
 ## Deferred
 
 - **Teachings 与外部记忆核心。** `ctx.faberloomMemory`（learning）与 `memoryCoreUrl` 背后的 agent-memory 核心不走共享内容目录，因此它们在构造上就只属于所有者，此标志不适用于它们。在它们本身可共享之前，给 Teachings 一个显式标志继续推迟。
-- **按 Space 的粒度。** `publishSpaceContent` 会把所有者的 Work Flow 与 Routine 发布到每一个共享 Space，而不只是流程或例程所属的那个。私有记录仍被排除；更粗的粒度早于本次改动。
 - **残留的导入副本。** 授权被撤销或流程变为私有后，成员导入的记录仍留在其存储中，但每条读取路径——`list`、`requireAccess`、`materializeSharedContent`——都拒绝它。
 - **立即重新发布需要控制台。** 只有在设置了 `CONSOLA_API_BASE` 与 `CONSOLA_TOKEN` 时，可见性变更才会立即重新发布；否则由周期性的 `overview` 遍次在大约十秒内发布。

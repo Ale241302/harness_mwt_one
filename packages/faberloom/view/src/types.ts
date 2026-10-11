@@ -165,6 +165,8 @@ export interface FaberLoomRoutineRow {
   readonly status: string
   /** `shared` or `private`; a private routine stays to its owner. */
   readonly visibility?: string
+  /** Space the routine belongs to, or null for the personal scope. */
+  readonly spaceId?: string | null
   /** True when another member shared the routine; it is read-only here. */
   readonly shared?: boolean
   /** True when the actor holds the module permission to remove this shared item. */
@@ -403,6 +405,8 @@ export interface FaberLoomRoutineDetail {
   readonly status: string
   /** Current version number. */
   readonly version: number
+  /** Space the routine belongs to, or null for the personal scope. */
+  readonly spaceId: string | null
   /** Every stored version, ascending. */
   readonly versions: readonly number[]
   /** The procedure's intent. */
@@ -461,6 +465,8 @@ export interface RoutineSaveInput {
   readonly permissions?: readonly string[]
   /** Failure policy. */
   readonly failurePolicy?: string
+  /** Space the routine belongs to, or null to move it to the personal scope. */
+  readonly spaceId?: string | null
 }
 
 /** One link between a routine and a work flow, in either direction. */
