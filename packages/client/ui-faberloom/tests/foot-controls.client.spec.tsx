@@ -12,7 +12,6 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ThemePreference } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { LanguageMenu, ThemeMenu, createFootLocaleStore, createFootThemeStore } from '../src/client/foot-controls.tsx'
 import type { FootThemeState, LanguageMenuProps, ThemeMenuProps } from '../src/client/foot-controls.tsx'
 
@@ -26,13 +25,13 @@ const COPY: Record<string, string> = {
   'language.menu': 'Language',
 }
 
-/** Palette grounds and accents, as the registered definitions carry them. */
+/** Palette grounds, accents and names, as the registered definitions carry them. */
 const THEMES: FootThemeState['themes'] = [
-  { id: 'light', colorScheme: 'light', tokens: { '--dsw-alias-bg-base': '#EDE8DF', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#C96442' } },
-  { id: 'dark', colorScheme: 'dark', tokens: { '--dsw-alias-bg-base': '#1B1A17', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#CD6B4A' } },
-  { id: 'slate', colorScheme: 'dark', tokens: { '--dsw-alias-bg-base': '#16181B', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#CD6B4A' } },
-  { id: 'mono', colorScheme: 'dark', tokens: { '--dsw-alias-bg-base': '#0E0D0C', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#D6724E' } },
-  { id: 'cloud', colorScheme: 'light', tokens: { '--dsw-alias-bg-base': '#F4F1ED', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#C96442' } },
+  { id: 'light', name: 'Paper', colorScheme: 'light', tokens: { '--dsw-alias-bg-base': '#EDE8DF', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#C96442' } },
+  { id: 'dark', name: 'Faber Warm', colorScheme: 'dark', tokens: { '--dsw-alias-bg-base': '#1B1A17', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#CD6B4A' } },
+  { id: 'slate', name: 'Slate', colorScheme: 'dark', tokens: { '--dsw-alias-bg-base': '#16181B', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#CD6B4A' } },
+  { id: 'mono', name: 'Ink', colorScheme: 'dark', tokens: { '--dsw-alias-bg-base': '#0E0D0C', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#D6724E' } },
+  { id: 'cloud', name: 'Bond', colorScheme: 'light', tokens: { '--dsw-alias-bg-base': '#F4F1ED', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#C96442' } },
 ]
 
 const LOCALES = [
@@ -74,7 +73,7 @@ function shared() {
   }
 }
 
-function mountTheme({ wide = true, preference = 'dark', activeId = 'dark' }: { wide?: boolean; preference?: ThemePreference; activeId?: string } = {}) {
+function mountTheme({ wide = true, preference = 'dark', activeId = 'dark' }: { wide?: boolean; preference?: string; activeId?: string } = {}) {
   // Real store instance — the sanctioned zero-machinery path for tests.
   const store = createFootThemeStore().create()
   store.actions.sync({ preference, activeId, themes: THEMES }, 0)
@@ -104,6 +103,26 @@ describe('ThemeMenu', () => {
     expect(button.textContent).toBe('Faber Warm')
     expect(button.querySelector('span')?.getAttribute('style')).toContain('rgb(27, 26, 23)')
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('falls back to the id for a theme that carries no name', () => {
+    const store = createFootThemeStore().create()
+    store.actions.sync({
+      preference: 'aurora',
+      activeId: 'aurora',
+      themes: [
+        ...THEMES,
+        {
+          id: 'aurora',
+          colorScheme: 'dark',
+          tokens: { '--dsw-alias-bg-base': '#101018', '--dsw-alias-brand-primary-new-colorprimary-new-color': '#CD6B4A' },
+        },
+      ],
+    }, 0)
+    render(<ThemeMenu {...shared()} wide useStore={bindSnapshotSelector(store)} actions={store.actions} setTheme={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Theme' }).textContent).toBe('aurora')
+    fireEvent.click(screen.getByRole('button', { name: 'Theme' }))
+    expect(screen.getByRole('menuitem', { name: 'aurora' })).toBeTruthy()
   })
 
   it('lists follow-the-system first, then the palettes under a heading per scheme', () => {

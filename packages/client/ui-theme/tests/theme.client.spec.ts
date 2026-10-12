@@ -31,6 +31,10 @@ describe('ThemeRuntime', () => {
     expect(snapshot.active.id).toBe('light')
     expect(snapshot.active.colorScheme).toBe('light')
     expect(snapshot.themes.map(t => t.id)).toEqual(['light', 'dark', 'slate', 'mono', 'cloud'])
+    // A palette name travels in the definition, so a menu lists the registry
+    // without importing any of this package's values.
+    expect(snapshot.themes.find(t => t.id === 'slate')?.name).toBe('Slate')
+    expect(snapshot.active.name).toBe('Paper')
   })
 
   it('seeds the initial font size from the boot-script body variable, ignoring junk', () => {

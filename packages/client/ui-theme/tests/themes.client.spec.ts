@@ -3,7 +3,7 @@
  * roles, and the ids the durable preference and the boot style resolve against.
  */
 import { describe, expect, it } from 'vitest'
-import { THEME_PALETTES, THEME_PALETTE_IDS, THEME_PALETTE_NAMES, paletteById } from '../src/theme-palettes.ts'
+import { THEME_PALETTES, THEME_PALETTE_IDS, paletteById } from '../src/theme-palettes.ts'
 import { THEME_PREFERENCES, isThemePreference } from '../src/theme-settings.ts'
 
 /** The alias roles every palette must answer for the shell to read as one theme. */
@@ -65,7 +65,6 @@ describe('built-in palettes', () => {
   it('names every palette and resolves it by id', () => {
     for (const entry of THEME_PALETTES) {
       expect(entry.name.length).toBeGreaterThan(0)
-      expect(THEME_PALETTE_NAMES[entry.id]).toBe(entry.name)
       expect(paletteById(entry.id)).toBe(entry)
     }
     expect(paletteById('midnight')).toBeUndefined()

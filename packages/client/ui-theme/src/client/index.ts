@@ -64,10 +64,17 @@ export interface ThemeTokenModes {
 /** Override-layer dictionary: token names to per-mode value pairs. */
 export type ThemeTokenOverrides = Record<string, ThemeTokenModes>
 
-/** One selectable theme: id, dark/light semantics, and alias-token overrides. */
+/** One selectable theme: id, display name, dark/light semantics, and alias-token overrides. */
 export interface ThemeDefinition {
   /** Theme id (the setTheme argument for concrete themes). */
   id: string
+  /**
+   * Display name for menus that list the registry. A palette name is a proper
+   * noun — like a typeface or a product name — so it is data, not interface
+   * copy: the definition carries it and a surface shows it verbatim in every
+   * locale. Absent falls back to the id.
+   */
+  name?: string
   /**
    * Which base palette this theme builds on. The presenter switches
    * `body[data-ds-dark-theme]` from this field — never from the id.
@@ -133,17 +140,11 @@ declare module '@deepseek-ai/cordis' {
 const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze(
   THEME_PALETTES.map(palette => Object.freeze({
     id: palette.id,
+    name: palette.name,
     colorScheme: palette.colorScheme,
     tokens: palette.tokens,
   })),
 )
-
-/**
- * Palette names by id. A palette is a proper noun — like a typeface or a
- * product name — so it stays verbatim in every locale; only the dark/light
- * group headings around it ride the dictionaries.
- */
-export { THEME_PALETTE_NAMES } from '../theme-palettes.ts'
 
 const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
   { name: '--dsw-alias-bg-base', description: 'Application base background.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-bg-base' },

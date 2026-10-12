@@ -225,14 +225,6 @@ export const THEME_PALETTES: readonly ThemePalette[] = Object.freeze([
 ])
 
 /**
- * Palette names by id: the theme menu reads registry ids and needs their
- * display names without carrying the definitions.
- */
-export const THEME_PALETTE_NAMES: Readonly<Record<string, string>> = Object.freeze(
-  Object.fromEntries(THEME_PALETTES.map(entry => [entry.id, entry.name])),
-)
-
-/**
  * Look a built-in palette up by id.
  * @param id - a registry id or a durable preference value.
  * @returns the palette, or undefined when this build does not know the id.

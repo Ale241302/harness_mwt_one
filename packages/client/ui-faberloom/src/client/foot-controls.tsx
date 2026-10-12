@@ -16,20 +16,23 @@ import { useState, type ReactNode } from 'react'
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import { Menu, Tooltip, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { THEME_PALETTE_NAMES } from '@deepseek-ai/dsh-client-ui-theme/client'
-import type { ThemePreference } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { FaberloomKey } from './locales.ts'
 import css from './foot-controls.module.css'
 
 /** Theme facts the palette menu renders. */
 export interface FootThemeState {
-  /** Persisted preference; `system` follows the operating system. */
-  preference: ThemePreference
+  /**
+   * Persisted or in-session preference. The built-in palette ids and `system`
+   * are durable; a theme another plugin registered is selectable in the session
+   * without a durable value, which is why this mirrors the service as a string.
+   */
+  preference: string
   /** Resolved theme id; a `system` preference resolves to a registered theme. */
   activeId: string
   /** Registered themes in registry order, with the tokens their swatch reads. */
   themes: readonly {
     readonly id: string
+    readonly name?: string
     readonly colorScheme: 'light' | 'dark'
     readonly tokens: Readonly<Record<string, string>>
   }[]
@@ -98,8 +101,11 @@ export function createFootLocaleStore(): EngineStoreHandle<FootLocaleState, Foot
 
 /** Injected business faces for the two controls. */
 export interface FootControlsInjected {
-  /** Switch the theme preference, including `system`. */
-  setTheme: (id: ThemePreference) => void
+  /**
+   * Switch the theme preference: `system`, a built-in palette id, or the id of
+   * any other theme in the registry. The service rejects an unknown id.
+   */
+  setTheme: (id: string) => void
   /** Switch the interface language. */
   setLocale: (id: string) => void
 }
@@ -154,7 +160,7 @@ function themeEntries(
 ): MenuEntry[] {
   const of = (scheme: 'light' | 'dark'): MenuEntry[] => themes
     .filter(theme => theme.colorScheme === scheme)
-    .map(theme => ({ id: theme.id, label: THEME_PALETTE_NAMES[theme.id] ?? theme.id, icon: paletteSwatch(theme) }))
+    .map(theme => ({ id: theme.id, label: theme.name ?? theme.id, icon: paletteSwatch(theme) }))
   const dark = of('dark')
   const light = of('light')
   return [
@@ -178,7 +184,7 @@ export function ThemeMenu({ wide, t, setTheme, useStore }: ThemeMenuProps) {
   const active = state.themes.find(theme => theme.id === state.activeId)
   const label = state.preference === 'system'
     ? t('theme.followSystem')
-    : THEME_PALETTE_NAMES[state.activeId] ?? state.activeId
+    : active?.name ?? state.activeId
   return (
     <Menu
       open={open}
@@ -188,7 +194,7 @@ export function ThemeMenu({ wide, t, setTheme, useStore }: ThemeMenuProps) {
       selectedId={state.preference === 'system' ? 'system' : state.activeId}
       onSelect={(id) => {
         setOpen(false)
-        setTheme(id === 'system' ? 'system' : id as ThemePreference)
+        setTheme(id)
       }}
       onClose={() => { setOpen(false) }}
       anchor={(
