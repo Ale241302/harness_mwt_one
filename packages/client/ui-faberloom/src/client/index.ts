@@ -22,6 +22,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls ctx.inputTriggers, ctx.commandUi, and ctx.sessions for the chat gestures.
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import { runAdoptSpaceWorkspace } from './adopt-space-workspace.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
@@ -50,7 +51,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'faberloom'
 
 /** Required services: slots, dictionaries, identity tokens, navigation, the workspace Remote, and the chat gesture seats. */
-export const inject = ['slots', 'locale', 'theme', 'layout', 'remote', 'remote.faberloomView', 'inputTriggers', 'commandUi', 'sessions']
+export const inject = ['slots', 'locale', 'theme', 'layout', 'remote', 'remote.faberloomView', 'remote.directoryPicker', 'inputTriggers', 'commandUi', 'sessions']
 
 /** The store's bound write surface, as the registration's inject factory receives it. */
 type WorkspaceActions = BoundActions<ReturnType<typeof createWorkspaceStore>>
@@ -121,6 +122,11 @@ export function apply(ctx: ClientContext): void {
           ctx.layout.selectPanel(null)
         }).catch(() => {
           // A failed navigation keeps the current selection.
+        })
+      },
+      adoptSpaceWorkspace: (spaceId) => {
+        void runAdoptSpaceWorkspace(ctx.remote.directoryPicker, ctx.remote.faberloomView, refresh, spaceId).catch(() => {
+          // A cancelled pick or a failed adoption keeps the current workspace.
         })
       },
       renameSpace: (id, title) => { write(() => ctx.remote.faberloomView.renameSpace(id, title)) },

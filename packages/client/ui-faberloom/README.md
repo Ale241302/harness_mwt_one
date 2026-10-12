@@ -57,7 +57,7 @@ Independent of live requests: panel registration never touches a request prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Panel actions where the screen allows them** — Espacios and Agentes create, rename, and (agents) deactivate; Mesa creates and approves or rejects; Rutinas creates and toggles; Memoria records a statement. Board revision submission, model policy, and routine step editing stay in the product services until their screens land.
+- **Panel actions where the screen allows them** — Espacios creates, renames, and adopts an existing folder as the Space's Workspace through the mounted directory picker; Agentes create, rename, and deactivate; Mesa creates and approves or rejects; Rutinas creates and toggles; Memoria records a statement. Board revision submission, model policy, and routine step editing stay in the product services until their screens land.
 - **Memory follows the pipeline** — recording a statement appends it to the agent-memory inlet, and the distilled row may appear after the next read.
 - **Refresh on activity, not on push** — the panels re-read on the harness's forwarded session-activity event, on mount, and after every write.
 - **Spanish copy under the shipped locales** — FaberLoom's product language is Spanish, and the client locale runtime requires the two shipped locales per namespace, so `zh` and `en` both carry the Spanish dictionary until a first-class `es` locale exists.

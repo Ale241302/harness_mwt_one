@@ -192,6 +192,11 @@ async function bench(
       ctx.provide('locale', locale)
       ctx.provide('remote', { faberloomView, $on: vi.fn(() => () => {}) } as never)
       ctx.provide('remote.faberloomView', faberloomView as never)
+      ctx.provide('remote.directoryPicker', {
+        pick: vi.fn(async (): Promise<unknown> => ({ ok: true, value: null })),
+        list: vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] })),
+        createDirectory: vi.fn(async (): Promise<unknown> => ({ ok: true, value: '' })),
+      } as never)
       // The chat gestures register into these seats; the panel specs stub them
       // (`sessions` is already provided by the slot test runtime).
       ctx.provide('inputTriggers', { registerSource: vi.fn(() => () => {}), sessionOf: vi.fn() } as never)

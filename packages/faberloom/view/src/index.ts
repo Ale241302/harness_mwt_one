@@ -4010,6 +4010,27 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Adopt an existing folder as a space's conversation area: register the folder
+   * as a Workspace titled after the space (reusing one already registered at the
+   * same path) and point the space at it, so the Space and the sidebar Workspace
+   * name the same directory instead of the deterministic `spaces/<ref>` area.
+   * @param id - space id.
+   * @param path - absolute folder the user chose.
+   * @returns the adopted workspace projection.
+   */
+  @Remote('adoptSpaceWorkspace')
+  async adoptSpaceWorkspace(id: string, path: string): Promise<FaberLoomSpaceWorkspace> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const registry = this.workspaceRegistryOrUndefined()
+    if (registry === undefined) throw new Error('faberloom: the workspace registry is not mounted')
+    const existing = registry.list().find(candidate => candidate.path === path)
+    const workspace = existing ?? await registry.create(path, space.title)
+    await this.ctx.faberloomSpaces.update(actor, space.id, { workspaceId: String(workspace.id) })
+    return { registered: true, workspaceId: String(workspace.id), title: workspace.title, sessions: workspace.sessionIds.length }
+  }
+
+  /**
    * Create the space's conversation directory when needed and register it as a
    * Workspace titled after the space. A space adopted from an existing Workspace
    * reuses that Workspace instead of creating a second one. A deployment without
