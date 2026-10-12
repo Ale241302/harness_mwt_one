@@ -138,7 +138,7 @@ endpoint, su protocolo y su lista de modelos; el perfil solo nombra la referenci
 
 | Ruta (`provider`) | Base | Protocolo | Clave de despliegue |
 |---|---|---|---|
-| `deepseek-official` | `https://api.deepseek.com/v1` · `https://api.deepseek.com/anthropic` | OpenAI chat-completions · Anthropic Messages | `DEEPSEEK_API_KEY` |
+| `deepseek-official` | `https://api.deepseek.com` · `https://api.deepseek.com/anthropic` | OpenAI chat-completions · Anthropic Messages | `DEEPSEEK_API_KEY` |
 | `openai` | `https://api.openai.com/v1` | OpenAI Responses (catálogo pi-ai) | `OPENAI_API_KEY` |
 | `anthropic` | `https://api.anthropic.com` | Anthropic Messages (`anthropic-version: 2023-06-01`) | `ANTHROPIC_API_KEY` |
 | `google` | `https://generativelanguage.googleapis.com/v1beta` | Google Generative AI | `GOOGLE_API_KEY` |
