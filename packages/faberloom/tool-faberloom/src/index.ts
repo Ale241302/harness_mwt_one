@@ -48,6 +48,8 @@ import type {
   RoutineDefinitionInput,
   RoutineInput,
 } from '@deepseek-ai/dsh-faberloom-routines'
+// Type-only: the workspace view that owns the skill-install operation, read through ctx.get.
+import type { FaberLoomViewService } from '@deepseek-ai/dsh-faberloom-view'
 
 export const name = 'tool-faberloom'
 // `faberloomSpaces` is read through `ctx.get` when a call runs, not injected:
@@ -269,6 +271,13 @@ function memory(ctx: Context): FaberLoomMemory {
   return service
 }
 
+/** Resolve the mounted workspace view at call time, or fail loud. */
+function view(ctx: Context): FaberLoomViewService {
+  const service = ctx.get('faberloomView')
+  if (service === undefined) throw new Error('faberloom: the workspace view service is not mounted')
+  return service
+}
+
 /** Build the acting identity from the injected config, or fail loud. */
 function actor(config: Config): SpaceActor {
   const ownerId = config.ownerId
@@ -475,6 +484,30 @@ const CONTEXT_ENTRIES = {
 
 /** The standard `id` parameter shared by the read/mutate tools. */
 const ID_PARAM = { type: 'string', required: true, description: 'Target space id.' } as const
+
+/** One skill-install report as the tool's output schema carries it. */
+interface SkillInstallToolOutput {
+  readonly destination: string
+  readonly root: string
+  readonly refused?: string
+  readonly outcomes: readonly { readonly name: string; readonly status: string; readonly reason?: string }[]
+}
+
+/**
+ * Render one skill-install report as model-facing text: the destination, the
+ * resolved root, and one line per candidate that changed or was refused.
+ * @param report - the install report.
+ * @returns the text block.
+ */
+function skillInstallText(report: SkillInstallToolOutput): string {
+  const where = report.destination === 'workspace' ? 'this workspace' : 'the global skills root'
+  if (report.refused !== undefined) return `Nothing was installed into ${where}: ${report.refused}.`
+  return [
+    `Installed into ${where} at ${report.root}:`,
+    ...report.outcomes.map(outcome =>
+      `- ${outcome.name}: ${outcome.status}${outcome.reason === undefined ? '' : ` (${outcome.reason})`}`),
+  ].join('\n')
+}
 
 /**
  * Register the product tools on the calling agent's tool registry.
@@ -3023,5 +3056,61 @@ export function apply(ctx: Context, config: Config): void {
       return { foundIn: firstHit?.company ?? '', results }
     },
     presentCall: args => ({ card: 'generic', title: 'Find across companies', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_skill_install',
+    description: 'Install one or more skills from a folder the user named: a skill directory holding SKILL.md, or a directory of skill directories. Choose this workspace (a project root under the session workspace) or the global skills root. An existing skill of the same name is left alone unless replace is true.',
+    parameters: {
+      source: { type: 'string', required: true, description: 'Folder to install from, inside the workspace when the session has one.' },
+      destination: { type: 'string', required: true, enum: ['workspace', 'global'], description: 'Install for the current workspace or globally.' },
+      replace: { type: 'boolean', description: 'Replace an existing skill of the same name; false skips it.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          destination: { type: 'string', required: true },
+          root: { type: 'string', required: true },
+          refused: { type: 'string' },
+          outcomes: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true },
+                status: { type: 'string', required: true },
+                reason: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: skillInstallText(value) }],
+    },
+    execute: async (args, exec) => {
+      const session = exec.agent?.session
+      const policy = ctx.get('sandboxPolicy')
+      const workspaceRoot = session === undefined
+        ? undefined
+        : policy?.resolve({ session }).workspaceRoot ?? session.header.cwd
+      const report = await view(ctx).installSkill(
+        args.source,
+        args.destination,
+        args.replace,
+        workspaceRoot,
+      )
+      return {
+        destination: report.destination,
+        root: report.root,
+        ...report.refused === undefined ? {} : { refused: report.refused },
+        outcomes: report.outcomes.map(outcome => ({
+          name: outcome.name,
+          status: outcome.status,
+          ...outcome.reason === undefined ? {} : { reason: outcome.reason },
+        })),
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Install skill', kind: 'other', rawInput: args }),
   }))
 }

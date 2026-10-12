@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package carries the agent catalog and versioned model policy, the model pool, the shared resolver and recommender, per-execution selection records, and contextual outcome evidence. It registers the `ctx.faberloomAgents` host service. An agent's provider API key lives in the credential seam (`ctx.credentials`), addressed by a reference derived from the agent id; the durable record keeps only the non-secret tail and a presence flag, and no read returns the key.
+This package carries the agent catalog and versioned model policy, the model pool, the shared resolver and recommender, per-execution selection records, and contextual outcome evidence. It registers the `ctx.faberloomAgents` host service. An agent's provider API key lives in the credential seam (`ctx.credentials`), addressed by a reference derived from the agent id; the durable record keeps only the non-secret tail and a presence flag, and no read returns the key. `reconcileModels` asks one provider through `ctx.faberloomModelCatalog` which models it currently serves and folds the answer into the pool, so a model the provider adds becomes routable without a release.
 
 ## Table of Contents
 
@@ -24,6 +24,12 @@ This package carries the agent catalog and versioned model policy, the model poo
 ## Use this package
 
 Mount this row in a composition to expose `ctx.faberloomAgents`. The service is an effect on the calling plugin's fiber, so disposing that fiber removes it. Durable state goes through `ctx.storageDomain`; the key goes through the optional credential seam.
+
+### Reconciling the model pool with provider discovery
+
+`reconcileModels(providerId, credentialRef)` asks one provider which models it currently serves and makes them routable. Discovery runs through `ctx.faberloomModelCatalog.discover`, which resolves the credential reference through the credentials seam exactly as the catalog's own callers do. For each discovered model the pool creates an entry when none exists for that provider and model, and refreshes the entry that does; a pool entry of that provider which the provider no longer lists is marked unavailable rather than deleted, so a selection recorded earlier still resolves to a row. The returned `ModelReconciliation` reports how many entries this call created, refreshed, and marked unavailable. Entries of every other provider are untouched.
+
+The pool fills what the provider's answer supplies: `context_window` becomes `contextWindow`, `max_output_tokens` becomes `maxOutput`, and the declared input and output modalities become capability tags under the provider's own names (`["text","image"]`). A models response carries no prices, so a created entry starts with `inputPerMillion`, `outputPerMillion`, and `currency` undefined, and a refreshed entry keeps the rates already recorded: the pool reports an unknown rate as uncertainty rather than as zero, and `resolveModel` refuses to price a budgeted attempt on it. A field the provider omits on a later answer keeps what the pool recorded, because an omission is not a withdrawal.
 
 ### Where an agent's API key lives
 
@@ -74,6 +80,8 @@ Independent of live requests: the registration never touches a request prefix.
 - **A duplicate does not carry the key** — `duplicateAgent` copies configuration but never the credential, because a stored key cannot be read back; the copy starts without one.
 - **Without the seam the key stays in the record** — a composition that mounts no credential provider has no managed store, so a key written there remains in the durable record until a seam-mounted read migrates it.
 - **The tail can go stale** — a key changed directly on the seam keeps the record's last tail; `hasApiKey` stays correct because it follows `describe`.
+- **Discovery fills the pool, not the provider table.** `reconcileModels` fills only what a models response carries. Capability tags are the provider's own modality names, so a consumer that matches the pool's `vision` tag must also accept `image`. A model's display name, its reasoning-effort scale, and its prices have no pool field and are dropped.
+- **Retirement is availability, not deletion.** A model the provider stops listing is marked unavailable and stays in the pool, so a selection recorded earlier keeps resolving; nothing removes a pool entry on its own.
 
 No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
 

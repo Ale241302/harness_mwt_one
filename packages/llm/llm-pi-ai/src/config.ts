@@ -6,7 +6,10 @@
  * A route key is not required to name an installed pi-ai provider. When it does,
  * that provider's endpoint, protocol, display name, and model catalog are the
  * profile's defaults and the profile overrides them field by field; when it does
- * not, the profile is the whole provider declaration. Stored reads retain
+ * not, the profile is the whole provider declaration. A route key may also be an
+ * alias for an installed catalog provider (see `CATALOG_ROUTE_ALIASES` in
+ * `catalog.ts`), which resolves that provider's defaults under the route's own
+ * name. Stored reads retain
  * catalog diagnostics beside serviceable models; writes validate every changed
  * provider before persistence. Self-contained profile constraints apply to both.
  *

@@ -583,6 +583,17 @@ interface GenerateOptions {
   /** Registered provider route selecting the adapter instance. */
   provider: string
   model: string
+  /**
+   * Resolve this call's key from this reference instead of the provider
+   * route's configured one. Absent keeps the route's own reference. A
+   * reference that resolves to nothing fails the call rather than falling
+   * back silently.
+   *
+   * A name derived at request time, never written to a session log or any
+   * other durable record: it selects a credential, it is not one. The
+   * resolved value never rides in this field, so no secret enters a request.
+   */
+  credentialRef?: CredentialRef
   /** Adapter-owned reasoning effort selected for this exact model. */
   reasoningEffort?: ReasoningEffortId
   /**
@@ -727,6 +738,12 @@ FIXME(call-config-shape): revisit which remaining fields are genuinely epoch-lev
 interface LlmCallConfig {
   provider: string
   model: string
+  /**
+   * Per-call credential reference, mirroring {@link GenerateOptions.credentialRef}:
+   * resolved by the adapter instead of the route's configured reference, and
+   * never part of a durable record.
+   */
+  credentialRef?: CredentialRef
   reasoningEffort?: ReasoningEffortId
   temperature?: number
   maxTokens?: number

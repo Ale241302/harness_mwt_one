@@ -261,6 +261,8 @@ flowchart LR
   svc_faberloomSessionAgent["ctx.faberloomSessionAgent<br/>Space session composition"]
   pkg_agent_runtime["agent-runtime"]
   svc_faberloomAgentRuntime["ctx.faberloomAgentRuntime<br/>Durable Space-agent consultations"]
+  pkg_mcp_registry["mcp-registry"]
+  svc_faberloomMcpRegistry["ctx.faberloomMcpRegistry<br/>MCP server registry and connection probe"]
   pkg_model_catalog["model-catalog"]
   svc_faberloomModelCatalog["ctx.faberloomModelCatalog<br/>Provider model catalog and credential probe"]
   pkg_agents["agents"]
@@ -363,6 +365,7 @@ flowchart LR
   pkg_lsp --> svc_lsp
   pkg_lsp_stdio --> svc_lsp
   pkg_mcp_client --> svc_mcpResources
+  pkg_mcp_registry --> svc_faberloomMcpRegistry
   pkg_mcp_resources --> svc_mcpResources
   pkg_mcp_server --> svc_faberloomMcpServer
   pkg_message_feedback --> svc_messageFeedback
@@ -667,6 +670,7 @@ flowchart LR
 | `ctx.faberloomAgentPlane` | `core` | `agent-plane` | - | - | - | 依据一个目录代理声明的 MWT/SICOP-MCP 与 web 标志，解析其人格、工具掩码、技能与子代理 allowlist，并对被委托的子会话强制执行该掩码。 |
 | `ctx.faberloomSessionAgent` | `core` | `session-agent` | - | - | - | 把工作目录为某个 Space 的会话组合为该 Space 的负责代理，每个根会话安装一次其人格、工具掩码与技能。 |
 | `ctx.faberloomAgentRuntime` | `core` | `agent-runtime` | - | - | - | 拥有调用方会话与 Space 代理之间已记录的可持续咨询，使后续追问延续同一子会话。 |
+| `ctx.faberloomMcpRegistry` | `core` | `mcp-registry` | - | - | - | 拥有用户的 MCP 服务器：按 owner 持久化配置、其 headers 与环境所需的凭据、证明某个服务器可连接的探测，以及让每个已配置服务器对每个会话可用的全局挂载。 |
 | `ctx.faberloomModelCatalog` | `core` | `model-catalog` | - | - | - | 拥有固定的提供方协议表、按调用在被点名凭据下发现某提供方的模型，以及报告某引用是否通过认证、其账户是否已无额度的凭据探测。 |
 | `ctx.faberloomAgents` | `core` | `agents` | - | - | - | 拥有版本化代理目录、三条创建路径、版本化模型策略（主模型、排他、备选、升级、预算）、共享解析器，以及按可用结果成本计算的推荐器。 |
 | `ctx.faberloomRoutines` | `core` | `routines` | - | - | - | 拥有例程定义与版本、触发器、步骤依赖与激活校验；执行状态属于执行服务。 |

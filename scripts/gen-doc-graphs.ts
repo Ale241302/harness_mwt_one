@@ -794,6 +794,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns the recorded continuable consultations between a caller session and a Space agent so a follow-up continues the same child conversation.',
   },
   {
+    key: 'faberloomMcpRegistry',
+    pkg: 'mcp-registry',
+    title: 'MCP server registry and connection probe',
+    mode: 'core',
+    note: 'Owns a user\'s MCP servers: the durable per-owner configuration, the credentials their headers and environment need, the probe that proves one connects, and the global mounts that make every configured server available to every session.',
+  },
+  {
     key: 'faberloomModelCatalog',
     pkg: 'model-catalog',
     title: 'Provider model catalog and credential probe',

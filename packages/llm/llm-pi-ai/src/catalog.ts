@@ -165,6 +165,30 @@ export const CHAT_TEMPLATE_VARS = Object.keys(CHAT_TEMPLATE_VAR_GATE) as readonl
 let providerIndex: Map<string, Provider> | undefined
 
 /**
+ * Route keys that name an installed catalog provider under a different id.
+ *
+ * The product calls Kimi's coding plan `kimi`, while the installed catalog
+ * ships it as `kimi-coding`; a route key listed here resolves that provider's
+ * endpoint, protocol, display name, and model catalog exactly as the catalog id
+ * itself would. `moonshotai` needs no alias because the Moonshot platform is
+ * already its own catalog provider, so the two products stay separate routes
+ * with separate credentials. An alias exists only at the route key: the profile
+ * still configures `apiKeyEnv`, and a per-call `credentialRef` still wins,
+ * because credential resolution never reads this table.
+ */
+const CATALOG_ROUTE_ALIASES: Readonly<Record<string, string>> = Object.freeze({ kimi: 'kimi-coding' })
+
+/**
+ * The installed catalog id one route key names, following an alias when the
+ * key is one.
+ * @param provider - provider route key.
+ * @returns the catalog provider id to resolve.
+ */
+function catalogIdFor(provider: string): string {
+  return CATALOG_ROUTE_ALIASES[provider] ?? provider
+}
+
+/**
  * Installed catalog providers by id, constructed once. Each entry owns the API
  * implementations for its own models, which is why a catalog route reuses this
  * provider instead of being rebuilt from parts.
@@ -181,7 +205,7 @@ function catalogProviders(): Map<string, Provider> {
  * @returns the catalog provider, or `undefined` for a route pi-ai does not ship.
  */
 export function catalogProvider(provider: string): Provider | undefined {
-  return catalogProviders().get(provider)
+  return catalogProviders().get(catalogIdFor(provider))
 }
 
 /**
@@ -198,8 +222,9 @@ export function catalogProviderIds(): readonly string[] {
  * @returns catalog models by id; empty for a route pi-ai does not ship.
  */
 export function catalogModels(provider: string): Map<string, Model<Api>> {
-  if (!catalogProviders().has(provider)) return new Map()
-  const models = getBuiltinModels(provider as BuiltinProvider) as Model<Api>[]
+  const catalogId = catalogIdFor(provider)
+  if (!catalogProviders().has(catalogId)) return new Map()
+  const models = getBuiltinModels(catalogId as BuiltinProvider) as Model<Api>[]
   return new Map(models.map(model => [model.id, model]))
 }
 

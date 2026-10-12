@@ -41,8 +41,10 @@ import type {
   FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomContextExportRow, FaberLoomWorkflowVersionRow,
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow,
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
+  FaberLoomSkillInstallDestination, FaberLoomSkillInstallReport, FaberLoomSkillInstallRow, FaberLoomSkillInstallTargets,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
+import { SkillInstallBlock } from './skill-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
@@ -166,6 +168,23 @@ export interface FaberloomPanelInjected {
   saveSkill: (name: string, markdown: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** Remove one uploaded skill. */
   removeSkill: (name: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
+  /** Read the two resolved skill-install destination roots. */
+  skillInstallTargets: () => Promise<Result<FaberLoomSkillInstallTargets>>
+  /** List this identity's recorded skill installs. */
+  skillInstalls: () => Promise<Result<readonly FaberLoomSkillInstallRow[]>>
+  /** Install a skill from a folder into a destination, replacing on request. */
+  installSkill: (
+    source: string,
+    destination: FaberLoomSkillInstallDestination,
+    replace: boolean,
+  ) => Promise<Result<FaberLoomSkillInstallReport>>
+  /** Remove one recorded skill install. */
+  uninstallSkill: (
+    name: string,
+    destination: FaberLoomSkillInstallDestination,
+  ) => Promise<Result<readonly FaberLoomSkillInstallRow[]>>
+  /** Open the directory picker for one skill-install source folder. */
+  pickSkillFolder: () => Promise<string | null>
   /** List the owner's own connections (IMAP, SMTP, backup). */
   connections: () => Promise<Result<readonly FaberLoomConnection[]>>
   /** Create or replace one connection. */
@@ -1629,7 +1648,8 @@ function emailScreen() {
 /** Skills: the role catalog plus the owner's uploads. */
 function skillsScreen() {
   return function FaberloomSkills(props: ScreenProps & { tabs?: ReactNode }) {
-    const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare } = props
+    const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare,
+      skillInstallTargets, skillInstalls, installSkill, uninstallSkill, pickSkillFolder } = props
     const [list, setList] = useState<readonly FaberLoomSkillRow[] | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -1709,6 +1729,15 @@ function skillsScreen() {
           </>
         )}>
         <Feedback t={t} message={message} />
+        <SkillInstallBlock
+          t={t}
+          pickFolder={pickSkillFolder}
+          loadTargets={skillInstallTargets}
+          loadInstalls={skillInstalls}
+          install={installSkill}
+          uninstall={uninstallSkill}
+          onChanged={() => { void skills().then(apply) }}
+        />
         <div className={styles.split}>
           {list === null
             ? <StateBlock kind="loading" title={t('state.loading')} />

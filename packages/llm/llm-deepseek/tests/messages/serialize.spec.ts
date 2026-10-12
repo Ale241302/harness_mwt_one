@@ -12,7 +12,15 @@ import { readReplay, replayState } from '../../src/protocols/messages/replay.ts'
 import { serialize } from '../../src/protocols/messages/serialize.ts'
 import { MODEL, options, user } from './helpers.ts'
 
-const connection = resolveAdapterOptions({})
+const connection = resolveAdapterOptions({
+  // The image pipeline needs a declared vision route: the live endpoint's
+  // fallback no longer carries the experimental vision id, so it is declared here.
+  models: [
+    { id: 'deepseek-flash', inputModalities: ['text', 'image'] },
+    { id: MODEL, inputModalities: ['text'] },
+    { id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] },
+  ],
+})
 const call = (id = 'a'): ContentBlock => ({ type: 'tool-call', id: ToolCallId(id), name: 'read', arguments: '{"path":"a"}' })
 const assistant = (content: ContentBlock[]) => createAssistantMessage({ content, source: { provider: 'deepseek-official', model: MODEL } })
 const result = (id = 'a', content: ContentBlock[] = [{ type: 'text', text: 'result' }]) => createToolResultMessage({ callId: ToolCallId(id), content, isError: false })
@@ -269,6 +277,7 @@ describe('Messages images', () => {
   })
   it('requires logged offload at exact encoded bytes and preserves durable references', async () => {
     const config = resolveAdapterOptions({
+      models: [{ id: model, inputModalities: ['text', 'image'] }],
       maxInlineRequestImageBytes: 4, inlineImageOffloadByteQuantum: 1, maxImagesPerRequest: 2, imageOffloadCountQuantum: 1,
     })
     const history = [result('a', [image, image])]

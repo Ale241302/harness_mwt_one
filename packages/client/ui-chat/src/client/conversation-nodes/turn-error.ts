@@ -3,7 +3,7 @@ import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition, TurnErrorNode,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { chatNode } from './common.ts'
-import { displayFailure } from './event-projection.ts'
+import { displayFailure, failureProviderRoute } from './event-projection.ts'
 
 declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {
@@ -19,6 +19,7 @@ interface TurnErrorState {
     readonly time: number
     readonly message: string
     readonly code?: string
+    readonly provider?: string
   }
 }
 
@@ -32,11 +33,13 @@ function failureFrom(match: ConversationMatch): TurnErrorState['failure'] | unde
   if (match.event.type !== 'turn/end' || match.event.data.reason.kind !== 'error') return undefined
   const failure = match.event.data.reason.error
   const display = displayFailure(failure)
+  const provider = failureProviderRoute(failure.message)
   return {
     seq: match.event.seq,
     time: match.event.time,
     message: display.message,
     ...(display.code === undefined ? {} : { code: display.code }),
+    ...(provider === undefined ? {} : { provider }),
   }
 }
 
@@ -83,6 +86,7 @@ export const turnErrorDefinition: ConversationNodeDefinition<TurnErrorState> = {
       step: lastStep(context),
       message: failure.message,
       ...failure.code === undefined ? {} : { code: failure.code },
+      ...failure.provider === undefined ? {} : { provider: failure.provider },
     }
     return chatNode(context, 'turn-error', node.seq, node)
   },

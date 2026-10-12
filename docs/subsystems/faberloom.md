@@ -179,6 +179,24 @@ async removeModel(id: FaberLoomModelId): Promise<boolean>
 async syncPool(): Promise<{ checked: number; available: number }>
 
 /**
+ * Reconcile the model pool with the models one provider currently serves.
+ * Discovery runs through `ctx.faberloomModelCatalog`, which resolves the named
+ * credential reference through the credentials seam, per call and like the
+ * catalog itself. Every discovered model becomes a pool entry: an unlisted id
+ * is created, an already-registered one is refreshed from the provider's
+ * fields, and a pool entry of this provider that discovery no longer lists is
+ * marked unavailable rather than deleted, so a recorded selection never points
+ * at a missing row. A models response carries no rates, so a refreshed entry
+ * keeps its recorded rate and a created entry starts with an unknown cost.
+ * @param providerId - the provider whose served models to reconcile.
+ * @param credentialRef - the credential reference discovery authenticates with.
+ * @returns how many entries this call created, refreshed, and marked unavailable.
+ * @throws Error when no model catalog is mounted; the catalog's own errors
+ * otherwise (unknown provider, unresolvable credential, transport, or rejection).
+ */
+async reconcileModels(providerId: string, credentialRef: CredentialRef): Promise<ModelReconciliation>
+
+/**
  * Register one executable tool handler in this process.
  * @param name - tool name referenced by an agent's `tools` list.
  * @param handler - sync or async handler over the call arguments.
@@ -329,6 +347,8 @@ async costs(filter: { agentId?: FaberLoomAgentId; task?: string; since?: string 
  */
 async delegate(parentAgentId: FaberLoomAgentId, request: DelegateRequest): Promise<DelegateResult>
 ```
+
+Types: [CredentialRef](credentials.md)
 
 Source: [`packages/faberloom/agents/src/index.ts`](../../packages/faberloom/agents/src/index.ts)
 
@@ -924,6 +944,51 @@ async searchMailbox(ownerId: string, query: string, limit: number = 10, connecti
 ```
 
 Source: [`packages/faberloom/inbound/src/index.ts`](../../packages/faberloom/inbound/src/index.ts)
+
+<a id="ctxfaberloommcpregistry--faberloommcpregistry"></a>
+
+### `ctx.faberloomMcpRegistry` — `FaberLoomMcpRegistry`
+
+The MCP server registry published as `ctx.faberloomMcpRegistry`.
+
+```ts cordis-catalog
+/**
+ * List one owner's saved servers, name-ascending, each carrying whether the
+ * credential seam resolves its entries and whether it is mounted.
+ * @param ownerId - the identity whose servers are read.
+ * @returns the owner's saved servers.
+ */
+list(ownerId: string): Promise<readonly FaberLoomMcpServer[]>
+
+/**
+ * Persist one server and reconcile its mount; an enabled server mounts
+ * process-globally, and every `env` or `headers` value goes to the credential
+ * seam.
+ * @param ownerId - the identity the server belongs to.
+ * @param input - the server's name, transport, secret values, and enabled flag.
+ * @returns the saved server as a caller reads it.
+ */
+save(ownerId: string, input: McpServerInput): Promise<FaberLoomMcpServer>
+
+/**
+ * Remove one saved server, unmounting it and dropping the credentials its
+ * entries held.
+ * @param ownerId - the identity the server belongs to.
+ * @param name - the server to remove.
+ * @returns whether a server was removed.
+ */
+remove(ownerId: string, name: string): Promise<boolean>
+
+/**
+ * Prove one candidate server works by connecting in an isolated scope, listing
+ * its tools, and closing again.
+ * @param input - the candidate server with its secret values.
+ * @returns `{ ok: true, tools }`, or a named failure with every secret redacted.
+ */
+probe(input: McpServerInput): Promise<McpProbeResult>
+```
+
+Source: [`packages/faberloom/mcp-registry/src/types.ts`](../../packages/faberloom/mcp-registry/src/types.ts)
 
 <a id="ctxfaberloommcpserver--faberloommcpserver"></a>
 
@@ -2392,6 +2457,42 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the refreshed skill list.
  */
 @Remote('removeSkill') async removeSkill(name: string): Promise<readonly FaberLoomSkillRow[]>
+
+/**
+ * The two roots an install may target, so the panel can show the resolved
+ * destination before it writes anything.
+ * @returns the workspace skills root (null without a workspace) and the global root.
+ */
+@Remote('skillInstallTargets') skillInstallTargets(): Promise<FaberLoomSkillInstallTargets>
+
+/**
+ * Install one or more skills from a folder the user named. The source is a
+ * single skill directory (holding `SKILL.md`) or a directory of skill
+ * directories; every candidate's front matter is validated before anything is
+ * written, each whole skill directory is copied with its assets, and an
+ * existing skill of the same name is left alone unless `replace` is set.
+ * @param source - folder to install from; resolved inside the workspace when the call has one.
+ * @param destination - `workspace` writes under `<workspace>/.dsh/skills`, `global` under `$DSH_HOME/skills`.
+ * @param replace - true replaces a skill of the same name; false skips it.
+ * @param workspaceRoot - the session's resolved workspace root; omitted uses the deployment default.
+ * @returns the resolved destination root and one outcome per candidate.
+ */
+@Remote('installSkill') async installSkill( source: string, destination: FaberLoomSkillInstallDestination, replace?: boolean, workspaceRoot?: string, ): Promise<FaberLoomSkillInstallReport>
+
+/**
+ * List the skills this identity installed from a folder.
+ * @returns the install rows, sorted by name.
+ */
+@Remote('skillInstalls') async skillInstalls(): Promise<readonly FaberLoomSkillInstallRow[]>
+
+/**
+ * Remove one recorded install: the copied skill directory and its ledger row.
+ * @param name - installed skill name.
+ * @param destination - root the install landed in.
+ * @returns the refreshed install rows.
+ * @throws when the identity is read-only or holds no such install.
+ */
+@Remote('uninstallSkill') async uninstallSkill(name: string, destination: FaberLoomSkillInstallDestination): Promise<readonly FaberLoomSkillInstallRow[]>
 
 /**
  * List the owner's own connections (IMAP mailbox, knowledge backup).

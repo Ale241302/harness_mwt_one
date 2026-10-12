@@ -35,6 +35,8 @@ kind: "package-reference"
 
 每个 profile 都可以设置 `retryPolicy`；省略时使用 normal mode、最多重试五次。`apiKeyEnv` 是按请求经 harness 凭据 seam 解析的凭据引用，因此配置文件绝不包含密钥；解析为空的引用会让请求以 `MISSING_CREDENTIAL` 失败。省略它会让路由保持已配置但无密钥（configured-but-keyless）状态，对已安装目录路由而言即交由 pi-ai 提供方原生的环境发现。请求可携带 `GenerateOptions.credentialRef`，用该引用为这一次调用解析密钥，而非 profile 的 `apiKeyEnv`；每次调用的引用解析为空会让该调用以 `MISSING_CREDENTIAL` 失败并点名该引用，绝不回退到 profile 或环境发现。
 
+路由键也可以是产品对某个已安装提供方的自有命名：`kimi` 解析已安装的 `kimi-coding` 目录——其端点、协议与模型列表——因为那正是 Kimi 的编程套餐。别名只作用于路由键，因此 profile 仍配置 `apiKeyEnv`，所服务的模型仍是该目录的。Moonshot 平台无需别名，因为目录已以 `moonshotai` 提供它，所以两个产品保持为各自独立、凭据不同的路由。
+
 ```yaml
 - name: '@deepseek-ai/dsh-llm-pi-ai'
   config:

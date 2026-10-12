@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package registers the model-visible `faberloom_*` product tools over the native services: spaces, agents, models, routines, executions, board, sources, mail, the MWT.ONE tenant router, cross-space resolution (`faberloom_spaces_find`, `_reference`, `_ask`), and opt-in space-memory, teaching, and Work Flow graph tools. The router fans one read query out to every `legal_entity_ids` tenant, never outside them, and the console still enforces role and permissions on each call.
+This package registers the model-visible `faberloom_*` product tools over the native services: spaces, agents, models, routines, executions, board, sources, mail, the MWT.ONE tenant router, cross-space resolution (`faberloom_spaces_find`, `_reference`, `_ask`), skill installation (`faberloom_skill_install`: one folder into the workspace or the global root, reporting every installed, replaced, skipped, or refused candidate), and opt-in space-memory, teaching, and Work Flow graph tools. The router fans one read query out to every `legal_entity_ids` tenant, never outside them, and the console still enforces role and permissions on each call.
 
 ## Table of Contents
 

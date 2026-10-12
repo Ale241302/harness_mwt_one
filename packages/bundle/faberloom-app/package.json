@@ -41,6 +41,7 @@
     "@deepseek-ai/dsh-faberloom-agent-runtime": "workspace:^",
     "@deepseek-ai/dsh-faberloom-knowledge-index": "workspace:^",
     "@deepseek-ai/dsh-faberloom-model-catalog": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-mcp-registry": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
     "@deepseek-ai/dsh-faberloom-defaults": "workspace:^",

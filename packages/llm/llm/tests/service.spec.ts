@@ -138,6 +138,21 @@ describe('LlmRuntime', () => {
     expect(isQuotaExceededError('quota resets in one minute')).toBe(false)
   })
 
+  it('classifies OpenAI\'s live insufficient_quota body as exhausted, not throttled', () => {
+    // Verified against the real API: a valid key with no balance answers a chat
+    // request with HTTP 429 and this body. The `code`/`type` carry the
+    // structured `insufficient_quota` token; the sentence is what survives when
+    // an SDK flattens the body to its message.
+    const body = '{"error":{"message":"You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing.","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}'
+    const flattened = 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing.'
+    expect(isQuotaExceededError(body)).toBe(true)
+    expect(isQuotaExceededError(flattened)).toBe(true)
+    expect(providerAccountFailureCode(429, body)).toBe(QUOTA_EXCEEDED_CODE)
+    expect(providerAccountFailureCode(429, flattened)).toBe(QUOTA_EXCEEDED_CODE)
+    // A genuine throttle never states an absent balance.
+    expect(isQuotaExceededError('Rate limit reached for requests. Please try again later.')).toBe(false)
+  })
+
   it('classifies account-level HTTP failures ahead of the status-only mapping', () => {
     expect(providerAccountFailureCode(401, 'invalid api key')).toBe('AUTH')
     expect(providerAccountFailureCode(402, 'payment required')).toBe(QUOTA_EXCEEDED_CODE)

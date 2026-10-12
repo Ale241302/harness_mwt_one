@@ -8,7 +8,8 @@
   height: max-content;
   min-height: 100%;
   padding: 12px;
-  font-family: var(--dsw-font, sans-serif);
+  /* A document body is the UI body role, not a bare family. */
+  font-family: var(--dsw-font-ui-body-font-family);
   white-space: normal;
 }
 

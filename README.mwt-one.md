@@ -130,6 +130,33 @@ gateway aprovisiona por email un usuario + equipo + agente de memoria. Si el
 stack falla, el usuario sigue contra DeepSeek directo. El panel se consulta por
 túnel SSH (`ssh -p 2222 -L 8125:127.0.0.1:8125 root@…`).
 
+## Proveedores de modelo (multi-proveedor)
+
+Además de la ruta nativa `deepseek-official` (`dsh-llm-deepseek`), el bundle de producto monta
+`dsh-llm-pi-ai` con cinco rutas por defecto. Del catálogo instalado de pi-ai cada ruta toma su
+endpoint, su protocolo y su lista de modelos; el perfil solo nombra la referencia de la clave.
+
+| Ruta (`provider`) | Base | Protocolo | Clave de despliegue |
+|---|---|---|---|
+| `deepseek-official` | `https://api.deepseek.com/v1` · `https://api.deepseek.com/anthropic` | OpenAI chat-completions · Anthropic Messages | `DEEPSEEK_API_KEY` |
+| `openai` | `https://api.openai.com/v1` | OpenAI Responses (catálogo pi-ai) | `OPENAI_API_KEY` |
+| `anthropic` | `https://api.anthropic.com` | Anthropic Messages (`anthropic-version: 2023-06-01`) | `ANTHROPIC_API_KEY` |
+| `google` | `https://generativelanguage.googleapis.com/v1beta` | Google Generative AI | `GOOGLE_API_KEY` |
+| `kimi` | `https://api.kimi.com/coding` | Anthropic Messages (`anthropic-version: 2023-06-01`) | `KIMI_API_KEY` |
+| `moonshotai` | `https://api.moonshot.ai/v1` | OpenAI chat-completions | `MOONSHOT_API_KEY` |
+
+- Un agente guarda `provider`, `model` y —opcional— su propia API key. La clave propia se resuelve
+  en cada request por una referencia derivada del id del agente y **siempre gana** sobre la clave de
+  despliegue; sin clave propia, la ruta usa `apiKeyEnv` (la variable de entorno de la tabla).
+- El panel de Agentes ofrece las rutas vivas del harness. `kimi` es el **plan de código** de Kimi
+  (`api.kimi.com/coding`); `moonshotai` es la **plataforma** Moonshot: productos distintos con
+  credenciales distintas, y el usuario puede tener cualquiera de las dos.
+- `kimi` no publica endpoint de modelos (`GET …/models` responde 404), así que su lista viene del
+  catálogo instalado de pi-ai (`k3`, `k3-256k`, `kimi-for-coding`, `kimi-for-coding-highspeed`) y no
+  del descubrimiento: un despliegue que no haya descubierto nada igual ve esos cuatro ids.
+- Ninguna clave vive en el repo: `.env` o Docker secrets (cada nombre admite `<NAME>_FILE`)
+  suministran las de despliegue; las de cada agente se guardan en el almacén de credenciales.
+
 ## context-mode (MCP de contexto)
 
 La imagen instala **`context-mode@1.0.169`** (npm global, licencia Elastic-2.0) y cada `dsh`

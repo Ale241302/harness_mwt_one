@@ -960,6 +960,33 @@ export interface Config {
 
 Source: [`packages/faberloom/knowledge-index/src/index.ts:28`](../packages/faberloom/knowledge-index/src/index.ts)
 
+<a id="deepseek-aidsh-faberloom-mcp-registry"></a>
+
+## `@deepseek-ai/dsh-faberloom-mcp-registry`
+
+Requires: `storageDomain` · `tools`
+
+```ts config-catalog
+/**
+ * Deployment configuration for the MCP registry.
+ */
+export interface Config {
+  /**
+   * Milliseconds a probe waits for one server before it is abandoned. Defaults
+   * to {@link DEFAULT_PROBE_TIMEOUT_MS}; validated to 1 through the maximum
+   * timer delay so a probe cannot hold a surface open.
+   */
+  probeTimeoutMs?: number
+  /**
+   * Milliseconds allowed per tool call on a mounted server, passed to the MCP
+   * client. Defaults to {@link DEFAULT_TOOL_CALL_TIMEOUT_MS}.
+   */
+  toolCallTimeoutMs?: number
+}
+```
+
+Source: [`packages/faberloom/mcp-registry/src/index.ts:85`](../packages/faberloom/mcp-registry/src/index.ts)
+
 <a id="deepseek-aidsh-faberloom-mcp-server"></a>
 
 ## `@deepseek-ai/dsh-faberloom-mcp-server`
@@ -1094,7 +1121,7 @@ Source: [`packages/faberloom/shares/src/index.ts:29`](../packages/faberloom/shar
 
 ## `@deepseek-ai/dsh-faberloom-view`
 
-Requires: `faberloomSpaces` · `faberloomAgents` · `faberloomBoard` · `faberloomRoutines` · `faberloomMemory` · `faberloomAccess` · `faberloomMcpServer` · `faberloomBackup`
+Requires: `faberloomSpaces` · `faberloomAgents` · `faberloomBoard` · `faberloomRoutines` · `faberloomMemory` · `faberloomAccess` · `faberloomMcpServer` · `faberloomBackup` · `storageDomain`
 
 ```ts config-catalog
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
@@ -1134,7 +1161,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:177`](../packages/faberloom/view/src/index.ts)
+Source: [`packages/faberloom/view/src/index.ts:224`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -1783,7 +1810,7 @@ export type PiAiThinkingTokenBudgetField = NonNullable<OpenAICompletionsCompat['
 
 Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:221`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:224`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -3257,7 +3284,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts:59`](../packages/faberloom/tool-faberloom/src/index.ts)
+Source: [`packages/faberloom/tool-faberloom/src/index.ts:61`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 

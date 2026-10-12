@@ -2,6 +2,7 @@
 .document {
   min-width: 0;
   padding: 10px 12px;
-  font-family: var(--dsw-font, inherit);
+  /* A document body is the UI body role, not a bare family. */
+  font-family: var(--dsw-font-ui-body-font-family);
   white-space: normal;
 }

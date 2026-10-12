@@ -228,6 +228,7 @@
     { "path": "./packages/faberloom/agent-runtime" },
     { "path": "./packages/faberloom/knowledge-index" },
     { "path": "./packages/faberloom/model-catalog" },
+    { "path": "./packages/faberloom/mcp-registry" },
     { "path": "./packages/faberloom/board" },
     { "path": "./packages/faberloom/routines" },
     { "path": "./packages/faberloom/execution" },

@@ -72,6 +72,12 @@
       "path": "../session-shares"
     },
     {
+      "path": "../../storage/storage-domain"
+    },
+    {
+      "path": "../../sandbox/sandbox-policy"
+    },
+    {
       "path": "../../session-query/session-query/tsconfig.json"
     },
     {

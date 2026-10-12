@@ -997,6 +997,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'how many entries were checked and how many are now available.',
       },
       {
+        signature: 'async reconcileModels(providerId: string, credentialRef: CredentialRef): Promise<ModelReconciliation>',
+        description: 'Reconcile the model pool with the models one provider currently serves. Discovery runs through `ctx.faberloomModelCatalog`, which resolves the named credential reference through the credentials seam, per call and like the catalog itself. Every discovered model becomes a pool entry: an unlisted id is created, an already-registered one is refreshed from the provider\'s fields, and a pool entry of this provider that discovery no longer lists is marked unavailable rather than deleted, so a recorded selection never points at a missing row. A models response carries no rates, so a refreshed entry keeps its recorded rate and a created entry starts with an unknown cost.',
+        parameters: [{ name: 'providerId', description: 'the provider whose served models to reconcile.' }, { name: 'credentialRef', description: 'the credential reference discovery authenticates with.' }],
+        returns: 'how many entries this call created, refreshed, and marked unavailable.',
+        throws: ['Error when no model catalog is mounted; the catalog\'s own errors otherwise (unknown provider, unresolvable credential, transport, or rejection).'],
+      },
+      {
         signature: 'registerExecutableTool(name: string, handler: (args: unknown) => unknown): () => void',
         description: 'Register one executable tool handler in this process.',
         parameters: [{ name: 'name', description: 'tool name referenced by an agent\'s `tools` list.' }, { name: 'handler', description: 'sync or async handler over the call arguments.' }],
@@ -1513,6 +1520,37 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Search the owner\'s mailbox envelopes from the chat, newest first.\n\nRead-only like the poller: it neither advances the receiver\'s cursor nor touches the mailbox flags, so searching never hides mail from the triggers.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'query', description: 'text to look for; empty returns the newest envelopes.' }, { name: 'limit', description: 'most envelopes returned.' }, { name: 'connectionId', description: 'a specific IMAP connection, or undefined for the primary mailbox.' }],
         returns: 'the matching envelopes.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomMcpRegistry',
+    summary: 'The MCP server registry published as `ctx.faberloomMcpRegistry`.',
+    description: 'The MCP server registry published as `ctx.faberloomMcpRegistry`.',
+    methods: [
+      {
+        signature: 'list(ownerId: string): Promise<readonly FaberLoomMcpServer[]>',
+        description: 'List one owner\'s saved servers, name-ascending, each carrying whether the credential seam resolves its entries and whether it is mounted.',
+        parameters: [{ name: 'ownerId', description: 'the identity whose servers are read.' }],
+        returns: 'the owner\'s saved servers.',
+      },
+      {
+        signature: 'save(ownerId: string, input: McpServerInput): Promise<FaberLoomMcpServer>',
+        description: 'Persist one server and reconcile its mount; an enabled server mounts process-globally, and every `env` or `headers` value goes to the credential seam.',
+        parameters: [{ name: 'ownerId', description: 'the identity the server belongs to.' }, { name: 'input', description: 'the server\'s name, transport, secret values, and enabled flag.' }],
+        returns: 'the saved server as a caller reads it.',
+      },
+      {
+        signature: 'remove(ownerId: string, name: string): Promise<boolean>',
+        description: 'Remove one saved server, unmounting it and dropping the credentials its entries held.',
+        parameters: [{ name: 'ownerId', description: 'the identity the server belongs to.' }, { name: 'name', description: 'the server to remove.' }],
+        returns: 'whether a server was removed.',
+      },
+      {
+        signature: 'probe(input: McpServerInput): Promise<McpProbeResult>',
+        description: 'Prove one candidate server works by connecting in an isolated scope, listing its tools, and closing again.',
+        parameters: [{ name: 'input', description: 'the candidate server with its secret values.' }],
+        returns: '`{ ok: true, tools }`, or a named failure with every secret redacted.',
       },
     ],
   },
@@ -2532,6 +2570,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one owner-uploaded skill. Role-catalog skills cannot be removed.',
         parameters: [{ name: 'name', description: 'skill name.' }],
         returns: 'the refreshed skill list.',
+      },
+      {
+        signature: '@Remote(\'skillInstallTargets\') skillInstallTargets(): Promise<FaberLoomSkillInstallTargets>',
+        description: 'The two roots an install may target, so the panel can show the resolved destination before it writes anything.',
+        parameters: [],
+        returns: 'the workspace skills root (null without a workspace) and the global root.',
+      },
+      {
+        signature: '@Remote(\'installSkill\') async installSkill( source: string, destination: FaberLoomSkillInstallDestination, replace?: boolean, workspaceRoot?: string, ): Promise<FaberLoomSkillInstallReport>',
+        description: 'Install one or more skills from a folder the user named. The source is a single skill directory (holding `SKILL.md`) or a directory of skill directories; every candidate\'s front matter is validated before anything is written, each whole skill directory is copied with its assets, and an existing skill of the same name is left alone unless `replace` is set.',
+        parameters: [{ name: 'source', description: 'folder to install from; resolved inside the workspace when the call has one.' }, { name: 'destination', description: '`workspace` writes under `<workspace>/.dsh/skills`, `global` under `$DSH_HOME/skills`.' }, { name: 'replace', description: 'true replaces a skill of the same name; false skips it.' }, { name: 'workspaceRoot', description: 'the session\'s resolved workspace root; omitted uses the deployment default.' }],
+        returns: 'the resolved destination root and one outcome per candidate.',
+      },
+      {
+        signature: '@Remote(\'skillInstalls\') async skillInstalls(): Promise<readonly FaberLoomSkillInstallRow[]>',
+        description: 'List the skills this identity installed from a folder.',
+        parameters: [],
+        returns: 'the install rows, sorted by name.',
+      },
+      {
+        signature: '@Remote(\'uninstallSkill\') async uninstallSkill(name: string, destination: FaberLoomSkillInstallDestination): Promise<readonly FaberLoomSkillInstallRow[]>',
+        description: 'Remove one recorded install: the copied skill directory and its ledger row.',
+        parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'destination', description: 'root the install landed in.' }],
+        returns: 'the refreshed install rows.',
+        throws: ['when the identity is read-only or holds no such install.'],
       },
       {
         signature: '@Remote(\'connections\') async connections(): Promise<readonly FaberLoomConnection[]>',
@@ -7336,6 +7399,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type FaberLoomShareStatus = \'pending\' | \'active\' | \'revoked\';',
   },
   {
+    name: 'FaberLoomSkillCandidateReason',
+    declaration: 'export type FaberLoomSkillCandidateReason = \'name-missing\' | \'name-illegal\' | \'exists\';',
+  },
+  {
+    name: 'FaberLoomSkillInstallDestination',
+    declaration: 'export type FaberLoomSkillInstallDestination = \'workspace\' | \'global\';',
+  },
+  {
+    name: 'FaberLoomSkillInstallOutcome',
+    declaration: 'export interface FaberLoomSkillInstallOutcome {\n    readonly name: string;\n    readonly status: \'installed\' | \'replaced\' | \'skipped\' | \'refused\';\n    readonly reason?: FaberLoomSkillCandidateReason;\n}',
+  },
+  {
+    name: 'FaberLoomSkillInstallRefusal',
+    declaration: 'export type FaberLoomSkillInstallRefusal = \'read-only\' | \'no-workspace\' | \'source-missing\' | \'outside-workspace\' | \'not-a-skill\';',
+  },
+  {
+    name: 'FaberLoomSkillInstallReport',
+    declaration: 'export interface FaberLoomSkillInstallReport {\n    readonly destination: FaberLoomSkillInstallDestination;\n    readonly root: string;\n    readonly refused?: FaberLoomSkillInstallRefusal;\n    readonly outcomes: readonly FaberLoomSkillInstallOutcome[];\n}',
+  },
+  {
+    name: 'FaberLoomSkillInstallRow',
+    declaration: 'export interface FaberLoomSkillInstallRow {\n    readonly name: string;\n    readonly sourcePath: string;\n    readonly destination: FaberLoomSkillInstallDestination;\n    readonly destinationRoot: string;\n    readonly installedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomSkillInstallTargets',
+    declaration: 'export interface FaberLoomSkillInstallTargets {\n    readonly workspace: string | null;\n    readonly global: string;\n}',
+  },
+  {
     name: 'FaberLoomSkillRow',
     declaration: 'export interface FaberLoomSkillRow {\n    readonly name: string;\n    readonly description: string;\n    readonly module: string | null;\n    readonly action: string | null;\n    readonly origin: \'role\' | \'owner\' | \'shared\' | \'incoming\';\n    readonly assignedTo: readonly string[];\n    readonly sharedBy?: string;\n}',
   },
@@ -7920,6 +8011,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
   },
   {
+    name: 'McpHttpTransportInput',
+    declaration: 'export interface McpHttpTransportInput {\n    transport: \'streamable-http\';\n    url: string;\n}',
+  },
+  {
+    name: 'McpProbeFailure',
+    declaration: 'export type McpProbeFailure = \'unreachable\' | \'bad-credential\' | \'protocol\';',
+  },
+  {
+    name: 'McpProbeResult',
+    declaration: 'export type McpProbeResult = {\n    readonly ok: true;\n    readonly tools: readonly string[];\n} | {\n    readonly ok: false;\n    readonly failure: McpProbeFailure;\n    readonly detail: string;\n};',
+  },
+  {
     name: 'McpResourceProvider',
     declaration: 'export interface McpResourceProvider {\n    request(request: McpResourceRequest, exec: ToolExecution): Promise<JsonValue>;\n}',
   },
@@ -7928,8 +8031,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type McpResourceRequest = {\n    method: \'resources/list\' | \'resources/templates/list\';\n    cursor?: string;\n} | {\n    method: \'resources/read\';\n    uri: string;\n};',
   },
   {
+    name: 'McpServerInput',
+    declaration: 'export interface McpServerInput {\n    name: string;\n    transport: McpTransportInput;\n    env?: Readonly<Record<string, string>>;\n    headers?: Readonly<Record<string, string>>;\n    enabled?: boolean;\n}',
+  },
+  {
+    name: 'McpStdioTransportInput',
+    declaration: 'export interface McpStdioTransportInput {\n    transport: \'stdio\';\n    command: string;\n    args?: readonly string[];\n    cwd?: string;\n}',
+  },
+  {
     name: 'McpTokenInput',
     declaration: 'export interface McpTokenInput {\n    readonly label: string;\n    readonly scopes?: readonly string[];\n}',
+  },
+  {
+    name: 'McpTransportInput',
+    declaration: 'export type McpTransportInput = McpStdioTransportInput | McpHttpTransportInput;',
   },
   {
     name: 'Message',
@@ -8074,6 +8189,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ModelReasoningEffort',
     declaration: 'export interface ModelReasoningEffort {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n}',
+  },
+  {
+    name: 'ModelReconciliation',
+    declaration: 'export interface ModelReconciliation {\n    readonly provider: string;\n    readonly created: number;\n    readonly refreshed: number;\n    readonly unavailable: number;\n}',
   },
   {
     name: 'ObjectJsonSchema',

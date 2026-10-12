@@ -132,6 +132,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   faberloomContext: 'faberloom.md',
   faberloomSessionShares: 'faberloom.md',
   faberloomModelCatalog: 'faberloom.md',
+  faberloomMcpRegistry: 'faberloom.md',
   subagentModelSelection: 'subagent.md',
   subagents: 'subagent.md',
   subprocess: 'subprocess.md',
@@ -326,6 +327,9 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FaberLoomMcpToken: 'faberloom.md',
   FaberLoomMcpTokenRow: 'faberloom.md',
   McpTokenInput: 'faberloom.md',
+  FaberLoomMcpServer: 'faberloom.md',
+  McpServerInput: 'faberloom.md',
+  McpProbeResult: 'faberloom.md',
   ImapMessage: 'faberloom.md',
   ImapCredentials: 'faberloom.md',
   CursorRecord: 'faberloom.md',
@@ -336,6 +340,10 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FaberLoomAgentDetail: 'faberloom.md',
   AgentSaveInput: 'faberloom.md',
   FaberLoomSkillRow: 'faberloom.md',
+  FaberLoomSkillInstallDestination: 'faberloom.md',
+  FaberLoomSkillInstallRow: 'faberloom.md',
+  FaberLoomSkillInstallTargets: 'faberloom.md',
+  FaberLoomSkillInstallReport: 'faberloom.md',
   FaberLoomSpace: 'faberloom.md',
   SpaceActor: 'faberloom.md',
   SpaceContext: 'faberloom.md',
@@ -1098,6 +1106,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   SessionDeleteValue: 'Host session-controller result contract is owned by packages/api/session-controller/src/types.ts',
   SessionDeleteOrphansValue: 'Host session-controller result contract is owned by packages/api/session-controller/src/types.ts',
   SessionAgentRoute: 'product consumer type is owned by packages/faberloom/session-agent/src/types.ts',
+  ModelReconciliation: 'product consumer type is owned by packages/faberloom/agents/src/types.ts',
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */

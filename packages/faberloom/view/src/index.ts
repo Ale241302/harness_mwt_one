@@ -5,7 +5,7 @@
  * argument, so a panel cannot ask for another owner's rows.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -58,6 +58,8 @@ import type {
   FaberLoomWorkflowTemplateRow, FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph, FaberLoomConsultationRow, FaberLoomContextExportRow,
+  FaberLoomSkillInstallDestination, FaberLoomSkillCandidateReason,
+  FaberLoomSkillInstallOutcome, FaberLoomSkillInstallReport, FaberLoomSkillInstallTargets, FaberLoomSkillInstallRow,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -79,6 +81,9 @@ import type { FaberLoomContext, FaberLoomContextEntry } from '@deepseek-ai/dsh-f
 // Type-only: resolves the ctx.faberloomAgentRuntime declaration used through ctx.get.
 import type {} from '@deepseek-ai/dsh-faberloom-agent-runtime'
 import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-ai/dsh-faberloom-session-shares'
+import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
+import { skillInstallDomainSpec, type SkillInstallRecord } from './spec.ts'
 // Type-only: pulls the ctx.sessionQuery merge for cross-member Session capture.
 import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -171,6 +176,48 @@ function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' 
     })
   }
   return rows.sort((left, right) => left.name.localeCompare(right.name))
+}
+
+/** Whether one resolved path is the root itself or a descendant of it. */
+function isInsidePath(root: string, target: string): boolean {
+  const normalized = resolve(root)
+  return target === normalized || target.startsWith(normalized + sep)
+}
+
+/**
+ * The candidate skill directories inside one install source: the source itself
+ * when it holds a `SKILL.md`, otherwise each immediate child directory that
+ * does. A source with none is not a skill folder.
+ * @param source - the resolved absolute source path.
+ * @returns the candidate directories, or undefined when the source holds no skill.
+ */
+function skillCandidates(source: string): readonly string[] | undefined {
+  if (existsSync(join(source, 'SKILL.md'))) return [source]
+  const children = readdirSync(source, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && existsSync(join(source, entry.name, 'SKILL.md')))
+    .map(entry => join(source, entry.name))
+    .sort()
+  return children.length === 0 ? undefined : children
+}
+
+/**
+ * Read one candidate's front matter name and check it against the skill naming
+ * rule before anything is written.
+ * @param dir - the candidate skill directory.
+ * @returns the legal name, or the reason the candidate is refused.
+ */
+function readSkillName(dir: string): { kind: 'ok'; name: string } | { kind: 'refused'; reason: FaberLoomSkillCandidateReason } {
+  const front = readFileSync(join(dir, 'SKILL.md'), 'utf8').match(/^---\s*\n([\s\S]*?)\n---/)
+  const line = (front?.[1] ?? '').split('\n').find(candidate => candidate.trimStart().startsWith('name:'))
+  const name = line?.slice(line.indexOf(':') + 1).trim().replace(/^["']|["']$/g, '') ?? ''
+  if (name.length === 0) return { kind: 'refused', reason: 'name-missing' }
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) return { kind: 'refused', reason: 'name-illegal' }
+  return { kind: 'ok', name }
+}
+
+/** Keep one user's shared-skill marker from travelling with a copied folder. */
+function copyExceptSharedMarker(source: string): boolean {
+  return basename(source) !== '.shared-by'
 }
 
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
@@ -525,7 +572,7 @@ function readScope(value: unknown): WorkFlowScope | undefined {
  * panels refresh from one value instead of recomputing.
  */
 export class FaberLoomViewService extends TypertRemoteService {
-  static inject = ['faberloomSpaces', 'faberloomAgents', 'faberloomBoard', 'faberloomRoutines', 'faberloomMemory', 'faberloomAccess', 'faberloomMcpServer', 'faberloomBackup']
+  static inject = ['faberloomSpaces', 'faberloomAgents', 'faberloomBoard', 'faberloomRoutines', 'faberloomMemory', 'faberloomAccess', 'faberloomMcpServer', 'faberloomBackup', 'storageDomain']
 
   /**
    * The connections service, resolved lazily so a deployment that does not
@@ -590,6 +637,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomView')
+    ctx.effect(() => () => this.closeInstallDomain(), 'faberloom.view.skillInstallDomainClose')
     // The Space and its registered Workspace are the same area; deleting the
     // workspace from the sidebar must drop the Space, or the record and its
     // agent link outlive the area the user removed.
@@ -2999,6 +3047,160 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     rmSync(dir, { recursive: true, force: true })
     return await this.skills()
+  }
+
+  /** The skill-install domain handle, opened once per service. */
+  private installDomainPromise: Promise<Domain<typeof skillInstallDomainSpec>> | undefined
+
+  /** Close the lazily opened install domain, if any, when the service fiber unloads. */
+  private async closeInstallDomain(): Promise<void> {
+    if (this.installDomainPromise === undefined) return
+    await (await this.installDomainPromise).close()
+  }
+
+  /** Open the skill-install domain once and keep its handle. */
+  private installDomain(): Promise<Domain<typeof skillInstallDomainSpec>> {
+    this.installDomainPromise ??= this.ctx.storageDomain.open(skillInstallDomainSpec)
+    return this.installDomainPromise
+  }
+
+  /** The durable installs table handle. */
+  private async installs(): Promise<KvTable<string, SkillInstallRecord>> {
+    return (await this.installDomain()).table('installs')
+  }
+
+  /** The durable key one install occupies: owner, destination, and name. */
+  private installKey(ownerId: string, destination: FaberLoomSkillInstallDestination, name: string): string {
+    return `${ownerId}\u0000${destination}\u0000${name}`
+  }
+
+  /** The session-or-deployment workspace root a workspace install may write under. */
+  private workspaceRoot(): string | undefined {
+    const policy = this.ctx.get('sandboxPolicy')
+    if (policy === undefined) return undefined
+    const root = policy.resolve().workspaceRoot
+    return root.length === 0 ? undefined : root
+  }
+
+  /**
+   * The two roots an install may target, so the panel can show the resolved
+   * destination before it writes anything.
+   * @returns the workspace skills root (null without a workspace) and the global root.
+   */
+  @Remote('skillInstallTargets')
+  skillInstallTargets(): Promise<FaberLoomSkillInstallTargets> {
+    const workspaceRoot = this.workspaceRoot()
+    return Promise.resolve({
+      workspace: workspaceRoot === undefined ? null : join(workspaceRoot, '.dsh', 'skills'),
+      global: join(this.dshHome(), 'skills'),
+    })
+  }
+
+  /**
+   * Install one or more skills from a folder the user named. The source is a
+   * single skill directory (holding `SKILL.md`) or a directory of skill
+   * directories; every candidate's front matter is validated before anything is
+   * written, each whole skill directory is copied with its assets, and an
+   * existing skill of the same name is left alone unless `replace` is set.
+   * @param source - folder to install from; resolved inside the workspace when the call has one.
+   * @param destination - `workspace` writes under `<workspace>/.dsh/skills`, `global` under `$DSH_HOME/skills`.
+   * @param replace - true replaces a skill of the same name; false skips it.
+   * @param workspaceRoot - the session's resolved workspace root; omitted uses the deployment default.
+   * @returns the resolved destination root and one outcome per candidate.
+   */
+  @Remote('installSkill')
+  async installSkill(
+    source: string,
+    destination: FaberLoomSkillInstallDestination,
+    replace?: boolean,
+    workspaceRoot?: string,
+  ): Promise<FaberLoomSkillInstallReport> {
+    const reference = workspaceRoot ?? this.workspaceRoot()
+    if (destination === 'workspace' && reference === undefined) {
+      return { destination, root: '', refused: 'no-workspace', outcomes: [] }
+    }
+    const root = destination === 'global' ? join(this.dshHome(), 'skills') : join(reference as string, '.dsh', 'skills')
+    if (this.actor().readOnly) return { destination, root, refused: 'read-only', outcomes: [] }
+    const resolvedSource = resolve(reference ?? process.cwd(), source)
+    if (reference !== undefined && !isInsidePath(reference, resolvedSource)) {
+      return { destination, root, refused: 'outside-workspace', outcomes: [] }
+    }
+    if (!existsSync(resolvedSource) || !statSync(resolvedSource).isDirectory()) {
+      return { destination, root, refused: 'source-missing', outcomes: [] }
+    }
+    const candidates = skillCandidates(resolvedSource)
+    if (candidates === undefined) return { destination, root, refused: 'not-a-skill', outcomes: [] }
+    // Validate every candidate's front matter before writing any of them, so a
+    // refused name can never leave a half-installed folder set behind.
+    const checked = candidates.map(candidate => ({ candidate, name: readSkillName(candidate) }))
+    const ownerId = this.actor().id
+    const outcomes: FaberLoomSkillInstallOutcome[] = []
+    for (const entry of checked) {
+      if (entry.name.kind === 'refused') {
+        outcomes.push({ name: basename(entry.candidate), status: 'refused', reason: entry.name.reason })
+        continue
+      }
+      const name = entry.name.name
+      const target = join(root, name)
+      const exists = existsSync(target)
+      if (exists && !replace) {
+        outcomes.push({ name, status: 'skipped', reason: 'exists' })
+        continue
+      }
+      rmSync(target, { recursive: true, force: true })
+      mkdirSync(root, { recursive: true })
+      cpSync(entry.candidate, target, { recursive: true, filter: copyExceptSharedMarker })
+      await (await this.installs()).put(this.installKey(ownerId, destination, name), {
+        ownerId,
+        name,
+        sourcePath: entry.candidate,
+        destination,
+        destinationRoot: root,
+        installedAt: new Date().toISOString(),
+      })
+      outcomes.push({ name, status: exists ? 'replaced' : 'installed' })
+    }
+    return { destination, root, outcomes }
+  }
+
+  /**
+   * List the skills this identity installed from a folder.
+   * @returns the install rows, sorted by name.
+   */
+  @Remote('skillInstalls')
+  async skillInstalls(): Promise<readonly FaberLoomSkillInstallRow[]> {
+    const ownerId = this.actor().id
+    const rows: FaberLoomSkillInstallRow[] = []
+    for (const [, record] of (await this.installs()).entries()) {
+      if (record.ownerId !== ownerId) continue
+      rows.push({
+        name: record.name,
+        sourcePath: record.sourcePath,
+        destination: record.destination,
+        destinationRoot: record.destinationRoot,
+        installedAt: record.installedAt,
+      })
+    }
+    return rows.sort((left, right) => left.name.localeCompare(right.name))
+  }
+
+  /**
+   * Remove one recorded install: the copied skill directory and its ledger row.
+   * @param name - installed skill name.
+   * @param destination - root the install landed in.
+   * @returns the refreshed install rows.
+   * @throws when the identity is read-only or holds no such install.
+   */
+  @Remote('uninstallSkill')
+  async uninstallSkill(name: string, destination: FaberLoomSkillInstallDestination): Promise<readonly FaberLoomSkillInstallRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove skills')
+    const table = await this.installs()
+    const key = this.installKey(this.actor().id, destination, name)
+    const record = table.get(key)
+    if (record === undefined) throw new Error('faberloom: that skill is not an install of this identity')
+    rmSync(join(record.destinationRoot, record.name), { recursive: true, force: true })
+    await table.delete(key)
+    return await this.skillInstalls()
   }
 
   /**

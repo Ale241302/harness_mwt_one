@@ -259,6 +259,8 @@ flowchart LR
   svc_faberloomSessionAgent["ctx.faberloomSessionAgent<br/>Space session composition"]
   pkg_agent_runtime["agent-runtime"]
   svc_faberloomAgentRuntime["ctx.faberloomAgentRuntime<br/>Durable Space-agent consultations"]
+  pkg_mcp_registry["mcp-registry"]
+  svc_faberloomMcpRegistry["ctx.faberloomMcpRegistry<br/>MCP server registry and connection probe"]
   pkg_model_catalog["model-catalog"]
   svc_faberloomModelCatalog["ctx.faberloomModelCatalog<br/>Provider model catalog and credential probe"]
   pkg_agents["agents"]
@@ -361,6 +363,7 @@ flowchart LR
   pkg_lsp --> svc_lsp
   pkg_lsp_stdio --> svc_lsp
   pkg_mcp_client --> svc_mcpResources
+  pkg_mcp_registry --> svc_faberloomMcpRegistry
   pkg_mcp_resources --> svc_mcpResources
   pkg_mcp_server --> svc_faberloomMcpServer
   pkg_message_feedback --> svc_messageFeedback
@@ -665,6 +668,7 @@ flowchart LR
 | `ctx.faberloomAgentPlane` | `core` | `agent-plane` | - | - | - | Resolves one catalog agent's persona, tool mask, skills, and subagent allowlist from its declared MWT/SICOP-MCP and web flags, and enforces the mask on a delegated child. |
 | `ctx.faberloomSessionAgent` | `core` | `session-agent` | - | - | - | Composes a session whose working directory is a Space as that Space's responsible agent, installing its persona, tool mask, and skills once per root session. |
 | `ctx.faberloomAgentRuntime` | `core` | `agent-runtime` | - | - | - | Owns the recorded continuable consultations between a caller session and a Space agent so a follow-up continues the same child conversation. |
+| `ctx.faberloomMcpRegistry` | `core` | `mcp-registry` | - | - | - | Owns a user's MCP servers: the durable per-owner configuration, the credentials their headers and environment need, the probe that proves one connects, and the global mounts that make every configured server available to every session. |
 | `ctx.faberloomModelCatalog` | `core` | `model-catalog` | - | - | - | Owns the fixed provider protocol table, the per-call discovery of one provider's models under a caller-named credential, and the credential probe that reports whether a reference authenticates and whether its account is out of quota. |
 | `ctx.faberloomAgents` | `core` | `agents` | - | - | - | Owns the versioned agent catalog, the three creation routes, the versioned model policy (primary, exclusivity, alternatives, escalation, budget), the shared resolver, and the cost-per-useful-result recommender. |
 | `ctx.faberloomRoutines` | `core` | `routines` | - | - | - | Owns routine definitions and versions, triggers, step dependencies, and activation validation; execution state belongs to the execution service. |

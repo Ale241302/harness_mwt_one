@@ -66,6 +66,21 @@ export interface ModelInput {
   readonly available?: boolean
 }
 
+/**
+ * Outcome of reconciling one provider's served models into the pool.
+ * The counts describe this call only; entries of other providers are untouched.
+ */
+export interface ModelReconciliation {
+  /** The provider whose models discovery asked. */
+  readonly provider: string
+  /** Pool entries discovery created because the provider listed an unregistered model. */
+  readonly created: number
+  /** Existing pool entries of this provider that discovery refreshed. */
+  readonly refreshed: number
+  /** Pool entries of this provider that discovery no longer lists, marked unavailable. */
+  readonly unavailable: number
+}
+
 /** How a missing or failing primary model may be substituted. */
 export interface EscalationPolicy {
   /** Models the user explicitly authorized for escalation, ordered. */

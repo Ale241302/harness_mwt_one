@@ -272,7 +272,10 @@
 
 .cardId {
   margin-top: auto;
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  /* A preset id is a code surface: the data role's mono family. The scale's one
+     11px role is the uppercase overline, wrong for a case-sensitive id, so this
+     site keeps the smaller step its own 11px asks for. */
+  font-family: var(--dsw-font-data-font-family);
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -356,7 +359,8 @@
 }
 
 .revealedPath code {
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  /* A directory path is a code surface: the data role's mono family. */
+  font-family: var(--dsw-font-data-font-family);
   color: var(--dsw-alias-label-secondary);
   user-select: all;
   overflow-wrap: anywhere;
@@ -439,7 +443,8 @@
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  /* The composition viewer is a code surface: the data role's mono family. */
+  font-family: var(--dsw-font-data-font-family);
   font-size: 12.5px;
   line-height: 1.5;
   white-space: pre;

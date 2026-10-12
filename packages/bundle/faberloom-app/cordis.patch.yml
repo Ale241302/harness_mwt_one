@@ -33,6 +33,11 @@
     - id: faberloom-model-catalog
       name: '@deepseek-ai/dsh-faberloom-model-catalog'
 
+    # User-owned MCP servers: durable configuration, credential-seam secrets,
+    # the install probe, and the process-global mounts of every enabled server.
+    - id: faberloom-mcp-registry
+      name: '@deepseek-ai/dsh-faberloom-mcp-registry'
+
     - id: faberloom-board
       name: '@deepseek-ai/dsh-faberloom-board'
 
@@ -110,3 +115,33 @@
   disabled: true
 - id: web-fetch-http
   disabled: true
+
+# Rutas multi-proveedor por defecto del producto. El adaptador pi-ai ya viene
+# montado (dormido) en el bundle base; aquí se le dan los perfiles para que
+# OpenAI, Anthropic, Google, Kimi (plan de código) y Moonshot (plataforma)
+# existan como rutas en todo arranque de este perfil —el gateway y la app de
+# escritorio—, no solo cuando un despliegue las escribe. `apiKeyEnv` es una
+# referencia a la variable de entorno que resuelve la credencial en cada
+# request; la clave propia de un agente (GenerateOptions.credentialRef) siempre
+# gana sobre esta referencia. La clave nunca va en el repo: sin valor, la ruta
+# queda sin credencial.
+#
+# `kimi` es el plan de código (Anthropic Messages en https://api.kimi.com/coding).
+# Ese proveedor no publica endpoint de modelos (404), así que su lista —`k3`,
+# `k3-256k`, `kimi-for-coding`, `kimi-for-coding-highspeed`— viene del catálogo
+# instalado de pi-ai, no del descubrimiento. `moonshotai` es la plataforma
+# Moonshot (OpenAI-compatible en https://api.moonshot.ai/v1), un producto
+# distinto con credenciales distintas.
+- id: llm-pi-ai
+  config:
+    providers:
+      openai:
+        apiKeyEnv: OPENAI_API_KEY
+      anthropic:
+        apiKeyEnv: ANTHROPIC_API_KEY
+      google:
+        apiKeyEnv: GOOGLE_API_KEY
+      kimi:
+        apiKeyEnv: KIMI_API_KEY
+      moonshotai:
+        apiKeyEnv: MOONSHOT_API_KEY

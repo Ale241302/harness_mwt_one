@@ -88,6 +88,13 @@ export function isContextWindowExceededError(detail: string): boolean {
 /**
  * Recognize provider wording that identifies an exhausted account quota rather
  * than a transient request-rate limit.
+ *
+ * The balance-absence pattern covers OpenAI's `insufficient_quota` body, whose
+ * sentence names an empty balance without the `insufficient` prefix
+ * ("You have no credits remaining. Add credits to continue…"). The provider
+ * flattens that body to its message before some adapters classify it, so the
+ * structured `code` alone is not always available. The pattern asserts an absent
+ * balance; a throttling message names a rate instead, so it cannot match.
  * @param detail - provider error code/type/message text joined into one string.
  * @returns true only for terminal quota, balance, credit, budget, or usage-limit wording.
  */
@@ -97,6 +104,7 @@ export function isQuotaExceededError(detail: string): boolean {
     || /\bexceed(?:ed|s)?[\s_-]+(?:(?:your|the)[\s_-]+)?(?:current[\s_-]+)?quota\b/i.test(detail)
     || /\b(?:balance|credits?)[\s_-]+(?:exhausted|depleted)\b/i.test(detail)
     || /\bout[\s_-]+of[\s_-]+(?:credits?|budget)\b/i.test(detail)
+    || /\bno[\s_-]+(?:credits?|funds?|balance)[\s_-]+(?:remaining|left)\b/i.test(detail)
 }
 
 /**
@@ -126,6 +134,10 @@ export function providerAccountFailureCode(status: number | undefined, detail: s
  * Name the provider route in one provider failure message, so a user acting on
  * a credential or billing failure knows which account to fix. Only the route
  * id is appended; no credential value is ever part of a failure message.
+ *
+ * The appended ` (provider "<route>")` suffix is this function's format
+ * contract: the Chat client reads it back to name the account in a localized
+ * `AUTH` or `QUOTA` notice, so the format changes with its reader.
  * @param provider - registered provider route the call selected.
  * @param message - provider-supplied or adapter-built failure text.
  * @returns the message with the provider route appended.

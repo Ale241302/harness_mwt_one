@@ -194,6 +194,14 @@ export function apply(ctx: ClientContext): void {
       skills: () => ctx.remote.faberloomView.skills(),
       saveSkill: (name, markdown) => ctx.remote.faberloomView.saveSkill(name, markdown),
       removeSkill: name => ctx.remote.faberloomView.removeSkill(name),
+      skillInstallTargets: () => ctx.remote.faberloomView.skillInstallTargets(),
+      skillInstalls: () => ctx.remote.faberloomView.skillInstalls(),
+      installSkill: (source, destination, replace) => ctx.remote.faberloomView.installSkill(source, destination, replace),
+      uninstallSkill: (name, destination) => ctx.remote.faberloomView.uninstallSkill(name, destination),
+      pickSkillFolder: async () => {
+        const picked = await ctx.remote.directoryPicker.pick()
+        return picked.ok ? picked.value : null
+      },
       connections: () => ctx.remote.faberloomView.connections(),
       saveConnection: input => ctx.remote.faberloomView.saveConnection(input),
       removeConnection: id => ctx.remote.faberloomView.removeConnection(id),

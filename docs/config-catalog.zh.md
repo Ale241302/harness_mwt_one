@@ -962,6 +962,32 @@ export interface Config {
 
 来源：[`packages/faberloom/knowledge-index/src/index.ts:28`](../packages/faberloom/knowledge-index/src/index.ts)
 
+<a id="deepseek-aidsh-faberloom-mcp-registry"></a>
+
+## `@deepseek-ai/dsh-faberloom-mcp-registry`
+
+
+```ts config-catalog
+/**
+ * Deployment configuration for the MCP registry.
+ */
+export interface Config {
+  /**
+   * Milliseconds a probe waits for one server before it is abandoned. Defaults
+   * to {@link DEFAULT_PROBE_TIMEOUT_MS}; validated to 1 through the maximum
+   * timer delay so a probe cannot hold a surface open.
+   */
+  probeTimeoutMs?: number
+  /**
+   * Milliseconds allowed per tool call on a mounted server, passed to the MCP
+   * client. Defaults to {@link DEFAULT_TOOL_CALL_TIMEOUT_MS}.
+   */
+  toolCallTimeoutMs?: number
+}
+```
+
+来源：[`packages/faberloom/mcp-registry/src/index.ts:85`](../packages/faberloom/mcp-registry/src/index.ts)
+
 <a id="deepseek-aidsh-faberloom-mcp-server"></a>
 
 ## `@deepseek-ai/dsh-faberloom-mcp-server`
@@ -985,6 +1011,7 @@ export interface Config {
 ```
 
 来源：[`packages/faberloom/mcp-server/src/index.ts:45`](../packages/faberloom/mcp-server/src/index.ts)
+
 
 <a id="deepseek-aidsh-faberloom-model-catalog"></a>
 

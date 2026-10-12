@@ -1,10 +1,11 @@
 /**
- * Native product agents (`ctx.faberloomAgents`): the model pool, the versioned
- * agent catalog with its three creation routes, the versioned model policy, the
- * shared resolver and recommender, per-execution selection records, contextual
- * outcome evidence, and subagent delegation under a shared budget. Records are
- * durable through `ctx.storageDomain`; an agent's API key lives in the
- * credential seam (`ctx.credentials`), named by {@link agentCredentialRef}.
+ * Native product agents (`ctx.faberloomAgents`): the model pool with its
+ * provider-discovery reconciliation, the versioned agent catalog with its three
+ * creation routes, the versioned model policy, the shared resolver and
+ * recommender, per-execution selection records, contextual outcome evidence, and
+ * subagent delegation under a shared budget. Records are durable through
+ * `ctx.storageDomain`; an agent's API key lives in the credential seam
+ * (`ctx.credentials`), named by {@link agentCredentialRef}.
  * @module @deepseek-ai/dsh-faberloom-agents
  */
 
@@ -17,6 +18,9 @@ import { agentsDomainSpec, type AgentRecord, type ModelRecord, type OutcomeRecor
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 // Type-only: resolves the optional ctx.llm declaration used to verify live routes.
 import type {} from '@deepseek-ai/dsh-llm'
+// Type-only: the discovered row shape, and the optional ctx.faberloomModelCatalog
+// declaration discovery goes through.
+import type { DiscoveredModel } from '@deepseek-ai/dsh-faberloom-model-catalog'
 import type {
   AgentInput,
   AgentPatch,
@@ -33,6 +37,7 @@ import type {
   FaberLoomModelId,
   ModelInput,
   ModelPolicy,
+  ModelReconciliation,
   Outcome,
   OutcomeInput,
   PolicyPatch,
@@ -122,6 +127,50 @@ function toModel(id: FaberLoomModelId, record: ModelRecord): FaberLoomModel {
     checkedAt: record.checkedAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+  }
+}
+
+/**
+ * Capability tags from the modalities one provider declared for a model: the
+ * provider's own modality names, in declaration order, without inventing an
+ * alias. `input_modalities: ["text","image"]` yields `["text","image"]`.
+ * @param row - the discovered model.
+ * @returns the deduplicated modality names, empty when the provider declared none.
+ */
+function modalityCapabilities(row: DiscoveredModel): string[] {
+  const tags = new Set<string>()
+  if (row.inputModalities !== undefined) for (const modality of row.inputModalities) tags.add(modality)
+  if (row.outputModalities !== undefined) for (const modality of row.outputModalities) tags.add(modality)
+  return [...tags]
+}
+
+/**
+ * Fold one discovered model into a pool record. The provider's context window,
+ * output limit, and modalities replace the stored values, while a field the
+ * provider omitted keeps what the pool already recorded. A models response
+ * carries no rates, so a stored rate survives and a new entry starts unknown:
+ * the pool treats an unknown cost as uncertainty rather than zero.
+ * @param provider - the provider id the discovery asked.
+ * @param row - the discovered model.
+ * @param existing - the pool entry being refreshed, or undefined when creating one.
+ * @param now - ISO-8601 instant of this reconciliation.
+ * @returns the record to persist.
+ */
+function discoveredRecord(provider: string, row: DiscoveredModel, existing: ModelRecord | undefined, now: string): ModelRecord {
+  const capabilities = modalityCapabilities(row)
+  return {
+    provider,
+    model: row.id,
+    capabilities: capabilities.length > 0 ? capabilities : (existing?.capabilities ?? []),
+    contextWindow: row.contextWindow ?? existing?.contextWindow ?? null,
+    maxOutput: row.maxOutputTokens ?? existing?.maxOutput ?? null,
+    inputPerMillion: existing?.inputPerMillion ?? null,
+    outputPerMillion: existing?.outputPerMillion ?? null,
+    currency: existing?.currency ?? null,
+    available: true,
+    checkedAt: now,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
   }
 }
 
@@ -522,6 +571,67 @@ export class FaberLoomAgents extends Service {
       if (next.available) available += 1
     }
     return { checked: table.size, available }
+  }
+
+  /**
+   * Reconcile the model pool with the models one provider currently serves.
+   * Discovery runs through `ctx.faberloomModelCatalog`, which resolves the named
+   * credential reference through the credentials seam, per call and like the
+   * catalog itself. Every discovered model becomes a pool entry: an unlisted id
+   * is created, an already-registered one is refreshed from the provider's
+   * fields, and a pool entry of this provider that discovery no longer lists is
+   * marked unavailable rather than deleted, so a recorded selection never points
+   * at a missing row. A models response carries no rates, so a refreshed entry
+   * keeps its recorded rate and a created entry starts with an unknown cost.
+   * @param providerId - the provider whose served models to reconcile.
+   * @param credentialRef - the credential reference discovery authenticates with.
+   * @returns how many entries this call created, refreshed, and marked unavailable.
+   * @throws Error when no model catalog is mounted; the catalog's own errors
+   * otherwise (unknown provider, unresolvable credential, transport, or rejection).
+   */
+  async reconcileModels(providerId: string, credentialRef: CredentialRef): Promise<ModelReconciliation> {
+    const catalog = this.ctx.get('faberloomModelCatalog')
+    if (catalog === undefined) {
+      throw new Error('faberloom: no model catalog is mounted; mount faberloom-model-catalog to discover provider models')
+    }
+    const discovered = await catalog.discover(providerId, credentialRef)
+    const table = await this.models()
+    const now = new Date().toISOString()
+    const listed = new Set(discovered.map(row => row.id))
+    // One pool entry per id, so a provider+model registered more than once is
+    // refreshed in place instead of gaining a duplicate.
+    const registered = new Map<string, Array<{ id: FaberLoomModelId; record: ModelRecord }>>()
+    for (const [id, record] of table.entries()) {
+      if (record.provider !== providerId) continue
+      const entries = registered.get(record.model)
+      if (entries === undefined) registered.set(record.model, [{ id, record }])
+      else entries.push({ id, record })
+    }
+
+    let created = 0
+    let refreshed = 0
+    for (const row of discovered) {
+      const entries = registered.get(row.id)
+      if (entries === undefined) {
+        await table.put(brandString<FaberLoomModelId>(randomUUID()), discoveredRecord(providerId, row, undefined, now))
+        created += 1
+        continue
+      }
+      for (const { id, record } of entries) {
+        await table.update(id, () => discoveredRecord(providerId, row, record, now))
+        refreshed += 1
+      }
+    }
+
+    let unavailable = 0
+    for (const [model, entries] of registered) {
+      if (listed.has(model)) continue
+      for (const { id, record } of entries) {
+        await table.update(id, () => ({ ...record, available: false, checkedAt: now, updatedAt: now }))
+        unavailable += 1
+      }
+    }
+    return { provider: providerId, created, refreshed, unavailable }
   }
 
   // ── Executable tools ────────────────────────────────────────────────

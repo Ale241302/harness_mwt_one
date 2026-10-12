@@ -804,6 +804,64 @@ export interface FaberLoomSkillRow {
   readonly sharedBy?: string
 }
 
+/** Where an installed skill lands: a project root under the session workspace, or the deployment's global skills root. */
+export type FaberLoomSkillInstallDestination = 'workspace' | 'global'
+
+/** Why one install attempt changed nothing. */
+export type FaberLoomSkillInstallRefusal =
+  | 'read-only'
+  | 'no-workspace'
+  | 'source-missing'
+  | 'outside-workspace'
+  | 'not-a-skill'
+
+/** Why one candidate skill was refused or skipped. */
+export type FaberLoomSkillCandidateReason = 'name-missing' | 'name-illegal' | 'exists'
+
+/** The outcome of one candidate skill in an install call. */
+export interface FaberLoomSkillInstallOutcome {
+  /** Skill name (the front matter name when legal, otherwise the source directory). */
+  readonly name: string
+  /** What the call did with this candidate. */
+  readonly status: 'installed' | 'replaced' | 'skipped' | 'refused'
+  /** Why nothing changed, for a skipped or refused candidate. */
+  readonly reason?: FaberLoomSkillCandidateReason
+}
+
+/** The result of one install call: the resolved destination root and one outcome per candidate. */
+export interface FaberLoomSkillInstallReport {
+  /** The destination the call targeted. */
+  readonly destination: FaberLoomSkillInstallDestination
+  /** Resolved skills root the call wrote into; empty when the call was refused before a root existed. */
+  readonly root: string
+  /** Why the whole call changed nothing; absent when it ran. */
+  readonly refused?: FaberLoomSkillInstallRefusal
+  /** One entry per installed, replaced, skipped, or refused candidate, in source order. */
+  readonly outcomes: readonly FaberLoomSkillInstallOutcome[]
+}
+
+/** The two roots an install may target, resolved for the control that chooses between them. */
+export interface FaberLoomSkillInstallTargets {
+  /** Workspace skills root, or null when the call has no workspace. */
+  readonly workspace: string | null
+  /** Global skills root (`$DSH_HOME/skills`). */
+  readonly global: string
+}
+
+/** One skill this owner installed from a folder. */
+export interface FaberLoomSkillInstallRow {
+  /** Skill name (its directory under the destination root). */
+  readonly name: string
+  /** Folder the skill was installed from. */
+  readonly sourcePath: string
+  /** Which root holds the install. */
+  readonly destination: FaberLoomSkillInstallDestination
+  /** Skills root the install landed in. */
+  readonly destinationRoot: string
+  /** ISO-8601 install instant. */
+  readonly installedAt: string
+}
+
 /** One agent with its full editable configuration. */
 export interface FaberLoomAgentDetail {
   /** Agent id. */

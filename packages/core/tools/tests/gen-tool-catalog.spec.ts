@@ -36,7 +36,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'faberloom_executions_start', 'faberloom_executions_tick', 'faberloom_mail_attachment', 'faberloom_mail_attachment_link', 'faberloom_mail_download', 'faberloom_mail_mark_read',
       'faberloom_mail_read', 'faberloom_mail_search', 'faberloom_mail_send', 'faberloom_mail_trash', 'faberloom_models_list', 'faberloom_models_register',
       'faberloom_models_sync_pool', 'faberloom_mwt_call', 'faberloom_mwt_find', 'faberloom_routines_activate', 'faberloom_routines_create', 'faberloom_routines_list',
-      'faberloom_routines_pause', 'faberloom_routines_update', 'faberloom_routines_version', 'faberloom_sources_list', 'faberloom_sources_register', 'faberloom_spaces_archive',
+      'faberloom_routines_pause', 'faberloom_routines_update', 'faberloom_routines_version', 'faberloom_skill_install', 'faberloom_sources_list', 'faberloom_sources_register', 'faberloom_spaces_archive',
       'faberloom_spaces_ask', 'faberloom_spaces_attach_file', 'faberloom_spaces_create', 'faberloom_spaces_effective_context', 'faberloom_spaces_find', 'faberloom_spaces_followup',
       'faberloom_spaces_get', 'faberloom_spaces_list', 'faberloom_spaces_list_files', 'faberloom_spaces_preview_link', 'faberloom_spaces_read_file', 'faberloom_spaces_reference',
       'faberloom_spaces_resolve_workdir', 'faberloom_spaces_update', 'faberloom_spaces_validate_source', 'get_goal', 'glob', 'grep',

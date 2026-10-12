@@ -339,7 +339,9 @@
 .imageLabel {
   margin-bottom: 4px;
   overflow-wrap: anywhere;
-  font: var(--dsw-font-sm-13);
+  /* The 13px sans step this sheet already uses for its card text; the app scale
+     names no 13px role, so the closest published step stands. */
+  font: var(--dsw-font-xs-13);
   color: var(--dsw-alias-label-secondary);
 }
 

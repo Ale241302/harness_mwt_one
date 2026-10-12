@@ -50,9 +50,16 @@ interface RetryCountdown {
 function failureMessage(
   message: string,
   code: unknown,
+  provider: string | undefined,
   t: ChatViewSlotProps['t'],
 ): string {
-  return code === 'AUTH' ? t('message.failure.auth') : message
+  if (code === 'QUOTA' && provider !== undefined) return t('message.failure.quota', { provider })
+  if (code === 'AUTH') {
+    return provider === undefined
+      ? t('message.failure.auth')
+      : t('message.failure.authProvider', { provider })
+  }
+  return message
 }
 
 function ModelRetryItem({ node, active, t }: {
@@ -114,7 +121,7 @@ function ModelRetryItem({ node, active, t }: {
         </div>
         <div>
           <span className={css.retryDetailLabel}>{t('message.retry.failure')}</span>
-          {failureMessage(node.failure.message, node.failure.code, t)}
+          {failureMessage(node.failure.message, node.failure.code, undefined, t)}
         </div>
       </div>
     </details>
@@ -131,7 +138,7 @@ function TurnErrorItem({ node, t }: {
       <StateDot state="error" className={css.turnErrorDot} />
       <div className={css.turnErrorCopy}>
         <span className={css.turnErrorTitle}>{t('message.turnError')}</span>
-        <span className={css.turnErrorMessage}>{failureMessage(node.message, node.code, t)}</span>
+        <span className={css.turnErrorMessage}>{failureMessage(node.message, node.code, node.provider, t)}</span>
       </div>
       {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
     </div>

@@ -2440,6 +2440,59 @@ describe('built-in conversation node Definitions', () => {
     expect(node(snapshot(failed), 'turn-error')).toBeDefined()
   })
 
+  it('carries the classified account failure code and provider route on the turn-error node', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'turn/end', {
+        turn: 1,
+        reason: {
+          kind: 'error',
+          error: {
+            code: 'QUOTA',
+            message: 'insufficient balance (provider "deepseek-official")',
+          },
+        },
+      }),
+    ])
+
+    expect(node(snapshot(value), 'turn-error')?.data).toMatchObject({
+      kind: 'turn-error',
+      seq: 3,
+      turn: 1,
+      code: 'QUOTA',
+      provider: 'deepseek-official',
+    })
+
+    // A rejected credential keeps its sanitized empty message and still names the route.
+    const auth = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'turn/end', {
+        turn: 1,
+        reason: {
+          kind: 'error',
+          error: { code: 'AUTH', message: 'HTTP 401: bad key (provider "openai")' },
+        },
+      }),
+    ])
+    expect(node(snapshot(auth), 'turn-error')?.data).toMatchObject({
+      kind: 'turn-error',
+      code: 'AUTH',
+      provider: 'openai',
+      message: '',
+    })
+
+    // A failure without a harness route suffix carries no provider.
+    const plain = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'turn/end', {
+        turn: 1,
+        reason: { kind: 'error', error: { code: 'TRANSPORT', message: 'socket closed' } },
+      }),
+    ])
+    expect(node(snapshot(plain), 'turn-error')?.data).not.toHaveProperty('provider')
+  })
+
   it('keeps the max-tokens notice when the window starts after the owning turn/start', () => {
     const value = assembler([
       at(9, 'turn/end', { turn: 3, reason: { kind: 'max-tokens' } }),

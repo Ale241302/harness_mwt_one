@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包承载代理目录与版本化模型策略、模型池、共享解析器与推荐器、每次执行的选型记录，以及上下文结果证据。它注册 `ctx.faberloomAgents` 主机服务。代理的提供方 API 密钥存放在凭据接缝（`ctx.credentials`）中，以由代理 id 派生的引用寻址；持久化记录只保留非机密的尾部与存在标志，任何读取都不返回密钥。
+此包承载代理目录与版本化模型策略、模型池、共享解析器与推荐器、每次执行的选型记录，以及上下文结果证据。它注册 `ctx.faberloomAgents` 主机服务。代理的提供方 API 密钥存放在凭据接缝（`ctx.credentials`）中，以由代理 id 派生的引用寻址；持久化记录只保留非机密的尾部与存在标志，任何读取都不返回密钥。`reconcileModels` 通过 `ctx.faberloomModelCatalog` 询问某个提供方当前服务哪些模型，并把答案并入模型池，因此提供方新增的模型无需等待发版即可路由。
 
 ## 目录
 
@@ -24,6 +24,12 @@ kind: "package-reference"
 ## 使用此包
 
 在组合中挂载此行即可暴露 `ctx.faberloomAgents`。该服务是调用插件 fiber 上的副作用，释放该 fiber 即移除。持久化状态经由 `ctx.storageDomain`，密钥经由可选的凭据接缝。
+
+### 结合提供方发现来协调模型池
+
+`reconcileModels(providerId, credentialRef)` 询问某个提供方当前服务哪些模型，并让它们可被路由。发现经由 `ctx.faberloomModelCatalog.discover` 进行，它像目录自身的调用方一样，通过凭据接缝解析凭据引用。对发现的每个模型，若该提供方与模型尚无池条目则创建一个，已有则刷新该条目；该提供方不再列出的池条目会被标为不可用而非删除，因此先前记录的选型仍能解析到一行。返回的 `ModelReconciliation` 报告本次调用创建、刷新和标为不可用的条目数。其他提供方的条目不受影响。
+
+模型池只填入提供方答案所提供的内容：`context_window` 成为 `contextWindow`，`max_output_tokens` 成为 `maxOutput`，声明的输入与输出模态按提供方自己的名称成为能力标签（`["text","image"]`）。models 响应不携带价格，因此新建条目的 `inputPerMillion`、`outputPerMillion` 与 `currency` 为 undefined，而刷新条目保留已记录的费率：模型池把未知费率报告为不确定性而非零，`resolveModel` 也拒绝对预算内的尝试按它计价。提供方在后续答案中省略的字段会保留模型池已记录的值，因为省略并不等于撤回。
 
 ### 代理 API 密钥存放于何处
 
@@ -74,6 +80,8 @@ await ctx.credentials.describe(ref)           // { configured, source?, writable
 - **副本不携带密钥** — `duplicateAgent` 复制配置，但绝不复制凭据，因为已存密钥无法被读回；副本从无密钥开始。
 - **没有接缝时密钥留在记录中** — 未挂载凭据提供方的组合没有受管存储，因此在那里写入的密钥会留在持久化记录中，直到一次挂载了接缝的读取将其迁移。
 - **尾部可能过时** — 直接在接缝上更换的密钥会保留记录中的旧尾部；`hasApiKey` 依然正确，因为它跟随 `describe`。
+- **发现填充的是模型池，而非提供方表。** `reconcileModels` 只填入 models 响应携带的内容。能力标签就是提供方自己的模态名称，因此匹配模型池 `vision` 标签的消费方也必须接受 `image`。模型的显示名、推理强度档位与价格没有对应的池字段，会被丢弃。
+- **退役体现为可用性，而非删除。** 提供方不再列出的模型会被标为不可用并留在池中，因此先前记录的选型仍能解析；没有任何调用会自行移除池条目。
 
 未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
 

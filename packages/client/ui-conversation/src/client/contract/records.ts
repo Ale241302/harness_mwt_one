@@ -138,6 +138,11 @@ export interface TurnErrorNode {
   message: string
   /** Stable provider failure code, when recorded. */
   code?: string
+  /**
+   * Provider route the failure names, when the message carries it; the
+   * localized account notice interpolates this to name the account to fix.
+   */
+  provider?: string
 }
 
 /** Durable notice for a turn ended by the per-request output-token cap. */

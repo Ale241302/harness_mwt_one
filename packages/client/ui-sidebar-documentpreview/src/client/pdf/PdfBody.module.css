@@ -5,7 +5,8 @@
   width: 100%;
   min-height: 0;
   overflow-x: hidden;
-  font-family: var(--dsw-font, sans-serif);
+  /* A document body is the UI body role, not a bare family. */
+  font-family: var(--dsw-font-ui-body-font-family);
   white-space: normal;
 }
 

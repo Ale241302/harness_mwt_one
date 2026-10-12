@@ -57,6 +57,17 @@ const cfg = {
   consolaApi: (process.env.CONSOLA_API_BASE || 'https://consola.mwt.one/api').replace(/\/+$/, ''),
   publicHost: process.env.PUBLIC_HOST || 'harness.mwt.one',
   deepseekKey: readSecret('DEEPSEEK_API_KEY'),
+  // Claves de los proveedores multi-modelo de llm-pi-ai. Se resuelven aquí
+  // (env o `<NAME>_FILE`) y se pasan al dsh hijo, que las lee por su
+  // referencia `apiKeyEnv` en cada request. La clave propia de un agente en el
+  // harness siempre gana sobre esta clave de despliegue.
+  openaiKey: readSecret('OPENAI_API_KEY'),
+  anthropicKey: readSecret('ANTHROPIC_API_KEY'),
+  googleKey: readSecret('GOOGLE_API_KEY'),
+  // `kimi` es el plan de código (api.kimi.com/coding); `moonshotai`, la
+  // plataforma Moonshot (api.moonshot.ai). Productos distintos, claves distintas.
+  kimiKey: readSecret('KIMI_API_KEY'),
+  moonshotKey: readSecret('MOONSHOT_API_KEY'),
   dataDir: process.env.DATA_DIR || '/data/users',
   dshBasePort: Number(process.env.DSH_BASE_PORT || 3100),
   dshBin: process.env.DSH_BIN || 'dsh',
@@ -978,10 +989,16 @@ function renderPatch(home, user, memory) {
     )
   }
 
-  // El adaptador multi-proveedor (llm-pi-ai) viene dormido en el bundle base;
-  // este patch le da los perfiles para que OpenAI, Anthropic, Google y Moonshot
-  // aparezcan como rutas. Las claves se leen de estas variables de entorno
-  // (nunca del repo), resueltas por request.
+  // El adaptador multi-proveedor (llm-pi-ai) viene montado en el bundle base y
+  // el bundle de producto ya trae estas rutas por defecto; este patch las
+  // restablece por usuario para que el despliegue sea dueño de su conjunto de
+  // proveedores y de las referencias de clave. Los perfiles siguen al catálogo
+  // instalado de pi-ai (endpoint, protocolo y modelos). `kimi` es el plan de
+  // código (Anthropic Messages en api.kimi.com/coding; sin endpoint de modelos,
+  // su lista sale del catálogo); `moonshotai`, la plataforma Moonshot. La clave
+  // propia de un agente, resuelta por request, gana sobre estas referencias de
+  // despliegue. Las claves se leen de estas variables de entorno (nunca del
+  // repo), resueltas por request.
   lines.push(
     '',
     '- id: llm-pi-ai',
@@ -993,6 +1010,8 @@ function renderPatch(home, user, memory) {
     '        apiKeyEnv: ANTHROPIC_API_KEY',
     '      google:',
     '        apiKeyEnv: GOOGLE_API_KEY',
+    '      kimi:',
+    '        apiKeyEnv: KIMI_API_KEY',
     '      moonshotai:',
     '        apiKeyEnv: MOONSHOT_API_KEY',
   )
@@ -1264,6 +1283,14 @@ function startInstance(user, memory) {
         // usuario los deja bajo /data/users/<id>.
         HOME: home,
         DEEPSEEK_API_KEY: cfg.deepseekKey,
+        // Claves de despliegue de las rutas llm-pi-ai; el dsh las resuelve por
+        // su `apiKeyEnv`. Resueltas con readSecret para que `<NAME>_FILE`
+        // (Docker secret) funcione igual que la variable directa.
+        OPENAI_API_KEY: cfg.openaiKey,
+        ANTHROPIC_API_KEY: cfg.anthropicKey,
+        GOOGLE_API_KEY: cfg.googleKey,
+        KIMI_API_KEY: cfg.kimiKey,
+        MOONSHOT_API_KEY: cfg.moonshotKey,
         // El parche referencia estos secretos como `!!js process.env.*`, así que
         // el proceso hijo debe recibir el valor resuelto (env o *_FILE).
         ...(cfg.mcpGatewayKey ? { MWT_MCP_GATEWAY_KEY: cfg.mcpGatewayKey } : {}),

@@ -20,7 +20,7 @@ Status: implemented
 
 **该引用永不持久化。** `AgentOptions.credentialRef` 是请求期状态。循环在每一步都从自身选项重新播种它，因为日志中的 header 不携带它、而多步代理必须重新应用自己的密钥；同时在派发请求时把它从被记录的 `request/header` 中排除。模型选择投影、`SessionSelectModelRequest` 与 `model/selection` 事件都不携带该引用；测试直接断言这一点，而不是相信代码路径。
 
-**提供方目录取代烧死的模型列表。** 新增的 `packages/faberloom/model-catalog`（`ctx.faberloomModelCatalog`）拥有冻结的提供方表（deepseek、openai、anthropic、kimi、google，各自附来源、协议与 models 路径）、`discover(providerId, credentialRef)`（向该提供方询问它今天提供哪些模型，并把四种响应形状归一化为同一个 `DiscoveredModel`）、`probe(providerId, credentialRef)`（回答 `ok`、`invalid-credential`、`quota-exhausted`、`unreachable` 或 `unsupported`），以及 `models()`（返回最近一次缓存的结果）。它复用 LLM 包的额度与凭据分类，因此判定结果与将来服务该请求的适配器一致。
+**提供方目录取代烧死的模型列表。** 新增的 `packages/faberloom/model-catalog`（`ctx.faberloomModelCatalog`）拥有冻结的提供方表（deepseek、openai、anthropic、kimi、google，各自附来源、协议与 models 路径）、`discover(providerId, credentialRef)`（向该提供方询问它今天提供哪些模型，并把四种响应形状归一化为同一个 `DiscoveredModel`）、`probe(providerId, credentialRef)`（回答 `ok`、`invalid-credential`、`quota-exhausted`、`unreachable` 或 `unsupported`），以及 `models()`（返回最近一次缓存的结果）。它复用 LLM 包的额度与凭据分类，因此判定结果与将来服务该请求的适配器一致。`ctx.faberloomAgents.reconcileModels(providerId, credentialRef)` 消费该发现结果：发现的每个模型都成为可路由的池条目，已注册的条目按提供方字段刷新，而该提供方不再列出的池条目被标为不可用而非删除，因此先前记录的选型绝不会指向缺失的行。models 响应不携带价格，因此刷新后的条目保留已记录的费率，新建条目则以未知开始；`resolveModel` 早已对未知成本明确失败。
 
 ## Alternatives considered
 
@@ -40,6 +40,6 @@ Status: implemented
 
 会话不再需要一把部署级密钥才能工作：一个 Space 可以用其代理持有的密钥运行，一次咨询用被咨询代理的密钥运行，而凭据 seam 按操作解析，因此被轮换的密钥无需重启即可作用于下一次请求。代理目录也无法泄漏它读不回来的密钥。提供方集合成为数据，提供方新增的模型会在下一次发现时出现，而不必等一个版本发布。
 
-接受三项代价与限制。`llm-deepseek/src/common/models.ts` 中随包发布的 DeepSeek 模型列表仍是写死的，且已经落后于该提供方实际报告的答案（今天是 `deepseek-flash` 与 `deepseek-v4-pro`）；把池子指向该目录是下一步，也是该目录存在的原因。告诉用户其提供方账户已无额度的界面尚不存在：分类止于错误码，而客户端今天不渲染任何 `QUOTA` 或 `AUTH` 文案。此外本次工作所提供的凭据中只有 DeepSeek 认证成功，因此另外四家提供方由模拟服务器与已验证的端点覆盖，而非一次真实往返。
+接受三项代价与限制。`llm-deepseek/src/common/models.ts` 中的 DeepSeek 模型列表如今是建议性的离线回退，只列出最近一次审阅时该提供方所服务的两个 id（`deepseek-flash` 与 `deepseek-v4-pro`）；实时列表通过 `reconcileModels` 到达，因此提供方新增模型无需等待发版。告诉用户其提供方账户已无额度的界面现在存在了：客户端为余额耗尽与被拒密钥两种情况渲染本地化提示，点名提供方并提示到该提供方自己的账户充值；分类器也补上了真实耗尽账户返回的措辞（一个正文写着已无剩余额度的 429，此前的匹配器漏掉了它）。路由 id 与失败码一同到达客户端，而不是作为持久失败之上的结构化字段（那会是一次已声明的持久化类型变更），因此客户端从 harness 组合出的消息后缀中读取它；该后缀是写入方记录下来的格式约定。此外本次工作所提供的凭据中只有 DeepSeek 认证成功，因此另外四家提供方由模拟服务器与已验证的端点覆盖，而非一次真实往返。
 
 验证：改动过的包与消费方共 1364 个测试通过，改动过的运行时文件在语句、分支、函数与行上均为 100% 覆盖。一条 session-controller 测试断言代理的路由与引用到达适配器，而会话日志不携带引用；断言未配置密钥或未配置路由的代理仍走部署默认值；并断言用户的显式选择胜出且丢弃该引用。一条循环测试断言每个请求都派发该引用，而被记录的 header 省略它。

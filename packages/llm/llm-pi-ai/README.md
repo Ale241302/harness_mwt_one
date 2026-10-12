@@ -35,6 +35,8 @@ Choose this adapter when the same composition serves several providers, when a r
 
 Each profile may set a `retryPolicy`; omission uses normal mode with five retries. `apiKeyEnv` is a credential reference resolved per request through the harness credential seam, so no secret enters the configuration file; a reference that resolves to nothing fails the request with `MISSING_CREDENTIAL`. Omitting it leaves the route configured-but-keyless, which for an installed catalog route defers to pi-ai's provider-native ambient discovery. A request may carry `GenerateOptions.credentialRef`, which resolves that one call's key instead of the profile's `apiKeyEnv`; a per-call reference that resolves to nothing fails that call with `MISSING_CREDENTIAL` naming it and never falls back to the profile or to ambient discovery.
 
+A route key may also be one of the product's own names for an installed provider: `kimi` resolves the installed `kimi-coding` catalog — its endpoint, protocol, and model list — because that is Kimi's coding plan. The alias lives only at the route key, so the profile still configures `apiKeyEnv` and the models served are the catalog's. The Moonshot platform needs no alias because the catalog already ships it as `moonshotai`, so the two products stay separate routes with separate credentials.
+
 ```yaml
 - name: '@deepseek-ai/dsh-llm-pi-ai'
   config:

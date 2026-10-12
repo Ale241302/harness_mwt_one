@@ -63,6 +63,12 @@
       "path": "../context"
     },
     {
+      "path": "../view"
+    },
+    {
+      "path": "../../sandbox/sandbox-policy"
+    },
+    {
       "path": "../../subprocess/subprocess"
     }
   ]
