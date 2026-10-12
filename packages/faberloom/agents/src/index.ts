@@ -386,6 +386,34 @@ export class FaberLoomAgents extends Service {
   }
 
   /**
+   * Copy one agent's key to another. The seam is read and written inside the
+   * host, so a duplicate carries its original's key without the value crossing
+   * the wire or entering a record. An original with no key, or a deployment
+   * without a seam, yields undefined and the copy starts keyless; a seam that
+   * refuses the write is logged and leaves the copy keyless rather than failing
+   * the duplicate.
+   * @param from - the agent whose key is copied.
+   * @param to - the agent that receives it.
+   * @param source - the source record, whose legacy stored value is the fallback.
+   * @returns the copied key's last four characters, or undefined when none was copied.
+   */
+  private async copyKey(from: FaberLoomAgentId, to: FaberLoomAgentId, source: AgentRecord): Promise<string | undefined> {
+    const credentials = this.credentials()
+    if (credentials === undefined) return undefined
+    try {
+      const hit = await credentials.resolve(agentCredentialRef(from))
+      const raw = hit?.value ?? source.apiKey
+      if (raw === null || raw.length === 0) return undefined
+      await credentials.set(agentCredentialRef(to), raw)
+      return raw.slice(-4)
+    } catch (error) {
+      this.ctx.logger.warn('faberloom: copying the API key of agent %s to %s failed; the duplicate starts without one', from, to)
+      this.ctx.logger.warn(error)
+      return undefined
+    }
+  }
+
+  /**
    * Read one agent record, completing any pending key migration.
    * @param id - the agent to read.
    * @returns the resolved table and the migrated record.
@@ -858,14 +886,19 @@ export class FaberLoomAgents extends Service {
     const { table, record: source } = await this.loadRecord(id)
     const now = new Date().toISOString()
     const copyId = brandString<FaberLoomAgentId>(randomUUID())
+    // La clave del original viaja con la copia: el seam se lee y se escribe
+    // dentro del host, asi que copiarla no expone el valor por ningun cable ni
+    // lo mete en el registro, y sin esto una copia obligaria a reescribir la
+    // clave a mano.
+    const tail = await this.copyKey(id, copyId, source)
     const record: AgentRecord = {
       ...source,
       name: input.name,
       spaceId: input.spaceId ?? source.spaceId,
       baseAgentId: id,
       apiKey: null,
-      hasApiKey: false,
-      apiKeyTail: null,
+      hasApiKey: tail !== undefined,
+      apiKeyTail: tail ?? null,
       lessons: input.lessons !== undefined ? [...input.lessons] : [],
       active: true,
       version: 1,

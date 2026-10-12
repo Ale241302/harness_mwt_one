@@ -158,6 +158,24 @@ foreach ($path in $deployPaths) {
   Copy-Normalized -Source (Join-Path $root $path) -Destination (Join-Path $stage $path)
 }
 
+# El manifiesto que se despliega debe citar el build que se despliega: es el
+# documento con el que /healthz compara el forkSha en marcha, y un manifiesto
+# que cita otro build no documenta lo que corre. Se sella aqui, en la copia del
+# staging, y no en el del repositorio: el del repositorio declara el despliegue
+# anterior y no puede citar un commit que aun no existia cuando se escribio.
+$stagedManifest = Join-Path $stage 'MANIFEST.md'
+if ((Test-Path -LiteralPath $stagedManifest) -and -not [string]::IsNullOrEmpty($script:ForkSha)) {
+  $sha = $script:ForkSha
+  $short = if ($sha.Length -ge 10) { $sha.Substring(0, 10) } else { $sha }
+  $stampDay = (Get-Date).ToString('yyyy-MM-dd')
+  $text = [IO.File]::ReadAllText($stagedManifest)
+  $text = [Text.RegularExpressions.Regex]::Replace($text, '(?m)^\*\*Imagen desplegada actual:\*\*.*$', '**Imagen desplegada actual:** build de `main` @ `' + $sha + '` (deploy caliente).')
+  $text = [Text.RegularExpressions.Regex]::Replace($text, '(?m)^\*\*Verificado en el VPS:\*\*.*$', '**Verificado en el VPS:** ' + $stampDay + '.')
+  $text = [Text.RegularExpressions.Regex]::Replace($text, '\(`[0-9a-f]{7,40}`\) es el `build\.forkSha`', '(`' + $short + '`) es el `build.forkSha`')
+  [IO.File]::WriteAllText($stagedManifest, $text, (New-Object System.Text.UTF8Encoding($false)))
+  Write-Host "    manifiesto sellado con $short"
+}
+
 # Un solo archivo, una sola conexión: cada scp por ruta abría una conexión y
 # el sshd del VPS cortaba la secuencia a mitad de subida.
 $payload = Join-Path $env:TEMP 'mwt-deploy-payload.tgz'

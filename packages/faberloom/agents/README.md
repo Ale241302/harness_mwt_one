@@ -77,7 +77,7 @@ Independent of live requests: the registration never touches a request prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **A duplicate does not carry the key** — `duplicateAgent` copies configuration but never the credential, because a stored key cannot be read back; the copy starts without one.
+- **A duplicate carries the key** — `duplicateAgent` copies configuration and, in the host, the stored credential: the seam is read and written inside the process, so the value never crosses the wire or enters a record, and the copy starts usable. A source with no key produces a keyless copy.
 - **Without the seam the key stays in the record** — a composition that mounts no credential provider has no managed store, so a key written there remains in the durable record until a seam-mounted read migrates it.
 - **The tail can go stale** — a key changed directly on the seam keeps the record's last tail; `hasApiKey` stays correct because it follows `describe`.
 - **Discovery fills the pool, not the provider table.** `reconcileModels` fills only what a models response carries. Capability tags are the provider's own modality names, so a consumer that matches the pool's `vision` tag must also accept `image`. A model's display name, its reasoning-effort scale, and its prices have no pool field and are dropped.

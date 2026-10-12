@@ -12,7 +12,7 @@ Status: implemented
 
 **请求可以点名它用于认证的凭据。** `packages/llm/llm` 新增 `GenerateOptions.credentialRef` 与 `LlmCallConfig.credentialRef`，二者都使用凭据 seam 自身的 `CredentialRef` 类型，因此请求携带的是名字而绝非秘密。`llm-deepseek` 与 `llm-pi-ai` 按调用解析 `credentialRef ?? 路由自身配置的引用`，路径与它们此前解析路由引用完全一致，都经过 `ctx.credentials`。解析不到任何值的引用会让该次调用以 `MISSING_CREDENTIAL` 明确失败并点名该引用，且不会发出任何请求。该字段在文档中明确为请求期状态，永不持久化。
 
-**密钥离开代理记录。** `packages/faberloom/agents` 用 `ctx.credentials.set(ref, value)` 写入保存的密钥；记录只保留 `hasApiKey` 与 `apiKeyTail`（最后四个字符），且 `hasApiKey` 由 `credentials.describe(ref).configured` 派生，因此在应用之外被轮换的密钥会立刻不再报告为存在。引用由代理 id 派生而非存储：`AGENT_CREDENTIAL_REF_PREFIX` 加上 id 的 UTF-8 字节的大写十六进制。该派生对引用语法合法、对该服务能生成的一切 id 都是全域的，并且是单射的；若按字符替换派生，`a-b` 与 `a_b` 就会相撞。此前写入、仍持有明文密钥的记录会在下一次读取时把密钥移入 seam，且幂等，写入被拒时保留原值。服务的任何方法都不解析或返回该值，因此 `duplicateAgent` 不再复制密钥：它读不回来。
+**密钥离开代理记录。** `packages/faberloom/agents` 用 `ctx.credentials.set(ref, value)` 写入保存的密钥；记录只保留 `hasApiKey` 与 `apiKeyTail`（最后四个字符），且 `hasApiKey` 由 `credentials.describe(ref).configured` 派生，因此在应用之外被轮换的密钥会立刻不再报告为存在。引用由代理 id 派生而非存储：`AGENT_CREDENTIAL_REF_PREFIX` 加上 id 的 UTF-8 字节的大写十六进制。该派生对引用语法合法、对该服务能生成的一切 id 都是全域的，并且是单射的；若按字符替换派生，`a-b` 与 `a_b` 就会相撞。此前写入、仍持有明文密钥的记录会在下一次读取时把密钥移入 seam，且幂等，写入被拒时保留原值。服务的任何方法都不把该值返回给调用方，也没有任何值经过线路；在宿主内部，`duplicateAgent` 读取 seam 一次，把同一密钥写到副本自己的引用下，因此副本无需重新输入密钥即可使用。
 
 **Space 会话默认使用其代理的路由。** `packages/faberloom/agent-plane` 在代理确实存有密钥时解析出平面的 `credentialRef`。`packages/faberloom/session-agent` 把它作为 `SessionComposition.route` 发布给所组合的会话。`packages/api/session-controller` 按以下顺序解析会话模型：持久投影中的显式选择，其次会话日志已记录的路由，其次该 Space 代理的路由（当代理同时声明了提供方与模型并存有密钥时），最后是部署默认值。只有在生效的提供方与模型都等于该代理路由时，才会为该请求附带代理的引用，因此在用户另选模型时会保留该路由自身的引用。
 

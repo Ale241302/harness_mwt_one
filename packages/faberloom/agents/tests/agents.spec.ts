@@ -416,6 +416,23 @@ describe('FaberLoomAgents API keys in the credential seam', () => {
     expect((await ctx.credentials.resolve(agentCredentialRef(agent.id)))?.value).toBe('sk-test-create-1234')
   })
 
+  it('carries the original key into a duplicate, and leaves a keyless original keyless', async () => {
+    const { ctx, agents, facility } = await harness({ credentials: MemoryCredentials })
+    const source = await agents.createAgent({ name: 'Origen', responsibility: 'r', apiKey: 'sk-copy-9999' })
+
+    const copy = await agents.duplicateAgent(source.id, { name: 'Copia' })
+    expect(agentCredentialRef(copy.id)).not.toBe(agentCredentialRef(source.id))
+    expect((await ctx.credentials.resolve(agentCredentialRef(copy.id)))?.value).toBe('sk-copy-9999')
+    expect(copy).toMatchObject({ hasApiKey: true, apiKeyTail: '9999' })
+    expect(storedAgent(facility, copy.id)).toMatchObject({ apiKey: null, hasApiKey: true, apiKeyTail: '9999' })
+
+    const bare = await agents.createAgent({ name: 'Sin clave', responsibility: 'r' })
+    const bareCopy = await agents.duplicateAgent(bare.id, { name: 'Copia sin clave' })
+    expect(await ctx.credentials.resolve(agentCredentialRef(bareCopy.id))).toBeUndefined()
+    expect(bareCopy.hasApiKey).toBe(false)
+    expect(bareCopy.apiKeyTail).toBeUndefined()
+  })
+
   it('replaces, keeps, and clears the key across updates', async () => {
     const { ctx, agents, facility } = await harness({ credentials: MemoryCredentials })
     const created = await agents.createAgent({ name: 'Rotación', responsibility: 'r', apiKey: 'sk-old-abcd' })
@@ -595,13 +612,5 @@ describe('FaberLoomAgents API keys in the credential seam', () => {
     ]
     for (const surface of surfaces) expect(JSON.stringify(surface)).not.toContain('sk-never-expose-4242')
     expect(Object.keys(agent)).not.toContain('apiKey')
-  })
-
-  it('duplicates without copying the key', async () => {
-    const { agents } = await harness({ credentials: MemoryCredentials })
-    const source = await agents.createAgent({ name: 'Fuente', responsibility: 'r', apiKey: 'sk-source-1111' })
-    const copy = await agents.duplicateAgent(source.id, { name: 'Copia' })
-    expect(copy).toMatchObject({ hasApiKey: false })
-    expect(copy.apiKeyTail).toBeUndefined()
   })
 })
