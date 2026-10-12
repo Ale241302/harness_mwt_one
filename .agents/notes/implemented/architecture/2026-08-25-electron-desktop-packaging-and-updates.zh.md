@@ -91,7 +91,7 @@ Windows 发布打包通过 `/f` 向已配置且与 SafeNet 兼容的 SignTool �
 
 Windows 打包调用强制设置 `ELECTRON_BUILDER_7Z_FILTER=BCJ`。内置的 7-Zip 24.09 编码器会为 ARM64 PE 文件自动选择 ARM64 过滤器，但 `nsis-resources-3.4.1` 中的 NSIS 解码器会在解压时遗漏这些条目。使用实际 NSIS 插件的原生解压验证表明，自动过滤会丢失两个 `node-pty` ARM64 二进制文件，而 BCJ 可以逐字节还原二者。使用兼容的过滤器能够保留依赖内容与运行时完整性，无需删除特定架构的文件或削弱校验。
 
-本地 Windows 安装测试使用显式的 `--unsigned` 打包调用，并执行相同的构建和运行时准备。它清除证书输入，将产物隔离到 `unsigned-artifacts`，并省略更新器配置和发布完成记录。即使父进程环境请求未签名模式，常规打包命令也会显式选择签名模式。这样既能在没有 EV Token 时诊断安装问题，也能防止本地测试产物通过发布上传校验。
+本地 Windows 与 macOS 安装测试使用显式的 `--unsigned` 打包调用，并执行相同的构建和运行时准备。它清除证书输入，将产物隔离到 `unsigned-artifacts`，并省略更新器配置和发布完成记录；在 macOS 上还会跳过代码签名与公证，因此产出的应用只能在构建主机上运行。即使父进程环境请求未签名模式，常规打包命令也会显式选择签名模式。`.github/workflows/desktop-installer-unsigned.yml` 在 GitHub 的 Windows 与 macOS runner 上运行同样的命令（这些 runner 已自带打包运行时所需的原生工具链），并把每个安装包发布为 workflow artifact。这样既能在没有 EV Token 或 Apple 证书时诊断安装问题，也能防止本地测试产物通过发布上传校验。
 
 NSIS 先解压到私有的 `7z-out` 目录，再把文件复制到应用目录。Finish 启动应用后，默认退出清理可能与后端的文件读取重叠。[安装器 hook](../../../../apps/desktop/scripts/installer.nsh) 在 `customInstall` 阶段仅删除该解压目录，早于交互和静默启动分支。它保留包归档、插件 DLL、回滚目录、寄存器和错误状态；[原生清理 smoke](../../../../apps/desktop/tests/fixtures/installer-cleanup-smoke.nsi) 检查这些约束。把清理移入安装阶段并不会减少文件系统工作，因此必须分别测量安装总耗时与点击 Finish 到窗口出现的耗时。
 

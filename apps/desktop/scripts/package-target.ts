@@ -204,7 +204,6 @@ export function parseDesktopPackageInvocation(
   })
   if (positionals.length > 1) throw new Error('desktop package: expected at most one target')
   const name = positionals[0] ?? hostTargetName(hostPlatform, hostArch)
-  if (values.unsigned && name !== 'win-x64') throw new Error('desktop package: --unsigned requires win-x64')
   if (values.unsigned && values['prepare-only']) throw new Error('desktop package: --unsigned cannot use --prepare-only')
   return {
     target: resolveDesktopPackageTarget(name, hostPlatform, hostArch),
@@ -311,7 +310,7 @@ async function main(): Promise<void> {
   await runPnpm(['run', 'prepare:packages'], targetEnv)
   await runPnpm(['run', 'prepare:dsh'], targetEnv)
   if (invocation.prepareOnly) return
-  if (target.platform === 'darwin' && !invocation.directory) {
+  if (target.platform === 'darwin' && !invocation.directory && !invocation.unsigned) {
     await runPnpm([
       ...desktopElectronBuilderArguments(target, true),
       '--config.mac.notarize=false',

@@ -149,15 +149,19 @@ macOS signing visits real files without following Framework symlink aliases. PAK
 
 Company proxies can accelerate uploads to Apple's notarization service. See the company internal documentation for configuration.
 
-### Unsigned Windows test installer
+### Unsigned test installers
 
-On Windows x64, use the complete unsigned packaging command for local installation testing:
+On Windows x64 and macOS, use the complete unsigned packaging command for local installation testing:
 
 ```sh
 pnpm run package:desktop:win:x64:unsigned
+pnpm run package:desktop:mac:arm64 -- --unsigned
+pnpm run package:desktop:mac:x64 -- --unsigned
 ```
 
-The command requires `DSH_DESKTOP_APP_ID` and the normal build dependencies, including Python and Visual C++ build tools for native modules. Set `PYTHON` to the Python executable when it is absent from `PATH`. It writes the installer to `.desktop-build/targets/win-x64/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. It does not require EV credentials or an update origin. The signed packaging and upload commands retain their release requirements.
+The commands require `DSH_DESKTOP_APP_ID` and the normal build dependencies, including Python and the native toolchain (Visual C++ build tools with the Windows SDK on Windows, the Xcode command-line tools on macOS). Set `PYTHON` to the Python executable when it is absent from `PATH`. Each writes its installer to `.desktop-build/targets/<target>/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. An unsigned macOS build skips code signing and notarization, so its application runs only on the machine that built it (macOS Gatekeeper quarantines a downloaded copy). The signed packaging and upload commands retain their release requirements.
+
+`.github/workflows/desktop-installer-unsigned.yml` runs the same three commands on GitHub's `windows-latest`, `macos-14`, and `macos-13` runners, which already carry the native toolchain, and uploads each installer as a workflow artifact. It is manual (`workflow_dispatch`); set the repository secret `DESKTOP_HOME_ENV` to the deployment defaults document each installation appends to its Harness-home `.env`, or pass the same JSON through its `home_env` input.
 
 ### Windows EV signing
 
