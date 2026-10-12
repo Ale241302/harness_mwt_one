@@ -112,7 +112,7 @@ macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS �
 
 打包应用运行编译后的 JavaScript 和预生成的 Typert 元数据，不编译 TypeScript 插件。源码级调试导航和编辑器声明仍可从开发包中获取。[复制规则测试](tests/runtime-file-policy.spec.ts)覆盖排除项和保留资源；`prepare:dsh` 在 Host smoke 和最终清单验证之前，使用内置 Node 执行[产物 smoke](tests/fixtures/runtime-payload-smoke.mjs)。
 
-Windows 发布验收还需在 Desktop 构建后手动运行[原生清理和替换检查](scripts/smoke-windows.ps1)。将 `$Electron` 设为已准备的 Electron 可执行文件，将 `$Makensis`、`$SevenZip` 和 `$PluginDir` 分别设为锁定版本构建器的 NSIS 编译器、7-Zip 可执行文件和 x86-unicode NSIS 插件目录。从仓库根目录运行以下命令。它验证 Electron junction 清理、安装器临时目录清理和两种文件占用替换方式；不属于单元测试通道。
+Windows 发布验收还需在 Desktop 构建后手动运行[原生清理和替换检查](scripts/smoke-windows.ps1)。将 `$Electron` 设为已准备的 Electron 可执行文件，将 `$Makensis`、`$SevenZip` 和 `$PluginDir` 分别设为锁定版本构建器的 NSIS 编译器、7-Zip 可执行文件和 x86-unicode NSIS 插件目录。从仓库根目录运行以下命令。它验证 Electron junction 清理、安装器临时目录清理、两种文件占用替换方式，以及卸载数据选项的删除集合；不属于单元测试通道。
 
 ```powershell
 pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Electron $Electron -Makensis $Makensis -SevenZip $SevenZip -PluginDir $PluginDir
@@ -162,6 +162,12 @@ pnpm run package:desktop:mac:x64 -- --unsigned
 这些命令要求设置 `DSH_DESKTOP_APP_ID` 并具备常规构建依赖，包括编译原生模块所需的 Python 与原生工具链（Windows 上为带 Windows SDK 的 Visual C++ 构建工具，macOS 上为 Xcode 命令行工具）。Python 不在 `PATH` 中时，将 `PYTHON` 设置为其可执行文件路径。每条命令把安装包写入 `.desktop-build/targets/<target>/unsigned-artifacts/`，省略自动更新配置，清除签名凭据，且不生成发布完成记录。未签名的 macOS 构建会跳过代码签名与公证，因此其应用只能在构建它的机器上运行（macOS Gatekeeper 会隔离下载来的副本）。签名打包和上传命令仍遵循正式发布要求。
 
 `.github/workflows/desktop-installer-unsigned.yml` 在 GitHub 的 `windows-latest`、`macos-14` 与 `macos-13` runner 上运行同样的三条命令（这些 runner 已自带原生工具链），并把每个安装包作为 workflow artifact 上传。它由手动触发（`workflow_dispatch`）；把仓库 secret `DESKTOP_HOME_ENV` 设为每次安装追加到其 Harness home `.env` 的部署默认值文档，或通过其 `home_env` 输入传入同一 JSON。
+
+### Windows 安装器体验
+
+引导式安装器携带产品自己的图形资源：安装与卸载窗口使用 `build/icon.ico`，页面标题栏使用 `build/installerHeaderIcon.ico`，另有 164×314 的 `installerSidebar.bmp` 与 150×57 的 `installerHeader.bmp` 面板。缺少这些资源时 electron-builder 会回退到 NSIS 自带的蓝色向导位图。它们全部由 `apps/web/public` 中已提交的品牌 SVG 渲染而成。
+
+`scripts/installer.nsh` 补上了引导式流程本身不会提出的卸载问题：卸载开始前的确认，以及是否同时删除用户数据的询问（`$PROFILE\.dsh` 与 `%APPDATA%\@deepseek-ai\dsh-desktop` 下的应用配置）。拒绝确认会退出卸载程序，数据询问默认保留数据，两者在更新触发的静默卸载中都保持静默。删除集合由[NSIS 冒烟用例](tests/fixtures/installer-uninstall-data-smoke.nsi)在 Windows 验收脚本中驱动验证。
 
 ### Windows EV 签名
 

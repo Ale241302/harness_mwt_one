@@ -130,6 +130,14 @@ export function createElectronBuilderConfig(
       oneClick: false,
       allowToChangeInstallationDirectory: true,
       differentialPackage: true,
+      // Brand artwork for the installer and uninstaller windows; without these
+      // electron-builder falls back to the stock NSIS blue wizard bitmap.
+      installerIcon: 'build/icon.ico',
+      uninstallerIcon: 'build/icon.ico',
+      installerHeaderIcon: 'build/installerHeaderIcon.ico',
+      installerHeader: 'build/installerHeader.bmp',
+      installerSidebar: 'build/installerSidebar.bmp',
+      uninstallerSidebar: 'build/uninstallerSidebar.bmp',
     },
     publish: update === undefined ? null : [{ provider: 'generic', url: update.publicUrl }],
   }

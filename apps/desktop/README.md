@@ -112,7 +112,7 @@ Production packages first pass through npm's publication rules and dependency in
 
 The packaged application runs compiled JavaScript and pre-generated Typert metadata; it does not compile TypeScript plugins. Source-level debugger navigation and editor declarations remain available in development packages. [Copy-policy tests](tests/runtime-file-policy.spec.ts) cover exclusions and retained assets; `prepare:dsh` runs the [payload smoke](tests/fixtures/runtime-payload-smoke.mjs) under the bundled Node before the Host smoke and final inventory verification.
 
-Windows release qualification also runs [native cleanup and replacement checks](scripts/smoke-windows.ps1) manually after the Desktop build. Set `$Electron` to the prepared Electron executable and `$Makensis`, `$SevenZip`, and `$PluginDir` to the pinned builder’s NSIS compiler, 7-Zip executable, and x86-unicode NSIS plugin directory. From the repository root, run the command below. It verifies Electron junction cleanup, installer scratch cleanup, and both locked-file replacement modes; it is not part of the unit-test lane.
+Windows release qualification also runs [native cleanup and replacement checks](scripts/smoke-windows.ps1) manually after the Desktop build. Set `$Electron` to the prepared Electron executable and `$Makensis`, `$SevenZip`, and `$PluginDir` to the pinned builder’s NSIS compiler, 7-Zip executable, and x86-unicode NSIS plugin directory. From the repository root, run the command below. It verifies Electron junction cleanup, installer scratch cleanup, both locked-file replacement modes, and the uninstall data-choice removal set; it is not part of the unit-test lane.
 
 ```powershell
 pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Electron $Electron -Makensis $Makensis -SevenZip $SevenZip -PluginDir $PluginDir
@@ -162,6 +162,12 @@ pnpm run package:desktop:mac:x64 -- --unsigned
 The commands require `DSH_DESKTOP_APP_ID` and the normal build dependencies, including Python and the native toolchain (Visual C++ build tools with the Windows SDK on Windows, the Xcode command-line tools on macOS). Set `PYTHON` to the Python executable when it is absent from `PATH`. Each writes its installer to `.desktop-build/targets/<target>/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. An unsigned macOS build skips code signing and notarization, so its application runs only on the machine that built it (macOS Gatekeeper quarantines a downloaded copy). The signed packaging and upload commands retain their release requirements.
 
 `.github/workflows/desktop-installer-unsigned.yml` runs the same three commands on GitHub's `windows-latest`, `macos-14`, and `macos-13` runners, which already carry the native toolchain, and uploads each installer as a workflow artifact. It is manual (`workflow_dispatch`); set the repository secret `DESKTOP_HOME_ENV` to the deployment defaults document each installation appends to its Harness-home `.env`, or pass the same JSON through its `home_env` input.
+
+### Windows installer experience
+
+The assisted installer carries the product's own artwork: `build/icon.ico` for the installer and uninstaller windows, `build/installerHeaderIcon.ico` beside the page header, and the 164×314 `installerSidebar.bmp` with the 150×57 `installerHeader.bmp` panels. Without them electron-builder falls back to the stock NSIS blue wizard bitmap. All of them are rendered from the committed brand SVGs in `apps/web/public`.
+
+`scripts/installer.nsh` adds the uninstall questions the assisted flow does not ask on its own: a confirmation before the uninstaller runs, and a keep-or-delete question for the user data (`$PROFILE\.dsh` and the application profile under `%APPDATA%\@deepseek-ai\dsh-desktop`). Declining the confirmation quits the uninstaller, the data question defaults to keeping the data, and both stay silent during the silent uninstall an update performs. The removal set has an [NSIS smoke fixture](tests/fixtures/installer-uninstall-data-smoke.nsi) driven by the Windows qualification script.
 
 ### Windows EV signing
 

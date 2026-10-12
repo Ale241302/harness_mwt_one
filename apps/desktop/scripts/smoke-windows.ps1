@@ -22,12 +22,28 @@ try {
     Invoke-Checked $electron @((Join-Path $fixtureRoot 'owned-directory-smoke.mjs'))
   } finally { $env:ELECTRON_RUN_AS_NODE = $previousRunAsNode }
 
-  $cleanupExe = Join-Path $scratch 'cleanup.exe'
+  const cleanupExe = Join-Path $scratch 'cleanup.exe'
   $cleanupResult = Join-Path $scratch 'cleanup.txt'
   Invoke-Checked $Makensis @('/V2', "/DOUTPUT_FILE=$cleanupExe", "/DRESULT_FILE=$cleanupResult", (Join-Path $fixtureRoot 'installer-cleanup-smoke.nsi'))
   Invoke-Checked $cleanupExe @('/S')
   if ((Get-Content -LiteralPath $cleanupResult -Raw) -ne 'scratch removed; archive, plugin, rollback, registers and error flags preserved') {
     throw 'NSIS cleanup did not preserve its sentinels'
+  }
+
+  $uninstallDataExe = Join-Path $scratch 'uninstall-data.exe'
+  $uninstallDataResult = Join-Path $scratch 'uninstall-data.txt'
+  Invoke-Checked $Makensis @(
+    '/V2',
+    "/DOUTPUT_FILE=$uninstallDataExe",
+    "/DRESULT_FILE=$uninstallDataResult",
+    "/DAPP_DATA_DIR=$(Join-Path $scratch 'appdata')",
+    "/DLOCAL_APP_DATA_DIR=$(Join-Path $scratch 'localappdata')",
+    "/DPROFILE_DIR=$(Join-Path $scratch 'profile')",
+    (Join-Path $fixtureRoot 'installer-uninstall-data-smoke.nsi')
+  )
+  Invoke-Checked $uninstallDataExe @('/S')
+  if ((Get-Content -LiteralPath $uninstallDataResult -Raw) -ne 'silent uninstall kept the data; the chosen removal took exactly the owned directories') {
+    throw 'NSIS uninstall data choice did not match the owned directories'
   }
 
   $payload = Join-Path $scratch 'payload'
@@ -56,7 +72,7 @@ try {
       throw "Unexpected NSIS $mode replacement result"
     }
   }
-  Write-Output 'Electron cleanup and NSIS cleanup/replacement smokes passed.'
+  Write-Output 'Electron cleanup and NSIS cleanup, replacement, and uninstall-data smokes passed.'
 } finally {
   $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
   $resolvedScratch = [System.IO.Path]::GetFullPath($scratch)

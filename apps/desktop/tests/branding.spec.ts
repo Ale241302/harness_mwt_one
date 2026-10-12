@@ -39,6 +39,50 @@ it('ships the FaberLoom application icons', () => {
   expect(existsSync(fileURLToPath(new URL('../build/icon.ico', import.meta.url)))).toBe(true)
 })
 
+it('points the installer and uninstaller windows at the FaberLoom artwork', async () => {
+  const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
+  const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
+  expect(config.nsis.oneClick).toBe(false)
+  expect(config.nsis.installerIcon).toBe('build/icon.ico')
+  expect(config.nsis.uninstallerIcon).toBe('build/icon.ico')
+  expect(config.nsis.installerHeaderIcon).toBe('build/installerHeaderIcon.ico')
+  expect(config.nsis.installerHeader).toBe('build/installerHeader.bmp')
+  expect(config.nsis.installerSidebar).toBe('build/installerSidebar.bmp')
+  expect(config.nsis.uninstallerSidebar).toBe('build/uninstallerSidebar.bmp')
+  expect(config.nsis.include).toContain('installer.nsh')
+})
+
+it('ships installer bitmaps at the sizes the NSIS wizard requires', () => {
+  const bitmaps: readonly [string, number, number][] = [
+    ['installerSidebar.bmp', 164, 314],
+    ['uninstallerSidebar.bmp', 164, 314],
+    ['installerHeader.bmp', 150, 57],
+  ]
+  for (const [name, width, height] of bitmaps) {
+    const bitmap = readFileSync(fileURLToPath(new URL(`../build/${name}`, import.meta.url)))
+    expect(bitmap.subarray(0, 2).toString('ascii')).toBe('BM')
+    expect(bitmap.readInt32LE(18)).toBe(width)
+    expect(bitmap.readInt32LE(22)).toBe(height)
+    expect(bitmap.readUInt16LE(28)).toBe(24)
+  }
+  const headerIcon = readFileSync(fileURLToPath(new URL('../build/installerHeaderIcon.ico', import.meta.url)))
+  expect(headerIcon.readUInt16LE(0)).toBe(0)
+  expect(headerIcon.readUInt16LE(2)).toBe(1)
+  expect(headerIcon.readUInt16LE(4)).toBe(4)
+  expect([headerIcon[6], headerIcon[22], headerIcon[38], headerIcon[54]]).toEqual([16, 24, 32, 48])
+})
+
+it('asks before uninstalling and before deleting the user data', () => {
+  const script = readFileSync(fileURLToPath(new URL('../scripts/installer.nsh', import.meta.url)), 'utf8')
+  expect(script).toContain('!macro customUnInit')
+  expect(script).toContain('!macro customUnInstall')
+  expect(script).toContain('areYouSureToUninstall')
+  expect(script).toContain('faberloomUninstallData')
+  expect(script).toContain('!insertmacro faberloomRemoveUserData "$APPDATA" "$LOCALAPPDATA" "$PROFILE"')
+  expect(script).toContain('RMDir /r "${PROFILE_DIR}\\.dsh"')
+  expect(script).toContain('RMDir /r "${APP_DATA}\\@deepseek-ai"')
+})
+
 it('brands the web document and its install manifest', () => {
   const html = readFileSync(fileURLToPath(new URL('../../web/index.html', import.meta.url)), 'utf8')
   expect(html).toContain('<title>Faberloom</title>')
