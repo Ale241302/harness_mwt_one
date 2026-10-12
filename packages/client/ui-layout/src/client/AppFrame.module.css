@@ -1,13 +1,12 @@
-/* Shell chrome: the top bar above the frame's three columns, and the regimes
-   that take the rails out of the flow below the tablet breakpoint. */
+/* Shell chrome: the three-column frame and the regimes that take the rails out
+   of the flow below the tablet breakpoint. The frame has no chrome bar; the one
+   frame-level control is the floating drawer toggle (.drawerToggle). */
 
 .frame {
-  /* Design top-bar height (FaberLoom Shell .topbar). */
-  --shell-topbar-height: 54px;
   position: relative; /* anchors the drag handles, which straddle column borders */
   display: grid;
-  /* Row 1 is the top bar; row 2 holds the three columns. */
-  grid-template-rows: var(--shell-topbar-height) minmax(0, 1fr);
+  /* One row: the three columns. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
@@ -22,86 +21,42 @@
   transition: none;
 }
 
-.topbar {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  /* Never wraps: the toggles have to stay reachable at every frame width. */
-  flex-wrap: nowrap;
-  height: var(--shell-topbar-height);
-  padding: 0 14px;
-  min-width: 0;
-  z-index: 60;
-  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
-  /* The design's elevation treatment (linear-gradient(--elev-top, transparent)
-     over the canvas). This token sheet has no --elev-top: --dsw-alias-bg-layer-1
-     is the closest existing token, the first elevated surface layer. */
-  background:
-    linear-gradient(var(--dsw-alias-bg-layer-1), transparent),
-    var(--dsw-alias-bg-base);
-}
-
-.railToggles {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.railToggle {
-  width: 34px;
-  height: 34px;
+/* The one frame-level control, present only below the tablet breakpoint while
+   the left rail is off-canvas and closed: one 44px button in the top-start
+   corner over the canvas. It is not a bar: no strip spans the frame and no
+   seat waits to be filled. The expanded sidebar's own collapse control, the
+   scrim, and Escape close what it opens. */
+.drawerToggle {
+  position: absolute;
+  top: 8px;
+  inset-inline-start: 8px;
+  z-index: 57;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
-  flex-shrink: 0;
   border: none;
   padding: 0;
-  border-radius: 7px;
-  background: none;
+  border-radius: 12px;
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-primary);
   cursor: pointer;
-  color: var(--dsw-alias-label-tertiary);
+  box-shadow: var(--dsw-elevation-panel);
   transition: background 0.18s, color 0.18s;
 }
 
-.railToggle:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+.drawerToggle:hover {
+  background: var(--dsw-alias-button-floating-hover);
 }
 
-.railToggle:focus-visible {
+.drawerToggle:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  flex-shrink: 1;
-}
-
-/* The brand slot declares no fallback: an unoccupied seat must not spend a gap. */
-.brand:empty {
-  display: none;
-}
-
-.center {
-  flex: 1;
-  min-width: 0;
-}
-
-.actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
 .sidebarCol {
   grid-column: 1;
-  grid-row: 2;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   background: var(--dsw-specific-sidebar-fill);
@@ -110,7 +65,7 @@
 
 .centerCol {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -126,7 +81,7 @@
  */
 .rightbarCol {
   grid-column: 3;
-  grid-row: 2;
+  grid-row: 1;
   position: relative;
   min-width: 0;
   overflow: visible;
@@ -134,13 +89,13 @@
 
 /*
  * Below the tablet breakpoint the rails leave the flow: the left rail slides
- * off-canvas as a drawer (toggled from the top bar) and the right rail keeps
- * its zero-width track, overlaying the canvas. `visibility` carries the closed
- * drawer out of the tab order while the transform still animates.
+ * off-canvas as a drawer (opened by the floating toggle) and the right rail
+ * keeps its zero-width track, overlaying the canvas. `visibility` carries the
+ * closed drawer out of the tab order while the transform still animates.
  */
 .frame:not([data-shell-regime='wide']) .sidebarCol {
   position: absolute;
-  top: var(--shell-topbar-height);
+  top: 0;
   bottom: 0;
   left: 0;
   z-index: 58;
@@ -159,10 +114,10 @@
   transform: none;
 }
 
-/* The drawer's dismissal surface: below the top bar, over the canvas. */
+/* The drawer's dismissal surface: over the canvas. */
 .scrim {
   position: absolute;
-  top: var(--shell-topbar-height);
+  top: 0;
   left: 0;
   right: 0;
   bottom: 0;
@@ -182,7 +137,7 @@
    over the centre. */
 .handle {
   position: absolute;
-  top: var(--shell-topbar-height);
+  top: 0;
   bottom: 0;
   width: 8px;
   margin-left: -4px;
@@ -220,7 +175,7 @@
 @media (prefers-reduced-motion: reduce) {
   .frame,
   .handle,
-  .railToggle,
+  .drawerToggle,
   .frame:not([data-shell-regime='wide']) .sidebarCol {
     transition: none;
   }

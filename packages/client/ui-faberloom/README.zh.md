@@ -26,9 +26,9 @@ FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoo
 在存在 `ctx.slots`、`ctx.locale` 与 `ctx.theme` 的组合中挂载本插件。它会贡献：
 
 - 通过 `ctx.theme.overrideTokens` 注册的强调色层，随浅色/深色模式变化；
-- `sidebar.brand.name`、`sidebar.brand.mark` 与 `conversation.hero.brand.mark` 的占用者；
+- `sidebar.brand.name` 的双色字标，以及 `sidebar.brand.mark` 与 `conversation.hero.brand.mark` 的等距图标占用者；
 - 十个 `sidebar.panellist` 行覆盖十二个 `main` 面板，以共享的 `MainPanelId` 寻址（对话落地页与技能面板保留路由但不占侧边栏行）；
-- Settings 旁的 `sidebar.footer.action` 偏好控件：调色板菜单按配色方案分组列出所有已注册主题，每项带取自该主题自身定义的色样；语言菜单列出已注册的语言。两者都由本包而非 `ui-theme` 注册，因为侧边栏的动作座位位于该包的引用闭包之外（`ui-sidebar` 到达 `ui-layout`，后者到达 `ui-theme`），而本插件已同时依赖两者；各自通过自己的服务（`theme`、`locale`）写入，因此脚部控件与对应设置行保持同一设置；
+- Settings 旁的 `sidebar.footer.action` 偏好控件：调色板菜单按配色方案分组列出所有已注册主题，每项带取自该主题自身定义的色样；语言菜单列出已注册的语言，每项带对应国旗。两者都由本包而非 `ui-theme` 注册，因为侧边栏的动作座位位于该包的引用闭包之外（`ui-sidebar` 到达 `ui-layout`，后者到达 `ui-theme`），而本插件已同时依赖两者；各自通过自己的服务（`theme`、`locale`）写入，因此脚部控件与对应设置行保持同一设置；
 - 聊天手势：一个 `@` 触发器源，列出所有者的活跃代理（选中会插入 `@name`），以及一个带弹窗的 `/routine` 命令贡献，用于启动选中的例程；两者都由工作区总览经 `ctx.remote.faberloomView` 提供。
 
 Espacios 详情把业务空间与 harness 工作区连接起来：`spaceWorkspace` 投射该空间的对话区域（其 `fw_` 工作目录注册为工作区，标题取自空间），而「在此空间新建对话」会在其中打开一个会话，因此侧边栏的工作区分组与空间始终是同一个东西。Mesa de trabajo（工作台）可带备注评审、提交新的已准备修订、让条目经过异常状态（请求数据、失败、完成），并列出已记录的效果及其明细与日期。

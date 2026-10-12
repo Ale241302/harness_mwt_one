@@ -188,11 +188,38 @@ describe('LanguageMenu', () => {
     const m = mountLanguage()
     fireEvent.click(screen.getByRole('button', { name: 'Language' }))
     expect(screen.getAllByRole('menuitem').map(row => row.textContent)).toEqual(['English', 'Español', '中文'])
-    expect(screen.getByRole('menuitem', { name: 'Español' }).querySelector('svg')).not.toBeNull()
-    expect(screen.getByRole('menuitem', { name: 'English' }).querySelector('svg')).toBeNull()
+    // Each row leads with its flag; the active row adds the trailing check.
+    expect(screen.getByRole('menuitem', { name: 'English' }).querySelector('[data-language-flag="en"]')).not.toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Español' }).querySelector('[data-language-flag="es"]')).not.toBeNull()
+    expect(screen.getByRole('menuitem', { name: '中文' }).querySelector('[data-language-flag="zh"]')).not.toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Español' }).querySelectorAll('svg')).toHaveLength(2)
+    expect(screen.getByRole('menuitem', { name: 'English' }).querySelectorAll('svg')).toHaveLength(1)
     fireEvent.click(screen.getByRole('menuitem', { name: '中文' }))
     expect(m.setLocale).toHaveBeenCalledWith('zh')
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('draws a decorative inline SVG flag per shipped language', () => {
+    mountLanguage()
+    fireEvent.click(screen.getByRole('button', { name: 'Language' }))
+    const shipped = [['English', 'en'], ['Español', 'es'], ['中文', 'zh']] as const
+    for (const [name, id] of shipped) {
+      const flag = screen.getByRole('menuitem', { name }).querySelector(`[data-language-flag="${id}"] svg`)
+      expect(flag?.getAttribute('aria-hidden')).toBe('true')
+      expect(flag?.getAttribute('width')).toBe('16')
+      expect(flag?.getAttribute('height')).toBe('11')
+      // The flag is real art, not an emoji glyph that Windows cannot render.
+      expect(flag?.querySelector('polygon, rect, circle')).not.toBeNull()
+    }
+  })
+
+  it('keeps the menu working for a locale with no flag art', () => {
+    const store = createFootLocaleStore().create()
+    store.actions.sync({ id: 'fr', locales: [...LOCALES, { id: 'fr', label: 'Français' }] }, 0)
+    render(<LanguageMenu {...shared()} wide useStore={bindSnapshotSelector(store)} actions={store.actions} setLocale={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Language' }))
+    expect(screen.getByRole('menuitem', { name: 'Français' }).querySelector('[data-language-flag]')).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'English' }).querySelector('[data-language-flag="en"]')).not.toBeNull()
   })
 
   it('renders no rows before the first sync carries the catalog', () => {

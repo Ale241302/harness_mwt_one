@@ -1,6 +1,16 @@
 /* FaberLoom surface styling. Semantic tokens only: every color, radius, and
    space resolves through the active theme, so light and dark stay consistent. */
 
+/* App type scale (FaberLoom Typography.dc.html, section 03 APP): screen title
+   Geist SemiBold 600 20/25; panel and group label Geist SemiBold 600 15/20; UI
+   body Geist Regular 400 14/21; control label Geist Medium 500 14px on a 44px
+   hit target; caption and helper Geist Regular 400 12/17; status tag and
+   overline Geist Mono 400 UPPER 11px with 0.12em tracking; exact values
+   (numbers, dates, ids, diffs) Geist Mono 400/500 12.5/19 tabular; interface
+   text never drops below 11px. The roles resolve through ui-theme's published
+   app-type-scale tokens (ui-theme/src/styles/app-type-scale.css), so a rule
+   names its role instead of a pixel value. */
+
 /* Fields in this surface are `width: 100%`; the theme only resets `select` to
    border-box, so an input painted itself past its card by its own padding
    (10px + 10px + border). Scoped here so every control of the panel obeys. */
@@ -67,25 +77,23 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
+/* Screen title role. */
 .h1 {
   margin: 0;
-  font-family: var(--dsw-font-family-serif, var(--dsw-font-family));
-  font-size: 22px;
-  font-style: italic;
-  font-weight: 500;
-  letter-spacing: 0;
+  font: var(--dsw-font-screen-title);
 }
 
+/* Panel or group label role. */
 .h2 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 650;
+  font: var(--dsw-font-panel-label);
 }
 
+/* Intro and description copy: UI body role. */
 .sub {
   margin: 4px 0 0;
   color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .tools {
@@ -103,8 +111,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .search input:focus {
@@ -148,7 +155,7 @@
   padding: 8px 12px;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .pagerSize {
@@ -164,8 +171,7 @@
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .pagerInfo {
@@ -184,8 +190,8 @@
   border-radius: 7px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  font-weight: 600;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
@@ -225,7 +231,7 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .table thead th {
@@ -236,11 +242,10 @@
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-caption);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
   text-align: left;
-  text-transform: uppercase;
+  text-transform: var(--dsw-font-overline-text-transform);
   white-space: nowrap;
 }
 
@@ -271,11 +276,12 @@
   box-shadow: inset 2px 0 0 var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
-/* Numeric columns read as figures: trailing edge and tabular digits. */
+/* Numeric columns read as figures: data role, tabular digits. */
 .table th[data-align='end'],
 .table td[data-align='end'] {
   text-align: end;
-  font-variant-numeric: tabular-nums;
+  font: var(--dsw-font-data);
+  font-variant-numeric: var(--dsw-font-data-font-variant-numeric);
 }
 
 .cellName {
@@ -373,8 +379,7 @@
   corner-shape: round;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-family);
-  font-size: 11px;
+  font: var(--dsw-font-overline);
 }
 
 .chipAccent {
@@ -387,7 +392,9 @@
   align-items: center;
   gap: 6px;
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
 }
 
 .pulse {
@@ -448,12 +455,11 @@
   gap: 6px;
 }
 
+/* Field label: Geist Medium 500, 14px. Never uppercase and never letter-spaced. */
 .fieldLabel {
-  color: var(--dsw-alias-label-caption);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+  font-weight: 500;
 }
 
 .field input[type='text'],
@@ -468,8 +474,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .field textarea {
@@ -485,9 +490,10 @@
   border-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
+/* Helper text: caption role. */
 .hint {
   color: var(--dsw-alias-label-caption);
-  font-size: 11px;
+  font: var(--dsw-font-caption);
 }
 
 .grid2 {
@@ -504,8 +510,8 @@
   border-radius: 8px;
   background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
   color: var(--dsw-alias-bg-base);
-  font-size: 13px;
-  font-weight: 600;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
@@ -530,8 +536,8 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  font-weight: 600;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
@@ -541,7 +547,8 @@
   border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
@@ -551,18 +558,19 @@
   border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-state-error-text, #c0392b);
-  font-size: 13px;
-  font-weight: 600;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
+/* Compact row action: a control label, kept small inside its dense row grid. */
 .rowAction {
   padding: 4px 10px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
+  font: var(--dsw-font-control);
   cursor: pointer;
 }
 
@@ -585,19 +593,19 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .stateTitle {
   margin: 0;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
   font-weight: 600;
 }
 
 .stateText {
   margin: 0;
   color: var(--dsw-alias-label-caption);
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .error {
@@ -608,7 +616,7 @@
   padding: 10px 12px;
   border: 1px solid var(--dsw-alias-state-error-primary);
   border-radius: 9px;
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .errorDetail {
@@ -650,7 +658,7 @@
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
-  font-size: 11px;
+  font: var(--dsw-font-caption);
 }
 
 .paneRows {
@@ -681,8 +689,7 @@
 
 .paneRow code {
   overflow: hidden;
-  font-family: var(--dsw-font-family);
-  font-size: 11px;
+  font: var(--dsw-font-data);
   color: var(--dsw-alias-label-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -699,12 +706,16 @@
   color: var(--dsw-alias-label-caption);
 }
 
+/* FaberLoom wordmark: the two-tone "Faber" + "Loom" from ui-primitives,
+   replacing the shell's localized text label. The shell sizes the identity row;
+   this only keeps the two halves together as one inline group. */
 .brandName {
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
 }
 
-/* Product brand mark: green on the light theme, white on the dark one. */
+/* Product brand mark: the FaberLoom 3x3 isotipo, ink on the light theme and
+   cream on the dark one (each image carries its own colour). */
 .brandMark {
   display: inline-flex;
   align-items: center;
@@ -763,9 +774,7 @@
   padding: 6px 8px;
   border-left: 0.5px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-family);
-  font-size: 12px;
-  line-height: 1.4;
+  font: var(--dsw-font-data);
   white-space: pre-wrap;
   overflow: hidden;
   max-height: 5.6em;
@@ -778,12 +787,12 @@
   border-radius: 7px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font: var(--dsw-font-ui-body);
 }
 
 .stepIndex {
   color: var(--dsw-alias-label-caption);
-  font-size: 11px;
+  font: var(--dsw-font-data);
   text-align: center;
 }
 
@@ -792,7 +801,7 @@
   align-items: center;
   gap: 4px;
   color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
+  font: var(--dsw-font-caption);
   white-space: nowrap;
 }
 
@@ -821,7 +830,7 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 /* ── work-flow editor ────────────────────────────────────────────────── */
@@ -909,7 +918,7 @@
 .workflowSpaceLabel {
   align-self: center;
   color: var(--dsw-alias-label-caption);
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .workflowModal.workflowModal {
@@ -938,8 +947,8 @@
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--dsw-alias-label-caption);
-  font: inherit;
-  font-size: 13px;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
@@ -1033,12 +1042,12 @@
 }
 
 .workflowNodeTitle {
-  font-size: 12px;
+  font: var(--dsw-font-caption);
   fill: var(--dsw-alias-label-primary);
 }
 
 .workflowNodeKind {
-  font-size: 10px;
+  font: var(--dsw-font-overline);
   fill: var(--dsw-alias-label-caption);
 }
 
@@ -1054,8 +1063,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .workflowForm {
@@ -1081,7 +1089,7 @@
 }
 
 .workflowHint {
-  font-size: 12px;
+  font: var(--dsw-font-caption);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -1089,7 +1097,7 @@
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .workflowHealthRow {
@@ -1113,7 +1121,7 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   corner-shape: round;
-  font-size: 12px;
+  font: var(--dsw-font-overline);
 }
 
 .workflowPermissionOn {
@@ -1193,8 +1201,7 @@
   border-radius: 10px;
   background: transparent;
   cursor: pointer;
-  font-size: 14px;
-  line-height: 22px;
+  font: var(--dsw-font-ui-body);
   color: var(--dsw-alias-label-primary);
   text-align: left;
 }
@@ -1220,8 +1227,7 @@
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 12px;
-  line-height: 18px;
+  font: var(--dsw-font-data);
   color: var(--dsw-alias-label-primary);
 }
 

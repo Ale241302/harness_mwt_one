@@ -1,10 +1,9 @@
 /**
  * Layout plugin, browser half: one register() call contributes AppFrame into
  * the runtime's built-in 'root' slot and, in the same breath, declares the
- * child slots (declaration = exclusive render authority) — the three columns,
- * the frame-wide overlay layer, and the top bar's brand/centre/actions seats —
- * seats the layout store (panel geometry), and wires the panel-action service
- * face. ctx.layout selects the main panel and controls column geometry; Session
+ * child slots (declaration = exclusive render authority): the three columns
+ * and the frame-wide overlay layer. It seats the layout store (panel geometry)
+ * and wires the panel-action service face. ctx.layout selects the main panel and controls column geometry; Session
  * selection belongs to the Session Controller. A second effect seats the theme
  * presenter, which projects ctx.theme snapshots onto document.body; a third
  * registers this package's own copy namespace.
@@ -47,7 +46,7 @@ declare module '@deepseek-ai/cordis' {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Shell chrome copy: the top bar's rail toggles and the drawer dismissal. */
+    /** Shell chrome copy: the drawer toggle and the drawer dismissal. */
     layout: LayoutKey
   }
 
@@ -105,25 +104,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `id` is added beside the shipped entries instead of replacing them.
      */
     'shell.overlay': { kind: 'list'; scope: 'root' }
-    /**
-     * The top bar's brand block, left of the centre. One occupant renders the
-     * product's own mark and name; the frame draws nothing when nobody does
-     * (no fallback artwork and no reserved width).
-     */
-    'shell.topbar.brand': { kind: 'single'; scope: 'root' }
-    /**
-     * The top bar's centre seat: the shell's search/command trigger. The frame
-     * declares the hole and renders nothing until a package fills it — an
-     * empty centre is the correct resting state, so no fallback control is
-     * fabricated here.
-     */
-    'shell.topbar.center': { kind: 'single'; scope: 'root' }
-    /**
-     * Controls at the top bar's right edge, list order ascending. For chrome a
-     * package owns (a budget chip, a theme button, a status pill); the rail
-     * toggles at the left edge are the frame's own and are not entries here.
-     */
-    'shell.topbar.actions': { kind: 'list'; scope: 'root' }
   }
 }
 
@@ -158,9 +138,9 @@ export interface RightbarOwnerProps {
 export const inject = ['slots', 'theme', 'locale']
 
 /**
- * Client plugin body: provide ctx.layout, then one register() call — AppFrame
- * into 'root' with the four child-slot declarations, the layout store seat,
- * and the shared root instance supplying commands and the panel-info source.
+ * Client plugin body: provide ctx.layout, then one register() call: AppFrame
+ * into 'root' with the child-slot declarations, the layout store seat, and the
+ * shared root instance supplying commands and the panel-info source.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -182,22 +162,19 @@ export function apply(ctx: ClientContext): void {
     }
     const disposePanelInfo = ctx.slots.provideRoot({ hooks: { panelInfo } })
     const disposeService = ctx.reflect.provide('layout', layout)
-    // Rail mounting: the top bar's toggles appear only while an occupant is
-    // registered. Subscribed before the root registration declares the child
-    // slots (subscribing ahead of declaration is allowed) and published after
-    // it, so the first render already carries the settled facts.
-    const rails = createSnapshotStore<RailsSnapshot>({ sidebar: false, rightbar: false })
+    // Rail mounting: the drawer's floating toggle appears only while a left-rail
+    // occupant is registered. Subscribed before the root registration declares
+    // the child slots (subscribing ahead of declaration is allowed) and
+    // published after it, so the first render already carries the settled fact.
+    const rails = createSnapshotStore<RailsSnapshot>({ sidebar: false })
     const syncRails = (): void => {
       const mounted: RailsSnapshot = {
         sidebar: ctx.slots.entriesOfSlot('sidebar').length > 0,
-        rightbar: ctx.slots.entriesOfSlot('rightbar').length > 0,
       }
-      const previous = rails.getSnapshot()
-      if (previous.sidebar === mounted.sidebar && previous.rightbar === mounted.rightbar) return
+      if (rails.getSnapshot().sidebar === mounted.sidebar) return
       rails.set(mounted)
     }
     const disposeSidebarRails = ctx.slots.subscribe('sidebar', syncRails)
-    const disposeRightbarRails = ctx.slots.subscribe('rightbar', syncRails)
     const injected = (): AppFrameInjected => ({ hooks: { rails } })
     const disposeRegistration = ctx.slots.register({
       name: 'root',
@@ -207,9 +184,6 @@ export function apply(ctx: ClientContext): void {
         'main': { kind: 'keyed', scope: 'root' },
         'rightbar': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
-        'shell.topbar.brand': { kind: 'single', scope: 'root' },
-        'shell.topbar.center': { kind: 'single', scope: 'root' },
-        'shell.topbar.actions': { kind: 'list', scope: 'root' },
       },
       store,
       inject: injected,
@@ -221,7 +195,6 @@ export function apply(ctx: ClientContext): void {
       layout.dispose()
       disposePanels()
       disposeSidebarRails()
-      disposeRightbarRails()
       disposeRegistration()
       disposePanelInfo()
       // provide()'s disposer settles asynchronously; teardown is synchronous fire-and-forget.

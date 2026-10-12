@@ -80,7 +80,7 @@ describe('ui-layout client apply', () => {
     expect(inject).toEqual(['slots', 'theme', 'locale'])
   })
 
-  it('provides ctx.layout and declares the root-scoped frame and top-bar slots', async () => {
+  it('provides ctx.layout and declares the root-scoped frame slots', async () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -90,9 +90,6 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('main')).toEqual({ kind: 'keyed', scope: 'root' })
     expect(slots.spec('rightbar')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('shell.overlay')).toEqual({ kind: 'list', scope: 'root' })
-    expect(slots.spec('shell.topbar.brand')).toEqual({ kind: 'single', scope: 'root' })
-    expect(slots.spec('shell.topbar.center')).toEqual({ kind: 'single', scope: 'root' })
-    expect(slots.spec('shell.topbar.actions')).toEqual({ kind: 'list', scope: 'root' })
   })
 
   it('registers its own dictionary namespace', async () => {
@@ -104,7 +101,7 @@ describe('ui-layout client apply', () => {
     expect(locale.bind('layout')('drawer.dismiss')).toBe('Close the navigation drawer')
   })
 
-  it('publishes rail mounting facts through the root registration inject face', async () => {
+  it('publishes left-rail mounting facts through the root registration inject face', async () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -113,15 +110,11 @@ describe('ui-layout client apply', () => {
     const instance = handle.create()
     const injected = entry.inject!(instance.actions as never) as unknown as AppFrameInjected
     const rails = injected.hooks.rails
-    expect(rails.getSnapshot()).toEqual({ sidebar: false, rightbar: false })
+    expect(rails.getSnapshot()).toEqual({ sidebar: false })
     const disposeSidebar = slots.register({ name: 'sidebar' }, () => null)
-    await vi.waitFor(() => { expect(rails.getSnapshot()).toEqual({ sidebar: true, rightbar: false }) })
-    const disposeRightbar = slots.register({ name: 'rightbar' }, () => null)
-    await vi.waitFor(() => { expect(rails.getSnapshot()).toEqual({ sidebar: true, rightbar: true }) })
-    disposeRightbar()
-    await vi.waitFor(() => { expect(rails.getSnapshot()).toEqual({ sidebar: true, rightbar: false }) })
+    await vi.waitFor(() => { expect(rails.getSnapshot()).toEqual({ sidebar: true }) })
     disposeSidebar()
-    await vi.waitFor(() => { expect(rails.getSnapshot()).toEqual({ sidebar: false, rightbar: false }) })
+    await vi.waitFor(() => { expect(rails.getSnapshot()).toEqual({ sidebar: false }) })
   })
 
   it('shares a pre-created instance between service actions, root rendering, and panelInfo', async () => {
@@ -191,9 +184,6 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('main')).toBeUndefined()
     expect(slots.spec('rightbar')).toBeUndefined()
     expect(slots.spec('shell.overlay')).toBeUndefined()
-    expect(slots.spec('shell.topbar.brand')).toBeUndefined()
-    expect(slots.spec('shell.topbar.center')).toBeUndefined()
-    expect(slots.spec('shell.topbar.actions')).toBeUndefined()
     expect(host.root.getSnapshot().hooks.panelInfo).toBeUndefined()
     // The built-in root declaration survives entry teardown (renderer-owned).
     expect(slots.spec('root')).toEqual({ kind: 'single', scope: 'root' })

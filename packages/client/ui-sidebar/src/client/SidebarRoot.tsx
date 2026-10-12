@@ -332,8 +332,11 @@ export function SidebarRoot({
               button's accessible name is the mode value itself. */}
           {layout.showModeBar && (
             <div className={css.modeBar}>
+              {/* A horizontal row of buttons: the bubble goes above the
+                  anchor so it never covers the neighbouring button. The rail
+                  stacks the bar vertically, where beside stays correct. */}
               {layout.tabs.map(({ mode, glyph }) => (
-                <Tooltip key={mode} label={mode} delayMs={500}>
+                <Tooltip key={mode} label={mode} delayMs={500} side={wide ? 'top' : 'right'}>
                   <button
                     type="button"
                     className={clsx(css.modeButton, mode === layout.mode && css.modeActive)}

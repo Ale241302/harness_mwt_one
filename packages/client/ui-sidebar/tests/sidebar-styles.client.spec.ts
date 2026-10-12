@@ -77,6 +77,15 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .settingsArea')?.get('width')).toBe('auto')
   })
 
+  it('states the footer row rule: controls keep their size, labels yield first', () => {
+    // The icon controls never shrink (the action row is flex: none); the
+    // labels yield the row's space first (every footer cell is min-width: 0,
+    // so a long label ellipsizes inside its own control).
+    expect(declarations('.footerActions')?.get('flex')).toBe('none')
+    expect(declarations('.footArea > *')?.get('min-width')).toBe('0')
+    expect(declarations('.settingsArea')?.get('min-width')).toBe('0')
+  })
+
   it('keeps the slotted brand row at the full artwork height', () => {
     expect(declarations('.brandIdentity')?.get('height')).toBe('24px')
     expect(declarations('.brandName')?.get('height')).toBe('24px')
@@ -99,6 +108,22 @@ describe('SidebarRoot.module.css panel placement', () => {
       expect(declarations(selector)?.get('overflow')).toBe('hidden')
       expect(declarations(selector)?.get('text-overflow')).toBe('ellipsis')
       expect(declarations(selector)?.get('white-space')).toBe('nowrap')
+    }
+  })
+
+  it('consumes the shared app type scale roles for group labels, rows, and chips', () => {
+    // Group/panel label and row label name the ui-theme roles, never a pixel
+    // value: --dsw-font-panel-label (600 15/20) and --dsw-font-ui-body
+    // (400 14/21).
+    expect(declarations('.accordionHead')?.get('font')).toBe('var(--dsw-font-panel-label)')
+    expect(declarations('.panelRow')?.get('font')).toBe('var(--dsw-font-ui-body)')
+    // Count badges and status tags take the overline role: mono 400,
+    // uppercase, tracked (the scale's one documented 11px role).
+    for (const selector of ['.accordionCount', '.panelBadge']) {
+      const chip = declarations(selector)!
+      expect(chip.get('font')).toBe('var(--dsw-font-overline)')
+      expect(chip.get('letter-spacing')).toBe('var(--dsw-font-overline-letter-spacing)')
+      expect(chip.get('text-transform')).toBe('var(--dsw-font-overline-text-transform)')
     }
   })
 

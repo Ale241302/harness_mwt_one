@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-12-faberloom-shell-design-system.md
-2026-10-12-faberloom-shell-design-system.md: eb12d5db1ed8c2ae9b469601d0071b57fbbb7855
-2026-10-12-faberloom-shell-design-system.zh.md: 1aeac1c61ecfc88ec157b18acfec653ac9a42d2c
+2026-10-12-faberloom-shell-design-system.md: 365ba900c973b6ed61d4f6d7ecd0056dfa41b2e0
+2026-10-12-faberloom-shell-design-system.zh.md: 4c7d86b3b47a9c5c35c90206fd406f9b9d4afe55

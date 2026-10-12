@@ -310,6 +310,8 @@
   container-type: inline-size;
 }
 
+/* The row label takes the shared UI body role (ui-theme
+   app-type-scale.css). */
 .panelRow {
   display: flex;
   align-items: center;
@@ -322,8 +324,7 @@
   border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  line-height: 22px;
+  font: var(--dsw-font-ui-body);
   text-align: left;
   cursor: pointer;
 }
@@ -332,10 +333,11 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* Selection reads through fill and ink alone; the label keeps its 400 weight
+   so every row follows the same scale step. */
 .panelRow.panelActive {
   background: var(--dsw-alias-interactive-bg-active);
   color: var(--dsw-alias-label-primary);
-  font-weight: 500;
 }
 
 .panelRow:focus-visible {
@@ -359,16 +361,18 @@
 }
 
 /* Count/status chip a row's registration declared. It trails the truncated
-   title, which is why the title carries the row's free space. */
+   title, which is why the title carries the row's free space. The chip takes
+   the shared overline/status role (ui-theme app-type-scale.css): mono,
+   uppercase, tracked, the scale's one documented 11px role. */
 .panelBadge {
   flex: none;
   padding: 0 6px;
   border-radius: 6px;
   background: var(--dsw-alias-interactive-bg-active);
   color: var(--dsw-alias-label-secondary);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 16px;
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
 }
 
 /* Mode bar: one compact icon button per declared mode. It renders once more
@@ -420,7 +424,8 @@
 
 /* One accordion per declared group: a heading button (chevron, group label,
    row count) over the rows it toggles. A group declared without a heading
-   renders its rows directly, with no heading button. */
+   renders its rows directly, with no heading button. The heading takes the
+   shared panel/group label role (ui-theme app-type-scale.css). */
 .accordion {
   display: flex;
   flex-direction: column;
@@ -438,11 +443,7 @@
   border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font: var(--dsw-font-panel-label);
   text-align: left;
   cursor: pointer;
 }
@@ -482,11 +483,9 @@
   border-radius: 6px;
   background: var(--dsw-specific-sidebar-nav-item-active);
   color: var(--dsw-alias-label-tertiary);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0;
-  line-height: 16px;
-  text-transform: none;
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
 }
 
 .accordionBody {
@@ -559,6 +558,14 @@
   flex-direction: row-reverse;
   align-items: center;
   gap: 8px;
+}
+
+/* Footer row rule: the icon controls never shrink (each action control is
+   flex: none) and the labels yield the space first, so a long label
+   ellipsizes inside its own control instead of squeezing a control out of
+   the row. */
+.footArea > * {
+  min-width: 0;
 }
 
 .settingsArea {

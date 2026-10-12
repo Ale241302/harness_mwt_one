@@ -23,7 +23,7 @@ import {
   FlIconWorkspace,
   FlIconWorkloom,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
+import { BrandWordmark, Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomConnection, FaberLoomExecutionRow,
   FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomModelCatalog, FaberLoomOverview,
@@ -3229,9 +3229,15 @@ function conversarPanel() {
   }
 }
 
-/** Sidebar brand name beside the mark. */
-export function FaberloomBrandName({ t }: PropsLocale<'faberloom'>) {
-  return <span className={styles.brandName}>{t('brand.name')}</span>
+/**
+ * Sidebar brand name beside the mark. Renders the shared two-tone wordmark so
+ * "Faber" holds the coral alias and "Loom" takes the ink of its ground, rather
+ * than the shell's one-ink text label. The name is a proper noun, so it carries
+ * no locale dictionary entry.
+ * @returns the FaberLoom wordmark without the separately slotted mark.
+ */
+export function FaberloomBrandName() {
+  return <BrandWordmark className={styles.brandName} includeMark={false} />
 }
 
 /**

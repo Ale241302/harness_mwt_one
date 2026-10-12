@@ -36,13 +36,13 @@ const useSessionPendingInteraction: TriggerContentProps['useSessionPendingIntera
 const kit = { useSessions: unusedHook, useSessionPendingInteraction, usePanelInfo, useResource, useWorkspaces: unusedHook }
 
 describe('chrome content', () => {
-  it('TriggerContent renders the icon with the label in the wide column', () => {
+  it('TriggerContent renders the icon alone, with no visible label in any width', () => {
     const { container } = render(<TriggerContent {...kit} wide t={t} />)
     expect(container.querySelector('svg')).toBeTruthy()
-    expect(screen.getByText('Settings')).toBeTruthy()
+    expect(screen.queryByText('Settings')).toBeNull()
   })
 
-  it('TriggerContent drops the label in the rail state', () => {
+  it('TriggerContent stays icon-only in the rail state', () => {
     const { container } = render(<TriggerContent {...kit} wide={false} t={t} />)
     expect(container.querySelector('svg')).toBeTruthy()
     expect(screen.queryByText('Settings')).toBeNull()

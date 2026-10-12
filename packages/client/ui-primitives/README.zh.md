@@ -49,7 +49,7 @@ kind: "package-library"
 | `Modal` | 页面遮罩之上的居中对话框。 |
 | `RiskConfirmation` | 以显式复选框把关的敏感操作确认。 |
 | `OnboardingSurface` | 首次运行的引导舞台，期间保持应用根节点 inert。 |
-| `Tooltip` | 克隆锚点上的悬停文本，可置于右、下、上三个方向。 |
+| `Tooltip` | 克隆锚点上的悬停文本，可置于右、下、上三个方向；横向排列的控件传入 `side="top"`，气泡便位于锚点上方，避开默认右侧会遮住的相邻控件。 |
 | `HoverCard` | 指针可停留、可选中的悬停预览；可选带复制按钮。 |
 | `Toast` | 顶部居中的瞬时横幅，保持时长由所有者的 `holdMs` 决定。 |
 | `JsonTree`、`JsonBlock` | 只读 JSON 查看。 |

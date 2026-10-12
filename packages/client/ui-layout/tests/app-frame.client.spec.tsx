@@ -135,11 +135,9 @@ function handleFor(frame: HTMLElement, side: 'sidebar' | 'rightbar'): HTMLElemen
   return handle
 }
 
-/** One rail toggle from the top bar (left first, right second). */
-function railToggle(frame: HTMLElement, side: 'left' | 'right'): HTMLElement {
-  const toggle = frame.querySelectorAll<HTMLElement>('[data-shell-topbar] button')[side === 'left' ? 0 : 1]
-  if (toggle === undefined) throw new Error(`missing ${side} rail toggle`)
-  return toggle
+/** The single floating drawer toggle, or null outside the drawer regime. */
+function drawerToggle(frame: HTMLElement): HTMLElement | null {
+  return frame.querySelector<HTMLElement>('[data-shell-drawer-toggle]')
 }
 
 function pointer(handle: Element, type: string, clientX: number, pointerId = 1, button = 0): void {
@@ -159,7 +157,7 @@ beforeEach(() => {
   selectedSession = 's-test' as SessionId
   selectedSessionTitle = undefined
   workspacesReady = true
-  railsMounted = { sidebar: true, rightbar: true }
+  railsMounted = { sidebar: true }
   sidebarFocusable = false
   observers = []
   animationFrames = new Map()
@@ -267,62 +265,48 @@ describe('AppFrame', () => {
   })
 })
 
-describe('AppFrame top bar', () => {
-  it('renders the three shell seats with no fallback', () => {
-    const { slotCalls, getByTestId } = mountFrame()
-    // No fallback node is ever supplied: an unregistered seat is simply empty.
-    expect(slotCalls.find(c => c.key === 'shell.topbar.brand')).toEqual({ key: 'shell.topbar.brand', props: {}, options: undefined })
-    expect(slotCalls.find(c => c.key === 'shell.topbar.center')).toEqual({ key: 'shell.topbar.center', props: {}, options: undefined })
-    expect(slotCalls.find(c => c.key === 'shell.topbar.actions')).toEqual({ key: 'shell.topbar.actions', props: {}, options: undefined })
-    expect(getByTestId('shell.topbar.center-content')).toBeTruthy()
-    expect(getByTestId('shell.topbar.brand-content')).toBeTruthy()
-    expect(getByTestId('shell.topbar.actions-content')).toBeTruthy()
+describe('AppFrame floating drawer toggle', () => {
+  it('renders no frame chrome in the wide regime', () => {
+    const { frame, slotCalls } = mountFrame()
+    expect(frame.dataset.shellRegime).toBe('wide')
+    expect(frame.querySelector('[data-shell-drawer-toggle]')).toBeNull()
+    // The frame no longer declares or dispatches any top-bar seat.
+    expect(slotCalls.some(call => call.key.startsWith('shell.topbar'))).toBe(false)
   })
 
-  it('hides each rail toggle while its occupant is not mounted', () => {
-    railsMounted = { sidebar: false, rightbar: false }
-    expect(mountFrame().frame.querySelectorAll('[data-shell-topbar] button')).toHaveLength(0)
+  it('shows the single toggle only while the left rail has an occupant', () => {
+    frameWidth = 900
+    railsMounted = { sidebar: false }
+    expect(mountFrame().frame.querySelector('[data-shell-drawer-toggle]')).toBeNull()
     cleanup()
-    railsMounted = { sidebar: true, rightbar: false }
+    railsMounted = { sidebar: true }
     const { frame } = mountFrame()
-    expect(frame.querySelectorAll('[data-shell-topbar] button')).toHaveLength(1)
-    expect(railToggle(frame, 'left').getAttribute('aria-expanded')).toBe('true')
+    expect(frame.querySelectorAll('[data-shell-drawer-toggle]')).toHaveLength(1)
   })
 
-  it('backs the left toggle state and label with the store and the dictionary', () => {
+  it('opens the drawer from the toggle and hides it while the drawer is open', () => {
+    frameWidth = 900
     const { frame, instance } = mountFrame()
-    const toggle = railToggle(frame, 'left')
-    expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(toggle.getAttribute('aria-label')).toBe('Hide the left panel')
-    expect(toggle.getAttribute('aria-controls')).toBe(frame.querySelector('[data-shell-sidebar]')!.id)
-    act(() => { toggle.click() })
-    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(0)
+    const toggle = drawerToggle(frame)!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(toggle.getAttribute('aria-label')).toBe('Show the left panel')
+    expect(toggle.getAttribute('aria-controls')).toBe(frame.querySelector('[data-shell-sidebar]')!.id)
+    act(() => { toggle.click() })
+    expect(instance.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
+    expect(drawerToggle(frame)).toBeNull()
   })
 
-  it('hides and restores the right rail from its toggle', () => {
-    const { frame, instance, queryByTestId } = mountFrame()
-    act(() => { instance.actions.openRightbar(true, false) })
-    const toggle = railToggle(frame, 'right')
-    expect(queryByTestId('rightbar-content')).toBeTruthy()
-    expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(toggle.getAttribute('aria-label')).toBe('Hide the right panel')
-    act(() => { toggle.click() })
-    expect(queryByTestId('rightbar-content')).toBeNull()
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(toggle.getAttribute('aria-label')).toBe('Show the right panel')
-    act(() => { toggle.click() })
-    expect(queryByTestId('rightbar-content')).toBeTruthy()
-  })
-
-  it('follows rail occupants as they mount and unmount', () => {
-    railsMounted = { sidebar: false, rightbar: true }
+  it('follows the left rail occupant as it mounts and unmounts', () => {
+    frameWidth = 900
+    railsMounted = { sidebar: false }
     const { frame, rerenderFrame } = mountFrame()
-    expect(frame.querySelectorAll('[data-shell-topbar] button')).toHaveLength(1)
-    railsMounted = { sidebar: true, rightbar: true }
+    expect(drawerToggle(frame)).toBeNull()
+    railsMounted = { sidebar: true }
     rerenderFrame()
-    expect(frame.querySelectorAll('[data-shell-topbar] button')).toHaveLength(2)
+    expect(drawerToggle(frame)).not.toBeNull()
+    railsMounted = { sidebar: false }
+    rerenderFrame()
+    expect(drawerToggle(frame)).toBeNull()
   })
 })
 
@@ -341,7 +325,7 @@ describe('AppFrame responsive regimes', () => {
   it('drops the drawer override when the frame widens and keeps rails out of the flow otherwise', () => {
     frameWidth = 900
     const { frame, instance } = mountFrame()
-    act(() => { railToggle(frame, 'left').click() })
+    act(() => { drawerToggle(frame)!.click() })
     expect(frame.dataset.drawerOpen).toBe('true')
     act(() => { instance.actions.toggleSidebar() })
     expect(frame.dataset.drawerOpen).toBeUndefined()
@@ -357,7 +341,7 @@ describe('AppFrame off-canvas drawer', () => {
     expect(sidebar.getAttribute('aria-hidden')).toBe('true')
     expect(frame.querySelector('[data-shell-scrim]')).toBeNull()
     expect(tracks(frame)).toEqual([0, 0])
-    act(() => { railToggle(frame, 'left').click() })
+    act(() => { drawerToggle(frame)!.click() })
     expect(instance.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
     expect(frame.dataset.drawerOpen).toBe('true')
     expect(sidebar.getAttribute('aria-hidden')).toBeNull()
@@ -368,21 +352,20 @@ describe('AppFrame off-canvas drawer', () => {
   it('closes on the scrim and returns focus to the toggle that opened it', () => {
     frameWidth = 900
     const { frame, instance } = mountFrame()
-    const toggle = railToggle(frame, 'left')
     const sidebar = frame.querySelector<HTMLElement>('[data-shell-sidebar]')!
-    act(() => { toggle.click() })
+    act(() => { drawerToggle(frame)!.click() })
     act(() => { frame.querySelector<HTMLElement>('[data-shell-scrim]')!.click() })
     expect(instance.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
     expect(frame.dataset.drawerOpen).toBeUndefined()
     expect(sidebar.getAttribute('aria-hidden')).toBe('true')
     expect(frame.querySelector('[data-shell-scrim]')).toBeNull()
-    expect(document.activeElement).toBe(toggle)
+    expect(document.activeElement).toBe(drawerToggle(frame))
   })
 
   it('closes on Escape', () => {
     frameWidth = 900
     const { frame, instance } = mountFrame()
-    act(() => { railToggle(frame, 'left').click() })
+    act(() => { drawerToggle(frame)!.click() })
     expect(frame.dataset.drawerOpen).toBe('true')
     act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
     expect(instance.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
@@ -393,31 +376,32 @@ describe('AppFrame off-canvas drawer', () => {
     frameWidth = 900
     sidebarFocusable = true
     const { frame, getByTestId } = mountFrame()
-    act(() => { railToggle(frame, 'left').click() })
+    act(() => { drawerToggle(frame)!.click() })
     expect(document.activeElement).toBe(getByTestId('sidebar-focus'))
   })
 
   it('ignores other keys and closes even after the toggling control unmounts', () => {
     frameWidth = 900
     const { frame, rerenderFrame } = mountFrame()
-    act(() => { railToggle(frame, 'left').click() })
+    act(() => { drawerToggle(frame)!.click() })
     act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' })) })
     expect(frame.dataset.drawerOpen).toBe('true')
-    railsMounted = { sidebar: false, rightbar: true }
+    railsMounted = { sidebar: false }
     rerenderFrame()
-    expect(frame.querySelectorAll('[data-shell-topbar] button')).toHaveLength(1)
+    // The floating toggle is already gone while the drawer is open; Escape
+    // still closes the drawer.
+    expect(frame.querySelector('[data-shell-drawer-toggle]')).toBeNull()
     act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
     expect(frame.dataset.drawerOpen).toBeUndefined()
   })
 
-  it('leaves the drawer closed and the rails in the flow at the wide regime', () => {
+  it('leaves the rails in the flow and shows no toggle at the wide regime', () => {
     const { frame, instance } = mountFrame()
     expect(frame.dataset.shellRegime).toBe('wide')
     expect(frame.querySelector('[data-shell-scrim]')).toBeNull()
+    expect(drawerToggle(frame)).toBeNull()
     expect(frame.querySelector<HTMLElement>('[data-shell-sidebar]')!.getAttribute('aria-hidden')).toBeNull()
-    act(() => { railToggle(frame, 'left').click() })
-    expect(frame.dataset.drawerOpen).toBeUndefined()
-    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(0)
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(280)
   })
 })
 

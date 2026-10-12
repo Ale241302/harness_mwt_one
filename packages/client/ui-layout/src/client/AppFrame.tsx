@@ -1,17 +1,17 @@
 /**
- * Shell frame: the top bar above the three-column frame, the responsive
- * regimes, the drag handles (pointer capture + rAF throttle), the column solve
- * (columns.ts), and the child-slot render decisions (the sidebar slot receives
- * live parameters from that solve; the root-scoped main slot selects the
- * Conversation or a global panel). The top bar owns the two rail toggles and
- * the three shell slots other packages fill. Each column occupant owns its
- * Session binding and reports the geometry it needs.
+ * Shell frame: the three-column frame, the responsive regimes, the drag
+ * handles (pointer capture + rAF throttle), the column solve (columns.ts), and
+ * the child-slot render decisions (the sidebar slot receives live parameters
+ * from that solve; the root-scoped main slot selects the Conversation or a
+ * global panel). There is no chrome bar: only the off-canvas drawer regime has
+ * a frame-level control, the floating toggle that opens the left rail. Each
+ * column occupant owns its Session binding and reports the geometry it needs.
  *
  * Regimes are driven by the frame's own measured width, not the window: above
  * the tablet breakpoint the rails are in-flow columns, below it the left rail
  * is an off-canvas drawer and the right rail overlays the canvas, and below the
  * phone breakpoint the canvas is the page. Crossing a breakpoint never leaves
- * stuck state — the store drops the drawer's manual override on the crossing
+ * stuck state: the store drops the drawer's manual override on the crossing
  * (stores.ts setViewportWidth).
  *
  * The right column is a track, not a box: its occupant draws its panel anchored
@@ -36,15 +36,13 @@ import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
 /**
- * Rail mounting facts for the top bar's toggles: whether an occupant is
- * registered in each rail. Declared by the layout plugin's own registration and
- * read through the `useRails` selector hook.
+ * Rail mounting facts for the drawer's floating toggle: whether an occupant is
+ * registered in the left rail. Declared by the layout plugin's own registration
+ * and read through the `useRails` selector hook.
  */
 export interface RailsSnapshot {
   /** A left-rail occupant is mounted. */
   sidebar: boolean
-  /** A right-rail occupant is mounted. */
-  rightbar: boolean
 }
 
 /** Root registration inject face: the rail-mount observable bound to `useRails`. */
@@ -64,9 +62,6 @@ export type AppFrameProps =
     | 'main'
     | 'rightbar'
     | 'shell.overlay'
-    | 'shell.topbar.brand'
-    | 'shell.topbar.center'
-    | 'shell.topbar.actions'
   >
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & InjectFace<AppFrameInjected>
@@ -102,9 +97,8 @@ function RightbarColumn(props: { children?: ReactNode }) {
   return <div className={css.rightbarCol} data-rightbar-col>{props.children}</div>
 }
 
-/** One rail toggle's glyph: a panel frame with its divider on the toggle's side. */
-function RailGlyph(props: { side: 'left' | 'right' }) {
-  const divider = props.side === 'left' ? 6 : 10
+/** The drawer toggle's glyph: a panel frame with its divider on the left side. */
+function RailGlyph() {
   return (
     <svg
       viewBox="0 0 16 16"
@@ -117,7 +111,7 @@ function RailGlyph(props: { side: 'left' | 'right' }) {
       focusable="false"
     >
       <rect x="1.5" y="2.5" width="13" height="11" rx="2.5" />
-      <line x1={divider} y1="2.5" x2={divider} y2="13.5" />
+      <line x1="6" y1="2.5" x2="6" y2="13.5" />
     </svg>
   )
 }
@@ -252,11 +246,6 @@ export function AppFrame({
   colsRef.current = cols
   const rightbarWidth = useRef(normal.rightbar)
   rightbarWidth.current = normal.rightbar
-  // Chrome state only this component knows: the user hid the right rail from
-  // the top bar. Whether the rail is expanded inside that decision stays the
-  // occupant's own recorded fact (layoutInfo.rightbarShown).
-  const [rightbarHidden, setRightbarHidden] = useState(false)
-  const rightbarShown = layoutInfo.rightbarShown && !rightbarHidden
   const drawerOpen = narrow && layoutInfo.narrowExpanded
   const drawerId = useId()
 
@@ -312,11 +301,6 @@ export function AppFrame({
     <MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} />
   ), [usePanelInfo, renderSlot])
   const overlays = useMemo(() => renderSlot('shell.overlay', {}), [renderSlot])
-  // The top bar's seats hold their own subscriptions; memoizing here keeps an
-  // unrelated frame re-render (a panel switch, a drag) from re-dispatching them.
-  const topbarBrand = useMemo(() => renderSlot('shell.topbar.brand', {}), [renderSlot])
-  const topbarCenter = useMemo(() => renderSlot('shell.topbar.center', {}), [renderSlot])
-  const topbarActions = useMemo(() => renderSlot('shell.topbar.actions', {}), [renderSlot])
 
   return (
     <div
@@ -339,44 +323,26 @@ export function AppFrame({
         useSessions={useSessions}
         usePanelInfo={usePanelInfo}
       />
-      <header className={css.topbar} data-shell-topbar aria-label={t('topbar.label')}>
-        <div className={css.railToggles}>
-          {/* Each toggle appears only while its rail has an occupant; the
-              layout store backs the left one in both regimes (wide column
-              collapse, narrow drawer override). */}
-          {rails.sidebar && (
-            <button
-              ref={leftToggleRef}
-              type="button"
-              className={css.railToggle}
-              aria-label={sidebarCollapsed ? t('rail.left.open') : t('rail.left.close')}
-              aria-expanded={!sidebarCollapsed}
-              aria-controls={drawerId}
-              onClick={() => { actions.toggleSidebar() }}
-            >
-              <RailGlyph side="left" />
-            </button>
-          )}
-          {rails.rightbar && (
-            <button
-              type="button"
-              className={css.railToggle}
-              aria-label={rightbarShown ? t('rail.right.close') : t('rail.right.open')}
-              aria-expanded={rightbarShown}
-              onClick={() => { setRightbarHidden(shown => !shown) }}
-            >
-              <RailGlyph side="right" />
-            </button>
-          )}
-        </div>
-        {/* Brand artwork belongs to the package that registers here; an
-            unoccupied seat renders nothing and spends no space. */}
-        <div className={css.brand}>{topbarBrand}</div>
-        {/* The shell's search/command trigger: no fallback, so an unwired
-            centre stays empty instead of showing a dead control. */}
-        <div className={css.center}>{topbarCenter}</div>
-        <div className={css.actions}>{topbarActions}</div>
-      </header>
+      {/* The only frame-level chrome: below the tablet breakpoint the left rail
+          is off-canvas, so one floating toggle opens it. It sits in the
+          top-start corner over the canvas and is present only while the drawer
+          is closed; the expanded sidebar's own collapse control, the scrim, and
+          Escape close what it opens. This is a single control, not a bar: no
+          strip spans the frame and no seat waits to be filled. */}
+      {!inFlow && rails.sidebar && !drawerOpen && (
+        <button
+          ref={leftToggleRef}
+          type="button"
+          className={css.drawerToggle}
+          data-shell-drawer-toggle
+          aria-label={t('rail.left.open')}
+          aria-expanded={drawerOpen}
+          aria-controls={drawerId}
+          onClick={() => { actions.toggleSidebar() }}
+        >
+          <RailGlyph />
+        </button>
+      )}
       <div
         ref={drawerRef}
         id={drawerId}
@@ -390,7 +356,7 @@ export function AppFrame({
       <>
         <CenterColumn>{main}</CenterColumn>
         <RightbarColumn>
-          {!rightbarHidden && renderSlot('rightbar', {
+          {renderSlot('rightbar', {
             width: inFlow ? normal.rightbar : clampWidth(rightbarPreference, RIGHTBAR_MIN, viewport),
             viewportWidth: viewport,
             canShow: inFlow ? normal.rightbar > 0 : true,

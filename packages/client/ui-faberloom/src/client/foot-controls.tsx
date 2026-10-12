@@ -17,6 +17,7 @@ import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-sto
 import { Menu, Tooltip, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { FaberloomKey } from './locales.ts'
+import { languageFlag } from './flags.tsx'
 import css from './foot-controls.module.css'
 
 /** Theme facts the palette menu renders. */
@@ -198,7 +199,7 @@ export function ThemeMenu({ wide, t, setTheme, useStore }: ThemeMenuProps) {
       }}
       onClose={() => { setOpen(false) }}
       anchor={(
-        <Tooltip label={t('theme.menu')} delayMs={500} disabled={wide}>
+        <Tooltip label={t('theme.menu')} side="top" delayMs={500} disabled={wide}>
           <button
             type="button"
             className={wide ? css.control : `${css.control} ${css.rail}`}
@@ -234,7 +235,7 @@ export function LanguageMenu({ wide, t, setLocale, useStore }: LanguageMenuProps
       open={open}
       side="top"
       autoFocus
-      items={state.locales.map(locale => ({ id: locale.id, label: locale.label }))}
+      items={state.locales.map(locale => ({ id: locale.id, label: locale.label, icon: languageFlag(locale.id) }))}
       selectedId={state.id}
       onSelect={(id) => {
         setOpen(false)
@@ -242,7 +243,7 @@ export function LanguageMenu({ wide, t, setLocale, useStore }: LanguageMenuProps
       }}
       onClose={() => { setOpen(false) }}
       anchor={(
-        <Tooltip label={t('language.menu')} delayMs={500} disabled={wide}>
+        <Tooltip label={t('language.menu')} side="top" delayMs={500} disabled={wide}>
           <button
             type="button"
             className={wide ? css.control : `${css.control} ${css.rail}`}

@@ -51,7 +51,9 @@ kind: "package-reference"
 
 ### 样式表
 
-`src/styles/` 下有六张样式表，由 ui-theme 的动态客户端 entry 依次导入：`base.css`、`corner-shape.css`、`design-platform.css`、`scrollbar.css`、`gradient-shadow-text.css` 与 `shiki.css`。客户端 bundle 将其编译并注入为插件持有的全局样式，因此卸载与 HMR（热模块替换）会随 ui-theme 一同移除。`scrollbar.css` 是 `--dsw-alias-scrollbar-*` token 的唯一消费方，必须排在声明这些 token 的 `design-platform.css` 之后。
+`src/styles/` 下有八张样式表，由 ui-theme 的动态客户端 entry 依次导入：`fonts.css`、`base.css`、`app-type-scale.css`、`corner-shape.css`、`design-platform.css`、`scrollbar.css`、`gradient-shadow-text.css` 与 `shiki.css`。客户端 bundle 将其编译并注入为插件持有的全局样式，因此卸载与 HMR（热模块替换）会随 ui-theme 一同移除。`scrollbar.css` 是 `--dsw-alias-scrollbar-*` token 的唯一消费方，必须排在声明这些 token 的 `design-platform.css` 之后。
+
+`app-type-scale.css` 把品牌的 app 字号阶发布为共享界面角色（app 标题、屏幕标题、面板标签、UI 正文、控件、说明文字、overline、数据），每个角色是一个复合 `--dsw-font-<role>` 简写加上 `-font-family`、`-font-weight`、`-font-size`、`-line-height` 与 `-font-style` 伴生变量。字号阶属于排版而非调色板，因此在每套主题中都相同：这些 token 只声明在 `:root` 上，没有任何调色板区块覆盖它们。它逐字转录自品牌排版页（「03 · APP」小节）；`--dsh-content-font-size` 仍是用户可自行调节的会话正文字号，不受影响。
 
 `corner-shape.css` 平滑所有圆角：在 `@supports (corner-shape: superellipse(1.5))` 内定义 `--dsw-corner-shape`，并通过通配选择器应用到所有元素及其 `::before`/`::after`，因此不支持 `corner-shape` 的引擎保持普通圆弧。正圆形状——`border-radius: 50%` 的圆与胶囊半径——因超级椭圆会使其变形，须在所属组件样式表中把 `corner-shape: round` 与半径声明配对；corner-shape 样式表 spec 跨全部包样式表强制这一配对。
 

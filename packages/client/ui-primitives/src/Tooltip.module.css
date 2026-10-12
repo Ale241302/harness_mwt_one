@@ -6,12 +6,13 @@
      max-content sizes by the label alone, capped at half the viewport. */
   width: max-content;
   max-width: 50vw;
-  padding: 3px 7px;
-  border-radius: 8px;
+  /* Caption chrome from the app type scale: the bubble is the smallest
+     interface text, so it never renders as a slab over the surface. */
+  padding: 4px 8px;
+  border-radius: 6px;
   background: var(--dsw-alias-tooltip-bg);
   color: var(--dsw-static-neutral-bluish-00);
-  font-size: 13px;
-  line-height: 20px;
+  font: var(--dsw-font-caption);
   white-space: pre-line;
   /* Unbreakable tokens (URLs, paths) must not push past max-width. */
   overflow-wrap: break-word;

@@ -77,3 +77,51 @@ describe('built-in palettes', () => {
     expect(isThemePreference('')).toBe(false)
   })
 })
+
+/**
+ * The two-tone wordmark reads its halves from aliases the palettes own:
+ * BrandWordmark paints "Faber" with the coral alias and "Loom" with the label
+ * alias. These assertions keep a later palette edit from collapsing either
+ * half: Faber stays coral and distinct in every palette, and Loom flexes to a
+ * light colour on every dark palette (its cream on the warm-dark ground) and to
+ * the ground ink on every light one.
+ */
+describe('wordmark halves across the built-in palettes', () => {
+  const CORAL_ALIAS = '--dsw-alias-brand-primary-new-colorprimary-new-color'
+  const LOOM_ALIAS = '--dsw-alias-label-primary'
+
+  /** A palette colour as its three 0-255 channels. */
+  const rgb = (hex: string): [r: number, g: number, b: number] => [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ]
+
+  it('paints Faber coral in every palette, never the Loom ink', () => {
+    for (const entry of THEME_PALETTES) {
+      const coral = entry.tokens[CORAL_ALIAS] ?? ''
+      expect(coral, entry.id).toMatch(/^#[0-9A-Fa-f]{6}$/u)
+      const [red, green, blue] = rgb(coral)
+      expect(red, `${entry.id} coral: red leads green`).toBeGreaterThan(green)
+      expect(green, `${entry.id} coral: green leads blue`).toBeGreaterThan(blue)
+      expect(red - blue, `${entry.id} coral: warm separation`).toBeGreaterThanOrEqual(100)
+      // The coral half is the same accent the rest of the UI actions use.
+      expect(coral, entry.id).toBe(entry.tokens['--dsw-alias-brand-primary'])
+      expect(entry.tokens[LOOM_ALIAS], `${entry.id} coral and loom differ`).not.toBe(coral)
+    }
+  })
+
+  it('flexes Loom to a light colour on every dark palette', () => {
+    for (const entry of THEME_PALETTES.filter(candidate => candidate.colorScheme === 'dark')) {
+      const [red, green, blue] = rgb(entry.tokens[LOOM_ALIAS] ?? '')
+      expect(Math.min(red, green, blue), `${entry.id} Loom is light`).toBeGreaterThanOrEqual(200)
+    }
+  })
+
+  it('keeps Loom as the ground ink on every light palette', () => {
+    for (const entry of THEME_PALETTES.filter(candidate => candidate.colorScheme === 'light')) {
+      const [red, green, blue] = rgb(entry.tokens[LOOM_ALIAS] ?? '')
+      expect(Math.max(red, green, blue), `${entry.id} Loom is dark ink`).toBeLessThanOrEqual(60)
+    }
+  })
+})

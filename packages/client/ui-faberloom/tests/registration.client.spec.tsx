@@ -286,9 +286,24 @@ describe('faberloom surface', () => {
       'faberloom-connections',
       'faberloom-email',
     ])
-    expect(view.getByText('Faberloom')).toBeTruthy()
+    expect(view.getByText('Faber').style.color).toBe('var(--dsw-alias-brand-primary-new-colorprimary-new-color)')
+    expect(view.getByText('Loom').style.color).toBe('var(--dsw-alias-label-primary)')
     expect(view.getByRole('heading', { name: 'What do you want to solve today?' })).toBeTruthy()
     await surface.dispose()
+  })
+
+  it('renders the two-tone wordmark: coral on "Faber", the ground ink on "Loom"', async () => {
+    const { view } = await bench()
+    const faber = view.getByText('Faber')
+    const loom = view.getByText('Loom')
+    // The first half keeps the coral alias; the second takes the label alias,
+    // which resolves to ink on the light palettes and cream on the dark ones.
+    // A palette edit can never collapse the wordmark back to a single ink.
+    expect(faber.style.color).toBe('var(--dsw-alias-brand-primary-new-colorprimary-new-color)')
+    expect(loom.style.color).toBe('var(--dsw-alias-label-primary)')
+    // The two halves are one lockup, rendered in the sidebar brand slot.
+    expect(faber.parentElement).toBe(loom.parentElement)
+    expect(faber.closest('header')).not.toBeNull()
   })
 
   it('labels each sidebar row with its mode, group, and live overview badge', async () => {

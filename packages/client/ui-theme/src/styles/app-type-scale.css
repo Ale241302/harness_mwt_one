@@ -1,0 +1,108 @@
+/* The app type scale: the interface roles the brand typography sheet fixes for
+ * the product (FaberLoom Typography.dc.html, section "03 · APP"). Consumers
+ * name a role, never a pixel value: a screen title reads
+ * --dsw-font-screen-title, a caption --dsw-font-caption. The full role set is
+ * declared once here so ui-layout, ui-sidebar, ui-faberloom and every other
+ * surface share one definition instead of repeating magic numbers.
+ *
+ * The scale is typography, not palette, so it is identical in every theme: the
+ * tokens live on :root alone and no palette block overrides one. The composite
+ * families resolve against --dsw-font-family, --ds-font-family-code and
+ * --dsw-font-family-serif from base.css.
+ *
+ * Roles, verbatim from that document:
+ *   app / product title  Garamond Italic 500   28 / 31px   titles only
+ *   screen title         Geist SemiBold 600    20 / 25px   LH 1.25
+ *   panel / group label  Geist SemiBold 600    15 / 20px
+ *   UI body              Geist Regular 400     14 / 21px   LH 1.5
+ *   button / control     Geist Medium 500      14px        >=44px hit target
+ *   caption / helper     Geist Regular 400     12 / 17px   colour text-2
+ *   overline / status    Geist Mono 400        UPPER 11px  letter-spacing 0.12em
+ *   data / audit trail   Geist Mono 400/500    12.5 / 19px tabular figures
+ *
+ * The rules the scale encodes: never below 12px in the interface, with the mono
+ * overline the one role the document sets at 11px; never set body copy or a
+ * control in the serif, which is italic only; reserve tracking for mono caps,
+ * so no lowercase Geist token carries letter-spacing. The user's own
+ * adjustable body size (--dsh-content-font-size) is a conversation-content
+ * control and stays untouched. */
+:root {
+  /* App / product title, Garamond Italic 500. Titles only. */
+  --dsw-font-app-title: italic 500 28px/31px var(--dsw-font-family-serif);
+  --dsw-font-app-title-font-family: var(--dsw-font-family-serif);
+  --dsw-font-app-title-font-weight: 500;
+  --dsw-font-app-title-font-size: 28px;
+  --dsw-font-app-title-line-height: 31px;
+  --dsw-font-app-title-font-style: italic;
+
+  /* Screen title, Geist SemiBold 600. */
+  --dsw-font-screen-title: 600 20px/25px var(--dsw-font-family);
+  --dsw-font-screen-title-font-family: var(--dsw-font-family);
+  --dsw-font-screen-title-font-weight: 600;
+  --dsw-font-screen-title-font-size: 20px;
+  --dsw-font-screen-title-line-height: 25px;
+  --dsw-font-screen-title-font-style: normal;
+
+  /* Panel / group label, Geist SemiBold 600. */
+  --dsw-font-panel-label: 600 15px/20px var(--dsw-font-family);
+  --dsw-font-panel-label-font-family: var(--dsw-font-family);
+  --dsw-font-panel-label-font-weight: 600;
+  --dsw-font-panel-label-font-size: 15px;
+  --dsw-font-panel-label-line-height: 20px;
+  --dsw-font-panel-label-font-style: normal;
+
+  /* UI body, Geist Regular 400: list rows, descriptions, form values, menu items. */
+  --dsw-font-ui-body: 400 14px/21px var(--dsw-font-family);
+  --dsw-font-ui-body-font-family: var(--dsw-font-family);
+  --dsw-font-ui-body-font-weight: 400;
+  --dsw-font-ui-body-font-size: 14px;
+  --dsw-font-ui-body-line-height: 21px;
+  --dsw-font-ui-body-font-style: normal;
+
+  /* Button / control, Geist Medium 500. The hit target is the role's minimum
+     interactive box, independent of the label it holds. */
+  --dsw-font-control: 500 14px/1 var(--dsw-font-family);
+  --dsw-font-control-font-family: var(--dsw-font-family);
+  --dsw-font-control-font-weight: 500;
+  --dsw-font-control-font-size: 14px;
+  --dsw-font-control-line-height: 1;
+  --dsw-font-control-font-style: normal;
+  --dsw-control-hit-target: 44px;
+
+  /* Caption / helper, Geist Regular 400: the smallest interface text allowed.
+     Pair it with colour text-2 at the render site. */
+  --dsw-font-caption: 400 12px/17px var(--dsw-font-family);
+  --dsw-font-caption-font-family: var(--dsw-font-family);
+  --dsw-font-caption-font-weight: 400;
+  --dsw-font-caption-font-size: 12px;
+  --dsw-font-caption-line-height: 17px;
+  --dsw-font-caption-font-style: normal;
+
+  /* Overline / status tag, Geist Mono 400: uppercase, tracked. */
+  --dsw-font-overline: 400 11px/14px var(--ds-font-family-code);
+  --dsw-font-overline-font-family: var(--ds-font-family-code);
+  --dsw-font-overline-font-weight: 400;
+  --dsw-font-overline-font-size: 11px;
+  --dsw-font-overline-line-height: 14px;
+  --dsw-font-overline-font-style: normal;
+  --dsw-font-overline-letter-spacing: 0.12em;
+  --dsw-font-overline-text-transform: uppercase;
+
+  /* Data / audit trail, Geist Mono 400 with a 500 emphasis variant: tabular
+     figures keep columns of numbers aligned. */
+  --dsw-font-data: 400 12.5px/19px var(--ds-font-family-code);
+  --dsw-font-data-font-family: var(--ds-font-family-code);
+  --dsw-font-data-font-weight: 400;
+  --dsw-font-data-font-size: 12.5px;
+  --dsw-font-data-line-height: 19px;
+  --dsw-font-data-font-style: normal;
+  --dsw-font-data-font-variant-numeric: tabular-nums;
+
+  --dsw-font-data-strong: 500 12.5px/19px var(--ds-font-family-code);
+  --dsw-font-data-strong-font-family: var(--ds-font-family-code);
+  --dsw-font-data-strong-font-weight: 500;
+  --dsw-font-data-strong-font-size: 12.5px;
+  --dsw-font-data-strong-line-height: 19px;
+  --dsw-font-data-strong-font-style: normal;
+  --dsw-font-data-strong-font-variant-numeric: tabular-nums;
+}

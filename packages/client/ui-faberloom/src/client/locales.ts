@@ -9,7 +9,6 @@
  */
 
 export const es = {
-  'brand.name': 'Faberloom',
   'nav.conversar': 'Conversar',
   'nav.board': 'Mesa de trabajo',
   'nav.executions': 'Ejecución',
@@ -791,7 +790,6 @@ export type FaberloomKey = keyof typeof es
  * Chinese reader sees translated copy rather than Spanish in disguise.
  */
 export const en: Record<FaberloomKey, string> = {
-  'brand.name': 'Faberloom',
   'nav.conversar': 'Chat',
   'nav.board': 'Mesa de trabajo',
   'nav.executions': 'Runs',
@@ -1566,7 +1564,6 @@ export const en: Record<FaberloomKey, string> = {
 
 /** Simplified Chinese dictionary; a real translation of the same key set. */
 export const zh: Record<FaberloomKey, string> = {
-  'brand.name': 'Faberloom',
   'nav.conversar': '对话',
   'nav.board': '工作台',
   'nav.executions': '运行',

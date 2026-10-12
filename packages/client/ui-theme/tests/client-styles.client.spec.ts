@@ -22,6 +22,7 @@ describe('ui-theme client styles', () => {
     expect(styles.map(style => style.dataset.pluginCss)).toEqual([
       `${PLUGIN_ID}/fonts.css`,
       `${PLUGIN_ID}/base.css`,
+      `${PLUGIN_ID}/app-type-scale.css`,
       `${PLUGIN_ID}/corner-shape.css`,
       `${PLUGIN_ID}/design-platform.css`,
       `${PLUGIN_ID}/scrollbar.css`,

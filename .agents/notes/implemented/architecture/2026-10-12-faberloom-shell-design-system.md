@@ -1,4 +1,4 @@
-# Agent Note: Adopt the FaberLoom shell — five palettes, grouped navigation, top bar, and responsive rails
+# Agent Note: Adopt the FaberLoom shell with five palettes, grouped navigation, and responsive rails
 
 Status: implemented
 
@@ -20,7 +20,7 @@ The signed-in client shipped one light and one dark theme behind a single toggle
 
 **Navigation groups into modes and accordions.** `sidebar.panellist` gains three optional list options — `mode`, `group`, `badge` — resolved per projection like `label`. `packages/client/ui-slots` carries them verbatim on the stored entry, `packages/client/ui-sidebar` projects them into its panel metadata, and `packages/client/ui-faberloom` declares them for its sections (Operar / Aprender / Admin, with a thematic group per area and a badge only where the live overview holds a real number). The sidebar renders a mode bar when more than one mode exists, an accordion per group with its row count, and keeps a flat list unchanged when no row declares a mode or group.
 
-**The frame owns a top bar and the responsive regimes.** `packages/client/ui-layout` renders a 54px top bar above the columns with a brand seat, a centre seat, and an actions seat (all three declared there, none with fallback), plus the rail toggles. Below 1024px the left column leaves the flow as an off-canvas drawer with a scrim, Escape-to-close and focus return, and the right rail hangs over the canvas instead of reserving a track; below 768px the canvas is the page. The regime comes from the frame's measured width, so a floating or split window lands in it without a device signal.
+**The frame owns the responsive regimes.** `packages/client/ui-layout` renders one grid row: the three columns with no chrome bar above them, and one frame-level control. That control is the drawer toggle, a single 44px button pinned to the top-start corner over the canvas, rendered only below the tablet breakpoint while the sidebar is off-canvas and the drawer is closed, carrying `aria-expanded` and `aria-controls`, with focus returned to it when the drawer closes. The right rail keeps its expand control in the conversation header. Below 1024px the left column leaves the flow as an off-canvas drawer with a scrim, Escape-to-close and focus return, and the right rail hangs over the canvas instead of reserving a track; below 768px the canvas is the page. The regime comes from the frame's measured width, so a floating or split window lands in it without a device signal.
 
 ## Alternatives considered
 
@@ -42,7 +42,7 @@ The signed-in client shipped one light and one dark theme behind a single toggle
 
 ## Consequences
 
-Navigation now scales: a row is placed by its declarer, grouped without the sidebar knowing what a group means, and a section with no grouping metadata renders exactly as before — the three options are optional, and the flat list keeps its own snapshot. The top bar's three seats are empty until something registers into them, which is deliberate: no dead search box ships with the frame. The palette menu lists what the registry holds, so a theme package added later appears without touching the menu, and its swatch comes from the theme's own tokens.
+Navigation now scales: a row is placed by its declarer, grouped without the sidebar knowing what a group means, and a section with no grouping metadata renders exactly as before — the three options are optional, and the flat list keeps its own snapshot. The product's owner asked for the empty strip to go, so the `shell.topbar.brand`, `shell.topbar.center`, and `shell.topbar.actions` seats were removed with their CSS rather than left declared, and the frame carries no chrome bar. The palette menu lists what the registry holds, so a theme package added later appears without touching the menu, and its swatch comes from the theme's own tokens.
 
 Two limits are accepted. The Settings Appearance row still offers the default pair plus `system` — the five palettes are reachable from the foot menu, and folding the row into a palette list is its own change. And the slot catalog's list options are curated text, so adding the three members to `ctx.slots.register` also updated `scripts/gen-client-catalog.ts` and its spec in the same change; a future list option must do the same.
 

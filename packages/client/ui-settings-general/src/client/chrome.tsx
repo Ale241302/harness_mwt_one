@@ -6,7 +6,6 @@
  */
 import { FlIconSettings } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import css from './chrome.module.css'
 
 /** Trigger content props: the sidebar column state + the standard locale seat. */
 export type TriggerContentProps = PropsRuntime<'settings.trigger'> & PropsLocale<'settings'>
@@ -15,17 +14,15 @@ export type TriggerContentProps = PropsRuntime<'settings.trigger'> & PropsLocale
 export type HeaderContentProps = PropsRuntime<'settings.header'> & PropsLocale<'settings'>
 
 /**
- * Render the trigger row content (icon; label only in the wide column).
+ * Render the trigger row content: the settings icon alone. The shell's button
+ * carries the accessible name, and the label is deliberately absent from the
+ * foot row because three controls share it and the text was the first thing to
+ * be clipped; the shell names the button on hover instead.
  * @param props - composed slot props.
  * @returns the trigger content fragment.
  */
-export function TriggerContent({ wide, t }: TriggerContentProps) {
-  return (
-    <>
-      <FlIconSettings size={wide ? 16 : 18} />
-      {wide && <span className={css.triggerLabel}>{t('trigger')}</span>}
-    </>
-  )
+export function TriggerContent({ wide }: TriggerContentProps) {
+  return <FlIconSettings size={wide ? 16 : 18} />
 }
 
 /**

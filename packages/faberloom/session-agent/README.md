@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The session composition service (`ctx.faberloomSessionAgent`) makes a Space session run as the Space's responsible agent. When a session's working directory is a registered workspace mirrored by a Space, the service installs, for that session alone, the agent's persona (shadowing the deployment persona), the agent's tool mask for the sources it may not use, and a directive naming its skills, and it publishes the agent's model route — its provider, model, and the reference naming its API key. A session outside a Space, or a Space without a responsible agent, is left on the deployment composition. The composition happens in the awaited `agent/created` window, before the first turn.
+The session composition service (`ctx.faberloomSessionAgent`) runs a Space session as its responsible agent. When a session's working directory is a registered workspace mirrored by a Space, the service installs for that session alone the agent's persona (shadowing the deployment persona), its tool mask for the sources it may not use, and a directive naming its skills, and it publishes the agent's route: provider, model, and the reference naming its API key. A session outside a Space, or a Space with no agent, keeps the deployment composition. Composition runs in the awaited `agent/created` window, before the first turn.
 
 ## Table of Contents
 
