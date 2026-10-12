@@ -100,6 +100,41 @@ export function isQuotaExceededError(detail: string): boolean {
 }
 
 /**
+ * Resolve the account-level failure code one provider HTTP response reports,
+ * if any, before the transport status alone decides.
+ *
+ * Two account-level outcomes stay distinguishable because the user's fix
+ * differs: a rejected credential (`AUTH` — correct or replace the key) and an
+ * exhausted balance or quota (`QUOTA` — top up or raise the limit). Anything
+ * else returns `undefined`, leaving a transient `RATE_LIMIT` or a status-only
+ * mapping to the caller. HTTP 401 is always a rejected credential; HTTP 402
+ * and any status whose body carries quota, balance, credit, or usage-limit
+ * wording are an exhausted account, so a billing body on 403 or 429 is not
+ * mistaken for a permissions or throttling failure. No credential value is
+ * read here or anywhere in this classification.
+ * @param status - provider HTTP status, when the failure had one.
+ * @param detail - provider error code, type, and message text joined into one string.
+ * @returns the account-level failure code, or `undefined` when the status alone decides.
+ */
+export function providerAccountFailureCode(status: number | undefined, detail: string): string | undefined {
+  if (status === 401) return 'AUTH'
+  if (status === 402 || isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
+  return undefined
+}
+
+/**
+ * Name the provider route in one provider failure message, so a user acting on
+ * a credential or billing failure knows which account to fix. Only the route
+ * id is appended; no credential value is ever part of a failure message.
+ * @param provider - registered provider route the call selected.
+ * @param message - provider-supplied or adapter-built failure text.
+ * @returns the message with the provider route appended.
+ */
+export function providerFailureMessage(provider: string, message: string): string {
+  return `${message} (provider "${provider}")`
+}
+
+/**
  * Render a thrown value with its full `cause` chain and AggregateError
  * members, so transport wrappers like undici's `TypeError: fetch failed`
  * surface the underlying failure instead of masking it. Plain structured

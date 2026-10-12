@@ -7,7 +7,7 @@
  * @module @deepseek-ai/dsh-tool-faberloom/src/plane
  */
 
-import type { AgentPlane } from '@deepseek-ai/dsh-faberloom-agent-plane'
+import type { AgentPlane, AgentCredentialRef } from '@deepseek-ai/dsh-faberloom-agent-plane'
 import type { SubagentProvider, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 
@@ -15,7 +15,7 @@ import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 interface PlaneStartFields {
   toolFilter?: ToolRestriction
   persona?: string
-  agentOptions?: { provider: string; model: string }
+  agentOptions?: { provider: string; model: string; credentialRef?: AgentCredentialRef }
 }
 
 /** One Space as the caller-identity chain reads it. */
@@ -64,7 +64,9 @@ export { toolSourcesOf } from '@deepseek-ai/dsh-faberloom-agent-plane'
  * persona, and its model route. The persona and model route are applied only
  * when the chosen provider advertises the matching capability; the tool mask
  * is mandatory, so a provider that cannot enforce it fails loud instead of
- * silently widening the child's plane.
+ * silently widening the child's plane. A keyed agent also contributes its
+ * credential reference, so the consulted call authenticates on that agent's own
+ * account; an unkeyed agent contributes the route alone.
  * @param plane - the agent's resolved plane.
  * @param capabilities - the chosen provider's advertised capabilities.
  * @returns the fields to spread into the subagent start request.
@@ -83,7 +85,11 @@ export function planeStartFields(
   }
   if (capabilities.persona && plane.persona.length > 0) fields.persona = plane.persona
   if (capabilities.agentOptions && plane.provider !== undefined && plane.model !== undefined) {
-    fields.agentOptions = { provider: plane.provider, model: plane.model }
+    fields.agentOptions = {
+      provider: plane.provider,
+      model: plane.model,
+      ...plane.credentialRef === undefined ? {} : { credentialRef: plane.credentialRef },
+    }
   }
   return fields
 }

@@ -914,7 +914,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'resolve(agent: FaberLoomAgent, sources: AgentToolSources): AgentPlane',
         description: 'Resolve one catalog agent\'s enforced plane. A source the agent may not use denies exactly the registered tool names that source publishes; a source the agent may use, or a source with no registered names, contributes no mask. The mask is omitted entirely when nothing is denied, so a caller never passes an empty-restriction no-op.',
         parameters: [{ name: 'agent', description: 'the catalog agent whose capabilities are enforced.' }, { name: 'sources', description: 'the registered tool names grouped by source.' }],
-        returns: 'the agent\'s persona, tool mask, model route, and skills.',
+        returns: 'the agent\'s persona, tool mask, model route, key reference, and skills.',
       },
       {
         signature: 'allowsSubagent(agent: FaberLoomAgent, targetAgentId: string): boolean',
@@ -1040,13 +1040,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async updateAgent(id: FaberLoomAgentId, patch: AgentPatch): Promise<FaberLoomAgent>',
-        description: 'Apply a patch to one agent, bumping its version.',
+        description: 'Apply a patch to one agent, bumping its version. A key the patch omits stays as it was; `null` or an empty string clears it.',
         parameters: [{ name: 'id', description: 'agent id.' }, { name: 'patch', description: 'fields to change.' }],
         returns: 'the updated agent.',
       },
       {
         signature: 'async duplicateAgent(id: FaberLoomAgentId, input: DuplicateInput): Promise<FaberLoomAgent>',
-        description: 'Duplicate one agent: copies configuration and explicitly selected lessons, never the source\'s evidence (confidence is not transferred).',
+        description: 'Duplicate one agent: copies configuration and explicitly selected lessons, never the source\'s evidence (confidence is not transferred) and never its key — a credential is not readable, so the copy starts without one.',
         parameters: [{ name: 'id', description: 'source agent id.' }, { name: 'input', description: 'name, optional space, and selected lessons for the copy.' }],
         returns: 'the created duplicate.',
       },
@@ -1621,6 +1621,38 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomModelCatalog',
+    summary: 'The model catalog service, published as `ctx.faberloomModelCatalog`.',
+    description: 'The model catalog service, published as `ctx.faberloomModelCatalog`.\n\nEvery call resolves its credential reference through the credentials seam, or through the launch environment while no seam is mounted, so a changed reference reaches the next call with no restart. No method caches a credential value.',
+    methods: [
+      {
+        signature: 'providers(): readonly ProviderDescriptor[]',
+        description: 'The fixed provider protocol table.',
+        parameters: [],
+        returns: 'the frozen table, in the order the plugin declares it.',
+      },
+      {
+        signature: 'discover(providerId: string, credentialRef: CredentialRef): Promise<DiscoveredModel[]>',
+        description: 'Ask one provider which models it currently serves, authenticating with the named credential reference.',
+        parameters: [{ name: 'providerId', description: 'the provider id to reach.' }, { name: 'credentialRef', description: 'the reference resolved through `ctx.credentials`, or the launch environment.' }],
+        returns: 'the normalized models, and records them as this provider\'s cached snapshot.',
+        throws: ['LlmError `UNSUPPORTED_PROVIDER` for an unknown id, the credential error `resolveCredential` raises, `TRANSPORT` when the request never completed, and the probe failure codes when the provider rejected the request.'],
+      },
+      {
+        signature: 'probe(providerId: string, credentialRef: CredentialRef): Promise<ProviderProbe>',
+        description: 'Probe whether one credential reference authenticates against a provider, with a single attempt and a bounded timeout.',
+        parameters: [{ name: 'providerId', description: 'the provider id to probe.' }, { name: 'credentialRef', description: 'the reference resolved through `ctx.credentials`, or the launch environment.' }],
+        returns: 'the verdict, the HTTP status, a safe detail, and the served models on success.',
+      },
+      {
+        signature: 'models(): readonly ModelCatalogSnapshot[]',
+        description: 'Read the cached last discovery per provider, without touching the network.',
+        parameters: [],
+        returns: 'one frozen snapshot per provider discovered so far, ordered by provider id.',
+      },
+    ],
+  },
+  {
     key: 'faberloomRoutines',
     summary: 'The product routines service: versioned definitions, validated activation, persistent executions, dispatcher, effects ledger, sources, and migration.',
     description: 'The product routines service: versioned definitions, validated activation, persistent executions, dispatcher, effects ledger, sources, and migration.',
@@ -1806,7 +1838,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     key: 'faberloomSessionAgent',
     summary: 'The Space session composition service: resolves one session\'s Space agent and installs its persona, tool mask, and skills.',
     description: 'The Space session composition service: resolves one session\'s Space agent and installs its persona, tool mask, and skills.',
-    methods: [],
+    methods: [
+      {
+        signature: 'routeFor(agent: Agent): SessionAgentRoute | undefined',
+        description: 'The model route one session\'s Space agent runs on. It is a complete route only when the agent declares both a provider and a model and stores an API key; otherwise the value is `undefined`, so an unrouted or unkeyed agent leaves the session on the deployment default. A session controller reads this through `ctx.get(\'faberloomSessionAgent\')` and applies it as the session\'s default, below any explicit selection of its own.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }],
+        returns: 'the agent\'s route, or `undefined`.',
+      },
+    ],
   },
   {
     key: 'faberloomSessionShares',
@@ -6125,6 +6164,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentConsultationInput {\n    readonly spaceId: string;\n    readonly callerSessionId: string;\n    readonly childSessionId: string;\n    readonly label: string;\n}',
   },
   {
+    name: 'AgentCredentialRef',
+    declaration: 'export type AgentCredentialRef = ReturnType<typeof agentCredentialRef>;',
+  },
+  {
     name: 'AgentEscalationInput',
     declaration: 'export interface AgentEscalationInput {\n    readonly authorized: readonly string[];\n    readonly conditions: readonly string[];\n    readonly mode: string;\n}',
   },
@@ -6142,7 +6185,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentOptions',
-    declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    reasoningEffort?: ReasoningEffortId;\n    maxTokens?: number;\n}',
+    declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    credentialRef?: LlmCallConfig[\'credentialRef\'];\n    reasoningEffort?: ReasoningEffortId;\n    maxTokens?: number;\n}',
   },
   {
     name: 'AgentPatch',
@@ -6150,7 +6193,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPlane',
-    declaration: 'export interface AgentPlane {\n    readonly persona: string;\n    readonly toolFilter: ToolRestriction | undefined;\n    readonly provider: string | undefined;\n    readonly model: string | undefined;\n    readonly skills: readonly string[];\n}',
+    declaration: 'export interface AgentPlane {\n    readonly persona: string;\n    readonly toolFilter: ToolRestriction | undefined;\n    readonly provider: string | undefined;\n    readonly model: string | undefined;\n    readonly credentialRef: AgentCredentialRef | undefined;\n    readonly skills: readonly string[];\n}',
   },
   {
     name: 'AgentPreset',
@@ -6739,6 +6782,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DirectoryRegistrationHandle',
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
+  },
+  {
+    name: 'DiscoveredModel',
+    declaration: 'export interface DiscoveredModel {\n    readonly id: string;\n    readonly name?: string;\n    readonly contextWindow?: number;\n    readonly maxOutputTokens?: number;\n    readonly inputModalities?: readonly string[];\n    readonly outputModalities?: readonly string[];\n    readonly effortLevels?: readonly string[];\n}',
   },
   {
     name: 'DispatchReport',
@@ -7502,7 +7549,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'GenerateOptions',
-    declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    messages: Message[];\n    system?: string;\n    tools?: ToolSchema[];\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\';\n}',
+    declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    credentialRef?: CredentialRef;\n    reasoningEffort?: ReasoningEffortId;\n    messages: Message[];\n    system?: string;\n    tools?: ToolSchema[];\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\';\n}',
   },
   {
     name: 'GenericCallView',
@@ -7770,7 +7817,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmCallConfig',
-    declaration: 'export interface LlmCallConfig {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n}',
+    declaration: 'export interface LlmCallConfig {\n    provider: string;\n    model: string;\n    credentialRef?: CredentialRef;\n    reasoningEffort?: ReasoningEffortId;\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n}',
   },
   {
     name: 'LlmCallConfigAdapterDefaults',
@@ -7993,6 +8040,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n}',
   },
   {
+    name: 'ModelCatalogSnapshot',
+    declaration: 'export interface ModelCatalogSnapshot {\n    readonly providerId: string;\n    readonly at: number;\n    readonly models: readonly DiscoveredModel[];\n}',
+  },
+  {
     name: 'ModelInput',
     declaration: 'export interface ModelInput {\n    readonly provider: string;\n    readonly model: string;\n    readonly capabilities?: readonly string[];\n    readonly contextWindow?: number;\n    readonly maxOutput?: number;\n    readonly inputPerMillion?: number;\n    readonly outputPerMillion?: number;\n    readonly currency?: string;\n    readonly available?: boolean;\n}',
   },
@@ -8125,6 +8176,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n    info?: ToolErrorInfo;\n} | {\n    kind: \'cancel\';\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
   },
   {
+    name: 'ProbeKind',
+    declaration: 'export type ProbeKind = \'ok\' | \'invalid-credential\' | \'quota-exhausted\' | \'unreachable\' | \'unsupported\';',
+  },
+  {
     name: 'ProjectionChangeListener',
     declaration: 'export type ProjectionChangeListener = (session: Session, key: Extract<keyof SessionProjectionMap, string>, value: unknown, seq: SessionSeq) => void;',
   },
@@ -8167,6 +8222,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PromptSectionOrderName',
     declaration: 'export type PromptSectionOrderName = keyof typeof SECTION_ORDERS;',
+  },
+  {
+    name: 'ProviderDescriptor',
+    declaration: 'export interface ProviderDescriptor {\n    readonly id: string;\n    readonly label: string;\n    readonly origin: string;\n    readonly protocol: ProviderProtocol;\n    readonly modelsPath: string;\n}',
+  },
+  {
+    name: 'ProviderProbe',
+    declaration: 'export interface ProviderProbe {\n    readonly kind: ProbeKind;\n    readonly status?: number;\n    readonly detail?: string;\n    readonly models?: readonly DiscoveredModel[];\n}',
+  },
+  {
+    name: 'ProviderProtocol',
+    declaration: 'export type ProviderProtocol = \'openai\' | \'messages\' | \'google\';',
   },
   {
     name: 'ProviderRequestId',
@@ -8495,6 +8562,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionAddress',
     declaration: 'export type SessionAddress = {\n    readonly kind: \'session\';\n    readonly sessionId: SessionId;\n} | {\n    readonly kind: \'subagent\';\n    readonly parentSessionId: SessionId;\n    readonly childSessionId: SessionId;\n    readonly mode: \'one-shot\' | \'continuable\';\n};',
+  },
+  {
+    name: 'SessionAgentRoute',
+    declaration: 'export interface SessionAgentRoute {\n    readonly provider: string;\n    readonly model: string;\n    readonly credentialRef: NonNullable<AgentPlane[\'credentialRef\']>;\n}',
   },
   {
     name: 'SessionAssistantStreamAttempt',

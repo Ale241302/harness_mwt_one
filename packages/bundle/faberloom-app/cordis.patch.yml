@@ -28,6 +28,11 @@
     - id: faberloom-knowledge-index
       name: '@deepseek-ai/dsh-faberloom-knowledge-index'
 
+    # Catálogo de modelos dinámico: tabla de proveedores, descubrimiento de
+    # modelos con una credencial nombrada y sonda de credencial/cuota.
+    - id: faberloom-model-catalog
+      name: '@deepseek-ai/dsh-faberloom-model-catalog'
+
     - id: faberloom-board
       name: '@deepseek-ai/dsh-faberloom-board'
 

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The session composition service (`ctx.faberloomSessionAgent`) makes a Space session run as the Space's responsible agent. When a session's working directory is a registered workspace mirrored by a Space, the service installs, for that session alone, the agent's persona (shadowing the deployment persona), the agent's tool mask for the sources it may not use, and a directive naming its skills. A session outside a Space, or a Space without a responsible agent, is left on the deployment composition. The composition happens in the awaited `agent/created` window, before the first turn.
+The session composition service (`ctx.faberloomSessionAgent`) makes a Space session run as the Space's responsible agent. When a session's working directory is a registered workspace mirrored by a Space, the service installs, for that session alone, the agent's persona (shadowing the deployment persona), the agent's tool mask for the sources it may not use, and a directive naming its skills, and it publishes the agent's model route — its provider, model, and the reference naming its API key. A session outside a Space, or a Space without a responsible agent, is left on the deployment composition. The composition happens in the awaited `agent/created` window, before the first turn.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ The session composition service (`ctx.faberloomSessionAgent`) makes a Space sess
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row where `ctx.agents`, `ctx.faberloomSpaces`, `ctx.faberloomAgents`, `ctx.faberloomAgentPlane`, and the workspace registry are present, and set `ownerId`, `role`, `companyId`, and `readOnly` to the acting identity. The service registers `ctx.faberloomSessionAgent`, resolves each session's Space agent from its working directory, and installs the composition on that agent's scope through `agent.ctx.inject`. It applies to agents listed at mount and to every `agent/created`; a composition is disposed with its agent. The model route is not set here: a session resolves its route from its logged header or the deployment default, and the agent's model policy applies when it delegates.
+Mount this row where `ctx.agents`, `ctx.faberloomSpaces`, `ctx.faberloomAgents`, `ctx.faberloomAgentPlane`, and the workspace registry are present, and set `ownerId`, `role`, `companyId`, and `readOnly` to the acting identity. The service registers `ctx.faberloomSessionAgent`, resolves each session's Space agent from its working directory, and installs the composition on that agent's scope through `agent.ctx.inject`. It applies to agents listed at mount and to every `agent/created`; a composition is disposed with its agent. The same service publishes the agent's model route through `routeFor(agent)`: a provider, model, and the credential reference derived from the agent id, present only when the agent declares both a provider and a model and stores an API key. A session controller reads it through `ctx.get('faberloomSessionAgent')`, uses it as the session's default route below any explicit selection, and authenticates that route with the agent's own key rather than the deployment connection.
 
 -----
 
@@ -48,7 +48,7 @@ Prefix-stable for the life of the session: the composition installs once before 
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **The model route is not composed here.** A session's route comes from its logged header or the deployment default, and there is no per-agent creation seam to override it; the agent's model policy is applied when it delegates.
+- **The model route needs a provider, a model, and a key.** An agent missing any of the three publishes no route, so its session keeps the deployment default. The route's credential reference names the agent's key in the credential seam and is derived at request time from the agent id; it never carries the key value, and it is never written to the session log.
 - **Resolution needs the workspace mirror.** A session whose working directory is not a registered workspace mirrored by a Space carries no composition, which is the correct default for a plain session.
 - **A Space session started before its workspace is registered is not composed.** The workspace must exist when the session is created; the Spaces panel registers it when the Space is opened.
 

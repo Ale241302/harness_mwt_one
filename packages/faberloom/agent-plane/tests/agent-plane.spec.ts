@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { FaberLoomAgent } from '@deepseek-ai/dsh-faberloom-agents'
+import { agentCredentialRef, type FaberLoomAgent } from '@deepseek-ai/dsh-faberloom-agents'
 import FaberLoomAgentPlane from '../src/index.ts'
 import type { AgentToolSources } from '../src/index.ts'
 
@@ -62,8 +62,16 @@ describe('FaberLoomAgentPlane resolve', () => {
       toolFilter: undefined,
       provider: 'deepseek',
       model: 'deepseek-v4-pro',
+      credentialRef: undefined,
       skills: ['a', 'b'],
     })
+  })
+
+  it('names the agent key reference only for a keyed agent', async () => {
+    const plane = await harness()
+    const keyed = plane.resolve(agent({ hasApiKey: true }), SOURCES)
+    expect(keyed.credentialRef).toBe(agentCredentialRef('agent-1' as FaberLoomAgent['id']))
+    expect(plane.resolve(agent({ hasApiKey: false }), SOURCES).credentialRef).toBeUndefined()
   })
 
   it('denies exactly the disabled MCP server tools', async () => {
@@ -84,6 +92,11 @@ describe('FaberLoomAgentPlane resolve', () => {
     const plane = await harness()
     const resolved = plane.resolve(agent({ sicopMcp: false, webAccess: false }), { mcp: { mwt: ['mcp__mwt__whoami'] }, web: [] })
     expect(resolved.toolFilter).toBeUndefined()
+  })
+
+  it('treats a disabled source with no registered names as no denial', async () => {
+    const plane = await harness()
+    expect(plane.resolve(agent({ mwtMcp: false }), { mcp: {}, web: [] }).toolFilter).toBeUndefined()
   })
 
   it('keeps the flags declarative when enforcement is off', async () => {

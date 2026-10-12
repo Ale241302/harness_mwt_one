@@ -6,6 +6,7 @@
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ToolCallId, ProviderRequestId, ReasoningEffortId } from './brand.ts'
 import type { Message } from './message.ts'
 
@@ -454,6 +455,17 @@ export interface GenerateOptions {
   /** Registered provider route selecting the adapter instance. */
   provider: string
   model: string
+  /**
+   * Resolve this call's key from this reference instead of the provider
+   * route's configured one. Absent keeps the route's own reference. A
+   * reference that resolves to nothing fails the call rather than falling
+   * back silently.
+   *
+   * A name derived at request time, never written to a session log or any
+   * other durable record: it selects a credential, it is not one. The
+   * resolved value never rides in this field, so no secret enters a request.
+   */
+  credentialRef?: CredentialRef
   /** Adapter-owned reasoning effort selected for this exact model. */
   reasoningEffort?: ReasoningEffortId
   /**

@@ -9,13 +9,17 @@ import LlmRuntime, {
   isQuotaExceededError,
   LlmAdapter,
   LlmError,
+  providerAccountFailureCode,
+  providerFailureMessage,
   ProviderRequestId,
+  QUOTA_EXCEEDED_CODE,
   ReasoningEffortId,
   resolveRetryPolicy,
   StreamChunk,
   createMessage,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {
   LlmModelContext,
   LlmModelInfo,
@@ -132,6 +136,26 @@ describe('LlmRuntime', () => {
     ]) expect(isQuotaExceededError(detail)).toBe(true)
     expect(isQuotaExceededError('HTTP 429: rate limit reached')).toBe(false)
     expect(isQuotaExceededError('quota resets in one minute')).toBe(false)
+  })
+
+  it('classifies account-level HTTP failures ahead of the status-only mapping', () => {
+    expect(providerAccountFailureCode(401, 'invalid api key')).toBe('AUTH')
+    expect(providerAccountFailureCode(402, 'payment required')).toBe(QUOTA_EXCEEDED_CODE)
+    expect(providerAccountFailureCode(403, 'insufficient balance')).toBe(QUOTA_EXCEEDED_CODE)
+    expect(providerAccountFailureCode(
+      429,
+      'You exceeded your current quota, please check your plan and billing details.',
+    )).toBe(QUOTA_EXCEEDED_CODE)
+    expect(providerAccountFailureCode(undefined, 'account balance depleted')).toBe(QUOTA_EXCEEDED_CODE)
+    // A permissions denial and a transient throttle stay with the status mapping.
+    expect(providerAccountFailureCode(403, 'permission denied')).toBeUndefined()
+    expect(providerAccountFailureCode(429, 'slow down')).toBeUndefined()
+  })
+
+  it('names the provider route in an account-level failure message, never the key', () => {
+    const message = providerFailureMessage('deepseek-official', 'insufficient balance')
+    expect(message).toBe('insufficient balance (provider "deepseek-official")')
+    expect(message).not.toContain('sk-')
   })
 
   it('errorChain renders the full cause chain of a wrapped transport failure', () => {
@@ -952,6 +976,26 @@ describe('LlmRuntime', () => {
         },
       },
     })
+  })
+
+  it('threads a per-call credential reference through prepared dispatch and rejects a swap', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const adapter = new RecordingAdapter(SCRIPT)
+    ctx.llm.registerAdapter(['route'], adapter)
+    const ref = credentialRef('PER_CALL_KEY')
+
+    const prepared = await ctx.llm.prepareCall({ provider: 'route', model: 'model', credentialRef: ref })
+    expect(prepared.config.credentialRef).toBe(ref)
+    await collect(prepared.stream({ ...prepared.config, messages: [] }))
+    expect(adapter.lastOptions?.credentialRef).toBe(ref)
+
+    const swapped = await ctx.llm.prepareCall({ provider: 'route', model: 'model', credentialRef: ref })
+    expect(() => swapped.stream({
+      ...swapped.config,
+      credentialRef: credentialRef('OTHER_KEY'),
+      messages: [],
+    })).toThrow(expect.objectContaining({ code: 'INVALID_PREPARED_CALL' }))
   })
 
   it('reuses one exact-model lookup for prepared config and context metadata', async () => {

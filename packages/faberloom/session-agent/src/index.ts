@@ -5,9 +5,11 @@
  * for that session alone, the agent's persona (shadowing the deployment
  * persona), its tool mask for the sources the agent may not use, and a prompt
  * directive naming the agent's skills. A session outside a Space, or a Space
- * without a responsible agent, is left unchanged. The model route is not set
- * here: a session resolves its route from its logged header or the deployment
- * default, and the agent's model policy already applies when it delegates.
+ * without a responsible agent, is left unchanged. The composition also carries
+ * the agent's model route (provider, model, and the reference naming its API
+ * key), which a session controller reads through {@link FaberLoomSessionAgent.routeFor}
+ * and uses as the session's default route; an unrouted or unkeyed agent
+ * contributes no route, so the deployment default applies.
  * @module @deepseek-ai/dsh-faberloom-session-agent
  */
 
@@ -21,7 +23,7 @@ import { toolSourcesOf } from '@deepseek-ai/dsh-faberloom-agent-plane'
 // inject window, and the optional ctx.faberloom* services read through ctx.get.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
-import type { SessionComposition } from './types.ts'
+import type { SessionComposition, SessionAgentRoute } from './types.ts'
 
 export type * from './types.ts'
 
@@ -74,6 +76,8 @@ export class FaberLoomSessionAgent extends Service {
 
   private readonly fibers = new Map<Agent, ReturnType<Context['inject']>>()
   private readonly pending = new Set<Agent>()
+  /** The resolved model route of each composed session, keyed by its agent. */
+  private readonly routes = new Map<Agent, SessionAgentRoute | undefined>()
 
   /**
    * @param ctx - Cordis context owning the service fiber.
@@ -87,6 +91,7 @@ export class FaberLoomSessionAgent extends Service {
       try {
         const composition = await this.compose(agent)
         if (composition === undefined) return
+        this.routes.set(agent, composition.route)
         const fiber = agent.ctx.inject(['systemPrompt', 'tools'], (scope) => {
           scope.systemPrompt.section({
             name: 'deployment:persona-prefix',
@@ -120,20 +125,37 @@ export class FaberLoomSessionAgent extends Service {
     ctx.on('agent/disposed', ({ agent }) => {
       const fiber = this.fibers.get(agent)
       this.fibers.delete(agent)
+      this.routes.delete(agent)
       void fiber?.dispose()
     })
     ctx.effect(() => async () => {
       const fibers = [...this.fibers.values()]
       this.fibers.clear()
+      this.routes.clear()
       await Promise.all(fibers.map(fiber => fiber.dispose()))
     }, 'faberloom-session-agent: compositions')
   }
 
   /**
+   * The model route one session's Space agent runs on. It is a complete route
+   * only when the agent declares both a provider and a model and stores an API
+   * key; otherwise the value is `undefined`, so an unrouted or unkeyed agent
+   * leaves the session on the deployment default. A session controller reads
+   * this through `ctx.get('faberloomSessionAgent')` and applies it as the
+   * session's default, below any explicit selection of its own.
+   * @param agent - the session's agent.
+   * @returns the agent's route, or `undefined`.
+   */
+  routeFor(agent: Agent): SessionAgentRoute | undefined {
+    return this.routes.get(agent)
+  }
+
+  /**
    * Resolve the composition one session runs under: its working directory is a
    * registered workspace mirrored by a Space whose responsible agent declares a
-   * persona, tool plane, and skills. Returns `undefined` when any link is
-   * missing, so a session outside a Space keeps the deployment composition.
+   * persona, tool plane, skills, and (when routed and keyed) a model route.
+   * Returns `undefined` when any link is missing, so a session outside a Space
+   * keeps the deployment composition.
    * @param agent - the session's agent.
    * @returns the agent's composition, or `undefined`.
    */
@@ -162,7 +184,18 @@ export class FaberLoomSessionAgent extends Service {
     if (space === undefined || space.agentId === undefined) return undefined
     const catalogAgent = await fleet.getAgent(space.agentId as FaberLoomAgentId)
     const resolved = plane.resolve(catalogAgent, toolSourcesOf(this.ctx.get('tools')?.schemas() ?? []))
-    return { persona: resolved.persona, toolFilter: resolved.toolFilter, skills: resolved.skills, prompt: space.prompt }
+    const route: SessionAgentRoute | undefined = resolved.provider !== undefined
+      && resolved.model !== undefined
+      && resolved.credentialRef !== undefined
+      ? { provider: resolved.provider, model: resolved.model, credentialRef: resolved.credentialRef }
+      : undefined
+    return {
+      persona: resolved.persona,
+      toolFilter: resolved.toolFilter,
+      skills: resolved.skills,
+      prompt: space.prompt,
+      route,
+    }
   }
 }
 

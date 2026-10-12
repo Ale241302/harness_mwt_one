@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-代理能力平面服务（`ctx.faberloomAgentPlane`）把某个目录代理声明的能力转换为被委托的子代理或 Space 会话所执行的工具掩码。代理无权使用的来源（`mwtMcp`、`sicopMcp`、`webAccess`）会变成针对该来源发布的、确切的已注册工具名的 `deny` 条目，因此掩码在发生委托之处被执行，而不是仅作声明。`resolve` 还携带代理的 persona、模型路由与技能，`allowsSubagent` 则回答调用方的委托允许名单。该服务不读取存储，也不注册工具。
+代理能力平面服务（`ctx.faberloomAgentPlane`）把某个目录代理声明的能力转换为被委托的子代理或 Space 会话所执行的工具掩码。代理无权使用的来源（`mwtMcp`、`sicopMcp`、`webAccess`）会变成针对该来源发布的、确切的已注册工具名的 `deny` 条目，因此掩码在发生委托之处被执行，而不是仅作声明。`resolve` 还携带代理的 persona、模型路由、key 引用（`credentialRef`，仅对已保存 key 的代理存在）与技能，`allowsSubagent` 则回答调用方的委托允许名单。该服务不读取存储，也不注册工具。
 
 ## 目录
 
@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-在同时存在 `ctx.tools` 与 `ctx.faberloomAgents` 的组合中挂载此行。该服务注册 `ctx.faberloomAgentPlane`。消费者按来源枚举已注册的工具名——例如用 `ctx.tools.schemas()` 结合 `mcp__<server>__` 前缀与开放网络名称进行分组——并调用 `resolve(agent, sources)`。当返回的 `toolFilter` 存在时，它会被传给子代理启动（`spawn` provider 会在子代理的创建窗口中将其作为作用域化的 `tools.restrict()` 应用）或作为作用域化限制应用；`deny` 只列出确实存在的名称，因此该限制绝不会因未知工具而失败。`enforceSources`（默认 `true`）把标志转换为强制执行；关闭后所有标志保持声明性，而 `resolve` 仍会报告 persona、模型与技能。
+在同时存在 `ctx.tools` 与 `ctx.faberloomAgents` 的组合中挂载此行。该服务注册 `ctx.faberloomAgentPlane`。消费者按来源枚举已注册的工具名——例如用 `ctx.tools.schemas()` 结合 `mcp__<server>__` 前缀与开放网络名称进行分组——并调用 `resolve(agent, sources)`。当返回的 `toolFilter` 存在时，它会被传给子代理启动（`spawn` provider 会在子代理的创建窗口中将其作为作用域化的 `tools.restrict()` 应用）或作为作用域化限制应用；`deny` 只列出确实存在的名称，因此该限制绝不会因未知工具而失败。`resolve` 还返回代理的 `credentialRef`：在凭证缝中命名代理 API key 的引用，由代理 id 派生，仅当代理保存了 key 时存在。`enforceSources`（默认 `true`）把标志转换为强制执行；关闭后所有标志保持声明性，而 `resolve` 仍会报告 persona、模型、key 引用与技能。
 
 -----
 

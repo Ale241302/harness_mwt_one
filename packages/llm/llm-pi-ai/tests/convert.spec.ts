@@ -924,6 +924,21 @@ describe('mapStopReason / mapUsage', () => {
     }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
   })
 
+  it('names the provider route on an account-level failure and never the key', () => {
+    const auth = mapStopReason(assistant({ stopReason: 'error', errorMessage: 'HTTP 401: bad key' }))
+    expect(auth).toEqual({
+      kind: 'error',
+      failure: { message: 'HTTP 401: bad key (provider "deepseek")', code: 'AUTH' },
+    })
+    // A billing body on a 403 is an exhausted account, not a permission denial.
+    const billing = mapStopReason(assistant({ stopReason: 'error', errorMessage: 'HTTP 403: insufficient balance' }))
+    expect(billing).toEqual({
+      kind: 'error',
+      failure: { message: 'HTTP 403: insufficient balance (provider "deepseek")', code: 'QUOTA' },
+    })
+    expect(JSON.stringify(billing)).not.toContain('sk-')
+  })
+
   it.each([
     'other side closed',
     'HTTP2 request did not get a response',

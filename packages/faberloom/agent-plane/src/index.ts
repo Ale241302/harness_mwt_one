@@ -11,7 +11,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { FaberLoomAgent } from '@deepseek-ai/dsh-faberloom-agents'
+import { agentCredentialRef, type FaberLoomAgent } from '@deepseek-ai/dsh-faberloom-agents'
 import type { AgentPlane, AgentToolSources } from './types.ts'
 
 export type * from './types.ts'
@@ -82,7 +82,7 @@ export class FaberLoomAgentPlane extends Service {
    * never passes an empty-restriction no-op.
    * @param agent - the catalog agent whose capabilities are enforced.
    * @param sources - the registered tool names grouped by source.
-   * @returns the agent's persona, tool mask, model route, and skills.
+   * @returns the agent's persona, tool mask, model route, key reference, and skills.
    */
   resolve(agent: FaberLoomAgent, sources: AgentToolSources): AgentPlane {
     const deny: string[] = []
@@ -97,6 +97,10 @@ export class FaberLoomAgentPlane extends Service {
       toolFilter: unique.length > 0 ? { deny: unique } : undefined,
       provider: agent.provider,
       model: agent.model,
+      // The reference is derived from the agent id, so it is a name the request
+      // path can reconstruct; the key value stays in the credential seam. Only a
+      // keyed agent names one, so an unkeyed agent keeps the route's own credential.
+      credentialRef: agent.hasApiKey ? agentCredentialRef(agent.id) : undefined,
       skills: [...agent.skills],
     }
   }

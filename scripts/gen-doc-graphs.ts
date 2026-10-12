@@ -794,6 +794,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns the recorded continuable consultations between a caller session and a Space agent so a follow-up continues the same child conversation.',
   },
   {
+    key: 'faberloomModelCatalog',
+    pkg: 'model-catalog',
+    title: 'Provider model catalog and credential probe',
+    mode: 'core',
+    note: 'Owns the fixed provider protocol table, the per-call discovery of one provider\'s models under a caller-named credential, and the credential probe that reports whether a reference authenticates and whether its account is out of quota.',
+  },
+  {
     key: 'faberloomAgents',
     pkg: 'agents',
     title: 'Product agent catalog and model policy',

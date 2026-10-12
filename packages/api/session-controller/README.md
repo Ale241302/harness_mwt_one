@@ -39,6 +39,8 @@ The user-invocable `skills/list` metadata includes the winning provider’s opti
 
 Fork copies history through the selected completed turn, including its `turn/end`. Events after that point, including queued input and model-setting changes, are excluded. An omitted or past-end anchor selects the last completed turn; an anchor inside an unfinished turn is rejected.
 
+The Host resolves an ordinary Session's model at prompt assembly in this order: an explicit selection recorded in the durable projection, then the route the Session's log already recorded, then — when the Session runs in a Space whose responsible agent declares a complete routed and keyed route — that agent's provider and model, and otherwise the deployment default. A route that resolves to the Space agent's provider and model authenticates with that agent's own credential reference instead of the deployment connection; the reference is a name derived from the agent id at request time, never the key, and it never enters the Session log or any durable record.
+
 <a id="session-media-references"></a>
 ## Session media references
 

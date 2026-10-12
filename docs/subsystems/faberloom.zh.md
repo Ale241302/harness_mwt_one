@@ -68,7 +68,7 @@ The agent capability plane service: resolves one agent's enforced tool mask and 
  * never passes an empty-restriction no-op.
  * @param agent - the catalog agent whose capabilities are enforced.
  * @param sources - the registered tool names grouped by source.
- * @returns the agent's persona, tool mask, model route, and skills.
+ * @returns the agent's persona, tool mask, model route, key reference, and skills.
  */
 resolve(agent: FaberLoomAgent, sources: AgentToolSources): AgentPlane
 
@@ -232,7 +232,8 @@ async listAgents(): Promise<FaberLoomAgent[]>
 async getAgent(id: FaberLoomAgentId): Promise<FaberLoomAgent>
 
 /**
- * Apply a patch to one agent, bumping its version.
+ * Apply a patch to one agent, bumping its version. A key the patch omits
+ * stays as it was; `null` or an empty string clears it.
  * @param id - agent id.
  * @param patch - fields to change.
  * @returns the updated agent.
@@ -241,7 +242,8 @@ async updateAgent(id: FaberLoomAgentId, patch: AgentPatch): Promise<FaberLoomAge
 
 /**
  * Duplicate one agent: copies configuration and explicitly selected lessons,
- * never the source's evidence (confidence is not transferred).
+ * never the source's evidence (confidence is not transferred) and never its
+ * key — a credential is not readable, so the copy starts without one.
  * @param id - source agent id.
  * @param input - name, optional space, and selected lessons for the copy.
  * @returns the created duplicate.
@@ -1064,6 +1066,53 @@ async importKnowledge( ownerId: string, snapshot: KnowledgeSnapshot, ): Promise<
 
 Source: [`packages/faberloom/learning/src/index.ts`](../../packages/faberloom/learning/src/index.ts)
 
+<a id="ctxfaberloommodelcatalog--providermodelcatalog"></a>
+
+### `ctx.faberloomModelCatalog` — `ProviderModelCatalog`
+
+The model catalog service, published as `ctx.faberloomModelCatalog`.
+
+Every call resolves its credential reference through the credentials seam, or through the launch environment while no seam is mounted, so a changed reference reaches the next call with no restart. No method caches a credential value.
+
+```ts cordis-catalog
+/**
+ * The fixed provider protocol table.
+ * @returns the frozen table, in the order the plugin declares it.
+ */
+providers(): readonly ProviderDescriptor[]
+
+/**
+ * Ask one provider which models it currently serves, authenticating with the
+ * named credential reference.
+ * @param providerId - the provider id to reach.
+ * @param credentialRef - the reference resolved through `ctx.credentials`, or the launch environment.
+ * @returns the normalized models, and records them as this provider's cached snapshot.
+ * @throws LlmError `UNSUPPORTED_PROVIDER` for an unknown id, the credential error
+ * `resolveCredential` raises, `TRANSPORT` when the request never completed, and
+ * the probe failure codes when the provider rejected the request.
+ */
+discover(providerId: string, credentialRef: CredentialRef): Promise<DiscoveredModel[]>
+
+/**
+ * Probe whether one credential reference authenticates against a provider,
+ * with a single attempt and a bounded timeout.
+ * @param providerId - the provider id to probe.
+ * @param credentialRef - the reference resolved through `ctx.credentials`, or the launch environment.
+ * @returns the verdict, the HTTP status, a safe detail, and the served models on success.
+ */
+probe(providerId: string, credentialRef: CredentialRef): Promise<ProviderProbe>
+
+/**
+ * Read the cached last discovery per provider, without touching the network.
+ * @returns one frozen snapshot per provider discovered so far, ordered by provider id.
+ */
+models(): readonly ModelCatalogSnapshot[]
+```
+
+Types: [CredentialRef](credentials.zh.md)
+
+Source: [`packages/faberloom/model-catalog/src/types.ts`](../../packages/faberloom/model-catalog/src/types.ts)
+
 <a id="ctxfaberloomroutines--faberloomroutines"></a>
 
 ### `ctx.faberloomRoutines` — `FaberLoomRoutines`
@@ -1315,6 +1364,22 @@ Source: [`packages/faberloom/routines/src/index.ts`](../../packages/faberloom/ro
 ### `ctx.faberloomSessionAgent` — `FaberLoomSessionAgent`
 
 The Space session composition service: resolves one session's Space agent and installs its persona, tool mask, and skills.
+
+```ts cordis-catalog
+/**
+ * The model route one session's Space agent runs on. It is a complete route
+ * only when the agent declares both a provider and a model and stores an API
+ * key; otherwise the value is `undefined`, so an unrouted or unkeyed agent
+ * leaves the session on the deployment default. A session controller reads
+ * this through `ctx.get('faberloomSessionAgent')` and applies it as the
+ * session's default, below any explicit selection of its own.
+ * @param agent - the session's agent.
+ * @returns the agent's route, or `undefined`.
+ */
+routeFor(agent: Agent): SessionAgentRoute | undefined
+```
+
+Types: [Agent](core.zh.md)
 
 Source: [`packages/faberloom/session-agent/src/index.ts`](../../packages/faberloom/session-agent/src/index.ts)
 

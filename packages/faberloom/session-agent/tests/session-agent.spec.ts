@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import FaberLoomSessionAgent from '../src/index.ts'
 
-/** The install callback the fake agent captures. */
+/** The install callback the fake agent captures, plus the service and agent under test. */
 interface Captured {
   cb?: (scope: unknown) => void
+  ctx: Context
+  agent: { session: { header: { cwd: string | undefined; parentSession: string | undefined } } }
 }
 
 /** Every service the composition reads, all present by default. */
@@ -47,7 +49,6 @@ async function harness(
   cwd: string | undefined,
   parentSession?: string,
 ): Promise<Captured> {
-  const captured: Captured = {}
   const agent = {
     session: { header: { cwd, parentSession } },
     ctx: {
@@ -58,6 +59,7 @@ async function harness(
     },
   }
   const ctx = new Context()
+  const captured: Captured = { ctx, agent }
   const provide = (name: string, value: unknown): void => { (ctx.provide as (n: string, v: unknown) => void)(name, value) }
   for (const [name, value] of Object.entries(services(patch))) provide(name, value)
   provide('agents', { list: () => [agent] })
@@ -115,5 +117,79 @@ describe('FaberLoomSessionAgent composition', () => {
     expect((await harness({ ownerId: 'owner@test' }, {
       faberloomSpaces: { list: async () => [{ workspaceId: 'ws-1', agentId: undefined }] },
     }, '/home/SICOP')).cb).toBeUndefined()
+  })
+
+  it('publishes the agent model route when the agent is routed and keyed', async () => {
+    const { ctx, agent } = await harness({ ownerId: 'owner@test' }, {
+      faberloomAgentPlane: {
+        resolve: () => ({
+          persona: 'P', toolFilter: undefined, provider: 'openai', model: 'gpt-4o',
+          credentialRef: 'FABERLOOM_AGENT_API_KEY_41', skills: [],
+        }),
+      },
+    }, '/home/SICOP')
+    expect(ctx.faberloomSessionAgent.routeFor(agent as never)).toEqual({
+      provider: 'openai', model: 'gpt-4o', credentialRef: 'FABERLOOM_AGENT_API_KEY_41',
+    })
+  })
+
+  it('publishes no route for an unrouted or unkeyed agent', async () => {
+    const unrouted = await harness({ ownerId: 'owner@test' }, {}, '/home/SICOP')
+    expect(unrouted.ctx.faberloomSessionAgent.routeFor(unrouted.agent as never)).toBeUndefined()
+    const unkeyed = await harness({ ownerId: 'owner@test' }, {
+      faberloomAgentPlane: {
+        resolve: () => ({ persona: 'P', toolFilter: undefined, provider: 'openai', model: 'gpt-4o', credentialRef: undefined, skills: [] }),
+      },
+    }, '/home/SICOP')
+    expect(unkeyed.ctx.faberloomSessionAgent.routeFor(unkeyed.agent as never)).toBeUndefined()
+  })
+
+  it('drops the published route when the composed agent is disposed', async () => {
+    const { ctx, agent } = await harness({ ownerId: 'owner@test' }, {
+      faberloomAgentPlane: {
+        resolve: () => ({
+          persona: 'P', toolFilter: undefined, provider: 'openai', model: 'gpt-4o',
+          credentialRef: 'FABERLOOM_AGENT_API_KEY_41', skills: [],
+        }),
+      },
+    }, '/home/SICOP')
+    ctx.emit('agent/disposed', { agent: agent as never })
+    expect(ctx.faberloomSessionAgent.routeFor(agent as never)).toBeUndefined()
+  })
+
+  it('tears down every composed fiber and route with the plugin', async () => {
+    const { ctx } = await harness({ ownerId: 'owner@test' }, {
+      faberloomAgentPlane: {
+        resolve: () => ({
+          persona: 'P', toolFilter: undefined, provider: 'openai', model: 'gpt-4o',
+          credentialRef: 'FABERLOOM_AGENT_API_KEY_41', skills: [],
+        }),
+      },
+    }, '/home/SICOP')
+    await expect(ctx.fiber.dispose()).resolves.toBeUndefined()
+  })
+
+  it('composes a session created after mount and ignores an overlapping install', async () => {
+    const { ctx, agent } = await harness({ ownerId: 'owner@test' }, {}, '/home/SICOP')
+    // Already composed through `ctx.agents.list()`: a later create event is a no-op.
+    ctx.emit('agent/created', { agent: agent as never, source: 'startup' })
+    const late = {
+      session: { header: { cwd: '/home/SICOP', parentSession: undefined } },
+      ctx: { inject: vi.fn(() => ({ dispose: vi.fn(async () => {}) })) },
+    }
+    ctx.emit('agent/created', { agent: late as never, source: 'startup' })
+    ctx.emit('agent/created', { agent: late as never, source: 'startup' })
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    expect(ctx.faberloomSessionAgent.routeFor(late as never)).toBeUndefined()
+  })
+
+  it('composes without a tools registry', async () => {
+    const captured = await harness({ ownerId: 'owner@test' }, {
+      tools: undefined,
+      faberloomAgentPlane: {
+        resolve: () => ({ persona: 'P', toolFilter: undefined, provider: undefined, model: undefined, credentialRef: undefined, skills: [] }),
+      },
+    }, '/home/SICOP')
+    expect(captured.cb).toBeDefined()
   })
 })

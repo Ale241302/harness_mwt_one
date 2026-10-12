@@ -8,6 +8,7 @@
 
 import type { GenerateOptions } from './types.ts'
 import type { ReasoningEffortId } from './brand.ts'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 
 /** Process-local identities of request objects assembled by dsh-agent-loop. */
 const AGENT_LOOP_REQUESTS = new WeakSet<GenerateOptions>()
@@ -23,6 +24,12 @@ const AGENT_LOOP_REQUESTS = new WeakSet<GenerateOptions>()
 export interface LlmCallConfig {
   provider: string
   model: string
+  /**
+   * Per-call credential reference, mirroring {@link GenerateOptions.credentialRef}:
+   * resolved by the adapter instead of the route's configured reference, and
+   * never part of a durable record.
+   */
+  credentialRef?: CredentialRef
   reasoningEffort?: ReasoningEffortId
   temperature?: number
   maxTokens?: number
@@ -50,6 +57,7 @@ export function callConfigEquals(a: LlmCallConfig, b: LlmCallConfig): boolean {
   if (
     a.provider !== b.provider
     || a.model !== b.model
+    || a.credentialRef !== b.credentialRef
     || a.reasoningEffort !== b.reasoningEffort
     || a.temperature !== b.temperature
     || a.maxTokens !== b.maxTokens

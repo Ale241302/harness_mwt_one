@@ -91,6 +91,20 @@ describe('direct Messages HTTP', () => {
     expect(llm.imageRequestPricing('deepseek-official', MODEL)).toBeDefined()
   })
 
+  it.each([
+    [401, { message: 'bad key' }, 'AUTH', 'bad key (provider "deepseek-official")'],
+    [403, { message: 'insufficient balance' }, 'QUOTA', 'insufficient balance (provider "deepseek-official")'],
+    [429, { code: 'insufficient_quota', message: 'account credits exhausted' }, 'QUOTA', 'account credits exhausted (provider "deepseek-official")'],
+    [429, { message: 'slow down' }, 'RATE_LIMIT', 'slow down'],
+  ])('names the provider route on account-level HTTP %d and leaves throttling alone', async (status, error, code, message) => {
+    const http = await endpoint((response) => {
+      response.statusCode = status
+      response.end(JSON.stringify({ error }))
+    })
+    const failure = await chunks(adapter({ baseURL: http.url }).stream(options())).catch((cause: unknown) => cause)
+    expect(failure).toMatchObject({ code, message })
+  })
+
   it.each([true, false])('maps non-2xx responses (JSON=%s)', async (json) => {
     const http = await endpoint((response) => { response.statusCode = 429; response.setHeader('retry-after', '3'); response.end(json ? JSON.stringify({ error: { type: 'rate_limit_error', message: 'slow down' } }) : '<html>busy</html>') })
     await expect(chunks(adapter({ baseURL: http.url }).stream(options()))).rejects.toMatchObject({ code: 'RATE_LIMIT', failure: { status: 429, providerRetryAfterMs: 3000 } })
@@ -133,6 +147,20 @@ describe('direct Messages HTTP', () => {
     await chunks(llm.stream(options()))
     expect(first.requests[0]).toMatchObject({ headers: { 'x-api-key': 'first' }, body: { max_tokens: 10 } })
     expect(second.requests[0]).toMatchObject({ headers: { 'x-api-key': 'second' }, body: { max_tokens: 20 } })
+  })
+
+  it('resolves a per-call credential reference instead of the configured one', async () => {
+    const http = await endpoint()
+    const files = new DeepSeekFileStore()
+    const llm = new DeepSeekMessagesAdapter({
+      connection: () => Messages.resolveAdapterOptions({ baseURL: http.url }),
+      apiKey: (_snapshot, credentialRef) => Promise.resolve(credentialRef ?? 'route-key'),
+      userId: () => 'user', attachments: () => undefined, imageAccess: () => undefined, files: () => files, prepareExtensions,
+    })
+    await chunks(llm.stream(options({ credentialRef: credentialRef('MESSAGES_CALL_KEY') })))
+    await chunks(llm.stream(options()))
+    expect(http.requests[0]).toMatchObject({ headers: { 'x-api-key': 'MESSAGES_CALL_KEY' } })
+    expect(http.requests[1]).toMatchObject({ headers: { 'x-api-key': 'route-key' } })
   })
 
   it('aborts an open provider response when its consumer stops', async () => {
@@ -220,6 +248,15 @@ describe('Cordis provider composition', () => {
     await ctx.loader.await()
     return { ctx, http }
   }
+
+  it('authenticates one call through its own credential reference instead of the stored route key', async () => {
+    const { ctx, http } = await boot()
+    await ctx.credentials.set(credentialRef('MESSAGES_CALL_KEY'), 'call-key')
+    await chunks(ctx.llm.stream(options({ credentialRef: credentialRef('MESSAGES_CALL_KEY') })))
+    await chunks(ctx.llm.stream(options()))
+    expect(http.requests[0]).toMatchObject({ headers: { 'x-api-key': 'call-key' } })
+    expect(http.requests[1]).toMatchObject({ headers: { 'x-api-key': 'stored-key' } })
+  })
 
   it.each([
     { model: MODEL, inHistory: false },

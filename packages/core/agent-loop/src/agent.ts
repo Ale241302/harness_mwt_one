@@ -518,12 +518,19 @@ export class ReactLoopAgent implements Agent {
       : undefined
     const reasoningEffort = this.options.reasoningEffort ?? persistedReasoningEffort
     const maxTokens = this.options.maxTokens
+    const credentialRef = this.options.credentialRef
     const seedConfig = deepFreeze(structuredClone(
       this.requestHeaderLogged
-        // oxlint-disable-next-line typescript/no-non-null-assertion -- the instance logged the header it now folds
-        ? requestProposal(persistedHeader!)
+        ? {
+          // oxlint-disable-next-line typescript/no-non-null-assertion -- the instance logged the header it now folds
+          ...requestProposal(persistedHeader!),
+          // The header never carries the reference, so a multi-step agent's own
+          // key is reapplied from its options on every step.
+          ...credentialRef === undefined ? {} : { credentialRef },
+        }
         : {
           ...route,
+          ...credentialRef === undefined ? {} : { credentialRef },
           ...reasoningEffort === undefined ? {} : { reasoningEffort },
           ...maxTokens === undefined ? {} : { maxTokens },
         },
@@ -560,8 +567,12 @@ export class ReactLoopAgent implements Agent {
   ): GenerateOptions {
     const { session } = this
     const surfaceGeneration = session.surface.contentGeneration
+    // The credential reference selects a key for this request alone: it is
+    // request state, never header state, so the logged (and reconstructable)
+    // header omits it while the dispatched request keeps it.
+    const { credentialRef: _credentialRef, ...loggedConfig } = config
     const header = canonicalHeader({
-      config,
+      config: loggedConfig,
       ...preparedCall === undefined ? {} : { adapterDefaults: preparedCall.adapterDefaults },
       ...tools.length > 0 ? { tools } : {},
     })
@@ -609,7 +620,7 @@ export class ReactLoopAgent implements Agent {
     }
     Object.freeze(boundaryMessages)
     const request = markAgentLoopRequest(Object.freeze({
-      ...header.config,
+      ...config,
       messages: boundaryMessages,
       ...header.tools !== undefined ? { tools: header.tools } : {},
       sessionId: this.session.id,

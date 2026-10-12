@@ -984,6 +984,32 @@ export interface Config {
 
 Source: [`packages/faberloom/mcp-server/src/index.ts:48`](../packages/faberloom/mcp-server/src/index.ts)
 
+<a id="deepseek-aidsh-faberloom-model-catalog"></a>
+
+## `@deepseek-ai/dsh-faberloom-model-catalog`
+
+```ts config-catalog
+/**
+ * Deployment configuration for the model catalog.
+ */
+export interface Config {
+  /**
+   * Milliseconds allowed for one provider request before it is abandoned.
+   * Defaults to {@link DEFAULT_REQUEST_TIMEOUT_MS}; validated to 1 through
+   * 60,000 so a probe cannot hold a surface open.
+   */
+  requestTimeoutMs?: number
+  /**
+   * Egress origin per provider id, replacing the protocol table's public
+   * origin: a self-hosted gateway, a regional host, or a test server. The
+   * provider ids, credential transports, and models paths stay fixed.
+   */
+  origins?: Record<string, string>
+}
+```
+
+Source: [`packages/faberloom/model-catalog/src/index.ts:65`](../packages/faberloom/model-catalog/src/index.ts)
+
 <a id="deepseek-aidsh-faberloom-routines"></a>
 
 ## `@deepseek-ai/dsh-faberloom-routines`
@@ -1024,7 +1050,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/session-agent/src/index.ts:35`](../packages/faberloom/session-agent/src/index.ts)
+Source: [`packages/faberloom/session-agent/src/index.ts:37`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 

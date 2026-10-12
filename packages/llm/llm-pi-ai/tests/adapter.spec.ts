@@ -10,6 +10,7 @@ import type {
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -812,6 +813,43 @@ describe('provider profile lifecycle', () => {
     expect(second.finish.kind).toBe('error')
     if (second.finish.kind !== 'error') throw new Error('expected an error finish')
     expect(second.finish.failure.message).toMatch(/provider route "deepseek".*PI_CUSTOM_REF_KEY/s)
+    expect(server.requests).toHaveLength(0)
+  })
+
+  it('resolves a per-call credential reference instead of the route reference', async () => {
+    vi.stubEnv('PI_CALL_KEY', 'call-key')
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+    await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [],
+      credentialRef: credentialRef('PI_CALL_KEY'),
+    })
+    expect(server.headers[0]?.authorization).toBe('Bearer call-key')
+  })
+
+  it('keeps the route credential when the call names no reference', async () => {
+    vi.stubEnv('PI_CALL_KEY', 'call-key')
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[0]?.authorization).toBe('Bearer test-key')
+  })
+
+  it('fails a per-call reference that resolves to nothing instead of the route key', async () => {
+    vi.stubEnv('PI_CALL_KEY', '')
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+    const result = await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [],
+      credentialRef: credentialRef('PI_CALL_KEY'),
+    })
+    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
+    if (result.finish.kind !== 'error') throw new Error('expected an error finish')
+    expect(result.finish.failure.message).toContain('PI_CALL_KEY')
+    // The route's own key still resolves; the call must not fall back to it.
+    expect(result.finish.failure.message).not.toContain('test-key')
     expect(server.requests).toHaveLength(0)
   })
 

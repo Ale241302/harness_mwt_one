@@ -126,6 +126,9 @@ describe('SSE framing and provider failures', () => {
     [undefined, { type: 'invalid_request_error' }, 'INVALID_REQUEST'], [undefined, {}, 'SERVER'],
     [400, { message: 'maximum context length exceeded' }, 'CONTEXT_WINDOW_EXCEEDED'],
     [400, { message: 'insufficient balance' }, 'QUOTA'],
+    // A billing body outranks the auth/permission and throttle statuses.
+    [403, { message: 'insufficient balance' }, 'QUOTA'],
+    [429, { code: 'insufficient_quota', message: 'account credits exhausted' }, 'QUOTA'],
   ])('classifies status %s and error %j', (status, error, code) => {
     expect(providerError({ error }, status)).toMatchObject({ code })
   })

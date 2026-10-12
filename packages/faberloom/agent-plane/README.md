@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The agent plane service (`ctx.faberloomAgentPlane`) turns one catalog agent's declared capabilities into the tool mask a delegated child or a Space session executes under. A source the agent may not use (`mwtMcp`, `sicopMcp`, `webAccess`) becomes a `deny` entry over the exact registered tool names that source publishes, so the mask is enforced where the delegation happens rather than left declarative. `resolve` also carries the agent's persona, model route, and skills, and `allowsSubagent` answers the caller-side delegation allowlist. The service reads no storage and registers no tools.
+The agent plane service (`ctx.faberloomAgentPlane`) turns one catalog agent's declared capabilities into the tool mask a delegated child or a Space session executes under. A source the agent may not use (`mwtMcp`, `sicopMcp`, `webAccess`) becomes a `deny` entry over the exact registered tool names that source publishes, so the mask is enforced where the delegation happens rather than left declarative. `resolve` also carries the agent's persona, model route, key reference (`credentialRef`, present only for a keyed agent), and skills, and `allowsSubagent` answers the caller-side delegation allowlist. The service reads no storage and registers no tools.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ The agent plane service (`ctx.faberloomAgentPlane`) turns one catalog agent's de
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row where `ctx.tools` and `ctx.faberloomAgents` are present. The service registers `ctx.faberloomAgentPlane`. A consumer enumerates the registered tool names grouped by source — for example `ctx.tools.schemas()` split by the `mcp__<server>__` prefix and the open-web names — and calls `resolve(agent, sources)`. When the returned `toolFilter` is present it is passed to a subagent start (the `spawn` provider applies it as a scoped `tools.restrict()` in the child's creation window) or applied as a scoped restriction; `deny` lists only names that exist, so the restriction never fails on an unknown tool. `enforceSources` (default `true`) turns the flags into enforcement; turning it off keeps every flag declarative while `resolve` still reports the persona, model, and skills.
+Mount this row where `ctx.tools` and `ctx.faberloomAgents` are present. The service registers `ctx.faberloomAgentPlane`. A consumer enumerates the registered tool names grouped by source — for example `ctx.tools.schemas()` split by the `mcp__<server>__` prefix and the open-web names — and calls `resolve(agent, sources)`. When the returned `toolFilter` is present it is passed to a subagent start (the `spawn` provider applies it as a scoped `tools.restrict()` in the child's creation window) or applied as a scoped restriction; `deny` lists only names that exist, so the restriction never fails on an unknown tool. `resolve` also returns the agent's `credentialRef`: the reference naming the agent's API key in the credential seam, derived from the agent id and present only when the agent stores a key. `enforceSources` (default `true`) turns the flags into enforcement; turning it off keeps every flag declarative while `resolve` still reports the persona, model, key reference, and skills.
 
 -----
 

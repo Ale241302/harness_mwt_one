@@ -94,12 +94,15 @@ export interface DeepSeekAdapterOptions {
   /** Current validated connection facts; called once per operation. */
   options: () => DeepSeekConnectionOptions
   /**
-   * Resolve the bearer token for the connection facts of one request. The
-   * snapshot is passed in — never re-read — so the key can only ever come
-   * from the same resolution as the endpoint it is sent to. Throws `LlmError`
-   * `MISSING_CREDENTIAL` when no key is available anywhere.
+   * Resolve the bearer token for the connection facts of one request, or for
+   * the exact reference a per-call override names. The snapshot is passed in —
+   * never re-read — so the key can only ever come from the same resolution as
+   * the endpoint it is sent to. A per-call reference that resolves to nothing
+   * throws `LlmError` `MISSING_CREDENTIAL` naming it rather than falling back
+   * to the route's own reference; a request with no key anywhere also throws
+   * `MISSING_CREDENTIAL`.
    */
-  resolveApiKey: (connection: DeepSeekConnectionOptions) => Promise<string>
+  resolveApiKey: (connection: DeepSeekConnectionOptions, credentialRef?: CredentialRef) => Promise<string>
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
   /** Resolve the current durable attachment service; absence rejects image input. */

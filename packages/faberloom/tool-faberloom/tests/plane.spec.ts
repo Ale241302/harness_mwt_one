@@ -8,9 +8,12 @@ function capabilities(patch: Partial<SubagentCapabilities> = {}): SubagentCapabi
   return { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true, ...patch }
 }
 
-/** A resolved plane with nothing masked unless overridden. */
+/** A resolved plane with nothing masked and no key reference unless overridden. */
 function plane(patch: Partial<AgentPlane> = {}): AgentPlane {
-  return { persona: 'Mantener las reglas', toolFilter: undefined, provider: undefined, model: undefined, skills: [], ...patch }
+  return {
+    persona: 'Mantener las reglas', toolFilter: undefined, provider: undefined, model: undefined,
+    credentialRef: undefined, skills: [], ...patch,
+  }
 }
 
 describe('toolSourcesOf', () => {
@@ -56,6 +59,21 @@ describe('planeStartFields', () => {
 
   it('omits the model route when the agent declares no provider or model', () => {
     expect(planeStartFields(plane({ provider: 'deepseek' }), capabilities())).toEqual({ persona: 'Mantener las reglas' })
+  })
+
+  it('carries the consulted agent credential reference when the route names one', () => {
+    const fields = planeStartFields(
+      plane({ provider: 'openai', model: 'gpt-4o', credentialRef: 'FABERLOOM_AGENT_API_KEY_41' as AgentPlane['credentialRef'] }),
+      capabilities(),
+    )
+    expect(fields.agentOptions).toEqual({
+      provider: 'openai', model: 'gpt-4o', credentialRef: 'FABERLOOM_AGENT_API_KEY_41',
+    })
+  })
+
+  it('omits the credential reference for an unkeyed agent, keeping the deployment route credential', () => {
+    const fields = planeStartFields(plane({ provider: 'openai', model: 'gpt-4o' }), capabilities())
+    expect(fields.agentOptions).toEqual({ provider: 'openai', model: 'gpt-4o' })
   })
 
   it('fails loud when the plane must mask tools but the provider cannot enforce it', () => {

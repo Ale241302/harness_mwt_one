@@ -131,6 +131,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   faberloomShares: 'faberloom.md',
   faberloomContext: 'faberloom.md',
   faberloomSessionShares: 'faberloom.md',
+  faberloomModelCatalog: 'faberloom.md',
   subagentModelSelection: 'subagent.md',
   subagents: 'subagent.md',
   subprocess: 'subprocess.md',
@@ -1086,9 +1087,17 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   SpaceIndexEntry: 'product consumer type is owned by packages/faberloom/spaces/src/types.ts',
   SpaceMatch: 'product consumer type is owned by packages/faberloom/spaces/src/types.ts',
   SpaceReference: 'product consumer type is owned by packages/faberloom/spaces/src/types.ts',
+  ProviderModelCatalog: 'product consumer type is owned by packages/faberloom/model-catalog/src/types.ts',
+  ProviderDescriptor: 'product consumer type is owned by packages/faberloom/model-catalog/src/types.ts',
+  ProviderProtocol: 'product consumer type is owned by packages/faberloom/model-catalog/src/types.ts',
+  DiscoveredModel: 'product consumer type is owned by packages/faberloom/model-catalog/src/types.ts',
+  ProbeKind: 'product consumer type is owned by packages/faberloom/model-catalog/src/types.ts',
+  ProviderProbe: 'product consumer type is owned by packages/faberloom/model-catalog/src/types.ts',
+  ModelCatalogSnapshot: 'product consumer type is owned by packages/faberloom/model-catalog/src/types.ts',
   SessionDeleteRequest: 'Host session-controller request contract is owned by packages/api/session-controller/src/types.ts',
   SessionDeleteValue: 'Host session-controller result contract is owned by packages/api/session-controller/src/types.ts',
   SessionDeleteOrphansValue: 'Host session-controller result contract is owned by packages/api/session-controller/src/types.ts',
+  SessionAgentRoute: 'product consumer type is owned by packages/faberloom/session-agent/src/types.ts',
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */

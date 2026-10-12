@@ -27,6 +27,7 @@ The subsystem reference is [docs/subsystems/faberloom.md](../../docs/subsystems/
 - `@deepseek-ai/dsh-faberloom-workflows` — versioned work-flow graphs compiled to routines.
 - `@deepseek-ai/dsh-faberloom-agents` — the agent catalog and versioned model policy.
 - `@deepseek-ai/dsh-faberloom-agent-plane` — the enforced tool mask and delegation allowlist of one catalog agent.
+- `@deepseek-ai/dsh-faberloom-model-catalog`: the provider protocol table, dynamic model discovery, and the credential probe.
 - `@deepseek-ai/dsh-faberloom-session-agent` — the composition a Space session runs under: its agent's persona, tool plane, and skills.
 - `@deepseek-ai/dsh-faberloom-agent-runtime` — the durable consultations between a caller session and a Space agent.
 - `@deepseek-ai/dsh-faberloom-knowledge-index` — the space search ranker: embeddings, the Knowledge Hub corpus, and a lexical fallback.

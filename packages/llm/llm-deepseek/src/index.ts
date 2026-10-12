@@ -1,6 +1,7 @@
 /** Register DeepSeek with protocol selection and request-local settings and credentials. */
 import type { Context } from '@deepseek-ai/cordis'
 import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-fs'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-settings'
@@ -81,10 +82,14 @@ export function apply(ctx: Context, config: Config): void {
   }
   options()
 
-  const resolveApiKey = async (connection: ResolvedDeepSeekOptions): Promise<string> => {
+  const resolveApiKey = async (
+    connection: ResolvedDeepSeekOptions,
+    credentialRef?: CredentialRef,
+  ): Promise<string> => {
     // Every credential fact comes from the caller's snapshot, so a rejected
-    // settings generation cannot leak its key onto the previous endpoint.
-    const ref = connection.apiKeyEnv
+    // settings generation cannot leak its key onto the previous endpoint. A
+    // per-call reference replaces the route's own for this call alone.
+    const ref = credentialRef ?? connection.apiKeyEnv
     const credentials = ctx.get('credentials')
     if (credentials !== undefined) {
       const hit = await credentials.resolve(ref)

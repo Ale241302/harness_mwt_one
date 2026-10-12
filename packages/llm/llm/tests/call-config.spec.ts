@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { callConfigEquals, isAgentLoopRequest, markAgentLoopRequest } from '../src/call-config.ts'
 import { ReasoningEffortId } from '../src/brand.ts'
 import type { GenerateOptions } from '../src/types.ts'
@@ -27,6 +28,19 @@ describe('callConfigEquals', () => {
     expect(callConfigEquals({ ...base, stop: ['a'] }, { ...base, stop: ['a', 'b'] })).toBe(false)
     expect(callConfigEquals({ ...base, stop: ['a'] }, { ...base, stop: ['b'] })).toBe(false)
     expect(callConfigEquals({ ...base, stop: ['a', 'b'] }, { ...base, stop: ['a', 'b'] })).toBe(true)
+  })
+
+  it('treats a changed per-call credential reference as a real change', () => {
+    const base = { provider: 'p', model: 'm' }
+    expect(callConfigEquals({ ...base, credentialRef: credentialRef('FIRST_KEY') }, base)).toBe(false)
+    expect(callConfigEquals(
+      { ...base, credentialRef: credentialRef('FIRST_KEY') },
+      { ...base, credentialRef: credentialRef('SECOND_KEY') },
+    )).toBe(false)
+    expect(callConfigEquals(
+      { ...base, credentialRef: credentialRef('FIRST_KEY') },
+      { ...base, credentialRef: credentialRef('FIRST_KEY') },
+    )).toBe(true)
   })
 })
 

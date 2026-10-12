@@ -302,6 +302,7 @@
       "@deepseek-ai/dsh-faberloom-session-agent": ["./packages/faberloom/session-agent/src"],
       "@deepseek-ai/dsh-faberloom-agent-runtime": ["./packages/faberloom/agent-runtime/src"],
       "@deepseek-ai/dsh-faberloom-knowledge-index": ["./packages/faberloom/knowledge-index/src"],
+      "@deepseek-ai/dsh-faberloom-model-catalog": ["./packages/faberloom/model-catalog/src"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

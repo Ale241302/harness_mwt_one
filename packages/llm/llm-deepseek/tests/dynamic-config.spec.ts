@@ -153,6 +153,25 @@ describe('request-level dynamic configuration', () => {
     expect(serverB.headers[0]?.authorization).toBe('Bearer second-key')
   })
 
+  it('authenticates one call through its own credential reference though the route names another', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const dir = await home()
+    const server = await mockServer([{ kind: 'sse', events: textEvents }, { kind: 'sse', events: textEvents }])
+    const { ctx } = await boot(dir, { baseURL: server.url })
+    await ctx.credentials.set(KEY_REF, 'route-key')
+    await ctx.credentials.set(credentialRef('DYNAMIC_CALL_KEY'), 'call-key')
+
+    await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [],
+      credentialRef: credentialRef('DYNAMIC_CALL_KEY'),
+    })
+    await prompt(ctx)
+
+    expect(server.headers[0]?.authorization).toBe('Bearer call-key')
+    expect(server.headers[1]?.authorization).toBe('Bearer route-key')
+  })
+
   it('starts keyless and serves the next request once the key arrives', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const dir = await home()

@@ -5,7 +5,11 @@
  * @module @deepseek-ai/dsh-faberloom-agent-plane/src/types
  */
 
+import type { agentCredentialRef } from '@deepseek-ai/dsh-faberloom-agents'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
+
+/** The credential reference type this plane names, as {@link agentCredentialRef} returns it. */
+export type AgentCredentialRef = ReturnType<typeof agentCredentialRef>
 
 /** The registered tool names a plane masks, grouped by the source they come from. */
 export interface AgentToolSources {
@@ -25,6 +29,12 @@ export interface AgentPlane {
   readonly provider: string | undefined
   /** Declared model id, or `undefined` when unset. */
   readonly model: string | undefined
+  /**
+   * The reference naming the agent's own API key in the credential seam, or
+   * `undefined` when the agent has none. A name only: resolving it is the
+   * caller's request-time operation, and the value never reaches this plane.
+   */
+  readonly credentialRef: AgentCredentialRef | undefined
   /** Skill names the agent declares. */
   readonly skills: readonly string[]
 }

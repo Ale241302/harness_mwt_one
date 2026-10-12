@@ -9,6 +9,7 @@ import type {
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -68,6 +69,22 @@ export type ApiSessionAgentResult =
 type InstalledSelection = ModelSelectionRef & {
   current: AgentModelSelection
   consume(provider: string, model: string, reasoningEffort: string | undefined): boolean
+}
+
+/** A Space agent's model route as the session composition publishes it. */
+interface SpaceAgentRoute {
+  /** Registered provider route the agent declares. */
+  readonly provider: string
+  /** Provider-owned model id the agent declares. */
+  readonly model: string
+  /** Reference naming the agent's own API key; a name, never the key. */
+  readonly credentialRef: NonNullable<LlmCallConfig['credentialRef']>
+}
+
+/** The optional Space session composition service, read structurally by service name. */
+interface SpaceAgentRouteSource {
+  /** The Space agent route one session runs on, or `undefined` when it has none. */
+  routeFor(agent: Agent): SpaceAgentRoute | undefined
 }
 
 /**
@@ -306,6 +323,14 @@ export class ApiSessionAgentController {
 
   /**
    * Install or return the Session-local model selection used by prompt assembly.
+   *
+   * The session's model resolves in this order: an explicit selection of its
+   * own (the pending projection), then the route its log already recorded, then
+   * the Space agent's route, then the deployment default. The Space agent's
+   * route therefore acts as the session's default, and an explicit user choice
+   * still wins. When the effective provider and model are the Space agent's
+   * route, the request also authenticates with that agent's credential
+   * reference; otherwise it keeps the route's own reference.
    * @param agent - live Agent that owns the selection.
    * @returns the installed mutable selection reference.
    */
@@ -320,11 +345,18 @@ export class ApiSessionAgentController {
       ? undefined
       : agentModelSelection(projectionState.pending)
     const defaultModel = this.ctx.agentDefaultModel
+    // Capture the controller: the selection object's accessors receive the
+    // selection as `this`, not the class instance.
+    const spaceRoute = (): SpaceAgentRoute | undefined => this.spaceRouteFor(agent)
     const selection: InstalledSelection = {
       get current(): AgentModelSelection {
         if (picked !== undefined) return picked
         const loggedHeader = agent.session.requestHeader()
-        if (loggedHeader === undefined) return defaultModel.currentSelection()
+        if (loggedHeader === undefined) {
+          const route = spaceRoute()
+          if (route !== undefined) return { provider: route.provider, model: route.model }
+          return defaultModel.currentSelection()
+        }
         const logged = loggedHeader.config
         return {
           provider: logged.provider,
@@ -349,9 +381,30 @@ export class ApiSessionAgentController {
       },
       assembled: undefined,
     }
+    // Registered before `installModelSelection` so it wraps it: the request
+    // listener then reads the provider/model the selection already applied and
+    // attaches the Space agent's key reference only when that route is the
+    // effective one. The reference stays request state, never a logged header.
+    agent.ctx.on('agent/request', async (_payload, next) => {
+      const resolved = await next()
+      const route = spaceRoute()
+      if (route === undefined || resolved.provider !== route.provider || resolved.model !== route.model) return resolved
+      return { ...resolved, credentialRef: route.credentialRef }
+    })
     installModelSelection(agent.ctx, selection)
     this.selections.set(agent, selection)
     return selection
+  }
+
+  /**
+   * Read the Space agent's model route for one session from the optional
+   * composition service. Absent or unrouted leaves the session on the
+   * deployment default.
+   * @param agent - live Agent whose Space route to read.
+   * @returns the agent's route, or `undefined`.
+   */
+  private spaceRouteFor(agent: Agent): SpaceAgentRoute | undefined {
+    return (this.ctx.get('faberloomSessionAgent') as SpaceAgentRouteSource | undefined)?.routeFor(agent)
   }
 
   /**

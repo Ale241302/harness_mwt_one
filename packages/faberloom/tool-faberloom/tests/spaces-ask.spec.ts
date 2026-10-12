@@ -227,6 +227,41 @@ describe('faberloom_spaces_ask', () => {
     expect(call[1].agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-v4-pro' })
   })
 
+  it('carries the consulted agent credential reference, and none for an unkeyed agent', async () => {
+    const subs = fakeSubagents({ agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true })
+    const plane = {
+      resolve: () => ({
+        persona: 'Mantener las plantillas', toolFilter: undefined, provider: 'openai', model: 'gpt-4o',
+        credentialRef: 'FABERLOOM_AGENT_API_KEY_41', skills: [],
+      }),
+      allowsSubagent: () => true,
+    }
+    const registry = harness(CONFIG, {
+      faberloomSpaces: SPACES, faberloomAgents: AGENTS, subagents: subs.service, faberloomAgentPlane: plane,
+    })
+    const exec = { agent: { id: 'parent-agent' }, signal: new AbortController().signal }
+    await registry.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-formats', question: 'x' } as never, exec as never)
+    const keyed = subs.start.mock.calls[0] as unknown as [string, { agentOptions?: unknown }]
+    expect(keyed[1].agentOptions).toEqual({
+      provider: 'openai', model: 'gpt-4o', credentialRef: 'FABERLOOM_AGENT_API_KEY_41',
+    })
+
+    const unkeyed = fakeSubagents({ agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true })
+    const planeNoKey = {
+      resolve: () => ({
+        persona: 'Mantener las plantillas', toolFilter: undefined, provider: 'openai', model: 'gpt-4o',
+        credentialRef: undefined, skills: [],
+      }),
+      allowsSubagent: () => true,
+    }
+    const unkeyedTools = harness(CONFIG, {
+      faberloomSpaces: SPACES, faberloomAgents: AGENTS, subagents: unkeyed.service, faberloomAgentPlane: planeNoKey,
+    })
+    await unkeyedTools.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-formats', question: 'x' } as never, exec as never)
+    const withoutKey = unkeyed.start.mock.calls[0] as unknown as [string, { agentOptions?: unknown }]
+    expect(withoutKey[1].agentOptions).toEqual({ provider: 'openai', model: 'gpt-4o' })
+  })
+
   it('fails loud when the provider cannot enforce a needed tool mask', async () => {
     const subs = fakeSubagents({ agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false })
     const plane = {

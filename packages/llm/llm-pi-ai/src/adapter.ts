@@ -57,6 +57,7 @@ import type {
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
@@ -76,13 +77,19 @@ export interface PiAiAdapterOptions {
   profiles: () => ReadonlyMap<string, ResolvedPiAiProviderProfile>
   /**
    * Resolve the credential for one already-resolved profile; called once per
-   * stream call and frozen for that call. `undefined` defers to the route's own
-   * pi-ai auth, which for an installed catalog route is its provider-native
-   * ambient discovery; the plugin allows that only for a profile naming no
-   * credential at all, because a named reference that misses throws `LlmError`
-   * `MISSING_CREDENTIAL` rather than falling back.
+   * stream call and frozen for that call. When the call carries a
+   * `credentialRef`, that reference resolves instead of the profile's own and
+   * a miss throws `LlmError` `MISSING_CREDENTIAL` naming it. `undefined`
+   * defers to the route's own pi-ai auth, which for an installed catalog route
+   * is its provider-native ambient discovery; the plugin allows that only for
+   * a profile naming no credential at all, because a named reference that
+   * misses throws rather than falling back.
    */
-  resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<string | undefined>
+  resolveApiKey: (
+    provider: string,
+    profile: ResolvedPiAiProviderProfile,
+    credentialRef?: CredentialRef,
+  ) => Promise<string | undefined>
   /**
    * How every collection this adapter builds resolves auth the request-level
    * `apiKey` override does not cover. Required rather than optional: a
@@ -345,7 +352,7 @@ export class PiAiAdapter extends LlmAdapter {
       model,
       options.reasoningEffort ?? profile.reasoning,
     )
-    const apiKey = await this.config.resolveApiKey(options.provider, profile)
+    const apiKey = await this.config.resolveApiKey(options.provider, profile, options.credentialRef)
 
     const consumer = new AbortController()
     const upstream = options.signal === undefined

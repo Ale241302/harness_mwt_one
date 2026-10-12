@@ -14,12 +14,15 @@ import type {
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
 import type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
 import { apply, inject } from '../src/client/index.ts'
+import { en } from '../src/client/locales.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
 const sid = (value: string): SessionId => value as SessionId
 const session: ClientSessionContext = { sessionId: sid('target') }
 /** The target session's own workspace: candidates in it are the `sameWorkspace` rows. */
 const HOME = '/Users/dev'
+/** The target session's workspace root: the directory browsing is rooted at. */
+const ROOT = `${HOME}/project`
 const CREATED_AT = 1_700_000_000_000
 /** Three days after every fixture's createdAt, so age copy is one fixed bucket. */
 const NOW = CREATED_AT + 3 * 86_400_000
@@ -41,6 +44,33 @@ type RemoteLookup<T> = (
   query: string,
   signal?: AbortSignal,
 ) => Promise<RemoteEnvelope<T[]>>
+
+/** One direct child of a listed workspace directory. */
+interface ListingEntry {
+  readonly name: string
+  readonly type: 'file' | 'directory' | 'other'
+}
+
+/** One workspace directory listing, as `workspaceFiles.list` settles it. */
+interface Listing {
+  /** Workspace-relative path of the listed directory; empty at the root. */
+  readonly path: string
+  readonly entries: readonly ListingEntry[]
+  readonly truncated: boolean
+}
+
+type ListingLookup = (
+  sessionId: SessionId,
+  path: string,
+  signal?: AbortSignal,
+) => Promise<RemoteEnvelope<Listing>>
+
+/** The workspace root's listing the browsing tests start from. */
+const ROOT_LISTING: Listing = {
+  path: '',
+  entries: [{ name: 'src', type: 'directory' }, { name: 'a b.md', type: 'file' }],
+  truncated: false,
+}
 
 function request(
   query: string,
@@ -74,8 +104,14 @@ async function bench(
       mention: '@[Research](dsh-session:InNvdXJjZSI)',
     }],
   })),
-  listed: Record<string, { updatedAt: number }> = {},
-): Promise<{ ctx: Context; fiber: ReturnType<Context['plugin']>; source: InputTriggerSource }> {
+  listed: Record<string, { cwd?: string; updatedAt?: number }> = { target: { cwd: ROOT } },
+  workspaceFiles: ListingLookup = vi.fn(() => Promise.resolve({ ok: true as const, value: ROOT_LISTING })),
+): Promise<{
+  ctx: Context
+  fiber: ReturnType<Context['plugin']>
+  source: InputTriggerSource
+  workspaceFiles: ListingLookup
+}> {
   const ctx = new Context()
   ctx.provide('sidebarRight', { openResource: vi.fn() })
   let source: InputTriggerSource | undefined
@@ -95,19 +131,20 @@ async function bench(
   new RemoteService(ctx)
   ctx.provide('remote.fileReferences', { list: files })
   ctx.provide('remote.sessionReferenceResolver', { candidates: sessions })
+  ctx.provide('remote.workspaceFiles', { list: workspaceFiles })
   ctx.provide('locale', new LocaleRuntime(ctx))
   ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: listed }) } })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   if (source === undefined) throw new Error('reference source was not registered')
-  return { ctx, fiber, source }
+  return { ctx, fiber, source, workspaceFiles }
 }
 
 describe('apply', () => {
   it('declares its services and releases the @ reference registration on disposal', async () => {
     expect(inject).toEqual([
       'inputTriggers', 'locale', 'sessions', 'remote', 'remote.fileReferences',
-      'remote.sessionReferenceResolver', 'sidebarRight',
+      'remote.workspaceFiles', 'remote.sessionReferenceResolver', 'sidebarRight',
     ])
     const { fiber } = await bench()
     let registered: InputTriggerSource | undefined
@@ -129,6 +166,7 @@ describe('apply', () => {
     new RemoteService(ctx)
     ctx.provide('remote.fileReferences', { list: () => Promise.resolve({ ok: true, value: [] }) })
     ctx.provide('remote.sessionReferenceResolver', { candidates: () => Promise.resolve({ ok: true, value: [] }) })
+    ctx.provide('remote.workspaceFiles', { list: () => Promise.resolve({ ok: true, value: ROOT_LISTING }) })
     ctx.provide('locale', new LocaleRuntime(ctx))
     ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: {} }) } })
     const ownFiber = ctx.plugin({ inject: [...inject], apply })
@@ -369,6 +407,188 @@ describe('candidates', () => {
   })
 })
 
+describe('workspace browsing', () => {
+  const noSessions = (): ReturnType<RemoteLookup<SessionReferenceMentionCandidate>> =>
+    Promise.resolve({ ok: true, value: [] })
+
+  it('lists the session workspace root for the empty query, folders before files', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: {
+        path: '',
+        entries: [
+          { name: 'zeta.txt', type: 'file' as const },
+          { name: 'src', type: 'directory' as const },
+          { name: 'alpha', type: 'directory' as const },
+          { name: 'odd', type: 'other' as const },
+          { name: 'bad\nname', type: 'file' as const },
+        ],
+        truncated: false,
+      },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, request(''))
+    expect(workspaceFiles).toHaveBeenCalledWith(sid('target'), ROOT, expect.any(AbortSignal))
+    expect(rows.map(row => row.name)).toEqual(['alpha/', 'src/', 'zeta.txt'])
+    expect(rows.map(row => row.icon)).toEqual(['folder', 'folder', 'file'])
+    expect(rows.filter(row => row.drill === true).map(row => row.name)).toEqual(['alpha/', 'src/'])
+  })
+
+  it('lists the workspace root as "." when the session list carries no workspace path', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({ ok: true as const, value: ROOT_LISTING }))
+    const { source } = await bench(undefined, noSessions, {}, workspaceFiles)
+    await source.candidates(session, request(''))
+    expect(workspaceFiles).toHaveBeenCalledWith(sid('target'), '.', expect.any(AbortSignal))
+  })
+
+  it('drills into a subfolder from its row, lists that child path, and walks back through the breadcrumbs', async () => {
+    const workspaceFiles = vi.fn((_sessionId: SessionId, path: string) => Promise.resolve({
+      ok: true as const,
+      value: path === ROOT
+        ? { path: '', entries: [{ name: 'src', type: 'directory' as const }], truncated: false }
+        : { path: 'src', entries: [{ name: 'index.html', type: 'file' as const }], truncated: false },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const [folder] = await source.candidates(session, request(''))
+    const descends = source.onPick({
+      candidate: folder!,
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'drill',
+      span: { start: 0, end: 1, draftRev: 1 },
+    })
+    expect(descends).toEqual({ text: '@src/', continue: true })
+    const drilled = await source.candidates(session, { ...request('src/'), drilled: true })
+    expect(workspaceFiles).toHaveBeenNthCalledWith(2, sid('target'), `${ROOT}/src`, expect.any(AbortSignal))
+    expect(drilled.map(row => row.name)).toEqual(['index.html'])
+    const crumbs = source.header?.(session, { query: 'src/', drilled: true })
+    expect(crumbs?.map(crumb => crumb.label)).toEqual(['Workspace', 'src'])
+    // The root crumb is the drill back to the workspace root.
+    const returns = source.onPick({
+      candidate: { name: crumbs![0]!.label, value: crumbs![0]!.value },
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'drill',
+      span: { start: 0, end: 3, draftRev: 1 },
+    })
+    expect(returns).toEqual({ text: '@', continue: true })
+    await source.candidates(session, { ...request(''), drilled: true })
+    expect(workspaceFiles).toHaveBeenNthCalledWith(3, sid('target'), ROOT, expect.any(AbortSignal))
+  })
+
+  it('filters a browsed directory by the name fragment typed after its path', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: {
+        path: 'src',
+        entries: [
+          { name: 'notes.md', type: 'file' as const },
+          { name: 'module1', type: 'directory' as const },
+          { name: 'index.ts', type: 'file' as const },
+        ],
+        truncated: false,
+      },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, request('src/ind'))
+    expect(workspaceFiles).toHaveBeenCalledWith(sid('target'), `${ROOT}/src`, expect.any(AbortSignal))
+    expect(rows.map(row => row.name)).toEqual(['index.ts'])
+  })
+
+  it('keeps the fuzzy workspace search for a query with no separator', async () => {
+    const files = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: [{ path: 'src/module1/index.ts', kind: 'file' as const }],
+    }))
+    const workspaceFiles = vi.fn()
+    const { source } = await bench(files, noSessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, request('ind'))
+    expect(files).toHaveBeenCalledWith(sid('target'), 'ind', expect.any(AbortSignal))
+    expect(workspaceFiles).not.toHaveBeenCalled()
+    expect(rows.map(row => row.name)).toEqual(['index.ts'])
+    expect(rows[0]?.description).toBe('src/module1')
+  })
+
+  it('says a listing was cut at the entry cap instead of hiding entries', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: { path: '', entries: [{ name: 'src', type: 'directory' as const }], truncated: true },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, request(''))
+    expect(rows.map(row => row.name)).toEqual(['src/', en['listing.truncated']])
+    const note = rows.at(-1)
+    expect(note?.value).toBeUndefined()
+    expect(note?.section).toBe(en['section.files'])
+  })
+
+  it('names a failed listing in the reader\'s words instead of showing an empty menu', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({ ok: true as const, value: ROOT_LISTING }))
+    workspaceFiles
+      .mockResolvedValueOnce({
+        ok: false,
+        error: new RemoteError('workspace-file/not-found', 'gone', { path: 'gone' }),
+      } as never)
+      .mockResolvedValueOnce({
+        ok: false,
+        error: new RemoteError('workspace-file/outside-workspace', 'outside', { path: '../escape' }),
+      } as never)
+      .mockResolvedValueOnce({
+        ok: false,
+        error: new RemoteError('workspace-file/not-directory', 'a file', { path: 'notes.md', kind: 'file' }),
+      } as never)
+      .mockResolvedValueOnce({
+        ok: false,
+        error: new RemoteError('gateway/internal', 'broker lost', {}),
+      } as never)
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    await expect(source.candidates(session, request('gone/'))).resolves.toEqual([
+      { name: en['listing.error.notFound'], section: en['section.files'] },
+    ])
+    await expect(source.candidates(session, request('../escape/'))).resolves.toEqual([
+      { name: en['listing.error.outsideWorkspace'], section: en['section.files'] },
+    ])
+    await expect(source.candidates(session, request('notes.md/'))).resolves.toEqual([
+      { name: en['listing.error.notDirectory'], section: en['section.files'] },
+    ])
+    await expect(source.candidates(session, request('weird/'))).resolves.toEqual([
+      { name: en['listing.error.unavailable'].replace('{message}', 'broker lost'), section: en['section.files'] },
+    ])
+  })
+
+  it('inserts the workspace-relative mention of a file reached by drilling', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: {
+        path: 'docs/guide',
+        entries: [{ name: 'read me.md', type: 'file' as const }],
+        truncated: false,
+      },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const [row] = await source.candidates(session, request('docs/guide/'))
+    expect(workspaceFiles).toHaveBeenCalledWith(sid('target'), `${ROOT}/docs/guide`, expect.any(AbortSignal))
+    expect(source.onPick({
+      candidate: row!,
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'pick',
+      span: { start: 0, end: 12, draftRev: 1 },
+    })).toEqual({
+      insert: {
+        source: 'reference',
+        ref: '@"docs/guide/read me.md"',
+        label: 'read me.md',
+        appearance: 'file',
+        clipboardText: '@"docs/guide/read me.md"',
+      },
+    })
+  })
+})
+
 describe('directory header', () => {
   const drilledRequest = (query: string, quoted = false): CandidateRequest => ({
     query,
@@ -427,17 +647,20 @@ describe('directory header', () => {
   })
 
   it('drops the row location a drilled listing already shows in its header', async () => {
-    const files = vi.fn(() => Promise.resolve({
+    const workspaceFiles = vi.fn(() => Promise.resolve({
       ok: true as const,
-      value: [{ path: 'src/module1/index.html', kind: 'file' as const }],
+      value: {
+        path: 'src/module1',
+        entries: [{ name: 'index.html', type: 'file' as const }],
+        truncated: false,
+      },
     }))
     const sessions = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))
-    const { source } = await bench(files, sessions)
-    await expect(source.candidates(session, drilledRequest('src/module1/'))).resolves.toEqual([
-      expect.objectContaining({ name: 'index.html', icon: 'file' }),
-    ])
-    const [row] = await source.candidates(session, drilledRequest('src/module1/'))
-    expect(row).not.toHaveProperty('description')
+    const { source } = await bench(undefined, sessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, drilledRequest('src/module1/'))
+    expect(rows).toEqual([expect.objectContaining({ name: 'index.html', icon: 'file' })])
+    expect(rows[0]).not.toHaveProperty('description')
+    expect(source.header?.(session, { query: 'src/module1/', drilled: true })).not.toBeUndefined()
   })
 })
 
@@ -457,7 +680,9 @@ describe('pick and codec', () => {
   it('settles files and directories as atomic icon labels; drill keeps directory completion open', async () => {
     const { source } = await bench()
     const [directory, file] = await source.candidates(session, request(''))
+    expect(directory?.name).toBe('src/')
     expect(directory?.drill).toBe(true)
+    expect(file?.name).toBe('a b.md')
     expect(file?.drill).toBeUndefined()
     expect(pick(source, directory!)).toEqual({
       insert: {
@@ -472,10 +697,10 @@ describe('pick and codec', () => {
     expect(pick(source, file!)).toEqual({
       insert: {
         source: 'reference',
-        ref: '@"docs/a b.md"',
+        ref: '@"a b.md"',
         label: 'a b.md',
         appearance: 'file',
-        clipboardText: '@"docs/a b.md"',
+        clipboardText: '@"a b.md"',
       },
     })
     const [quotedDirectory] = await source.candidates(session, request('', { quoted: true }))
