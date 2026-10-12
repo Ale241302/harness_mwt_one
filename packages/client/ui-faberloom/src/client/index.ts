@@ -129,6 +129,7 @@ export function apply(ctx: ClientContext): void {
           // A cancelled pick or a failed adoption keeps the current workspace.
         })
       },
+      exportContextToFolder: spaceId => ctx.remote.faberloomView.exportSpaceViewToFolder(spaceId, 'context', '', 'markdown'),
       renameSpace: (id, title) => { write(() => ctx.remote.faberloomView.renameSpace(id, title)) },
       createAgent: (input) => {
         write(() => ctx.remote.faberloomView.createAgent(

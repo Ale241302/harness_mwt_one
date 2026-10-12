@@ -2531,6 +2531,42 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Write one exported view into a space's folder as a real file, so the agent's
+   * file tools and the user see the same document: a Work Flow's portable JSON
+   * (or its Archify HTML) or a Context export. The file lands under
+   * `<space dir>/exportaciones/`.
+   * @param spaceId - the space whose folder receives the export.
+   * @param kind - `workflow` or `context`.
+   * @param targetId - the Work Flow id, or the context's space id (empty for the owner's own).
+   * @param format - `json` (default) or `archify` for a workflow, `markdown` for context.
+   * @returns the written path and its byte count.
+   */
+  @Remote('exportSpaceViewToFolder')
+  async exportSpaceViewToFolder(
+    spaceId: string,
+    kind: string,
+    targetId: string,
+    format?: string,
+  ): Promise<{ path: string; bytes: number }> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    const exported = kind === 'context'
+      ? await this.exportContext(targetId.length === 0 ? spaceId : targetId, format)
+      : await this.exportWorkflow(targetId, format === 'archify' ? 'archify' : 'json')
+    const content = typeof exported.content === 'string' ? exported.content : JSON.stringify(exported.content, null, 2)
+    const fallback = kind === 'context' ? 'context.md' : 'workflow.json'
+    const suggested = kind === 'context'
+      ? (exported as { filename?: string }).filename ?? fallback
+      : `${targetId.slice(0, 24) || 'workflow'}.${format === 'archify' ? 'html' : 'json'}`
+    const dir = join(await this.resolveSpaceDir(actor, space), 'exportaciones')
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, basename(suggested))
+    const bytes = Buffer.from(content, 'utf8')
+    writeFileSync(path, bytes)
+    return { path, bytes: bytes.length }
+  }
+
+  /**
    * Import a context record and return the refreshed entries.
    * @param payload - the exported JSON body.
    * @returns the refreshed rows.

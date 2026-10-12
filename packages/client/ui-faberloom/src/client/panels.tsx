@@ -68,6 +68,8 @@ export interface FaberloomPanelInjected {
   goToWorkspace: (spaceId: string) => void
   /** Adopt an existing folder as this space's Workspace, chosen with the directory picker. */
   adoptSpaceWorkspace: (spaceId: string) => void
+  /** Write this space's context export into its folder. */
+  exportContextToFolder: (spaceId: string) => Promise<Result<{ path: string; bytes: number }>>
   /** Rename one space and refresh. */
   renameSpace: (id: string, title: string) => void
   /** Create an agent with its initial configuration, and refresh. */
@@ -433,7 +435,8 @@ function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null 
 function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
     const {
-      t, createSpace, deleteSpace, goToWorkspace, adoptSpaceWorkspace, spaceDetail, saveSpace, spaceWorkspace, startSpaceSession,
+      t, createSpace, deleteSpace, goToWorkspace, adoptSpaceWorkspace, exportContextToFolder,
+      spaceDetail, saveSpace, spaceWorkspace, startSpaceSession,
       sessionsShare, openSharedSession, setSpacePermissions, workflows,
     } = props
     const { overview, status, error } = useOverview(props)
@@ -640,6 +643,12 @@ function spacesScreen() {
                           <span className={styles.tools}>
                             <button className={styles.secondary} type="button" disabled={detailValue === undefined} onClick={() => { if (detailValue !== undefined) startSpaceSession(detailValue.id) }}>{t('spaces.newInSpace')}</button>
                             <button className={styles.secondary} type="button" disabled={detailValue === undefined} onClick={() => { if (detailValue !== undefined) adoptSpaceWorkspace(detailValue.id) }}>{t('spaces.fromFolder')}</button>
+                            <button className={styles.secondary} type="button" disabled={detailValue === undefined} onClick={() => {
+                              if (detailValue === undefined) return
+                              void exportContextToFolder(detailValue.id).then((result) => {
+                                setMessage(result.ok ? `${t('spaces.exportedTo')} ${result.value.path}` : result.error.message)
+                              }).catch((error: unknown) => { setMessage(String(error)) })
+                            }}>{t('spaces.export')}</button>
                           </span>
                         </Field>
                         <Field label={t('spaces.sharedSessions')} hint={t('spaces.sharedSessionsHint')}>
