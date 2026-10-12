@@ -10,7 +10,7 @@ interface Captured {
 /** Every service the composition reads, all present by default. */
 const BASE_SERVICES: Record<string, unknown> = {
   workspaceRegistry: { list: () => [{ id: 'ws-1', path: '/home/SICOP' }] },
-  faberloomSpaces: { list: async () => [{ workspaceId: 'ws-1', agentId: 'agent-sicop' }] },
+  faberloomSpaces: { list: async () => [{ workspaceId: 'ws-1', agentId: 'agent-sicop', prompt: 'Mantén el foco en SICOP.' }] },
   faberloomAgents: { getAgent: async () => ({ responsibility: 'Mantener las reglas', skills: ['docx'], mwtMcp: true, sicopMcp: false, webAccess: false, subagents: [] }) },
   faberloomAgentPlane: { resolve: () => ({ persona: 'Mantener las reglas', toolFilter: { deny: ['mcp__sicop__x'] }, provider: undefined, model: undefined, skills: ['docx'] }) },
   tools: { schemas: () => [{ name: 'mcp__sicop__x' }] },
@@ -73,13 +73,15 @@ describe('FaberLoomSessionAgent composition', () => {
     const installed = scope()
     captured.cb!(installed)
     expect(installed.sections[0]).toMatchObject({ name: 'deployment:persona-prefix', order: 5, text: 'Mantener las reglas' })
-    expect(installed.sections[1]?.text).toContain('Skills asignadas: docx')
+    expect(installed.sections[1]).toMatchObject({ name: 'faberloom:space-directive', text: 'Mantén el foco en SICOP.' })
+    expect(installed.sections[2]?.text).toContain('Skills asignadas: docx')
     expect(installed.restrict).toHaveBeenCalledWith({ deny: ['mcp__sicop__x'] })
   })
 
   it('installs only the persona when nothing is masked and no skills are declared', async () => {
     const captured = await harness({ ownerId: 'owner@test' }, {
       faberloomAgentPlane: { resolve: () => ({ persona: 'Solo persona', toolFilter: undefined, provider: undefined, model: undefined, skills: [] }) },
+      faberloomSpaces: { list: async () => [{ workspaceId: 'ws-1', agentId: 'agent-sicop', prompt: '' }] },
     }, '/home/SICOP')
     const installed = scope()
     captured.cb!(installed)

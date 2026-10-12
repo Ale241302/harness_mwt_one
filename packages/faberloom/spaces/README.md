@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package carries thematic spaces and effective context. It registers the `ctx.faberloomSpaces` host service with durable records through the storage domain and console-role access control; the model tools live in `dsh-tool-faberloom`. It also resolves a referenced space by lexical lookup and returns its effective context, memory, and attached-file metadata.
+This package carries thematic spaces and effective context. It registers the `ctx.faberloomSpaces` host service with durable records through the storage domain and console-role access control; the model tools live in `dsh-tool-faberloom`. Each record also carries the owner's `prompt` — a directive the Space's agent follows, empty by default and set through `update` — alongside its context, sources, responsible agent, and mirrored workspace. It also resolves a referenced space by lexical lookup and returns its effective context, memory, and attached-file metadata.
 
 ## Table of Contents
 

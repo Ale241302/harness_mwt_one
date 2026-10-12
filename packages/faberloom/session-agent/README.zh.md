@@ -34,7 +34,7 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-Space 会话的请求把负责代理的 persona 作为 `deployment:persona-prefix` 段落携带，把列出代理技能的简短 `faberloom:session-agent` 指令携带，并携带移除了被禁用来源工具的工具集。Space 之外的会话看到部署组合不变。
+Space 会话的请求把负责代理的 persona 作为 `deployment:persona-prefix` 段落携带，把该 Space owner 的指令作为 `faberloom:space-directive` 段落携带（当记录设置了它时），把列出代理技能的简短 `faberloom:session-agent` 指令携带，并携带移除了被禁用来源工具的工具集。Space 之外的会话看到部署组合不变。
 
 #### Token 影响
 

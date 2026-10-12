@@ -32,6 +32,10 @@ export const spaceRecord = z.object({
   excluded: z.array(spaceId),
   members: z.array(z.string()),
   context: z.record(z.string(), z.string()),
+  // The owner's directive for this Space's agent; empty keeps the agent's own
+  // persona. Defaulted so records written before the field keep loading under
+  // the same domain version.
+  prompt: z.string().default(''),
   sources: z.array(spaceSource).default([]),
   // The agent in charge of this space. Optional so records written before the
   // responsible-agent field keep loading under the same domain version.

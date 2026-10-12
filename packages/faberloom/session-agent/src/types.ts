@@ -15,4 +15,6 @@ export interface SessionComposition {
   readonly toolFilter: ToolRestriction | undefined
   /** Skill names the agent declares. */
   readonly skills: readonly string[]
+  /** The Space owner's directive for this session's agent; empty when unset. */
+  readonly prompt: string
 }

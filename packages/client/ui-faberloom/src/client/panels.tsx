@@ -449,6 +449,7 @@ function spacesScreen() {
     const [inherit, setInherit] = useState(true)
     const [members, setMembers] = useState('')
     const [spaceAgentId, setSpaceAgentId] = useState('')
+    const [spacePrompt, setSpacePrompt] = useState('')
     const [parentId, setParentId] = useState('')
     const [newInherit, setNewInherit] = useState(true)
     const [creating, setCreating] = useState(false)
@@ -478,6 +479,7 @@ function spacesScreen() {
       setInherit(detail.value.inheritContext)
       setMembers(detail.value.members.join(', '))
       setSpaceAgentId(detail.value.agentId ?? '')
+      setSpacePrompt(detail.value.prompt)
       setMessage(null)
     }, [detail])
 
@@ -603,6 +605,7 @@ function spacesScreen() {
                       inheritContext: inherit,
                       members: members.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
                       agentId: spaceAgentId.length === 0 ? null : spaceAgentId,
+                      prompt: spacePrompt,
                     })
                       .then((result) => { if (!result.ok) setMessage(result.error.message) })
                       .catch((cause: unknown) => { setMessage(String(cause)) })
@@ -633,6 +636,9 @@ function spacesScreen() {
                             <option value="yes">{t('spaces.inheritYes')}</option>
                             <option value="no">{t('spaces.inheritNo')}</option>
                           </select>
+                        </Field>
+                        <Field label={t('field.prompt')} hint={t('spaces.promptHint')}>
+                          <textarea value={spacePrompt} onChange={(event) => { setSpacePrompt(event.target.value) }} />
                         </Field>
                         <Field label={t('spaces.conversations')} hint={t('spaces.workspaceHint')}>
                           {workspace.kind === 'loading'

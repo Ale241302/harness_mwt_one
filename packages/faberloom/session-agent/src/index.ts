@@ -94,10 +94,17 @@ export class FaberLoomSessionAgent extends Service {
             text: composition.persona,
           })
           if (composition.toolFilter !== undefined) scope.tools.restrict(composition.toolFilter)
+          if (composition.prompt.length > 0) {
+            scope.systemPrompt.section({
+              name: 'faberloom:space-directive',
+              order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 1,
+              text: composition.prompt,
+            })
+          }
           if (composition.skills.length > 0) {
             scope.systemPrompt.section({
               name: 'faberloom:session-agent',
-              order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 1,
+              order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 2,
               text: `Skills asignadas: ${composition.skills.join(', ')}. Cárgalas con la tool skill cuando la tarea lo requiera.`,
             })
           }
@@ -155,7 +162,7 @@ export class FaberLoomSessionAgent extends Service {
     if (space === undefined || space.agentId === undefined) return undefined
     const catalogAgent = await fleet.getAgent(space.agentId as FaberLoomAgentId)
     const resolved = plane.resolve(catalogAgent, toolSourcesOf(this.ctx.get('tools')?.schemas() ?? []))
-    return { persona: resolved.persona, toolFilter: resolved.toolFilter, skills: resolved.skills }
+    return { persona: resolved.persona, toolFilter: resolved.toolFilter, skills: resolved.skills, prompt: space.prompt }
   }
 }
 

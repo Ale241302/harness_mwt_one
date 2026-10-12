@@ -4083,6 +4083,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       members: [...space.members],
       sources: space.sources.map(source => ({ kind: source.kind, ref: source.id })),
       contextKeys: Object.keys(space.context),
+      prompt: space.prompt,
       agentId: space.agentId ?? null,
     }
   }
@@ -4257,6 +4258,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...input.inheritContext === undefined ? {} : { inheritContext: input.inheritContext },
       ...input.members === undefined ? {} : { members: [...input.members] },
       ...input.agentId === undefined ? {} : { agentId: input.agentId },
+      ...input.prompt === undefined ? {} : { prompt: input.prompt },
     })
     if (typeof input.agentId === 'string' && input.agentId.length > 0) await this.assignAgent(input.agentId, id)
     return await this.overview()

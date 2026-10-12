@@ -501,6 +501,8 @@ export interface FaberLoomSpaceDetail {
   readonly sources: readonly { readonly kind: string; readonly ref: string }[]
   /** Context keys the space carries. */
   readonly contextKeys: readonly string[]
+  /** The owner's directive for this Space's agent; empty when unset. */
+  readonly prompt: string
   /** The agent in charge of the space, or null when none is assigned. */
   readonly agentId: string | null
 }
@@ -515,6 +517,8 @@ export interface SpaceSaveInput {
   readonly members?: readonly string[]
   /** New responsible agent, or null to clear the assignment. */
   readonly agentId?: string | null
+  /** New owner directive for the Space's agent; an empty string clears it. */
+  readonly prompt?: string
 }
 
 /** One board item with its review state. */

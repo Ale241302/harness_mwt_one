@@ -59,6 +59,8 @@ export interface FaberLoomSpace {
   readonly members: readonly string[]
   /** Context this space contributes. */
   readonly context: SpaceContext
+  /** The owner's directive for this Space's agent; empty keeps the agent's own persona. */
+  readonly prompt: string
   /** Commercial sources in MWT.ONE this space refers to (directives, not copies). */
   readonly sources: readonly SpaceSource[]
   /** The agent in charge of this space, or `undefined` when none is assigned. */
@@ -89,6 +91,8 @@ export interface CreateSpaceInput {
   readonly agentId?: string
   /** Workspace this space mirrors when a Workspace is adopted as a Space. */
   readonly workspaceId?: string
+  /** Owner's directive for this Space's agent; empty keeps the agent's own persona. */
+  readonly prompt?: string
   /** Whether the new space inherits its ancestors' context; defaults to true. */
   readonly inheritContext?: boolean
 }
@@ -129,6 +133,8 @@ export interface UpdateSpaceInput {
   readonly agentId?: string | null
   /** New mirrored workspace id, or `null` to fall back to the deterministic area. */
   readonly workspaceId?: string | null
+  /** New owner directive for the Space's agent; `null` clears it. */
+  readonly prompt?: string | null
 }
 
 /** Input accepted when attaching one file to a space. */

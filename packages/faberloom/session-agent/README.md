@@ -34,7 +34,7 @@ Mount this row where `ctx.agents`, `ctx.faberloomSpaces`, `ctx.faberloomAgents`,
 
 #### What the model sees
 
-A Space session's request carries the responsible agent's persona as the `deployment:persona-prefix` section, a short `faberloom:session-agent` directive listing the agent's skills, and a tool set with the disabled sources' tools removed. A session outside a Space sees the deployment composition unchanged.
+A Space session's request carries the responsible agent's persona as the `deployment:persona-prefix` section, the Space owner's directive as a `faberloom:space-directive` section when the record sets one, a short `faberloom:session-agent` directive listing the agent's skills, and a tool set with the disabled sources' tools removed. A session outside a Space sees the deployment composition unchanged.
 
 #### Token effect
 
