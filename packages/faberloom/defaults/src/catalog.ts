@@ -168,4 +168,38 @@ export const SEED_ROUTINES: readonly SeedRoutine[] = [
     permissions: ['mwt'],
     failurePolicy: 'review',
   },
+  {
+    name: 'Excel diario desde el correo',
+    intent: 'Mantener el Excel de seguimiento del Space actualizado con el reporte que llega por correo.',
+    trigger: { kind: 'recurrence', match: 'every:1d' },
+    steps: [
+      {
+        id: 'excel-correo',
+        instruction: 'Busca en el buzón el correo del reporte diario (el remitente o el asunto acordados) y guarda su adjunto Excel en la carpeta del Space.',
+        handler: 'agent',
+        dependsOn: [],
+      },
+      {
+        id: 'excel-enlace',
+        instruction: 'Si el reporte no trae adjunto, extrae del cuerpo del correo el enlace al archivo Excel (xlsx/xls).',
+        handler: 'email.extract-spreadsheet-link',
+        dependsOn: ['excel-correo'],
+      },
+      {
+        id: 'excel-actualizar',
+        instruction: 'Actualiza el Excel de seguimiento del Space con las filas del reporte: conserva las columnas existentes y añade o reemplaza por clave, sin duplicar filas.',
+        handler: 'agent',
+        dependsOn: ['excel-correo', 'excel-enlace'],
+      },
+      {
+        id: 'excel-verificar',
+        instruction: 'Verifica que el Excel actualizado está en la carpeta del Space y contiene las filas del día; si falta algo, dilo en el resultado.',
+        handler: 'agent',
+        dependsOn: ['excel-actualizar'],
+      },
+    ],
+    expectedResult: 'El Excel de seguimiento del Space queda actualizado con el reporte del día.',
+    permissions: [],
+    failurePolicy: 'review',
+  },
 ]
