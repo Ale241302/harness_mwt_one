@@ -16,7 +16,7 @@ import { TerminalTitle } from './TerminalTitle.tsx'
 import { TerminalRecovery, type TerminalRecoveryInjected } from './TerminalRecovery.tsx'
 import { TerminalCleanup, type TerminalCleanupInjected } from './TerminalCleanup.tsx'
 import type { TerminalBodyInjected, TerminalInjected } from './face.ts'
-import { en, zh } from './locales.ts'
+import { en, es, zh } from './locales.ts'
 
 /** Services needed by the terminal's two sidebar seats. */
 export const inject = ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs', 'webTerminals', 'theme']
@@ -43,7 +43,7 @@ export function apply(ctx: Context): void {
   const namespace = 'sidebarTerminal'
   const id = '@deepseek-ai/dsh-client-ui-sidebar-terminal'
   const t = ctx.locale.bind(namespace)
-  ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'ui-sidebar-terminal.copy')
+  ctx.effect(() => ctx.locale.register(namespace, { zh, en, es }), 'ui-sidebar-terminal.copy')
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id, kind: 'terminal', multiple: true, priority: 'builtin', title: () => t('title'),
     guide: [{ id: 'new', order: 20, title: () => t('new'), description: () => t('description'), icon: TerminalGuideIcon }],

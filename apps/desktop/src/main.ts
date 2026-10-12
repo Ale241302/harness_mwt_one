@@ -32,7 +32,8 @@ import { DesktopProjectManager, type DesktopProjectHooks } from './project-manag
 import { DesktopHostProcess } from './host-process.ts'
 import { DesktopBackendController, type DesktopBackendState } from './backend-controller.ts'
 import { DESKTOP_IPC, type DesktopIdentityStatus, type DesktopSignInResult, type DesktopUpdateState } from './ipc.ts'
-import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
+import { formatDesktopMessage, desktopLocaleOf, isDesktopLocaleId, resolveDesktopLocale, type DesktopLocale } from './locale.ts'
+import { readLocaleChoice, writeLocaleChoice } from './locale-choice.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { desktopErrorState } from './startup-error.ts'
@@ -213,7 +214,8 @@ async function main(): Promise<void> {
   let pluginWindow: BrowserWindow | undefined
   let shellInstallerOwnsQuit = false
   let updateState: DesktopUpdateState = { phase: 'idle' }
-  const locale = resolveDesktopLocale(app.getLocale())
+  // The shell's own screens follow the language the operator picked, then the OS.
+  let locale: DesktopLocale = resolveDesktopLocale(readLocaleChoice(home) ?? app.getLocale())
   const messages = locale.messages
   const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
   const managementPreload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
@@ -391,6 +393,13 @@ async function main(): Promise<void> {
   }
   ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
     assertDesktopSender(event, ['shell'])
+    return locale
+  })
+  ipcMain.handle(DESKTOP_IPC.localeSet, (event, value: unknown): DesktopLocale => {
+    assertDesktopSender(event, ['shell'])
+    if (!isDesktopLocaleId(value)) throw new Error('dsh desktop: locale must be a shipped locale id')
+    writeLocaleChoice(home, value)
+    locale = desktopLocaleOf(value)
     return locale
   })
   ipcMain.handle(DESKTOP_IPC.appearanceGet, (event): 'light' | 'dark' => {

@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { ArchivedSessionsSection } from './ArchivedSessionsSection.tsx'
 import type { ArchivedSessionsSectionInjected } from './ArchivedSessionsSection.tsx'
-import { en, zh, type ArchivedSessionsLocaleKey } from './locales.ts'
+import { en, es, zh, type ArchivedSessionsLocaleKey } from './locales.ts'
 
 export type { ArchivedSessionsSectionInjected, ArchivedSessionsSectionProps } from './ArchivedSessionsSection.tsx'
 export type { ArchivedSessionsLocaleKey } from './locales.ts'
@@ -31,7 +31,7 @@ export const inject = ['slots', 'locale', 'uiWorkspace']
 
 /** Contribute the archived-session page to Settings. */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-unarchive-sessions: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-settings-unarchive-sessions: dictionaries')
 
   const t = ctx.locale.bind(NS)
   const injected = (): ArchivedSessionsSectionInjected => ({

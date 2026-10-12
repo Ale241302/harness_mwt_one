@@ -7,26 +7,68 @@ const osPrefersDark = typeof window.matchMedia === 'function'
 document.documentElement.dataset.appearance = osPrefersDark ? 'dark' : 'light'
 
 async function main() {
-  const { id, messages } = await api.locale()
-  document.documentElement.lang = id
-  document.querySelector('#page-title').textContent = messages.startupLoading
-  document.querySelector('#restart').textContent = messages.restartApplication
-  document.querySelector('#disable-plugins').textContent = messages.disableThirdPartyPlugins
-  document.querySelector('#reset-configuration').textContent = messages.resetConfiguration
-  document.querySelector('#reset-advice').textContent = messages.startupConfigurationAdvice
-  document.querySelector('#reinstall-advice').textContent = messages.startupReinstallAdvice
+  const initial = await api.locale()
+  let id = initial.id
+  let messages = initial.messages
   const signin = document.querySelector('#signin')
-  document.querySelector('#signin-description').textContent = messages.signInDescription
-  document.querySelector('#signin-user-label').textContent = messages.signInUser
-  document.querySelector('#signin-password-label').textContent = messages.signInPassword
   const submit = document.querySelector('#signin-submit')
   const submitSpinner = document.querySelector('#signin-submit-spinner')
   const submitLabel = document.querySelector('#signin-submit-label')
-  submitLabel.textContent = messages.signInSubmit
   const signinError = document.querySelector('#signin-error')
   const userInput = document.querySelector('#signin-user')
   const passwordInput = document.querySelector('#signin-password')
+  let loginPending = false
+  let lastState = { phase: 'starting' }
   let signedIn = (await api.identity.status()).signedIn
+
+  /** Copy every static label the shell owns from the active dictionary. */
+  function applyCopy() {
+    document.documentElement.lang = id
+    document.querySelector('#page-title').textContent = messages.startupLoading
+    document.querySelector('#restart').textContent = messages.restartApplication
+    document.querySelector('#disable-plugins').textContent = messages.disableThirdPartyPlugins
+    document.querySelector('#reset-configuration').textContent = messages.resetConfiguration
+    document.querySelector('#reset-advice').textContent = messages.startupConfigurationAdvice
+    document.querySelector('#reinstall-advice').textContent = messages.startupReinstallAdvice
+    document.querySelector('#signin-description').textContent = messages.signInDescription
+    document.querySelector('#signin-user-label').textContent = messages.signInUser
+    document.querySelector('#signin-password-label').textContent = messages.signInPassword
+    setSignInBusy(loginPending)
+  }
+
+  // Language: one button per shipped locale, built from the payload so the shell
+  // stays the single owner of the list. The choice is remembered by the shell.
+  const language = document.querySelector('#language')
+  for (const option of initial.available) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.dataset.locale = option.id
+    button.textContent = option.label
+    language.append(button)
+  }
+  const languageButtons = [...language.querySelectorAll('button')]
+  function markLanguage() {
+    language.setAttribute('aria-label', messages.languageTitle)
+    for (const button of languageButtons) {
+      button.setAttribute('aria-pressed', String(button.dataset.locale === id))
+    }
+  }
+  for (const button of languageButtons) {
+    button.addEventListener('click', () => {
+      const next = button.dataset.locale
+      if (next === undefined || next === id) return
+      api.setLocale(next).then((payload) => {
+        id = payload.id
+        messages = payload.messages
+        applyCopy()
+        markLanguage()
+        applyAppearance(appearance)
+        render(lastState)
+      }).catch(() => {
+        // A refused switch keeps the language the screen is already showing.
+      })
+    })
+  }
 
   const toggle = document.querySelector('#appearance-toggle')
   let appearance = document.documentElement.dataset.appearance === 'dark' ? 'dark' : 'light'
@@ -36,6 +78,8 @@ async function main() {
     toggle.setAttribute('aria-pressed', String(value === 'dark'))
     toggle.setAttribute('aria-label', value === 'dark' ? messages.appearanceToLight : messages.appearanceToDark)
   }
+  applyCopy()
+  markLanguage()
   applyAppearance(appearance)
   try {
     applyAppearance(await api.appearance.get())
@@ -50,6 +94,7 @@ async function main() {
   })
 
   function render(state) {
+    lastState = state
     if (!signedIn) {
       document.querySelector('main').setAttribute('aria-busy', 'false')
       document.querySelector('#spinner').hidden = true
@@ -81,8 +126,8 @@ async function main() {
   let changed = false
   const unsubscribe = api.backend.subscribe(state => { changed = true; render(state) })
   window.addEventListener('pagehide', unsubscribe, { once: true })
-  const initial = await api.backend.status()
-  if (!changed) render(initial)
+  const status = await api.backend.status()
+  if (!changed) render(status)
 
   async function recover(operation) {
     render({ phase: 'starting' })
@@ -93,7 +138,6 @@ async function main() {
     }
   }
 
-  let loginPending = false
   function setSignInBusy(busy) {
     if (busy) {
       submit.setAttribute('aria-busy', 'true')

@@ -33,7 +33,7 @@ import { runSpaceFromEmail } from './space-from-email.ts'
 import { runTaskChat } from './task-chat.ts'
 import { createWorkspaceStore } from './store.ts'
 import { ThemeToggle, createThemeToggleStore, type ThemeToggleInjected } from './theme-toggle.tsx'
-import { en, zh, type FaberloomKey } from './locales.ts'
+import { en, es, zh, type FaberloomKey } from './locales.ts'
 import { FABERLOOM_THEME_SOURCE, faberloomTokens } from './theme.ts'
 
 export { FaberloomBrandName } from './panels.tsx'
@@ -69,7 +69,7 @@ type OverviewResult =
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
 
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-faberloom: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-faberloom: dictionaries')
   ctx.effect(
     () => ctx.theme.overrideTokens(FABERLOOM_THEME_SOURCE, faberloomTokens),
     'ui-faberloom: identity tokens',

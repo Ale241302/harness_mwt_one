@@ -33,6 +33,8 @@ Desktop 在启动 Host 之前先登录。未登录时，壳渲染登录表单而
 
 登录界面左上角提供外观切换按钮，可在米色浅色主题与暖色深色主题之间切换整个界面。所选外观写入共享 Harness home 的 `desktop-appearance.json`，并在下次启动首帧前应用，因此重启不会闪现错误主题；未做选择时跟随操作系统。
 
+外观按钮旁是语言组，每个按钮对应一种 shell 语言（English、Español、中文）。所选语言写入 `desktop-locale.json`，并就地重新标注整个界面——包括 shell 自有的恢复与更新页面；未做选择时跟随操作系统语言，任何西语区域标签（`es-AR`、`es-MX` 等）都落在西语文案上。这仅作用于 Electron shell 自身的页面；登录后的应用从 Host 用户设置文档读取语言，与主题偏好所在位置相同。
+
 ### 后端选择
 
 `DSH_DESKTOP_GATEWAY_URL` 选择后端。默认情况下 Desktop 是共享多用户网关（`https://harness.mwt.one/`）的客户端：窗口在持久会话分区中加载该源，网关自身的登录是唯一的凭据步骤，且每个产品模块——Spaces、Workflows、Memory、Routines、Context、Approvals、Agents & Skills、Connections 与 Email——展示与 Web UI 相同的数据，因为它们共用同一个后端。应用菜单中的“退出登录”会清除该分区。`DSH_DESKTOP_GATEWAY_URL` 为空时改为选择本机单用户 harness：内置 `faberloom` profile、上文的登录表单，以及本机拥有的 Harness home 数据。

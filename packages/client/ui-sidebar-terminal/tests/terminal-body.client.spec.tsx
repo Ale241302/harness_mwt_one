@@ -10,7 +10,7 @@ import type { TerminalViewState } from '@deepseek-ai/dsh-api-terminal-controller
 import type { WebTerminalId } from '@deepseek-ai/dsh-api-terminal-controller/types'
 import { TerminalBody, type TerminalBodyProps } from '../src/client/TerminalBody.tsx'
 import { TerminalTitle } from '../src/client/TerminalTitle.tsx'
-import { en, zh } from '../src/client/locales.ts'
+import { en, es, zh } from '../src/client/locales.ts'
 
 const fake = vi.hoisted(() => ({
   terminals: [] as FakeTerminal[],
@@ -366,7 +366,7 @@ it('starts a recovered screen with no local history when environment discovery i
 })
 
 
-it.each([en, zh])('translates known terminal failures while retaining unknown Host diagnostics', (dictionary) => {
+it.each([en, zh, es])('translates known terminal failures while retaining unknown Host diagnostics', (dictionary) => {
   const h = mount(idle, dictionary)
   for (const issue of ['missingTerminal', 'inputFull', 'attachmentEnded', 'invalidOutput', 'terminalLimit'] as const) {
     h.update({ ...idle, phase: 'failed', issue, error: 'raw diagnostic' })

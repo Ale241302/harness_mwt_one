@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DocumentPreviewRegistry } from '../src/client/document/registry.ts'
 import { ImageBody } from '../src/client/image/ImageBody.tsx'
 import { apply, BINARY_IMAGE_EXTENSIONS, IMAGE_BODY_ID, IMAGE_EXTENSIONS, imageBodyDefinition } from '../src/client/image/index.ts'
-import { en, zh } from '../src/client/image/locales.ts'
+import { en, es, zh } from '../src/client/image/locales.ts'
 
 let dispose: (() => Promise<void>) | undefined
 afterEach(async () => { await dispose?.(); dispose = undefined })
@@ -51,7 +51,7 @@ describe('image registration', () => {
       expect(registry.candidates(`ASSET.${extension}`).map(entry => entry.id)).toEqual([IMAGE_BODY_ID])
     }
     expect(registry.getSnapshot()[0]?.title()).toBe(en.title)
-    expect(dictionaries.get('sidebarImage')).toEqual({ zh, en })
+    expect(dictionaries.get('sidebarImage')).toEqual({ zh, en, es })
     expect(register).toHaveBeenCalledExactlyOnceWith(
       { name: 'sidebar.right.tab.document', key: IMAGE_BODY_ID, locale: 'sidebarImage' },
       ImageBody,

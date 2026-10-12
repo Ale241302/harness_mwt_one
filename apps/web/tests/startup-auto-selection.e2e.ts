@@ -49,7 +49,9 @@ describe('web e2e: startup auto-selection', () => {
     expect(await fish.evaluate(node => getComputedStyle(node).color))
       .toBe(await headline.evaluate(node => getComputedStyle(node).color))
     await fishHitbox.hover()
-    expect(await fish.evaluate(node => getComputedStyle(node).animationName)).not.toBe('none')
+    // The hero mark answers a hover with the brand's coral anchor node, not motion.
+    await expect.poll(async () => fish.locator('circle').evaluate(node => getComputedStyle(node).opacity))
+      .toBe('1')
     await page.evaluate(() => {
       const refs = {
         root: document.querySelector('div[data-phase="hero"]'),

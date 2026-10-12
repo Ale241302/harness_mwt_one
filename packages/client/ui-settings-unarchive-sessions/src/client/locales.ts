@@ -40,3 +40,22 @@ export const en = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
 } satisfies Record<ArchivedSessionsLocaleKey, string>
+
+/** Spanish dictionary, checked complete against the zh key set. */
+export const es = {
+  nav: 'Sesiones archivadas',
+  search: 'Buscar sesiones archivadas',
+  loading: 'Leyendo sesiones…',
+  empty: 'No hay sesiones archivadas.',
+  unavailable: 'Aquí no hay sesiones archivadas que se puedan restaurar.',
+  emptySearch: 'No hay sesiones que coincidan.',
+  unarchive: 'Desarchivar',
+  unarchiveNamed: 'Desarchivar {title}',
+  ungrouped: 'Sin agrupar',
+  'time.now': 'ahora',
+  'time.minutes': '{n} min',
+  'time.hours': '{n} h',
+  'time.days': '{n} d',
+  'time.months': '{n} mes',
+  'time.years': '{n} año',
+} satisfies Record<ArchivedSessionsLocaleKey, string>

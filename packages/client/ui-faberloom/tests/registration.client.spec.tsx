@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
+import { es as commonEs } from '@deepseek-ai/dsh-client-locale/src/locales/es.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -205,7 +206,7 @@ async function bench(
       // (`sessions` is already provided by the slot test runtime).
       ctx.provide('inputTriggers', { registerSource: vi.fn(() => () => {}), sessionOf: vi.fn() } as never)
       ctx.provide('commandUi', { register: vi.fn(() => () => {}), decorate: vi.fn(() => () => {}), dismiss: vi.fn(), popupFor: vi.fn() } as never)
-      ctx.effect(() => locale.register('common', { zh: commonZh, en: commonEn }), 'test: common locale')
+      ctx.effect(() => locale.register('common', { zh: commonZh, en: commonEn, es: commonEs }), 'test: common locale')
       ctx.slots.installLocale(locale)
     },
   })

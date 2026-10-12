@@ -33,6 +33,8 @@ The Desktop signs in before it boots a Host. While signed out, the shell renders
 
 The sign-in screen carries a top-left appearance toggle that switches the whole screen between the cream light and warm-dark themes. The chosen appearance is written to `desktop-appearance.json` in the shared Harness home and applied before the first paint of the next launch, so a restart never flashes the wrong theme; an unmade choice follows the operating system.
 
+Beside it, a language group offers the three shell locales (English, Español, 中文) as one button each. The choice is written to `desktop-locale.json` and re-labels the whole screen in place — including the recovery and update screens the shell owns — and an unmade choice follows the operating system's language, with any regional Spanish tag (`es-AR`, `es-MX`, …) landing on the Spanish copy. This governs the Electron shell's own screens; the signed-in application reads its language from the Host user-settings document, the same place its theme preference lives.
+
 ### Backend selection
 
 `DSH_DESKTOP_GATEWAY_URL` selects the backend. By default the Desktop is a client of the shared multi-user gateway (`https://harness.mwt.one/`): the window loads that origin in a persistent session partition, the gateway's own sign-in is the only credential step, and every product module — Spaces, Workflows, Memory, Routines, Context, Approvals, Agents & Skills, Connections, and Email — shows the same data as the Web UI because it is the same backend. "Sign out" from the application menu clears that partition. An empty `DSH_DESKTOP_GATEWAY_URL` selects the local single-user harness instead: the bundled `faberloom` profile, the sign-in form above, and the Harness-home data owned by this machine.

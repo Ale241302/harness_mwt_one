@@ -1,13 +1,14 @@
 /** Typed preload operations exposed only by the Electron shell. */
 
 import type { DesktopPluginRecord } from './project-manager.ts'
-import type { DesktopLocale } from './locale.ts'
+import type { DesktopLocale, DesktopLocaleId } from './locale.ts'
 import type { DesktopBackendState } from './backend-controller.ts'
 import type { DesktopAppearance } from './appearance.ts'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
   localeGet: 'dsh-desktop:locale-get',
+  localeSet: 'dsh-desktop:locale-set',
   appearanceGet: 'dsh-desktop:appearance-get',
   appearanceSet: 'dsh-desktop:appearance-set',
   pluginsList: 'dsh-desktop:plugins-list',
@@ -55,6 +56,8 @@ export interface DesktopSignInResult {
 export interface DshDesktopApi {
   readonly protocolVersion: 1
   locale(): Promise<DesktopLocale>
+  /** Switch the shell language and return the payload for the chosen locale. */
+  setLocale(id: DesktopLocaleId): Promise<DesktopLocale>
   readonly appearance: {
     get(): Promise<DesktopAppearance>
     set(value: DesktopAppearance): Promise<void>
@@ -85,7 +88,7 @@ export interface DshDesktopApi {
 }
 
 /** Startup-page controls, unavailable to backend-provided application documents. */
-export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale' | 'identity' | 'appearance'> {
+export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale' | 'setLocale' | 'identity' | 'appearance'> {
   readonly backend: Omit<DshDesktopApi['backend'], 'retry'>
   disablePlugins(): Promise<void>
   restart(): Promise<void>

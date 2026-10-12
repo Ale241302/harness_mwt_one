@@ -38,6 +38,22 @@ export const en = {
   'confirm.enable': 'Enable Full access',
 } satisfies Record<PermissionSettingsKey, string>
 
+/** Spanish dictionary, checked complete against the zh key set. */
+export const es = {
+  'title': 'Permisos',
+  'description': 'Elige el modo de permiso predeterminado para las sesiones nuevas',
+  'loading': 'Cargando',
+  'unavailable': 'No disponible',
+  'preset.readOnly': 'Solo lectura',
+  'preset.workspaceWrite': 'Escritura en el workspace',
+  'preset.fullAccess': 'Acceso total',
+  'confirm.title': '¿Habilitar el acceso total?',
+  'confirm.description': 'El acceso total reduce los pasos de confirmación y permite que las sesiones nuevas realicen más acciones directamente, incluidas operaciones sensibles, cambios en archivos o comandos externos. Úsalo solo cuando confíes en las tareas posteriores.',
+  'confirm.acknowledge': 'Entiendo los riesgos y quiero continuar',
+  'confirm.cancel': 'Cancelar',
+  'confirm.enable': 'Habilitar el acceso total',
+} satisfies Record<PermissionSettingsKey, string>
+
 /** Simplified Chinese dictionary for the current-session popup gate. */
 export const accessZh = {
   'mode': '访问模式，当前：{name}',
@@ -81,4 +97,25 @@ export const accessEn = {
   'auto.confirm.description': 'Auto review runs without a sandbox. Before every native tool call and PTC inner call, the same model as the current agent reviews whether to allow it. This feature is experimental, can falsely allow or deny actions, and uses additional tokens.',
   'auto.confirm.acknowledge': 'I understand these risks and want to continue',
   'auto.confirm.enable': 'Enable Auto review',
+} satisfies Record<PermissionAccessKey, string>
+
+/** Spanish dictionary, checked complete against the zh key set. */
+export const accessEs = {
+  'mode': 'Modo de acceso, actual: {name}',
+  'close': 'Cerrar',
+  'preset.readOnly': 'Solo lectura',
+  'preset.workspaceWrite': 'Escritura en el workspace',
+  'preset.fullAccess': 'Acceso total',
+  'confirm.title': '¿Habilitar el acceso total?',
+  'confirm.description': 'El acceso total reduce los pasos de confirmación y permite que el agente realice más acciones directamente, incluidas operaciones sensibles, cambios en archivos o comandos externos. Úsalo solo cuando confíes en la tarea actual.',
+  'confirm.acknowledge': 'Entiendo los riesgos y quiero continuar',
+  'confirm.cancel': 'Cancelar',
+  'confirm.enable': 'Habilitar el acceso total',
+  'auto.label': 'Auto review',
+  'auto.badge': 'EXP',
+  'auto.description': 'Se ejecuta sin sandbox; antes de cada llamada a herramienta nativa y de cada llamada interna de PTC, el mismo modelo realiza una revisión experimental.',
+  'auto.confirm.title': '¿Habilitar Auto review (experimental)?',
+  'auto.confirm.description': 'Auto review se ejecuta sin sandbox. Antes de cada llamada a herramienta nativa y de cada llamada interna de PTC, el mismo modelo que el agente actual revisa si permitirla. Esta función es experimental, puede permitir o denegar acciones por error y consume tokens adicionales.',
+  'auto.confirm.acknowledge': 'Entiendo estos riesgos y quiero continuar',
+  'auto.confirm.enable': 'Habilitar Auto review',
 } satisfies Record<PermissionAccessKey, string>

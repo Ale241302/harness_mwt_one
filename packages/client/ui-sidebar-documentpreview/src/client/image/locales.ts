@@ -19,6 +19,15 @@ export const en = {
   unsupported: 'Image preview requires the complete file contents.',
 } satisfies Record<ImagePreviewKey, string>
 
+/** Spanish dictionary with the same keys as the Chinese dictionary. */
+export const es = {
+  title: 'Imagen',
+  preview: 'Vista previa de la imagen: {name}',
+  loading: 'Cargando…',
+  failed: 'No se pudo mostrar esta imagen.',
+  unsupported: 'La vista previa de la imagen requiere el contenido completo del archivo.',
+} satisfies Record<ImagePreviewKey, string>
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Image preview selection, accessible name, and status text. */

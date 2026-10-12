@@ -3,11 +3,12 @@
  *
  * FaberLoom's product language is Spanish (`es`), the dictionary the panels are
  * authored in. The client locale runtime requires every namespace to register the
- * two shipped locales (`en`, `zh`), so both carry real translations of the full
- * key set — no Spanish copy is presented under an English or Chinese label.
+ * three shipped locales (`en`, `es`, `zh`), so each carries real translations of
+ * the full key set — no Spanish copy is presented under an English or Chinese
+ * label.
  */
 
-const es = {
+export const es = {
   'brand.name': 'Faberloom',
   'nav.conversar': 'Conversar',
   'nav.board': 'Mesa de trabajo',
@@ -777,9 +778,9 @@ const es = {
 export type FaberloomKey = keyof typeof es
 
 /**
- * Canonical FaberLoom dictionary (Spanish). Spanish is the product's working
- * language; `en` and `zh` below are real translations of the same key set, so an
- * English or Chinese reader sees translated copy rather than Spanish in disguise.
+ * Canonical FaberLoom dictionary is `es` above (the product's working language);
+ * `en` and `zh` below are real translations of the same key set, so an English or
+ * Chinese reader sees translated copy rather than Spanish in disguise.
  */
 export const en: Record<FaberloomKey, string> = {
   'brand.name': 'Faberloom',

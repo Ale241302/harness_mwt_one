@@ -36,10 +36,12 @@ function startup(
   const login = vi.fn(async (): Promise<{ ok: boolean; message?: string }> => ({ ok: true }))
   const getAppearance = vi.fn(async (): Promise<'light' | 'dark'> => appearance.stored ?? (appearance.osDark === true ? 'dark' : 'light'))
   const setAppearance = vi.fn(async (_value: 'light' | 'dark') => {})
+  const setLocale = vi.fn(async (id: Parameters<DshDesktopStartupApi['setLocale']>[0]) => resolveDesktopLocale(id))
   const queried = Promise.withResolvers<undefined>()
   const api: DshDesktopStartupApi = {
     protocolVersion: 1,
     locale: async () => resolveDesktopLocale(locale),
+    setLocale,
     appearance: { get: getAppearance, set: setAppearance },
     backend: {
       status: () => { queried.resolve(undefined); return status },
@@ -76,7 +78,7 @@ function startup(
         : [element(selector).textContent]),
   ].join('\n')
   return { dom, document, element, button, publish, copy, submitSignIn,
-    disablePlugins, resetConfiguration, restart, unsubscribe, login, getAppearance, setAppearance, queried: queried.promise }
+    disablePlugins, resetConfiguration, restart, unsubscribe, login, getAppearance, setAppearance, setLocale, queried: queried.promise }
 }
 
 it('renders the sign-in form instead of loading while signed out', async () => {
@@ -287,4 +289,23 @@ it('offers only restart before emergency profile recovery is available', () => {
   const dom = new JSDOM(startupFailureDocument(resolveDesktopLocale('en'), 'Resources unavailable'))
   expect([...dom.window.document.querySelectorAll('form')].map(form => form.action)).toEqual(['dsh-recovery://restart'])
   dom.window.close()
+})
+
+it('switches the shell language from the sign-in screen and re-labels it', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  const buttons = [...page.document.querySelectorAll<HTMLButtonElement>('#language button')]
+  expect(buttons.map(button => button.textContent)).toEqual(['English', 'Español', '中文'])
+  expect(buttons[0]?.getAttribute('aria-pressed')).toBe('true')
+  expect(page.element('#language').getAttribute('aria-label')).toBe('Language')
+
+  buttons[1]?.click()
+  await expect.poll(() => page.element('#heading').textContent).toBe('Entrar a MWT.ONE')
+  expect(page.setLocale).toHaveBeenCalledWith('es')
+  expect(page.document.documentElement.lang).toBe('es')
+  expect(page.element('#signin-submit-label').textContent).toBe('Entrar')
+  expect(page.element('#language').getAttribute('aria-label')).toBe('Idioma')
+  const after = [...page.document.querySelectorAll<HTMLButtonElement>('#language button')]
+  expect(after[1]?.getAttribute('aria-pressed')).toBe('true')
+  expect(after[0]?.getAttribute('aria-pressed')).toBe('false')
 })

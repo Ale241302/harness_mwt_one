@@ -152,6 +152,80 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   enablePickerToCreate: '请先开启 Agent 模式选择，再启动创造模式',
 }
 
+/** Spanish copy. */
+export const es: Record<AgentPresetSettingsKey, string> = {
+  error: 'No se pudieron cargar los presets de agente.',
+  userTrust: 'Personalizado',
+  seatHint: 'Preset de agente para la sesión que estás a punto de iniciar',
+  headerHint: 'El preset de agente que ejecuta esta sesión, fijado cuando se inició',
+  nav: 'Presets de agente',
+  sectionIntro:
+    'Un preset es la composición de complementos que ejecuta el agente de una sesión: sus herramientas, su prompt y '
+    + 'sus capacidades. Duplica uno existente y hazlo tuyo, o deja que el agente cree uno por ti en el modo Creador.',
+  builtIn: 'Integrado',
+  setDefault: 'Establecer como predeterminado',
+  view: 'Ver',
+  presetStandardName: 'Modo estándar',
+  presetStandardDescription:
+    'Agente de programación completo con edición de archivos, shell, búsqueda en archivos y en la web, skills, '
+    + 'planificación, objetivos, subagentes y flujos de trabajo.',
+  presetPtcName: 'Modo PTC',
+  presetPtcDescription:
+    'Agente de programación completo sin la herramienta de flujos de trabajo; las demás herramientas se exponen a '
+    + 'través del SDK del modo PTC para que el modelo combine operaciones de varios pasos en un solo programa de TypeScript.',
+  presetMinimalName: 'Modo mínimo',
+  presetMinimalDescription:
+    'Agente de programación de una sola herramienta con un shell persistente.',
+  presetCordisName: 'Modo Creador',
+  presetCordisDescription:
+    'Pensado para crear presets de agente personalizados, con todas las capacidades del modo Estándar más inspección '
+    + 'en tiempo de ejecución, experimentos con complementos y guía para crear presets.',
+  duplicate: 'Duplicar',
+  duplicateUnavailable: 'Esta implementación no tiene un directorio de presets con permisos de escritura',
+  delete: 'Eliminar',
+  presetId: 'Identificador',
+  presetIdPlaceholder: 'my-agent',
+  displayName: 'Nombre',
+  displayNamePlaceholder: 'Se muestra en el selector; de forma predeterminada, el identificador',
+  inUse: 'Predeterminado para tareas nuevas',
+  selectionOffDefault: 'Predeterminado',
+  builtInGroup: 'Integrados',
+  customGroup: 'Personalizados',
+  noDescription: 'Sin descripción.',
+  brokenBadge: 'No se pudo cargar',
+  brokenNoCopy: 'Un preset que no se pudo cargar no se puede duplicar',
+  switchRefused: 'No se pudo cambiar a {name}: {reason}',
+  copyOf: 'Copiado de',
+  composition: 'Composición (agent.cordis.yml)',
+  cancel: 'Cancelar',
+  close: 'Cerrar',
+  retry: 'Reintentar',
+  copyTitle: 'Duplicar preset',
+  copyIntro:
+    'El preset completo se copia en esta máquina. El identificador pasa a ser el nombre de su directorio y no se '
+    + 'puede cambiar después; todo lo demás se edita en los archivos propios del preset.',
+  create: 'Crear',
+  creating: 'Creando…',
+  creatorDraft: 'Crear un preset personalizado con el modo Creador',
+  openLocation: 'Abrir carpeta',
+  showLocation: 'Mostrar ubicación',
+  revealedPathLabel: 'Archivos del preset:',
+  idRequired: 'Asigna un identificador al preset.',
+  idInvalid: 'Usa letras minúsculas, dígitos y guiones, y empieza por una letra o un dígito.',
+  idTaken: 'Ya existe un preset con este identificador.',
+  deleteTitle: '¿Eliminar este preset?',
+  deleteDescription:
+    'Se elimina el directorio del preset. Las sesiones que ya se ejecutan con él siguen funcionando; las sesiones nuevas no pueden seleccionarlo.',
+  deleteConfirm: 'Eliminar',
+  deleting: 'Eliminando…',
+  showPicker: 'Permitir cambiar de modo de agente',
+  showPickerBeta: 'Beta',
+  showPickerDescription:
+    'Cuando está activado, las tareas nuevas pueden elegir los modos Estándar, PTC, Creador, Mínimo y personalizados. Cuando está desactivado, todas las tareas nuevas usan el modo predeterminado (Estándar de forma predeterminada; configurable). Solo afecta a las tareas nuevas.',
+  enablePickerToSetDefault: 'Activa la selección de modo de agente para elegir un modo predeterminado',
+  enablePickerToCreate: 'Activa la selección de modo de agente para iniciar el modo Creador',
+}
+
 // The resolution itself is the shared fold in `dsh-agent-presets/display`,
 // re-exported here so every surface in this plugin reads one path; the
 // Settings plugin list inlines the same fold over this plugin's dictionaries.

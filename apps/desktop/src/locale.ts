@@ -60,6 +60,7 @@ export const en = {
   signOutMenu: 'Sign out',
   appearanceToDark: 'Switch to dark appearance',
   appearanceToLight: 'Switch to light appearance',
+  languageTitle: 'Language',
 } as const
 
 /** Every Desktop locale supplies the complete English key set. */
@@ -125,19 +126,126 @@ export const zh = {
   signOutMenu: '退出登录',
   appearanceToDark: '切换到深色外观',
   appearanceToLight: '切换到浅色外观',
+  languageTitle: '语言',
+} as const satisfies DesktopMessages
+
+/**
+ * Spanish copy owned by the Electron shell, checked complete against the
+ * English key set. The shell's own screens are the first thing a Spanish-
+ * speaking operator meets, so this dictionary ships with the built-ins rather
+ * than waiting for a language pack.
+ */
+export const es = {
+  application: 'Aplicación',
+  startupFailed: 'No se pudo iniciar Faberloom',
+  startupLoading: 'Iniciando Faberloom…',
+  startupLoadingDescription: 'El espacio de trabajo se abrirá cuando esté listo.',
+  startupErrorDescription: 'Elige una acción de recuperación. Desactivar los complementos de terceros conserva sus archivos.',
+  startupReinstallAdvice: 'Si faltan archivos de la aplicación o están dañados, ciérrala y vuelve a instalarla. Tus tareas se guardan aparte.',
+  startupConfigurationAdvice: 'Restablecer Desktop borra toda la configuración del perfil de Desktop y los complementos de terceros sin respaldo, y después inicia un perfil nuevo. Las tareas y los ajustes compartidos se conservan.',
+  restartApplication: 'Cerrar y reiniciar',
+  resetConfiguration: 'Restablecer Desktop y reintentar',
+  disableThirdPartyPlugins: 'Desactivar todos los complementos de terceros y reintentar',
+  pluginsMenu: 'Complementos de Desktop…',
+  pluginsMenuPackagedOnly: 'Complementos de Desktop… (disponible en aplicaciones instaladas)',
+  checkUpdatesMenu: 'Buscar actualizaciones…',
+  updateCheckFailedTitle: 'Falló la búsqueda de actualizaciones',
+  unknownError: 'Error desconocido',
+  updateCheckTitle: 'Buscar actualizaciones',
+  updateCurrent: 'Ya tienes la última versión.',
+  updateTitle: 'Actualización de Faberloom',
+  updateAvailable: 'Hay una actualización disponible',
+  updateDetail: 'Faberloom {version}\n\nEsta versión incluye su versión de dsh correspondiente. La aplicación se reiniciará después de instalarla.',
+  installAndRestart: 'Instalar y reiniciar',
+  later: 'Más tarde',
+  updateFailedTitle: 'Falló la actualización',
+  pluginManagerTitle: 'Complementos de Desktop',
+  pluginWindowTitle: 'Faberloom — Complementos de Desktop',
+  pluginManagerDescription: 'Los complementos se instalan solo en los node_modules de Desktop y los gestiona el pnpm incluido.',
+  refresh: 'Actualizar',
+  enable: 'Activar',
+  disable: 'Desactivar',
+  disabled: 'Desactivado',
+  retry: 'Reintentar el inicio',
+  disableAll: 'Desactivar todos los complementos y reintentar',
+  recoveryDescription: 'El backend no pudo iniciar. Actualiza o desactiva los complementos incompatibles y reintenta. Los complementos instalados y la configuración se conservan.',
+  changingActivation: 'Cambiando la activación de los complementos…',
+  npmPackage: 'paquete npm',
+  install: 'Instalar',
+  installed: 'Instalado',
+  noPlugins: 'No hay complementos de Desktop instalados.',
+  remove: 'Quitar',
+  update: 'Actualizar',
+  targetVersion: 'Escribe la versión de destino para {name}',
+  removing: 'Quitando {name}…',
+  updating: 'Actualizando {name}…',
+  installing: 'Instalando {spec}…',
+  operationComplete: 'Listo. El backend de Desktop se reinició.',
+  refreshing: 'Actualizando…',
+  refreshed: 'Lista de complementos actualizada.',
+  loadingPlugins: 'Leyendo los complementos de Desktop…',
+  signInTitle: 'Entrar a MWT.ONE',
+  signInDescription: 'Usa tu cuenta de la consola MWT.ONE. Tus agentes, skills y espacios se cargan con esta identidad.',
+  signInUser: 'Usuario',
+  signInPassword: 'Contraseña',
+  signInSubmit: 'Entrar',
+  signInBusy: 'Entrando…',
+  signInFailed: 'No se pudo entrar',
+  signedInAs: 'Sesión de {email}',
+  signOutMenu: 'Cerrar sesión',
+  appearanceToDark: 'Cambiar al modo oscuro',
+  appearanceToLight: 'Cambiar al modo claro',
+  languageTitle: 'Idioma',
 } as const satisfies DesktopMessages
 
 /** Locale payload exposed to the Desktop-owned renderer. */
 export interface DesktopLocale {
-  readonly id: 'en' | 'zh-CN'
+  readonly id: DesktopLocaleId
   readonly messages: DesktopMessages
+  /** Every shipped locale, in switcher order, so the renderer builds one control. */
+  readonly available: typeof DESKTOP_LOCALES
 }
 
-/** Resolve Electron's locale to one shipped Desktop dictionary. */
+/** Shipped shell locales, in switcher order. */
+export const DESKTOP_LOCALES = [
+  { id: 'en', label: 'English' },
+  { id: 'es', label: 'Español' },
+  { id: 'zh-CN', label: '中文' },
+] as const
+
+/** One shipped shell locale id. */
+export type DesktopLocaleId = typeof DESKTOP_LOCALES[number]['id']
+
+/**
+ * Resolve a system or stored locale tag to one shipped Desktop dictionary.
+ * Regional Spanish tags (`es-AR`, `es-MX`, …) all land on the Spanish copy.
+ * @param locale - the tag to resolve, typically Electron's `app.getLocale()`.
+ * @returns the matching locale payload.
+ */
 export function resolveDesktopLocale(locale: string): DesktopLocale {
-  return locale.toLowerCase().startsWith('zh')
-    ? { id: 'zh-CN', messages: zh }
-    : { id: 'en', messages: en }
+  const tag = locale.toLowerCase()
+  if (tag.startsWith('zh')) return { id: 'zh-CN', messages: zh, available: DESKTOP_LOCALES }
+  if (tag.startsWith('es')) return { id: 'es', messages: es, available: DESKTOP_LOCALES }
+  return { id: 'en', messages: en, available: DESKTOP_LOCALES }
+}
+
+/**
+ * Whether a value names one of the shipped shell locales.
+ * @param value - candidate locale id from the renderer or the stored choice.
+ * @returns whether the id is a shipped locale.
+ */
+export function isDesktopLocaleId(value: unknown): value is DesktopLocaleId {
+  return DESKTOP_LOCALES.some(locale => locale.id === value)
+}
+
+/**
+ * Build the payload for one shipped locale id.
+ * @param id - a shipped shell locale id.
+ * @returns the matching locale payload.
+ */
+export function desktopLocaleOf(id: DesktopLocaleId): DesktopLocale {
+  const messages = id === 'zh-CN' ? zh : id === 'es' ? es : en
+  return { id, messages, available: DESKTOP_LOCALES }
 }
 
 /** Replace named placeholders in one locale-owned message. */

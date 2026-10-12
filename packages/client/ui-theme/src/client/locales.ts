@@ -28,3 +28,16 @@ export const en = {
   'fontSize.increase': 'Increase font size',
   'fontSize.decrease': 'Decrease font size',
 } satisfies Record<ThemeKey, string>
+
+/** Spanish dictionary, checked complete against the zh key set. */
+export const es = {
+  'appearance.title': 'Apariencia',
+  'appearance.light': 'Claro',
+  'appearance.dark': 'Oscuro',
+  'appearance.system': 'Seguir al sistema',
+  'fontSize.title': 'Tamaño de la letra',
+  'fontSize.description': 'Solo afecta el tamaño de letra del contenido de la conversación',
+  'fontSize.unit': 'px',
+  'fontSize.increase': 'Aumentar el tamaño de la letra',
+  'fontSize.decrease': 'Reducir el tamaño de la letra',
+} satisfies Record<ThemeKey, string>

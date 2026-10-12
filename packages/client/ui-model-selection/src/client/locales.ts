@@ -60,3 +60,28 @@ export const en = {
   'blocked.composer': 'This model is unavailable — select one to continue',
   'empty.efforts': 'This model provides no reasoning effort levels.',
 } satisfies Record<ModelKey, string>
+
+/** Spanish dictionary, checked complete against the zh key set. */
+export const es = {
+  'command.label': 'Modelo',
+  'command.description': 'Elegir el modelo de esta conversación',
+  'option.loadError': 'No se pudo cargar el catálogo: {message}',
+  'option.deepseekV4Flash.description': 'Rápido, eficiente y económico; ideal para tareas concretas, rutinarias o en paralelo.',
+  'option.deepseekV4Pro.description': 'Mayor capacidad de codificación autónoma, conocimiento y razonamiento complejo; ideal para tareas complejas o donde prima la calidad, con mayor costo.',
+  'trigger.fallback': 'Elegir un modelo',
+  'trigger.loading': 'Cargando modelos…',
+  'trigger.selectAria': 'Elegir un modelo',
+  'trigger.aria': 'Elegir un modelo, actual {model}',
+  'trigger.ariaEffort': 'Elegir un modelo, actual {model}, nivel de razonamiento {effort}',
+  'menu.aria': 'Modelo y nivel de razonamiento',
+  'menu.model': 'Modelo',
+  'menu.effort': 'Nivel de razonamiento',
+  'effort.providerDefault': 'Default',
+  'status.loading': 'Actualizando la lista de modelos…',
+  'error.action': 'No se pudo completar la operación con el modelo: {message}',
+  'action.reload': 'Recargar',
+  'warning.groupLoad': '{name} no se pudo cargar: {message}',
+  'empty.models': 'No hay modelos disponibles.',
+  'blocked.composer': 'El modelo actual no está disponible; elige uno para continuar',
+  'empty.efforts': 'Este modelo no ofrece niveles de razonamiento.',
+} satisfies Record<ModelKey, string>

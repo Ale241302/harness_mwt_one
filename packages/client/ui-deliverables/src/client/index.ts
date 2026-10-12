@@ -18,7 +18,7 @@ import { PresentedOpenController } from './present-open.ts'
 import { downloadWorkspaceFile } from './download.ts'
 import { PresentRow } from './PresentRow.tsx'
 import { Deliverables, selectDeliverables, type DeliverablesInjected } from './Deliverables.tsx'
-import { en, NS, zh, type DeliverablesKey } from './locales.ts'
+import { en, es, NS, zh, type DeliverablesKey } from './locales.ts'
 import {
   deliverablesDefinition, presentedForClosing, producedFileMentions, selectProducedFiles,
 } from './turn-deliverables.ts'
@@ -45,7 +45,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => () => opener.dispose())
   ctx.on('connection/reset', () => { opener.resetHost() })
   ctx.uiConversation.events.register(deliverablesDefinition)
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-deliverables: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-deliverables: dictionaries')
   ctx.slots.inject(
     'conversation.chat.turnTail',
     () => ctx.slots.register({

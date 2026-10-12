@@ -54,3 +54,20 @@ export const en = {
   'error.notDirectory': 'That is not a directory.',
   'error.unavailable': 'Read failed: {message}',
 } satisfies Record<SidebarFilesKey, string>
+
+/** Spanish dictionary, checked complete against the zh key set. */
+export const es = {
+  'type.label': 'Archivos',
+  'guide.title': 'Archivos del workspace',
+  'guide.description': 'Explora los archivos del workspace de esta sesión',
+  loading: 'Cargando…',
+  empty: 'Directorio vacío',
+  truncated: 'Hay demasiados elementos; solo se muestra una parte.',
+  noWorkspace: 'Esta sesión no tiene un directorio de workspace.',
+  reload: 'Recargar',
+  'entry.other': 'No es un archivo ni un directorio, así que no se puede abrir.',
+  'error.notFound': 'Ese directorio ya no existe. Es posible que se haya movido o eliminado.',
+  'error.outsideWorkspace': 'Ese directorio está fuera del workspace, así que la barra lateral no lo leerá.',
+  'error.notDirectory': 'Eso no es un directorio.',
+  'error.unavailable': 'No se pudo leer: {message}',
+} satisfies Record<SidebarFilesKey, string>

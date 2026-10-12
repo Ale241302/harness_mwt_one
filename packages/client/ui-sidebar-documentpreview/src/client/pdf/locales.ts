@@ -27,6 +27,19 @@ export const en = {
   retry: 'Retry',
 } satisfies Record<PdfLocaleKey, string>
 
+/** Spanish PDF-renderer dictionary. */
+export const es = {
+  title: 'PDF',
+  pageImage: 'Página {page} del PDF',
+  loading: 'Cargando…',
+  rendering: 'Dibujando la página…',
+  failed: 'No se pudo mostrar el PDF: {message}',
+  password: 'Este PDF requiere contraseña; no se admiten vistas previas protegidas con contraseña.',
+  workerFailed: 'El proceso de renderizado del PDF no pudo continuar. Inténtalo de nuevo.',
+  unsupported: 'La vista previa del PDF requiere el contenido completo del archivo.',
+  retry: 'Reintentar',
+} satisfies Record<PdfLocaleKey, string>
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** PDF page, loading, and failure messages. */
