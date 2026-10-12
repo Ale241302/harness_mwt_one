@@ -165,6 +165,8 @@ async function bench(
   const workflowPendingChanges = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const acceptWorkflowChange = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const rejectWorkflowChange = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const saveSpaceAttachment = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { files: [] } }))
+  const sendSpaceFileByEmail = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { messageId: '<m@x>', accepted: [] } }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
@@ -183,6 +185,7 @@ async function bench(
     captureSpaceSessions, spaceSessions, spaceSessionContent, removeSpaceSession,
     syncContext, workflowPendingChanges, acceptWorkflowChange, rejectWorkflowChange,
     setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
+    saveSpaceAttachment, sendSpaceFileByEmail,
   }
   await runtime.mount({
     inject: ['slots'],

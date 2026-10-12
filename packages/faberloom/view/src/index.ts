@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join, sep } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -3393,6 +3393,49 @@ export class FaberLoomViewService extends TypertRemoteService {
       return { name: attachment.name, path, bytes: bytes.length }
     })
     return { files }
+  }
+
+  /**
+   * Send one file that lives in a space's folder as an email attachment through
+   * the owner's SMTP row. The path must resolve inside the space folder, so a
+   * panel action can never mail an arbitrary file on the host.
+   * @param spaceId - the space whose folder holds the file.
+   * @param path - the file path, relative to the space folder (or absolute inside it).
+   * @param to - comma-separated recipients.
+   * @param subject - message subject.
+   * @param text - plain-text body.
+   * @returns the generated `Message-ID` and the accepted recipients.
+   */
+  @Remote('sendSpaceFileByEmail')
+  async sendSpaceFileByEmail(
+    spaceId: string,
+    path: string,
+    to: string,
+    subject: string,
+    text: string,
+  ): Promise<{ messageId: string; accepted: readonly string[] }> {
+    const actor = this.actor()
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) throw new Error('faberloom: no hay una conexión de correo configurada')
+    const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    const root = await this.resolveSpaceDir(actor, space)
+    const target = resolve(root, path)
+    if (target !== root && !target.startsWith(root + sep)) {
+      throw new Error('faberloom: el archivo debe estar dentro de la carpeta del Space')
+    }
+    const bytes = readFileSync(target)
+    const recipients = to.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
+    if (recipients.length === 0) throw new Error('faberloom: el mensaje no tiene destinatarios')
+    return await connections.sendMail(actor.id, {
+      to: recipients,
+      subject,
+      text,
+      attachments: [{
+        name: basename(target),
+        mediaType: 'application/octet-stream',
+        contentBase64: bytes.toString('base64'),
+      }],
+    })
   }
 
   /**

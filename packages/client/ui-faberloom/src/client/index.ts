@@ -195,6 +195,8 @@ export function apply(ctx: ClientContext): void {
       emailTrash: (uid, sender, subject) => ctx.remote.faberloomView.emailTrash(uid, sender, subject),
       emailAttachment: (uid, index) => ctx.remote.faberloomView.emailAttachment(uid, index),
       saveAttachmentToSpace: (spaceId, uid, name) => ctx.remote.faberloomView.saveSpaceAttachment(spaceId, uid, name),
+      sendSpaceFileByEmail: (spaceId, path, to, subject, text) =>
+        ctx.remote.faberloomView.sendSpaceFileByEmail(spaceId, path, to, subject, text),
       spaceFromEmail: (uid, name, agentId, from) => {
         runSpaceFromEmail(ctx, bound, refresh, { uid, name, agentId, from })
       },

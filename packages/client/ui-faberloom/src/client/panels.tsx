@@ -187,6 +187,14 @@ export interface FaberloomPanelInjected {
     uid: string,
     name: string,
   ) => Promise<Result<{ files: readonly { name: string; path: string; bytes: number }[] }>>
+  /** Mail one file that lives in a space's folder through the owner's SMTP row. */
+  sendSpaceFileByEmail: (
+    spaceId: string,
+    path: string,
+    to: string,
+    subject: string,
+    text: string,
+  ) => Promise<Result<{ messageId: string; accepted: readonly string[] }>>
   /** Turn one email into a Space with its Workspace, memory, and files. */
   spaceFromEmail: (uid: string, name: string, agentId: string | null, from: string | null) => void
   /** Answer one message in the routine-designer chat. */
@@ -1109,7 +1117,7 @@ function agentsScreen() {
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
-      t, emailInbox, emailRead, emailAttachment, saveAttachmentToSpace, emailMarkSeen, emailTrash, emailDrafts,
+      t, emailInbox, emailRead, emailAttachment, saveAttachmentToSpace, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailDrafts,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, emailPolicy, saveEmailPolicy, spaceFromEmail, routineChat, routineFromEmail,
       openRoutines, learnFromEmail, startConversation,
@@ -1132,6 +1140,8 @@ function emailScreen() {
     const [replyBody, setReplyBody] = useState<string | null>(null)
     const [attachments, setAttachments] = useState<readonly string[]>([])
     const [saveSpaceId, setSaveSpaceId] = useState('')
+    const [sendSpaceId, setSendSpaceId] = useState('')
+    const [sendFilePath, setSendFilePath] = useState('')
     const [spaceOpen, setSpaceOpen] = useState(false)
     const [spaceName, setSpaceName] = useState('')
     const [spaceAgent, setSpaceAgent] = useState('')
@@ -1180,6 +1190,16 @@ function emailScreen() {
         setMessage(result.value.files.length === 0
           ? t('state.error')
           : `${t('email.savedToFolder')} ${result.value.files.map(file => file.path).join(', ')}`)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+    /** Mail one file that lives in the chosen space's folder. */
+    const sendSpaceFile = (): void => {
+      setMessage(null)
+      void sendSpaceFileByEmail(sendSpaceId, sendFilePath.trim(), to, subject, body).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setComposing(false)
+        setReload(value => value + 1)
+        setMessage(`${t('email.sentFile')} ${result.value.messageId}`)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
     const inboxRows = inbox.kind === 'ready' ? inbox.value : []
@@ -1528,9 +1548,24 @@ function emailScreen() {
             <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value) }} /></Field>
           </div>
           <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value) }} /></Field>
-          <Field label={t('field.attachments')}>
+          <Field label={t('field.attachments')} hint={t('email.sendFileHint')}>
             <input type="file" multiple onChange={(event) => { onFiles(event.target.files) }} />
             {attachments.length === 0 ? null : <span className={styles.cellMuted}>{attachments.join(', ')}</span>}
+            <div className={styles.grid2}>
+              <select value={sendSpaceId} onChange={(event) => { setSendSpaceId(event.target.value) }} aria-label={t('email.saveTarget')}>
+                <option value="">{t('email.saveTargetNone')}</option>
+                {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+              </select>
+              <input type="text" autoComplete="off" value={sendFilePath} placeholder={t('email.sendFilePath')}
+                aria-label={t('email.sendFilePath')} onChange={(event) => { setSendFilePath(event.target.value) }} />
+            </div>
+            <span className={styles.tools}>
+              <button className={styles.secondary} type="button"
+                disabled={sendSpaceId.length === 0 || sendFilePath.trim().length === 0}
+                onClick={sendSpaceFile}>
+                {t('email.sendFileAction')}
+              </button>
+            </span>
           </Field>
           <Field label={t('field.body')}><textarea className={styles.emailBody} value={body} onChange={(event) => { setBody(event.target.value) }} /></Field>
         </Modal>

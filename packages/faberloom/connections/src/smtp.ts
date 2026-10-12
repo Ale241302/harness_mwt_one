@@ -241,11 +241,42 @@ function buildMessage(mail: OutgoingMail, from: string, messageId: string): stri
     `Date: ${new Date().toUTCString()}`,
     `Message-ID: ${messageId}`,
     'MIME-Version: 1.0',
+  ]
+  const text = Buffer.from(mail.text, 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n')
+  const attachments = mail.attachments ?? []
+  if (attachments.length === 0) {
+    const plain = [
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+    ]
+    return `${[...headers, ...plain].join('\r\n')}\r\n\r\n${text}`
+  }
+  // One multipart body: the text part first, then one part per attachment. The
+  // filename parameter follows RFC 2231 when the name is not printable ASCII.
+  const boundary = `faberloom-${randomUUID()}`
+  const parts: string[] = [
+    `--${boundary}`,
     'Content-Type: text/plain; charset=UTF-8',
     'Content-Transfer-Encoding: base64',
+    '',
+    text,
   ]
-  const body = Buffer.from(mail.text, 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n')
-  return `${headers.join('\r\n')}\r\n\r\n${body}`
+  for (const attachment of attachments) {
+    const name = attachment.name.replace(/[\r\n"]/g, '_')
+    const disposition = /^[\x20-\x7e]*$/u.test(name)
+      ? `filename="${name}"`
+      : `filename*=UTF-8''${encodeURIComponent(name)}`
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${attachment.mediaType.replace(/[\r\n]/g, '')}; name="${name}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; ${disposition}`,
+      '',
+      attachment.contentBase64.replace(/.{76}/g, '$&\r\n'),
+    )
+  }
+  parts.push(`--${boundary}--`, '')
+  return `${[...headers, `Content-Type: multipart/mixed; boundary="${boundary}"`].join('\r\n')}\r\n\r\n${parts.join('\r\n')}`
 }
 
 /**

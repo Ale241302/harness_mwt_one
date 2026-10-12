@@ -194,6 +194,32 @@ describe('FaberLoomConnections', () => {
     expect(wire).toContain('Content-Transfer-Encoding: base64')
   })
 
+  it('attaches a file as a multipart part', async () => {
+    const received: string[] = []
+    const fake = await fakeSmtpServer(received)
+    servers.push(fake.server)
+    const { connections } = await harness()
+    await connections.save('owner@example.com', {
+      kind: 'smtp', label: 'Saliente', host: '127.0.0.1', port: fake.port, secure: false, username: '506@muitowork.com', secret: 'secreta', primary: true,
+    })
+    const payload = Buffer.from('%PDF-1.4 proforma', 'utf8').toString('base64')
+
+    const sent = await connections.sendMail('owner@example.com', {
+      to: ['cliente@eguisa.example'],
+      subject: 'Proforma con adjunto',
+      text: 'Hola,\nadjunto la proforma.\n',
+      attachments: [{ name: 'proforma.pdf', mediaType: 'application/pdf', contentBase64: payload }],
+    })
+
+    expect(sent.accepted).toEqual(['cliente@eguisa.example'])
+    const wire = received[0] ?? ''
+    expect(wire).toContain('Content-Type: multipart/mixed; boundary="faberloom-')
+    expect(wire).toContain('Content-Type: application/pdf; name="proforma.pdf"')
+    expect(wire).toContain('Content-Disposition: attachment; filename="proforma.pdf"')
+    expect(wire).toContain(payload)
+    expect(wire).toContain('--faberloom-')
+  })
+
   it('fails loud when no SMTP server is configured', async () => {
     const { connections } = await harness()
     await expect(connections.sendMail('owner@example.com', { to: ['x@y.z'], subject: 's', text: 't' }))
