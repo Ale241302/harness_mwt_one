@@ -184,6 +184,10 @@ Remove-Item -LiteralPath $payload -Force -ErrorAction SilentlyContinue
 if ($Deploy) {
   $shaArg = if ([string]::IsNullOrEmpty($script:ForkSha)) { '' } else { "DSH_FORK_SHA=$($script:ForkSha) " }
   Write-Host "==> Desplegando (build del fork + up + nginx). El build tarda."
-  Invoke-Native { ssh -p $Port "${User}@${SshHost}" "cd $RemoteDir && ${shaArg}bash scripts/deploy-vps.sh" } 'deploy en el VPS'
+  # Keepalive explicito: el paso que mas tarda (la exportacion de la imagen) pasa
+  # minutos sin imprimir nada, y una conexion ociosa la resetea el camino. Sin
+  # esto el despliegue muere con "client_loop: send disconnect: Connection reset"
+  # justo al exportar, con el build ya terminado.
+  Invoke-Native { ssh -p $Port -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -o TCPKeepAlive=yes "${User}@${SshHost}" "cd $RemoteDir && ${shaArg}bash scripts/deploy-vps.sh" } 'deploy en el VPS'
 }
 Write-Host "OK"
