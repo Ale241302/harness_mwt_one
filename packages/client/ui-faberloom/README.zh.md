@@ -28,10 +28,12 @@ FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoo
 - 通过 `ctx.theme.overrideTokens` 注册的强调色层，随浅色/深色模式变化；
 - `sidebar.brand.name`、`sidebar.brand.mark` 与 `conversation.hero.brand.mark` 的占用者；
 - 十个 `sidebar.panellist` 行覆盖十二个 `main` 面板，以共享的 `MainPanelId` 寻址（对话落地页与技能面板保留路由但不占侧边栏行）；
-- Settings 旁的 `sidebar.footer.action` 主题开关：主题功能的第二个界面，它从 `theme` 服务读取已解析的方案，并写入与外观行相同的偏好。它由本包而非 `ui-theme` 注册，因为侧边栏的动作座位位于该包的引用闭包之外（`ui-sidebar` 到达 `ui-layout`，后者到达 `ui-theme`），而本插件已同时依赖两者；
+- Settings 旁的 `sidebar.footer.action` 偏好控件：调色板菜单按配色方案分组列出所有已注册主题，每项带取自该主题自身定义的色样；语言菜单列出已注册的语言。两者都由本包而非 `ui-theme` 注册，因为侧边栏的动作座位位于该包的引用闭包之外（`ui-sidebar` 到达 `ui-layout`，后者到达 `ui-theme`），而本插件已同时依赖两者；各自通过自己的服务（`theme`、`locale`）写入，因此脚部控件与对应设置行保持同一设置；
 - 聊天手势：一个 `@` 触发器源，列出所有者的活跃代理（选中会插入 `@name`），以及一个带弹窗的 `/routine` 命令贡献，用于启动选中的例程；两者都由工作区总览经 `ctx.remote.faberloomView` 提供。
 
 Espacios 详情把业务空间与 harness 工作区连接起来：`spaceWorkspace` 投射该空间的对话区域（其 `fw_` 工作目录注册为工作区，标题取自空间），而「在此空间新建对话」会在其中打开一个会话，因此侧边栏的工作区分组与空间始终是同一个东西。Mesa de trabajo（工作台）可带备注评审、提交新的已准备修订、让条目经过异常状态（请求数据、失败、完成），并列出已记录的效果及其明细与日期。
+
+这些行按设计的三种导航模式分组——「`Operar`」（Mesa、Espacios、Rutinas、Flujos、Correo）、「`Aprender`」（Memoria、Contexto、Aprobaciones）与「`Admin`」（Agentes y Skills、Conexiones）——并且只在总览已经计数其记录时才带徽标；没有真实数字的分区不显示徽标。
 
 所有注册都是调用方 fiber 上的 effect，并随其消失。
 
@@ -60,6 +62,7 @@ Espacios 详情把业务空间与 harness 工作区连接起来：`spaceWorkspac
 - **在界面允许处提供面板动作** — Espacios 通过已挂载的目录选择器把已有文件夹采纳为该 Space 的工作区，并支持创建、重命名、编辑该 Space 的 agent 指令，以及把该 Space 的 context 导出写入该文件夹；Agentes 支持创建、重命名与（代理）停用；Mesa 支持创建与批准/拒绝；Rutinas 支持创建与启停；Memoria 支持记录一条语句；Email 支持下载附件、把它作为真实文件保存到所选 Space 的文件夹，或把所选 Space 文件夹中的文件作为附件发送。看板修订提交、模型策略与例程步骤编辑在其界面落地前仍属于产品服务。
 - **记忆遵循流水线** — 记录语句会追加到 agent-memory 入口，蒸馏后的行可能在下次读取后出现。
 - **活动事件驱动刷新，而非推送** — 面板在 harness 转发会话活动事件时、挂载时以及每次写入后重新读取。
+- **行元数据随侧边栏的投影更新** — 模式、分组与徽标是侧边栏按读取解析的 `sidebar.panellist` 注册选项；徽标显示本界面最后发布的总览，并随侧边栏下一次投影行而出现。
 - **内置 locale 下使用西班牙语文案** — FaberLoom 的产品语言是西班牙语，而客户端 locale 运行时要求每个命名空间注册两个内置 locale，因此 `zh` 与 `en` 都承载西班牙语字典，直到出现一等公民的 `es` locale。
 
 <a id="dev-note"></a>
@@ -68,7 +71,7 @@ Espacios 详情把业务空间与 harness 工作区连接起来：`spaceWorkspac
 <details>
 <summary>维护者工作上下文 — 点击展开</summary>
 
-分区身份集中在一个数组（`FABERLOOM_SECTIONS`）中：侧边栏 id、主面板 key、行顺序、标签 key，以及两个占用者。新增一个界面只需一条记录加上它的文案 key。
+分区身份集中在一个数组（`FABERLOOM_SECTIONS`）中：侧边栏 id、主面板 key、行顺序、标签 key、导航模式与分组 key、可选的按总览计数的徽标，以及两个占用者。新增一个界面只需一条记录加上它的文案 key。在平板断点以下，表格/检查器分栏折叠为一列（检查器成为表格下方的整宽块），且每个表格在各自的卡片内横向平移并带粘性表头。
 
 </details>
 

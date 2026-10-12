@@ -22,6 +22,7 @@ import type { FontSizeRowInjected } from './FontSizeRow.tsx'
 import { FontSizeRow } from './FontSizeRow.tsx'
 import { createAppearanceRowStore, createFontSizeRowStore } from './settings-store.ts'
 import { installThemeStyles } from './styles.ts'
+import { THEME_PALETTES } from '../theme-palettes.ts'
 import { en, es, zh, type ThemeKey } from './locales.ts'
 import {
   DEFAULT_FONT_SIZE, DEFAULT_PREFERENCE, FONT_SIZE_FIELD, FONT_SIZE_MAX, FONT_SIZE_MIN,
@@ -123,10 +124,26 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze([
-  Object.freeze({ id: 'light', colorScheme: 'light' as const, tokens: Object.freeze({}) }),
-  Object.freeze({ id: 'dark', colorScheme: 'dark' as const, tokens: Object.freeze({}) }),
-])
+/**
+ * The built-in themes: every palette the brand system defines, present from
+ * construction so a durable preference naming one of them always resolves on
+ * the first adoption. `light` and `dark` stay the pair a `system` preference
+ * picks between.
+ */
+const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze(
+  THEME_PALETTES.map(palette => Object.freeze({
+    id: palette.id,
+    colorScheme: palette.colorScheme,
+    tokens: palette.tokens,
+  })),
+)
+
+/**
+ * Palette names by id. A palette is a proper noun — like a typeface or a
+ * product name — so it stays verbatim in every locale; only the dark/light
+ * group headings around it ride the dictionaries.
+ */
+export { THEME_PALETTE_NAMES } from '../theme-palettes.ts'
 
 const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
   { name: '--dsw-alias-bg-base', description: 'Application base background.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-bg-base' },

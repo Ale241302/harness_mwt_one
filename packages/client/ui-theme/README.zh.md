@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-theme` 让 Web GUI 用户在设置中选择 `light`、`dark` 或 `system`，并把会话正文字号设为 12 至 17 px。回环客户端把两个值存入 `ui-theme` 设置命名空间，本地提供方默认将其持久化到 `$DSH_HOME/settings.yaml`。插件通过 `prefers-color-scheme` 解析 `system` 并发布不可变的 `ThemeSnapshot`；ui-layout 把每份快照应用到文档。本包还提供 `--dsw-*` token 样式表，并注入同步引导，使所选调色板与字号在外壳加载前生效。第三方主题可通过 `ctx.theme` 注册别名 token 覆盖。
+`dsh-client-ui-theme` 提供五套调色板——三套深色（`dark` = Faber Warm，默认；`slate`；`mono`）与两套浅色（`light` = Paper，默认；`cloud`）——并解析当前生效的一套；`system` 在默认两者之间跟随 `prefers-color-scheme`。用户在设置中选择偏好并把会话正文字号设为 12 至 17 px，任何提供调色板选择的界面都通过 `ctx.theme.setTheme` 写入同一偏好。回环客户端把两个值存入 `ui-theme` 设置命名空间，默认持久化到 `$DSH_HOME/settings.yaml`。本包发布不可变的 `ThemeSnapshot`，提供 `--dsw-*` token 样式表，注入同步引导，并通过 `ctx.theme` 接受第三方别名 token 主题。
 
 ## 目录
 
@@ -37,7 +37,7 @@ kind: "package-reference"
 
 ### 插件前调色板
 
-当主机组合包含 HTTP 服务器时，宿主侧会把已注册的 `ui-theme` 设置或 schema 默认值嵌入每份 index 响应。head CSS 会在任何脚本运行前选择文档画布的配色方案，其中 `system` 偏好使用 `prefers-color-scheme` 查询；随后，body 脚本会在加载页面和应用脚本之前设置 `body[data-ds-dark-theme]` 与 `--dsh-content-font-size`，因此首帧绘制就采用所选调色板与字号。
+当主机组合包含 HTTP 服务器时，宿主侧会把已注册的 `ui-theme` 设置或 schema 默认值嵌入每份 index 响应。head CSS 会在任何脚本运行前用所选调色板自身的底色与配色方案绘制画布；`system` 以及本构建不认识的 id 退回中性的浅/深配对，并使用 `prefers-color-scheme` 查询。随后，body 脚本依据该调色板的方案设置 `body[data-ds-dark-theme]`，并在加载页面和应用脚本之前设置 `--dsh-content-font-size`，因此首帧绘制就采用所选调色板与字号。
 
 -----
 

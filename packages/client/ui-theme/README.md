@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-theme` lets Web GUI users choose `light`, `dark`, or `system` and set conversation content text from 12 to 17 px in Settings. A loopback client stores both values in the `ui-theme` settings namespace, which the local provider persists in `$DSH_HOME/settings.yaml` by default. The plugin resolves `system` through `prefers-color-scheme` and publishes immutable `ThemeSnapshot`s; ui-layout applies each snapshot to the document. The package also ships the `--dsw-*` token stylesheets and injects a synchronous bootstrap so the selected palette and font size apply before the shell loads. Third-party themes can register alias-token overrides through `ctx.theme`.
+`dsh-client-ui-theme` ships five palettes — three dark (`dark` = Faber Warm, the default; `slate`; `mono`) and two light (`light` = Paper, the default; `cloud`) — and resolves the active one; `system` follows `prefers-color-scheme` between the default pair. Settings pick a preference and the conversation content text size (12 to 17 px), and any surface offering a palette writes that preference through `ctx.theme.setTheme`. A loopback client persists both in the `ui-theme` settings namespace, in `$DSH_HOME/settings.yaml` by default. The package publishes immutable `ThemeSnapshot`s, ships the `--dsw-*` token stylesheets, injects a synchronous bootstrap, and accepts third-party alias-token themes through `ctx.theme`.
 
 ## Table of Contents
 
@@ -37,7 +37,7 @@ A composition can register a third-party theme id with alias-token overrides thr
 
 ### Pre-plugin palette
 
-When the host composition includes an HTTP server, the host half embeds the registered `ui-theme` settings, or schema defaults, into each index response. Head CSS selects the document canvas color scheme before any script runs, including a `prefers-color-scheme` query for the `system` preference. A body script then sets `body[data-ds-dark-theme]` and `--dsh-content-font-size` before the loading page and application scripts, so the first paint uses the selected palette and text size.
+When the host composition includes an HTTP server, the host half embeds the registered `ui-theme` settings, or schema defaults, into each index response. Head CSS paints the canvas with the selected palette's own ground and color scheme before any script runs; `system`, and an id this build does not know, fall back to the neutral light/dark pair with a `prefers-color-scheme` query. A body script then sets `body[data-ds-dark-theme]` from that palette's scheme and `--dsh-content-font-size` before the loading page and application scripts, so the first paint uses the selected palette and text size.
 
 -----
 

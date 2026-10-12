@@ -10,7 +10,11 @@ import { es as commonEs } from '@deepseek-ai/dsh-client-locale/src/locales/es.ts
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { apply, inject } from '../src/client/index.ts'
+import { FABERLOOM_SECTIONS, resolveSectionNav, sectionBadge } from '../src/client/panels.tsx'
+import { en as faberloomEn, es as faberloomEs, zh as faberloomZh, type FaberloomKey } from '../src/client/locales.ts'
+import css from '../src/client/faberloom.module.css'
 
 const CONVERSAR = 'faberloom-conversar' as MainPanelId
 const BOARD = 'faberloom-board' as MainPanelId
@@ -225,12 +229,20 @@ async function bench(
     'sidebar.panellist': { kind: 'list', scope: 'root' },
     main: { kind: 'keyed', scope: 'root' },
   }, Frame)
+  // Record every registration the surface makes, so the sidebar row metadata
+  // (mode, group, badge) can be asserted even before the sidebar projects it.
+  const registrations: Record<string, unknown>[] = []
+  const originalRegister = runtime.slots.register
+  vi.spyOn(runtime.slots, 'register').mockImplementation(((options: unknown, component: unknown) => {
+    registrations.push(options as Record<string, unknown>)
+    return originalRegister.call(runtime.slots, options as never, component as never)
+  }) as never)
   const surface = await runtime.mount({ inject: [...inject], apply })
   const view = runtime.renderRoot()
   return {
-    runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace,
+    runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace,
     deleteBoardItem, emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
-    deleteSpaceMemory, remember, spaceMemory, surface, view,
+    deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connectNode, disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,
@@ -277,6 +289,74 @@ describe('faberloom surface', () => {
     expect(view.getByText('Faberloom')).toBeTruthy()
     expect(view.getByRole('heading', { name: 'What do you want to solve today?' })).toBeTruthy()
     await surface.dispose()
+  })
+
+  it('labels each sidebar row with its mode, group, and live overview badge', async () => {
+    const { registrations, runtime, locale, view } = await bench()
+    type NavRow = { id: string; mode: () => string; group: () => string; badge?: () => string }
+    const rows = registrations.filter(options => options.name === 'sidebar.panellist')
+    const byId = new Map(rows.map(options => [String(options.id), options as unknown as NavRow]))
+
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    await view.findByRole('button', { name: 'Marluvas' })
+
+    expect(byId.get('faberloom-board')?.mode?.()).toBe('Operate')
+    expect(byId.get('faberloom-board')?.group?.()).toBe('Work')
+    expect(byId.get('faberloom-board')?.badge?.()).toBe('1')
+    expect(byId.get('faberloom-spaces')?.badge?.()).toBe('1')
+    expect(byId.get('faberloom-agents')?.mode?.()).toBe('Admin')
+    expect(byId.get('faberloom-agents')?.group?.()).toBe('Setup')
+    expect(byId.get('faberloom-memory')?.group?.()).toBe('Knowledge')
+    expect(byId.get('faberloom-approvals')?.group?.()).toBe('Inbox')
+    // A section without an overview count carries no badge at all.
+    expect(byId.get('faberloom-approvals')?.badge).toBeUndefined()
+    expect(byId.get('faberloom-workflows')?.badge).toBeUndefined()
+
+    // The copy seat follows the active locale, so the same row re-labels in place.
+    act(() => { locale.setLocale('zh') })
+    await waitFor(() => { expect(byId.get('faberloom-board')?.mode?.()).toBe('操作') })
+    expect(byId.get('faberloom-board')?.group?.()).toBe('工作')
+  })
+
+  it('resolves mode, group, and badge copy from the dictionaries without inventing a count', () => {
+    const board = FABERLOOM_SECTIONS.find(section => section.id === 'faberloom-board')
+    const workflows = FABERLOOM_SECTIONS.find(section => section.id === 'faberloom-workflows')
+    if (board === undefined || workflows === undefined) throw new Error('sections missing')
+    const overview = { board: [{}, {}] } as unknown as FaberLoomOverview
+    const t = (key: FaberloomKey): string => faberloomEn[key]
+
+    // No read yet, no count, or a zero count renders no badge.
+    expect(sectionBadge(board, null)).toBe('')
+    expect(sectionBadge(workflows, overview)).toBe('')
+    expect(sectionBadge(board, { board: [] } as unknown as FaberLoomOverview)).toBe('')
+    // The real overview count is the only badge source.
+    expect(sectionBadge(board, overview)).toBe('2')
+
+    expect(resolveSectionNav(board, t, overview)).toEqual({ mode: 'Operate', group: 'Work', badge: '2' })
+    expect(resolveSectionNav(board, key => faberloomEs[key], overview).mode).toBe('Operar')
+    expect(resolveSectionNav(board, key => faberloomZh[key], null)).toEqual({ mode: '操作', group: '工作', badge: '' })
+  })
+
+  it('pans the table inside its card and keeps the inspector reachable below the split', async () => {
+    const { runtime, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    await view.findByRole('button', { name: 'Marluvas' })
+
+    const split = view.container.querySelector(`.${css.split}`)
+    expect(split).not.toBeNull()
+    const scroll = split?.querySelector(`.${css.tableScroll}`)
+    expect(scroll).not.toBeNull()
+    const inspector = split?.querySelector(`.${css.inspector}`)
+    expect(inspector).not.toBeNull()
+    // Source order is table first, inspector last, so the single-column collapse
+    // puts the detail editor under the list.
+    expect(split?.firstElementChild?.contains(scroll ?? null)).toBe(true)
+    expect(split?.lastElementChild).toBe(inspector)
+
+    // A selected row is announced for assistive tech and carries the accent.
+    const rows = await view.findAllByRole('row')
+    fireEvent.click(rows[1] as HTMLTableRowElement)
+    expect(rows[1]?.getAttribute('aria-selected')).toBe('true')
   })
 
   it('renders real workspace rows from the host view and opens the conversation', async () => {

@@ -21,6 +21,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 const ALPHA = 'sidebar-test-alpha' as MainPanelId
 const BETA = 'sidebar-test-beta' as MainPanelId
+const GAMMA = 'sidebar-test-gamma' as MainPanelId
 const runtimes = new Set<SlotTestRuntime>()
 
 afterEach(async () => {
@@ -83,6 +84,9 @@ interface TestPanel {
   heading: string
   order?: number
   label?: SlotLabel
+  mode?: () => string
+  group?: () => string
+  badge?: () => string
 }
 
 async function mountPanel(runtime: SlotTestRuntime, { heading, ...metadata }: TestPanel) {
@@ -118,6 +122,23 @@ async function mountPanels(runtime: SlotTestRuntime, locale: LocaleRuntime, beta
   return { alpha, beta }
 }
 
+/** Two modes and two groups, mounted one at a time so registration order is fixed. */
+async function mountPlacedPanels(runtime: SlotTestRuntime) {
+  const alpha = await mountPanel(runtime, {
+    id: ALPHA, heading: 'Alpha content', label: 'Alpha panel', order: 10,
+    mode: () => 'operate', group: () => 'Workspace', badge: () => '3',
+  })
+  const beta = await mountPanel(runtime, {
+    id: BETA, heading: 'Beta content', label: 'Beta panel', order: 20,
+    mode: () => 'operate', group: () => 'Workspace',
+  })
+  const gamma = await mountPanel(runtime, {
+    id: GAMMA, heading: 'Gamma content', label: 'Gamma panel', order: 30,
+    mode: () => 'admin', group: () => 'Tenant',
+  })
+  return { alpha, beta, gamma }
+}
+
 describe('sidebar global panels', () => {
   it('adds late registrations, removes each plugin contribution, and leaves no empty panel-list DOM', async () => {
     const { runtime, locale, view } = await bench()
@@ -147,6 +168,45 @@ describe('sidebar global panels', () => {
     expect(view.container.querySelector('[data-slot="sidebar.panellist"]')).toBeNull()
     expect(runtime.slots.entries('sidebar.panellist')).toEqual([])
     expect(runtime.slots.entries('main').map(entry => entry.options.key)).toEqual(['conversation'])
+  })
+
+  it('renders a plain list when no row declares placement', async () => {
+    const { runtime, locale, view } = await bench()
+    await mountPanels(runtime, locale)
+    const navigation = await view.findByRole('navigation', { name: 'Global panels' })
+    expect(within(navigation).getAllByRole('button')).toHaveLength(2)
+    // No mode bar and no accordion headings: the flat list is what these
+    // registrations have always rendered.
+    expect(navigation.querySelector('button[aria-pressed]')).toBeNull()
+    expect(navigation.querySelector('button[aria-expanded]')).toBeNull()
+  })
+
+  it('groups rows into a mode bar and counted accordions from their registration options', async () => {
+    const { runtime, view } = await bench()
+    await mountPlacedPanels(runtime)
+    const navigation = await view.findByRole('navigation', { name: 'Global panels' })
+    // One bar button per declared mode, the displayed one pressed; the mode
+    // value is each button's accessible name.
+    const modes = within(navigation).getAllByRole('button')
+      .filter(button => button.hasAttribute('aria-pressed'))
+    expect(modes.map(button => button.getAttribute('aria-label'))).toEqual(['operate', 'admin'])
+    expect(modes[0]?.getAttribute('aria-pressed')).toBe('true')
+    expect(modes[1]?.getAttribute('aria-pressed')).toBe('false')
+    // Only the displayed mode's rows render, under a heading that counts them
+    // and shows the selected row's badge.
+    const openHeadings = within(navigation).getAllByRole('button', { expanded: true })
+    expect(openHeadings).toHaveLength(1)
+    const workspaceHeading = openHeadings[0]!
+    expect(within(workspaceHeading).getByText('Workspace')).toBeTruthy()
+    expect(within(workspaceHeading).getByText('2')).toBeTruthy()
+    expect(within(navigation).getByRole('button', { name: 'Alpha panel' }).textContent).toBe('Alpha panel3')
+    expect(within(navigation).queryByRole('button', { name: 'Gamma panel' })).toBeNull()
+
+    fireEvent.click(within(navigation).getByRole('button', { name: 'admin' }))
+    expect(modes[1]?.getAttribute('aria-pressed')).toBe('true')
+    expect(within(navigation).queryByRole('button', { name: 'Alpha panel' })).toBeNull()
+    expect(within(navigation).getByRole('button', { name: 'Gamma panel' })).toBeTruthy()
+    expect(within(navigation).getAllByRole('button', { expanded: true })[0]?.textContent).toBe('Tenant1')
   })
 
   it.each([false, true])('renders ordered rows, icon sizes, and tooltip labels with collapsed=%s', async (collapsed) => {

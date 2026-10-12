@@ -27,6 +27,8 @@
   height: 100%;
   padding: 22px clamp(18px, 3vw, 30px);
   overflow-y: auto;
+  /* A dense table pans inside its own card; the panel never widens the page. */
+  overflow-x: hidden;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
 }
@@ -67,9 +69,11 @@
 
 .h1 {
   margin: 0;
-  font-size: 21px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-family: var(--dsw-font-family-serif, var(--dsw-font-family));
+  font-size: 22px;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .h2 {
@@ -89,6 +93,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .search input {
@@ -125,7 +130,10 @@
   min-width: 0;
 }
 
-@media (max-width: 1100px) {
+/* Below the tablet breakpoint the table and its inspector stack: the inspector
+   becomes a full-width block under the table, so a narrow, floating, or split
+   window still reaches the detail editor. */
+@media (max-width: 1080px) {
   .split {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -207,6 +215,13 @@
   overflow: hidden;
 }
 
+/* The table's own scroll container: dense rows pan horizontally here instead of
+   overflowing the page, and the sticky header travels with the columns. */
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -214,19 +229,23 @@
 }
 
 .table thead th {
-  padding: 10px 12px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 12px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-caption);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-align: left;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .table tbody td {
-  padding: 11px 12px;
+  padding: 10px 12px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   vertical-align: middle;
 }
@@ -239,12 +258,24 @@
   cursor: pointer;
 }
 
-.table tbody tr:hover {
-  background: var(--dsw-alias-bg-layer-2);
+.table tbody tr:hover td {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.rowSelected {
+.rowSelected td {
   background: var(--dsw-specific-sidebar-nav-item-active, var(--dsw-alias-bg-layer-2));
+}
+
+/* A selected row carries the same left accent the sidebar's active row does. */
+.rowSelected td:first-child {
+  box-shadow: inset 2px 0 0 var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+/* Numeric columns read as figures: trailing edge and tabular digits. */
+.table th[data-align='end'],
+.table td[data-align='end'] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
 }
 
 .cellName {
@@ -1192,4 +1223,36 @@
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-primary);
+}
+
+/* ── responsive ──────────────────────────────────────────────────────── */
+
+/* Phone widths: rows grow to a comfortable touch target and the toolbar and
+   form grids stack, so the module screens stay usable in a narrow window. */
+@media (max-width: 767px) {
+  .screen {
+    padding: 16px 14px;
+  }
+
+  .toolbar {
+    align-items: flex-start;
+  }
+
+  .toolbarTitle,
+  .tools {
+    flex: 1 1 100%;
+  }
+
+  .search input {
+    width: 100%;
+  }
+
+  .table tbody td {
+    padding: 13px 12px;
+    min-height: 44px;
+  }
+
+  .grid2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

@@ -1,23 +1,27 @@
 /**
  * Layout plugin, browser half: one register() call contributes AppFrame into
  * the runtime's built-in 'root' slot and, in the same breath, declares the
- * four child slots (declaration = exclusive render authority), seats the
- * layout store (panel geometry), and wires the panel-action service face.
- * ctx.layout selects the main panel and controls column geometry; Session
+ * child slots (declaration = exclusive render authority) — the three columns,
+ * the frame-wide overlay layer, and the top bar's brand/centre/actions seats —
+ * seats the layout store (panel geometry), and wires the panel-action service
+ * face. ctx.layout selects the main panel and controls column geometry; Session
  * selection belongs to the Session Controller. A second effect seats the theme
- * presenter, which projects ctx.theme snapshots onto document.body.
+ * presenter, which projects ctx.theme snapshots onto document.body; a third
+ * registers this package's own copy namespace.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { HostObservable, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PanelInfo } from './service.ts'
-import { AppFrame } from './AppFrame.tsx'
+import { AppFrame, type AppFrameInjected, type RailsSnapshot } from './AppFrame.tsx'
 import { createLayoutStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
+import { en, es, zh, type LayoutKey } from './locales.ts'
 
 // Contract exports only (export-convergence rule: cross-package consumers
 // keep a symbol exported; test-only/package-internal symbols live off /src).
@@ -26,9 +30,13 @@ import { ThemePresenter } from './theme-presenter.ts'
 // against; the frame components and the store factory are package-internal.
 export { LayoutController } from './service.ts'
 export type { ILayout, MainPanelId, PanelInfo } from './service.ts'
+export type { LayoutKey } from './locales.ts'
 
 /** Selector hook over root-scoped panel selection. */
 export type UsePanelInfo = SnapshotSelectorHook<PanelInfo>
+
+/** Dictionary namespace owned by this plugin: the shell chrome's own copy. */
+const NS = 'layout'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -38,6 +46,11 @@ declare module '@deepseek-ai/cordis' {
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** Shell chrome copy: the top bar's rail toggles and the drawer dismissal. */
+    layout: LayoutKey
+  }
+
   interface GlobalStandardProps {
     /** Subscribe to the selected main panel independently of parent renders. */
     usePanelInfo: UsePanelInfo
@@ -45,7 +58,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
   interface SlotMap {
     // The 'root' entry itself is the runtime's built-in slot (declared
-    // there); these four are the frame's children, declared by the same
+    // there); these are the frame's children, declared by the same
     // register() call that contributes AppFrame. Session owners never pass
     // sessionId: the framework injects it as a standard prop.
     /**
@@ -57,6 +70,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      *
      * The occupant receives the frame's live column state (collapsed, width)
      * and is expected to render the compact control rail while collapsed.
+     * Below the tablet breakpoint the same column is the off-canvas drawer, so
+     * the frame passes the drawer's expanded state and width instead.
      */
     'sidebar': { kind: 'single'; scope: 'root'; owner: SidebarOwnerProps }
     /**
@@ -68,7 +83,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * The right column: a track the centre makes room for, or nothing. OCCUPIED
      * by the right Sidebar, which uses the resolved column width in normal
      * mode and covers the viewport in fullscreen, retaining the wide-screen
-     * column reservation underneath.
+     * column reservation underneath. Below the tablet breakpoint the frame
+     * reserves no track: the resolved width hangs the panel over the canvas.
      *
      * Whether the panel is shown, and whether it takes a track, is the
      * occupant's own recorded business — it reports the composition of its
@@ -89,6 +105,25 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `id` is added beside the shipped entries instead of replacing them.
      */
     'shell.overlay': { kind: 'list'; scope: 'root' }
+    /**
+     * The top bar's brand block, left of the centre. One occupant renders the
+     * product's own mark and name; the frame draws nothing when nobody does
+     * (no fallback artwork and no reserved width).
+     */
+    'shell.topbar.brand': { kind: 'single'; scope: 'root' }
+    /**
+     * The top bar's centre seat: the shell's search/command trigger. The frame
+     * declares the hole and renders nothing until a package fills it — an
+     * empty centre is the correct resting state, so no fallback control is
+     * fabricated here.
+     */
+    'shell.topbar.center': { kind: 'single'; scope: 'root' }
+    /**
+     * Controls at the top bar's right edge, list order ascending. For chrome a
+     * package owns (a budget chip, a theme button, a status pill); the rail
+     * toggles at the left edge are the frame's own and are not entries here.
+     */
+    'shell.topbar.actions': { kind: 'list'; scope: 'root' }
   }
 }
 
@@ -129,6 +164,8 @@ export const inject = ['slots', 'theme', 'locale']
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-layout: dictionaries')
+
   ctx.effect(() => {
     const handle = createLayoutStore()
     const instance = handle.create()
@@ -145,22 +182,46 @@ export function apply(ctx: ClientContext): void {
     }
     const disposePanelInfo = ctx.slots.provideRoot({ hooks: { panelInfo } })
     const disposeService = ctx.reflect.provide('layout', layout)
+    // Rail mounting: the top bar's toggles appear only while an occupant is
+    // registered. Subscribed before the root registration declares the child
+    // slots (subscribing ahead of declaration is allowed) and published after
+    // it, so the first render already carries the settled facts.
+    const rails = createSnapshotStore<RailsSnapshot>({ sidebar: false, rightbar: false })
+    const syncRails = (): void => {
+      const mounted: RailsSnapshot = {
+        sidebar: ctx.slots.entriesOfSlot('sidebar').length > 0,
+        rightbar: ctx.slots.entriesOfSlot('rightbar').length > 0,
+      }
+      const previous = rails.getSnapshot()
+      if (previous.sidebar === mounted.sidebar && previous.rightbar === mounted.rightbar) return
+      rails.set(mounted)
+    }
+    const disposeSidebarRails = ctx.slots.subscribe('sidebar', syncRails)
+    const disposeRightbarRails = ctx.slots.subscribe('rightbar', syncRails)
+    const injected = (): AppFrameInjected => ({ hooks: { rails } })
     const disposeRegistration = ctx.slots.register({
       name: 'root',
-      locale: 'common',
+      locale: NS,
       children: {
         'sidebar': { kind: 'single', scope: 'root' },
         'main': { kind: 'keyed', scope: 'root' },
         'rightbar': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
+        'shell.topbar.brand': { kind: 'single', scope: 'root' },
+        'shell.topbar.center': { kind: 'single', scope: 'root' },
+        'shell.topbar.actions': { kind: 'list', scope: 'root' },
       },
       store,
+      inject: injected,
     }, AppFrame)
     const disposePanels = ctx.slots.subscribe('main', retainMainPanels)
     retainMainPanels()
+    syncRails()
     return () => {
       layout.dispose()
       disposePanels()
+      disposeSidebarRails()
+      disposeRightbarRails()
       disposeRegistration()
       disposePanelInfo()
       // provide()'s disposer settles asynchronously; teardown is synchronous fire-and-forget.

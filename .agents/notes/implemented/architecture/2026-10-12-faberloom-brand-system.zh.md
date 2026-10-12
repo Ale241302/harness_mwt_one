@@ -18,7 +18,7 @@ Status: implemented
 
 **图标。** `packages/client/ui-primitives/src/icons/faberloom.tsx` 在同一套 24×24、描边 1.75 的网格上承载品牌的十个字形与其文档化的标准库（共 45 个）。客户端的侧边栏面板行、Settings 触发器与 hero 都使用它们，使产品自身的界面语言成为一套；品牌文档未描述的外部字形（文件类型、编辑器界面）保留现有图形，另行迁移。
 
-**主题控制。** 登录后的侧边栏通过 `sidebar.footer.action` 条目暴露产品真实的明暗偏好：列展开时位于 Settings 右侧，56px 导轨中堆叠在 Settings 图标上方。注册该条目的是 FaberLoom 产品插件而非其自然归属者 `ui-theme`，因为该座位由 `ui-sidebar` 声明，而 `ui-sidebar` 到达 `ui-layout`，后者到达 `ui-theme`——在该处建立项目引用会形成环，slot 目录也拒绝在第二个包中重复声明同一座位。注册方通过 `theme` 服务写入，与外观行同一条路径，因此两个界面始终是同一个设置。桌面登录文档与 gateway 的无会话页面各自带有开关——分别持久化在 `$DSH_HOME/desktop-appearance.json` 与 `localStorage`，默认跟随操作系统——因为尚未登录的用户没有可读取的服务端偏好。
+**主题与语言控件。** 登录后的侧边栏脚部通过两个 `sidebar.footer.action` 条目承载产品调色板与界面语言：调色板菜单按配色方案分组列出所有已注册主题，每行带取自该主题自身定义的色样；语言菜单列出已注册的语言。注册这两个条目的是 FaberLoom 产品插件而非其自然归属者 `ui-theme`，因为该座位由 `ui-sidebar` 声明，而 `ui-sidebar` 到达 `ui-layout`，后者到达 `ui-theme`——在该处建立项目引用会形成环，slot 目录也拒绝在第二个包中重复声明同一座位。各自通过自己的服务（`theme`、`locale`）写入，与设置行同一条路径，因此控件与其设置行始终是同一个设置；五套调色板本身是[外壳设计系统笔记](2026-10-12-faberloom-shell-design-system.zh.md)的主题。桌面登录文档与 gateway 的无会话页面各自带有明暗开关——分别持久化在 `$DSH_HOME/desktop-appearance.json` 与 `localStorage`，默认跟随操作系统——因为尚未登录的用户没有可读取的服务端偏好。
 
 **登录反馈。** 桌面提交按钮与 gateway 登录表单在请求进行中以行内 spinner 标记忙碌状态，并在用户用浏览器返回时重新复位。
 

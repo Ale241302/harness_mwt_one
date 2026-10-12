@@ -9,6 +9,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as themeApply, inject as themeInject, ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { apply, inject, LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-layout'
+import type { AppFrameInjected } from '../src/client/AppFrame.tsx'
 import type { MainPanelId } from '../src/client/service.ts'
 import type { createLayoutStore } from '../src/client/stores.ts'
 
@@ -79,7 +80,7 @@ describe('ui-layout client apply', () => {
     expect(inject).toEqual(['slots', 'theme', 'locale'])
   })
 
-  it('provides ctx.layout and declares the four root-scoped frame slots', async () => {
+  it('provides ctx.layout and declares the root-scoped frame and top-bar slots', async () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -89,6 +90,38 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('main')).toEqual({ kind: 'keyed', scope: 'root' })
     expect(slots.spec('rightbar')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('shell.overlay')).toEqual({ kind: 'list', scope: 'root' })
+    expect(slots.spec('shell.topbar.brand')).toEqual({ kind: 'single', scope: 'root' })
+    expect(slots.spec('shell.topbar.center')).toEqual({ kind: 'single', scope: 'root' })
+    expect(slots.spec('shell.topbar.actions')).toEqual({ kind: 'list', scope: 'root' })
+  })
+
+  it('registers its own dictionary namespace', async () => {
+    const { ctx } = await bench()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const locale = ctx.get('locale') as LocaleRuntime
+    expect(locale.bind('layout')('rail.left.open')).toBe('Show the left panel')
+    expect(locale.bind('layout')('drawer.dismiss')).toBe('Close the navigation drawer')
+  })
+
+  it('publishes rail mounting facts through the root registration inject face', async () => {
+    const { ctx, slots } = await bench()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = slots.entries('root')[0]!
+    const handle = entry.store as ReturnType<typeof createLayoutStore>
+    const instance = handle.create()
+    const injected = entry.inject!(instance.actions as never) as unknown as AppFrameInjected
+    const rails = injected.hooks.rails
+    expect(rails.getSnapshot()).toEqual({ sidebar: false, rightbar: false })
+    const disposeSidebar = slots.register({ name: 'sidebar' }, () => null)
+    await vi.waitFor(() => { expect(rails.getSnapshot()).toEqual({ sidebar: true, rightbar: false }) })
+    const disposeRightbar = slots.register({ name: 'rightbar' }, () => null)
+    await vi.waitFor(() => { expect(rails.getSnapshot()).toEqual({ sidebar: true, rightbar: true }) })
+    disposeRightbar()
+    await vi.waitFor(() => { expect(rails.getSnapshot()).toEqual({ sidebar: true, rightbar: false }) })
+    disposeSidebar()
+    await vi.waitFor(() => { expect(rails.getSnapshot()).toEqual({ sidebar: false, rightbar: false }) })
   })
 
   it('shares a pre-created instance between service actions, root rendering, and panelInfo', async () => {
@@ -96,7 +129,6 @@ describe('ui-layout client apply', () => {
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const entry = slots.entries('root')[0]!
-    expect(entry.inject).toBeUndefined()
     const handle = entry.store as ReturnType<typeof createLayoutStore>
     const instance = handle.create()
     expect(handle.create()).toBe(instance)
@@ -159,6 +191,9 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('main')).toBeUndefined()
     expect(slots.spec('rightbar')).toBeUndefined()
     expect(slots.spec('shell.overlay')).toBeUndefined()
+    expect(slots.spec('shell.topbar.brand')).toBeUndefined()
+    expect(slots.spec('shell.topbar.center')).toBeUndefined()
+    expect(slots.spec('shell.topbar.actions')).toBeUndefined()
     expect(host.root.getSnapshot().hooks.panelInfo).toBeUndefined()
     // The built-in root declaration survives entry teardown (renderer-owned).
     expect(slots.spec('root')).toEqual({ kind: 'single', scope: 'root' })

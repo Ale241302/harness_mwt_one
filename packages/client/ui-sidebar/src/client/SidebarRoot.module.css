@@ -297,12 +297,17 @@
   max-width: 0;
 }
 
+/* Global panel navigation is a query container: the mode bar and the accordion
+   headings below size against the column's own inline width (set by the
+   layout's drag state), not the viewport's. */
 .panelList {
   flex: none;
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-bottom: 8px;
+  min-width: 0;
+  container-type: inline-size;
 }
 
 .panelRow {
@@ -346,10 +351,154 @@
 }
 
 .panelTitle {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Count/status chip a row's registration declared. It trails the truncated
+   title, which is why the title carries the row's free space. */
+.panelBadge {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+/* Mode bar: one compact icon button per declared mode. It renders once more
+   than one mode is registered; SidebarRoot.tsx owns the aria-pressed state and
+   the mode value as each button's accessible name. */
+.modeBar {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.modeButton {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.modeButton:hover {
+  background: var(--dsw-alias-button-floating-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.modeButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-primary);
+  outline-offset: -2px;
+}
+
+.modeButton.modeActive {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-specific-sidebar-nav-item-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.modeGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* One accordion per declared group: a heading button (chevron, group label,
+   row count) over the rows it toggles. A group declared without a heading
+   renders its rows directly, with no heading button. */
+.accordion {
+  display: flex;
+  flex-direction: column;
+}
+
+.accordionHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.accordionHead:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.accordionHead:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-primary);
+  outline-offset: -2px;
+}
+
+/* The chevron points right while collapsed and turns down while open. */
+.accordionChevron {
+  flex: none;
+  transform: rotate(-90deg);
+  transition: transform 150ms var(--ds-ease-in-out);
+}
+
+.accordionChevronOpen {
+  transform: rotate(0deg);
+}
+
+.accordionTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accordionCount {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-specific-sidebar-nav-item-active);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 16px;
+  text-transform: none;
+}
+
+.accordionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The collapsed state is the `hidden` attribute (SidebarRoot.tsx), and it has
+   to outrank the body's column display. */
+.accordionBody[hidden] {
+  display: none;
 }
 
 .collapsed .panelList {
@@ -363,6 +512,19 @@
   justify-content: center;
   padding: 0;
   color: var(--dsw-alias-label-primary);
+}
+
+/* The rail keeps the mode bar and the rows icon-only: the bar stacks
+   vertically, and SidebarRoot.tsx drops the accordion headings there. */
+.collapsed .modeBar {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.collapsed .modeButton {
+  flex: none;
+  width: 36px;
+  height: 36px;
 }
 
 /* Region seat: always mounted so the foot never moves. Its trailing margin
@@ -423,9 +585,31 @@
   width: auto;
 }
 
+/* Narrow columns (a sidebar dragged to its floor) tighten the bar and the
+   headings instead of clipping them; the labels keep ellipsizing. */
+@container (max-width: 300px) {
+  .modeBar {
+    gap: 2px;
+  }
+
+  .accordionHead {
+    padding: 4px;
+  }
+}
+
+/* Touch: the bar buttons, the headings, and the rows keep 44px hit targets. */
+@media (pointer: coarse) {
+  .modeButton,
+  .accordionHead,
+  .panelRow {
+    min-height: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wide,
   .fading > *,
+  .accordionChevron,
   .railIn .iconButton,
   .railIn .newSession,
   .railIn .panelList,

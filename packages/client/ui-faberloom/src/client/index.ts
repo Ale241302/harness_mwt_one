@@ -26,13 +26,13 @@ import { runAdoptSpaceWorkspace } from './adopt-space-workspace.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
-import { FaberloomBrandName, FaberloomBrandMark, FABERLOOM_SECTIONS, type FaberloomPanelInjected } from './panels.tsx'
+import { FaberloomBrandName, FaberloomBrandMark, FABERLOOM_SECTIONS, sectionBadge, type FaberloomPanelInjected } from './panels.tsx'
 import { WorkspaceShareDialog, WorkspaceShareMenuItem, createWorkspaceShareStore, type WorkspaceShareInjected } from './workspace-share.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
 import { runTaskChat } from './task-chat.ts'
 import { createWorkspaceStore } from './store.ts'
-import { ThemeToggle, createThemeToggleStore, type ThemeToggleInjected } from './theme-toggle.tsx'
+import { LanguageMenu, ThemeMenu, createFootLocaleStore, createFootThemeStore, type FootControlsInjected } from './foot-controls.tsx'
 import { en, es, zh, type FaberloomKey } from './locales.ts'
 import { FABERLOOM_THEME_SOURCE, faberloomTokens } from './theme.ts'
 
@@ -81,6 +81,9 @@ export function apply(ctx: ClientContext): void {
   // The renderer binds actions per registration; the first binding is enough for
   // the shared store, so the focus refresh can publish while a panel is mounted.
   let actions: WorkspaceActions | undefined
+  // The last overview published to the panels, kept so the sidebar row badges
+  // (resolved synchronously, outside React) read the same live numbers.
+  let latestOverview: FaberLoomOverview | null = null
 
   /** Read once and publish; a failed read keeps the last rows and marks the state. */
   const refresh = (): void => {
@@ -88,8 +91,10 @@ export function apply(ctx: ClientContext): void {
     const bound = actions
     void ctx.remote.faberloomView.overview()
       .then((result) => {
-        if (result.ok) bound.setOverview(result.value)
-        else bound.setError(result.error.message)
+        if (result.ok) {
+          latestOverview = result.value
+          bound.setOverview(result.value)
+        } else bound.setError(result.error.message)
       })
       .catch(() => { bound.setError('read failed') })
   }
@@ -100,8 +105,10 @@ export function apply(ctx: ClientContext): void {
     const bound = actions
     void run()
       .then((result) => {
-        if (result.ok) bound.setOverview(result.value)
-        else bound.setError(result.error.message)
+        if (result.ok) {
+          latestOverview = result.value
+          bound.setOverview(result.value)
+        } else bound.setError(result.error.message)
       })
       .catch(() => { bound.setError('write failed') })
   }
@@ -345,26 +352,61 @@ export function apply(ctx: ClientContext): void {
     inject: () => ({}),
   }, FaberloomBrandMark))
 
-  // The theme control beside Settings: the theme feature's second surface. It
-  // registers from here because the foot's action seat (declared by ui-sidebar)
-  // sits outside ui-theme's reference closure — ui-sidebar reaches ui-layout,
-  // which reaches ui-theme — while this plugin already depends on both. The
-  // write is the `theme` service, so the Appearance row and this button stay one
+  // The two preference controls beside Settings: the palette menu (the theme
+  // feature's second surface) and the language menu. They register from here
+  // because the foot's action seat (declared by ui-sidebar) sits outside
+  // ui-theme's reference closure — ui-sidebar reaches ui-layout, which reaches
+  // ui-theme — while this plugin already depends on both. Each write goes
+  // through its own service, so a foot control and its settings row stay one
   // setting.
-  const themeToggle = createThemeToggleStore()
-  let themeToggleBound: BoundActions<typeof themeToggle> | undefined
-  ctx.on('theme/change', (snapshot) => { themeToggleBound?.sync(snapshot.active.colorScheme, snapshot.revision) })
+  const footTheme = createFootThemeStore()
+  let footThemeBound: BoundActions<typeof footTheme> | undefined
+  const syncTheme = (): void => {
+    const snapshot = ctx.theme.getTheme()
+    footThemeBound?.sync({
+      preference: snapshot.preference,
+      activeId: snapshot.active.id,
+      themes: snapshot.themes,
+    }, snapshot.revision)
+  }
+  ctx.on('theme/change', syncTheme)
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
     name: 'sidebar.footer.action',
     id: 'faberloom-theme',
     order: 20,
-    store: themeToggle,
+    store: footTheme,
     locale: NS,
-    inject: (actions: BoundActions<typeof themeToggle>): ThemeToggleInjected => {
-      themeToggleBound = actions
+    inject: (actions: BoundActions<typeof footTheme>): Pick<FootControlsInjected, 'setTheme'> => {
+      footThemeBound = actions
+      // Re-sync from the getter so no event is lost between registration and
+      // first render (the store's revision guard drops stale duplicates).
+      syncTheme()
       return { setTheme: (id) => { ctx.theme.setTheme(id) } }
     },
-  }, ThemeToggle))
+  }, ThemeMenu))
+
+  const footLocale = createFootLocaleStore()
+  let footLocaleBound: BoundActions<typeof footLocale> | undefined
+  const syncLocale = (): void => {
+    const snapshot = ctx.locale.getLocale()
+    footLocaleBound?.sync({
+      id: snapshot.active,
+      locales: snapshot.locales.map(({ id, label }) => ({ id, label })),
+    }, snapshot.revision)
+  }
+  ctx.on('locale/change', syncLocale)
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action',
+    id: 'faberloom-language',
+    order: 21,
+    store: footLocale,
+    locale: NS,
+    inject: (actions: BoundActions<typeof footLocale>): Pick<FootControlsInjected, 'setLocale'> => {
+      footLocaleBound = actions
+      syncLocale()
+      return { setLocale: (id) => { ctx.locale.setLocale(id) } }
+    },
+  }, LanguageMenu))
 
   for (const section of FABERLOOM_SECTIONS) {
     ctx.slots.inject('main', () => ctx.slots.register({
@@ -377,11 +419,20 @@ export function apply(ctx: ClientContext): void {
     // A section may keep its panel reachable without listing a sidebar row (the
     // Chat landing, or Skills folded into the Agents tab).
     if (section.sidebar === false) continue
+    // Beyond the row itself, the registration carries the design's navigation
+    // metadata: the mode and group the row belongs to, and — only for a section
+    // the live overview counts — a badge resolved per read.
+    const nav = {
+      mode: () => t(section.modeKey),
+      group: () => t(section.groupKey),
+      ...(section.badge === undefined ? {} : { badge: () => sectionBadge(section, latestOverview) }),
+    }
     ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
       name: 'sidebar.panellist',
       id: section.id,
       order: section.order,
       label: () => t(section.labelKey),
+      ...nav,
       locale: NS,
       inject: () => ({}),
     }, section.Icon))

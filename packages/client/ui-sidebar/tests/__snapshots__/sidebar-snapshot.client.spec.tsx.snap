@@ -375,3 +375,280 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
   </div>
 </div>
 `;
+
+exports[`sidebar shell snapshots > renders the mode bar, counted accordions, and the row badge from placement options 1`] = `
+<div
+  data-slot="sidebar"
+  style="display: contents;"
+>
+  <div
+    class="root quietBars"
+    style="width: 300px;"
+  >
+    <div
+      class="logoRow"
+    >
+      <button
+        aria-label="New session"
+        class="brand wide"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="brandIdentity"
+        >
+          <span
+            class="brandMark"
+          >
+            <div
+              data-slot="sidebar.brand.mark"
+              style="display: contents;"
+            >
+              <svg
+                aria-hidden="true"
+                data-content="589c7dd9"
+                fill="none"
+                height="24"
+                viewBox="0 0 48 48"
+                width="24"
+              />
+            </div>
+          </span>
+          <span
+            class="brandName"
+          >
+            <div
+              data-slot="sidebar.brand.name"
+              style="display: contents;"
+            >
+              <span
+                class="localBuildBrand"
+              >
+                <span
+                  class="localBuildTitle"
+                >
+                  Faberloom
+                </span>
+                <span
+                  class="buildVersion"
+                >
+                  1.2.3-rc.4-abc1234-dirty
+                </span>
+              </span>
+            </div>
+          </span>
+        </span>
+      </button>
+      <button
+        aria-label="Collapse sidebar"
+        class="iconButton toggle"
+        type="button"
+      >
+        <svg
+          class="panelIcon"
+          data-content="27ed0e85"
+          fill="none"
+          height="16"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1.75"
+          viewBox="0 0 24 24"
+          width="16"
+          xmlns="http://www.w3.org/2000/svg"
+        />
+      </button>
+    </div>
+    <button
+      aria-label="New session"
+      class="newSession"
+      type="button"
+    >
+      <svg
+        data-content="6ce7f1ad"
+        fill="none"
+        height="14"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.75"
+        viewBox="0 0 24 24"
+        width="14"
+        xmlns="http://www.w3.org/2000/svg"
+      />
+      <span
+        class="newSessionLabel wide"
+      >
+        New Session
+      </span>
+    </button>
+    <nav
+      aria-label="Global panels"
+      class="panelList"
+    >
+      <div
+        class="modeBar"
+      >
+        <button
+          aria-label="operate"
+          aria-pressed="true"
+          class="modeButton modeActive"
+          type="button"
+        >
+          <span
+            aria-hidden="true"
+            class="modeGlyph"
+          >
+            <div
+              data-slot="sidebar.panellist"
+              style="display: contents;"
+            >
+              <span
+                data-glyph="16"
+              />
+            </div>
+          </span>
+        </button>
+        <button
+          aria-label="learn"
+          aria-pressed="false"
+          class="modeButton"
+          type="button"
+        >
+          <span
+            aria-hidden="true"
+            class="modeGlyph"
+          >
+            <div
+              data-slot="sidebar.panellist"
+              style="display: contents;"
+            >
+              <span
+                data-glyph="16"
+              />
+            </div>
+          </span>
+        </button>
+      </div>
+      <div
+        class="accordion"
+      >
+        <button
+          aria-expanded="true"
+          class="accordionHead"
+          type="button"
+        >
+          <svg
+            class="accordionChevron accordionChevronOpen"
+            data-content="6c4049e2"
+            fill="none"
+            height="12"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.75"
+            viewBox="0 0 24 24"
+            width="12"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span
+            class="accordionTitle"
+          >
+            Workspace
+          </span>
+          <span
+            class="accordionCount"
+          >
+            2
+          </span>
+        </button>
+        <div
+          class="accordionBody"
+        >
+          <button
+            aria-label="Board"
+            class="panelRow"
+            type="button"
+          >
+            <span
+              aria-hidden="true"
+              class="panelGlyph"
+            >
+              <div
+                data-slot="sidebar.panellist"
+                style="display: contents;"
+              >
+                <span
+                  data-glyph="16"
+                />
+              </div>
+            </span>
+            <span
+              class="panelTitle wide"
+            >
+              Board
+            </span>
+            <span
+              class="panelBadge"
+            >
+              3
+            </span>
+          </button>
+          <button
+            aria-label="Inbox"
+            class="panelRow"
+            type="button"
+          >
+            <span
+              aria-hidden="true"
+              class="panelGlyph"
+            >
+              <div
+                data-slot="sidebar.panellist"
+                style="display: contents;"
+              >
+                <span
+                  data-glyph="16"
+                />
+              </div>
+            </span>
+            <span
+              class="panelTitle wide"
+            >
+              Inbox
+            </span>
+          </button>
+        </div>
+      </div>
+    </nav>
+    <div
+      class="regionArea"
+    >
+      <div
+        data-slot="sidebar.workspaces"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      class="footArea"
+    >
+      <div
+        class="footerActions"
+      >
+        <div
+          data-slot="sidebar.footer.action"
+          style="display: contents;"
+        />
+      </div>
+      <div
+        class="settingsArea"
+      >
+        <div
+          data-slot="sidebar.settings"
+          style="display: contents;"
+        />
+      </div>
+    </div>
+  </div>
+</div>
+`;

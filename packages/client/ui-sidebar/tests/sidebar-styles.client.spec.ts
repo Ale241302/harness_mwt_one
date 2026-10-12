@@ -86,3 +86,42 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.fallbackBrandName')?.get('white-space')).toBe('nowrap')
   })
 })
+
+describe('SidebarRoot.module.css panel placement', () => {
+  it('makes the panel list a query container so a narrow column degrades in place', () => {
+    expect(declarations('.panelList')?.get('container-type')).toBe('inline-size')
+    expect(declarations('.panelList')?.get('min-width')).toBe('0')
+    expect(css).toMatch(/@container \(max-width: 300px\) \{/)
+  })
+
+  it('truncates the heading and the row title with ellipsis', () => {
+    for (const selector of ['.accordionTitle', '.panelTitle']) {
+      expect(declarations(selector)?.get('overflow')).toBe('hidden')
+      expect(declarations(selector)?.get('text-overflow')).toBe('ellipsis')
+      expect(declarations(selector)?.get('white-space')).toBe('nowrap')
+    }
+  })
+
+  it('hides the collapsed accordion body against its column display', () => {
+    expect(declarations('.accordionBody')?.get('display')).toBe('flex')
+    expect(declarations('.accordionBody[hidden]')?.get('display')).toBe('none')
+  })
+
+  it('keeps 44px hit targets on touch pointers', () => {
+    const block = /@media \(pointer: coarse\) \{([\s\S]*?)\n}/.exec(css)?.[1] ?? ''
+    for (const selector of ['.modeButton', '.accordionHead', '.panelRow']) {
+      expect(block).toContain(selector)
+    }
+    expect(block).toContain('min-height: 44px')
+  })
+
+  it('stacks the mode bar in the rail and keeps the 36px rail controls', () => {
+    expect(declarations('.collapsed .modeBar')?.get('flex-direction')).toBe('column')
+    expect(declarations('.collapsed .modeButton')?.get('height')).toBe('36px')
+  })
+
+  it('paints with theme tokens only, never a literal color', () => {
+    expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+    expect(css).not.toMatch(/\b(?:rgb|rgba|hsl|hsla|oklch|lab|lch)\(/)
+  })
+})

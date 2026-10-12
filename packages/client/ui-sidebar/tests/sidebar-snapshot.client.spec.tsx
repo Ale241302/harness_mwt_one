@@ -11,6 +11,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, waitFor } from '@testing-library/react'
 import { SlotTestRuntime, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import type { Context } from '@deepseek-ai/cordis'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { es as commonEs } from '@deepseek-ai/dsh-client-locale/src/locales/es.ts'
@@ -50,6 +53,42 @@ async function bench(options: { locale?: 'en' } = {}) {
   await runtime.declare({ 'sidebar': { kind: 'single', scope: 'root' } })
   await runtime.mount({ inject: [...inject], apply })
   return { runtime, locale }
+}
+
+/**
+ * Register three panel rows: one two-row mode/group with a badge, and a second
+ * mode so the mode bar renders.
+ * @param runtime - the booted runtime.
+ * @returns the registration fiber.
+ */
+async function mountPlacedPanels(runtime: SlotTestRuntime) {
+  function Icon({ size }: PropsRuntime<'sidebar.panellist'>) {
+    return <span data-glyph={size} />
+  }
+  const panels = [
+    {
+      id: 'faberloom-board' as MainPanelId, order: 10, label: 'Board',
+      mode: () => 'operate', group: () => 'Workspace', badge: () => '3',
+    },
+    {
+      id: 'faberloom-inbox' as MainPanelId, order: 20, label: 'Inbox',
+      mode: () => 'operate', group: () => 'Workspace',
+    },
+    {
+      id: 'faberloom-guide' as MainPanelId, order: 30, label: 'Guide',
+      mode: () => 'learn', group: () => 'Teachings',
+    },
+  ]
+  return runtime.mount({
+    inject: ['slots'],
+    apply(ctx: Context) {
+      for (const panel of panels) {
+        ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+          name: 'sidebar.panellist', ...panel,
+        }, Icon))
+      }
+    },
+  })
 }
 
 describe('sidebar shell snapshots', () => {
@@ -95,6 +134,16 @@ describe('sidebar shell snapshots', () => {
     act(() => { locale.setLocale('en') })
     expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
     expect(slot.view.queryByRole('button', { name: '新建会话' })).toBeNull()
+    await runtime.dispose()
+  })
+
+  it('renders the mode bar, counted accordions, and the row badge from placement options', async () => {
+    const { runtime } = await bench({ locale: 'en' })
+    const panels = await mountPlacedPanels(runtime)
+    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
+    await waitFor(() => { expect(slot.view.getByRole('button', { name: 'Board' })).toBeTruthy() })
+    expect(slot.container).toMatchSnapshot()
+    await panels.dispose()
     await runtime.dispose()
   })
 })

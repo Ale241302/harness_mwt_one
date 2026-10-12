@@ -28,10 +28,12 @@ Mount this plugin where `ctx.slots`, `ctx.locale`, and `ctx.theme` are present. 
 - an accent layer through `ctx.theme.overrideTokens`, which follows light and dark;
 - the `sidebar.brand.name`, `sidebar.brand.mark`, and `conversation.hero.brand.mark` occupant;
 - ten `sidebar.panellist` rows over twelve `main` panels, addressed by the shared `MainPanelId` (the Chat landing and the Skills panel keep their routes without a sidebar row);
-- the `sidebar.footer.action` theme toggle beside Settings: the theme feature's second surface, which reads the resolved scheme from the `theme` service and writes the same preference the Appearance row does. It registers from here rather than from `ui-theme` because the sidebar's action seat sits outside that package's reference closure (`ui-sidebar` reaches `ui-layout`, which reaches `ui-theme`), while this plugin already depends on both;
+- the `sidebar.footer.action` preference controls beside Settings: a palette menu listing every registered theme grouped by color scheme, each row carrying a swatch drawn from that theme's own definition, and an interface-language menu listing the registered locales. Both register from here rather than from `ui-theme` because the sidebar's action seat sits outside that package's reference closure (`ui-sidebar` reaches `ui-layout`, which reaches `ui-theme`), while this plugin already depends on both, and each writes through its own service (`theme`, `locale`) so a foot control and its settings row stay one setting;
 - the chat gestures: an `@` trigger source that lists the owner's active agents (a pick inserts `@name`) and a `/routine` command contribution with a popup that starts the picked routine, both fed by the workspace overview through `ctx.remote.faberloomView`.
 
 The Spaces detail links the business space to the harness workspace: `spaceWorkspace` projects the space's conversation area (its `fw_` workdir registered as a workspace, titled after the space) and "New conversation in this space" opens a session in it, so the sidebar's workspace group and the space stay the same thing. The Work bench reviews with a note, submits new prepared revisions, moves items through the exception states (request data, fail, complete), and lists recorded effects with detail and date.
+
+The rows group by the design's three navigation modes — `Operar` (Mesa, Espacios, Rutinas, Flujos, Correo), `Aprender` (Memoria, Contexto, Aprobaciones), and `Admin` (Agentes y Skills, Conexiones) — and carry a badge only where the live overview already counts their records; a section with no real number shows none.
 
 All registrations are effects on the calling plugin's fiber and disappear with it.
 
@@ -61,6 +63,7 @@ Independent of live requests: panel registration never touches a request prefix.
 - **Panel actions where the screen allows them** — Espacios creates, renames, edits the Space's agent directive, adopts an existing folder as the Space's Workspace through the mounted directory picker, and writes the Space's context export into that folder; Agentes create, rename, and deactivate; Mesa creates and approves or rejects; Rutinas creates and toggles; Memoria records a statement; Email downloads an attachment, saves it into a chosen Space's folder as a real file, or mails a file from a chosen Space's folder as an attachment. Board revision submission, model policy, and routine step editing stay in the product services until their screens land.
 - **Memory follows the pipeline** — recording a statement appends it to the agent-memory inlet, and the distilled row may appear after the next read.
 - **Refresh on activity, not on push** — the panels re-read on the harness's forwarded session-activity event, on mount, and after every write.
+- **Row metadata rides the sidebar's projection** — the mode, group, and badge are `sidebar.panellist` registration options the sidebar resolves per read; a badge shows the latest overview this surface published and appears with the sidebar's next projection of its rows.
 - **Spanish copy under the shipped locales** — FaberLoom's product language is Spanish, and the client locale runtime requires the two shipped locales per namespace, so `zh` and `en` both carry the Spanish dictionary until a first-class `es` locale exists.
 
 <a id="dev-note"></a>
@@ -69,7 +72,7 @@ Independent of live requests: panel registration never touches a request prefix.
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-Section identity lives in one array (`FABERLOOM_SECTIONS`): the sidebar id, the main-panel key, the row order, the label key, and both occupants. Adding a screen is one entry plus its copy keys.
+Section identity lives in one array (`FABERLOOM_SECTIONS`): the sidebar id, the main-panel key, the row order, the label key, the navigation mode and group keys, an optional overview-count badge, and both occupants. Adding a screen is one entry plus its copy keys. Below the tablet breakpoint the table/inspector split collapses to one column (the inspector becomes a full-width block under the table), and each table pans inside its own card with a sticky header.
 
 </details>
 

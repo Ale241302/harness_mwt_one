@@ -3264,12 +3264,64 @@ export interface FaberloomSection {
   order: number
   /** Sidebar row label key. */
   labelKey: FaberloomKey
+  /** Sidebar mode this row lives under: `nav.mode.*`. */
+  modeKey: FaberloomKey
+  /** Group inside the mode: `nav.group.*`. */
+  groupKey: FaberloomKey
+  /** Live overview count for the row badge; omitted when the overview carries no such number. */
+  badge?: (overview: FaberLoomOverview) => number
   /** Sidebar row occupant. */
   Icon: FaberloomPanelIconType
   /** Main-panel occupant. */
   Page: FaberloomPanelBody
   /** Whether the sidebar lists a row for the panel (default true). */
   sidebar?: boolean
+}
+
+/** Copy seat a section's navigation metadata resolves through. */
+export type FaberloomCopy = (key: FaberloomKey) => string
+
+/** One sidebar row's resolved navigation metadata. */
+export interface FaberloomSectionNav {
+  /** Mode label for the sidebar's three-mode bar. */
+  mode: string
+  /** Group label inside the mode. */
+  group: string
+  /** Row badge: the live overview count, or an empty string when there is none. */
+  badge: string
+}
+
+/**
+ * Resolve a section's row badge from the live overview. A section without an
+ * overview count, or a zero count, yields no badge — a count is never invented.
+ * @param section - the section row.
+ * @param overview - the live overview, or null before the first read.
+ * @returns the badge text, or an empty string when the row carries none.
+ */
+export function sectionBadge(section: FaberloomSection, overview: FaberLoomOverview | null): string {
+  if (section.badge === undefined || overview === null) return ''
+  const count = section.badge(overview)
+  return count === 0 ? '' : String(count)
+}
+
+/**
+ * Resolve a section's localized mode, group, and badge together, for the
+ * sidebar row metadata the surface contributes.
+ * @param section - the section row.
+ * @param t - copy seat bound to the faberloom namespace.
+ * @param overview - the live overview, or null before the first read.
+ * @returns the resolved mode, group, and badge strings.
+ */
+export function resolveSectionNav(
+  section: FaberloomSection,
+  t: FaberloomCopy,
+  overview: FaberLoomOverview | null,
+): FaberloomSectionNav {
+  return {
+    mode: t(section.modeKey),
+    group: t(section.groupKey),
+    badge: sectionBadge(section, overview),
+  }
 }
 
 /** Every node kind the Work Flow inspector offers. */
@@ -4192,7 +4244,7 @@ function contextScreen() {
       { key: 'title', header: t('col.title'), cell: row => <span className={styles.cellName}>{row.title}</span> },
       { key: 'visibility', header: t('ctx.visibility'), cell: row => <Chip>{visibilityLabel(row.visibility)}</Chip> },
       { key: 'space', header: t('col.space'), cell: row => <span className={styles.cellMuted}>{contextSpaceName(t, overview?.spaces ?? [], row.spaceId)}</span> },
-      { key: 'version', header: t('ctx.version'), cell: row => <span className={styles.cellMuted}>{versionLabel(row.version)}</span> },
+      { key: 'version', header: t('ctx.version'), align: 'end', cell: row => <span className={styles.cellMuted}>{versionLabel(row.version)}</span> },
       { key: 'updated', header: t('col.date'), cell: row => <span className={styles.cellMuted}>{row.updatedAt}</span> },
     ]
 
@@ -4445,16 +4497,16 @@ function agentsAndSkillsScreen() {
 export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   // The Chat landing keeps its route but no sidebar row (the New Session button
   // and the conversation cover it).
-  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(FlIconSpaceloom), Page: conversarPanel(), sidebar: false },
-  { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', Icon: panelIcon(FlIconWorkloom), Page: boardScreen() },
-  { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', Icon: panelIcon(FlIconWorkspace), Page: spacesScreen() },
+  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', Icon: panelIcon(FlIconSpaceloom), Page: conversarPanel(), sidebar: false },
+  { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.board.length, Icon: panelIcon(FlIconWorkloom), Page: boardScreen() },
+  { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.spaces.length, Icon: panelIcon(FlIconWorkspace), Page: spacesScreen() },
   // Agents and Skills share one sidebar row; the panel's own tab switches them.
-  { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agentsAndSkills', Icon: panelIcon(FlIconUsers), Page: agentsAndSkillsScreen() },
-  { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(FlIconRefresh), Page: routinesScreen() },
-  { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(FlIconCuration), Page: workflowsScreen() },
-  { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(FlIconStackloom), Page: memoryScreen() },
-  { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', Icon: panelIcon(FlIconKnowledgeIndex), Page: contextScreen() },
-  { id: 'faberloom-approvals' as MainPanelId, order: 64, labelKey: 'nav.approvals', Icon: panelIcon(FlIconCriterio), Page: approvalsScreen() },
-  { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', Icon: panelIcon(FlIconExternal), Page: connectionsScreen() },
-  { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', Icon: panelIcon(FlIconMail), Page: emailScreen() },
+  { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agentsAndSkills', modeKey: 'nav.mode.admin', groupKey: 'nav.group.setup', badge: overview => overview.agents.length, Icon: panelIcon(FlIconUsers), Page: agentsAndSkillsScreen() },
+  { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.routines.length, Icon: panelIcon(FlIconRefresh), Page: routinesScreen() },
+  { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', Icon: panelIcon(FlIconCuration), Page: workflowsScreen() },
+  { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', modeKey: 'nav.mode.learn', groupKey: 'nav.group.knowledge', badge: overview => overview.memory.length, Icon: panelIcon(FlIconStackloom), Page: memoryScreen() },
+  { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', modeKey: 'nav.mode.learn', groupKey: 'nav.group.knowledge', Icon: panelIcon(FlIconKnowledgeIndex), Page: contextScreen() },
+  { id: 'faberloom-approvals' as MainPanelId, order: 64, labelKey: 'nav.approvals', modeKey: 'nav.mode.learn', groupKey: 'nav.group.inbox', Icon: panelIcon(FlIconCriterio), Page: approvalsScreen() },
+  { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', modeKey: 'nav.mode.admin', groupKey: 'nav.group.setup', Icon: panelIcon(FlIconExternal), Page: connectionsScreen() },
+  { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', modeKey: 'nav.mode.operate', groupKey: 'nav.group.inbox', Icon: panelIcon(FlIconMail), Page: emailScreen() },
 ]

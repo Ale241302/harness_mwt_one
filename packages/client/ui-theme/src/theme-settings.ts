@@ -1,9 +1,14 @@
 /** Theme preferences stored in the Host user-settings document. */
 
 import z from '@deepseek-ai/schemastery'
+import { THEME_PALETTE_IDS } from './theme-palettes.ts'
 
-/** Built-in preferences accepted at the registry and settings boundaries. */
-export const THEME_PREFERENCES = ['light', 'dark', 'system'] as const
+/**
+ * Preferences accepted at the registry and settings boundaries: every built-in
+ * palette id plus `system`. A theme registered at runtime is selectable in the
+ * session but has no durable preference value, so it is not listed here.
+ */
+export const THEME_PREFERENCES = [...THEME_PALETTE_IDS, 'system'] as const
 
 /** Settings namespace owned by the theme plugin. */
 export const THEME_SETTINGS_NAMESPACE = 'ui-theme'

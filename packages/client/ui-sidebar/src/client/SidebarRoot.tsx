@@ -12,20 +12,27 @@
  * plus `sidebar.footer.action`; the shell hands them the wide flag (plus an
  * expand request callback for the browser).
  *
+ * Panel rows follow the registrations' placement members: rows that declare a
+ * mode switch through a compact mode bar and group into accordions inside their
+ * mode (each heading carries a chevron and the group's row count, and the
+ * selected row's group stays open), while rows that declare none keep the flat
+ * list. The rail renders the mode bar and the rows as icons only.
+ *
  * The column also owns whether the scroll regions nested in it draw a
  * scrollbar at all: the shell tracks the pointer and rebinds ui-theme's
  * scrollbar indirection away while it is elsewhere, so a list the user is not
  * pointing at carries no bar.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  FaberLoomMark, FlIconPanelLeft, FlIconPlus, Tooltip,
+  FaberLoomMark, FlIconChevron, FlIconPanelLeft, FlIconPlus, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   SidebarPanelMetadata, SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps,
 } from './contract/slots.ts'
+import { panelLayout, type PanelAccordion } from './panels.ts'
 import css from './SidebarRoot.module.css'
 
 /** Wide-content unmount delay; matches the 150ms wide-content fade-out. */
@@ -51,13 +58,14 @@ function localBuildVersion(): string | undefined {
 
 type PanelRowProps =
   Pick<SidebarPanelMetadata, 'id' | 'label'>
+  & { /** Row chip text; undefined when the registration declared none. */ badge?: string | undefined }
   & Pick<SidebarSectionOwnerProps, 'wide'>
   & Pick<PropsRuntime<'sidebar'>, 'usePanelInfo'>
   & Pick<InjectFace<SidebarRootInjected>, 'selectPanel'>
   & PropsRenderSlots<'sidebar.panellist'>
 
 /** Each panel row subscribes only to its own selection state. */
-function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: PanelRowProps) {
+function PanelRow({ id, label, badge, wide, usePanelInfo, selectPanel, renderSlot }: PanelRowProps) {
   const active = usePanelInfo(info => info.activePanelId === id)
   return (
     <Tooltip label={label} delayMs={500} disabled={wide}>
@@ -76,8 +84,70 @@ function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: Pa
             {label}
           </span>
         )}
+        {wide && badge !== undefined && <span className={css.panelBadge}>{badge}</span>}
       </button>
     </Tooltip>
+  )
+}
+
+/** One accordion: its group, its collapsed state, and the shell shares its rows render with. */
+type AccordionProps =
+  Pick<PropsRuntime<'sidebar'>, 'usePanelInfo'>
+  & Pick<InjectFace<SidebarRootInjected>, 'selectPanel'>
+  & PropsRenderSlots<'sidebar.panellist'>
+  & {
+    /** The group to render, with its rows in registration order. */
+    accordion: PanelAccordion
+    /** Whether the user collapsed this group; the selected row's group stays open regardless. */
+    collapsed: boolean
+    /** Toggle this group in the shell's collapsed state. */
+    onToggle: () => void
+  }
+
+/**
+ * One accordion: a heading button carrying the chevron, the group label, and
+ * the group's row count over the rows it toggles. A group declared without a
+ * heading renders its rows directly. The group holding the selected panel
+ * stays open, so selecting a panel never leaves its row behind a collapsed
+ * heading.
+ * @param props - accordion data, shell shares, and the toggle callback.
+ * @returns the accordion element tree.
+ */
+function Accordion({
+  accordion, collapsed, onToggle, usePanelInfo, selectPanel, renderSlot,
+}: AccordionProps) {
+  const ids = accordion.rows.map(row => row.id)
+  const holdsActive = usePanelInfo(info => info.activePanelId !== null && ids.includes(info.activePanelId))
+  const open = accordion.group === undefined || !collapsed || holdsActive
+  return (
+    <div className={css.accordion}>
+      {accordion.group !== undefined && (
+        <button
+          type="button"
+          className={css.accordionHead}
+          aria-expanded={open}
+          onClick={() => { onToggle() }}
+        >
+          <FlIconChevron size={12} className={clsx(css.accordionChevron, open && css.accordionChevronOpen)} />
+          <span className={css.accordionTitle}>{accordion.group}</span>
+          <span className={css.accordionCount}>{accordion.rows.length}</span>
+        </button>
+      )}
+      <div className={css.accordionBody} hidden={!open}>
+        {accordion.rows.map(row => (
+          <PanelRow
+            key={row.id}
+            id={row.id}
+            label={row.label}
+            badge={row.badge}
+            wide
+            usePanelInfo={usePanelInfo}
+            selectPanel={selectPanel}
+            renderSlot={renderSlot}
+          />
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -98,6 +168,22 @@ export function SidebarRoot({
   renderSlot,
 }: SidebarRootComponentProps) {
   const panels = usePanels(snapshot => snapshot)
+
+  // Panel placement: the mode bar's pick and the per-mode+group collapsed state
+  // persist while the shell is mounted. A pick no registration declares any
+  // more falls back to the first declared mode.
+  const [pickedMode, setPickedMode] = useState<string>()
+  const [collapsedAccordions, setCollapsedAccordions] = useState<ReadonlySet<string>>(() => new Set<string>())
+  const layout = useMemo(() => panelLayout(panels, pickedMode), [panels, pickedMode])
+  const toggleAccordion = (key: string): void => {
+    setCollapsedAccordions((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
   const [settled, setSettled] = useState(collapsed)
@@ -242,17 +328,69 @@ export function SidebarRoot({
 
       {panels.length > 0 && (
         <nav className={css.panelList} aria-label={t('panels.label')}>
-          {panels.map(({ id, label }) => (
+          {/* The mode bar switches which accordions render. Icon-only, so each
+              button's accessible name is the mode value itself. */}
+          {layout.showModeBar && (
+            <div className={css.modeBar}>
+              {layout.tabs.map(({ mode, glyph }) => (
+                <Tooltip key={mode} label={mode} delayMs={500}>
+                  <button
+                    type="button"
+                    className={clsx(css.modeButton, mode === layout.mode && css.modeActive)}
+                    aria-label={mode}
+                    aria-pressed={mode === layout.mode}
+                    onClick={() => { setPickedMode(mode) }}
+                  >
+                    <span className={css.modeGlyph} aria-hidden="true">
+                      {renderSlot('sidebar.panellist', {
+                        size: wide ? 16 : 18,
+                        active: mode === layout.mode,
+                      }, { only: glyph })}
+                    </span>
+                  </button>
+                </Tooltip>
+              ))}
+            </div>
+          )}
+          {/* Rows that declare no mode stay visible in every layout. */}
+          {layout.unplaced.map(row => (
             <PanelRow
-              key={id}
-              id={id}
-              label={label}
+              key={row.id}
+              id={row.id}
+              label={row.label}
+              badge={row.badge}
               wide={wide}
               usePanelInfo={usePanelInfo}
               selectPanel={selectPanel}
               renderSlot={renderSlot}
             />
           ))}
+          {/* Wide, the displayed mode's rows group under their headings; the
+              rail drops the headings and renders the same rows as icons. */}
+          {wide
+            ? layout.accordions.map(accordion => (
+              <Accordion
+                key={accordion.key}
+                accordion={accordion}
+                collapsed={collapsedAccordions.has(accordion.key)}
+                onToggle={() => { toggleAccordion(accordion.key) }}
+                usePanelInfo={usePanelInfo}
+                selectPanel={selectPanel}
+                renderSlot={renderSlot}
+              />
+            ))
+            : layout.modeRows.map(row => (
+              <PanelRow
+                key={row.id}
+                id={row.id}
+                label={row.label}
+                badge={row.badge}
+                wide={false}
+                usePanelInfo={usePanelInfo}
+                selectPanel={selectPanel}
+                renderSlot={renderSlot}
+              />
+            ))}
         </nav>
       )}
 

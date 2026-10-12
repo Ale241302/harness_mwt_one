@@ -1,7 +1,13 @@
+/* Shell chrome: the top bar above the frame's three columns, and the regimes
+   that take the rails out of the flow below the tablet breakpoint. */
+
 .frame {
+  /* Design top-bar height (FaberLoom Shell .topbar). */
+  --shell-topbar-height: 54px;
   position: relative; /* anchors the drag handles, which straddle column borders */
   display: grid;
-  grid-template-rows: 100%;
+  /* Row 1 is the top bar; row 2 holds the three columns. */
+  grid-template-rows: var(--shell-topbar-height) minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
@@ -16,13 +22,86 @@
   transition: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .frame {
-    transition: none;
-  }
+.topbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* Never wraps: the toggles have to stay reachable at every frame width. */
+  flex-wrap: nowrap;
+  height: var(--shell-topbar-height);
+  padding: 0 14px;
+  min-width: 0;
+  z-index: 60;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
+  /* The design's elevation treatment (linear-gradient(--elev-top, transparent)
+     over the canvas). This token sheet has no --elev-top: --dsw-alias-bg-layer-1
+     is the closest existing token, the first elevated surface layer. */
+  background:
+    linear-gradient(var(--dsw-alias-bg-layer-1), transparent),
+    var(--dsw-alias-bg-base);
+}
+
+.railToggles {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.railToggle {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: none;
+  padding: 0;
+  border-radius: 7px;
+  background: none;
+  cursor: pointer;
+  color: var(--dsw-alias-label-tertiary);
+  transition: background 0.18s, color 0.18s;
+}
+
+.railToggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.railToggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+/* The brand slot declares no fallback: an unoccupied seat must not spend a gap. */
+.brand:empty {
+  display: none;
+}
+
+.center {
+  flex: 1;
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .sidebarCol {
+  grid-column: 1;
+  grid-row: 2;
   min-width: 0;
   overflow: hidden;
   background: var(--dsw-specific-sidebar-fill);
@@ -30,10 +109,69 @@
 }
 
 .centerCol {
+  grid-column: 2;
+  grid-row: 2;
   min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/*
+ * The right column never clips: its occupant anchors a fixed-width panel to the
+ * column's right edge (the frame's edge, which never moves) and lets the track
+ * decide whether the centre makes room. With no track the panel hangs over the
+ * centre from a zero-width column, and while the track animates the panel stays
+ * where it is. The occupant draws its own left border.
+ */
+.rightbarCol {
+  grid-column: 3;
+  grid-row: 2;
+  position: relative;
+  min-width: 0;
+  overflow: visible;
+}
+
+/*
+ * Below the tablet breakpoint the rails leave the flow: the left rail slides
+ * off-canvas as a drawer (toggled from the top bar) and the right rail keeps
+ * its zero-width track, overlaying the canvas. `visibility` carries the closed
+ * drawer out of the tab order while the transform still animates.
+ */
+.frame:not([data-shell-regime='wide']) .sidebarCol {
+  position: absolute;
+  top: var(--shell-topbar-height);
+  bottom: 0;
+  left: 0;
+  z-index: 58;
+  border-right: none;
+  box-shadow: var(--dsw-elevation-prominent);
+  visibility: hidden;
+  transform: translateX(-100%);
+  transition:
+    transform var(--ds-transition-duration-slow) var(--ds-ease-in-out),
+    visibility var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.frame[data-drawer-open] .sidebarCol {
+  border-right: 0.5px solid var(--dsw-alias-border-l3);
+  visibility: visible;
+  transform: none;
+}
+
+/* The drawer's dismissal surface: below the top bar, over the canvas. */
+.scrim {
+  position: absolute;
+  top: var(--shell-topbar-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 55;
+  border: none;
+  padding: 0;
+  background: var(--dsw-alias-bg-mask-3);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
 }
 
 /* Drag handles are frame children (columns clip overflow): an 8px hit strip
@@ -44,7 +182,7 @@
    over the centre. */
 .handle {
   position: absolute;
-  top: 0;
+  top: var(--shell-topbar-height);
   bottom: 0;
   width: 8px;
   margin-left: -4px;
@@ -68,25 +206,6 @@
   transition: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .handle {
-    transition: none;
-  }
-}
-
-/*
- * The right column never clips: its occupant anchors a fixed-width panel to the
- * column's right edge (the frame's edge, which never moves) and lets the track
- * decide whether the centre makes room. With no track the panel hangs over the
- * centre from a zero-width column, and while the track animates the panel stays
- * where it is. The occupant draws its own left border.
- */
-.rightbarCol {
-  position: relative;
-  min-width: 0;
-  overflow: visible;
-}
-
 .overlayLayer {
   position: absolute;
   inset: 0;
@@ -96,4 +215,13 @@
 
 .overlayLayer > * {
   pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame,
+  .handle,
+  .railToggle,
+  .frame:not([data-shell-regime='wide']) .sidebarCol {
+    transition: none;
+  }
 }
