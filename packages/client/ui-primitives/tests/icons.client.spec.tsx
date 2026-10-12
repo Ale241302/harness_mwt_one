@@ -78,15 +78,119 @@ describe('FishLogo', () => {
   })
 })
 
-describe('BrandWordmark', () => {
-  it('can render the name artwork with or without its leading mark', () => {
-    const view = render(<primitives.BrandWordmark />)
-    const svg = view.container.querySelector('svg')!
-    expect(svg.getAttribute('width')).toBe('182')
-    expect(svg.getAttribute('viewBox')).toBe('0 0 182 24')
+// The FaberLoom families share one 24px grid and the same IconProps
+// signature; filter by the FlIcon prefix before typing.
+const flIcons = Object.fromEntries(
+  Object.entries(primitives).filter(([name]) => name.startsWith('FlIcon')),
+) as Record<string, (p: primitives.IconProps) => React.JSX.Element>
+const flIconNames = Object.keys(flIcons)
 
-    view.rerender(<primitives.BrandWordmark includeMark={false} />)
-    expect(svg.getAttribute('width')).toBe('156')
-    expect(svg.getAttribute('viewBox')).toBe('26 0 156 24')
+describe('FaberLoom icon set', () => {
+  it('exports the ten brand glyphs and the thirty-five standard glyphs', () => {
+    expect(flIconNames).toHaveLength(45)
+    expect(flIconNames).toEqual(expect.arrayContaining([
+      'FlIconBrandLoom', 'FlIconCriterio', 'FlIconWorkloom', 'FlIconSpaceloom', 'FlIconStackloom',
+      'FlIconVoice', 'FlIconLearningClock', 'FlIconKnowledgeIndex', 'FlIconCuration', 'FlIconWorkspace',
+      'FlIconSearch', 'FlIconPlus', 'FlIconClose', 'FlIconChevron', 'FlIconArrow', 'FlIconArrowUp',
+      'FlIconPanelLeft', 'FlIconPanelRight', 'FlIconHourglass', 'FlIconClock', 'FlIconRefresh',
+      'FlIconLayers', 'FlIconLibrary', 'FlIconBookmark', 'FlIconFileText', 'FlIconMail', 'FlIconMessage',
+      'FlIconInbox', 'FlIconPaperclip', 'FlIconCheck', 'FlIconAlert', 'FlIconWarning', 'FlIconSparkles',
+      'FlIconPin', 'FlIconCircle', 'FlIconCircleFill', 'FlIconUser', 'FlIconUsers', 'FlIconUserCircle',
+      'FlIconSettings', 'FlIconSliders', 'FlIconEdit', 'FlIconLogOut', 'FlIconExternal', 'FlIconTrash',
+    ]))
+  })
+
+  it.each(flIconNames)('%s draws the 24px grid in currentColor with no hardcoded palette', (name) => {
+    const Icon = flIcons[name]!
+    const { container } = render(<Icon />)
+    const svg = container.querySelector('svg')!
+    expect(svg.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(svg.getAttribute('width')).toBe('24')
+    expect(svg.getAttribute('fill')).toBe('none')
+    const markup = container.innerHTML
+    expect(markup).not.toMatch(/#[0-9a-fA-F]{3,8}"/)
+    expect(markup).toContain('currentColor')
+  })
+
+  it('lands size and className on the root svg', () => {
+    const { container } = render(<primitives.FlIconSearch size={32} className="x" />)
+    const svg = container.querySelector('svg')!
+    expect(svg.getAttribute('width')).toBe('32')
+    expect(svg.getAttribute('height')).toBe('32')
+    expect(svg.classList.contains('x')).toBe(true)
+  })
+
+  it('keeps a brand glyph filled only at its deliberate anchor node', () => {
+    const { container } = render(<primitives.FlIconCriterio />)
+    const svg = container.querySelector('svg')!
+    expect(svg.getAttribute('stroke')).toBe('currentColor')
+    expect(svg.getAttribute('stroke-width')).toBe('1.75')
+    expect(container.querySelectorAll('[fill="currentColor"]')).toHaveLength(1)
+  })
+})
+
+describe('FaberLoomMark', () => {
+  it('renders the 3x3 weave on the 48-unit field', () => {
+    const { container } = render(<primitives.FaberLoomMark />)
+    const svg = container.querySelector('svg')!
+    expect(svg.getAttribute('width')).toBe('24')
+    expect(svg.getAttribute('height')).toBe('24')
+    expect(svg.getAttribute('viewBox')).toBe('0 0 48 48')
+    expect(svg.getAttribute('aria-hidden')).toBe('true')
+    const group = container.querySelector('g')!
+    expect(group.getAttribute('stroke')).toBe('currentColor')
+    expect(group.getAttribute('stroke-width')).toBe('3.5')
+    expect(group.getAttribute('stroke-linecap')).toBe('round')
+    expect(container.querySelectorAll('path')).toHaveLength(15)
+  })
+
+  it('collapses to the single woven cross below 24px', () => {
+    const { container } = render(<primitives.FaberLoomMark size={16} />)
+    expect(container.querySelector('g')!.getAttribute('stroke-width')).toBe('6')
+    const paths = [...container.querySelectorAll('path')].map(path => path.getAttribute('d'))
+    expect(paths).toEqual(['M24 9 V39', 'M9 24 H17', 'M31 24 H39'])
+  })
+
+  it('keeps the full weave at and above 24px', () => {
+    const { container } = render(<primitives.FaberLoomMark size={24} className="mark" />)
+    expect(container.querySelector('g')!.getAttribute('stroke-width')).toBe('3.5')
+    expect(container.querySelectorAll('path')).toHaveLength(15)
+    expect(container.querySelector('svg')!.classList.contains('mark')).toBe(true)
+  })
+})
+
+describe('BrandWordmark', () => {
+  it.each([
+    ['light', null],
+    ['dark', 'data-ds-dark-theme'],
+  ])('renders Faber coral and Loom ground ink on a %s ground', (_ground, attribute) => {
+    if (attribute !== null) document.body.setAttribute(attribute, '')
+    const { container, unmount } = render(<primitives.BrandWordmark size={40} />)
+    const root = container.firstElementChild as HTMLElement
+    expect(root.getAttribute('aria-hidden')).toBe('true')
+    expect(root.style.fontFamily).toContain('EB Garamond')
+    expect(root.style.fontStyle).toBe('italic')
+    expect(root.style.fontWeight).toBe('500')
+    expect(root.style.fontSize).toBe('40px')
+    expect(root.style.letterSpacing).toBe('-0.005em')
+    expect(root.style.lineHeight).toBe('1')
+    // "Loom" rides one adaptive ink token, so it takes ink on a light ground and
+    // cream on the dark ground; "Faber" keeps the coral accent either way.
+    const parts = [...root.querySelector('span')!.children] as HTMLElement[]
+    expect(parts.map(part => part.textContent)).toEqual(['Faber', 'Loom'])
+    expect(parts[0]!.style.color).toBe('var(--dsw-alias-brand-primary-new-colorprimary-new-color)')
+    expect(parts[1]!.style.color).toBe('var(--dsw-alias-label-primary)')
+    unmount()
+    if (attribute !== null) document.body.removeAttribute(attribute)
+  })
+
+  it('adds the woven mark at the brand optical size and drops it on request', () => {
+    const view = render(<primitives.BrandWordmark size={38} />)
+    const mark = view.container.querySelector('svg')!
+    expect(mark.getAttribute('viewBox')).toBe('0 0 48 48')
+    expect(mark.getAttribute('width')).toBe('52')
+
+    view.rerender(<primitives.BrandWordmark size={38} includeMark={false} />)
+    expect(view.container.querySelector('svg')).toBeNull()
   })
 })

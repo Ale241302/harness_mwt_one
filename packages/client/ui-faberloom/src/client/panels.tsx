@@ -11,16 +11,17 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: declares the sidebar shell's `sidebar.panellist` owner props.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import {
-  IconAgentPresetOutline16,
-  IconAlarmClockOutline16,
-  IconApiOutline14,
-  IconBranchOutline16,
-  IconChecklistOutline14,
-  IconContextInjectionOutline16,
-  IconSendOutline14,
-  IconDatabaseOutline16,
-  IconFolderOpenOutline16,
-  IconNewChatOutline16,
+  FlIconCriterio,
+  FlIconCuration,
+  FlIconExternal,
+  FlIconKnowledgeIndex,
+  FlIconMail,
+  FlIconRefresh,
+  FlIconSpaceloom,
+  FlIconStackloom,
+  FlIconUsers,
+  FlIconWorkspace,
+  FlIconWorkloom,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -4435,20 +4436,25 @@ function agentsAndSkillsScreen() {
   }
 }
 
-/** The FaberLoom sections in sidebar order. */
+/** The FaberLoom sections in sidebar order. The glyphs are the product's own
+ *  icon system (`FlIcon*`, 24×24 / stroke 1.75): the brand set carries the
+ *  weaving vocabulary — SpaceLoom for a conversation, WorkLoom for the work
+ *  bench, Curation for the pipeline, Criterio for a human approval, StackLoom
+ *  for the knowledge layers, KnowledgeIndex for incoming material, Workspace
+ *  for a Space — and the standard set covers the rest. */
 export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   // The Chat landing keeps its route but no sidebar row (the New Session button
   // and the conversation cover it).
-  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(IconNewChatOutline16), Page: conversarPanel(), sidebar: false },
-  { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', Icon: panelIcon(IconChecklistOutline14), Page: boardScreen() },
-  { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', Icon: panelIcon(IconFolderOpenOutline16), Page: spacesScreen() },
+  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', Icon: panelIcon(FlIconSpaceloom), Page: conversarPanel(), sidebar: false },
+  { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', Icon: panelIcon(FlIconWorkloom), Page: boardScreen() },
+  { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', Icon: panelIcon(FlIconWorkspace), Page: spacesScreen() },
   // Agents and Skills share one sidebar row; the panel's own tab switches them.
-  { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agentsAndSkills', Icon: panelIcon(IconAgentPresetOutline16), Page: agentsAndSkillsScreen() },
-  { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(IconAlarmClockOutline16), Page: routinesScreen() },
-  { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(IconBranchOutline16), Page: workflowsScreen() },
-  { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(IconDatabaseOutline16), Page: memoryScreen() },
-  { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', Icon: panelIcon(IconContextInjectionOutline16), Page: contextScreen() },
-  { id: 'faberloom-approvals' as MainPanelId, order: 64, labelKey: 'nav.approvals', Icon: panelIcon(IconChecklistOutline14), Page: approvalsScreen() },
-  { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', Icon: panelIcon(IconApiOutline14), Page: connectionsScreen() },
-  { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', Icon: panelIcon(IconSendOutline14), Page: emailScreen() },
+  { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agentsAndSkills', Icon: panelIcon(FlIconUsers), Page: agentsAndSkillsScreen() },
+  { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', Icon: panelIcon(FlIconRefresh), Page: routinesScreen() },
+  { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', Icon: panelIcon(FlIconCuration), Page: workflowsScreen() },
+  { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', Icon: panelIcon(FlIconStackloom), Page: memoryScreen() },
+  { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', Icon: panelIcon(FlIconKnowledgeIndex), Page: contextScreen() },
+  { id: 'faberloom-approvals' as MainPanelId, order: 64, labelKey: 'nav.approvals', Icon: panelIcon(FlIconCriterio), Page: approvalsScreen() },
+  { id: 'faberloom-connections' as MainPanelId, order: 70, labelKey: 'nav.connections', Icon: panelIcon(FlIconExternal), Page: connectionsScreen() },
+  { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', Icon: panelIcon(FlIconMail), Page: emailScreen() },
 ]

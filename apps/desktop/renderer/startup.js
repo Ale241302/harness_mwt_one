@@ -1,5 +1,11 @@
 const api = window.dshDesktop
 
+// Resolve the OS appearance before the first paint; a stored preference overrides
+// it once it loads, so a restart never flashes the wrong theme.
+const osPrefersDark = typeof window.matchMedia === 'function'
+  && window.matchMedia('(prefers-color-scheme: dark)').matches
+document.documentElement.dataset.appearance = osPrefersDark ? 'dark' : 'light'
+
 async function main() {
   const { id, messages } = await api.locale()
   document.documentElement.lang = id
@@ -13,15 +19,41 @@ async function main() {
   document.querySelector('#signin-description').textContent = messages.signInDescription
   document.querySelector('#signin-user-label').textContent = messages.signInUser
   document.querySelector('#signin-password-label').textContent = messages.signInPassword
-  document.querySelector('#signin-submit').textContent = messages.signInSubmit
+  const submit = document.querySelector('#signin-submit')
+  const submitSpinner = document.querySelector('#signin-submit-spinner')
+  const submitLabel = document.querySelector('#signin-submit-label')
+  submitLabel.textContent = messages.signInSubmit
   const signinError = document.querySelector('#signin-error')
+  const userInput = document.querySelector('#signin-user')
+  const passwordInput = document.querySelector('#signin-password')
   let signedIn = (await api.identity.status()).signedIn
+
+  const toggle = document.querySelector('#appearance-toggle')
+  let appearance = document.documentElement.dataset.appearance === 'dark' ? 'dark' : 'light'
+  function applyAppearance(value) {
+    appearance = value
+    document.documentElement.dataset.appearance = value
+    toggle.setAttribute('aria-pressed', String(value === 'dark'))
+    toggle.setAttribute('aria-label', value === 'dark' ? messages.appearanceToLight : messages.appearanceToDark)
+  }
+  applyAppearance(appearance)
+  try {
+    applyAppearance(await api.appearance.get())
+  } catch {
+    // An unreadable preference leaves the OS appearance in place.
+  }
+  toggle.addEventListener('click', () => {
+    const previous = appearance
+    const next = previous === 'dark' ? 'light' : 'dark'
+    applyAppearance(next)
+    api.appearance.set(next).catch(() => { applyAppearance(previous) })
+  })
 
   function render(state) {
     if (!signedIn) {
       document.querySelector('main').setAttribute('aria-busy', 'false')
       document.querySelector('#spinner').hidden = true
-      document.querySelector('#title').textContent = messages.signInTitle
+      document.querySelector('#heading').textContent = messages.signInTitle
       document.querySelector('#description').textContent = messages.signInDescription
       document.querySelector('#error').hidden = true
       document.querySelector('#actions').hidden = true
@@ -34,7 +66,7 @@ async function main() {
     const failed = state.phase === 'error'
     document.querySelector('main').setAttribute('aria-busy', String(!failed))
     document.querySelector('#spinner').hidden = failed
-    document.querySelector('#title').textContent = failed ? messages.startupFailed : messages.startupLoading
+    document.querySelector('#heading').textContent = failed ? messages.startupFailed : messages.startupLoading
     document.querySelector('#description').textContent = failed ? messages.startupErrorDescription : messages.startupLoadingDescription
     document.querySelector('#error').hidden = !failed
     document.querySelector('#error').textContent = failed ? state.message : ''
@@ -60,24 +92,38 @@ async function main() {
       render(current?.phase === 'error' ? current : { phase: 'error', message: error instanceof Error ? error.message : String(error) })
     }
   }
+
+  let loginPending = false
+  function setSignInBusy(busy) {
+    if (busy) {
+      submit.setAttribute('aria-busy', 'true')
+      submit.setAttribute('aria-disabled', 'true')
+    } else {
+      submit.removeAttribute('aria-busy')
+      submit.removeAttribute('aria-disabled')
+    }
+    submitSpinner.hidden = !busy
+    submitLabel.textContent = busy ? messages.signInBusy : messages.signInSubmit
+  }
   async function submitSignIn() {
-    const submit = document.querySelector('#signin-submit')
-    submit.disabled = true
-    submit.textContent = messages.signInBusy
+    if (loginPending) return
+    loginPending = true
+    setSignInBusy(true)
     signinError.hidden = true
-    const result = await api.identity.login(
-      document.querySelector('#signin-user').value,
-      document.querySelector('#signin-password').value,
-    )
-    submit.disabled = false
-    submit.textContent = messages.signInSubmit
+    let result
+    try {
+      result = await api.identity.login(userInput.value, passwordInput.value)
+    } finally {
+      loginPending = false
+      setSignInBusy(false)
+    }
     if (!result.ok) {
       signinError.hidden = false
       signinError.textContent = `${messages.signInFailed}: ${result.message ?? messages.unknownError}`
       return
     }
     signedIn = true
-    document.querySelector('#signin-password').value = ''
+    passwordInput.value = ''
     render({ phase: 'starting' })
   }
   signin.addEventListener('submit', (event) => { event.preventDefault(); void submitSignIn() })

@@ -15,6 +15,16 @@ describe('desktop locale dictionaries', () => {
       .toBe('plugin@1.2.3 {missing}')
   })
 
+  it('names the appearance toggle action in both locales', () => {
+    for (const dictionary of [en, zh]) {
+      expect(dictionary.appearanceToDark.length).toBeGreaterThan(0)
+      expect(dictionary.appearanceToLight.length).toBeGreaterThan(0)
+      expect(dictionary.appearanceToDark).not.toBe(dictionary.appearanceToLight)
+    }
+    expect(en.appearanceToDark).not.toBe(zh.appearanceToDark)
+    expect(en.appearanceToLight).not.toBe(zh.appearanceToLight)
+  })
+
   it('keeps visible plugin-manager HTML copy in the locale dictionaries', () => {
     const html = readFileSync(new URL('../renderer/plugin-manager.html', import.meta.url), 'utf8')
     const staticText = [...html.matchAll(/>([^<]*\p{L}[^<]*)</gu)].map(match => match[1]?.trim())

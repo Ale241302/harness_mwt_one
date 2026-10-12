@@ -32,6 +32,7 @@ import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
 import { runTaskChat } from './task-chat.ts'
 import { createWorkspaceStore } from './store.ts'
+import { ThemeToggle, createThemeToggleStore, type ThemeToggleInjected } from './theme-toggle.tsx'
 import { en, zh, type FaberloomKey } from './locales.ts'
 import { FABERLOOM_THEME_SOURCE, faberloomTokens } from './theme.ts'
 
@@ -343,6 +344,27 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({}),
   }, FaberloomBrandMark))
+
+  // The theme control beside Settings: the theme feature's second surface. It
+  // registers from here because the foot's action seat (declared by ui-sidebar)
+  // sits outside ui-theme's reference closure — ui-sidebar reaches ui-layout,
+  // which reaches ui-theme — while this plugin already depends on both. The
+  // write is the `theme` service, so the Appearance row and this button stay one
+  // setting.
+  const themeToggle = createThemeToggleStore()
+  let themeToggleBound: BoundActions<typeof themeToggle> | undefined
+  ctx.on('theme/change', (snapshot) => { themeToggleBound?.sync(snapshot.active.colorScheme, snapshot.revision) })
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action',
+    id: 'faberloom-theme',
+    order: 20,
+    store: themeToggle,
+    locale: NS,
+    inject: (actions: BoundActions<typeof themeToggle>): ThemeToggleInjected => {
+      themeToggleBound = actions
+      return { setTheme: (id) => { ctx.theme.setTheme(id) } }
+    },
+  }, ThemeToggle))
 
   for (const section of FABERLOOM_SECTIONS) {
     ctx.slots.inject('main', () => ctx.slots.register({

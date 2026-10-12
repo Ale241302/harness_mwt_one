@@ -767,6 +767,10 @@ const es = {
   'skills.sharedBy': 'Compartida por',
   'skills.share': 'Compartir',
   'skills.shareHint': 'Quien la recibe la usa como copia de solo lectura; no puede editarla.',
+  'theme.switchToLight': 'Cambiar al modo claro',
+  'theme.switchToDark': 'Cambiar al modo oscuro',
+  'theme.light': 'Claro',
+  'theme.dark': 'Oscuro',
 } satisfies Record<string, string>
 
 /** The faberloom namespace key union. */
@@ -1537,6 +1541,10 @@ export const en: Record<FaberloomKey, string> = {
   'skills.sharedBy': 'Shared by',
   'skills.share': 'Share',
   'skills.shareHint': 'Recipients use it as a read-only copy; they cannot edit it.',
+  'theme.switchToLight': 'Switch to light theme',
+  'theme.switchToDark': 'Switch to dark theme',
+  'theme.light': 'Light',
+  'theme.dark': 'Dark',
 }
 
 /** Simplified Chinese dictionary; a real translation of the same key set. */
@@ -2300,4 +2308,8 @@ export const zh: Record<FaberloomKey, string> = {
   'skills.sharedBy': '共享者',
   'skills.share': '共享',
   'skills.shareHint': '接收者以只读副本使用，无法编辑。',
+  'theme.switchToLight': '切换到浅色模式',
+  'theme.switchToDark': '切换到深色模式',
+  'theme.light': '浅色',
+  'theme.dark': '深色',
 }

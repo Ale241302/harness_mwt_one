@@ -8,22 +8,39 @@ import type { DshDesktopStartupApi } from '../src/ipc.ts'
 import { resolveDesktopLocale } from '../src/locale.ts'
 import { startupFailureDocument } from '../src/startup-document.ts'
 
-function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.resolve({ phase: 'starting' }), signedIn = true) {
+interface AppearanceOptions {
+  readonly osDark?: boolean
+  readonly stored?: 'light' | 'dark'
+}
+
+function startup(
+  locale = 'en',
+  status: Promise<DesktopBackendState> = Promise.resolve({ phase: 'starting' }),
+  signedIn = true,
+  appearance: AppearanceOptions = {},
+) {
   const dom = new JSDOM(readFileSync(new URL('../renderer/startup.html', import.meta.url), 'utf8'), { runScripts: 'outside-only' })
   onTestFinished(() => {
     dom.window.dispatchEvent(new dom.window.Event('pagehide'))
     dom.window.close()
+  })
+  Object.defineProperty(dom.window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: appearance.osDark === true }),
   })
   const listeners = new Set<(state: DesktopBackendState) => void>()
   const unsubscribe = vi.fn(() => { listeners.clear() })
   const disablePlugins = vi.fn(async () => {})
   const resetConfiguration = vi.fn(async () => {})
   const restart = vi.fn(async () => {})
-  const login = vi.fn(async () => ({ ok: true }))
+  const login = vi.fn(async (): Promise<{ ok: boolean; message?: string }> => ({ ok: true }))
+  const getAppearance = vi.fn(async (): Promise<'light' | 'dark'> => appearance.stored ?? (appearance.osDark === true ? 'dark' : 'light'))
+  const setAppearance = vi.fn(async (_value: 'light' | 'dark') => {})
   const queried = Promise.withResolvers<undefined>()
   const api: DshDesktopStartupApi = {
     protocolVersion: 1,
     locale: async () => resolveDesktopLocale(locale),
+    appearance: { get: getAppearance, set: setAppearance },
     backend: {
       status: () => { queried.resolve(undefined); return status },
       subscribe: (listener) => { listeners.add(listener); return unsubscribe },
@@ -49,29 +66,111 @@ function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.r
     return result
   }
   const publish = (state: DesktopBackendState): void => { for (const listener of listeners) listener(state) }
-  const copy = (): string => [element('#title').textContent, element('#description').textContent,
+  const submitSignIn = (): void => {
+    element('#signin').dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
+  }
+  const copy = (): string => [element('#heading').textContent, element('#description').textContent,
     ...['#reset-advice', '#reinstall-advice', '#error', '#actions'].filter(selector => !element(selector).hidden)
       .flatMap(selector => selector === '#actions'
         ? [...document.querySelectorAll<HTMLButtonElement>('#actions button')].filter(button => !button.hidden).map(button => button.textContent)
         : [element(selector).textContent]),
   ].join('\n')
-  return { dom, document, element, button, publish, copy,
-    disablePlugins, resetConfiguration, restart, unsubscribe, login, queried: queried.promise }
+  return { dom, document, element, button, publish, copy, submitSignIn,
+    disablePlugins, resetConfiguration, restart, unsubscribe, login, getAppearance, setAppearance, queried: queried.promise }
 }
 
 it('renders the sign-in form instead of loading while signed out', async () => {
   const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
-  await expect.poll(() => page.element('#title').textContent).not.toBe('')
-  expect(page.element('#title').textContent).toBe('Sign in to MWT.ONE')
+  await expect.poll(() => page.element('#heading').textContent).not.toBe('')
+  expect(page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  expect(page.element('#title').textContent).toBe('FaberLoom')
   expect(page.element('#signin').hidden).toBe(false)
   expect(page.element('#spinner').hidden).toBe(true)
   expect(page.element('#signin-user-label').textContent).toBe('User')
   expect(page.element('#signin-submit').textContent).toBe('Sign in')
 })
 
+it('carries the two-tone wordmark and a locale-owned appearance toggle', async () => {
+  const page = startup()
+  await expect.poll(() => page.element('#heading').textContent).not.toBe('')
+  expect(page.element('#wordmark-faber').textContent).toBe('Faber')
+  expect(page.element('#wordmark-loom').textContent).toBe('Loom')
+  const toggle = page.button('#appearance-toggle')
+  expect(page.document.documentElement.dataset.appearance).toBe('light')
+  expect(toggle.getAttribute('aria-label')).toBe('Switch to dark appearance')
+  expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  toggle.click()
+  expect(page.document.documentElement.dataset.appearance).toBe('dark')
+  expect(toggle.getAttribute('aria-label')).toBe('Switch to light appearance')
+  expect(toggle.getAttribute('aria-pressed')).toBe('true')
+  expect(page.setAppearance).toHaveBeenCalledWith('dark')
+})
+
+it('applies the stored appearance over the OS default', async () => {
+  const stored = startup('en', Promise.resolve({ phase: 'starting' }), true, { osDark: false, stored: 'dark' })
+  await expect.poll(() => stored.element('#heading').textContent).not.toBe('')
+  expect(stored.document.documentElement.dataset.appearance).toBe('dark')
+  expect(stored.button('#appearance-toggle').getAttribute('aria-label')).toBe('Switch to light appearance')
+  expect(stored.setAppearance).not.toHaveBeenCalled()
+
+  const osDark = startup('en', Promise.resolve({ phase: 'starting' }), true, { osDark: true })
+  await expect.poll(() => osDark.element('#heading').textContent).not.toBe('')
+  expect(osDark.document.documentElement.dataset.appearance).toBe('dark')
+})
+
+it('shows an inline spinner in the submit button while signing in', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  const pending = Promise.withResolvers<{ ok: boolean; message?: string }>()
+  page.login.mockReturnValueOnce(pending.promise)
+  page.submitSignIn()
+  await expect.poll(() => page.button('#signin-submit').getAttribute('aria-busy')).toBe('true')
+  expect(page.element('#signin-submit-spinner').hidden).toBe(false)
+  expect(page.element('#signin-submit-label').textContent).toBe('Signing in…')
+  expect(page.button('#signin-submit').disabled).toBe(false)
+  expect(page.element('#signin-user').hasAttribute('disabled')).toBe(false)
+  expect(page.element('#signin-password').hasAttribute('disabled')).toBe(false)
+  pending.resolve({ ok: false, message: 'Rejected' })
+  await expect.poll(() => page.element('#signin-error').hidden).toBe(false)
+  expect(page.element('#signin-error').textContent).toBe('Sign-in failed: Rejected')
+  expect(page.button('#signin-submit').hasAttribute('aria-busy')).toBe(false)
+  expect(page.element('#signin-submit-spinner').hidden).toBe(true)
+  expect(page.element('#signin-submit-label').textContent).toBe('Sign in')
+})
+
+it('restores the idle submit button after a successful sign-in', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  page.submitSignIn()
+  await expect.poll(() => page.element('#signin').hidden).toBe(true)
+  expect(page.element('#signin-submit-spinner').hidden).toBe(true)
+  expect(page.element('#signin-submit-label').textContent).toBe('Sign in')
+  expect(page.button('#signin-submit').hasAttribute('aria-busy')).toBe(false)
+  expect(page.document.querySelector<HTMLInputElement>('#signin-password')?.value).toBe('')
+})
+
+it('ships cream and warm-dark brand variants with referenceable fonts', () => {
+  const css = readFileSync(new URL('../renderer/startup.css', import.meta.url), 'utf8')
+  expect(css).toContain('#F4F1ED')
+  expect(css).toContain('#1F1E1C')
+  expect(css).toContain('#C96442')
+  expect(css).toContain('[data-appearance="dark"]')
+  expect(css).toContain('fonts/geist.woff2')
+  expect(css).toContain('fonts/geist-mono.woff2')
+  expect(css).toContain('fonts/eb-garamond-italic.woff2')
+})
+
+it('disables both spinners under prefers-reduced-motion', () => {
+  const css = readFileSync(new URL('../renderer/startup.css', import.meta.url), 'utf8')
+  const block = /@media \(prefers-reduced-motion: reduce\) \{([^}]*)\}/u.exec(css)?.[1] ?? ''
+  expect(block).toContain('#spinner')
+  expect(block).toContain('.button-spinner')
+  expect(block).toContain('animation: none')
+})
+
 it('shows English loading and recovery actions without a Host document', async () => {
   const page = startup()
-  await expect.poll(() => page.element('#title').textContent).not.toBe('')
+  await expect.poll(() => page.element('#heading').textContent).not.toBe('')
   expect(page.copy()).toMatchInlineSnapshot(`
     "Starting Faberloom…
     Your workspace will open when it is ready."
@@ -103,7 +202,7 @@ it('shows English loading and recovery actions without a Host document', async (
 
 it('shows Chinese loading and recovery copy', async () => {
   const page = startup('zh-CN')
-  await expect.poll(() => page.element('#title').textContent).not.toBe('')
+  await expect.poll(() => page.element('#heading').textContent).not.toBe('')
   expect(page.document.documentElement.lang).toBe('zh-CN')
   expect(page.copy()).toMatchInlineSnapshot(`
     "正在启动 Faberloom…
@@ -124,7 +223,7 @@ it('shows Chinese loading and recovery copy', async () => {
 
 it('renders diagnostic markup as text and exposes failures from recovery actions', async () => {
   const page = startup()
-  await expect.poll(() => page.element('#title').textContent).not.toBe('')
+  await expect.poll(() => page.element('#heading').textContent).not.toBe('')
   const diagnostic = '<img src=x onerror="window.compromised=true">'
   page.publish({ phase: 'error', profileRecovery: true, message: diagnostic })
   expect(page.element('#error').textContent).toBe(diagnostic)

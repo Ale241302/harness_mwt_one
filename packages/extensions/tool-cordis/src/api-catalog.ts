@@ -2381,6 +2381,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the export body and file name.',
       },
       {
+        signature: '@Remote(\'exportSpaceViewToFolder\') async exportSpaceViewToFolder( spaceId: string, kind: string, targetId: string, format?: string, ): Promise<{ path: string; bytes: number }>',
+        description: 'Write one exported view into a space\'s folder as a real file, so the agent\'s file tools and the user see the same document: a Work Flow\'s portable JSON (or its Archify HTML) or a Context export. The file lands under `<space dir>/exportaciones/`.',
+        parameters: [{ name: 'spaceId', description: 'the space whose folder receives the export.' }, { name: 'kind', description: '`workflow` or `context`.' }, { name: 'targetId', description: 'the Work Flow id, or the context\'s space id (empty for the owner\'s own).' }, { name: 'format', description: '`json` (default) or `archify` for a workflow, `markdown` for context.' }],
+        returns: 'the written path and its byte count.',
+      },
+      {
         signature: '@Remote(\'importContext\') async importContext(payload: string): Promise<readonly FaberLoomContextRow[]>',
         description: 'Import a context record and return the refreshed entries.',
         parameters: [{ name: 'payload', description: 'the exported JSON body.' }],
@@ -2573,6 +2579,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the attachment bytes as base64, or undefined.',
       },
       {
+        signature: '@Remote(\'saveSpaceAttachment\') async saveSpaceAttachment( spaceId: string, uid: string, name?: string, ): Promise<{ files: readonly { name: string; path: string; bytes: number }[] }>',
+        description: 'Save one mailbox message\'s attachment(s) as real files inside a space\'s folder, so the agent\'s file tools and the sidebar conversation work on the actual document instead of a browser download. The files land under `<space dir>/correo-adjuntos/`, the same convention the model tool uses.',
+        parameters: [{ name: 'spaceId', description: 'destination space.' }, { name: 'uid', description: 'the message UID.' }, { name: 'name', description: 'save only the attachment with this exact name; every attachment otherwise.' }],
+        returns: 'the written files, each with its path and byte count.',
+      },
+      {
+        signature: '@Remote(\'sendSpaceFileByEmail\') async sendSpaceFileByEmail( spaceId: string, path: string, to: string, subject: string, text: string, ): Promise<{ messageId: string; accepted: readonly string[] }>',
+        description: 'Send one file that lives in a space\'s folder as an email attachment through the owner\'s SMTP row. The path must resolve inside the space folder, so a panel action can never mail an arbitrary file on the host.',
+        parameters: [{ name: 'spaceId', description: 'the space whose folder holds the file.' }, { name: 'path', description: 'the file path, relative to the space folder (or absolute inside it).' }, { name: 'to', description: 'comma-separated recipients.' }, { name: 'subject', description: 'message subject.' }, { name: 'text', description: 'plain-text body.' }],
+        returns: 'the generated `Message-ID` and the accepted recipients.',
+      },
+      {
         signature: '@Remote(\'spaceFromEmail\') async spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<FaberLoomSpaceFromEmail>',
         description: 'Turn one email into a Space: reuse the space with the same title when it already exists, otherwise create it with its agent and Workspace, store the email as the space\'s memory, and attach every file it carried.',
         parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'name', description: 'the space title (usually the subject).' }, { name: 'agentId', description: 'the agent put in charge, when chosen and the space is new.' }, { name: 'from', description: 'the sender line the browser already holds, for the seeded context.' }],
@@ -2721,6 +2739,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Open a space\'s conversation area: create the workdir when needed, register it as a workspace titled after the space, and return its id so the browser can start a session in it.',
         parameters: [{ name: 'id', description: 'space id.' }],
         returns: 'the registered workspace projection.',
+      },
+      {
+        signature: '@Remote(\'adoptSpaceWorkspace\') async adoptSpaceWorkspace(id: string, path: string): Promise<FaberLoomSpaceWorkspace>',
+        description: 'Adopt an existing folder as a space\'s conversation area: register the folder as a Workspace titled after the space (reusing one already registered at the same path) and point the space at it, so the Space and the sidebar Workspace name the same directory instead of the deterministic `spaces/<ref>` area.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'path', description: 'absolute folder the user chose.' }],
+        returns: 'the adopted workspace projection.',
       },
       {
         signature: '@Remote(\'saveSpace\') async saveSpace(id: string, input: SpaceSaveInput): Promise<FaberLoomOverview>',
@@ -6622,7 +6646,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateSpaceInput',
-    declaration: 'export interface CreateSpaceInput {\n    readonly title: string;\n    readonly parentId?: FaberLoomSpaceId;\n    readonly agentId?: string;\n    readonly workspaceId?: string;\n    readonly inheritContext?: boolean;\n}',
+    declaration: 'export interface CreateSpaceInput {\n    readonly title: string;\n    readonly parentId?: FaberLoomSpaceId;\n    readonly agentId?: string;\n    readonly workspaceId?: string;\n    readonly prompt?: string;\n    readonly inheritContext?: boolean;\n}',
   },
   {
     name: 'CreateTeamTaskRequest',
@@ -7270,11 +7294,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSpace',
-    declaration: 'export interface FaberLoomSpace {\n    readonly id: FaberLoomSpaceId;\n    readonly ownerId: string;\n    readonly companyId: string | undefined;\n    readonly title: string;\n    readonly parentId: FaberLoomSpaceId | undefined;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly FaberLoomSpaceId[];\n    readonly members: readonly string[];\n    readonly context: SpaceContext;\n    readonly sources: readonly SpaceSource[];\n    readonly agentId: string | undefined;\n    readonly workspaceId: string | undefined;\n    readonly archived: boolean;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly version: number;\n}',
+    declaration: 'export interface FaberLoomSpace {\n    readonly id: FaberLoomSpaceId;\n    readonly ownerId: string;\n    readonly companyId: string | undefined;\n    readonly title: string;\n    readonly parentId: FaberLoomSpaceId | undefined;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly FaberLoomSpaceId[];\n    readonly members: readonly string[];\n    readonly context: SpaceContext;\n    readonly prompt: string;\n    readonly sources: readonly SpaceSource[];\n    readonly agentId: string | undefined;\n    readonly workspaceId: string | undefined;\n    readonly archived: boolean;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly version: number;\n}',
   },
   {
     name: 'FaberLoomSpaceDetail',
-    declaration: 'export interface FaberLoomSpaceDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly string[];\n    readonly members: readonly string[];\n    readonly sources: readonly {\n        readonly kind: string;\n        readonly ref: string;\n    }[];\n    readonly contextKeys: readonly string[];\n    readonly agentId: string | null;\n}',
+    declaration: 'export interface FaberLoomSpaceDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly string[];\n    readonly members: readonly string[];\n    readonly sources: readonly {\n        readonly kind: string;\n        readonly ref: string;\n    }[];\n    readonly contextKeys: readonly string[];\n    readonly prompt: string;\n    readonly agentId: string | null;\n}',
   },
   {
     name: 'FaberLoomSpaceFromEmail',
@@ -8021,8 +8045,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OutcomeInput {\n    readonly agentId: FaberLoomAgentId;\n    readonly task: string;\n    readonly modelId: FaberLoomModelId;\n    readonly outcome: \'approved\' | \'corrected\';\n    readonly cost?: number;\n}',
   },
   {
+    name: 'OutgoingAttachment',
+    declaration: 'export interface OutgoingAttachment {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly contentBase64: string;\n}',
+  },
+  {
     name: 'OutgoingMail',
-    declaration: 'export interface OutgoingMail {\n    readonly from?: string;\n    readonly to: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n}',
+    declaration: 'export interface OutgoingMail {\n    readonly from?: string;\n    readonly to: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly attachments?: readonly OutgoingAttachment[];\n}',
   },
   {
     name: 'PerformanceCause',
@@ -9150,7 +9178,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpaceSaveInput',
-    declaration: 'export interface SpaceSaveInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly members?: readonly string[];\n    readonly agentId?: string | null;\n}',
+    declaration: 'export interface SpaceSaveInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly members?: readonly string[];\n    readonly agentId?: string | null;\n    readonly prompt?: string;\n}',
   },
   {
     name: 'SpaceSource',
@@ -9818,7 +9846,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'UpdateSpaceInput',
-    declaration: 'export interface UpdateSpaceInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly excluded?: readonly FaberLoomSpaceId[];\n    readonly members?: readonly string[];\n    readonly context?: SpaceContext;\n    readonly sources?: readonly SpaceSource[];\n    readonly agentId?: string | null;\n    readonly workspaceId?: string | null;\n}',
+    declaration: 'export interface UpdateSpaceInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly excluded?: readonly FaberLoomSpaceId[];\n    readonly members?: readonly string[];\n    readonly context?: SpaceContext;\n    readonly sources?: readonly SpaceSource[];\n    readonly agentId?: string | null;\n    readonly workspaceId?: string | null;\n    readonly prompt?: string | null;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',

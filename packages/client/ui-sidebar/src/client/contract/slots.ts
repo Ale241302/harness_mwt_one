@@ -4,8 +4,9 @@
  * owns column geometry, the brand row, New Session, and global panel rows;
  * everything between the workspace section header and the list bottom is the
  * `sidebar.workspaces` registrant's (ui-workspace), and the foot is the
- * `sidebar.settings` registrant's (ui-settings), followed by optional footer
- * actions in `sidebar.footer.action`.
+ * `sidebar.settings` registrant's (ui-settings), with optional footer actions
+ * in `sidebar.footer.action` rendered to the right of Settings when the column
+ * is wide and above it in the 56px rail.
  */
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -46,6 +47,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /**
      * Optional actions beside Settings at the sidebar foot. Declared by this
      * package's 'sidebar' entry; each action receives only the column state.
+     * A wide column renders the entries to the right of Settings in list
+     * order; the 56px rail stacks them above the Settings icon.
      */
     'sidebar.footer.action': { kind: 'list'; scope: 'root'; owner: SidebarFooterActionOwnerProps }
   }

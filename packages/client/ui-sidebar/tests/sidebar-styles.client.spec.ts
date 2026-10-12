@@ -64,6 +64,19 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .newSession')?.get('width')).toBe('36px')
   })
 
+  it('renders footer actions to the right of Settings when wide and above it in the rail', () => {
+    // DOM order is [footerActions][settingsArea]; the reversed row axis is what
+    // renders Settings first with the actions beside it. The rail restores the
+    // column so the actions sit above the Settings icon.
+    expect(declarations('.footArea')?.get('flex-direction')).toBe('row-reverse')
+    expect(declarations('.footArea')?.get('align-items')).toBe('center')
+    expect(declarations('.settingsArea')?.get('flex')).toBe('1')
+    expect(declarations('.footerActions')?.get('flex')).toBe('none')
+    expect(declarations('.collapsed .footArea')?.get('flex-direction')).toBe('column')
+    expect(declarations('.collapsed .settingsArea')?.get('flex')).toBe('none')
+    expect(declarations('.collapsed .settingsArea')?.get('width')).toBe('auto')
+  })
+
   it('keeps the slotted brand row at the full artwork height', () => {
     expect(declarations('.brandIdentity')?.get('height')).toBe('24px')
     expect(declarations('.brandName')?.get('height')).toBe('24px')

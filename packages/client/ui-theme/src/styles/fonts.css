@@ -1,0 +1,29 @@
+/* Self-hosted FaberLoom brand faces (SIL OFL 1.1): Geist for every interface
+ * surface, Geist Mono for data, timestamps, ids, and code, and EB Garamond
+ * italic for titles and the wordmark. Latin subset only; CJK keeps the system
+ * fallback. This sheet is injected into a document served from the site root,
+ * so root-absolute URLs work for the gateway-served web app and the desktop
+ * app (remote and local) alike. */
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/geist.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('/fonts/geist-mono.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('/fonts/eb-garamond-italic.woff2') format('woff2');
+}

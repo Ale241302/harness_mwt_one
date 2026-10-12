@@ -9,6 +9,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   protocol,
   session,
   shell,
@@ -18,6 +19,7 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { resolveGatewayUrl } from './gateway.ts'
 import { resolveDesktopPaths } from './paths.ts'
 import { ensureHomeEnvFile, resolveHomeEnvDefaults } from './home-env.ts'
+import { readAppearance, writeAppearance } from './appearance.ts'
 import {
   DEFAULT_CONSOLA_API_BASE,
   IDENTITY_PATCH_FILENAME,
@@ -76,6 +78,7 @@ const MIME: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
 }
 
 interface RuntimeResources {
@@ -389,6 +392,17 @@ async function main(): Promise<void> {
   ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
     assertDesktopSender(event, ['shell'])
     return locale
+  })
+  ipcMain.handle(DESKTOP_IPC.appearanceGet, (event): 'light' | 'dark' => {
+    assertDesktopSender(event, ['shell'])
+    // No stored choice follows the OS, so a fresh install matches the rest of the
+    // desktop until the user picks an appearance.
+    return readAppearance(home) ?? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
+  })
+  ipcMain.handle(DESKTOP_IPC.appearanceSet, (event, value: unknown) => {
+    assertDesktopSender(event, ['shell'])
+    if (value !== 'light' && value !== 'dark') throw new Error('dsh desktop: appearance must be light or dark')
+    writeAppearance(home, value)
   })
   ipcMain.handle(DESKTOP_IPC.pluginsList, (event) => {
     assertDesktopSender(event, ['shell'])

@@ -3,14 +3,24 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self' data:">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'none'; img-src 'self' data:">
     <title id="page-title"></title>
     <link rel="stylesheet" href="startup.css">
   </head>
   <body>
+    <button id="appearance-toggle" type="button" aria-label="">
+      <svg class="icon icon-sun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2"></path>
+      </svg>
+      <svg class="icon icon-moon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path>
+      </svg>
+    </button>
     <main aria-busy="true">
+      <h1 id="title"><span id="wordmark-faber">Faber</span><span id="wordmark-loom">Loom</span></h1>
+      <h2 id="heading" role="status" aria-live="polite"></h2>
       <div id="spinner" aria-hidden="true"></div>
-      <h1 id="title" role="status" aria-live="polite"></h1>
       <p id="description"></p>
       <p id="reset-advice" hidden></p>
       <p id="reinstall-advice" hidden></p>
@@ -27,7 +37,7 @@
         <label for="signin-password" id="signin-password-label"></label>
         <input id="signin-password" name="password" type="password" autocomplete="current-password" required>
         <p id="signin-error" role="alert" hidden></p>
-        <button id="signin-submit" type="submit"></button>
+        <button id="signin-submit" type="submit"><span id="signin-submit-spinner" class="button-spinner" aria-hidden="true" hidden></span><span id="signin-submit-label"></span></button>
       </form>
     </main>
     <script src="startup.js"></script>

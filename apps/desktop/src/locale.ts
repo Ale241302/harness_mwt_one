@@ -58,6 +58,8 @@ export const en = {
   signInFailed: 'Sign-in failed',
   signedInAs: 'Signed in as {email}',
   signOutMenu: 'Sign out',
+  appearanceToDark: 'Switch to dark appearance',
+  appearanceToLight: 'Switch to light appearance',
 } as const
 
 /** Every Desktop locale supplies the complete English key set. */
@@ -121,6 +123,8 @@ export const zh = {
   signInFailed: '登录失败',
   signedInAs: '已登录：{email}',
   signOutMenu: '退出登录',
+  appearanceToDark: '切换到深色外观',
+  appearanceToLight: '切换到浅色外观',
 } as const satisfies DesktopMessages
 
 /** Locale payload exposed to the Desktop-owned renderer. */

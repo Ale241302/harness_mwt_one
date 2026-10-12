@@ -22,6 +22,9 @@ try {
     Invoke-Checked $electron @((Join-Path $fixtureRoot 'owned-directory-smoke.mjs'))
   } finally { $env:ELECTRON_RUN_AS_NODE = $previousRunAsNode }
 
+  # Both electron-builder passes over the real installer script, with -WX.
+  Invoke-Checked 'node' @((Join-Path $desktopRoot 'scripts/check-installer-script.mjs'), $Makensis)
+
   const cleanupExe = Join-Path $scratch 'cleanup.exe'
   $cleanupResult = Join-Path $scratch 'cleanup.txt'
   Invoke-Checked $Makensis @('/V2', "/DOUTPUT_FILE=$cleanupExe", "/DRESULT_FILE=$cleanupResult", (Join-Path $fixtureRoot 'installer-cleanup-smoke.nsi'))

@@ -11,6 +11,11 @@
 ; during the silent uninstall an update performs.
 !include "LogicLib.nsh"
 
+; El instalador compila el mismo script sin `BUILD_UNINSTALLER`, donde estos dos
+; globales solo existirían declarados: NSIS avisa (6001) por una variable sin
+; usar y electron-builder trata sus avisos como error, así que la declaración
+; vive en la pasada que realmente los lee.
+!ifdef BUILD_UNINSTALLER
 ; Whether the user asked for the Harness home and the application profile to be
 ; deleted; `customUnInit` sets it and `customUnInstall` reads it.
 Var /GLOBAL faberloomDeleteUserData
@@ -18,10 +23,38 @@ Var /GLOBAL faberloomDeleteUserData
 ; The data-question text, assembled once per uninstall so the two paths it names
 ; expand from the installer's own variables.
 Var /GLOBAL faberloomUninstallPrompt
+!endif
 
+; La pregunta de datos, declarada para cada idioma que carga electron-builder:
+; makensis avisa (6040) por cada idioma sin entrada y electron-builder trata sus
+; avisos como error, así que la lista debe cubrir el juego completo. Inglés es el
+; texto por defecto; español y chino llevan el suyo.
 LangString faberloomUninstallData 1033 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1031 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1036 "Delete your FaberLoom data as well?"
 LangString faberloomUninstallData 3082 "¿Borrar también tus datos de FaberLoom?"
 LangString faberloomUninstallData 2052 "是否同时删除您的 FaberLoom 数据？"
+LangString faberloomUninstallData 1028 "是否同時刪除您的 FaberLoom 資料？"
+LangString faberloomUninstallData 1041 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1042 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1040 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1043 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1030 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1053 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1044 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1035 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1049 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 2070 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1046 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1045 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1058 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1029 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1051 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1038 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1025 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1055 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1054 "Delete your FaberLoom data as well?"
+LangString faberloomUninstallData 1066 "Delete your FaberLoom data as well?"
 
 !macro customInstall
   Push $0

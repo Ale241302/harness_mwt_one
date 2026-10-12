@@ -3,10 +3,13 @@
 import type { DesktopPluginRecord } from './project-manager.ts'
 import type { DesktopLocale } from './locale.ts'
 import type { DesktopBackendState } from './backend-controller.ts'
+import type { DesktopAppearance } from './appearance.ts'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
   localeGet: 'dsh-desktop:locale-get',
+  appearanceGet: 'dsh-desktop:appearance-get',
+  appearanceSet: 'dsh-desktop:appearance-set',
   pluginsList: 'dsh-desktop:plugins-list',
   pluginsAdd: 'dsh-desktop:plugins-add',
   pluginsRemove: 'dsh-desktop:plugins-remove',
@@ -52,6 +55,10 @@ export interface DesktopSignInResult {
 export interface DshDesktopApi {
   readonly protocolVersion: 1
   locale(): Promise<DesktopLocale>
+  readonly appearance: {
+    get(): Promise<DesktopAppearance>
+    set(value: DesktopAppearance): Promise<void>
+  }
   readonly plugins: {
     list(): Promise<readonly DesktopPluginRecord[]>
     add(spec: string): Promise<void>
@@ -78,7 +85,7 @@ export interface DshDesktopApi {
 }
 
 /** Startup-page controls, unavailable to backend-provided application documents. */
-export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale' | 'identity'> {
+export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale' | 'identity' | 'appearance'> {
   readonly backend: Omit<DshDesktopApi['backend'], 'retry'>
   disablePlugins(): Promise<void>
   restart(): Promise<void>

@@ -13,7 +13,8 @@ const harness = await vi.hoisted(async () => {
   const windows: FakeWindow[] = []
   const hosts: FakeHost[] = []
   const managerRuntimes: unknown[] = []
-  const handlers = new Map<string, (event: { senderFrame: { url: string } }) => unknown>()
+  const handlers = new Map<string, (event: { senderFrame: { url: string } }, ...args: unknown[]) => unknown>()
+  const nativeTheme = { shouldUseDarkColors: false }
   let pluginsEnabled = false
   let preparing = deferred()
   let prepared = deferred()
@@ -74,7 +75,7 @@ const harness = await vi.hoisted(async () => {
     }),
   })
   return {
-    windows, hosts, managerRuntimes, handlers, app, FakeWindow, FakeHost,
+    windows, hosts, managerRuntimes, handlers, app, FakeWindow, FakeHost, nativeTheme,
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     assertProfileRuntime: vi.fn(),
@@ -89,6 +90,7 @@ const harness = await vi.hoisted(async () => {
       windows.length = 0; hosts.length = 0; managerRuntimes.length = 0; handlers.clear(); app.removeAllListeners()
       app.isPackaged = true
       pluginsEnabled = false
+      nativeTheme.shouldUseDarkColors = false
       preparing = deferred(); prepared = deferred(); hostStarted = deferred()
       navigated = deferred(); errorPublished = deferred(); quitCompleted = deferred()
     },
@@ -99,8 +101,12 @@ vi.mock('electron', () => ({
   app: harness.app,
   BrowserWindow: harness.FakeWindow,
   dialog: harness.dialog,
+  nativeTheme: harness.nativeTheme,
   ipcMain: {
-    handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { harness.handlers.set(channel, handler) },
+    handle: (
+      channel: string,
+      handler: (event: { senderFrame: { url: string } }, ...args: unknown[]) => unknown,
+    ) => { harness.handlers.set(channel, handler) },
   },
   Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
@@ -132,11 +138,15 @@ vi.mock('../src/identity.ts', () => ({
   signOut: vi.fn(),
   writeIdentity: vi.fn(),
 }))
+vi.mock('../src/appearance.ts', () => ({
+  readAppearance: vi.fn(() => undefined),
+  writeAppearance: vi.fn(),
+}))
 
-function invoke(channel: string): unknown {
+function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = harness.handlers.get(channel)
   if (handler === undefined) throw new Error(`missing handler ${channel}`)
-  return handler({ senderFrame: { url: 'dsh-app://shell/startup.html' } })
+  return handler({ senderFrame: { url: 'dsh-app://shell/startup.html' } }, ...args)
 }
 
 beforeEach(() => {
@@ -167,6 +177,20 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it('resolves and persists the appearance preference over the shell IPC', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const appearance = await import('../src/appearance.ts')
+    expect(invoke(DESKTOP_IPC.appearanceGet)).toBe('light')
+    harness.nativeTheme.shouldUseDarkColors = true
+    expect(invoke(DESKTOP_IPC.appearanceGet)).toBe('dark')
+    vi.mocked(appearance.readAppearance).mockReturnValueOnce('light')
+    expect(invoke(DESKTOP_IPC.appearanceGet)).toBe('light')
+    invoke(DESKTOP_IPC.appearanceSet, 'dark')
+    expect(appearance.writeAppearance).toHaveBeenCalledWith(expect.any(String), 'dark')
+    expect(() => invoke(DESKTOP_IPC.appearanceSet, 'blue')).toThrow('appearance must be light or dark')
+  })
+
   it('exits with a diagnostic when both initialization and emergency navigation fail', async () => {
     const exited = Promise.withResolvers<undefined>()
     vi.spyOn(harness.app, 'getLocale').mockImplementationOnce(() => { throw new Error('locale unavailable') })

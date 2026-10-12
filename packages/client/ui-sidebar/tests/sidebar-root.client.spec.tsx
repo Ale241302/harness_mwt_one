@@ -188,4 +188,18 @@ describe('SidebarRoot shell', () => {
     expect(b.regionOwner().wide).toBe(false)
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
   })
+
+  it('keeps the footer action seat and the settings seat as siblings in the foot', () => {
+    const b = mountShell()
+    const action = screen.getByTestId('footer-action-seat')
+    const settings = screen.getByTestId('settings-seat')
+    // Both seats sit in one foot container, in DOM order [actions][settings];
+    // the foot CSS reverses the row axis so Settings renders first with the
+    // action beside it.
+    expect(action.parentElement?.parentElement).toBe(settings.parentElement?.parentElement)
+    expect(action.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    b.rerender({ collapsed: true })
+    expect(screen.getByTestId('footer-action-seat')).toBeTruthy()
+    expect(screen.getByTestId('settings-seat')).toBeTruthy()
+  })
 })

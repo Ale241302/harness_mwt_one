@@ -24,7 +24,7 @@
 
 /* Rail geometry (figma rail spec): 36x36 control boxes centered in the 56px
    rail (10px side padding), 12px vertical rhythm, 18px from the rail top to
-   the whale's box (24px to the 24-wide whale glyph itself). */
+   the brand mark's box (the 24px slot to the 24-unit knot itself). */
 .root.collapsed {
   padding: 18px 10px 6px;
 }
@@ -32,7 +32,7 @@
 /* Scrollbars in the column are a pointer affordance: the shell adds this
    class whenever the pointer is not inside (SidebarRoot.tsx owns the linger),
    and rebinding ui-theme's indirection pair to `transparent` takes the thumb
-   out of every scroll region nested under it — the workspace browser's
+   out of every scroll region nested under it â€” the workspace browser's
    session list. `transparent` rather than `display: none` on the bar:
    the reservation (`scrollbar-gutter: stable` on the list) stays in force, so
    revealing the thumb never reflows a row. Rebinding contract and the two
@@ -111,7 +111,7 @@
 /* Brand group (figma I133:7632): the full wordmark rides the text ink
    (figma flows: the main-screen instance is black; blue is brand
    emphasis only). A button only in behavior (New Session shortcut): the
-   pointer cursor is the sole affordance — no hover chrome on the mark. */
+   pointer cursor is the sole affordance â€” no hover chrome on the mark. */
 .brand {
   flex: 1;
   min-width: 0;
@@ -202,8 +202,8 @@
   height: 36px;
 }
 
-/* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
-   no hover circle) and hovering reveals the panel icon — the expand
+/* Rail logo swap: collapsed, the toggle rests as the brand mark (brand ink,
+   no hover circle) and hovering reveals the panel icon â€” the expand
    affordance (figma sidebar-hover flow). Expanded it is a plain panel icon. */
 .collapsed .toggle .panelIcon {
   display: none;
@@ -385,31 +385,39 @@
   padding-left: 0;
 }
 
-/* Footer seats: additive actions stack above Settings. Each occupant owns its
-   button geometry and hover chrome. */
+/* Footer seats. DOM order is [footerActions][settingsArea]; expanded, the row
+   axis is reversed so Settings renders first and the additive actions sit to
+   its right. The rail (.collapsed, applied only after the collapse settles)
+   restores the column: actions above the Settings icon, matching the top-down
+   order of the upper rail controls. Each occupant owns its own button geometry
+   and hover chrome. */
 .footArea {
   flex: none;
   display: flex;
-  flex-direction: column;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 8px;
 }
 
-.settingsArea,
+.settingsArea {
+  flex: 1;
+  min-width: 0;
+}
+
 .footerActions {
   flex: none;
-  min-width: 0;
-  width: 100%;
-}
-
-.footerActions {
   display: flex;
+  align-items: center;
 }
 
 .collapsed .footArea {
+  flex-direction: column;
   align-items: center;
 }
 
 .collapsed .settingsArea,
 .collapsed .footerActions {
+  flex: none;
   display: flex;
   justify-content: center;
   width: auto;

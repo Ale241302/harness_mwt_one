@@ -27,20 +27,24 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
           >
             <svg
               aria-hidden="true"
-              data-content="965fe321"
+              data-content="589c7dd9"
               fill="none"
-              height="17.6580310880829"
-              viewBox="0 0 23.16 17.04"
+              height="24"
+              viewBox="0 0 48 48"
               width="24"
             />
           </div>
         </span>
         <svg
           class="panelIcon"
-          data-content="35f95b0c"
+          data-content="27ed0e85"
           fill="none"
           height="18"
-          viewBox="0 0 16 16"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1.75"
+          viewBox="0 0 24 24"
           width="18"
           xmlns="http://www.w3.org/2000/svg"
         />
@@ -52,10 +56,14 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
       type="button"
     >
       <svg
-        data-content="c0ce4dcc"
+        data-content="6ce7f1ad"
         fill="none"
         height="18"
-        viewBox="0 0 16 16"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.75"
+        viewBox="0 0 24 24"
         width="18"
         xmlns="http://www.w3.org/2000/svg"
       />
@@ -122,10 +130,10 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
             >
               <svg
                 aria-hidden="true"
-                data-content="965fe321"
+                data-content="589c7dd9"
                 fill="none"
-                height="17.6580310880829"
-                viewBox="0 0 23.16 17.04"
+                height="24"
+                viewBox="0 0 48 48"
                 width="24"
               />
             </div>
@@ -162,10 +170,14 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       >
         <svg
           class="panelIcon"
-          data-content="35f95b0c"
+          data-content="27ed0e85"
           fill="none"
           height="16"
-          viewBox="0 0 16 16"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1.75"
+          viewBox="0 0 24 24"
           width="16"
           xmlns="http://www.w3.org/2000/svg"
         />
@@ -177,10 +189,14 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       type="button"
     >
       <svg
-        data-content="c0ce4dcc"
+        data-content="6ce7f1ad"
         fill="none"
         height="14"
-        viewBox="0 0 16 16"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.75"
+        viewBox="0 0 24 24"
         width="14"
         xmlns="http://www.w3.org/2000/svg"
       />
@@ -252,10 +268,10 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
             >
               <svg
                 aria-hidden="true"
-                data-content="965fe321"
+                data-content="589c7dd9"
                 fill="none"
-                height="17.6580310880829"
-                viewBox="0 0 23.16 17.04"
+                height="24"
+                viewBox="0 0 48 48"
                 width="24"
               />
             </div>
@@ -292,10 +308,14 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       >
         <svg
           class="panelIcon"
-          data-content="35f95b0c"
+          data-content="27ed0e85"
           fill="none"
           height="16"
-          viewBox="0 0 16 16"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1.75"
+          viewBox="0 0 24 24"
           width="16"
           xmlns="http://www.w3.org/2000/svg"
         />
@@ -307,10 +327,14 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       type="button"
     >
       <svg
-        data-content="c0ce4dcc"
+        data-content="6ce7f1ad"
         fill="none"
         height="14"
-        viewBox="0 0 16 16"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.75"
+        viewBox="0 0 24 24"
         width="14"
         xmlns="http://www.w3.org/2000/svg"
       />

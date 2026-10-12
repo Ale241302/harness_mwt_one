@@ -31,6 +31,8 @@ Desktop 在 Host 启动前补全共享 Harness home 的 `.env` 层：只追加�
 
 Desktop 在启动 Host 之前先登录。未登录时，壳渲染登录表单而非加载页，后端不会启动。提交后向控制台认证（`POST {CONSOLA_API_BASE}/auth/login/`），并把两个文件写入共享 Harness home：控制台地址与令牌写入 `.env`，`desktop-identity.patch.yml` 则把已登录的 `ownerId`、角色与只读标志写入每个产品行。`runDesktopHost` 把该 patch 作为最后一层组合应用，因此 `faberloom-defaults` 会为已登录 owner 播种 agent 与 routine，而不是返回 `no owner configured`。退出登录会删除该 patch 与身份记录，并清除控制台令牌。Spaces、会话、技能及其它所有按 home 记录都保留在本机：控制台只传输用户显式共享的内容。
 
+登录界面左上角提供外观切换按钮，可在米色浅色主题与暖色深色主题之间切换整个界面。所选外观写入共享 Harness home 的 `desktop-appearance.json`，并在下次启动首帧前应用，因此重启不会闪现错误主题；未做选择时跟随操作系统。
+
 ### 后端选择
 
 `DSH_DESKTOP_GATEWAY_URL` 选择后端。默认情况下 Desktop 是共享多用户网关（`https://harness.mwt.one/`）的客户端：窗口在持久会话分区中加载该源，网关自身的登录是唯一的凭据步骤，且每个产品模块——Spaces、Workflows、Memory、Routines、Context、Approvals、Agents & Skills、Connections 与 Email——展示与 Web UI 相同的数据，因为它们共用同一个后端。应用菜单中的“退出登录”会清除该分区。`DSH_DESKTOP_GATEWAY_URL` 为空时改为选择本机单用户 harness：内置 `faberloom` profile、上文的登录表单，以及本机拥有的 Harness home 数据。
@@ -112,7 +114,7 @@ macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS �
 
 打包应用运行编译后的 JavaScript 和预生成的 Typert 元数据，不编译 TypeScript 插件。源码级调试导航和编辑器声明仍可从开发包中获取。[复制规则测试](tests/runtime-file-policy.spec.ts)覆盖排除项和保留资源；`prepare:dsh` 在 Host smoke 和最终清单验证之前，使用内置 Node 执行[产物 smoke](tests/fixtures/runtime-payload-smoke.mjs)。
 
-Windows 发布验收还需在 Desktop 构建后手动运行[原生清理和替换检查](scripts/smoke-windows.ps1)。将 `$Electron` 设为已准备的 Electron 可执行文件，将 `$Makensis`、`$SevenZip` 和 `$PluginDir` 分别设为锁定版本构建器的 NSIS 编译器、7-Zip 可执行文件和 x86-unicode NSIS 插件目录。从仓库根目录运行以下命令。它验证 Electron junction 清理、安装器临时目录清理、两种文件占用替换方式，以及卸载数据选项的删除集合；不属于单元测试通道。
+Windows 发布验收还需在 Desktop 构建后手动运行[原生清理和替换检查](scripts/smoke-windows.ps1)。将 `$Electron` 设为已准备的 Electron 可执行文件，将 `$Makensis`、`$SevenZip` 和 `$PluginDir` 分别设为锁定版本构建器的 NSIS 编译器、7-Zip 可执行文件和 x86-unicode NSIS 插件目录。从仓库根目录运行以下命令。它以“警告即错误”在全部捆绑语言上编译真实安装脚本的两种 electron-builder 传递，随后验证 Electron junction 清理、安装器临时目录清理、两种文件占用替换方式，以及卸载数据选项的删除集合；不属于单元测试通道。
 
 ```powershell
 pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Electron $Electron -Makensis $Makensis -SevenZip $SevenZip -PluginDir $PluginDir

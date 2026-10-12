@@ -1416,6 +1416,20 @@ app.get(['/favicon.ico', '/faberloom_favicon32.svg'], (_req, res) => {
   res.sendFile(path.join(import.meta.dirname, 'assets', 'faberloom_favicon32.svg'))
 })
 
+// Tipografía de marca para las páginas sin sesión: solo se sirven los tres
+// archivos declarados en AUTH_FONTS, nunca un nombre del cliente.
+const AUTH_FONT_FILES = new Set(['geist.woff2', 'geist-mono.woff2', 'eb-garamond-italic.woff2'])
+app.get('/fonts/:file', (req, res) => {
+  const file = String(req.params.file)
+  if (!AUTH_FONT_FILES.has(file)) {
+    res.status(404).end()
+    return
+  }
+  res.type('font/woff2')
+  res.set('cache-control', 'public, max-age=31536000, immutable')
+  res.sendFile(path.join(import.meta.dirname, 'assets', 'fonts', file))
+})
+
 app.get('/login', (req, res) => {
   const sess = getSession(req)
   if (sess) {
@@ -1839,35 +1853,122 @@ function escapeHtml(value) {
 }
 
 // Las páginas sin sesión del gateway no cargan el CSS del cliente, así que
-// repiten aquí los tokens oscuros de @deepseek-ai/dsh-client-ui-theme para verse
-// como el resto del producto: base #151517, capas #232324/#2c2c2e, texto
-// #f9fafb/#adb2b8, primario casi blanco, y la misma familia tipográfica.
-const AUTH_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Helvetica Neue',Helvetica,Arial,sans-serif"
-const AUTH_MONO = "'SF Mono','JetBrains Mono','Fira Code',Consolas,'Liberation Mono',Menlo,Courier,'PingFang SC','Microsoft YaHei'"
+// repiten aquí el sistema de marca de FaberLoom: las tres familias
+// tipográficas (Geist para interfaz, Geist Mono para datos, EB Garamond
+// itálica para títulos y wordmark), los tokens crema/tinta/coral y el tema
+// claro y oscuro. `GET /fonts/:file` sirve los woff2 desde assets/fonts.
+const AUTH_FONTS = `
+  @font-face{font-family:'Geist';font-style:normal;font-weight:300 700;font-display:swap;src:url('/fonts/geist.woff2') format('woff2')}
+  @font-face{font-family:'Geist Mono';font-style:normal;font-weight:400 500;font-display:swap;src:url('/fonts/geist-mono.woff2') format('woff2')}
+  @font-face{font-family:'EB Garamond';font-style:italic;font-weight:400 600;font-display:swap;src:url('/fonts/eb-garamond-italic.woff2') format('woff2')}
+`
+const AUTH_FONT = "'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Helvetica,Arial,sans-serif"
+const AUTH_MONO = "'Geist Mono','SF Mono','JetBrains Mono','Fira Code',Consolas,'Liberation Mono',Menlo,Courier,'PingFang SC','Microsoft YaHei'"
+const AUTH_SERIF = "'EB Garamond',Georgia,'Times New Roman',serif"
+
+// El tema de estas páginas es local (no hay sesión todavía): se elige con el
+// botón de la esquina, se recuerda en localStorage y, sin elección previa,
+// sigue al sistema. El atributo se fija antes del primer pintado para que no
+// haya parpadeo; sin JavaScript la base clara es la que queda.
+const AUTH_APPEARANCE_KEY = 'faberloom-appearance'
+const AUTH_APPEARANCE_EARLY = `
+  (function () {
+    try {
+      var stored = localStorage.getItem('${AUTH_APPEARANCE_KEY}')
+      if (stored !== 'light' && stored !== 'dark') {
+        stored = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      }
+      document.documentElement.setAttribute('data-appearance', stored)
+    } catch (error) {
+      document.documentElement.setAttribute('data-appearance', 'light')
+    }
+  })()
+`
+const AUTH_SUN = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">'
+  + '<circle cx="8" cy="8" r="3.1" fill="none" stroke="currentColor" stroke-width="1.3"/>'
+  + '<path fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" d="M8 1.4v1.6M8 13v1.6M1.4 8h1.6M13 8h1.6M3.3 3.3l1.2 1.2M11.5 11.5l1.2 1.2M12.7 3.3l-1.2 1.2M4.5 11.5l-1.2 1.2"/></svg>'
+const AUTH_MOON = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">'
+  + '<path fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" d="M13.2 9.9A5.4 5.4 0 0 1 6.1 2.8a5.6 5.6 0 1 0 7.1 7.1Z"/></svg>'
+const AUTH_TOGGLE = '<button type="button" id="appearance-toggle" class="appearance"></button>'
+const AUTH_APPEARANCE_SCRIPT = `
+  (function () {
+    var key = '${AUTH_APPEARANCE_KEY}'
+    var root = document.documentElement
+    var button = document.getElementById('appearance-toggle')
+    var sun = '${AUTH_SUN}'
+    var moon = '${AUTH_MOON}'
+    function label(value) {
+      return value === 'dark' ? 'Cambiar al modo claro' : 'Cambiar al modo oscuro'
+    }
+    function paint(value) {
+      root.setAttribute('data-appearance', value)
+      if (button === null) return
+      button.innerHTML = value === 'dark' ? sun : moon
+      button.setAttribute('aria-label', label(value))
+      button.setAttribute('title', label(value))
+      button.setAttribute('aria-pressed', value === 'dark' ? 'true' : 'false')
+    }
+    function current() {
+      var value = root.getAttribute('data-appearance')
+      return value === 'dark' ? 'dark' : 'light'
+    }
+    paint(current())
+    if (button !== null) button.addEventListener('click', function () {
+      var next = current() === 'dark' ? 'light' : 'dark'
+      paint(next)
+      try { localStorage.setItem(key, next) } catch (error) { /* almacenamiento bloqueado */ }
+    })
+  })()
+`
 const AUTH_CSS = `
-  :root{color-scheme:dark}
+  ${AUTH_FONTS}
+  :root{color-scheme:light;--auth-bg:#F4F1ED;--auth-card:#fff;--auth-ink:#1F1E1C;--auth-text2:#5A544C;
+        --auth-line:#D8D0C0;--auth-field:#fff;--auth-coral:#C96442;--auth-primary:#C96442;--auth-primary-ink:#F4F1ED;
+        --auth-primary-hover:#B9573A;--auth-err:#B4452E;--auth-shadow:0 16px 48px rgba(31,30,28,.10)}
+  :root[data-appearance=dark]{color-scheme:dark;--auth-bg:#1F1E1C;--auth-card:#2A2724;--auth-ink:#F4F1ED;--auth-text2:#BEB6AB;
+        --auth-line:#3D3A34;--auth-field:#1B1A18;--auth-coral:#CD6B4A;--auth-primary:#CD6B4A;--auth-primary-ink:#1F1E1C;
+        --auth-primary-hover:#D97757;--auth-err:#D9695A;--auth-shadow:0 20px 56px rgba(0,0,0,.45)}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-       font-family:${AUTH_FONT};background:#151517;color:#f9fafb;-webkit-font-smoothing:antialiased}
-  .card{width:360px;max-width:92vw;background:#232324;border:1px solid rgba(255,255,255,.06);border-radius:16px;
-        padding:28px;box-shadow:0 16px 48px rgba(0,0,0,.4)}
+       font-family:${AUTH_FONT};background:var(--auth-bg);color:var(--auth-ink);-webkit-font-smoothing:antialiased}
+  .appearance{position:fixed;top:16px;left:16px;width:44px;height:44px;padding:0;margin:0;display:inline-flex;
+       align-items:center;justify-content:center;border:1px solid var(--auth-line);border-radius:10px;
+       background:var(--auth-card);color:var(--auth-text2);cursor:pointer}
+  .appearance:hover{color:var(--auth-ink);border-color:var(--auth-coral)}
+  .appearance:focus-visible{outline:2px solid var(--auth-coral);outline-offset:2px}
+  .card{width:360px;max-width:92vw;background:var(--auth-card);border:1px solid var(--auth-line);border-radius:16px;
+        padding:28px;box-shadow:var(--auth-shadow)}
   h1{font-size:18px;font-weight:600;margin:0 0 4px}
-  p.sub{margin:0 0 20px;font-size:13px;color:#adb2b8}
-  label:not(.opt){display:block;font-size:12px;color:#adb2b8;margin:14px 0 6px}
-  input:not([type=radio]){width:100%;padding:11px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);
-       background:#1b1b1c;color:#f9fafb;font-size:14px;font-family:inherit}
-  input:not([type=radio]):focus{outline:none;border-color:rgba(255,255,255,.24);box-shadow:0 0 0 3px rgba(255,255,255,.06)}
+  /* Wordmark: Faber sostiene el coral, Loom toma la tinta del fondo. */
+  .brand{font-family:${AUTH_SERIF};font-style:italic;font-weight:500;font-size:30px;line-height:1;
+        letter-spacing:-0.005em;margin:0 0 6px}
+  .brand .faber{color:var(--auth-coral)}
+  .brand .loom{color:var(--auth-ink)}
+  p.sub{margin:0 0 20px;font-size:13px;color:var(--auth-text2)}
+  label:not(.opt){display:block;font-size:12px;color:var(--auth-text2);margin:14px 0 6px}
+  input:not([type=radio]){width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--auth-line);
+       background:var(--auth-field);color:var(--auth-ink);font-size:14px;font-family:inherit}
+  input:not([type=radio]):focus{outline:none;border-color:var(--auth-coral);box-shadow:0 0 0 3px rgba(201,100,66,.18)}
   .secret{position:relative;display:block}
   .secret input{padding-right:40px}
   #secret-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:28px;height:28px;padding:0;margin:0;
-                 border:0;border-radius:8px;background:transparent;color:#adb2b8;cursor:pointer;
+                 border:0;border-radius:8px;background:transparent;color:var(--auth-text2);cursor:pointer;
                  display:inline-flex;align-items:center;justify-content:center}
-  #secret-toggle:hover{background:rgba(255,255,255,.08);color:#f9fafb}
-  button[type=submit]{margin-top:20px;width:100%;padding:12px;border:0;border-radius:10px;background:#f9fafb;color:#151517;
-       font-weight:600;font-size:14px;cursor:pointer;font-family:inherit}
-  button[type=submit]:hover{background:#e9ecf2}
-  .err{margin-top:16px;padding:10px 12px;border-radius:10px;background:rgba(242,90,90,.12);
-       border:1px solid rgba(242,90,90,.35);color:#f25a5a;font-size:13px}
+  #secret-toggle:hover{background:rgba(31,30,28,.06);color:var(--auth-ink)}
+  :root[data-appearance=dark] #secret-toggle:hover{background:rgba(244,241,237,.08)}
+  button[type=submit]{margin-top:20px;width:100%;padding:12px;border:0;border-radius:10px;background:var(--auth-primary);
+       color:var(--auth-primary-ink);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit;
+       display:inline-flex;align-items:center;justify-content:center;gap:8px}
+  button[type=submit]:hover{background:var(--auth-primary-hover)}
+  button[type=submit]:focus-visible{outline:2px solid var(--auth-ink);outline-offset:2px}
+  button[type=submit][aria-busy=true]{cursor:progress}
+  .spinner{display:none;width:14px;height:14px;border:2px solid currentColor;border-top-color:transparent;
+       border-radius:50%;animation:auth-spin .8s linear infinite}
+  button[type=submit][aria-busy=true] .spinner{display:inline-block}
+  @keyframes auth-spin{to{transform:rotate(360deg)}}
+  .err{margin-top:16px;padding:10px 12px;border-radius:10px;background:rgba(180,69,46,.10);
+       border:1px solid var(--auth-err);color:var(--auth-err);font-size:13px}
+  @media (prefers-reduced-motion:reduce){.spinner{animation:none;border-top-color:currentColor;opacity:.6}}
 `
 // El selector de empresa reutiliza el tema; sus opciones son radios en filas.
 const AUTH_ENTITY_CSS = `
@@ -1905,8 +2006,10 @@ function entityPage(sess, errCode) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="/faberloom_favicon32.svg">
 <title>Cambiar de empresa · Faberloom</title>
+<script>${AUTH_APPEARANCE_EARLY}</script>
 <style>${AUTH_CSS}${AUTH_ENTITY_CSS}</style></head>
 <body>
+  ${AUTH_TOGGLE}
   <form class="card" method="post" action="/entity">
     <h1>Cambiar de empresa</h1>
     <p class="sub">Tu cuenta tiene varias empresas y FaberLoom ya trabaja con tu empresa principal. Cámbiala solo si necesitas operar como otra: el tenant viaja al MCP en cada llamada.</p>
@@ -1915,6 +2018,7 @@ function entityPage(sess, errCode) {
     <button type="submit">Usar esta entidad</button>
     ${msg ? `<div class="err">${msg}</div>` : ''}
   </form>
+  <script>${AUTH_APPEARANCE_SCRIPT}</script>
 </body></html>`
 }
 
@@ -1938,9 +2042,10 @@ function loginPage(errCode, csrf = '') {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="/faberloom_favicon32.svg">
 <title>Faberloom</title>
+<script>${AUTH_APPEARANCE_EARLY}</script>
 <style>${AUTH_CSS}
-  a.forgot { display: inline-block; margin-top: 14px; font-size: 13px; color: #6b7894; text-decoration: none; }
-  a.forgot:hover { color: #c96442; text-decoration: underline; }
+  a.forgot { display: inline-block; margin-top: 14px; font-size: 13px; color: var(--auth-text2); text-decoration: none; }
+  a.forgot:hover { color: var(--auth-coral); text-decoration: underline; }
   dialog#forgot-dialog { border: 0; border-radius: 14px; padding: 0; width: min(92vw, 380px); color: inherit; background: transparent; }
   dialog#forgot-dialog::backdrop { background: rgba(6, 12, 24, 0.62); }
   dialog#forgot-dialog form { display: flex; flex-direction: column; gap: 10px; }
@@ -1948,8 +2053,9 @@ function loginPage(errCode, csrf = '') {
   dialog#forgot-dialog .forgot-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
 </style></head>
 <body>
+  ${AUTH_TOGGLE}
   <form class="card" method="post" action="/login">
-    <h1>Faberloom</h1>
+    <h1 class="brand"><span class="faber">Faber</span><span class="loom">Loom</span></h1>
     <p class="sub">Entra con tu usuario de la consola</p>
     <input type="hidden" name="_csrf" value="${csrf}">
     <label for="usuario">Usuario o correo</label>
@@ -1959,7 +2065,7 @@ function loginPage(errCode, csrf = '') {
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button type="button" id="secret-toggle" aria-label="Mostrar la contraseña" aria-pressed="false" title="Mostrar la contraseña"></button>
     </span>
-    <button type="submit">Entrar</button>
+    <button type="submit" id="login-submit"><span class="spinner" aria-hidden="true"></span><span>Entrar</span></button>
     <a class="forgot" href="#" id="forgot-open">¿Olvidaste tu contraseña?</a>
     ${msg ? `<div class="err">${msg}</div>` : ''}
   </form>
@@ -1977,6 +2083,18 @@ function loginPage(errCode, csrf = '') {
     </form>
   </dialog>
   <script>
+    ${AUTH_APPEARANCE_SCRIPT}
+    // El envío navega a la misma página: el botón se marca ocupado mientras
+    // dura la espera y se rearma si el usuario vuelve con el botón Atrás.
+    (function () {
+      var form = document.querySelector('form.card[action="/login"]')
+      var submit = document.getElementById('login-submit')
+      if (form === null || submit === null) return
+      var arm = function (busy) { submit.setAttribute('aria-busy', busy ? 'true' : 'false') }
+      arm(false)
+      form.addEventListener('submit', function () { arm(true) })
+      window.addEventListener('pageshow', function () { arm(false) })
+    })();
     // Reveal/hide the password without leaving the form.
     (function () {
       var toggle = document.getElementById('secret-toggle')

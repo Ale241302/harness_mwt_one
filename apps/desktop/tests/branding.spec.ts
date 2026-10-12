@@ -83,6 +83,27 @@ it('asks before uninstalling and before deleting the user data', () => {
   expect(script).toContain('RMDir /r "${APP_DATA}\\@deepseek-ai"')
 })
 
+it('carries the uninstall data question in every language the installer loads', async () => {
+  // app-builder-lib types its own language table as `any`; state the two
+  // members this test reads instead of letting `any` reach the assertions.
+  const langs = await import('app-builder-lib/out/util/langs.js') as unknown as {
+    readonly bundledLanguages: readonly string[]
+    readonly lcid: Readonly<Record<string, number>>
+  }
+  const script = readFileSync(fileURLToPath(new URL('../scripts/installer.nsh', import.meta.url)), 'utf8')
+  const declared = new Set(
+    [...script.matchAll(/^LangString faberloomUninstallData (\d+) /gmu)]
+      .map(match => Number(match[1] ?? '')),
+  )
+  // makensis warns (6040) for every loaded language without an entry and
+  // electron-builder treats warnings as errors, so the list must be complete.
+  const missing = langs.bundledLanguages
+    .map(language => ({ language, id: langs.lcid[language] ?? 0 }))
+    .filter(entry => !declared.has(entry.id))
+  expect(missing).toEqual([])
+  expect([...declared].every(id => Object.values(langs.lcid).includes(id))).toBe(true)
+})
+
 it('brands the web document and its install manifest', () => {
   const html = readFileSync(fileURLToPath(new URL('../../web/index.html', import.meta.url)), 'utf8')
   expect(html).toContain('<title>Faberloom</title>')

@@ -2162,6 +2162,19 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('exportContext') async exportContext(spaceId?: string, format?: string): Promise<FaberLoomContextExportRow>
 
 /**
+ * Write one exported view into a space's folder as a real file, so the agent's
+ * file tools and the user see the same document: a Work Flow's portable JSON
+ * (or its Archify HTML) or a Context export. The file lands under
+ * `<space dir>/exportaciones/`.
+ * @param spaceId - the space whose folder receives the export.
+ * @param kind - `workflow` or `context`.
+ * @param targetId - the Work Flow id, or the context's space id (empty for the owner's own).
+ * @param format - `json` (default) or `archify` for a workflow, `markdown` for context.
+ * @returns the written path and its byte count.
+ */
+@Remote('exportSpaceViewToFolder') async exportSpaceViewToFolder( spaceId: string, kind: string, targetId: string, format?: string, ): Promise<{ path: string; bytes: number }>
+
+/**
  * Import a context record and return the refreshed entries.
  * @param payload - the exported JSON body.
  * @returns the refreshed rows.
@@ -2423,6 +2436,31 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('emailAttachment') async emailAttachment(uid: string, index: number): Promise<FaberLoomEmailAttachmentContent | undefined>
 
 /**
+ * Save one mailbox message's attachment(s) as real files inside a space's
+ * folder, so the agent's file tools and the sidebar conversation work on the
+ * actual document instead of a browser download. The files land under
+ * `<space dir>/correo-adjuntos/`, the same convention the model tool uses.
+ * @param spaceId - destination space.
+ * @param uid - the message UID.
+ * @param name - save only the attachment with this exact name; every attachment otherwise.
+ * @returns the written files, each with its path and byte count.
+ */
+@Remote('saveSpaceAttachment') async saveSpaceAttachment( spaceId: string, uid: string, name?: string, ): Promise<{ files: readonly { name: string; path: string; bytes: number }[] }>
+
+/**
+ * Send one file that lives in a space's folder as an email attachment through
+ * the owner's SMTP row. The path must resolve inside the space folder, so a
+ * panel action can never mail an arbitrary file on the host.
+ * @param spaceId - the space whose folder holds the file.
+ * @param path - the file path, relative to the space folder (or absolute inside it).
+ * @param to - comma-separated recipients.
+ * @param subject - message subject.
+ * @param text - plain-text body.
+ * @returns the generated `Message-ID` and the accepted recipients.
+ */
+@Remote('sendSpaceFileByEmail') async sendSpaceFileByEmail( spaceId: string, path: string, to: string, subject: string, text: string, ): Promise<{ messageId: string; accepted: readonly string[] }>
+
+/**
  * Turn one email into a Space: reuse the space with the same title when it
  * already exists, otherwise create it with its agent and Workspace, store the
  * email as the space's memory, and attach every file it carried.
@@ -2627,6 +2665,17 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the registered workspace projection.
  */
 @Remote('openSpaceWorkspace') async openSpaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace>
+
+/**
+ * Adopt an existing folder as a space's conversation area: register the folder
+ * as a Workspace titled after the space (reusing one already registered at the
+ * same path) and point the space at it, so the Space and the sidebar Workspace
+ * name the same directory instead of the deterministic `spaces/<ref>` area.
+ * @param id - space id.
+ * @param path - absolute folder the user chose.
+ * @returns the adopted workspace projection.
+ */
+@Remote('adoptSpaceWorkspace') async adoptSpaceWorkspace(id: string, path: string): Promise<FaberLoomSpaceWorkspace>
 
 /**
  * Save one space's editable configuration.
