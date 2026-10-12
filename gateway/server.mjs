@@ -2000,7 +2000,7 @@ function loginPage(errCode, csrf = '') {
         setState(visible)
         field.focus()
       })
-    })()
+    })();
     // Open/close the "olvidé mi contraseña" dialog without a page reload.
     (function () {
       var dialog = document.getElementById('forgot-dialog')
