@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-12-bring-your-own-provider.md
-2026-10-12-bring-your-own-provider.md: 0118c1a0b7e9cd0cbd13ad71b2fcd9ce4b9c6658
-2026-10-12-bring-your-own-provider.zh.md: 6d615ce6d7f30fac500ec9979d0a3a89f87b93f1
+2026-10-12-bring-your-own-provider.md: c9e9657ec0619afe2734339ca55e70dca29efa6b
+2026-10-12-bring-your-own-provider.zh.md: 1abcd7e2869c7ebfba44187a7dcc9ff98dca18d4

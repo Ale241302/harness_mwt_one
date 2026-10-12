@@ -16,7 +16,7 @@ harness 的每个会话都跑在部署那唯一的 DeepSeek 连接上。pi-ai �
 
 **随产品交付的五条路由及其解析出的协议。** `packages/llm/llm-pi-ai/tests/config.spec.ts` 断言每条路由解析出已安装目录的端点与线上协议：`openai` 为 `https://api.openai.com/v1`，走 `openai-responses`；`anthropic` 为 `https://api.anthropic.com`，走 `anthropic-messages`；`google` 为 `https://generativelanguage.googleapis.com/v1beta`，走 `google-generative-ai`；`kimi` 为 `https://api.kimi.com/coding`，走 `anthropic-messages`，其模型 id 取自目录，因为该端点不发布模型列表；`moonshotai` 为 `https://api.moonshot.ai/v1`，走 `openai-completions`。原生的 `deepseek-official` 路由属于另一个适配器 `dsh-llm-deepseek` —— chat-completions 位于 `https://api.deepseek.com`，Anthropic Messages 位于 `https://api.deepseek.com/anthropic` —— 该 spec 正是因此不含 `deepseek`。
 
-**agent 自己的密钥按调用优先。** `GenerateOptions.credentialRef` 在该请求上覆盖路由的 `apiKeyEnv` 引用，路由的密钥只是未指名密钥的调用的部署兜底。
+**agent 自己的密钥按调用优先。** `GenerateOptions.credentialRef` 在该请求上覆盖路由的 `apiKeyEnv` 引用，路由的密钥只是未指名密钥的调用的部署兜底；凭据解析由 [agent-credential-route 笔记](2026-10-12-agent-credential-route.zh.md)负责。
 
 **账户余额耗尽会被归类。** `packages/llm/llm/src/error.ts` 声明真实耗尽账户返回的措辞：`isQuotaExceededError` 匹配断言余额缺失的扁平化消息（"no credits remaining"），此前的模式漏掉了它，而该模式要求余额缺失，因此真正的限流——它会写明速率——无法匹配。`providerAccountFailureCode` 把该响应报告为 `QUOTA`，于是正文是账单消息的 HTTP 429 被归类为账户已空，而非瞬时速率限制。
 
