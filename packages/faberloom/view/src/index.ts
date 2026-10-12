@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, sep } from 'node:path'
+import { basename, join, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -3356,6 +3356,43 @@ export class FaberLoomViewService extends TypertRemoteService {
     return attachment === undefined
       ? undefined
       : { name: attachment.name, mediaType: attachment.mediaType, contentBase64: attachment.contentBase64 }
+  }
+
+  /**
+   * Save one mailbox message's attachment(s) as real files inside a space's
+   * folder, so the agent's file tools and the sidebar conversation work on the
+   * actual document instead of a browser download. The files land under
+   * `<space dir>/correo-adjuntos/`, the same convention the model tool uses.
+   * @param spaceId - destination space.
+   * @param uid - the message UID.
+   * @param name - save only the attachment with this exact name; every attachment otherwise.
+   * @returns the written files, each with its path and byte count.
+   */
+  @Remote('saveSpaceAttachment')
+  async saveSpaceAttachment(
+    spaceId: string,
+    uid: string,
+    name?: string,
+  ): Promise<{ files: readonly { name: string; path: string; bytes: number }[] }> {
+    const actor = this.actor()
+    const inbound = this.ctx.get('faberloomInbound')
+    const id = Number(uid)
+    if (inbound === undefined || !Number.isSafeInteger(id) || id <= 0) return { files: [] }
+    const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    const content = await inbound.readEmail(actor.id, id)
+    const wanted = name === undefined || name.length === 0
+      ? content.attachments
+      : content.attachments.filter(attachment => attachment.name === name)
+    if (wanted.length === 0) return { files: [] }
+    const dir = join(await this.resolveSpaceDir(actor, space), 'correo-adjuntos')
+    mkdirSync(dir, { recursive: true })
+    const files = wanted.map((attachment) => {
+      const path = join(dir, basename(attachment.name))
+      const bytes = Buffer.from(attachment.contentBase64, 'base64')
+      writeFileSync(path, bytes)
+      return { name: attachment.name, path, bytes: bytes.length }
+    })
+    return { files }
   }
 
   /**

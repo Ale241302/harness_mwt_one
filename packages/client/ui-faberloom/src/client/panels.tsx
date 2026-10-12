@@ -181,6 +181,12 @@ export interface FaberloomPanelInjected {
   emailTrash: (uid: string, sender?: string, subject?: string) => Promise<Result<{ movedTo: string }>>
   /** Read one attachment's bytes for download. */
   emailAttachment: (uid: string, index: number) => Promise<Result<FaberLoomEmailAttachmentContent | undefined>>
+  /** Save one mailbox attachment into a space's folder as a real file. */
+  saveAttachmentToSpace: (
+    spaceId: string,
+    uid: string,
+    name: string,
+  ) => Promise<Result<{ files: readonly { name: string; path: string; bytes: number }[] }>>
   /** Turn one email into a Space with its Workspace, memory, and files. */
   spaceFromEmail: (uid: string, name: string, agentId: string | null, from: string | null) => void
   /** Answer one message in the routine-designer chat. */
@@ -1103,7 +1109,8 @@ function agentsScreen() {
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
-      t, emailInbox, emailRead, emailAttachment, emailMarkSeen, emailTrash, emailDrafts, saveEmailDraft, deleteEmailDraft, sendEmailDraft,
+      t, emailInbox, emailRead, emailAttachment, saveAttachmentToSpace, emailMarkSeen, emailTrash, emailDrafts,
+      saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, emailPolicy, saveEmailPolicy, spaceFromEmail, routineChat, routineFromEmail,
       openRoutines, learnFromEmail, startConversation,
     } = props
@@ -1124,6 +1131,7 @@ function emailScreen() {
     const [aiText, setAiText] = useState<string | null>(null)
     const [replyBody, setReplyBody] = useState<string | null>(null)
     const [attachments, setAttachments] = useState<readonly string[]>([])
+    const [saveSpaceId, setSaveSpaceId] = useState('')
     const [spaceOpen, setSpaceOpen] = useState(false)
     const [spaceName, setSpaceName] = useState('')
     const [spaceAgent, setSpaceAgent] = useState('')
@@ -1162,6 +1170,16 @@ function emailScreen() {
         link.download = name
         link.click()
         URL.revokeObjectURL(url)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+    /** Save one attachment into the chosen space's folder as a real file. */
+    const saveToFolder = (name: string): void => {
+      if (saveSpaceId.length === 0 || chosenMail === null) return
+      void saveAttachmentToSpace(saveSpaceId, chosenMail.id, name).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setMessage(result.value.files.length === 0
+          ? t('state.error')
+          : `${t('email.savedToFolder')} ${result.value.files.map(file => file.path).join(', ')}`)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
     const inboxRows = inbox.kind === 'ready' ? inbox.value : []
@@ -1419,15 +1437,26 @@ function emailScreen() {
           </Field>
           {mailBody.kind === 'ready' && mailBody.value.attachments.length > 0
             ? (
-              <Field label={t('field.attachments')}>
+              <Field label={t('field.attachments')} hint={t('email.saveHint')}>
                 <div className={styles.steps}>
                   {mailBody.value.attachments.map((attachment, index) => (
-                    <button className={styles.rowAction} type="button" key={`${attachment.name}-${String(index)}`}
-                      onClick={() => { downloadAttachment(selected ?? '', index, attachment.name) }}>
-                      {`${attachment.name} · ${String(attachment.size)}`}{' B'}
-                    </button>
+                    <span className={styles.tools} key={`${attachment.name}-${String(index)}`}>
+                      <button className={styles.rowAction} type="button"
+                        onClick={() => { downloadAttachment(selected ?? '', index, attachment.name) }}>
+                        {`${attachment.name} · ${String(attachment.size)}`}{' B'}
+                      </button>
+                      <button className={styles.ghost} type="button" disabled={saveSpaceId.length === 0}
+                        onClick={() => { saveToFolder(attachment.name) }}>
+                        {t('email.saveToFolder')}
+                      </button>
+                    </span>
                   ))}
                 </div>
+                <label className={styles.cellMuted} htmlFor="email-save-space">{t('email.saveTarget')}</label>
+                <select id="email-save-space" value={saveSpaceId} onChange={(event) => { setSaveSpaceId(event.target.value) }}>
+                  <option value="">{t('email.saveTargetNone')}</option>
+                  {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+                </select>
               </Field>
             )
             : null}
