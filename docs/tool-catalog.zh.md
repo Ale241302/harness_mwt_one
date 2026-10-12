@@ -34,7 +34,7 @@
 | `@deepseek-ai/dsh-tool-fs` | `edit`、`read`、`read_image`、`write` | `ctx.tools`、`ctx.fs`、`ctx.systemPrompt`、`ctx.attachments (image-tool registration)`、`ctx.llm + an image-capable route (image-tool execution)` | `tool/call`、`fs/write-intent or fs/edit-intent for mutations`、`fs/observed after read presence/absence or successful file operation`、`durable attachment (read_image)`、`tool/result` | - | 先读后写／编辑策略由 `@deepseek-ai/dsh-fs-observation-policy` 添加；它是一个 `fs/*` 事件门禁插件，不会改变 schema。加载这些工具的部署按预期也应加载该插件。没有 `ctx.attachments` 时图片工具不会注册；其 schema 与路由无关，执行时除非确切路由的模型声明图片输入，否则拒绝。 |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`、`grep` | `ctx.tools`、`ctx.subprocess`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。 |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`、`terminal_list`、`terminal_open`、`terminal_read`、`terminal_send`、`terminal_signal` | `ctx.tools`、`ctx.terminals`、`ctx.systemPrompt`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。 |
-| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_skill_install`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_followup`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source`| `ctx.tools`, `ctx.faberloomSpaces` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
+| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_files_create`, `faberloom_files_delete`, `faberloom_files_rename`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_mcp_add`, `faberloom_mcp_list`, `faberloom_mcp_remove`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_skill_install`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_ask`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_followup`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source`| `ctx.tools`, `ctx.faberloomSpaces`, `ctx.faberloomMcpRegistry` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list` | `ctx.tools`、`ctx.sessions`、Session 持久化、未来创建的 live 根 Agent | `tool/call`、`schedule/change create or delete`、`tool/result` | - | 仅在选择启用的 Schedule 插件加载后创建的 live 根 Agent scope 内注册。版本 1 接受 after_seconds、显式绝对 at 和有界固定速率 every_seconds，并披露 session-local 交付；管理读取与变更必须通过共享的 Session 持久化 barrier。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
@@ -2506,6 +2506,95 @@ Deliver events to waiting executions (persistent dispatcher tick).
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_files_create`
+
+在本会话的工作区内创建一个文件或一个文件夹。路径相对于工作区根目录（也可以是工作区内的绝对路径），缺失的父文件夹会被创建。名称已被占用时会被拒绝，不会覆盖任何内容。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Workspace-relative path of the new file or folder, such as \"informes/2026.md\"."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Whether to create a file or a folder.",
+      "enum": [
+        "file",
+        "directory"
+      ]
+    },
+    "content": {
+      "type": "string",
+      "description": "Complete text content of the new file; only for kind=file, empty when omitted."
+    }
+  },
+  "required": [
+    "path",
+    "kind"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_files_delete`
+
+在本会话的工作区内删除一个文件或一个文件夹。文件夹仍有内容时会被拒绝；把 recursive 设为 true 可连同其中的全部内容一起删除。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Workspace-relative path of the file or folder to delete."
+    },
+    "recursive": {
+      "type": "boolean",
+      "description": "Delete a non-empty folder with its contents; omitted refuses a non-empty folder."
+    }
+  },
+  "required": [
+    "path"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_files_rename`
+
+在本会话的工作区内重命名一个文件或文件夹，并让它留在同一个文件夹中。新名称替换路径的最后一段；该文件夹中已占用该名称时会被拒绝，除非设置了 overwrite。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Workspace-relative path of the file or folder to rename."
+    },
+    "name": {
+      "type": "string",
+      "description": "The new name: one path segment, without a separator."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "description": "Replace an entry that already has the new name; omitted refuses it."
+    }
+  },
+  "required": [
+    "path",
+    "name"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_mail_attachment`
 
 把一封邮件消息的原始附件作为真实文件保存到会话工作区并返回其路径，使用户能下载真实文件（或用业务文档工具上传）。使用 faberloom_mail_search 返回的 uid；传入 name 只保存一个附件。对邮箱只读。
@@ -2721,6 +2810,130 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
   },
   "required": [
     "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mcp_add`
+
+安装用户要求的 MCP 服务器，依据的是用户交来的文档：为它指定一个本地名称、到达方式，以及它用于认证的任何值。harness 会在保存前先连接一次，以证明服务器可用。stdio 分支运行本地程序；streamable-http 分支调用网络地址。用户自己的密钥或 token 以值的形式放入 env（环境变量）或 headers（请求头），并作为其机密存储、永不返回。安装一个已存在的名称会替换它。如果服务器无法连接或拒绝所给凭据，则不会保存任何内容，并报告原因。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Local name for the server: 1 to 32 letters, digits, dashes, or underscores. It is how the user names the server later, and it labels every tool the server adds."
+    },
+    "transport": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transport": {
+              "type": "string",
+              "description": "Marks a server the harness runs as a local program.",
+              "const": "stdio"
+            },
+            "command": {
+              "type": "string",
+              "description": "Program to run, for example `npx` or an installed executable."
+            },
+            "args": {
+              "type": "array",
+              "description": "Arguments passed to the program, one entry each; omit when it takes none.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cwd": {
+              "type": "string",
+              "description": "Directory the program runs in; omit for the default."
+            }
+          },
+          "required": [
+            "transport",
+            "command"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transport": {
+              "type": "string",
+              "description": "Marks a server reached over the network.",
+              "const": "streamable-http"
+            },
+            "url": {
+              "type": "string",
+              "description": "Full HTTP or HTTPS address of the server."
+            }
+          },
+          "required": [
+            "transport",
+            "url"
+          ]
+        }
+      ],
+      "description": "How the harness reaches the server. Pick the branch that matches the documentation: the server is a local program to run, or a network address to call."
+    },
+    "env": {
+      "type": "object",
+      "description": "Values the server reads from its environment, keyed by variable name, for example the user's API key. Supply the values this server needs: the harness proves the connection before saving, and that test only sees the values given here. Each value is stored as the user's secret and never returned.",
+      "additionalProperties": true
+    },
+    "headers": {
+      "type": "object",
+      "description": "Values sent as request headers, keyed by header name, for example an authorization token. Supply the values this server needs: the harness proves the connection before saving, and that test only sees the values given here. Each value is stored as the user's secret and never returned.",
+      "additionalProperties": true
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether the server becomes available in every chat as soon as it is saved; defaults to true. Set false to save it without turning it on."
+    }
+  },
+  "required": [
+    "name",
+    "transport"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mcp_list`
+
+列出为此用户安装的 MCP 服务器：每个服务器的名称、到达方式、当前是否已开启并可用，以及它需要的凭据中哪些已存在。绝不返回任何凭据值。在再次安装某个名称之前，或当用户询问已安装哪些服务器时使用它。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mcp_remove`
+
+按名称移除一个已安装的 MCP 服务器并遗忘其已保存的凭据，使它不再在每个对话中可用。移除一个未安装的名称不会改变任何内容。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name of the installed server to remove, as faberloom_mcp_list reports it."
+    }
+  },
+  "required": [
+    "name"
   ]
 }
 ```

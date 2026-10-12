@@ -25,7 +25,7 @@ Use `dsh-client-locale` to switch the web GUI between the shipped English and Ch
 <a id="use-this-package"></a>
 ## Use this package
 
-Use it wherever the web GUI needs a language switch or translated copy: the shipped settings row covers users, and plugin authors register their own dictionaries. Nothing needs configuration to mount — the package activates with the client tree.
+Use it wherever the web GUI needs a language switch or translated copy: the language choice is a Settings section owned by `ui-theme`, and plugin authors register their own dictionaries. Nothing needs configuration to mount — the package activates with the client tree.
 
 ### Choosing a language
 
@@ -89,7 +89,7 @@ The typed object form requires complete dictionaries for both built-in locales. 
 
 | File | Role |
 |---|---|
-| [`src/client/index.ts`](src/client/index.ts) | `LocaleRuntime`, dictionary registry, Language row registration, `locale/change` event |
+| [`src/client/index.ts`](src/client/index.ts) | `LocaleRuntime`, dictionary registry, document-language synchronization, `locale/change` event |
 | [`src/index.ts`](src/index.ts) | Node half: registers the `locale` settings namespace |
 | [`src/locale-settings.ts`](src/locale-settings.ts) | The durable schema for `locale.preference` |
 | [`src/locales/`](src/locales/) | The shipped `zh`/`en` dictionaries |

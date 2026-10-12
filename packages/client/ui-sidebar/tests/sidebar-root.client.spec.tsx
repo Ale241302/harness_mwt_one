@@ -67,11 +67,13 @@ function mountShell({
   width = 300,
   panels = [],
   activePanelId = null,
+  footerAction = true,
 }: {
   collapsed?: boolean
   width?: number
   panels?: readonly SidebarPanelMetadata[]
   activePanelId?: MainPanelId | null
+  footerAction?: boolean
 } = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
@@ -105,6 +107,7 @@ function mountShell({
           return <div data-testid="settings-seat" data-wide={settingsOwner.wide} />
         }
         if (key === 'sidebar.footer.action') {
+          if (!footerAction) return null
           footerActionOwner = owner as SidebarFooterActionOwnerProps
           return <div data-testid="footer-action-seat" data-wide={footerActionOwner.wide} />
         }
@@ -246,6 +249,16 @@ describe('SidebarRoot shell', () => {
     b.rerender({ collapsed: true })
     expect(screen.getByTestId('footer-action-seat')).toBeTruthy()
     expect(screen.getByTestId('settings-seat')).toBeTruthy()
+  })
+
+  it('renders the Settings seat alone in the foot when no footer action registers', () => {
+    mountShell({ footerAction: false })
+    expect(screen.queryByTestId('footer-action-seat')).toBeNull()
+    const settings = screen.getByTestId('settings-seat')
+    // The empty action cell holds no control, so the foot renders only the gear.
+    const foot = settings.parentElement?.parentElement
+    expect(foot?.querySelectorAll('[data-testid]')).toHaveLength(1)
+    expect(foot?.querySelector('[data-testid]')).toBe(settings)
   })
 })
 

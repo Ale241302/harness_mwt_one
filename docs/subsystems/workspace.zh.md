@@ -415,6 +415,53 @@ Host Remote file reads and workspace directory observations over the composed fi
  *   root is resolved, then queued and live observations in emission order.
  */
 @Remote({ mode: 'stream' }) changes(workspaceFileScope: WorkspaceFileScope, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
+
+/**
+ * Create one UTF-8 text file inside the Session's workspace. The write is
+ * atomic and refuses an occupied destination: this verb only creates.
+ * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+ * @param path - the new file's workspace path, absolute or relative to the workspace root.
+ * @param content - the complete file content; above the configured full-file cap the call is refused.
+ * @param signal - caller cancellation.
+ * @returns the created file's workspace path and absolute path.
+ */
+@Remote async createFile( workspaceFileScope: WorkspaceFileScope, path: string, content: string, signal: AbortSignal, ): Promise<WorkspaceFileMutation>
+
+/**
+ * Create one directory inside the Session's workspace, with any missing
+ * parent directory.
+ * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+ * @param path - the new directory's workspace path, absolute or relative to the workspace root.
+ * @param signal - caller cancellation.
+ * @returns the created directory's workspace path and absolute path.
+ */
+@Remote async createDirectory( workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal, ): Promise<WorkspaceFileMutation>
+
+/**
+ * Move one entry inside the Session's workspace: a rename when both paths
+ * share a parent, a move otherwise. Both paths are resolved and confined
+ * before anything is touched, and an occupied destination is refused unless
+ * the call allows the replacement.
+ * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+ * @param from - the entry's current workspace path.
+ * @param to - the entry's new workspace path.
+ * @param options - whether an occupied destination is replaced; omitted refuses it.
+ * @param signal - caller cancellation.
+ * @returns the entry's new workspace path and absolute path, with its previous workspace path.
+ */
+@Remote async move( workspaceFileScope: WorkspaceFileScope, from: string, to: string, options: WorkspaceFileMoveOptions, signal: AbortSignal, ): Promise<WorkspaceFileMutation>
+
+/**
+ * Remove one entry inside the Session's workspace: a file, a symbolic link is
+ * refused, or a directory. A directory is removed only when it is empty,
+ * unless the call asks for its contents too.
+ * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+ * @param path - the entry's workspace path.
+ * @param options - whether a directory's contents go with it; omitted refuses a non-empty one.
+ * @param signal - caller cancellation.
+ * @returns the removed entry's workspace path and absolute path.
+ */
+@Remote async remove( workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceFileRemoveOptions, signal: AbortSignal, ): Promise<WorkspaceFileMutation>
 ```
 
 Source: [`packages/api/workspace-files/src/index.ts`](../../packages/api/workspace-files/src/index.ts)

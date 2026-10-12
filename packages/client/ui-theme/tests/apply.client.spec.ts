@@ -1,8 +1,9 @@
 /** ui-theme apply wiring: service provision, settings dictionaries riding the
- * locale service, declaration-aware Appearance row registration, snapshot
- * projection into the row store, and HMR collapse recovery. */
+ * locale service, declaration-aware Appearance/font-size/Idioma registration,
+ * snapshot projection into the row stores, and HMR collapse recovery. */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
+import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
@@ -12,13 +13,16 @@ import type { AppearanceRowInjected, FontSizeRowInjected, ThemeRuntime } from '@
 import { THEME_SETTINGS_NAMESPACE, ThemeSettingsSchema } from '../src/theme-settings.ts'
 import { AppearanceRow } from '../src/client/AppearanceRow.tsx'
 import { FontSizeRow } from '../src/client/FontSizeRow.tsx'
-import type { createAppearanceRowStore, createFontSizeRowStore } from '../src/client/settings-store.ts'
+import { LanguageSection } from '../src/client/LanguageSection.tsx'
+import type { LanguageSectionInjected } from '../src/client/LanguageSection.tsx'
+import type { createAppearanceRowStore, createFontSizeRowStore, createLanguageSectionStore } from '../src/client/settings-store.ts'
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
 // FALLBACK_LOCALE (en); bench stages zh explicitly on the locale instead.
 
 const SLOT = 'settings.general.item'
+const SECTION = 'settings.section'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -59,10 +63,10 @@ async function bench(isLoopback = true) {
   }
 }
 
-/** Stand in for the settings shell: declare the General item slot from root. */
-function declareItems(slots: SlotRegistry): () => void {
+/** Stand in for the settings shell: declare the General item and section slots from root. */
+function declareSurface(slots: SlotRegistry): () => void {
   return slots.register(
-    { name: 'root', children: { [SLOT]: { kind: 'list', scope: 'root' } } } as never,
+    { name: 'root', children: { [SLOT]: { kind: 'list', scope: 'root' }, [SECTION]: { kind: 'list', scope: 'root' } } } as never,
     () => null,
   )
 }
@@ -86,14 +90,23 @@ function fontSizeFaceOf(slots: SlotRegistry) {
   return { entry, instance, face }
 }
 
+/** The same choreography for the Idioma section entry. */
+function sectionFaceOf(slots: SlotRegistry) {
+  const entry = slots.entries(SECTION).find(e => e.component === LanguageSection)!
+  const handle = entry.store as ReturnType<typeof createLanguageSectionStore>
+  const instance = handle.create()
+  const face = (entry.inject as unknown as (a: typeof instance.actions) => LanguageSectionInjected)(instance.actions)
+  return { entry, instance, face }
+}
+
 describe('ui-theme apply', () => {
   it('declares the slot and locale services', () => {
     expect(inject).toEqual(['slots', 'locale', 'remote', 'settingsScope'])
   })
 
-  it('provides the service, registers localized copy, and registers both rows (declaration before or after apply)', async () => {
+  it('provides the service, registers localized copy, and registers the rows and section (declaration before or after apply)', async () => {
     const before = await bench()
-    declareItems(before.slots)
+    declareSurface(before.slots)
     await before.ctx.plugin({ inject: [...inject], apply }).await()
     expect(before.locale.bind(SETTINGS_NS)('appearance.title')).toBe('外观')
     expect(before.locale.bind(SETTINGS_NS)('fontSize.title')).toBe('字号大小')
@@ -104,20 +117,26 @@ describe('ui-theme apply', () => {
     const fontEntry = before.slots.entries(SLOT).find(e => e.component === FontSizeRow)!
     expect(fontEntry.options).toMatchObject({ id: 'font-size', order: 11 })
     expect(fontEntry.locale).toBe(SETTINGS_NS)
+    const section = before.slots.entries(SECTION).find(e => e.component === LanguageSection)!
+    expect(section.options).toMatchObject({ id: 'language', order: 25 })
+    expect(section.locale).toBe(SETTINGS_NS)
+    expect(resolveSlotLabel(section.options.label)).toBe('Language')
 
     const after = await bench()
     const fiber = after.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(after.slots.entries(SLOT)).toHaveLength(0)
-    declareItems(after.slots)
+    expect(after.slots.entries(SECTION)).toHaveLength(0)
+    declareSurface(after.slots)
     await Promise.resolve()
     expect(after.slots.entries(SLOT).some(e => e.component === AppearanceRow)).toBe(true)
     expect(after.slots.entries(SLOT).some(e => e.component === FontSizeRow)).toBe(true)
+    expect(after.slots.entries(SECTION).some(e => e.component === LanguageSection)).toBe(true)
   })
 
   it('projects service snapshots into the row store and routes face writes back', async () => {
     const b = await bench()
-    declareItems(b.slots)
+    declareSurface(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const theme = b.ctx.get('theme') as ThemeRuntime
     // An event ahead of any inject hits the unbound-actions arm.
@@ -125,19 +144,22 @@ describe('ui-theme apply', () => {
 
     const { instance, face } = faceOf(b.slots)
     // The inject-time re-sync sealed the init window: the mirror is current.
-    expect(instance.getSnapshot().preference).toBe('dark')
+    expect(instance.getSnapshot().active).toBe('dark')
+    expect(instance.getSnapshot().themes.map(palette => palette.id))
+      .toEqual(['light', 'dark', 'slate', 'mono', 'cloud'])
     // Copy rides the standard locale seat: the entry declares the namespace.
     expect(b.slots.entries(SLOT).find(e => e.component === AppearanceRow)!.locale).toBe(SETTINGS_NS)
 
     face.setTheme('system')
     expect(theme.getTheme().preference).toBe('system')
-    expect(instance.getSnapshot().preference).toBe('system')
+    // `system` has no row; it resolves to a palette and that palette is marked.
+    expect(instance.getSnapshot().active).toBe('light')
     await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalledTimes(2) })
   })
 
   it('projects font-size snapshots into its row store and routes face writes back', async () => {
     const b = await bench()
-    declareItems(b.slots)
+    declareSurface(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const theme = b.ctx.get('theme') as ThemeRuntime
     // An event ahead of any inject hits the unbound-actions arm.
@@ -153,13 +175,33 @@ describe('ui-theme apply', () => {
     await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalledTimes(2) })
   })
 
+  it('mirrors the locale snapshot into the Idioma section and routes setLocale back', async () => {
+    const b = await bench()
+    declareSurface(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const { instance, face } = sectionFaceOf(b.slots)
+    expect(instance.getSnapshot().active).toBe('zh')
+    expect(instance.getSnapshot().options.map(option => option.id)).toEqual(['zh', 'en', 'es'])
+
+    face.setLocale('en')
+    expect(b.locale.getSnapshot().active).toBe('en')
+    expect(instance.getSnapshot().active).toBe('en')
+
+    // A locale added after registration refreshes the mirror through the
+    // LocaleFace subscription (the `locale/change` event stays off catalog adds).
+    const remove = b.locale.addLanguage({ id: 'fr', label: 'Français', fallback: 'en' })
+    expect(instance.getSnapshot().options.map(option => option.id)).toEqual(['zh', 'en', 'es', 'fr'])
+    remove()
+    expect(instance.getSnapshot().options.map(option => option.id)).toEqual(['zh', 'en', 'es'])
+  })
+
   it('loads Host settings at boot, refreshes its namespace, and keeps remote browsers process-local', async () => {
     const b = await bench()
     // The shared mirror read once at bench time; a Host-side change reaches it
     // through the document invalidation, exactly as production announces one.
     b.setHostSection({ preference: 'dark', fontSize: 17 })
     b.events.emit('settings/document-updated', [THEME_SETTINGS_NAMESPACE, 0])
-    declareItems(b.slots)
+    declareSurface(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const theme = b.ctx.get('theme') as ThemeRuntime
     await vi.waitFor(() => { expect(theme.getTheme().preference).toBe('dark') })
@@ -177,7 +219,7 @@ describe('ui-theme apply', () => {
     await vi.waitFor(() => { expect(theme.getTheme().preference).toBe('dark') })
 
     const remote = await bench(false)
-    declareItems(remote.slots)
+    declareSurface(remote.slots)
     await remote.ctx.plugin({ inject: [...inject], apply }).await()
     const remoteTheme = remote.ctx.get('theme') as ThemeRuntime
     remoteTheme.setTheme('dark')
@@ -216,29 +258,34 @@ describe('ui-theme apply', () => {
 
   it('recovers after an HMR collapse of the declaring entry (stale disposer must not block)', async () => {
     const b = await bench()
-    const host = declareItems(b.slots)
+    const host = declareSurface(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     expect(b.slots.entries(SLOT)).toHaveLength(2)
+    expect(b.slots.entries(SECTION)).toHaveLength(1)
 
     // Collapse: the declarer dies, the cascade removes our entries while the
     // apply closure still holds its (now stale) disposers.
     host()
     expect(b.slots.entries(SLOT)).toHaveLength(0)
+    expect(b.slots.entries(SECTION)).toHaveLength(0)
 
-    declareItems(b.slots)
+    declareSurface(b.slots)
     await Promise.resolve()
     expect(b.slots.entries(SLOT).some(e => e.component === AppearanceRow)).toBe(true)
     expect(b.slots.entries(SLOT).some(e => e.component === FontSizeRow)).toBe(true)
+    expect(b.slots.entries(SECTION).some(e => e.component === LanguageSection)).toBe(true)
   })
 
-  it('teardown removes the rows and the dictionaries; teardown without a declaration is quiet', async () => {
+  it('teardown removes the rows, the section, and the dictionaries; teardown without a declaration is quiet', async () => {
     const b = await bench()
-    declareItems(b.slots)
+    declareSurface(b.slots)
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(b.slots.entries(SLOT)).toHaveLength(2)
+    expect(b.slots.entries(SECTION)).toHaveLength(1)
     await fiber.dispose()
     expect(b.slots.entries(SLOT)).toHaveLength(0)
+    expect(b.slots.entries(SECTION)).toHaveLength(0)
     // Dictionary disposal: translation falls back to the bare key.
     expect(b.locale.bind(SETTINGS_NS)('appearance.title')).toBe('appearance.title')
 
@@ -248,5 +295,6 @@ describe('ui-theme apply', () => {
     await f2.await()
     await f2.dispose()
     expect(quiet.slots.entries(SLOT)).toHaveLength(0)
+    expect(quiet.slots.entries(SECTION)).toHaveLength(0)
   })
 })

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包在原生产品服务之上注册面向模型的 `faberloom_*` 工具：空间、agent、模型、例程、执行、工作台、来源、邮件、MWT.ONE 租户路由器、跨空间解析（`faberloom_spaces_find`、`_reference`、`_ask`）、技能安装（`faberloom_skill_install`：把一个文件夹安装到工作区或全局根目录，并报告每个已安装、已替换、已跳过或被拒绝的候选），以及可选启用的空间记忆、teaching 与 Work Flow 图工具。路由器把同一条读查询扇出到每个 `legal_entity_ids` 租户（绝不越界），控制台对每次调用仍强制执行角色与权限。
+此包在原生产品服务之上注册面向模型的 `faberloom_*` 工具：空间、agent、模型、例程、执行、工作台、来源、邮件、MWT.ONE 租户路由器、跨空间解析（`faberloom_spaces_find`、`_reference`、`_ask`）、技能安装（`faberloom_skill_install`：把一个文件夹安装到工作区或全局根目录，并报告每个候选）、MCP 服务器安装（`faberloom_mcp_add`/`_list`/`_remove`：用户交来的服务器先用一次连接验证，通过后才保存；凭证值进入凭证接缝）、工作区文件改动（`faberloom_files_create`/`_rename`/`_delete`，经 `workspaceFiles` 能力），以及可选启用的空间记忆、teaching 与 Work Flow 图工具。路由器把同一条读查询扇出到每个 `legal_entity_ids` 租户；控制台对每次调用仍强制执行角色与权限。
 
 ## 目录
 
@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-在存在 `ctx.tools` 与产品服务处挂载此行。工具注册在调用插件的 fiber 上，随其释放而消失。
+在存在 `ctx.tools` 与产品服务处挂载此行。工具注册在调用插件的 fiber 上，随其释放而消失。工作区文件工具还需要挂载 `workspaceFiles` 能力：它们在那里解析调用会话自己的工作区根，并通过它完成每一次改动，因此缺少该能力时调用会直接失败，而不是猜测一个路径。
 
 -----
 
@@ -54,6 +54,8 @@ kind: "package-reference"
 - **委托咨询。** `faberloom_spaces_ask` 通过 `askProvider`（默认 `spawn`）运行一次委托并返回其答复；`continuable: true` 会启动一个持久子会话，由 `faberloom_spaces_followup` 继续。委托深度适用，子代理继承负责代理的工具面，并在该代理保存了 key 时继承其凭证引用，因此咨询运行在被咨询代理自己的 provider 账户上。子代理在父级工作区中运行，因为 `resolveWorkdir` 返回的是不透明引用而非路径；在空间真实工作目录中运行推迟到后续。
 - **记忆工具为可选启用。** `memoryTools`（默认关闭）注册空间记忆（`faberloom_spaces_remember`/`_memory_list`/`_forget`）与 teaching（`faberloom_memory_teach`/`_teachings`/`_revoke`/`_retrieve`）工具；默认关闭是因为它们会增加常驻请求 schema。这一显式且带版本的层归 FaberLoom 所有；自动情景记忆由外部记忆服务器蒸馏（见 `MANIFEST.md`），不是这些工具。
 - **Work Flow 工具为可选启用。** `workflowTools`（默认关闭）注册图工具（`faberloom_workflows_list`/`_get`/`_create`/`_add_node`/`_update_node`/`_remove_node`/`_connect`/`_disconnect`/`_set_trigger`/`_validate`/`_activate`/`_pause`/`_run_now`/`_runs`）以及"把自动化编辑为图并在激活前校验"的指令。默认关闭是因为它们会增加常驻请求 schema。
+- **MCP 安装先探针后保存。** `faberloom_mcp_add` 先连接一次以证明服务器可用，只有探针成功才记录它；无法连接、拒绝所给凭证、或未按 MCP 服务器应答的服务器会被报告，且不保存任何内容。探针只携带本次调用提供的值，因此要重新测试一个需要密钥的已保存服务器，必须再次提供该值；该工具从不读回已保存的值。`faberloom_mcp_list` 报告每个服务器的传输方式、是否启用并已挂载、以及哪些条目存在，绝不返回值。
+- **工作区文件工具不自带文件系统规则。** `faberloom_files_create`、`_rename` 与 `_delete` 以调用会话自己的 scope 调用已挂载的 `workspaceFiles` 能力，因此包含、拒绝与答案（改动了什么、在哪里）都属于该能力；工具只校验自己的参数并把答案转成一行面向模型的文字。`_rename` 只替换一个路径段，绝不移动到别的目录，并在发送任何请求前拒绝含分隔符的名称。
 
 未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
 

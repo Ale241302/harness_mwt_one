@@ -16,7 +16,7 @@ Status: implemented
 
 **两个面读取同一目录。** 宿主侧此前只认识浅色与深色：`boot-theme.ts` 固定绘制 `#fff` 或 `#151517`，并从三值联合派生 `body[data-ds-dark-theme]`。现在它通过同一目录解析偏好——调色板 id 会在首帧绘制前用该调色板自身的底色与其配色方案绘制，而 `system` 与本构建不认识的 id 退回中性配对并使用 `prefers-color-scheme` 查询。
 
-**侧栏脚部承载两个菜单。** 单个主题开关变为调色板菜单：按配色方案分组列出所有已注册主题，每行带取自该主题自身定义的色样，其上是跟随系统；旁边是列出已注册语言的界面语言菜单。两者都放在 `packages/client/ui-faberloom`，因为 `sidebar.footer.action` 座位位于 `ui-theme` 的引用闭包之外，且各自通过自己的服务（`theme`、`locale`）写入。
+**侧栏脚部只承载 Settings 控件。** 调色板与界面语言的选择就在该控件打开的 Settings 模态框里——调色板在 Apariencia（外观）行，界面语言在自己的分区——而 `packages/client/ui-faberloom` 不再向 `sidebar.footer.action` 注册任何内容。[外壳偏好归于一处笔记](../feature/2026-10-12-one-place-for-the-shell-preferences.zh.md)拥有这一安排；本笔记保留它引入的调色板目录与导航。
 
 **导航归入模式与手风琴。** `sidebar.panellist` 新增三个可选列表选项——`mode`、`group`、`badge`——像 `label` 一样按投影解析。`packages/client/ui-slots` 把它们原样带在已存储条目上，`packages/client/ui-sidebar` 把它们投影进面板元数据，`packages/client/ui-faberloom` 为自己的分区声明它们（Operar / Aprender / Admin，每块领域一个主题分组，且只在实时概览确有数字处显示徽标）。侧栏在存在多个模式时渲染模式栏、每个分组渲染带行数的手风琴；当没有行声明模式或分组时，扁平列表保持原样。
 
@@ -42,8 +42,8 @@ Status: implemented
 
 ## Consequences
 
-导航现在可伸缩：行的归属由声明者决定，分组无需侧栏知道「分组」的含义，而没有分组元数据的分区渲染与此前完全一致——三个选项都是可选的，扁平列表保留自己的快照。产品的所有者要求去掉这条空置的顶栏条带，因此 `shell.topbar.brand`、`shell.topbar.center` 与 `shell.topbar.actions` 三个座位连同其 CSS 一并移除，而不是留着空声明；框架不再有条状顶栏。调色板菜单列出注册表实际持有的内容，因此之后加入的主题包无需改动菜单即可出现，且其色样来自该主题自身的 token。
+导航现在可伸缩：行的归属由声明者决定，分组无需侧栏知道「分组」的含义，而没有分组元数据的分区渲染与此前完全一致——三个选项都是可选的，扁平列表保留自己的快照。产品的所有者要求去掉这条空置的顶栏条带，因此 `shell.topbar.brand`、`shell.topbar.center` 与 `shell.topbar.actions` 三个座位连同其 CSS 一并移除，而不是留着空声明；框架不再有条状顶栏。Apariencia（外观）行列出注册表实际持有的内容，因此之后加入的主题包无需改动该行即可出现，且其色样来自该主题自身的 token。
 
-接受两点限制。设置中的「外观」行仍只提供默认配对加 `system`——五套调色板可从脚部菜单到达，把该行并入调色板列表是另一项改动。插槽目录的列表选项是策展文本，因此向 `ctx.slots.register` 添加这三个成员时，也在同一改动中更新了 `scripts/gen-client-catalog.ts` 及其 spec；未来的列表选项必须照做。
+接受一点限制：插槽目录的列表选项是策展文本，因此向 `ctx.slots.register` 添加这三个成员时，也在同一改动中更新了 `scripts/gen-client-catalog.ts` 及其 spec；未来的列表选项必须照做。
 
 引导样式现在绘制调色板自身的底色，这会改变注入的 index 字节。本包之外没有任何地方记录这些字符串，且引导页把 `--dsh-boot-bg` 作为回退读取，因此首帧前的颜色跟随调色板，无需改动任何使用方。

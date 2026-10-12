@@ -1,5 +1,5 @@
 ---
-description: "The right Sidebar's file-tree tab type for the dsh web client: the session workspace root listed one level at a time over the wire, opening files into the Sidebar by resource address."
+description: "The right Sidebar's file-tree tab type for the dsh web client: the session workspace root listed one level at a time over the wire, with create, rename, and delete, opening files into the Sidebar by resource address."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The right Sidebar's navigator tab type: the session's workspace root as a tree, listed one level at a time over the wire, opening files into the Sidebar. It is a page type reached from the guide and claims no address; it opens files by address for the `dsh-resource://file` viewers to claim — nothing in `ui-sidebar-right` knows this package.
+The right Sidebar's navigator tab type: the session's workspace root as a tree, listed one level at a time over the wire, with menus that create, rename, and delete entries through the same host capability, opening files into the Sidebar. It is a page type reached from the guide and claims no address; it opens files by address for the `dsh-resource://file` viewers to claim — nothing in `ui-sidebar-right` knows this package.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ The right Sidebar's navigator tab type: the session's workspace root as a tree, 
 ## What it registers
 
 - **The type** — `ctx.sidebarRightTabs.register(...)` with kind `files`, id `@deepseek-ai/dsh-client-ui-sidebar-files`, band `builtin`, no patterns, and one guide entry (order 10, its title and description from the `sidebarFiles` namespace, its glyph the shared folder icon) that opens the type.
-- **The body** — the keyed `sidebar.right.pane.tab` seat under that id: a header row under the strip, then the tree. The header row is the document preview's (`ui-sidebar-documentpreview`): the root path, its directories greyed and its last segment in full ink, never ellipsized (a path wider than the row keeps its end and fades its start), with the one control, reload, at its right. The row is copied rather than shared because a plugin bundle shares runtime code only through the platform modules; once the artifact and slot surfaces settle, one copy in `ui-primitives` could serve every pane header.
+- **The body** — the keyed `sidebar.right.pane.tab` seat under that id: a header row under the strip, then the tree. The header row is the document preview's (`ui-sidebar-documentpreview`): the root path, its directories greyed and its last segment in full ink, never ellipsized (a path wider than the row keeps its end and fades its start), with the new-entry control and reload at its right. The row is copied rather than shared because a plugin bundle shares runtime code only through the platform modules; once the artifact and slot surfaces settle, one copy in `ui-primitives` could serve every pane header.
 - **The chip title** — the keyed `sidebar.right.pane.tab.title` seat under that id: a shared `FileTypeIcon` folder glyph at 16px before the type's label. The tree's own rows never draw this sheet.
 
 Seven source files under `src/client/`: `definition.tsx` (the type), `store.ts` (what it keeps), `face.ts` (how it lists, Remote binding included), `FilesBody.tsx` (what it draws, with its ordering and failure-line helpers), `FilesTitle.tsx` (the chip title), `locales.ts` (what it says), and `index.ts` (the wiring).
@@ -43,6 +43,10 @@ The root is the session's working directory, read from `useSessions().byId[sessi
 
 A level cut by the endpoint's entry cap ends with a marker; an empty level says so; a level that failed shows one line per code — `workspace-file/not-found`, `outside-workspace`, `not-directory` — and the transport's own message otherwise. Reload drops every listed level and asks again for the expanded ones; collapsed levels are fetched again when they next open. A session without a working directory shows a single line instead of a tree.
 
+### Mutations
+
+The header's new-entry control creates in the root; each row's more-actions control opens a menu for the same two create gestures on a directory row, then rename and delete. Create and rename open one dialog with a name field, whose confirm stays disabled until the name is a single non-empty path segment; delete opens a confirmation that names the entry and, for a directory, offers a checkbox for taking its contents too. The body never guesses the result: `create`, `rename`, and `remove` go through the face, which calls `createFile` / `createDirectory` / `move` / `remove` on the `@deepseek-ai/dsh-api-workspace-files` namespace and, on a success, drops the changed entry's subtree from the store and lists the parent level again from the host. A refusal writes nothing and stays in the dialog as one localized line per code (`already-exists`, `directory-not-empty`, `root-refused`, `symlink-refused`, `bad-target`, `unsupported-backend`, `too-large`, and the transport's own message otherwise).
+
 State lives in the type's own store, bucketed by tab id: `root`, `levels` (loading / ready / failed per absolute path), `expanded`, and `scrollTop`, which the body tracks locally while scrolling and commits once when it unmounts. Because the store outlives the body, switching to another sidebar tab and back remounts the tree with its levels intact and its scroll offset restored. The owner's `signal` ends a bucket: on abort the tab is forgotten, and neither a listing that settles afterwards nor the unmount's offset commit writes anything.
 
 <a id="model-experience"></a>
@@ -57,8 +61,10 @@ None; directory listings travel over the Remote and assemble no model request.
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-- **Listing only.** No search, artifact filter, drag-and-drop, rename, context menu, current-file highlight, or filesystem watching; a level changes only through reload.
+- **Listing only, no search or watching.** No search, artifact filter, drag-and-drop, or filesystem watching; a level changes through a mutation or reload.
 - **One root.** The tree is rooted at the session's working directory; there is no way to browse above it, and the Host refuses paths outside the workspace root anyway.
+- **Create targets a directory, never a file.** The new-entry gestures live on the header (the root) and on directory rows; a file row offers rename and delete only.
+- **A delete confirmation, not an undo.** Removing an entry is confirmed once and is not reversible from the tree; taking a non-empty directory's contents requires the dialog's checkbox.
 
 <a id="dev-note"></a>
 ### Dev Note

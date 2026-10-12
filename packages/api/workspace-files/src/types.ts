@@ -8,8 +8,11 @@
  *   filesystem's execution world, because their consumer is the Client
  *   resource system, whose `dsh-resource://file/session/<id>/<path>` address carries that
  *   same path.
- * - `list` speaks workspace paths — the same syntax its `path` argument accepts —
- *   because its consumer is a tree rooted at the workspace root.
+ * - `list`, `createFile`, `createDirectory`, `move`, and `remove` speak
+ *   workspace paths — the same syntax their `path` argument accepts — because
+ *   their consumer is a tree rooted at the workspace root. A mutation also
+ *   reports the entry's absolute path, so a consumer that keys by absolute path
+ *   need not re-resolve it.
  *
  * @module @deepseek-ai/dsh-api-workspace-files/types
  */
@@ -115,6 +118,40 @@ export interface WorkspaceDirectoryListing {
 }
 
 /**
+ * One entry a mutation verb created, moved, or removed. Paths are workspace
+ * paths: the entry's address relative to the workspace root, `/`-joined and
+ * empty only for the root itself, which no verb mutates.
+ */
+export interface WorkspaceFileMutation {
+  /** What the call did to {@link path}. */
+  readonly operation: 'created-file' | 'created-directory' | 'moved' | 'removed'
+  /** The entry as a workspace path after the call. */
+  readonly path: string
+  /** The entry's absolute path in the filesystem's execution world. */
+  readonly absolutePath: string
+  /** For `moved`, the entry's workspace path before the call. */
+  readonly from?: string
+}
+
+/** Optional knobs of the `move` verb. */
+export interface WorkspaceFileMoveOptions {
+  /**
+   * Replace an existing destination entry instead of refusing it. Defaults to
+   * false: without it an occupied destination fails with `already-exists`.
+   */
+  readonly overwrite?: boolean
+}
+
+/** Optional knobs of the `remove` verb. */
+export interface WorkspaceFileRemoveOptions {
+  /**
+   * Remove a directory together with its contents. Defaults to false: without
+   * it a directory that has any child fails with `directory-not-empty`.
+   */
+  readonly recursive?: boolean
+}
+
+/**
  * One observation of a workspace file made by an instrumented filesystem
  * operation. Frames report observations, not deltas: a consumer already
  * holding `version` learns nothing new from the frame and can ignore it.
@@ -162,5 +199,27 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       readonly path: string
       readonly kind: 'file' | 'symlink' | 'other'
     }
+    /** A create or a move found the destination path already occupied. */
+    'workspace-file/already-exists': { readonly path: string }
+    /**
+     * A `remove` without `recursive` was asked to delete a directory that still
+     * has children, so nothing was deleted.
+     */
+    'workspace-file/directory-not-empty': { readonly path: string }
+    /** A mutation named the workspace root itself, which no verb changes. */
+    'workspace-file/root-refused': { readonly path: string }
+    /**
+     * A mutation named a symbolic link. The verbs resolve their path before
+     * touching it, so following the link and changing its destination instead of
+     * the named entry is refused rather than guessed.
+     */
+    'workspace-file/symlink-refused': { readonly path: string }
+    /** A move would place the entry inside itself, which the filesystem cannot express. */
+    'workspace-file/bad-target': { readonly path: string; readonly target: string }
+    /**
+     * The mounted filesystem backend does not share the harness host, so the
+     * operation has no host path to act on and is refused rather than guessed.
+     */
+    'workspace-file/unsupported-backend': { readonly path: string }
   }
 }

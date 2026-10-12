@@ -1,10 +1,10 @@
-/* Appearance row (figma 'Frame 2117131228': title + cube row, column gap 8,
+/* Appearance list (figma 'Frame 2117131228': title + palette rows, column gap,
  * pad 16/0, hairline separator; the section column strips it when last). */
 
 .group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
   padding: 16px 0;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
@@ -16,42 +16,80 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.cubeRow {
+/* One color-scheme family: its heading above the palettes it holds. */
+.family {
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
-/* Appearance cube (figma '.Selector Cube' 276x82 r16, pad 20/32, centered
- * icon-over-label column, gap 4); flexed down from the figma width so all
- * three sit on one row in the 800 panel, wrapping when narrower. */
-.themeCube {
+.familyHeading {
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.paletteList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* One palette row: leading swatch, name, and the selected edge. */
+.palette {
   box-sizing: border-box;
   flex: 1 1 180px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 20px 32px;
+  gap: 10px;
+  padding: 10px 14px;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 20px;
+  border-radius: 12px;
   background: transparent;
   font: inherit;
   font-size: 14px;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
+  text-align: start;
   cursor: pointer;
 }
 
-.themeCube:hover:not(.selected) {
+.palette:hover:not(.selected) {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Selected cube: #F5F6F7 fill + #ADB2B8 border (static token — the bluish-400
- * step has no alias-layer name). */
+/* Selected palette: module-platform fill + bluish-400 edge (static token — the
+ * bluish-400 step has no alias-layer name). */
 .selected {
   background: var(--dsw-alias-bg-module-platform);
   border-color: var(--dsw-static-neutral-bluish-400);
+}
+
+/* Palette preview: the palette's own ground with its accent dot. Both colours
+ * are registry data applied inline, never literals in this sheet. */
+.swatch {
+  position: relative;
+  box-sizing: border-box;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 5px;
+}
+
+.swatchAccent {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  corner-shape: round;
+}
+
+.paletteName {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

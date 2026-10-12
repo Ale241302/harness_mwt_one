@@ -79,7 +79,8 @@ Append-only when a mount adds a server between requests and replacing when a mou
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **No model-facing tool yet.** The model cannot install or inspect an MCP server from a request in this phase; a later `tool-faberloom` slice adds one tool over this service. The intended operation is one `faberloom_mcp_add` call carrying `{ name, transport, env?, headers?, enabled? }` — exactly this package's `save` input — so the model can pass the documentation it was handed, probe the candidate, and then save it.
+- **No panel for the servers.** The model can install, list and remove a server from a chat (`faberloom_mcp_add`, `_list`, `_remove` in `tool-faberloom`), and a user can read and manage one there; a dedicated settings surface for MCP servers is its own later slice.
+- **Probing again needs the values again.** `probe` takes a full candidate, so re-testing an already-saved server means supplying its credential values once more; a caller that holds only the reference cannot retest it, which is why no by-name probe tool ships.
 - **The mount is process-global.** Records are partitioned per owner, but one process holds one client per server name. A multi-owner deployment that enables two servers of the same name fails the later mount loudly and reports its row as not mounted until a later save or boot retries.
 - **A failed mount keeps its row.** `save` commits the record before it mounts, so a server whose mount fails (a missing credential, or a duplicate global namespace) is still listed, reported `mounted: false`, and retried at the next boot.
 - **`probe` writes nothing and reads no seam.** The candidate values must travel in the `probe` input, so probing an already-saved server means re-entering its values; a caller that only knows the reference cannot probe without them.

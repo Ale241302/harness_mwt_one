@@ -15,6 +15,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../api/workspace-files/tsconfig.host.json"
+    },
+    {
       "path": "../../core/tools"
     },
     {
@@ -49,6 +52,9 @@
     },
     {
       "path": "../learning"
+    },
+    {
+      "path": "../mcp-registry"
     },
     {
       "path": "../routines"

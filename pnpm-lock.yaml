@@ -7228,6 +7228,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-workspace-files':
+        specifier: workspace:^
+        version: link:../../api/workspace-files
       '@deepseek-ai/dsh-faberloom-agent-plane':
         specifier: workspace:^
         version: link:../agent-plane
@@ -7252,6 +7255,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-learning':
         specifier: workspace:^
         version: link:../learning
+      '@deepseek-ai/dsh-faberloom-mcp-registry':
+        specifier: workspace:^
+        version: link:../mcp-registry
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines

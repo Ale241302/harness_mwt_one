@@ -102,11 +102,18 @@
   padding: 0;
 }
 
+/* One row: the entry's own control, then its more-actions control at the end. */
+.line {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
 .row {
   display: flex;
+  flex: 1 1 auto;
   gap: 6px;
   align-items: center;
-  width: 100%;
   min-width: 0;
   /* Rows abut, so the hover fill is the whole row; the tree's air is this
      inset, not a gap between rows. */
@@ -121,6 +128,36 @@
 }
 
 .row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The row's more-actions control: revealed on the row's hover or focus, so the
+   tree stays a tree until the reader reaches for it. */
+.action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 2px;
+  padding: 4px;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.line:hover .action,
+.line:focus-within .action {
+  opacity: 1;
+}
+
+.action:hover {
+  color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
@@ -205,4 +242,43 @@
    on the text's line and spaces it. */
 .titleIcon {
   flex: none;
+}
+
+/* The mutation dialogs: one field or one confirmation, and a refusal line. */
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 240px;
+}
+
+.dialogField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialogLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.dialogLine {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1.5;
+}
+
+.dialogCheck {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dialogError {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 1.5;
 }

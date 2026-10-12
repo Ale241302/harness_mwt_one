@@ -124,7 +124,7 @@ Preview 记录已载入版本和读取开始时的观察版本。刷新只重读
 
 ## Workspace Files
 
-Host 的 `ctx.workspaceFiles` 服务与生成的 `workspaceFiles` Remote 命名空间读取 Session 文件系统后端允许的文件：`stat(path)` 返回 `{ absolutePath, version, bytes? }`；`read(path, { offset?, limit? })` 返回一页行（`offset` 1 起，`limit` 受配置页长限制），形如 `{ …stat, offset, text, eof }`；`readBytes(path, { offset?, length? })` 返回一个原始字节窗口（`offset` 0 起，`length` 受配置字节上限限制），形如 base64 的 `{ …stat, offset, data, eof }`、不做文本解码。`list(path)` 仍限定在工作区根内，返回目录的直接子项（`name`、`type: 'file' | 'directory' | 'other'`、`size?`），按配置上限截断并置 `truncated`。`changes()` 同样限定于工作区，订阅就绪后产出 `{ kind: 'ready' }`，随后产出 `{ kind: 'change', change }` 帧，其载荷为 `{ absolutePath, version }` 或 `{ absolutePath, absent: true }`（[README](../../packages/api/workspace-files/README.zh.md#use-this-package)）。文件操作拒绝末端符号链接并执行传输上限；`read` 还要求 UTF-8 文本。失败使用 `workspace-file/*` 错误码（[失败](../../packages/api/workspace-files/README.zh.md)）。
+Host 的 `ctx.workspaceFiles` 服务与生成的 `workspaceFiles` Remote 命名空间读取 Session 文件系统后端允许的文件：`stat(path)` 返回 `{ absolutePath, version, bytes? }`；`read(path, { offset?, limit? })` 返回一页行（`offset` 1 起，`limit` 受配置页长限制），形如 `{ …stat, offset, text, eof }`；`readBytes(path, { offset?, length? })` 返回一个原始字节窗口（`offset` 0 起，`length` 受配置字节上限限制），形如 base64 的 `{ …stat, offset, data, eof }`、不做文本解码。`list(path)` 仍限定在工作区根内，返回目录的直接子项（`name`、`type: 'file' | 'directory' | 'other'`、`size?`），按配置上限截断并置 `truncated`。`changes()` 同样限定于工作区，订阅就绪后产出 `{ kind: 'ready' }`，随后产出 `{ kind: 'change', change }` 帧，其载荷为 `{ absolutePath, version }` 或 `{ absolutePath, absent: true }`（[README](../../packages/api/workspace-files/README.zh.md#use-this-package)）。它们旁边还有四个修改动词——`createFile(path, content)`、`createDirectory(path)`、`move(from, to, { overwrite? })` 与 `remove(path, { recursive? })`——每个都先解析并限定于工作区根，再改动任何东西，并都以条目的工作区路径、绝对路径以及移动时的原路径作答。文件操作拒绝末端符号链接并执行传输上限；`read` 还要求 UTF-8 文本。失败使用 `workspace-file/*` 错误码（[失败](../../packages/api/workspace-files/README.zh.md)）。
 
 [`dsh-api-workspace-files`](../../packages/api/workspace-files/README.zh.md) 注册 `file` 提供方，`ResourceProtocolMap.file` 直接是 `WorkspaceFileStat`。Session 地址携带授权 Session 与相对或绝对路径，Host 原样接收并解析。提供方在 stat 前等待 Host 的 `ready` 帧，并按 `stat.absolutePath` 过滤变更。裸 `absolute` 地址没有授权 Session，以 `workspace-file/unknown-workspace` 失败，不借用当前或 Tab Session。任何 UI（包括 Global）访问同一完整地址都共享观察。Preview 的普通 Remote 回调使用地址中的 Session；Host `readAll` 和 `readRelated` 保留，字节结果由 Preview 的 `rpc.ts` 解码。
 
@@ -132,7 +132,7 @@ Host 的 `ctx.workspaceFiles` 服务与生成的 `workspaceFiles` Remote 命名�
 
 - **`guide`**——`builtin`，以 `openTab('guide')` 打开。一枚弱化的罗盘位于各类型按 `order` 贡献的入口胶囊上方；入口较少时显示已注册的描述，未提供图标的入口统一使用内置占位符。点选胶囊即在引导 tab 的位置把贡献它的类型作为页面打开。每个 pane 最多一个引导 tab，tab 条的新增控件只在本 pane 没有引导时出现。新 pane 使用已注册的默认页：只有一个引导入口时直接使用该入口，否则使用引导页（[引导](../../packages/client/ui-sidebar-right/README.zh.md#the-guide)）。
 - **`text`**——`fallback`，`dsh-resource://file/**`，只认领 Session 地址。Document Preview 通过 `useResource<'file'>` 观察元数据，经 Remote 回调加载内容，并拥有渲染器选择、工具栏、逐 tab 刷新、滚动与源码定位；未知扩展名按纯文本渲染（[README](../../packages/client/ui-sidebar-documentpreview/README.zh.md)）。
-- **`files`**——`builtin`，以 `openTab('files')` 打开。工作区目录树，经 `list` 懒加载，用 `tab.actions.openResource(fileAddressFor(sessionId, root, path))` 在自己所在 pane 打开文件（[README](../../packages/client/ui-sidebar-files/README.zh.md)）。
+- **`files`**——`builtin`，以 `openTab('files')` 打开。工作区目录树，经 `list` 懒加载，用 `tab.actions.openResource(fileAddressFor(sessionId, root, path))` 在自己所在 pane 打开文件，并经标题行与行菜单的 `createFile`/`createDirectory`/`move`/`remove` 改动它（[README](../../packages/client/ui-sidebar-files/README.zh.md)）。
 
 <a id="not-built"></a>
 ## 不做

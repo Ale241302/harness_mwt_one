@@ -798,11 +798,6 @@ export const es = {
   'skills.install.why.sourceMissing': 'la carpeta de origen no existe',
   'skills.install.why.outsideWorkspace': 'la carpeta de origen está fuera del espacio de trabajo',
   'skills.install.why.notASkill': 'la carpeta no contiene ninguna skill con SKILL.md',
-  'theme.menu': 'Tema',
-  'theme.followSystem': 'Seguir al sistema',
-  'theme.darkGroup': 'Oscuros',
-  'theme.lightGroup': 'Claros',
-  'language.menu': 'Idioma',
 } satisfies Record<string, string>
 
 /** The faberloom namespace key union. */
@@ -1603,11 +1598,6 @@ export const en: Record<FaberloomKey, string> = {
   'skills.install.why.sourceMissing': 'the source folder does not exist',
   'skills.install.why.outsideWorkspace': 'the source folder is outside the workspace',
   'skills.install.why.notASkill': 'the folder holds no skill with SKILL.md',
-  'theme.menu': 'Theme',
-  'theme.followSystem': 'Follow the system',
-  'theme.darkGroup': 'Dark',
-  'theme.lightGroup': 'Light',
-  'language.menu': 'Language',
 }
 
 /** Simplified Chinese dictionary; a real translation of the same key set. */
@@ -2401,9 +2391,4 @@ export const zh: Record<FaberloomKey, string> = {
   'skills.install.why.sourceMissing': '源文件夹不存在',
   'skills.install.why.outsideWorkspace': '源文件夹在工作区之外',
   'skills.install.why.notASkill': '该文件夹不包含带 SKILL.md 的技能',
-  'theme.menu': '主题',
-  'theme.followSystem': '跟随系统',
-  'theme.darkGroup': '深色',
-  'theme.lightGroup': '浅色',
-  'language.menu': '语言',
 }

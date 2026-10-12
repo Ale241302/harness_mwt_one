@@ -18,7 +18,7 @@ Status: implemented
 
 **图标。** `packages/client/ui-primitives/src/icons/faberloom.tsx` 在同一套 24×24、描边 1.75 的网格上承载品牌的十个字形与其文档化的标准库（共 45 个）。客户端的侧边栏面板行、Settings 触发器与 hero 都使用它们，使产品自身的界面语言成为一套；品牌文档未描述的外部字形（文件类型、编辑器界面）保留现有图形，另行迁移。
 
-**主题与语言控件。** 登录后的侧边栏脚部通过两个 `sidebar.footer.action` 条目承载产品调色板与界面语言：调色板菜单按配色方案分组列出所有已注册主题，每行带取自该主题自身定义的色样；语言菜单列出已注册的语言，每行带一枚旗帜：英语（美国）、中文（中国）或西班牙语（西班牙），因 Windows 不渲染旗帜 emoji 而绘成内联小 SVG；没有图形的语言则不显示图标。注册这两个条目的是 FaberLoom 产品插件而非其自然归属者 `ui-theme`，因为该座位由 `ui-sidebar` 声明，而 `ui-sidebar` 到达 `ui-layout`，后者到达 `ui-theme`——在该处建立项目引用会形成环，slot 目录也拒绝在第二个包中重复声明同一座位。各自通过自己的服务（`theme`、`locale`）写入，与设置行同一条路径，因此控件与其设置行始终是同一个设置；五套调色板本身是[外壳设计系统笔记](2026-10-12-faberloom-shell-design-system.zh.md)的主题。页脚行的每个控件都在锚点上方请求 tooltip，气泡按 caption 字号（`--dsw-font-caption`）渲染，因此不会压到旁边的控件。桌面登录文档与 gateway 的无会话页面各自带有明暗开关——分别持久化在 `$DSH_HOME/desktop-appearance.json` 与 `localStorage`，默认跟随操作系统——因为尚未登录的用户没有可读取的服务端偏好。
+**主题与语言控件。** 登录后的侧边栏脚部只保留产品的 Settings 控件：调色板与界面语言的选择就在该控件打开的 Settings 模态框里——调色板在 Apariencia（外观）行，界面语言在自己的分区——这一安排由[外壳偏好归于一处笔记](../feature/2026-10-12-one-place-for-the-shell-preferences.zh.md)拥有。语言分区为每个 locale 标出一枚旗帜：英语（美国）、中文（中国）或西班牙语（西班牙），因 Windows 不渲染旗帜 emoji 而绘成内联小 SVG；没有图形的语言则不显示图标。旗帜位于 `packages/client/ui-primitives` 的 `LocaleFlag`，设置分区与其他任何语言界面共用同一份图形，因为功能插件不得导入另一个功能插件的值。两项选择各通过自己的服务（`theme`、`locale`）写入，与设置行同一条路径，因此控件与其设置行始终是同一个设置；五套调色板本身是[外壳设计系统笔记](2026-10-12-faberloom-shell-design-system.zh.md)的主题。脚部的 Settings 控件在锚点上方请求 tooltip，气泡按 caption 字号（`--dsw-font-caption`）渲染。桌面登录文档与 gateway 的无会话页面各自带有明暗开关——分别持久化在 `$DSH_HOME/desktop-appearance.json` 与 `localStorage`，默认跟随操作系统——因为尚未登录的用户没有可读取的服务端偏好。
 
 **登录反馈。** 桌面提交按钮与 gateway 登录表单在请求进行中以行内 spinner 标记忙碌状态，并在用户用浏览器返回时重新复位。
 
@@ -40,4 +40,4 @@ Status: implemented
 
 ## Consequences
 
-界面一次性换脸，因此任何按旧字标图形测量的布局都需要自行核对：字标现在是文本加 token 字体，而不是固定 viewBox。桌面、Web 与 gateway 三份字体必须保持字节一致，OFL 文本必须随每份一同分发。侧边栏底部在展开状态下是三个控件共用的一行，因此 Settings 触发器只保留图标，靠悬停提示而非文字标签命名。卸载询问为 electron-builder 加载的每一种语言都做了声明——makensis 对每种缺失语言发出 6040 警告，而 electron-builder 把警告当作错误——`apps/desktop/tests/branding.spec.ts` 现在对此断言，因此新增安装器语言是对 `installer.nsh` 的机械改动，而不是构建期的意外。安装器图形由品牌 SVG 手工渲染；打包冒烟只检查每个文件以 NSIS 所需尺寸存在，而不检查它是否仍与设计源一致。
+界面一次性换脸，因此任何按旧字标图形测量的布局都需要自行核对：字标现在是文本加 token 字体，而不是固定 viewBox。桌面、Web 与 gateway 三份字体必须保持字节一致，OFL 文本必须随每份一同分发。侧边栏底部只剩一个控件，即 Settings 触发器，因此该触发器只保留图标，靠悬停提示而非文字标签命名。卸载询问为 electron-builder 加载的每一种语言都做了声明——makensis 对每种缺失语言发出 6040 警告，而 electron-builder 把警告当作错误——`apps/desktop/tests/branding.spec.ts` 现在对此断言，因此新增安装器语言是对 `installer.nsh` 的机械改动，而不是构建期的意外。安装器图形由品牌 SVG 手工渲染；打包冒烟只检查每个文件以 NSIS 所需尺寸存在，而不检查它是否仍与设计源一致。

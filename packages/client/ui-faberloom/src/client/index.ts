@@ -32,7 +32,6 @@ import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
 import { runTaskChat } from './task-chat.ts'
 import { createWorkspaceStore } from './store.ts'
-import { LanguageMenu, ThemeMenu, createFootLocaleStore, createFootThemeStore, type FootControlsInjected } from './foot-controls.tsx'
 import { en, es, zh, type FaberloomKey } from './locales.ts'
 import { FABERLOOM_THEME_SOURCE, faberloomTokens } from './theme.ts'
 
@@ -359,62 +358,6 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({}),
   }, FaberloomBrandMark))
-
-  // The two preference controls beside Settings: the palette menu (the theme
-  // feature's second surface) and the language menu. They register from here
-  // because the foot's action seat (declared by ui-sidebar) sits outside
-  // ui-theme's reference closure — ui-sidebar reaches ui-layout, which reaches
-  // ui-theme — while this plugin already depends on both. Each write goes
-  // through its own service, so a foot control and its settings row stay one
-  // setting.
-  const footTheme = createFootThemeStore()
-  let footThemeBound: BoundActions<typeof footTheme> | undefined
-  const syncTheme = (): void => {
-    const snapshot = ctx.theme.getTheme()
-    footThemeBound?.sync({
-      preference: snapshot.preference,
-      activeId: snapshot.active.id,
-      themes: snapshot.themes,
-    }, snapshot.revision)
-  }
-  ctx.on('theme/change', syncTheme)
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action',
-    id: 'faberloom-theme',
-    order: 20,
-    store: footTheme,
-    locale: NS,
-    inject: (actions: BoundActions<typeof footTheme>): Pick<FootControlsInjected, 'setTheme'> => {
-      footThemeBound = actions
-      // Re-sync from the getter so no event is lost between registration and
-      // first render (the store's revision guard drops stale duplicates).
-      syncTheme()
-      return { setTheme: (id) => { ctx.theme.setTheme(id) } }
-    },
-  }, ThemeMenu))
-
-  const footLocale = createFootLocaleStore()
-  let footLocaleBound: BoundActions<typeof footLocale> | undefined
-  const syncLocale = (): void => {
-    const snapshot = ctx.locale.getLocale()
-    footLocaleBound?.sync({
-      id: snapshot.active,
-      locales: snapshot.locales.map(({ id, label }) => ({ id, label })),
-    }, snapshot.revision)
-  }
-  ctx.on('locale/change', syncLocale)
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action',
-    id: 'faberloom-language',
-    order: 21,
-    store: footLocale,
-    locale: NS,
-    inject: (actions: BoundActions<typeof footLocale>): Pick<FootControlsInjected, 'setLocale'> => {
-      footLocaleBound = actions
-      syncLocale()
-      return { setLocale: (id) => { ctx.locale.setLocale(id) } }
-    },
-  }, LanguageMenu))
 
   for (const section of FABERLOOM_SECTIONS) {
     ctx.slots.inject('main', () => ctx.slots.register({

@@ -218,12 +218,13 @@ async function bench(
       ctx.slots.installLocale(locale)
     },
   })
-  function Frame({ usePanelInfo, renderSlot }: PropsRuntime<'root'> & PropsRenderSlots<'sidebar.brand.name' | 'sidebar.panellist' | 'main'>) {
+  function Frame({ usePanelInfo, renderSlot }: PropsRuntime<'root'> & PropsRenderSlots<'sidebar.brand.name' | 'sidebar.panellist' | 'sidebar.footer.action' | 'main'>) {
     const activePanelId = usePanelInfo(info => info.activePanelId)
     return (
       <>
         <header>{renderSlot('sidebar.brand.name', {})}</header>
         <nav>{renderSlot('sidebar.panellist', { size: 16, active: false })}</nav>
+        <footer>{renderSlot('sidebar.footer.action', { wide: true })}</footer>
         <main>{renderSlot('main', {}, { entryKey: activePanelId ?? CONVERSAR })}</main>
       </>
     )
@@ -231,6 +232,7 @@ async function bench(
   await runtime.root.declare({
     'sidebar.brand.name': { kind: 'single', scope: 'root' },
     'sidebar.panellist': { kind: 'list', scope: 'root' },
+    'sidebar.footer.action': { kind: 'list', scope: 'root' },
     main: { kind: 'keyed', scope: 'root' },
   }, Frame)
   // Record every registration the surface makes, so the sidebar row metadata
@@ -293,6 +295,15 @@ describe('faberloom surface', () => {
     expect(view.getByText('Faber').style.color).toBe('var(--dsw-alias-brand-primary-new-colorprimary-new-color)')
     expect(view.getByText('Loom').style.color).toBe('var(--dsw-alias-label-primary)')
     expect(view.getByRole('heading', { name: 'What do you want to solve today?' })).toBeTruthy()
+    await surface.dispose()
+  })
+
+  it('leaves the sidebar foot to the Settings control', async () => {
+    const { runtime, registrations, surface } = await bench()
+    // The product's palettes and interface language live in the Settings modal,
+    // so the surface fills no sidebar-foot action entry.
+    expect(registrations.filter(options => options.name === 'sidebar.footer.action')).toEqual([])
+    expect(runtime.slots.entries('sidebar.footer.action')).toEqual([])
     await surface.dispose()
   })
 

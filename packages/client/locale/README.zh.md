@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-只要 web GUI 需要语言切换或翻译文案就使用它：已发布的设置行覆盖用户侧，插件作者则注册自己的字典。挂载无需任何配置——本包随客户端树一起激活。
+只要 web GUI 需要语言切换或翻译文案就使用它：语言选择是由 `ui-theme` 拥有的 Settings 分区，插件作者则注册自己的字典。挂载无需任何配置——本包随客户端树一起激活。
 
 ### 选择语言
 
@@ -89,7 +89,7 @@ Host 通过 settings 服务为 loopback 页面持久化偏好。Client 会刻意
 
 | 文件 | 职责 |
 |---|---|
-| [`src/client/index.ts`](src/client/index.ts) | `LocaleRuntime`、字典注册表、Language 行注册、`locale/change` 事件 |
+| [`src/client/index.ts`](src/client/index.ts) | `LocaleRuntime`、字典注册表、文档语言同步、`locale/change` 事件 |
 | [`src/index.ts`](src/index.ts) | node 半侧：注册 `locale` 设置命名空间 |
 | [`src/locale-settings.ts`](src/locale-settings.ts) | `locale.preference` 的持久 schema |
 | [`src/locales/`](src/locales/) | 内置的 `zh`／`en` 字典 |

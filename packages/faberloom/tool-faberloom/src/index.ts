@@ -12,6 +12,8 @@ import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { registerWorkflowTools } from './workflows.ts'
 import { registerContextTools } from './context.ts'
+import { registerWorkspaceTools } from './workspace.ts'
+import { registerMcpTools } from './mcp.ts'
 import { planeStartFields, resolveCallerAgentId, toolSourcesOf } from './plane.ts'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
 import type { FaberLoomSpaceId, FaberLoomSpaces, SpaceActor, SpaceContext, SpaceReference, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
@@ -1545,6 +1547,10 @@ export function apply(ctx: Context, config: Config): void {
     }
     registerContextTools(ctx, actor(config))
   }
+
+  // The workspace file tools are not opt-in: the workspace tree is core to the
+  // product, and the model changes the same tree the Files panel does.
+  registerWorkspaceTools(ctx)
 
   ctx.tools.register(defineTool({
     name: 'faberloom_models_register',
@@ -3113,4 +3119,6 @@ export function apply(ctx: Context, config: Config): void {
     },
     presentCall: args => ({ card: 'generic', title: 'Install skill', kind: 'other', rawInput: args }),
   }))
+
+  registerMcpTools(ctx, () => actor(config).id)
 }

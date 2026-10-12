@@ -39,7 +39,7 @@ const CHILD_NAMES = Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>
  * ui-settings-models, ui-settings-plugins, ui-agent-preset, and
  * ui-settings-unarchive-sessions. A plugin adding a section changes this list.
  */
-const PRODUCT_SECTIONS: readonly string[] = ['general', 'models', 'plugins', 'agent-presets', 'archived-sessions']
+const PRODUCT_SECTIONS: readonly string[] = ['general', 'models', 'plugins', 'agent-presets', 'language', 'archived-sessions']
 /** Onboarding step the web-app roster registers, in coordinator order; it comes from ui-settings-models. */
 const PRODUCT_ONBOARDING: readonly { id: string; order: number }[] = [
   { id: 'deepseek-official', order: 0 },

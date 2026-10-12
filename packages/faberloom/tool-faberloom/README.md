@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package registers the model-visible `faberloom_*` product tools over the native services: spaces, agents, models, routines, executions, board, sources, mail, the MWT.ONE tenant router, cross-space resolution (`faberloom_spaces_find`, `_reference`, `_ask`), skill installation (`faberloom_skill_install`: one folder into the workspace or the global root, reporting every installed, replaced, skipped, or refused candidate), and opt-in space-memory, teaching, and Work Flow graph tools. The router fans one read query out to every `legal_entity_ids` tenant, never outside them, and the console still enforces role and permissions on each call.
+This package registers the model-visible `faberloom_*` tools over the native services: spaces, agents, models, routines, executions, board, sources, mail, the MWT.ONE tenant router, cross-space resolution (`faberloom_spaces_find`, `_reference`, `_ask`), skill installation (`faberloom_skill_install`: a folder into the workspace or the global root, reporting each candidate), MCP server installation (`faberloom_mcp_add`/`_list`/`_remove`: a handed-over server is proven by one connection before it is saved; credentials go to the credential seam), workspace file changes (`faberloom_files_create`/`_rename`/`_delete` through the `workspaceFiles` capability), and opt-in memory, teaching, and Work Flow tools. The router fans one read query to every `legal_entity_ids` tenant; the console enforces role and permissions per call.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ This package registers the model-visible `faberloom_*` product tools over the na
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row where `ctx.tools` and the product services are present. The tools register on the calling plugin's fiber and disappear with it.
+Mount this row where `ctx.tools` and the product services are present. The tools register on the calling plugin's fiber and disappear with it. The workspace file tools also need the `workspaceFiles` capability mounted — they resolve the calling session's own workspace root there and perform every change through it, so a call without that capability fails loud instead of guessing a path.
 
 -----
 
@@ -54,6 +54,8 @@ Adding or removing a tool changes the tool block, which can invalidate reuse fro
 - **Delegated consultation.** `faberloom_spaces_ask` runs one delegated turn through `askProvider` (default `spawn`) and returns its answer; `continuable: true` starts a durable child that `faberloom_spaces_followup` continues. Delegation depth applies and the child inherits the responsible agent's plane, including, when that agent stores a key, its credential reference, so the consultation runs on the consulted agent's own provider account. The child runs in the parent's workspace because `resolveWorkdir` returns an opaque reference, not a path; running in the Space's real workdir is deferred.
 - **Memory tools are opt-in.** `memoryTools` (default off) registers the space-memory (`faberloom_spaces_remember`/`_memory_list`/`_forget`) and teaching (`faberloom_memory_teach`/`_teachings`/`_revoke`/`_retrieve`) tools; it stays off by default because they add permanent request schema. This explicit, versioned layer is FaberLoom's; automatic episodic memory is distilled by the external memory server (see `MANIFEST.md`), not by these tools.
 - **Work Flow tools are opt-in.** `workflowTools` (default off) registers the graph tools (`faberloom_workflows_list`/`_get`/`_create`/`_add_node`/`_update_node`/`_remove_node`/`_connect`/`_disconnect`/`_set_trigger`/`_validate`/`_activate`/`_pause`/`_run_now`/`_runs`) and the directive to build an automation as a graph and validate before activating. It stays off by default because they add permanent request schema.
+- **MCP installation probes before it saves.** `faberloom_mcp_add` connects once to prove the server works and records it only when that probe succeeds; a server that cannot be reached, rejects the credentials it was given, or does not answer as an MCP server is reported and nothing is saved. The probe carries the values supplied in the call, so re-testing an already saved server that needs a secret means supplying the value again; the tool never reads a saved value back. `faberloom_mcp_list` reports each server's transport, whether it is enabled and mounted, and which of its entries are present, never a value.
+- **Workspace file tools own no filesystem rules.** `faberloom_files_create`, `_rename`, and `_delete` call the mounted `workspaceFiles` capability with the calling session's own scope, so containment, refusals, and the answer (what changed, and where) are that capability's; the tool only validates its own arguments and turns the answer into one model-facing line. `_rename` replaces one path segment, never a move to another directory, and it refuses a name carrying a separator before anything is sent.
 
 No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
 

@@ -294,7 +294,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/workspace-files/src/index.ts:69`](../packages/api/workspace-files/src/index.ts)
+Source: [`packages/api/workspace-files/src/index.ts:84`](../packages/api/workspace-files/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
@@ -3284,7 +3284,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts:61`](../packages/faberloom/tool-faberloom/src/index.ts)
+Source: [`packages/faberloom/tool-faberloom/src/index.ts:63`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 

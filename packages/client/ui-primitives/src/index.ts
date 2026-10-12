@@ -34,6 +34,8 @@ export {
 } from './FaberLoomMark.tsx'
 export { BrandWordmark } from './BrandWordmark.tsx'
 export type { BrandWordmarkProps } from './BrandWordmark.tsx'
+export { LocaleFlag } from './LocaleFlag.tsx'
+export type { LocaleFlagProps } from './LocaleFlag.tsx'
 export { ReferenceIcon } from './ReferenceIcon.tsx'
 export type { ReferenceIconKind, ReferenceIconProps } from './ReferenceIcon.tsx'
 export { LinkIcon, classifyLinkPath } from './LinkIcon.tsx'

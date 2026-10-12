@@ -416,7 +416,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tool-faberloom',
     dir: 'tool-faberloom',
     source: 'packages/faberloom/tool-faberloom/src/index.ts',
-    requires: ['ctx.tools', 'ctx.faberloomSpaces'],
+    requires: ['ctx.tools', 'ctx.faberloomSpaces', 'ctx.faberloomMcpRegistry'],
     writes: ['tool/call', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(FaberLoomSpaces)

@@ -118,7 +118,7 @@ describe('FilesBody', () => {
   it('a directory click lists that level once and marks it expanded; a second click collapses without asking again', async () => {
     const { view, script } = mountBody()
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    const dir = view.container.querySelector(`[data-files-path="${ROOT}/src"] > button`)!
+    const dir = view.container.querySelector(`[data-files-path="${ROOT}/src"] [data-files-row]`)!
     act(() => { fireEvent.click(dir) })
     expect(script.list).toHaveBeenLastCalledWith(SESSION, `${ROOT}/src`, expect.any(AbortSignal))
     expect(dir.getAttribute('aria-expanded')).toBe('true')
@@ -135,7 +135,7 @@ describe('FilesBody', () => {
   it('a file click opens its session-scoped file: address through the owner; an other entry offers no button', async () => {
     const { view, script, tabActions } = mountBody()
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/README.md"] > button`)!)
+    fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/README.md"] [data-files-row]`)!)
     // Every row sits under the tree's root, so the address is the path relative to it.
     expect(tabActions.openResource).toHaveBeenCalledWith(fileAddressFor(SESSION, ROOT, `${ROOT}/README.md`))
     expect(tabActions.openResource).toHaveBeenCalledWith('dsh-resource://file/session/s-test/README.md')
@@ -148,7 +148,7 @@ describe('FilesBody', () => {
     const { view, script } = mountBody()
     await act(() => script.settle({ ok: true, value: { entries: [{ name: 'd', type: 'directory' }], truncated: true } }))
     expect(view.container.querySelector('[data-files-row="truncated"]')?.textContent).toBe(zh.truncated)
-    act(() => { fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/d"] > button`)!) })
+    act(() => { fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/d"] [data-files-row]`)!) })
     await act(() => script.settle({ ok: true, value: { entries: [], truncated: false } }))
     expect(view.container.querySelector('[data-files-row="empty"]')?.textContent).toBe(zh.empty)
   })
@@ -169,7 +169,7 @@ describe('FilesBody', () => {
     const child = `${ROOT}/src`
     const collapsed = `${ROOT}/docs`
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    act(() => { fireEvent.click(view.container.querySelector(`[data-files-path="${child}"] > button`)!) })
+    act(() => { fireEvent.click(view.container.querySelector(`[data-files-path="${child}"] [data-files-row]`)!) })
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
     // A level listed earlier and since collapsed is dropped, not re-fetched.
     act(() => { instance.actions.loaded(TAB, collapsed, ROOT_LEVEL) })
