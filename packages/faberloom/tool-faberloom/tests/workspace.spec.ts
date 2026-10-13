@@ -35,7 +35,7 @@ function recording(): Recorded {
     createFile: vi.fn(invoke('createFile')),
     createDirectory: vi.fn(invoke('createDirectory')),
     move: vi.fn(invoke('move')),
-    remove: vi.fn(invoke('remove')),
+    removePath: vi.fn(invoke('removePath')),
   } as unknown as WorkspaceFiles
   return { calls, files }
 }

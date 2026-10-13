@@ -8,7 +8,7 @@
  * relative paths, with the sandbox policy root as its no-cwd fallback, not a
  * read-containment restriction. Directory listings, change observations, and
  * every mutation remain workspace-scoped: `createFile`, `createDirectory`,
- * `move`, and `remove` resolve each path through the same filesystem the reads
+ * `move`, and `removePath` resolve each path through the same filesystem the reads
  * use and refuse it before touching anything unless the resolved target is
  * inside the Session's workspace root. File-kind checks and configured read
  * caps apply to every preview.
@@ -479,7 +479,7 @@ export class WorkspaceFiles extends TypertRemoteService {
    * @returns the removed entry's workspace path and absolute path.
    */
   @Remote
-  async remove(
+  async removePath(
     workspaceFileScope: WorkspaceFileScope,
     path: string,
     options: WorkspaceFileRemoveOptions,

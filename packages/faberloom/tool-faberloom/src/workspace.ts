@@ -175,7 +175,7 @@ const WORKSPACE_TOOLS: readonly WorkspaceTool[] = [
       path: { type: 'string', required: true, description: 'Workspace-relative path of the file or folder to delete.' },
       recursive: { type: 'boolean', description: 'Delete a non-empty folder with its contents; omitted refuses a non-empty folder.' },
     },
-    run: async (files, scope, args, signal) => await files.remove(
+    run: async (files, scope, args, signal) => await files.removePath(
       scope,
       text(args, 'path'),
       args['recursive'] === true ? { recursive: true } : {},

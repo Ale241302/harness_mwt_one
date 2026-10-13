@@ -5599,7 +5599,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the entry\'s new workspace path and absolute path, with its previous workspace path.',
       },
       {
-        signature: '@Remote async remove( workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceFileRemoveOptions, signal: AbortSignal, ): Promise<WorkspaceFileMutation>',
+        signature: '@Remote async removePath( workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceFileRemoveOptions, signal: AbortSignal, ): Promise<WorkspaceFileMutation>',
         description: 'Remove one entry inside the Session\'s workspace: a file, a symbolic link is refused, or a directory. A directory is removed only when it is empty, unless the call asks for its contents too.',
         parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'the entry\'s workspace path.' }, { name: 'options', description: 'whether a directory\'s contents go with it; omitted refuses a non-empty one.' }, { name: 'signal', description: 'caller cancellation.' }],
         returns: 'the removed entry\'s workspace path and absolute path.',

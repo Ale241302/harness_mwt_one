@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-把本包与 `dsh-fs`、`dsh-sandbox-policy`、Session store 和 Typert Gateway 一起挂载；bundle 把它紧随 Session Controller 之后挂载。每个方法都在线路上携带 Session 身份，Client 调用 `remote.workspaceFiles.read(sessionId, path, range, signal)`、`stat(sessionId, path, signal)`、`readBytes(sessionId, path, range, signal)`、`list(sessionId, path, signal)`、`createFile(sessionId, path, content, signal)`、`createDirectory(sessionId, path, signal)`、`move(sessionId, from, to, options, signal)`、`remove(sessionId, path, options, signal)` 或 `changes(sessionId, signal)`，从不自己指定根。Host 读取 live Session header，cold Session 则使用持久层 `stat`；它不会激活 Agent、读取事件正文或借用父 Session 的根。live 读取不要求挂载 Session persistence；未挂载时 cold Session 无法解析，Gateway 返回 `gateway/lookup-not-found`。
+把本包与 `dsh-fs`、`dsh-sandbox-policy`、Session store 和 Typert Gateway 一起挂载；bundle 把它紧随 Session Controller 之后挂载。每个方法都在线路上携带 Session 身份，Client 调用 `remote.workspaceFiles.read(sessionId, path, range, signal)`、`stat(sessionId, path, signal)`、`readBytes(sessionId, path, range, signal)`、`list(sessionId, path, signal)`、`createFile(sessionId, path, content, signal)`、`createDirectory(sessionId, path, signal)`、`move(sessionId, from, to, options, signal)`、`removePath(sessionId, path, options, signal)` 或 `changes(sessionId, signal)`，从不自己指定根。Host 读取 live Session header，cold Session 则使用持久层 `stat`；它不会激活 Agent、读取事件正文或借用父 Session 的根。live 读取不要求挂载 Session persistence；未挂载时 cold Session 无法解析，Gateway 返回 `gateway/lookup-not-found`。
 
 | 方法 | 返回 | 用途 |
 |---|---|---|
@@ -38,12 +38,12 @@ kind: "package-reference"
 | `createFile(path, content)` | `WorkspaceFileMutation { operation: 'created-file', path, absolutePath }` | 工作区内一个 UTF-8 文本文件，缺失的父目录一并创建 |
 | `createDirectory(path)` | `WorkspaceFileMutation { operation: 'created-directory', … }` | 工作区内一个目录，缺失的父目录一并创建 |
 | `move(from, to, { overwrite? })` | `WorkspaceFileMutation { operation: 'moved', path, absolutePath, from }` | 工作区内一次重命名或移动 |
-| `remove(path, { recursive? })` | `WorkspaceFileMutation { operation: 'removed', … }` | 一个文件，或一个空目录 / 带 `recursive` 的目录 |
+| `removePath(path, { recursive? })` | `WorkspaceFileMutation { operation: 'removed', … }` | 一个文件，或一个空目录 / 带 `recursive` 的目录 |
 | `changes()` | `WorkspaceFileWatchFrame` 流 | 订阅就绪确认，随后为工作区根内的文件系统观察 |
 
 ### 寻址与路径
 
-`read`、`readBytes`、`readAll`、`readRelated`、`stat` 与四个修改动词接受绝对路径或相对于所选 Session 工作区根的路径。对读取而言，组合文件系统决定路径是否可读，本服务不额外要求限定于工作区；`readRelated` 从基文件所在目录解析相对文件系统路径，基文件或目标文件位于工作区外时同样适用。这些方法以文件系统执行环境中的绝对路径报告文件。`list`、`createFile`、`createDirectory`、`move` 与 `remove` 限定于工作区：它们以相对于该根的路径报告条目，修改的答案还带上条目的绝对路径。`changes` 同样只报告工作区根内已埋点的文件系统观察。
+`read`、`readBytes`、`readAll`、`readRelated`、`stat` 与四个修改动词接受绝对路径或相对于所选 Session 工作区根的路径。对读取而言，组合文件系统决定路径是否可读，本服务不额外要求限定于工作区；`readRelated` 从基文件所在目录解析相对文件系统路径，基文件或目标文件位于工作区外时同样适用。这些方法以文件系统执行环境中的绝对路径报告文件。`list`、`createFile`、`createDirectory`、`move` 与 `removePath` 限定于工作区：它们以相对于该根的路径报告条目，修改的答案还带上条目的绝对路径。`changes` 同样只报告工作区根内已埋点的文件系统观察。
 
 ### 修改
 
@@ -148,7 +148,7 @@ Typert 生成 `./typert` 与 `./remote` 暴露的 Host 与 Client Remote 产物�
 
 - **仅覆盖已埋点操作**——`changes` 转发 `fs/observed` 的发射；子进程、shell 命令、用户编辑器或下述修改动词改动的文件都不产生任何帧。
 - **仅目录受限**——尽管文件预览可以读取文件系统后端允许的任意路径，`list`、`changes` 与每一次修改仍限定在 Session 工作区内。
-- **三个动词要求与宿主共享的后端**——`createDirectory`、`move` 与 `remove` 直接操作宿主文件系统，因此拒绝不与 harness 宿主共享文件系统的后端（`unsupported-backend`）。要把它们移入文件系统 seam，需要 `ctx.fs` 具备目录、重命名与删除操作，而 Service Definition 目前没有；只有到那时沙箱模式才能像约束 `createFile` 一样约束它们。
+- **三个动词要求与宿主共享的后端**——`createDirectory`、`move` 与 `removePath` 直接操作宿主文件系统，因此拒绝不与 harness 宿主共享文件系统的后端（`unsupported-backend`）。要把它们移入文件系统 seam，需要 `ctx.fs` 具备目录、重命名与删除操作，而 Service Definition 目前没有；只有到那时沙箱模式才能像约束 `createFile` 一样约束它们。
 - **沙箱模式只约束 `createFile`**——另外三个修改自行强制工作区根包含，所以 `read-only` 会话模式会拒绝新建文件，却不拒绝新建目录、移动或删除。
 - **没有总行数**——页只报告 `eof`，不报告后面还有多少行；需要总数的消费方要翻到末尾或按 `bytes` 估算。
 - **超长单行没有页**——超过 `maxBytes` 的单行在包含它的每个窗口都以 `too-large` 失败，因为页按行而非按字节切。

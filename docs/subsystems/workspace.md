@@ -461,7 +461,7 @@ Host Remote file reads and workspace directory observations over the composed fi
  * @param signal - caller cancellation.
  * @returns the removed entry's workspace path and absolute path.
  */
-@Remote async remove( workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceFileRemoveOptions, signal: AbortSignal, ): Promise<WorkspaceFileMutation>
+@Remote async removePath( workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceFileRemoveOptions, signal: AbortSignal, ): Promise<WorkspaceFileMutation>
 ```
 
 Source: [`packages/api/workspace-files/src/index.ts`](../../packages/api/workspace-files/src/index.ts)

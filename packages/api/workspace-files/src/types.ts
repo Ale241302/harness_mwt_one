@@ -8,7 +8,7 @@
  *   filesystem's execution world, because their consumer is the Client
  *   resource system, whose `dsh-resource://file/session/<id>/<path>` address carries that
  *   same path.
- * - `list`, `createFile`, `createDirectory`, `move`, and `remove` speak
+ * - `list`, `createFile`, `createDirectory`, `move`, and `removePath` speak
  *   workspace paths — the same syntax their `path` argument accepts — because
  *   their consumer is a tree rooted at the workspace root. A mutation also
  *   reports the entry's absolute path, so a consumer that keys by absolute path
@@ -142,7 +142,7 @@ export interface WorkspaceFileMoveOptions {
   readonly overwrite?: boolean
 }
 
-/** Optional knobs of the `remove` verb. */
+/** Optional knobs of the `removePath` verb. */
 export interface WorkspaceFileRemoveOptions {
   /**
    * Remove a directory together with its contents. Defaults to false: without
@@ -202,7 +202,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     /** A create or a move found the destination path already occupied. */
     'workspace-file/already-exists': { readonly path: string }
     /**
-     * A `remove` without `recursive` was asked to delete a directory that still
+     * A `removePath` without `recursive` was asked to delete a directory that still
      * has children, so nothing was deleted.
      */
     'workspace-file/directory-not-empty': { readonly path: string }

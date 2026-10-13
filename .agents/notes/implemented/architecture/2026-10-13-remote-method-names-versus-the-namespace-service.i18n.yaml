@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-13-remote-method-names-versus-the-namespace-service.md
+2026-10-13-remote-method-names-versus-the-namespace-service.md: 97b3b68dd73563824f6aa1d75bc4764684b128c3
+2026-10-13-remote-method-names-versus-the-namespace-service.zh.md: 325db8ca7ce0b4da40e38026a389061baf8c9aed

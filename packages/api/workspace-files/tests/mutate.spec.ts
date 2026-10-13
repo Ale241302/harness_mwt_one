@@ -225,10 +225,10 @@ describe('workspaceFiles.move', () => {
   })
 })
 
-describe('workspaceFiles.remove', () => {
+describe('workspaceFiles.removePath', () => {
   it('removes one file and reports the entry it removed', async () => {
     await writeFile(join(workspace, 'gone.txt'), 'body', 'utf8')
-    const result = await endpoint().remove(harness.scope, 'gone.txt', {}, signal())
+    const result = await endpoint().removePath(harness.scope, 'gone.txt', {}, signal())
     expect(result.operation).toBe('removed')
     expect(result.path).toBe('gone.txt')
     await expect(readFile(join(workspace, 'gone.txt'), 'utf8')).rejects.toThrow()
@@ -236,7 +236,7 @@ describe('workspaceFiles.remove', () => {
 
   it('removes an empty directory', async () => {
     await mkdir(join(workspace, 'empty'))
-    const result = await endpoint().remove(harness.scope, 'empty', {}, signal())
+    const result = await endpoint().removePath(harness.scope, 'empty', {}, signal())
     expect(result.path).toBe('empty')
     expect(existsSync(join(workspace, 'empty'))).toBe(false)
   })
@@ -244,28 +244,28 @@ describe('workspaceFiles.remove', () => {
   it('refuses a directory that still has entries, and removes it with recursive', async () => {
     await mkdir(join(workspace, 'full', 'nested'), { recursive: true })
     await writeFile(join(workspace, 'full', 'a.txt'), 'body', 'utf8')
-    const refused = await failureOf(endpoint().remove(harness.scope, 'full', {}, signal()))
+    const refused = await failureOf(endpoint().removePath(harness.scope, 'full', {}, signal()))
     expect(refused.code).toBe('workspace-file/directory-not-empty')
     expect(refused.details).toEqual({ path: 'full' })
     await expect(readFile(join(workspace, 'full', 'a.txt'), 'utf8')).resolves.toBe('body')
 
-    const removed = await endpoint().remove(harness.scope, 'full', { recursive: true }, signal())
+    const removed = await endpoint().removePath(harness.scope, 'full', { recursive: true }, signal())
     expect(removed.path).toBe('full')
     await expect(readFile(join(workspace, 'full', 'a.txt'), 'utf8')).rejects.toThrow()
   })
 
   it('refuses a missing entry as not-found', async () => {
-    const failure = await failureOf(endpoint().remove(harness.scope, 'gone.txt', {}, signal()))
+    const failure = await failureOf(endpoint().removePath(harness.scope, 'gone.txt', {}, signal()))
     expect(failure.code).toBe('workspace-file/not-found')
   })
 
   it('refuses the workspace root and any path outside it', async () => {
     await writeFile(join(workspace, 'keep.txt'), 'body', 'utf8')
-    const root = await failureOf(endpoint().remove(harness.scope, '.', { recursive: true }, signal()))
+    const root = await failureOf(endpoint().removePath(harness.scope, '.', { recursive: true }, signal()))
     expect(root.code).toBe('workspace-file/root-refused')
-    const traversal = await failureOf(endpoint().remove(harness.scope, '../outside', { recursive: true }, signal()))
+    const traversal = await failureOf(endpoint().removePath(harness.scope, '../outside', { recursive: true }, signal()))
     expect(traversal.code).toBe('workspace-file/outside-workspace')
-    const absolute = await failureOf(endpoint().remove(harness.scope, outside, { recursive: true }, signal()))
+    const absolute = await failureOf(endpoint().removePath(harness.scope, outside, { recursive: true }, signal()))
     expect(absolute.code).toBe('workspace-file/outside-workspace')
     await expect(readFile(join(workspace, 'keep.txt'), 'utf8')).resolves.toBe('body')
   })
@@ -273,7 +273,7 @@ describe('workspaceFiles.remove', () => {
   it('refuses a symbolic link instead of deleting its destination', async () => {
     await mkdir(join(workspace, 'realdir', 'nested'), { recursive: true })
     await symlink(join(workspace, 'realdir'), join(workspace, 'link'), 'junction')
-    const failure = await failureOf(endpoint().remove(harness.scope, 'link', { recursive: true }, signal()))
+    const failure = await failureOf(endpoint().removePath(harness.scope, 'link', { recursive: true }, signal()))
     expect(failure.code).toBe('workspace-file/symlink-refused')
     expect(existsSync(join(workspace, 'realdir', 'nested'))).toBe(true)
   })
