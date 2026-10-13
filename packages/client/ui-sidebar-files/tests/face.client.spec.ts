@@ -151,7 +151,7 @@ describe('createMutations', () => {
       createFile: vi.fn().mockResolvedValue(answer),
       createDirectory: vi.fn().mockResolvedValue(answer),
       move: vi.fn().mockResolvedValue(answer),
-      remove: vi.fn().mockResolvedValue(answer),
+      removePath: vi.fn().mockResolvedValue(answer),
     }
     const remote = { workspaceFiles: namespace } as unknown as WorkspaceFilesMutateRemote
     const signal = new AbortController().signal
@@ -163,7 +163,7 @@ describe('createMutations', () => {
     expect(namespace.createFile).toHaveBeenCalledWith(SESSION, `${ROOT}/a.txt`, 'body', signal)
     expect(namespace.createDirectory).toHaveBeenCalledWith(SESSION, `${ROOT}/src`, signal)
     expect(namespace.move).toHaveBeenCalledWith(SESSION, `${ROOT}/a.txt`, `${ROOT}/b.txt`, { overwrite: true }, signal)
-    expect(namespace.remove).toHaveBeenCalledWith(SESSION, `${ROOT}/src`, { recursive: true }, signal)
+    expect(namespace.removePath).toHaveBeenCalledWith(SESSION, `${ROOT}/src`, { recursive: true }, signal)
   })
 })
 

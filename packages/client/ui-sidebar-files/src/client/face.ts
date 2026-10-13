@@ -62,7 +62,7 @@ export type WorkspaceFilesListRemote = {
 export type WorkspaceFilesMutateRemote = {
   readonly workspaceFiles: Pick<
     ClientRemote['workspaceFiles'],
-    'createFile' | 'createDirectory' | 'move' | 'remove'
+    'createFile' | 'createDirectory' | 'move' | 'removePath'
   >
 }
 
@@ -123,7 +123,7 @@ export function createMutations(remote: WorkspaceFilesMutateRemote): FilesMutato
     createFile: (sessionId, path, content, signal) => namespace.createFile(sessionId, path, content, signal),
     createDirectory: (sessionId, path, signal) => namespace.createDirectory(sessionId, path, signal),
     move: (sessionId, from, to, options, signal) => namespace.move(sessionId, from, to, options, signal),
-    remove: (sessionId, path, options, signal) => namespace.remove(sessionId, path, options, signal),
+    remove: (sessionId, path, options, signal) => namespace.removePath(sessionId, path, options, signal),
   }
 }
 
