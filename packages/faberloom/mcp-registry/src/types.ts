@@ -95,6 +95,12 @@ export interface FaberLoomMcpServer {
   enabled: boolean
   /** Whether the server's MCP client is mounted in this process right now. */
   mounted: boolean
+  /**
+   * The redacted reason the last mount attempt failed, or null when the server
+   * is mounted or has not been attempted since this process started. A server
+   * with an error is saved but not proven; it is never presented as working.
+   */
+  error: string | null
   /** ISO-8601 instant the record was created. */
   createdAt: string
   /** ISO-8601 instant the record was last written. */

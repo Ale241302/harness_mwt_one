@@ -33,6 +33,25 @@ const TRANSPORT_KEY: Record<FaberLoomMcpTransportKind, FaberloomKey> = {
   'streamable-http': 'mcp.servers.transportHttp',
 }
 
+/** The localized next action for one candidate failure. */
+const NEXT_KEY: Record<FaberLoomMcpProbeFailure, FaberloomKey> = {
+  unreachable: 'mcp.servers.next.unreachable',
+  'bad-credential': 'mcp.servers.next.badCredential',
+  protocol: 'mcp.servers.next.protocol',
+}
+
+/**
+ * The localized state of one saved server, from what the host proved: a server
+ * is working only when it is enabled and its client mounted; an enabled server
+ * that did not mount is saved but unproven, and a disabled one is off.
+ * @param row - the saved server as the host projects it.
+ * @returns the state key.
+ */
+function stateKey(row: FaberLoomMcpServerRow): FaberloomKey {
+  if (!row.enabled) return 'mcp.servers.stateDisabled'
+  return row.mounted ? 'mcp.servers.stateWorking' : 'mcp.servers.stateUnproven'
+}
+
 /** Local namespace of the server name the MCP client's tool grammar accepts. */
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 
@@ -80,6 +99,14 @@ function isHttpUrl(value: string): boolean {
  */
 function invalidReason(draft: Draft): FaberloomKey | null {
   if (!SERVER_NAME_PATTERN.test(draft.name.trim())) return 'mcp.servers.invalidName'
+  // A named credential with no value, or a value with no name, is the one
+  // missing input the harness must not drop: it refuses the write and says so.
+  for (const row of draft.secrets) {
+    const named = row.name.trim().length > 0
+    const valued = row.value.trim().length > 0
+    if (named && !valued) return 'mcp.servers.missingKey'
+    if (!named && valued) return 'mcp.servers.missingKeyName'
+  }
   if (draft.transport === 'stdio') {
     return draft.command.trim().length === 0 ? 'mcp.servers.invalidCommand' : null
   }
@@ -127,7 +154,13 @@ function draftInput(draft: Draft): FaberLoomMcpServerInput {
 }
 
 /** The outcome of one candidate test, as the panel shows it. */
-type TestState = { readonly state: 'testing' | 'ok' | 'fail'; readonly text: string; readonly tools: readonly string[] }
+type TestState = {
+  readonly state: 'testing' | 'ok' | 'fail'
+  readonly text: string
+  readonly tools: readonly string[]
+  /** The localized next action a named failure carries, or null. */
+  readonly next: FaberloomKey | null
+}
 
 /** Everything the settings section reads and calls, all bound outside the component. */
 export interface McpServersSectionInjected {
@@ -161,6 +194,10 @@ export function McpServersSection(props: McpServersSectionProps): ReactNode {
   const [pending, setPending] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [nextKey, setNextKey] = useState(1)
+  /** The server being edited, or null while the form installs a new one. */
+  const [editing, setEditing] = useState<string | null>(null)
+  /** The list search text, so a user with many servers finds one by name or target. */
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     let live = true
@@ -189,17 +226,22 @@ export function McpServersSection(props: McpServersSectionProps): ReactNode {
 
   /** Run one candidate test and keep its verdict in the form. */
   const runTest = (): void => {
-    setProbe({ state: 'testing', text: t('mcp.servers.testing'), tools: [] })
+    setProbe({ state: 'testing', text: t('mcp.servers.testing'), tools: [], next: null })
     void test(draftInput(draft)).then((result) => {
       // `result.ok` is the Remote call; `result.value.ok` is the test itself.
-      if (!result.ok) { setProbe({ state: 'fail', text: result.error.message, tools: [] }); return }
+      if (!result.ok) { setProbe({ state: 'fail', text: result.error.message, tools: [], next: null }); return }
       setProbe(result.value.ok
-        ? { state: 'ok', text: t('mcp.servers.testOk'), tools: result.value.tools }
-        : { state: 'fail', text: `${t(FAILURE_KEY[result.value.failure])}: ${result.value.detail}`, tools: [] })
-    }).catch((cause: unknown) => { setProbe({ state: 'fail', text: String(cause), tools: [] }) })
+        ? { state: 'ok', text: t('mcp.servers.testOk'), tools: result.value.tools, next: null }
+        : {
+          state: 'fail',
+          text: `${t(FAILURE_KEY[result.value.failure])}: ${result.value.detail}`,
+          tools: [],
+          next: NEXT_KEY[result.value.failure],
+        })
+    }).catch((cause: unknown) => { setProbe({ state: 'fail', text: String(cause), tools: [], next: null }) })
   }
 
-  /** Install the candidate, resetting the form when the write succeeds. */
+  /** Install or update the candidate, resetting the form when the write succeeds. */
   const runSave = (): void => {
     setBusy(true)
     setMessage(null)
@@ -208,6 +250,7 @@ export function McpServersSection(props: McpServersSectionProps): ReactNode {
       if (!result.ok) { setMessage(result.error.message); return }
       setRows(result.value)
       setDraft(EMPTY_DRAFT)
+      setEditing(null)
       setProbe(null)
     }).catch((cause: unknown) => { setBusy(false); setMessage(String(cause)) })
   }
@@ -222,11 +265,73 @@ export function McpServersSection(props: McpServersSectionProps): ReactNode {
     }).catch((cause: unknown) => { setMessage(String(cause)) })
   }
 
+  /**
+   * Load one saved server into the form so it can be edited in place. The saved
+   * credential values are never shown, so each existing entry becomes a row the
+   * user re-enters; saving replaces exactly this server's entries and leaves
+   * every other server untouched.
+   */
+  const startEdit = (row: FaberLoomMcpServerRow): void => {
+    const secrets: SecretDraft[] = [...row.env, ...row.headers].map((entry, index) => ({
+      key: nextKey + index,
+      name: entry.name,
+      value: '',
+    }))
+    setNextKey(nextKey + secrets.length)
+    setEditing(row.name)
+    setProbe(null)
+    setMessage(null)
+    setDraft({
+      name: row.name,
+      transport: row.transport,
+      command: row.command ?? '',
+      args: (row.args ?? []).join(' '),
+      cwd: row.cwd ?? '',
+      url: row.url ?? '',
+      secrets,
+      enabled: row.enabled,
+    })
+  }
+
+  /** Leave edit mode and clear the form. */
+  const cancelEdit = (): void => {
+    setEditing(null)
+    setDraft(EMPTY_DRAFT)
+    setProbe(null)
+  }
+
+  /**
+   * Flip one server's enabled flag without touching its saved credentials or
+   * any other server, by resending the row's own transport and no secret map.
+   */
+  const toggle = (row: FaberLoomMcpServerRow): void => {
+    setMessage(null)
+    setProbe(null)
+    const input: FaberLoomMcpServerInput = {
+      name: row.name,
+      transport: row.transport,
+      ...row.transport === 'stdio'
+        ? { command: row.command ?? '', args: [...row.args ?? []], cwd: row.cwd ?? '' }
+        : { url: row.url ?? '' },
+      enabled: !row.enabled,
+    }
+    void save(input).then((result) => {
+      if (result.ok) setRows(result.value)
+      else setMessage(result.error.message)
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+
   const invalid = invalidReason(draft)
+  const visible = search.trim().length === 0
+    ? rows ?? []
+    : (rows ?? []).filter(row =>
+      row.name.toLowerCase().includes(search.trim().toLowerCase())
+      || row.target.toLowerCase().includes(search.trim().toLowerCase()))
 
   return (
     <div className={styles.section}>
       <p className={styles.intro}>{t('mcp.servers.intro')}</p>
+      <p className={styles.scope}>{t('mcp.servers.scope')}</p>
       {message === null ? null : <p className={styles.error} role="alert">{message}</p>}
 
       {rows === null
@@ -234,48 +339,86 @@ export function McpServersSection(props: McpServersSectionProps): ReactNode {
         : rows.length === 0
           ? <p className={styles.status}>{t('mcp.servers.empty')}</p>
           : (
-            <ul className={styles.list}>
-              {rows.map(row => (
-                <li key={row.name} className={styles.row}>
-                  <div className={styles.rowHead}>
-                    <span className={styles.name}>{row.name}</span>
-                    <span className={styles.tag}>{t(TRANSPORT_KEY[row.transport])}</span>
-                    <span className={styles.tag}>{t(row.enabled ? 'mcp.servers.stateEnabled' : 'mcp.servers.stateDisabled')}</span>
-                    <span className={styles.tag}>{t(row.mounted ? 'mcp.servers.stateMounted' : 'mcp.servers.stateNotMounted')}</span>
-                  </div>
-                  <div className={styles.credentials}>
-                    {row.env.length === 0 && row.headers.length === 0
-                      ? <span className={styles.meta}>{t('mcp.servers.noSecrets')}</span>
-                      : [...row.env, ...row.headers].map(entry => (
-                        <span key={entry.name} className={styles.credential}>
-                          {`${entry.name}: `}{t(entry.present ? 'mcp.servers.present' : 'mcp.servers.absent')}
-                        </span>
-                      ))}
-                  </div>
-                  {pending === row.name
-                    ? (
-                      <div className={styles.confirm}>
-                        <span className={styles.meta}>{t('mcp.servers.removeConfirm')}</span>
-                        <button type="button" className={styles.danger} onClick={() => { runRemove(row.name) }}>
-                          {t('mcp.servers.removeAction')}
-                        </button>
-                        <button type="button" className={styles.secondary} onClick={() => { setPending(null) }}>
-                          {t('action.cancel')}
-                        </button>
-                      </div>
-                    )
-                    : (
-                      <button type="button" className={styles.ghost} onClick={() => { setPending(row.name) }}>
-                        {t('action.remove')}
-                      </button>
-                    )}
-                </li>
-              ))}
-            </ul>
+            <>
+              {rows.length > 3
+                ? (
+                  <label className={styles.field}>
+                    <span className={styles.label}>{t('mcp.servers.count')}</span>
+                    <input
+                      type="search"
+                      value={search}
+                      placeholder={t('mcp.servers.search')}
+                      aria-label={t('mcp.servers.search')}
+                      onChange={(event) => { setSearch(event.target.value) }}
+                    />
+                  </label>
+                )
+                : null}
+              {visible.length === 0
+                ? <p className={styles.status}>{t('mcp.servers.noMatch')}</p>
+                : (
+                  <ul className={styles.list}>
+                    {visible.map(row => (
+                      <li key={row.name} className={styles.row}>
+                        <div className={styles.rowHead}>
+                          <span className={styles.name}>{row.name}</span>
+                          <span className={styles.tag}>{t(TRANSPORT_KEY[row.transport])}</span>
+                          <span className={styles.tag}>{t(stateKey(row))}</span>
+                        </div>
+                        <p className={styles.target}>{row.target}</p>
+                        {row.error === null
+                          ? null
+                          : <p className={styles.rowError} role="alert">{`${t('mcp.servers.error')}: ${row.error}`}</p>}
+                        <div className={styles.credentials}>
+                          {row.env.length === 0 && row.headers.length === 0
+                            ? <span className={styles.meta}>{t('mcp.servers.noSecrets')}</span>
+                            : [...row.env, ...row.headers].map(entry => (
+                              <span key={entry.name} className={styles.credential}>
+                                {`${entry.name}: `}{t(entry.present ? 'mcp.servers.present' : 'mcp.servers.absent')}
+                              </span>
+                            ))}
+                        </div>
+                        {pending === row.name
+                          ? (
+                            <div className={styles.confirm}>
+                              <span className={styles.meta}>{t('mcp.servers.removeConfirm')}</span>
+                              <button type="button" className={styles.danger} onClick={() => { runRemove(row.name) }}>
+                                {t('mcp.servers.removeAction')}
+                              </button>
+                              <button type="button" className={styles.secondary} onClick={() => { setPending(null) }}>
+                                {t('action.cancel')}
+                              </button>
+                            </div>
+                          )
+                          : (
+                            <div className={styles.actions}>
+                              <button type="button" className={styles.ghost} onClick={() => { startEdit(row) }}>
+                                {t('mcp.servers.edit')}
+                              </button>
+                              <button type="button" className={styles.ghost} onClick={() => { toggle(row) }}>
+                                {t(row.enabled ? 'mcp.servers.disable' : 'mcp.servers.enable')}
+                              </button>
+                              <button type="button" className={styles.ghost} onClick={() => { setPending(row.name) }}>
+                                {t('action.remove')}
+                              </button>
+                            </div>
+                          )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+            </>
           )}
 
       <div className={styles.form}>
-        <h3 className={styles.formTitle}>{t('mcp.servers.add')}</h3>
+        <div className={styles.formHead}>
+          <h3 className={styles.formTitle}>{editing === null ? t('mcp.servers.add') : `${t('mcp.servers.editing')} ${editing}`}</h3>
+          {editing === null ? null : (
+            <button type="button" className={styles.secondary} onClick={() => { cancelEdit() }}>
+              {t('action.cancel')}
+            </button>
+          )}
+        </div>
         <label className={styles.field}>
           <span className={styles.label}>{t('field.name')}</span>
           <input
@@ -346,7 +489,7 @@ export function McpServersSection(props: McpServersSectionProps): ReactNode {
 
         <div className={styles.secrets}>
           <span className={styles.label}>{t('mcp.servers.secrets')}</span>
-          <span className={styles.hint}>{t('mcp.servers.secretsHint')}</span>
+          <span className={styles.hint}>{editing === null ? t('mcp.servers.secretsHint') : t('mcp.servers.editSecretsHint')}</span>
           {draft.secrets.map(row => (
             <div key={row.key} className={styles.secretRow}>
               <input
@@ -384,6 +527,7 @@ export function McpServersSection(props: McpServersSectionProps): ReactNode {
             {probe.state === 'ok'
               ? `${probe.text}: ${probe.tools.length === 0 ? t('mcp.servers.testNoTools') : `${t('mcp.servers.testTools')} ${probe.tools.join(', ')}`}`
               : probe.text}
+            {probe.next === null ? null : ` ${t(probe.next)}`}
           </p>
         )}
 

@@ -17,6 +17,11 @@
  * session list, so the `@` menu and the session list never disagree about its
  * age.
  *
+ * The file section never renders blank: a directory with nothing to show reads
+ * as an empty folder, a filter that matched nothing reads as no results, and a
+ * cut or failed listing keeps its own note. Those notes are rows the menu
+ * shows but never highlights or picks.
+ *
  * @module @deepseek-ai/dsh-client-ui-reference/client
  */
 // Type-only: pulls the generated Remote API and ctx.remote merge through the Client assembly boundary.
@@ -38,7 +43,7 @@ import type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-
 import { abbreviateHomePath, fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import {
   attachCandidate, attachFailureLine, browseCandidates, browseFailureCandidates, directoryValue,
-  encodeCandidate, listingPath, parseCandidate, splitBrowseQuery,
+  encodeCandidate, listingPath, noteCandidate, parseCandidate, splitBrowseQuery,
   type BrowseTarget, type ReferenceCandidateValue, type Translate,
 } from './browse.ts'
 import { en, es, NS, zh } from './locales.ts'
@@ -75,7 +80,11 @@ export function apply(ctx: ClientContext): void {
         // its header or the typed path already says where it is.
         : ctx.remote.fileReferences.list(session.sessionId, query, signal)
           .then(result => result.ok
-            ? result.value.flatMap(candidate => fileCandidate(candidate, preserveQuote, t))
+            // A search that matched nothing says so, so the user reads a
+            // reason where the file rows would stand instead of a menu holding
+            // only the session rows. A failed search stays quiet: a discovery
+            // failure is not an empty result.
+            ? withNoResultsNote(result.value.flatMap(candidate => fileCandidate(candidate, preserveQuote, t)), t)
             : [])
       const sessionLookup = quoted === true
         ? Promise.resolve([] as SessionReferenceMentionCandidate[])
@@ -233,6 +242,20 @@ function crumbsFor(
     })
   }
   return crumbs
+}
+
+/**
+ * A name search's rows, or the one note saying the search matched nothing, so a
+ * bare file section always explains itself.
+ * @param rows - the rows the fuzzy lookup projected.
+ * @param t - the reference dictionary.
+ * @returns the rows, or one no-results note.
+ */
+function withNoResultsNote(
+  rows: readonly InputTriggerCandidate[],
+  t: Translate,
+): readonly InputTriggerCandidate[] {
+  return rows.length > 0 ? rows : [noteCandidate(t('listing.noResults'), t)]
 }
 
 /** Project one fuzzy-search candidate as a menu row, naming its parent directory. */

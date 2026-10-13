@@ -8,7 +8,10 @@
  * capped results. This module holds the pure parts: splitting a path query
  * into the directory to list and the name filter inside it, ordering and
  * consulting one listing, naming a failed listing in the reader's words, and
- * encoding the payload a pick hands back.
+ * encoding the payload a pick hands back. Everything the file section says
+ * that is not a candidate — an empty folder, a filter with no match, a cut
+ * listing, a failed listing — is a note row, which the menu never highlights
+ * and never picks.
  *
  * A mention is built from the listing's own workspace-relative `path` plus the
  * entry name, so it stays plain path text the model reads and the Host resolves
@@ -95,7 +98,9 @@ function childListingPath(directory: string, name: string): string {
 /**
  * Project one directory listing into menu rows: directories first, then files,
  * each with the glyph and mention its pick uses, and a trailing note when the
- * endpoint's entry cap dropped children.
+ * endpoint's entry cap dropped children. A listing with nothing to show says
+ * so — an empty folder, or a listing the filter left empty — so the file
+ * section is never a silently blank area.
  *
  * A child that is neither a regular file nor a directory has no mention the
  * model can read, so it contributes no row.
@@ -113,6 +118,7 @@ export function browseCandidates(
 ): InputTriggerCandidate[] {
   const needle = filter.toLowerCase()
   const rows: InputTriggerCandidate[] = []
+  let shownEntries = 0
   for (const entry of orderEntries(listing.entries)) {
     if (entry.type === 'other') continue
     if (needle !== '' && !entry.name.toLowerCase().includes(needle)) continue
@@ -127,6 +133,7 @@ export function browseCandidates(
         value: encodeCandidate({ kind: 'file', fileKind: 'directory', label: entry.name, mention }),
         drill: true,
       })
+      shownEntries += 1
       continue
     }
     const mention = formatFileMention({ path, kind: 'file' }, preserveQuote)
@@ -138,9 +145,30 @@ export function browseCandidates(
       value: encodeCandidate({ kind: 'file', fileKind: 'file', label: entry.name, mention }),
     })
     rows.push(attachCandidate(entry.name, path, t))
+    shownEntries += 1
   }
-  if (listing.truncated) rows.push({ name: t('listing.truncated'), section: t('section.files') })
+  // Nothing to show reads differently by cause: a directory whose children are
+  // all outside the menu's vocabulary is empty, while one whose children the
+  // filter excluded has results the user simply has not reached.
+  if (shownEntries === 0) {
+    const someEntry = listing.entries.some(entry => entry.type !== 'other')
+    rows.push(noteCandidate(someEntry ? t('listing.noResults') : t('listing.empty'), t))
+  }
+  if (listing.truncated) rows.push(noteCandidate(t('listing.truncated'), t))
   return rows
+}
+
+/**
+ * One informational row for the file section: localized text the menu renders
+ * as a note instead of an option, so the highlight, a pointer press, and Enter
+ * all skip it. It carries no pick value at all, which is what keeps it out of
+ * the pick paths.
+ * @param copy - the localized line the user reads.
+ * @param t - the reference dictionary.
+ * @returns the note row.
+ */
+export function noteCandidate(copy: string, t: Translate): InputTriggerCandidate {
+  return { name: copy, section: t('section.files'), note: true }
 }
 
 /**
@@ -163,13 +191,14 @@ export function attachCandidate(name: string, path: string, t: Translate): Input
 
 /**
  * The single row a listing that failed produces: the reader's words for the
- * failure kind. It carries no pick value, so the row cannot insert anything.
+ * failure kind, as a note rather than a candidate, so the row cannot insert
+ * anything even if the highlight or a pointer reaches it.
  * @param failure - the settled Remote failure.
  * @param t - the reference dictionary.
  * @returns one note row for the file section.
  */
 export function browseFailureCandidates(failure: RemoteFailure, t: Translate): InputTriggerCandidate[] {
-  return [{ name: failureLine(failure, t), section: t('section.files') }]
+  return [noteCandidate(failureLine(failure, t), t)]
 }
 
 /**

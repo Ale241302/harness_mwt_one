@@ -43,6 +43,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { SkillRow } from './SkillRow.tsx'
+import { InstallSkillRow } from './InstallSkillRow.tsx'
 import { en, es, NS, zh, type SkillKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -69,10 +70,16 @@ export const inject = ['inputTriggers', 'sessions', 'slots', 'locale', 'remote',
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-skill: dictionaries')
-  ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
-    { name: 'tool.call.toolview', key: 'skill', locale: NS },
-    SkillRow,
-  ))
+  ctx.slots.inject('tool.call.toolview', function* () {
+    yield ctx.slots.register(
+      { name: 'tool.call.toolview', key: 'skill', locale: NS },
+      SkillRow,
+    )
+    yield ctx.slots.register(
+      { name: 'tool.call.toolview', key: 'install_skill', locale: NS },
+      InstallSkillRow,
+    )
+  })
 
   const skills = ctx.remote.skills
   const sessions = ctx.sessions

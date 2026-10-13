@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `dsh-client-ui-reference` when users need to mention files, folders, or sessions from one `@` completion menu. The file half browses the Session's workspace: `@` lists the root, a typed path descends into it, a folder row or Tab drills deeper, and the breadcrumb walks back; a name with no separator instead searches the workspace through the fuzzy index. Picking a file, folder, or session inserts an atomic reference with a stable clipboard form, and a folder row lets the user descend without closing completion. Session mentions are validated before model context is captured; browsing candidates has no model effect.
+Use `dsh-client-ui-reference` when users need to mention files, folders, or sessions from one `@` completion menu. Its file half browses the Session's workspace: `@` lists the root, a typed path descends, a folder row or Tab drills deeper, and the breadcrumb walks back; a name with no separator searches the workspace through the fuzzy index. An empty folder, or a filter with no match, says so instead of leaving the section silent. A pick inserts an atomic reference; a folder row descends without closing completion. Session mentions are validated before model context; browsing has no model effect.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Use `dsh-client-ui-reference` when users need to mention files, folders, or sess
 <a id="use-this-package"></a>
 ## Use this package
 
-The source is active whenever the composition mounts this package and the Host `ctx.fileReferences` and `ctx.workspaceFiles` providers are available. Type `@` to list the Session's workspace root, folders first. Keep typing a path (`@src/`, `@src/module1/`) to descend into it, or drill with a folder row's chevron or Tab; the menu header carries the workspace-root breadcrumb, where an earlier step is one click back. A typed name with no separator (`@readme`) instead searches the whole workspace by name through the fuzzy file index. Open `@"…` to search files only with a path that may contain spaces. The candidate list is a completion menu, not a search result page: pick once and keep typing.
+The source is active whenever the composition mounts this package and the Host `ctx.fileReferences` and `ctx.workspaceFiles` providers are available. Type `@` to list the Session's workspace root, folders first. Keep typing a path (`@src/`, `@src/module1/`) to descend into it, or drill with a folder row's chevron or Tab; the menu header carries the workspace-root breadcrumb, where an earlier step is one click back. A typed name with no separator (`@readme`) instead searches the whole workspace by name through the fuzzy file index. Open `@"…` to search files only with a path that may contain spaces. The candidate list is a completion menu, not a search result page: pick once and keep typing. When the folder has nothing to show, or the typed filter matches nothing, the file section says so instead of leaving the menu bare.
 
 ### What a pick inserts
 
@@ -37,7 +37,7 @@ Every file row carries a second verb beside its mention: the attach row reads th
 
 ### Failure behavior
 
-One unavailable or failed candidate domain yields no rows for that domain while the other still lists. A directory that cannot be listed — gone, outside the workspace, not a directory, or an unclassified Host failure — shows one row naming the reason instead of an empty file section, and a listing cut by the Host's entry cap ends with a row saying some entries are not shown. A session-reference preparation failure occurs after prompt acceptance and terminates that agent turn.
+One unavailable or failed candidate domain yields no rows for that domain while the other still lists. The file section never renders blank: a directory with nothing to show reads as an empty folder, a filter that matched nothing reads as no results, a directory that cannot be listed — gone, outside the workspace, not a directory, or an unclassified Host failure — shows a note naming the reason, and a listing cut by the Host's entry cap ends with a note saying some entries are not shown. Those notes are informational rows: the menu shows them where candidates would stand, the keyboard highlight skips them, and no press picks one. A session-reference preparation failure occurs after prompt acceptance and terminates that agent turn.
 
 Click a file reference in the composer to preview its current contents in the right Sidebar. Quoted paths retain their spaces, and paths resolve in the composer Session. Folder and Session references retain their editing behavior.
 
@@ -53,7 +53,7 @@ The source keeps candidate encoding internal to the registration effect: the `/c
 
 ### Candidate flow
 
-The file section is one browser, not two: an empty query or a typed path lists the real directory through the confined `workspaceFiles/list`, folders first, each row carrying the glyph and the `@path` mention its pick uses. The fuzzy `fileReferences/list` stays for the one case it does better — a typed name with no separator, which can match anywhere in the workspace. Keeping both inside one source, rather than registering a second `@` source, leaves the menu with one obvious way to browse a folder. Candidate encoding and the name/path split live in `browse.ts`; the registration wires them.
+The file section is one browser, not two: an empty query or a typed path lists the real directory through the confined `workspaceFiles/list`, folders first, each row carrying the glyph and the `@path` mention its pick uses. The fuzzy `fileReferences/list` stays for the one case it does better — a typed name with no separator, which can match anywhere in the workspace. Keeping both inside one source, rather than registering a second `@` source, leaves the menu with one obvious way to browse a folder. Candidate encoding and the name/path split live in `browse.ts`, and so does every informational line the section can carry — empty folder, no results, cut listing, failed listing — as a note row the reducer never highlights.
 
 For such a query the browser starts the `fileReferences/list` fuzzy search and the `sessionReferenceResolver/candidates` call together, then deterministically orders files before sessions with locale-registered folder/file/session labels. Rows render under non-selectable file and session section headings without a redundant raw `reference` source title. A session row is dated from the Host session list's `updatedAt` through the same relative-time bucket that list uses, so one session reads the same age on both surfaces; a session the list does not carry falls back to the candidate's creation time. A drilled query publishes a breadcrumb from the workspace root to the directory being listed; each crumb carries the drill payload a folder row would, so returning to a step and descending into one are one outcome.
 
@@ -93,7 +93,7 @@ Candidate browsing has no model effect. A selected file or session changes only 
 
 These limits define when the reference source cannot help; they are current package constraints.
 
-- **Candidate failure is intentionally quiet** — one unavailable or failed Remote discovery call yields no rows for that domain; only a directory that cannot be listed gets a row naming why. A session-reference preparation failure occurs after prompt acceptance and terminates that agent turn.
+- **A discovery failure stays quiet; an empty result does not** — one unavailable or failed Remote discovery call yields no rows for that domain, and only a directory that cannot be listed gets a note naming why. An empty result is never silent: a directory with nothing to show reads as an empty folder and a filter that matched nothing reads as no results. Those notes, like the cut-listing and failed-listing ones, are informational rows the highlight never reaches. A session-reference preparation failure occurs after prompt acceptance and terminates that agent turn.
 - **Folder browsing is workspace-confined** — the browser reads only inside the Session's workspace root through `workspaceFiles/list`; a path outside it surfaces as a row, not as content, and the browser cannot fall back to its own filesystem.
 - **Name search stays index-backed** — a typed name with no separator goes through `fileReferences/list` and inherits that provider's result cap; reaching an arbitrary file is the folder browser's job.
 - **Session search remains metadata-only** — discovery filters session id, cwd, and the latest log-backed title through `ctx.sessionReferenceResolver`; message bodies and full transcripts are not searched.

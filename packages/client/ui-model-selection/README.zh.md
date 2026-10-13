@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-Web GUI 允许用户通过 `/model` 弹窗或 composer 模型控件切换既有会话使用的模型与推理（reasoning）强度。两个界面呈现同一组按提供方分组的选择；所选模型决定可用的推理强度名称与默认值。完整选择从下一次请求开始生效；运行中的步骤保留其启动时的模型与推理强度。如果没有适配器可以服务会话路由，composer 会保持停用，直至路由恢复可用。
+Web GUI 允许用户通过 `/model` 弹窗或 composer 模型控件切换既有会话使用的模型与推理（reasoning）强度。两个界面呈现同一组按提供方分组、来自 Host 发现目录的选择；所选模型决定可用的推理强度名称与默认值。任一界面打开时以及新鲜度窗口过后，目录都会重新检查，并且每个界面都显示上次检查时间及其自己的刷新控件。完整选择从下一次请求开始生效；运行中的步骤保留其启动时的模型与推理强度。如果没有适配器可以服务会话路由，composer 会保持停用，直至路由恢复可用。
 
 ## 目录
 
@@ -29,7 +29,7 @@ Web GUI 允许用户通过 `/model` 弹窗或 composer 模型控件切换既有�
 
 ### 模型与推理强度
 
-模型按提供方分组。composer 菜单只显示模型与推理强度名称。`/model` 弹窗显示提供方名称与目录说明；其中两个内置 DeepSeek 模型的说明使用当前语言，外部提供方说明保持原文。弹窗应用所选模型的默认推理强度；composer 随后可以选择任一已公布的推理强度。适配器没有推理元数据时不显示 Effort 行；不存在任意推理强度输入。
+模型按提供方分组，顺序取自 Host 的报告。composer 菜单只显示模型与推理强度名称；`/model` 弹窗显示提供方名称，以及 Host 报告的每个模型自身说明，因此事实来自发现，而不是本插件维护的清单。Host 未给出说明文本的模型回退到其提供方名称。Host 声明了上下文窗口的行会在名称下显示该数值；Host 未声明的容量保持缺失，而不显示占位值。若 Host 在某提供方尚未提供任何模型前就拒绝了发现，界面会显示可见状态，缺少凭据时显示本地化的“无凭据”文案；目录就绪但没有任何行时显示无结果文案。弹窗应用所选模型的默认推理强度；composer 随后可以选择任一已公布的推理强度。适配器没有推理元数据时不显示 Effort 行；不存在任意推理强度输入。
 
 ### 不可路由的会话
 
@@ -43,7 +43,7 @@ Web GUI 允许用户通过 `/model` 弹窗或 composer 模型控件切换既有�
 <details>
 <summary>实现细节——点击展开</summary>
 
-两个入口共用一份由 `ModelDirectoryResolver`（`ctx.modelDirectories`）持有的会话级目录：`/model` popupSelect 贡献项（经 `ctx.commandUi` 注册）与 composer 的具名 `conversation.input.model` 位都经 `session.models` 加载会话的建议目录、经 `session.selectModel` 通过同一个 `ModelDirectory` 实例提交，因此任一入口所做的切换正是另一个入口接下来显示的。目录加载与选择共享一个代次计数器，旧响应不会覆盖新结果；连接重置丢弃所有常驻投影，并在显示前重新拉取 Host 恢复的选择。目录按会话惰性解析，随会话作用域一并 dispose（资源释放）；已寻址 subagent 会话不公开任一入口。每份常驻目录都会直接在转发的 `llm/adapters-updated` 与 `settings/document-updated` owner 事件上重拉。
+两个入口共用一份由 `ModelDirectoryResolver`（`ctx.modelDirectories`）持有的会话级目录：`/model` popupSelect 贡献项（经 `ctx.commandUi` 注册）与 composer 的具名 `conversation.input.model` 位都经 `session.models` 加载会话的建议目录、经 `session.selectModel` 通过同一个 `ModelDirectory` 实例提交，因此任一入口所做的切换正是另一个入口接下来显示的。每个 Host 代次一份 `ModelCatalogDirectory`，持有已加载目录、上次成功检查时间与其进行中的加载；在新鲜度窗口内的读取直接使用缓存，窗口过后则重新加载。composer 的刷新控件强制重读；转发的 `llm/adapters-updated`、`settings/document-updated` 与 `credentials/reference-updated` owner 事件总是重读。目录加载与选择共享一个代次计数器，旧响应不会覆盖新结果；连接重置丢弃所有常驻投影，并在显示前重新拉取 Host 恢复的选择。目录按会话惰性解析，随会话作用域一并 dispose（资源释放）；已寻址 subagent 会话不公开任一入口。
 
 </details>
 

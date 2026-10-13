@@ -16,7 +16,7 @@ import { closeModelsServers, modelsServer } from './mock-server.ts'
 const KEY = 'sk-catalog-test-marker-7f3'
 
 /** The rich DeepSeek models response, verbatim. */
-const DEEPSEEK_BODY = '{"object":"list","data":[{"id":"deepseek-flash","name":"DeepSeek-V4.1-Flash","context_window":1048576,"max_output_tokens":393216,"input_modalities":["text","image"],"output_modalities":["text"],"effort":{"supported_levels":["low","high","max"],"default_level":"high"}}]}'
+const DEEPSEEK_BODY = '{"object":"list","data":[{"id":"deepseek-flash","name":"DeepSeek-V4.1-Flash","context_window":1048576,"max_output_tokens":393216,"input_modalities":["text","image"],"output_modalities":["text"],"effort":{"supported_levels":["low","high","max"],"default_level":"high"},"api_capabilities":{"anthropic_messages":{"system_prompt_update":"in-history"}}}]}'
 
 afterEach(async () => {
   vi.unstubAllEnvs()
@@ -51,7 +51,7 @@ describe('provider table', () => {
     const ctx = await mountCatalog()
     const providers = ctx.faberloomModelCatalog.providers()
 
-    expect(providers.map(provider => provider.id)).toEqual(['deepseek', 'openai', 'anthropic', 'kimi', 'google'])
+    expect(providers.map(provider => provider.id)).toEqual(['deepseek', 'openai', 'anthropic', 'kimi', 'moonshotai', 'google'])
     expect(Object.isFrozen(providers)).toBe(true)
     expect(providers.find(provider => provider.id === 'anthropic')).toEqual({
       id: 'anthropic',
@@ -59,6 +59,11 @@ describe('provider table', () => {
       origin: 'https://api.anthropic.com',
       protocol: 'messages',
       modelsPath: '/v1/models',
+      auth: { kind: 'header', name: 'x-api-key', static: { 'anthropic-version': '2023-06-01' } },
+      errorShape: 'anthropic',
+      docs: ['https://docs.anthropic.com/en/api/models-list'],
+      routes: [],
+      credentialRef: 'ANTHROPIC_API_KEY',
     })
     expect(providers.find(provider => provider.id === 'google')).toEqual({
       id: 'google',
@@ -66,6 +71,48 @@ describe('provider table', () => {
       origin: 'https://generativelanguage.googleapis.com/v1beta',
       protocol: 'google',
       modelsPath: '/models',
+      auth: { kind: 'query', name: 'key' },
+      errorShape: 'google',
+      docs: ['https://ai.google.dev/api/models#method:-models.list'],
+      routes: [],
+      credentialRef: 'GOOGLE_API_KEY',
+    })
+    // Only DeepSeek's discovered rows feed a runtime route today; the rest are
+    // read by the configuration surface, not by a route's listing.
+    expect(providers.find(provider => provider.id === 'deepseek')).toMatchObject({
+      routes: ['deepseek-official'],
+      credentialRef: 'DEEPSEEK_API_KEY',
+    })
+  })
+
+  it('points kimi at the coding plan and keeps the Moonshot platform as its own entry', async () => {
+    const ctx = await mountCatalog()
+    const providers = ctx.faberloomModelCatalog.providers()
+    const kimi = providers.find(provider => provider.id === 'kimi')
+
+    expect(kimi).toEqual({
+      id: 'kimi',
+      label: 'Kimi Code',
+      origin: 'https://api.kimi.com/coding/v1',
+      protocol: 'openai',
+      modelsPath: '/models',
+      auth: { kind: 'bearer' },
+      errorShape: 'openai',
+      docs: ['https://www.kimi.ai/code', 'https://platform.kimi.ai/docs/guide/product-plans'],
+      routes: [],
+      credentialRef: 'KIMI_API_KEY',
+    })
+    expect(providers.find(provider => provider.id === 'moonshotai')).toEqual({
+      id: 'moonshotai',
+      label: 'Moonshot (platform)',
+      origin: 'https://api.moonshot.ai/v1',
+      protocol: 'openai',
+      modelsPath: '/models',
+      auth: { kind: 'bearer' },
+      errorShape: 'openai',
+      docs: ['https://platform.kimi.ai/docs/api/list-models'],
+      routes: [],
+      credentialRef: 'MOONSHOT_API_KEY',
     })
   })
 
@@ -92,6 +139,7 @@ describe('discovery normalization', () => {
       inputModalities: ['text', 'image'],
       outputModalities: ['text'],
       effortLevels: ['low', 'high', 'max'],
+      systemPromptUpdate: 'in-history',
     }])
     expect(server.requests).toHaveLength(1)
     expect(server.requests[0]?.url).toBe('/models')
@@ -151,6 +199,32 @@ describe('discovery normalization', () => {
     const models = await ctx.faberloomModelCatalog.discover('google', credentialRef('DEEPSEEK_API_KEY'))
 
     expect(models).toEqual([{ id: 'gemini-x', name: 'Gemini X', contextWindow: 1_000, maxOutputTokens: 100 }])
+  })
+
+  it('exposes a model id the provider started serving, with no code naming it', async () => {
+    // The id is deliberately one nobody has ever written into the source: the
+    // catalog must surface whatever the endpoint answers.
+    const server = await modelsServer([{
+      body: '{"object":"list","data":[{"id":"moonshot-nonexistent-preview-2099","context_length":32000,"supports_image_in":true}]}',
+    }])
+    const ctx = await mountCatalog({ origins: { kimi: server.origin } })
+
+    const models = await ctx.faberloomModelCatalog.discover('kimi', credentialRef('DEEPSEEK_API_KEY'))
+
+    expect(models.map(model => model.id)).toEqual(['moonshot-nonexistent-preview-2099'])
+    expect(server.requests[0]?.url).toBe('/models')
+    expect(server.requests[0]?.headers.authorization).toBe(`Bearer ${KEY}`)
+  })
+
+  it('reads the Moonshot listing fields (context_length, supports_image_in) as discovery facts', async () => {
+    const server = await modelsServer([{
+      body: '{"object":"list","data":[{"id":"kimi-k3","context_length":1048576,"supports_image_in":true}]}',
+    }])
+    const ctx = await mountCatalog({ origins: { kimi: server.origin } })
+
+    const models = await ctx.faberloomModelCatalog.discover('kimi', credentialRef('DEEPSEEK_API_KEY'))
+
+    expect(models).toEqual([{ id: 'kimi-k3', contextWindow: 1_048_576, inputModalities: ['text', 'image'] }])
   })
 
   it('reports a provider body with no model list as malformed', async () => {
@@ -218,7 +292,7 @@ describe('credential resolution', () => {
     await expect(ctx.faberloomModelCatalog.discover('deepseek', credentialRef('FABERLOOM_TEST_KEY')))
       .rejects.toMatchObject({ code: 'MISSING_CREDENTIAL' })
     await expect(ctx.faberloomModelCatalog.probe('deepseek', credentialRef('FABERLOOM_TEST_KEY')))
-      .resolves.toMatchObject({ kind: 'invalid-credential' })
+      .resolves.toMatchObject({ kind: 'no-credential' })
   })
 
   it('reports an unset or empty ambient credential as missing', async () => {
@@ -302,6 +376,28 @@ describe('probe classification', () => {
     expect(probe).toMatchObject({ kind: 'quota-exhausted', status: 403 })
   })
 
+  it('classifies the Kimi coding-plan 403 cycle-quota body as quota-exhausted, not a credential failure', async () => {
+    // Measured live: `POST https://api.kimi.com/coding/v1/messages` answers 403
+    // `permission_error` with this billing-cycle sentence.
+    const server = await modelsServer([{
+      status: 403,
+      body: JSON.stringify({
+        type: 'error',
+        error: {
+          type: 'permission_error',
+          message: 'You\'ve reached your monthly usage limit for this billing cycle. '
+            + 'Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan.',
+        },
+      }),
+    }])
+    const ctx = await mountCatalog({ origins: { kimi: server.origin } })
+    vi.stubEnv('KIMI_API_KEY', KEY)
+
+    const probe = await ctx.faberloomModelCatalog.probe('kimi', credentialRef('KIMI_API_KEY'))
+
+    expect(probe).toMatchObject({ kind: 'quota-exhausted', status: 403 })
+  })
+
   it('classifies a status this probe does not act on as unsupported', async () => {
     const server = await modelsServer([{ status: 500, body: 'upstream exploded' }])
     const ctx = await mountCatalog({ origins: { openai: server.origin } })
@@ -309,6 +405,56 @@ describe('probe classification', () => {
     const probe = await ctx.faberloomModelCatalog.probe('openai', credentialRef('DEEPSEEK_API_KEY'))
 
     expect(probe).toMatchObject({ kind: 'unsupported', status: 500, detail: 'upstream exploded' })
+  })
+
+  it('classifies a plain 429 as rate-limited and keeps the provider message excerpt', async () => {
+    const server = await modelsServer([{
+      status: 429,
+      body: '{"error":{"message":"Rate limit reached for gpt-x","type":"requests","code":"rate_limit_exceeded"}}',
+    }])
+    const ctx = await mountCatalog({ origins: { openai: server.origin } })
+
+    const probe = await ctx.faberloomModelCatalog.probe('openai', credentialRef('DEEPSEEK_API_KEY'))
+
+    expect(probe).toMatchObject({ kind: 'rate-limited', status: 429, detail: 'Rate limit reached for gpt-x' })
+  })
+
+  it('classifies a 400 with no credential wording as bad-request', async () => {
+    const server = await modelsServer([{
+      status: 400,
+      body: '{"error":{"message":"unknown parameter","type":"invalid_request_error"}}',
+    }])
+    const ctx = await mountCatalog({ origins: { openai: server.origin } })
+
+    const probe = await ctx.faberloomModelCatalog.probe('openai', credentialRef('DEEPSEEK_API_KEY'))
+
+    expect(probe).toMatchObject({ kind: 'bad-request', status: 400, detail: 'unknown parameter' })
+  })
+
+  it('classifies Google\'s 400 API-key rejection as invalid-credential through its own error status', async () => {
+    const server = await modelsServer([{
+      status: 400,
+      body: '{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"API_KEY_INVALID"}}',
+    }])
+    const ctx = await mountCatalog({ origins: { google: server.origin } })
+
+    const probe = await ctx.faberloomModelCatalog.probe('google', credentialRef('DEEPSEEK_API_KEY'))
+
+    expect(probe).toMatchObject({ kind: 'invalid-credential', status: 400 })
+    expect(probe.detail).toContain('API key not valid')
+  })
+
+  it('reads an Anthropic error message through its own error shape', async () => {
+    const server = await modelsServer([{
+      status: 429,
+      body: '{"type":"error","error":{"type":"rate_limit_error","message":"Number of request tokens has exceeded your per-minute rate limit"}}',
+    }])
+    const ctx = await mountCatalog({ origins: { anthropic: server.origin } })
+
+    const probe = await ctx.faberloomModelCatalog.probe('anthropic', credentialRef('DEEPSEEK_API_KEY'))
+
+    expect(probe).toMatchObject({ kind: 'rate-limited', status: 429 })
+    expect(probe.detail).toBe('Number of request tokens has exceeded your per-minute rate limit')
   })
 
   it('reports a 200 body with no model list as unsupported', async () => {
@@ -365,6 +511,25 @@ describe('discovery failures', () => {
 
     await expect(ctx.faberloomModelCatalog.discover('openai', credentialRef('DEEPSEEK_API_KEY')))
       .rejects.toMatchObject({ code: 'QUOTA' })
+  })
+
+  it('throws the rate-limit code, distinct from quota, for a plain 429', async () => {
+    const server = await modelsServer([{ status: 429, body: '{"error":{"message":"too many requests"}}' }])
+    const ctx = await mountCatalog({ origins: { openai: server.origin } })
+
+    const failure = await ctx.faberloomModelCatalog.discover('openai', credentialRef('DEEPSEEK_API_KEY'))
+      .then(() => undefined, (error: unknown) => error as { code?: string; message?: string })
+
+    expect(failure?.code).toBe('RATE_LIMIT')
+    expect(failure?.message).toContain('(rate-limited)')
+  })
+
+  it('throws the bad-request code for a 400 the provider does not mark as a credential problem', async () => {
+    const server = await modelsServer([{ status: 400, body: '{"error":{"message":"bad parameters"}}' }])
+    const ctx = await mountCatalog({ origins: { openai: server.origin } })
+
+    await expect(ctx.faberloomModelCatalog.discover('openai', credentialRef('DEEPSEEK_API_KEY')))
+      .rejects.toMatchObject({ code: 'BAD_REQUEST' })
   })
 
   it('throws an unsupported-status code without a detail when the body is empty', async () => {

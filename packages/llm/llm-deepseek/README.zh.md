@@ -45,7 +45,7 @@ kind: "package-reference"
     filesApiTimeoutMs: 60000
 ```
 
-请求用 `provider: deepseek-official` 选择路由；模型 id 原样传到协议，因此新增 DeepSeek 模型无需重新注册。省略 `models` 时公布支持文本和图像的 `deepseek-flash` 以及仅支持文本的 `deepseek-v4-pro`，各自的上下文窗口均为 1,000,000 token；该列表是尚未发现任何模型的部署的建议性回退，实时列表来自经由 `ctx.faberloomModelCatalog` 与 `ctx.faberloomAgents.reconcileModels` 的发现。显式列表会替换这些默认值，未列出的模型 id 仍作为纯文本路由原样通过。包括模型发现工具在内的客户端可通过 `ctx.llm.listModels('deepseek-official')` 读取这些建议性条目。支持图片的条目可把 `imagePixelBudget` 设置为正整数或 `low`，也可以设置 `imageMaxBytes`。当端点把 `messages` 中任意位置最新的 `system` 消息读作完整的有效系统提示词时，条目可以声明 `systemPromptUpdate: in-history`；适配器会在已解析模型与已准备调用上报告该模式，agent loop（智能体循环）随后把变化后的提示词追加到已缓存历史之后，而不是改写开头的 system 消息（[决策规则](../../core/agent-loop/README.zh.md#understand-the-implementation)）。默认的 `deepseek-flash` 条目声明该模式；其他模型需通过 `models` 显式声明，`in-history` 以外的任何值都会在加载时以 `llm-deepseek: catalog model "<id>" systemPromptUpdate must be "in-history" when present` 失败。
+请求用 `provider: deepseek-official` 选择路由；模型 id 原样传到协议，因此新增 DeepSeek 模型无需重新注册。省略 `models` 时目录完全来自发现：`ctx.faberloomModelCatalog` 为 `deepseek` 提供方发现的行走决定存在哪些 id，在发现返回任何行之前不会公布任何模型。写明的 `models` 列表完全胜过发现结果，因为它可能点名私有或网关专用的 id。每个发现行都带有提供方声明的全部事实——名称、上下文窗口、最大输出、模态以及 `systemPromptUpdate` 能力——因此这里也不再保留任何按 id 写死的表。未列出的模型 id 仍作为纯文本路由原样通过。包括模型发现工具在内的客户端可通过 `ctx.llm.listModels('deepseek-official')` 读取解析后的条目。支持图片的条目可把 `imagePixelBudget` 设置为正整数或 `low`，也可以设置 `imageMaxBytes`。当端点把 `messages` 中任意位置最新的 `system` 消息读作完整的有效系统提示词时，条目可以声明 `systemPromptUpdate: in-history`；适配器会在已解析模型与已准备调用上报告该模式，agent loop（智能体循环）随后把变化后的提示词追加到已缓存历史之后，而不是改写开头的 system 消息（[决策规则](../../core/agent-loop/README.zh.md#understand-the-implementation)）。`in-history` 以外的任何值都会在加载时以 `llm-deepseek: catalog model "<id>" systemPromptUpdate must be "in-history" when present` 失败。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
@@ -56,7 +56,7 @@ kind: "package-reference"
 | `reasoningEffort` | `high` | 默认强度：`off`、`low`、`high` 或 `max` |
 | `maxTokens` | `256,000` | 单次请求输出上限；模型自身上限与显式请求值优先 |
 | `defaultContextWindow` | `1,000,000` | 无精确值模型的容量回退 |
-| `models` | V41 Flash + V4 Pro | 供发现消费方查看的建议性目录 |
+| `models` | 发现行（发现前为空） | 供发现消费方查看的目录；写明的列表胜过发现结果 |
 | `streamIdleTimeoutMs` | `300,000` | 单次流读取未完成的最大提供方空闲时间 |
 | `maxRequestFilesBytes` | `128 MiB` | file 模式请求图片字节预算，保留图片超过时请求以 `IMAGE_OFFLOAD_REQUIRED` 失败 |
 | `maxInlineRequestImageBytes` | `20 MiB` | 独立的 base64 回退高水位 |
@@ -132,7 +132,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 | [`src/index.ts`](src/index.ts) | settings、凭据与提供方注册 |
 | [`src/config.ts`](src/config.ts) | schema 与请求配置解析 |
 | [`src/adapter.ts`](src/adapter.ts) | 按协议分派，并冻结已准备请求的配置 |
-| [`src/common/models.ts`](src/common/models.ts) | 共享模型目录 |
+| [`src/common/models.ts`](src/common/models.ts) | 基于发现行的目录解析，不写死任何 id |
 | [`src/common/model-info.ts`](src/common/model-info.ts) | 共享模型能力与推理选项 |
 | [`src/common/file-store.ts`](src/common/file-store.ts) | 共享 Files 缓存、刷新、配额清理与取消 |
 | [`src/common/files-api.ts`](src/common/files-api.ts) | 各协议的 Files 端点与响应映射 |
@@ -209,7 +209,7 @@ loop 保留的响应块会追加到下一个请求，并保留其更早的可复
 - **请求使用原始 `fetch`，而非 `@cordisjs/plugin-http`**——没有共享代理或拦截配置。
 - **跳过插件新增的内容块类型**——核心文本与受支持图片块会被序列化，空工具输出以字面量 `(no output)` 过线。
 - **图片是仅用于输入的持久附件**——不支持直接外部 URL 与 assistant 图片输出；DeepSeek 输入通常使用 Files API，仅在单次请求恢复时使用内联 base64。
-- 默认目录预注册 `deepseek-flash` 及其文本、图片和历史内更新能力，不探测网关可用性。网关开放该 ID 前，请求可能以 `INVALID_REQUEST` 失败。配置 `DEEPSEEK_API_KEY` 和支持该 ID 的网关后，设置 `DEEPSEEK_FLASH_E2E=1` 可启用[本包 e2e 测试文件](tests/adapter.e2e.ts)中的 Chat Completions 协议验证。
+- 本适配器不写死任何 id：没有写明的 `models` 列表时，它只公布 `ctx.faberloomModelCatalog` 已发现的行，尚未发现任何模型时则一个也不公布。需要固定目录的部署——仅有网关 id，或无法发现的无密钥组合——才写明 `models`。配置 `DEEPSEEK_API_KEY` 和支持该 ID 的网关后，设置 `DEEPSEEK_FLASH_E2E=1` 可启用[本包 e2e 测试文件](tests/adapter.e2e.ts)中的 Chat Completions 协议验证。
 - [Messages system 更新 e2e](tests/messages/adapter.e2e.ts) 要求通过 `DEEPSEEK_IN_HISTORY_MODEL` 指定支持该能力的模型，例如 `deepseek-flash`，并使用 `high` 思考强度。该变量未设置或为空时跳过；普通 `off` 文本检查仍在有凭据时运行。关闭思考时已知的指令遵循不稳定，使这些 system 更新检查不适合使用 `off`。
 
 <a id="dev-note"></a>

@@ -138,6 +138,17 @@ describe('LlmRuntime', () => {
     expect(isQuotaExceededError('quota resets in one minute')).toBe(false)
   })
 
+  it('reads a cycle-scoped quota as terminal, not as a sub-hour throttle', () => {
+    // Verified against the live Kimi coding plan: its generation endpoint answers
+    // HTTP 403 with this body once the monthly allowance is spent.
+    const kimi = "You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan."
+    expect(isQuotaExceededError(kimi)).toBe(true)
+    expect(providerAccountFailureCode(403, kimi)).toBe(QUOTA_EXCEEDED_CODE)
+    // A throttle names a sub-hour window, which no billing period matches.
+    expect(isQuotaExceededError('usage limit resets in one minute')).toBe(false)
+    expect(isQuotaExceededError('daily request rate limit reached; retry after 2 seconds')).toBe(false)
+  })
+
   it('classifies OpenAI\'s live insufficient_quota body as exhausted, not throttled', () => {
     // Verified against the real API: a valid key with no balance answers a chat
     // request with HTTP 429 and this body. The `code`/`type` carry the

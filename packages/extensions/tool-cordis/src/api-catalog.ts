@@ -4668,6 +4668,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'skillInstall',
+    summary: 'Installer published as `ctx.skillInstall`.',
+    description: 'Installer published as `ctx.skillInstall`. Every method writes through the same roots the filesystem skill provider scans, so an installed skill loads without a restart once the provider\'s watcher observes the new directory.',
+    methods: [
+      {
+        signature: 'targets(cwd?: string): Promise<SkillInstallTargets>',
+        description: 'Resolve the two roots an install may target.',
+        parameters: [{ name: 'cwd', description: 'session working directory; omitted leaves the workspace root null.' }],
+        returns: 'the workspace root (null without a workspace) and the global root.',
+      },
+      {
+        signature: 'detect(source: string, cwd?: string): Promise<SkillFolderDetection>',
+        description: 'Inspect a folder and report whether it is an installable skill.',
+        parameters: [{ name: 'source', description: 'absolute or `cwd`-relative folder to inspect.' }, { name: 'cwd', description: 'session working directory used to resolve a relative source.' }],
+        returns: 'the detected skills, or the reason the folder is not a skill.',
+      },
+      {
+        signature: 'install(request: SkillInstallRequest): Promise<SkillInstallReport>',
+        description: 'Copy every detected skill into the chosen scope\'s root.',
+        parameters: [{ name: 'request', description: 'source, destination, session cwd, and replace flag.' }],
+        returns: 'the resolved root and one outcome per candidate.',
+      },
+      {
+        signature: 'uninstall(request: SkillUninstallRequest): Promise<SkillUninstallReport>',
+        description: 'Remove one skill previously installed from a folder.',
+        parameters: [{ name: 'request', description: 'name, destination, and session cwd.' }],
+        returns: 'whether a marked install was removed.',
+      },
+      {
+        signature: 'list(cwd?: string): Promise<readonly SkillInstallRow[]>',
+        description: 'List every folder-installed skill across the global root and, when a workspace resolves, the workspace root.',
+        parameters: [{ name: 'cwd', description: 'session working directory; omitted lists the global root alone.' }],
+        returns: 'the install rows, name-ascending.',
+      },
+    ],
+  },
+  {
     key: 'skills',
     summary: 'Layered registry of skill providers, the host+per-scope shape the tools registry established.',
     description: 'Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context\'s scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset\'s standing composition lands in that preset\'s layer. A read merges the global layer with the viewing scope\'s chain — the nearest layer\'s entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. It exposes sorted invocation-neutral summaries and loads full skill bodies on demand.',
@@ -6861,6 +6898,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DelegateResult {\n    readonly status: ResolveStatus;\n    readonly modelId: FaberLoomModelId | undefined;\n    readonly reason: string;\n    readonly cost: number | undefined;\n    readonly remainingBudget: number | undefined;\n}',
   },
   {
+    name: 'DetectedSkill',
+    declaration: 'export interface DetectedSkill {\n    readonly name: string;\n    readonly description: string;\n    readonly directory: string;\n}',
+  },
+  {
     name: 'DiffCallView',
     declaration: 'export interface DiffCallView {\n    card: \'diff\';\n    title: string;\n    diffs: FileDiff[];\n    locations?: FileLocation[];\n}',
   },
@@ -6898,7 +6939,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DiscoveredModel',
-    declaration: 'export interface DiscoveredModel {\n    readonly id: string;\n    readonly name?: string;\n    readonly contextWindow?: number;\n    readonly maxOutputTokens?: number;\n    readonly inputModalities?: readonly string[];\n    readonly outputModalities?: readonly string[];\n    readonly effortLevels?: readonly string[];\n}',
+    declaration: 'export interface DiscoveredModel {\n    readonly id: string;\n    readonly name?: string;\n    readonly contextWindow?: number;\n    readonly maxOutputTokens?: number;\n    readonly inputModalities?: readonly string[];\n    readonly outputModalities?: readonly string[];\n    readonly effortLevels?: readonly string[];\n    readonly systemPromptUpdate?: SystemPromptUpdate;\n}',
   },
   {
     name: 'DispatchReport',
@@ -7278,7 +7319,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomMcpServerRow',
-    declaration: 'export interface FaberLoomMcpServerRow {\n    readonly name: string;\n    readonly transport: FaberLoomMcpTransportKind;\n    readonly env: readonly FaberLoomMcpSecretRow[];\n    readonly headers: readonly FaberLoomMcpSecretRow[];\n    readonly enabled: boolean;\n    readonly mounted: boolean;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface FaberLoomMcpServerRow {\n    readonly name: string;\n    readonly transport: FaberLoomMcpTransportKind;\n    readonly target: string;\n    readonly command?: string;\n    readonly args?: readonly string[];\n    readonly cwd?: string;\n    readonly url?: string;\n    readonly env: readonly FaberLoomMcpSecretRow[];\n    readonly headers: readonly FaberLoomMcpSecretRow[];\n    readonly enabled: boolean;\n    readonly mounted: boolean;\n    readonly error: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomMcpToken',
@@ -8222,11 +8263,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ModelCatalogFailure',
-    declaration: 'export interface ModelCatalogFailure {\n    readonly id: string;\n    readonly name: string;\n    readonly message: string;\n}',
+    declaration: 'export interface ModelCatalogFailure {\n    readonly id: string;\n    readonly name: string;\n    readonly message: string;\n    readonly code?: string;\n}',
   },
   {
     name: 'ModelCatalogModel',
-    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n}',
+    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly contextWindow?: number;\n    readonly maxOutputTokens?: number;\n    readonly reasoning?: ModelReasoning;\n}',
   },
   {
     name: 'ModelCatalogSnapshot',
@@ -8370,7 +8411,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ProbeKind',
-    declaration: 'export type ProbeKind = \'ok\' | \'invalid-credential\' | \'quota-exhausted\' | \'unreachable\' | \'unsupported\';',
+    declaration: 'export type ProbeKind = \'ok\' | \'no-credential\' | \'invalid-credential\' | \'quota-exhausted\' | \'rate-limited\' | \'bad-request\' | \'unreachable\' | \'unsupported\';',
   },
   {
     name: 'ProjectionChangeListener',
@@ -8417,8 +8458,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PromptSectionOrderName = keyof typeof SECTION_ORDERS;',
   },
   {
+    name: 'ProviderCredentialTransport',
+    declaration: 'export type ProviderCredentialTransport = {\n    readonly kind: \'bearer\';\n} | {\n    readonly kind: \'header\';\n    readonly name: string;\n    readonly static?: Readonly<Record<string, string>>;\n} | {\n    readonly kind: \'query\';\n    readonly name: string;\n};',
+  },
+  {
     name: 'ProviderDescriptor',
-    declaration: 'export interface ProviderDescriptor {\n    readonly id: string;\n    readonly label: string;\n    readonly origin: string;\n    readonly protocol: ProviderProtocol;\n    readonly modelsPath: string;\n}',
+    declaration: 'export interface ProviderDescriptor {\n    readonly id: string;\n    readonly label: string;\n    readonly origin: string;\n    readonly protocol: ProviderProtocol;\n    readonly modelsPath: string;\n    readonly auth: ProviderCredentialTransport;\n    readonly errorShape: ProviderErrorShape;\n    readonly docs: readonly string[];\n    readonly routes: readonly string[];\n    readonly credentialRef: CredentialRef;\n}',
+  },
+  {
+    name: 'ProviderErrorShape',
+    declaration: 'export type ProviderErrorShape = \'openai\' | \'anthropic\' | \'google\';',
   },
   {
     name: 'ProviderProbe',
@@ -8511,6 +8560,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'RefusedSkill',
+    declaration: 'export interface RefusedSkill {\n    readonly directory: string;\n    readonly reason: SkillFolderRejection;\n}',
   },
   {
     name: 'RemoteError',
@@ -9353,6 +9406,46 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillEntry {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly modelInvocable: boolean;\n}',
   },
   {
+    name: 'SkillFolderDetection',
+    declaration: 'export type SkillFolderDetection = {\n    readonly kind: \'invalid\';\n    readonly source: string;\n    readonly reason: SkillFolderRejection;\n} | {\n    readonly kind: \'found\';\n    readonly source: string;\n    readonly skills: readonly DetectedSkill[];\n    readonly refused: readonly RefusedSkill[];\n};',
+  },
+  {
+    name: 'SkillFolderRejection',
+    declaration: 'export type SkillFolderRejection = \'missing\' | \'not-a-directory\' | \'empty\' | \'missing-skill-md\' | \'bad-frontmatter\' | \'missing-name\' | \'invalid-name\';',
+  },
+  {
+    name: 'SkillInstallOutcome',
+    declaration: 'export interface SkillInstallOutcome {\n    readonly name: string;\n    readonly status: SkillInstallOutcomeStatus;\n    readonly reason?: SkillFolderRejection | \'exists\';\n}',
+  },
+  {
+    name: 'SkillInstallOutcomeStatus',
+    declaration: 'export type SkillInstallOutcomeStatus = \'installed\' | \'replaced\' | \'already-installed\' | \'skipped\' | \'refused\';',
+  },
+  {
+    name: 'SkillInstallRefusal',
+    declaration: 'export type SkillInstallRefusal = SkillFolderRejection | \'no-interaction\' | \'unknown-scope\' | \'unavailable-destination\';',
+  },
+  {
+    name: 'SkillInstallReport',
+    declaration: 'export interface SkillInstallReport {\n    readonly status: SkillInstallStatus;\n    readonly source: string;\n    readonly destination?: SkillScope;\n    readonly root?: string;\n    readonly outcomes: readonly SkillInstallOutcome[];\n    readonly reason?: SkillInstallRefusal;\n}',
+  },
+  {
+    name: 'SkillInstallRequest',
+    declaration: 'export interface SkillInstallRequest {\n    readonly source: string;\n    readonly destination: SkillScope;\n    readonly cwd?: string;\n    readonly replace?: boolean;\n}',
+  },
+  {
+    name: 'SkillInstallRow',
+    declaration: 'export interface SkillInstallRow {\n    readonly name: string;\n    readonly destination: SkillScope;\n    readonly root: string;\n    readonly source: string;\n    readonly installedAt: string;\n}',
+  },
+  {
+    name: 'SkillInstallStatus',
+    declaration: 'export type SkillInstallStatus = \'installed\' | \'already-installed\' | \'skipped\' | \'refused\' | \'invalid\' | \'cancelled\';',
+  },
+  {
+    name: 'SkillInstallTargets',
+    declaration: 'export interface SkillInstallTargets {\n    readonly workspace: string | null;\n    readonly global: string;\n}',
+  },
+  {
     name: 'SkillInvocationPolicy',
     declaration: 'export interface SkillInvocationPolicy {\n    readonly modelInvocable: boolean;\n    readonly userInvocable: boolean;\n}',
   },
@@ -9389,12 +9482,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SkillResourceBase = {\n    readonly kind: \'directory\';\n    readonly path: string;\n} | {\n    readonly kind: \'url\';\n    readonly url: string;\n} | {\n    readonly kind: \'opaque\';\n    readonly description: string;\n};',
   },
   {
+    name: 'SkillScope',
+    declaration: 'export type SkillScope = \'workspace\' | \'global\';',
+  },
+  {
     name: 'SkillSource',
     declaration: 'export type SkillSource = \'project-dsh\' | \'project-agents\' | \'runtime\' | \'user-dsh\' | \'user-agents\' | \'custom\' | \'bundled\' | (string & {});',
   },
   {
     name: 'SkillSummary',
     declaration: 'export interface SkillSummary {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n}',
+  },
+  {
+    name: 'SkillUninstallReport',
+    declaration: 'export interface SkillUninstallReport {\n    readonly status: SkillUninstallStatus;\n    readonly name: string;\n    readonly destination: SkillScope;\n    readonly root: string | null;\n}',
+  },
+  {
+    name: 'SkillUninstallRequest',
+    declaration: 'export interface SkillUninstallRequest {\n    readonly name: string;\n    readonly destination: SkillScope;\n    readonly cwd?: string;\n}',
+  },
+  {
+    name: 'SkillUninstallStatus',
+    declaration: 'export type SkillUninstallStatus = \'removed\' | \'not-found\' | \'not-an-install\';',
   },
   {
     name: 'SkillViewOptions',

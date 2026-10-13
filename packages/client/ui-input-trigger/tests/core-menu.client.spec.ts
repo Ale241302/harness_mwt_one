@@ -122,6 +122,43 @@ describe('menuReduce source-settled', () => {
   })
 })
 
+describe('menuReduce note rows', () => {
+  const note = (name: string) => ({ name, note: true })
+
+  it('keeps a group holding only a note on screen and highlights nothing', () => {
+    let s = open(['reference'])
+    s = menuReduce(s, { type: 'source-settled', generation: 1, source: 'reference', items: [note('Empty folder')] })
+    expect(s.open).toBe(true)
+    expect(s.highlight).toBeNull()
+  })
+
+  it('highlights the first pickable item, and move cycles past a note and wraps', () => {
+    let s = open(['command'])
+    s = menuReduce(s, {
+      type: 'source-settled',
+      generation: 1,
+      source: 'command',
+      items: [note('No results'), item('goal'), item('model')],
+    })
+    expect(s.highlight).toEqual({ source: 'command', index: 1 })
+    s = menuReduce(s, { type: 'move', dir: 1 })
+    expect(s.highlight).toEqual({ source: 'command', index: 2 })
+    s = menuReduce(s, { type: 'move', dir: 1 })
+    expect(s.highlight).toEqual({ source: 'command', index: 1 })
+  })
+
+  it('ignores a hover into a note row', () => {
+    let s = open(['command'])
+    s = menuReduce(s, {
+      type: 'source-settled',
+      generation: 1,
+      source: 'command',
+      items: [item('goal'), note('Truncated')],
+    })
+    expect(menuReduce(s, { type: 'hover', source: 'command', index: 1 })).toBe(s)
+  })
+})
+
 describe('menuReduce source-failed', () => {
   it('silently removes the failed group', () => {
     let s = open(['command', 'skill'])

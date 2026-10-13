@@ -13,6 +13,20 @@ import { DeepSeekFileStore } from '../../src/common/file-store.ts'
 export const prepareExtensions = async () => ({ fields: {}, accept: async () => {} })
 
 export const MODEL = 'deepseek-v4-flash'
+/**
+ * The reviewed catalog these fixtures configure. The adapter ships no default
+ * list: discovery decides the ids, so a test that wants a populated catalog
+ * states one, exactly as a deployment would.
+ */
+export const REVIEWED_MODELS: NonNullable<Config['models']> = [
+  {
+    id: 'deepseek-flash',
+    name: 'DeepSeek-V41-Flash',
+    inputModalities: ['text', 'image'],
+    systemPromptUpdate: 'in-history',
+  },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro' },
+]
 export const user = (text = 'hello') => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
 export const options = (overrides: Partial<GenerateOptions> = {}): GenerateOptions => ({ provider: 'deepseek-official', model: MODEL, messages: [user()], ...overrides })
 export const start = { type: 'message_start', message: { id: 'msg_1', model: MODEL, usage: { input_tokens: 12, output_tokens: 1 } } }
@@ -40,7 +54,8 @@ export async function assemble(stream: AsyncIterable<StreamChunk>, model = MODEL
 }
 export function adapter(config: Config = {}) {
   const files = new DeepSeekFileStore()
-  return new DeepSeekMessagesAdapter({ connection: () => resolveAdapterOptions(config), apiKey: () => Promise.resolve('test-key'), userId: () => 'test-user', attachments: () => undefined, imageAccess: () => undefined, files: () => files, prepareExtensions })
+  const connection = Object.assign({}, config, { models: config.models ?? REVIEWED_MODELS }) as Config
+  return new DeepSeekMessagesAdapter({ connection: () => resolveAdapterOptions(connection), apiKey: () => Promise.resolve('test-key'), userId: () => 'test-user', attachments: () => undefined, imageAccess: () => undefined, files: () => files, prepareExtensions })
 }
 export async function server(reply: (response: ServerResponse, count: number) => void = response => response.end(sse(textEvents))) {
   const requests: { path: string; headers: IncomingHttpHeaders; body: Record<string, unknown> }[] = []

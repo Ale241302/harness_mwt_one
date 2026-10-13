@@ -45,7 +45,7 @@ Choose this adapter for DeepSeek's official API or a gateway that supports the s
     filesApiTimeoutMs: 60000
 ```
 
-A request selects the route with `provider: deepseek-official`; the model id passes through to the wire, so new DeepSeek models need no re-registration. Omitted `models` advertises the text- and image-capable `deepseek-flash` and the text-only `deepseek-v4-pro`, each with a 1,000,000-token context window; this list is an advisory fallback for a deployment that has not discovered anything yet, and the live list comes from discovery through `ctx.faberloomModelCatalog` and `ctx.faberloomAgents.reconcileModels`. An explicit list replaces those defaults, and unlisted model ids still pass through as text-only routes. Clients, including model discovery tools, can read the advisory entries through `ctx.llm.listModels('deepseek-official')`. Image-capable entries may set `imagePixelBudget` to a positive integer or `low`, and may set `imageMaxBytes`. An entry may declare `systemPromptUpdate: in-history` when its endpoint reads the latest `system` message at any position of `messages` as the complete effective system prompt; the adapter reports the mode on the resolved model and the prepared call, and the agent loop then appends a changed prompt after the cached history instead of rewriting the leading system message ([decision rule](../../core/agent-loop/README.md#understand-the-implementation)). The default `deepseek-flash` entry declares this mode; other models require an explicit `models` declaration, and any value other than `in-history` fails at load with `llm-deepseek: catalog model "<id>" systemPromptUpdate must be "in-history" when present`.
+A request selects the route with `provider: deepseek-official`; the model id passes through to the wire, so new DeepSeek models need no re-registration. An omitted `models` resolves the catalog from discovery alone: the rows `ctx.faberloomModelCatalog` has discovered for the `deepseek` provider decide which ids exist, and nothing is advertised until a discovery supplies them. A written `models` list wins outright over discovery, because it may name private or gateway-specific ids. A discovered row carries every fact the provider declared — name, context window, maximum output, modalities, and its `systemPromptUpdate` capability — so no per-id table survives here either. Unlisted model ids still pass through as text-only routes. Clients, including model discovery tools, can read the resolved entries through `ctx.llm.listModels('deepseek-official')`. Image-capable entries may set `imagePixelBudget` to a positive integer or `low`, and may set `imageMaxBytes`. An entry may declare `systemPromptUpdate: in-history` when its endpoint reads the latest `system` message at any position of `messages` as the complete effective system prompt; the adapter reports the mode on the resolved model and the prepared call, and the agent loop then appends a changed prompt after the cached history instead of rewriting the leading system message ([decision rule](../../core/agent-loop/README.md#understand-the-implementation)). Any value other than `in-history` fails at load with `llm-deepseek: catalog model "<id>" systemPromptUpdate must be "in-history" when present`.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -56,7 +56,7 @@ A request selects the route with `provider: deepseek-official`; the model id pas
 | `reasoningEffort` | `high` | Default effort: `off`, `low`, `high`, or `max` |
 | `maxTokens` | `256,000` | Per-request output cap; a model's own cap and explicit request values win |
 | `defaultContextWindow` | `1,000,000` | Capacity fallback for models without an exact value |
-| `models` | V41 Flash + V4 Pro | Advisory catalog shown by discovery consumers |
+| `models` | discovered rows (none until discovery) | Catalog shown by discovery consumers; a written list wins over discovery |
 | `streamIdleTimeoutMs` | `300,000` | Maximum provider idle time per outstanding stream read |
 | `maxRequestFilesBytes` | `128 MiB` | File-mode request-image byte budget; a request whose retained images exceed it fails with `IMAGE_OFFLOAD_REQUIRED` |
 | `maxInlineRequestImageBytes` | `20 MiB` | Independent base64 fallback high watermark |
@@ -132,7 +132,7 @@ The plugin is built on one explicit resolve step and one registration fact. `res
 | [`src/index.ts`](src/index.ts) | Settings, credentials, and provider registration |
 | [`src/config.ts`](src/config.ts) | Schema and request-local configuration resolution |
 | [`src/adapter.ts`](src/adapter.ts) | Protocol dispatch with frozen prepared-call configuration |
-| [`src/common/models.ts`](src/common/models.ts) | Shared model catalog |
+| [`src/common/models.ts`](src/common/models.ts) | Catalog resolution over discovered rows, with no burned-in id |
 | [`src/common/model-info.ts`](src/common/model-info.ts) | Shared model capabilities and reasoning choices |
 | [`src/common/file-store.ts`](src/common/file-store.ts) | Shared Files cache, refresh, quota cleanup, and cancellation |
 | [`src/common/files-api.ts`](src/common/files-api.ts) | Protocol-specific Files endpoints and response mapping |
@@ -209,7 +209,7 @@ These limits define where the adapter stops and future work begins. They are cur
 - **Requests use raw `fetch`, not `@cordisjs/plugin-http`** — no shared proxy or interception configuration.
 - **Plugin-added content block types are skipped** — core text and supported image blocks are serialized, and empty tool output crosses the wire as the literal `(no output)`.
 - **Images are input-only durable attachments** — direct external URLs and assistant image output are not supported; DeepSeek input normally uses the Files API and uses inline base64 only for per-request recovery.
-- The default catalog pre-registers `deepseek-flash` and its text/image and in-history capabilities without probing gateway availability. Requests can fail with `INVALID_REQUEST` until the gateway enables the id. With `DEEPSEEK_API_KEY` and a supporting gateway configured, `DEEPSEEK_FLASH_E2E=1` enables the Chat Completions check in [this package's e2e suite](tests/adapter.e2e.ts).
+- No id is burned into this adapter: without a written `models` list it advertises exactly what `ctx.faberloomModelCatalog` discovered, and none when nothing has been discovered. A deployment that needs a fixed catalog — a gateway-only id, or a keyless composition that cannot discover — writes `models`. With `DEEPSEEK_API_KEY` and a supporting gateway configured, `DEEPSEEK_FLASH_E2E=1` enables the Chat Completions check in [this package's e2e suite](tests/adapter.e2e.ts).
 - The [Messages system-update e2e checks](tests/messages/adapter.e2e.ts) require `DEEPSEEK_IN_HISTORY_MODEL` to name a supported model, such as `deepseek-flash`, and run with `high` effort. They skip when that variable is unset or empty; ordinary `off` text checks remain enabled with credentials. Known instruction-following instability with thinking disabled makes these system-update checks unsuitable for `off`.
 
 <a id="dev-note"></a>

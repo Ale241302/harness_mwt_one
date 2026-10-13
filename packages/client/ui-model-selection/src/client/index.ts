@@ -24,6 +24,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconDataOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelDirectoryState } from './directory.ts'
+import { DEFAULT_CATALOG_TTL_MS } from './catalog.ts'
 import { ModelDirectoryResolver } from './service.ts'
 import type { ModelSelectInjected } from './slots.ts'
 import { ModelSelect } from './ModelSelect.tsx'
@@ -47,30 +48,23 @@ function rowId(providerId: string, modelId: string): string {
   return `${providerId}/${modelId}`
 }
 
-const BUILTIN_DESCRIPTION_KEYS: Readonly<Record<string, ModelKey>> = {
-  'deepseek-official/deepseek-v4-flash': 'option.deepseekV4Flash.description',
-  'deepseek-official/deepseek-v4-pro': 'option.deepseekV4Pro.description',
-}
-
-function descriptionOf(
-  providerId: string,
-  model: ModelDirectoryState['groups'][number]['models'][number],
-  t: TranslateNS<'model'>,
-): string | undefined {
-  const key = BUILTIN_DESCRIPTION_KEYS[rowId(providerId, model.id)]
-  return key !== undefined && model.description === en[key] ? t(key) : model.description
-}
-
-/** Flatten the directory into popup rows; failure rows are listed for visibility but never selectable. */
+/**
+ * Flatten the directory into popup rows; failure rows are listed for visibility
+ * but never selectable. A row's detail is provider name plus the description the
+ * Host reported for that model — discovered metadata, never a table this plugin
+ * maintains.
+ * @param directory - the session's shared directory snapshot.
+ * @param t - the bound translator, used only for the failure detail copy.
+ * @returns the selectable rows in directory order.
+ */
 function optionsOf(directory: ModelDirectoryState, t: TranslateNS<'model'>): SelectOption[] {
   const rows: SelectOption[] = []
   for (const group of directory.groups) {
     for (const model of group.models) {
-      const description = descriptionOf(group.id, model, t)
       rows.push({
         id: rowId(group.id, model.id),
         label: model.name,
-        detail: description !== undefined ? `${group.name} · ${description}` : group.name,
+        detail: model.description === undefined ? group.name : `${group.name} · ${model.description}`,
         ...(directory.current !== null
           && directory.current.provider === group.id
           && directory.current.model === model.id
@@ -134,7 +128,7 @@ export function apply(ctx: ClientContext): void {
 
   // The composer-block reason is this plugin's own copy, read at raise time so
   // a locale change reaches the next publish.
-  ctx.plugin(ModelDirectoryResolver, { blockReason: () => t('blocked.composer') })
+  ctx.plugin(ModelDirectoryResolver, { blockReason: () => t('blocked.composer'), catalogTtlMs: DEFAULT_CATALOG_TTL_MS })
 
   // Entry 1: the /model popupSelect over the shared directory.
   ctx.inject(['commandUi', 'modelDirectories'], (scope: ClientContext) => {
@@ -185,6 +179,9 @@ export function apply(ctx: ClientContext): void {
           directory: directory.store,
           load: () => {
             if (available) directory.load().catch(() => { /* surfaced on the store */ })
+          },
+          refresh: () => {
+            if (available) models.refreshCatalog()
           },
           select: (selection: ModelSelection) => available
             ? directory.select(selection).then(() => true, () => false)

@@ -67,7 +67,7 @@ for await (const chunk of ctx.llm.stream({
 
 ### 失败与恢复
 
-每个流都恰好以一个终止 `finish` 分片结束：失败为 `{ kind: 'error', failure }`，取消为 `{ kind: 'aborted', failure }`。失败携带稳定 code，如 `NO_ADAPTER`、`MISSING_CREDENTIAL`、`AUTH`、`RATE_LIMIT`、`QUOTA` 与 `CONTEXT_WINDOW_EXCEEDED`；消费方依据 code 路由，绝不解析消息文本。点名未注册提供方的请求会以 `NO_ADAPTER` 失败，格式错误的凭据会以 `INVALID_CREDENTIAL` 失败，而不是表现为不透明的 fetch 错误。提供方账户级响应会在仅按状态映射之前被分类：被拒绝的凭据（HTTP 401）以 `AUTH` 失败；余额或配额耗尽——HTTP 402，或任何响应体带有计费、余额缺失或用量上限措辞的状态，包括 `insufficient_quota` 代码，以及客户端可能只保留其消息的“no credits remaining”语句——以 `QUOTA` 失败并点名提供方路由，使产品能提示用户充值后继续。本服务从不自行重跑请求：重试是 `dsh-llm-retry` 在 agent 失败步骤扩展点上的职责。
+每个流都恰好以一个终止 `finish` 分片结束：失败为 `{ kind: 'error', failure }`，取消为 `{ kind: 'aborted', failure }`。失败携带稳定 code，如 `NO_ADAPTER`、`MISSING_CREDENTIAL`、`AUTH`、`RATE_LIMIT`、`QUOTA` 与 `CONTEXT_WINDOW_EXCEEDED`；消费方依据 code 路由，绝不解析消息文本。点名未注册提供方的请求会以 `NO_ADAPTER` 失败，格式错误的凭据会以 `INVALID_CREDENTIAL` 失败，而不是表现为不透明的 fetch 错误。提供方账户级响应会在仅按状态映射之前被分类：被拒绝的凭据（HTTP 401）以 `AUTH` 失败；余额或配额耗尽——HTTP 402，或任何响应体带有计费、余额缺失、用量上限或计费周期措辞的状态，包括 `insufficient_quota` 代码，以及客户端可能只保留其消息的“no credits remaining”语句——以 `QUOTA` 失败并点名提供方路由，使产品能提示用户充值后继续。本服务从不自行重跑请求：重试是 `dsh-llm-retry` 在 agent 失败步骤扩展点上的职责。
 
 -----
 

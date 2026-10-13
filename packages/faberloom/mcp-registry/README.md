@@ -54,7 +54,7 @@ Every `env` and `headers` value is a secret. `save` writes each value to the cre
 <a id="mounting"></a>
 ## Mounting
 
-An enabled server mounts in-process through `ctx.plugin(dsh-mcp-client, config)` — the same mechanism `dsh-acp` uses to mount one per session, here at the registry's own scope instead of an agent scope. `save` unmounts the previous client and mounts the new one, `remove` unmounts before deleting, and a disabled server is never mounted. The tools belong to the global tool registry, which the agent loop reassembles on every request: a session already running sees `mcp__<name>__<tool>` in its next request without a restart, while the request already in flight does not. At load, `apply` mounts every enabled record and logs any that cannot mount, so a saved server is available to every workspace and Space from boot. The registry fiber's teardown disposes every mount.
+An enabled server mounts in-process through `ctx.plugin(dsh-mcp-client, config)` — the same mechanism `dsh-acp` uses to mount one per session, here at the registry's own scope instead of an agent scope. Records are partitioned per owner and the mount is process-global, so a server one user saves is user-level: every workspace and Space of that user sees its tools, and no other owner does. `mounted` is the proof, not the intent: an enabled record whose mount failed (an unconfigured credential, or a duplicate global namespace) reads `mounted: false`, and a caller must present it as unproven rather than as working. `save` unmounts the previous client and mounts the new one, `remove` unmounts before deleting, and a disabled server is never mounted. The tools belong to the global tool registry, which the agent loop reassembles on every request: a session already running sees `mcp__<name>__<tool>` in its next request without a restart, while the request already in flight does not. At load, `apply` mounts every enabled record and logs any that cannot mount, so a saved server is available to every workspace and Space from boot. The registry fiber's teardown disposes every mount.
 
 -----
 
@@ -84,7 +84,7 @@ Append-only when a mount adds a server between requests and replacing when a mou
 - **A failed mount keeps its row.** `save` commits the record before it mounts, so a server whose mount fails (a missing credential, or a duplicate global namespace) is still listed, reported `mounted: false`, and retried at the next boot.
 - **`probe` writes nothing and reads no seam.** The candidate values must travel in the `probe` input, so probing an already-saved server means re-entering its values; a caller that only knows the reference cannot probe without them.
 
-No invariant companion is published because the package's unit specs already assert the round-trip, the seam write with its reference, the probe verdicts against real endpoints, and the mount/unmount transitions.
+No invariant companion is published because the package's unit specs already assert the round-trip, the seam write with its reference, the probe verdicts against real endpoints and a real stdio child process, the mount/unmount transitions, and the registry booting through a real Loader composition.
 
 <a id="dev-note"></a>
 ### Dev Note

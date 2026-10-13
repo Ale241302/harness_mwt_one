@@ -15,6 +15,12 @@
   font: var(--dsw-font-ui-body);
 }
 
+.scope {
+  margin: 0;
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+}
+
 .status {
   margin: 0;
   color: var(--dsw-alias-label-caption);
@@ -83,6 +89,27 @@
 .meta {
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-ui-body);
+}
+
+.target {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-data);
+  word-break: break-word;
+}
+
+.rowError {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-ui-body);
+  word-break: break-word;
+}
+
+.formHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .confirm {

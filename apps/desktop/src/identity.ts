@@ -220,14 +220,10 @@ function setEnvLine(content: string, name: string, value: string): string {
   const pattern = new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`, 'u')
   const lines = content.split(/\r?\n/u)
   while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-  let replaced = false
-  const next = lines.map((line) => {
-    if (replaced || !pattern.test(line)) return line
-    replaced = true
-    return `${name}=${value}`
-  })
-  if (!replaced) next.push(`${name}=${value}`)
-  return next.length === 0 ? '' : `${next.join('\n')}\n`
+  const index = lines.findIndex(line => pattern.test(line))
+  if (index === -1) lines.push(`${name}=${value}`)
+  else lines[index] = `${name}=${value}`
+  return lines.length === 0 ? '' : `${lines.join('\n')}\n`
 }
 
 /**

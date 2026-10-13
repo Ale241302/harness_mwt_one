@@ -130,6 +130,38 @@ interface ResolvedWatchConfig {
   followSymlinks: boolean
 }
 
+/**
+ * Workspace-scoped skill root (`project-dsh`): the directory this provider
+ * scans as `<projectRoot>/.dsh/skills`. A writer that wants an installed skill
+ * to load as a project skill must target exactly this directory.
+ * @param projectRoot - resolved project root, the nearest `.git` ancestor.
+ * @returns the absolute workspace skills root.
+ */
+export function projectSkillRoot(projectRoot: string): string {
+  return join(projectRoot, '.dsh', 'skills')
+}
+
+/**
+ * User-scoped skill root (`user-dsh`): the directory this provider scans as
+ * `<dshHome>/skills`.
+ * @param dshHome - resolved DeepSeek Harness home.
+ * @returns the absolute user skills root.
+ */
+export function userSkillRoot(dshHome: string): string {
+  return join(dshHome, 'skills')
+}
+
+/**
+ * Resolve the project root a workspace-scoped lookup scans: the nearest
+ * ancestor of `cwd` that holds `.git`, or `cwd` itself when none does.
+ * @param cwd - session working directory.
+ * @param fs - optional filesystem service used for the ancestor probes.
+ * @returns the absolute project root.
+ */
+export async function findSkillProjectRoot(cwd: string, fs: FileSystem | undefined): Promise<string> {
+  return await findProjectRoot(resolve(cwd), fs)
+}
+
 /** Register the local filesystem skill provider on `ctx.skills`. */
 export function apply(ctx: Context, config: Config = {}): void {
   let provider!: FileSystemSkillProvider
@@ -245,16 +277,16 @@ export class FileSystemSkillProvider implements SkillProvider {
   private async roots(cwd: string | undefined): Promise<SkillRoot[]> {
     const roots: SkillRoot[] = []
     if (this.includeDefaultRoots && cwd !== undefined) {
-      const projectRoot = await findProjectRoot(resolve(cwd), optionalFileSystem(this.ctx))
+      const projectRoot = await findSkillProjectRoot(cwd, optionalFileSystem(this.ctx))
       roots.push(
-        { path: join(projectRoot, '.dsh/skills'), source: 'project-dsh', rank: PROJECT_DSH_RANK, projectRoot },
+        { path: projectSkillRoot(projectRoot), source: 'project-dsh', rank: PROJECT_DSH_RANK, projectRoot },
         { path: join(projectRoot, '.agents/skills'), source: 'project-agents', rank: PROJECT_AGENTS_RANK, projectRoot },
       )
     }
     roots.push(...this.customSkillDirs.map(path => ({ path, source: 'custom' as const, rank: CUSTOM_RANK })))
     if (this.includeDefaultRoots) {
       roots.push(
-        { path: join(this.dshHome, 'skills'), source: 'user-dsh', rank: USER_DSH_RANK, skipSystem: true },
+        { path: userSkillRoot(this.dshHome), source: 'user-dsh', rank: USER_DSH_RANK, skipSystem: true },
         { path: join(this.agentsHome, 'skills'), source: 'user-agents', rank: USER_AGENTS_RANK },
       )
     }
@@ -802,7 +834,7 @@ async function parseSkillFile(path: string, ctx: Context, signal?: AbortSignal, 
   }
   let parsed
   try {
-    parsed = parseFrontmatter(raw.content)
+    parsed = parseSkillFrontmatter(raw.content)
   } catch (error) {
     ctx.logger.warn(`skill file ${path} ignored: invalid YAML frontmatter: ${errorMessage(error)}`)
     return undefined
@@ -914,7 +946,13 @@ async function nodeEntryKind(fullPath: string, entry: { isDirectory(): boolean; 
   }
 }
 
-function parseFrontmatter(raw: string): { data: Record<string, unknown>; body: string } | undefined {
+/**
+ * Parse one skill file's leading YAML front-matter block.
+ * @param raw - complete Markdown file content.
+ * @returns the parsed mapping and the body after the closing `---`, or undefined
+ *   when the file has no readable front-matter block.
+ */
+export function parseSkillFrontmatter(raw: string): { data: Record<string, unknown>; body: string } | undefined {
   const firstLineEnd = raw.indexOf('\n')
   if (firstLineEnd < 0) return undefined
   const firstLine = raw.slice(0, firstLineEnd).replace(/\r$/, '')

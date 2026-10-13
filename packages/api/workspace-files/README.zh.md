@@ -47,7 +47,7 @@ kind: "package-reference"
 
 ### 修改
 
-`createFile` 原子地写入一个完整 UTF-8 文件，并拒绝已被占用的目标；它从不覆盖。`createDirectory` 创建一个目录，缺失的父目录一并创建。`move` 重命名一个条目或把它移到另一个目录，目标被占用时拒绝，除非以 `{ overwrite: true }` 要求替换。`remove` 删除文件、拒绝符号链接，并且只删除空目录，除非以 `{ recursive: true }` 连同其中内容一起删除。
+`createFile` 原子地写入一个完整 UTF-8 文件，并拒绝已被占用的目标；它从不覆盖。`createDirectory` 创建一个目录，缺失的父目录一并创建。`move` 重命名一个条目或把它移到另一个目录，目标被占用时拒绝，除非以 `{ overwrite: true }` 要求替换。`removePath` 删除文件、拒绝符号链接，并且只删除空目录，除非以 `{ recursive: true }` 连同其中内容一起删除。
 
 每个修改都通过读取所用的同一文件系统解析路径，解析结果位于工作区根之外即拒绝，然后才改动任何东西。被解析的条目本身不得是符号链接：动词会拒绝它，而不是跟随它到其目标——否则经链接删除会删掉链接指向的文件。工作区根自身也被拒绝为修改目标。`move` 还拒绝位于其自身来源之内的目标，文件系统无法表达这种移动。每个答案都说明改动了什么、在哪里：`operation`、调用后的条目工作区 `path`、其 `absolutePath`，移动时还有 `from` 中的原工作区路径。文件内容经 `ctx.fs.writeText` 以 `createIfAbsent` 写入，因此由所挂载后端自身的沙箱模式约束；目录、移动与删除三个动词使用宿主文件系统，因为文件系统 Service Definition 没有目录、重命名或删除操作。这三个动词因此要求与 harness 宿主共享文件系统的后端——`processPathFromHostPath` 必须能把目标映射回来——SSH 文件系统会以 `unsupported-backend` 被拒绝，而不是拿到一个猜测的宿主路径。
 
@@ -80,7 +80,7 @@ kind: "package-reference"
 
 ### 失败
 
-每种失败都是一个带类型化 details 的 `RemoteError` 代码，声明于 [`src/types.ts`](src/types.ts)：`workspace-file/not-found`、`workspace-file/outside-workspace`（目录列举，以及任何解析结果离开工作区根的修改）、`workspace-file/too-large`（带 `limit`，即适用的页、窗口、完整文件或新建文件上限）、`workspace-file/not-text`、`workspace-file/not-regular-file`（`kind` 为 `directory`、`symlink` 或 `other`）、`workspace-file/not-directory`（`kind` 为 `file`、`symlink` 或 `other`）、`workspace-file/already-exists`（创建，或未带 `overwrite` 的移动到已占用目标）、`workspace-file/directory-not-empty`（未带 `recursive` 的 `remove`）、`workspace-file/root-refused`、`workspace-file/symlink-refused`、`workspace-file/bad-target`（移动到自身来源之内）以及 `workspace-file/unsupported-backend`。调用方按代码分支，绝不按消息文本。
+每种失败都是一个带类型化 details 的 `RemoteError` 代码，声明于 [`src/types.ts`](src/types.ts)：`workspace-file/not-found`、`workspace-file/outside-workspace`（目录列举，以及任何解析结果离开工作区根的修改）、`workspace-file/too-large`（带 `limit`，即适用的页、窗口、完整文件或新建文件上限）、`workspace-file/not-text`、`workspace-file/not-regular-file`（`kind` 为 `directory`、`symlink` 或 `other`）、`workspace-file/not-directory`（`kind` 为 `file`、`symlink` 或 `other`）、`workspace-file/already-exists`（创建，或未带 `overwrite` 的移动到已占用目标）、`workspace-file/directory-not-empty`（未带 `recursive` 的 `removePath`）、`workspace-file/root-refused`、`workspace-file/symlink-refused`、`workspace-file/bad-target`（移动到自身来源之内）以及 `workspace-file/unsupported-backend`。调用方按代码分支，绝不按消息文本。
 
 ### Client 文件资源
 
@@ -108,7 +108,7 @@ kind: "package-reference"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `WorkspaceFiles`：`workspaceFiles` 服务与 Remote 命名空间、`Config`、四道关、切页器、`read`、`readBytes`、`readAll`、`readRelated`、`stat`、`list`、`createFile`、`createDirectory`、`move`、`remove` |
+| [`src/index.ts`](src/index.ts) | `WorkspaceFiles`：`workspaceFiles` 服务与 Remote 命名空间、`Config`、四道关、切页器、`read`、`readBytes`、`readAll`、`readRelated`、`stat`、`list`、`createFile`、`createDirectory`、`move`、`removePath` |
 | [`src/changes.ts`](src/changes.ts) | `WorkspaceChangeFeed`：`fs/observed` 订阅与每个打开的 `changes` generation 各一条队列 |
 | [`src/types.ts`](src/types.ts) | 线路类型与 `RemoteErrorDetailsMap` 错误码，以 `./types` 发布给 Client 包 |
 | [`src/client/index.ts`](src/client/index.ts)、[`provider.ts`](src/client/provider.ts)、[`change-feed.ts`](src/client/change-feed.ts) | 浏览器插件、文件元数据与每 Session 变更流 |

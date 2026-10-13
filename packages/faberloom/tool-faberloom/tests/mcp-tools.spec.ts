@@ -33,7 +33,7 @@ function savedServer(overrides: Record<string, unknown> = {}): Record<string, un
   return {
     name: 'github',
     transport: { transport: 'stdio', command: 'npx', args: ['-y', 'server-github'], cwd: '' },
-    env: [], headers: [], enabled: true, mounted: true, createdAt: 'c', updatedAt: 'u',
+    env: [], headers: [], enabled: true, mounted: true, error: null, createdAt: 'c', updatedAt: 'u',
     ...overrides,
   }
 }
@@ -76,7 +76,7 @@ describe('faberloom mcp tools', () => {
     expect(registry.save).toHaveBeenCalledWith(OWNER, STDIO)
     expect(registry.probe.mock.invocationCallOrder[0]).toBeLessThan(registry.save.mock.invocationCallOrder[0]!)
     expect(result).toEqual({ saved: true, name: 'github', transport: 'stdio', tools: ['mcp__github__list_repos'] })
-    expect(render(tool, result)).toBe('Installed the MCP server "github". It offers: mcp__github__list_repos. Every chat can use them now.')
+    expect(render(tool, result)).toBe('Installed the MCP server "github". It offers: mcp__github__list_repos. Every workspace and Space of this user can use them now.')
   })
 
   it('reports an installed server that offers no tools', async () => {
@@ -238,10 +238,10 @@ describe('faberloom mcp tools', () => {
     ])
     expect(JSON.stringify(result)).not.toContain('credentialRef')
     const text = render(tool, result)
-    expect(text).toContain('3 MCP servers:')
-    expect(text).toContain('- github (stdio: npx -y server-github), enabled and available; credentials: GITHUB_PERSONAL_ACCESS_TOKEN (environment) present')
+    expect(text).toContain('3 MCP servers for this user, available in every workspace and Space:')
+    expect(text).toContain('- github (stdio: npx -y server-github), enabled, proven, and available; credentials: GITHUB_PERSONAL_ACCESS_TOKEN (environment) present')
     expect(text).toContain('- weather (streamable-http: https://api.example.com/mcp), disabled; credentials: Authorization (header) missing')
-    expect(text).toContain('- notes (stdio: notes-mcp), enabled but not available yet; no saved credentials')
+    expect(text).toContain('- notes (stdio: notes-mcp), saved but not proven yet; no saved credentials')
     expect(tool.presentCall({} as never)).toEqual({ card: 'generic', title: 'List MCP servers', kind: 'other' })
   })
 
@@ -262,7 +262,26 @@ describe('faberloom mcp tools', () => {
 
     const result = await tool.execute({} as never) as Record<string, unknown>
 
-    expect(render(tool, result)).toContain('1 MCP server:')
+    expect(render(tool, result)).toContain('1 MCP server for this user, available in every workspace and Space:')
+  })
+
+  it('carries one server\'s failure reason without hiding the others', async () => {
+    const registry = fakeRegistry({
+      list: vi.fn(async () => [
+        savedServer({ name: 'broken', mounted: false, error: 'the credential is not configured' }),
+        savedServer({ name: 'fine' }),
+      ]),
+    })
+    const tools = harness({ faberloomMcpRegistry: registry })
+    const tool = tools.get('faberloom_mcp_list')!
+
+    const result = await tool.execute({} as never) as { servers: readonly Record<string, unknown>[] }
+
+    expect(result.servers.map(server => server['error'])).toEqual(['the credential is not configured', undefined])
+    const text = render(tool, result)
+    expect(text).toContain('- broken (stdio: npx -y server-github), saved but not proven yet;')
+    expect(text).toContain('last mount error: the credential is not configured')
+    expect(text).toContain('- fine (stdio: npx -y server-github), enabled, proven, and available;')
   })
 
   it('removes an installed server and reports a missing one', async () => {

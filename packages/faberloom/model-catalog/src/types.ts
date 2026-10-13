@@ -7,6 +7,7 @@
  */
 
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import type { SystemPromptUpdate } from '@deepseek-ai/dsh-llm'
 
 /**
  * Wire protocol one provider's models endpoint speaks. It fixes both the
@@ -14,6 +15,37 @@ import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
  * how a model row is read.
  */
 export type ProviderProtocol = 'openai' | 'messages' | 'google'
+
+/**
+ * How one provider carries the credential on its models request. This is a
+ * protocol fact, not a deployment choice: it is how the endpoint reads a key,
+ * so it stays in the table beside the models path.
+ */
+export type ProviderCredentialTransport =
+  /** `Authorization: Bearer <key>`. */
+  | { readonly kind: 'bearer' }
+  /** A named header, plus any constant headers the endpoint requires beside it. */
+  | {
+    readonly kind: 'header'
+    readonly name: string
+    readonly static?: Readonly<Record<string, string>>
+  }
+  /** A query parameter carrying the key. */
+  | {
+    readonly kind: 'query'
+    readonly name: string
+  }
+
+/**
+ * Provider error-body family, which fixes where a rejected models response puts
+ * its message and which identifiers name a credential, quota, rate, or bad
+ * request. Three families cover the five providers: the OpenAI-compatible body
+ * (`{ error: { message, type, code } }`) shared by DeepSeek, OpenAI, and Kimi;
+ * Anthropic Messages (`{ type: "error", error: { type, message } }`); and Google
+ * (`{ error: { code, message, status } }`), which reports an invalid key as a
+ * 400 with an `API_KEY_INVALID` status instead of a 401.
+ */
+export type ProviderErrorShape = 'openai' | 'anthropic' | 'google'
 
 /** One provider in the fixed protocol table. */
 export interface ProviderDescriptor {
@@ -27,6 +59,25 @@ export interface ProviderDescriptor {
   readonly protocol: ProviderProtocol
   /** Path appended to the origin for the models request, such as `/v1/models`. */
   readonly modelsPath: string
+  /** How the credential travels on the models request. */
+  readonly auth: ProviderCredentialTransport
+  /** Which error-body family a rejected response uses. */
+  readonly errorShape: ProviderErrorShape
+  /** Provider documentation pages this entry's origin, models path, and auth were read from. */
+  readonly docs: readonly string[]
+  /**
+   * Harness LLM route ids whose requests read this provider's model listing
+   * from discovery. A route absent here resolves its catalog from its own
+   * adapter knowledge — the pi-ai installed catalog, or a pinned `models`
+   * list — and discovery never changes what it serves.
+   */
+  readonly routes: readonly string[]
+  /**
+   * Credential reference discovery authenticates with when a caller does not
+   * name one. It is the conventional environment-variable name this
+   * deployment stores the provider key under.
+   */
+  readonly credentialRef: CredentialRef
 }
 
 /**
@@ -49,20 +100,31 @@ export interface DiscoveredModel {
   readonly outputModalities?: readonly string[]
   /** Reasoning effort levels the model accepts, when the provider declares a scale. */
   readonly effortLevels?: readonly string[]
+  /** Declared mid-conversation system-prompt handling, when the provider declares one. */
+  readonly systemPromptUpdate?: SystemPromptUpdate
 }
 
 /** Verdict of one credential probe. */
 export type ProbeKind =
   /** The credential authenticated and the provider served its model list. */
   | 'ok'
-  /** The provider rejected the credential (401/403), or no usable value resolved for the reference. */
+  /** No usable value resolved for the reference: absent or empty, as distinct from rejected. */
+  | 'no-credential'
+  /** The provider rejected the credential (401, 403 without billing wording, or a 400 its own body marks as an invalid key). */
   | 'invalid-credential'
-  /** The account is out of balance, credit, or quota (402, or 429/403 carrying billing wording). */
+  /** The account is out of balance, credit, or quota (402, or a body carrying billing wording). */
   | 'quota-exhausted'
+  /** The provider throttled the request: a 429 that names a rate rather than a balance. */
+  | 'rate-limited'
+  /** The provider refused the request itself: a 400 that names no credential problem. */
+  | 'bad-request'
   /** The request never completed: transport failure, timeout, or an unresolvable host. */
   | 'unreachable'
   /** The provider id is not in the protocol table, or the provider answered a status this probe does not classify. */
   | 'unsupported'
+
+/** Every probe kind other than `ok`: the states a caller reports instead of a model list. */
+export type ProbeFailureKind = Exclude<ProbeKind, 'ok'>
 
 /** Outcome of one credential probe; never carries the credential. */
 export interface ProviderProbe {

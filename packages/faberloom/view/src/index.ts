@@ -581,13 +581,22 @@ function mcpServerRow(server: FaberLoomMcpServer): FaberLoomMcpServerRow {
     name: entry.name,
     present: entry.present,
   })
+  const transport = server.transport
+  const target = transport.transport === 'stdio'
+    ? [transport.command, ...transport.args].join(' ')
+    : transport.url
   return {
     name: server.name,
-    transport: server.transport.transport,
+    transport: transport.transport,
+    target,
+    ...transport.transport === 'stdio'
+      ? { command: transport.command, args: [...transport.args], cwd: transport.cwd }
+      : { url: transport.url },
     env: server.env.map(secret),
     headers: server.headers.map(secret),
     enabled: server.enabled,
     mounted: server.mounted,
+    error: server.error,
     createdAt: server.createdAt,
     updatedAt: server.updatedAt,
   }

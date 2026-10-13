@@ -628,6 +628,16 @@ export interface FaberLoomMcpServerRow {
   readonly name: string
   /** Transport the server is reached through. */
   readonly transport: FaberLoomMcpTransportKind
+  /** How the server is reached, as one line: the command with its arguments, or the URL. */
+  readonly target: string
+  /** Executable a `stdio` server spawns; absent on the HTTP branch. */
+  readonly command?: string
+  /** Arguments passed to the executable; absent on the HTTP branch. */
+  readonly args?: readonly string[]
+  /** Working directory of the `stdio` child process; absent on the HTTP branch. */
+  readonly cwd?: string
+  /** Endpoint a `streamable-http` server is reached at; absent on the stdio branch. */
+  readonly url?: string
   /** Environment entries and whether the seam holds a value for each. */
   readonly env: readonly FaberLoomMcpSecretRow[]
   /** Header entries and whether the seam holds a value for each. */
@@ -636,6 +646,8 @@ export interface FaberLoomMcpServerRow {
   readonly enabled: boolean
   /** Whether the server's MCP client is mounted in this process right now. */
   readonly mounted: boolean
+  /** The redacted reason the last mount attempt failed, or null when it is mounted or untried. */
+  readonly error: string | null
   /** ISO-8601 instant the record was created. */
   readonly createdAt: string
   /** ISO-8601 instant the record was last written. */

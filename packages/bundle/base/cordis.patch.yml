@@ -280,6 +280,10 @@
       name: '@deepseek-ai/dsh-skill-badge'
       disabled: true
 
+    - id: skill-install
+      name: '@deepseek-ai/dsh-skill-install'
+      disabled: true
+
     - id: tool-skill
       name: '@deepseek-ai/dsh-tool-skill'
 

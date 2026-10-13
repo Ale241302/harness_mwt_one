@@ -14,7 +14,7 @@ import type {
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
 import type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
 import { apply, inject } from '../src/client/index.ts'
-import { en } from '../src/client/locales.ts'
+import { en, es, zh } from '../src/client/locales.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
 const sid = (value: string): SessionId => value as SessionId
@@ -71,6 +71,9 @@ const ROOT_LISTING: Listing = {
   entries: [{ name: 'src', type: 'directory' }, { name: 'a b.md', type: 'file' }],
   truncated: false,
 }
+
+/** The file section's note when a name search matched no file at all. */
+const NO_MATCHING_FILE = { name: en['listing.noResults'], section: en['section.files'], note: true } as const
 
 function request(
   query: string,
@@ -352,7 +355,11 @@ describe('candidates', () => {
       error: new RemoteError('gateway/internal', 'session lookup failed', {}),
     }))
     const { source } = await bench(files, sessions)
-    await expect(source.candidates(session, request('bad'))).resolves.toEqual([])
+    // The lookup succeeded with nothing the menu can mention, so the file
+    // section says so; the failed session domain contributes no rows.
+    await expect(source.candidates(session, request('bad'))).resolves.toEqual([
+      { name: en['listing.noResults'], section: en['section.files'], note: true },
+    ])
 
     files.mockResolvedValueOnce({
       ok: false as const,
@@ -375,6 +382,7 @@ describe('candidates', () => {
     }))
     const { source } = await bench(files, sessions)
     await expect(source.candidates(session, request('same'))).resolves.toEqual([
+      NO_MATCHING_FILE,
       expect.objectContaining({
         name: 'same',
         description: '(no cwd) · 3d',
@@ -398,6 +406,7 @@ describe('candidates', () => {
     // A row absent from the list has no durable activity time to read.
     const { source } = await bench(files, sessions, { other: { updatedAt: UPDATED_AT } })
     await expect(source.candidates(session, request('unlisted'))).resolves.toEqual([
+      NO_MATCHING_FILE,
       expect.objectContaining({ name: 'Unlisted run', description: '3d' }),
     ])
   })
@@ -417,6 +426,7 @@ describe('candidates', () => {
     }))
     const { source } = await bench(files, sessions, { 'just-now': { updatedAt: NOW - 1_000 } })
     await expect(source.candidates(session, request('just'))).resolves.toEqual([
+      NO_MATCHING_FILE,
       expect.objectContaining({ name: 'Just now', description: 'now' }),
     ])
   })
@@ -436,6 +446,7 @@ describe('candidates', () => {
     }))
     const { source } = await bench(files, sessions)
     await expect(source.candidates(session, request('sib'))).resolves.toEqual([
+      NO_MATCHING_FILE,
       expect.objectContaining({ name: 'Sibling run', description: '3d' }),
     ])
   })
@@ -557,7 +568,67 @@ describe('workspace browsing', () => {
     expect(rows.map(row => row.name)).toEqual(['src/', en['listing.truncated']])
     const note = rows.at(-1)
     expect(note?.value).toBeUndefined()
+    expect(note?.note).toBe(true)
     expect(note?.section).toBe(en['section.files'])
+  })
+
+  it('says an empty folder at any level instead of leaving the file section bare', async () => {
+    const workspaceFiles = vi.fn()
+      .mockResolvedValueOnce({ ok: true as const, value: { path: '', entries: [], truncated: false } })
+      // A drilled level lists on its own, so it answers for itself.
+      .mockResolvedValueOnce({ ok: true as const, value: { path: 'src', entries: [], truncated: false } })
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    await expect(source.candidates(session, request(''))).resolves.toEqual([
+      { name: en['listing.empty'], section: en['section.files'], note: true },
+    ])
+    await expect(source.candidates(session, request('src/'))).resolves.toEqual([
+      { name: en['listing.empty'], section: en['section.files'], note: true },
+    ])
+  })
+
+  it('says no results when the typed filter excludes every child of a non-empty folder', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: {
+        path: 'docs',
+        entries: [{ name: 'guide.md', type: 'file' as const }, { name: 'notes', type: 'directory' as const }],
+        truncated: false,
+      },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, request('docs/zzz'))
+    expect(rows).toEqual([{ name: en['listing.noResults'], section: en['section.files'], note: true }])
+  })
+
+  it('says no results when a name search matches nothing', async () => {
+    const files = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))
+    const workspaceFiles = vi.fn()
+    const { source } = await bench(files, noSessions, undefined, workspaceFiles)
+    await expect(source.candidates(session, request('zzz'))).resolves.toEqual([
+      { name: en['listing.noResults'], section: en['section.files'], note: true },
+    ])
+    expect(workspaceFiles).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['en', en],
+    ['zh', zh],
+    ['es', es],
+  ] as const)('states the empty and no-result file sections in %s', async (id, dict) => {
+    const workspaceFiles = vi.fn()
+      .mockResolvedValueOnce({ ok: true as const, value: { path: '', entries: [], truncated: false } })
+      .mockResolvedValueOnce({
+        ok: true as const,
+        value: { path: 'docs', entries: [{ name: 'guide.md', type: 'file' as const }], truncated: false },
+      })
+    const { ctx, source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    ctx.locale.setLocale(id)
+    await expect(source.candidates(session, request(''))).resolves.toEqual([
+      { name: dict['listing.empty'], section: dict['section.files'], note: true },
+    ])
+    await expect(source.candidates(session, request('docs/zzz'))).resolves.toEqual([
+      { name: dict['listing.noResults'], section: dict['section.files'], note: true },
+    ])
   })
 
   it('names a failed listing in the reader\'s words instead of showing an empty menu', async () => {
@@ -581,16 +652,16 @@ describe('workspace browsing', () => {
       } as never)
     const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
     await expect(source.candidates(session, request('gone/'))).resolves.toEqual([
-      { name: en['listing.error.notFound'], section: en['section.files'] },
+      { name: en['listing.error.notFound'], section: en['section.files'], note: true },
     ])
     await expect(source.candidates(session, request('../escape/'))).resolves.toEqual([
-      { name: en['listing.error.outsideWorkspace'], section: en['section.files'] },
+      { name: en['listing.error.outsideWorkspace'], section: en['section.files'], note: true },
     ])
     await expect(source.candidates(session, request('notes.md/'))).resolves.toEqual([
-      { name: en['listing.error.notDirectory'], section: en['section.files'] },
+      { name: en['listing.error.notDirectory'], section: en['section.files'], note: true },
     ])
     await expect(source.candidates(session, request('weird/'))).resolves.toEqual([
-      { name: en['listing.error.unavailable'].replace('{message}', 'broker lost'), section: en['section.files'] },
+      { name: en['listing.error.unavailable'].replace('{message}', 'broker lost'), section: en['section.files'], note: true },
     ])
   })
 

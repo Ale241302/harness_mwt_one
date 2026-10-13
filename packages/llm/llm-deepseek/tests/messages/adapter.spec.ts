@@ -264,7 +264,9 @@ describe('Cordis provider composition', () => {
     { model: 'deepseek-flash', inHistory: true },
   ])('updates, clears and restores prompts across continued and resumed sessions, model=$model in-history=$inHistory', async ({ model, inHistory }) => {
     const { ctx, http } = await boot()
-    if (inHistory && model === MODEL) await ctx.settings.update(Messages.name, { models: [{ id: model, systemPromptUpdate: 'in-history' }] })
+    // The catalog is configuration now: a model's capability is declared, not
+    // inherited from a burned-in list.
+    if (inHistory) await ctx.settings.update(Messages.name, { models: [{ id: model, systemPromptUpdate: 'in-history' }] })
     let prompt = 'first prompt'
     ctx.on('system-prompt/assemble', async (_assembly, _context, next) => ({
       ...await next(), sections: [{ name: 'test', text: prompt, order: 0 }],

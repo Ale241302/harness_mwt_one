@@ -269,6 +269,8 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
   const toolCallTimeoutMs = config.toolCallTimeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS
   /** Live MCP client fibers, keyed by owner and server name; only mount/unmount touch it. */
   const mounts = new Map<string, Fiber>()
+  /** The redacted reason each server's last mount attempt failed, keyed like `mounts`. */
+  const mountErrors = new Map<string, string>()
   let domainPromise: Promise<Domain<typeof mcpRegistryDomainSpec>> | undefined
 
   /** Open the MCP-registry domain once and keep its handle, closing it with the plugin. */
@@ -303,6 +305,7 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
     headers: await secretViews(record.headers),
     enabled: record.enabled,
     mounted: mounts.has(keyOf(record.ownerId, record.name)),
+    error: mountErrors.get(keyOf(record.ownerId, record.name)) ?? null,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   })
@@ -383,20 +386,31 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
   /** Mount one enabled server's MCP client at the plugin's scope, awaiting its setup. */
   const mount = async (record: McpServerRecord): Promise<void> => {
     const key = keyOf(record.ownerId, record.name)
-    const env = await resolveSecrets(record.name, record.env)
-    const headers = await resolveSecrets(record.name, record.headers)
-    const fiber = ctx.plugin(McpClient, transportConfig(record.name, record.transport, { env, headers }, false))
-    mounts.set(key, fiber)
+    let secrets: string[] = []
     try {
-      await fiber
+      const env = await resolveSecrets(record.name, record.env)
+      const headers = await resolveSecrets(record.name, record.headers)
+      secrets = [...Object.values(env), ...Object.values(headers)]
+      const fiber = ctx.plugin(McpClient, transportConfig(record.name, record.transport, { env, headers }, false))
+      mounts.set(key, fiber)
+      try {
+        await fiber
+      } catch (error) {
+        mounts.delete(key)
+        throw error
+      }
+      mountErrors.delete(key)
     } catch (error) {
-      mounts.delete(key)
+      // Failures stay visible per server: a later `list` reports this server as
+      // unproven with the redacted reason, and never as working.
+      mountErrors.set(key, probeDetail(error, secrets))
       throw error
     }
   }
 
   /** Dispose one server's mount, when it has one. */
   const unmount = async (key: string): Promise<void> => {
+    mountErrors.delete(key)
     const fiber = mounts.get(key)
     if (fiber === undefined) return
     mounts.delete(key)
@@ -407,6 +421,7 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
   const closeMounts = async (): Promise<void> => {
     for (const fiber of mounts.values()) await fiber.dispose()
     mounts.clear()
+    mountErrors.clear()
   }
 
   ctx.effect(() => () => closeMounts(), 'faberloom.mcpRegistryMounts')

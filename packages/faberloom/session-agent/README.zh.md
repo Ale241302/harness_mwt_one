@@ -25,7 +25,7 @@ kind: "package-reference"
 
 在同时存在 `ctx.agents`、`ctx.faberloomSpaces`、`ctx.faberloomAgents`、`ctx.faberloomAgentPlane` 与工作区注册表的组合中挂载此行，并把 `ownerId`、`role`、`companyId`、`readOnly` 设为行为身份。该服务注册 `ctx.faberloomSessionAgent`，从每个会话的工作目录解析其 Space 代理，并通过 `agent.ctx.inject` 把组合安装到该代理的作用域上。它作用于挂载时列出的代理以及每一个 `agent/created`；组合随其代理一同释放。同一服务通过 `routeFor(agent)` 发布代理的模型路由：provider、model，以及由代理 id 派生的凭证引用；仅当代理同时声明了 provider 与 model 并保存了 API key 时才存在。会话控制器经 `ctx.get('faberloomSessionAgent')` 读取它，将其作为会话默认路由（低于任何显式选择），并用代理自己的 key 而非部署连接认证该路由。
 
-对每个存活代理，该服务还注册按轮次的 `@Name` 路由。它从某个步骤领取的消息中读取提及（请求瀑布本身不携带消息），只把被点名代理的 provider、model 与凭证引用施加到该轮次的请求上，并在下一个不含提及的轮次恢复会话自身的路由。`@` 选择器插入 `@Name` 及其后的一个空格，名称必须与目录代理的确切名称匹配；未知名称、缺少目录或平面、或缺少 provider、model、key 三者之一的代理，都不改动请求，因此提及绝不会让轮次失败。
+对每个存活代理，该服务还注册按轮次的 `@Name` 路由。它从某个步骤领取的消息中读取提及（请求瀑布本身不携带消息），只把被点名代理的 provider、model 与凭证引用施加到该轮次的请求上，并在下一个不含提及的轮次恢复会话自身的路由。提及在该轮次优先于会话自身的路由，包括组合会话起始所用的 Space 代理路由。`@` 选择器插入 `@Name` 及其后的一个空格，名称必须与目录代理的确切名称匹配；未知名称、缺少目录或平面、或缺少 provider、model、key 三者之一的代理，都不改动请求，因此提及绝不会让轮次失败。
 
 -----
 
@@ -80,5 +80,7 @@ Space 会话的请求把负责代理的 persona 作为 `deployment:persona-prefi
 persona 以与子代理组合相同的方式遮蔽 `deployment:persona-prefix`，因此 Space 会话无需新的提示槽即可读作其代理。工具掩码复用 `ctx.faberloomAgentPlane`，因此工作区会话与委托子代理强制同一个平面。解析链（工作目录 → 工作区 → Space → 代理）与 `spaces_ask` 调用方检查所用的一致。
 
 按轮次的路由位于两个代理作用域的监听器上：`agent/pre-step` 在步骤开启前捕获被领取消息中的提及，`agent/request`（以 `prepend` 注册，因而位于最外层）在链的其余部分解析出会话自身路由后施加该路由。仅凭 `agent/request` 无法读取提及，因为循环只在该瀑布之后才把被领取批次提交到日志。由于循环会记录请求所用的 header——模型可见输入的可重建性规则——被提及的路由会成为下一轮的种子；因此该监听器恢复它在提及前捕获的路由。通过 `faberloomAgents` 与 `faberloomAgentPlane` 传入被点名的代理；提及不新增任何服务。
+
+带 key 的实时冒烟（`tests/routing-live.e2e.ts`）对真实来源运行三个轮次，并在缺少各自所需凭证时自动跳过：目录代理自己的 key 打到 OpenAI（`OPENAI_API_KEY`）、无 key 的代理保持部署 DeepSeek 路由，以及带 key 的代理用自己的 key 打到 DeepSeek（`DEEPSEEK_API_KEY`）。本检出中的 OpenAI 账户没有额度，因此该轮次以提供商自身的额度耗尽响应体结束，成为类型化的 `QUOTA` 结果；这就是通过结果，因为其消息点名了提供商，且只可能来自 OpenAI。
 
 </details>

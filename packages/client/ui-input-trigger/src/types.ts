@@ -69,6 +69,14 @@ export interface InputTriggerCandidate {
   readonly hint?: string
   /** Optional visual heading shared by adjacent candidates; sectioned groups omit their source-title row. */
   readonly section?: string
+  /**
+   * Informational row instead of a candidate: the menu shows its text where
+   * candidates would stand, and the keyboard highlight, the pointer pick, and
+   * the drill gesture all skip it. A source publishes one to explain a section
+   * it has nothing to offer for ("no results", "empty folder", a failed
+   * listing) without claiming an option the user could choose.
+   */
+  readonly note?: boolean
   /** Opaque source-owned pick payload. */
   readonly value?: string
   /**

@@ -22,6 +22,15 @@ import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
 const NS = 'llm-deepseek'
 const KEY_REF = credentialRef('DEEPSEEK_API_KEY')
+/**
+ * The reviewed catalog these fixtures configure. The adapter ships no default
+ * list: discovery decides the ids, so a test that wants a populated catalog
+ * states one, exactly as a deployment would.
+ */
+const REVIEWED_MODELS: LlmDeepSeek.DeepSeekCatalogModel[] = [
+  { id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history' },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro' },
+]
 const IMAGE_REF: ImageAttachmentRef = {
   attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
   mediaType: 'image/png',
@@ -124,7 +133,7 @@ async function boot(dir: string, config: object): Promise<Harness> {
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await settingsFiber
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
-  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', ...config })
+  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', models: REVIEWED_MODELS, ...config })
   return { ctx, settingsFiber }
 }
 

@@ -73,6 +73,20 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* Informational row: a source's explanation standing where its candidates
+   would. It is not an option — the reducer never highlights it — so it drops
+   the pointer affordance and reads as quiet label text, wrapping instead of
+   truncating the way a one-line candidate row does. */
+.note {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.noteText {
+  min-width: 0;
+  line-height: 22px;
+}
+
 .sectionTitle {
   flex: none;
   min-height: 26px;

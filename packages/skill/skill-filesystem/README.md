@@ -55,6 +55,8 @@ Default roots are scanned in this provider's rank order:
 
 The project root is the nearest ancestor containing `.git`; without one, the current cwd is used. The user DSH root skips its `.system` child. `includeDefaultRoots: false` omits the project and user rows plus the `$DSH_BUNDLED_SKILL_DIR` default so an isolated provider sees only its own configured roots; `bundledSkillDir` adds a bundled root at rank 600.
 
+A writer that must target a scanned root instead of re-deriving it imports `projectSkillRoot`, `userSkillRoot`, and `findSkillProjectRoot` from this package; `@deepseek-ai/dsh-skill-install` installs through exactly those three.
+
 ### Mount and configure
 
 Load the plugin alongside the skill registry; it requires `ctx.skills`.

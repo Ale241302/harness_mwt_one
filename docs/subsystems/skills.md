@@ -263,6 +263,53 @@ Host service backing `ctx.remote.skills` without activating a cold Agent.
 
 Source: [`packages/api/session-controller/src/skill-catalog.ts`](../../packages/api/session-controller/src/skill-catalog.ts)
 
+<a id="ctxskillinstall--skillinstallservice"></a>
+
+### `ctx.skillInstall` — `SkillInstallService`
+
+Installer published as `ctx.skillInstall`. Every method writes through the same roots the filesystem skill provider scans, so an installed skill loads without a restart once the provider's watcher observes the new directory.
+
+```ts cordis-catalog
+/**
+ * Resolve the two roots an install may target.
+ * @param cwd - session working directory; omitted leaves the workspace root null.
+ * @returns the workspace root (null without a workspace) and the global root.
+ */
+targets(cwd?: string): Promise<SkillInstallTargets>
+
+/**
+ * Inspect a folder and report whether it is an installable skill.
+ * @param source - absolute or `cwd`-relative folder to inspect.
+ * @param cwd - session working directory used to resolve a relative source.
+ * @returns the detected skills, or the reason the folder is not a skill.
+ */
+detect(source: string, cwd?: string): Promise<SkillFolderDetection>
+
+/**
+ * Copy every detected skill into the chosen scope's root.
+ * @param request - source, destination, session cwd, and replace flag.
+ * @returns the resolved root and one outcome per candidate.
+ */
+install(request: SkillInstallRequest): Promise<SkillInstallReport>
+
+/**
+ * Remove one skill previously installed from a folder.
+ * @param request - name, destination, and session cwd.
+ * @returns whether a marked install was removed.
+ */
+uninstall(request: SkillUninstallRequest): Promise<SkillUninstallReport>
+
+/**
+ * List every folder-installed skill across the global root and, when a
+ * workspace resolves, the workspace root.
+ * @param cwd - session working directory; omitted lists the global root alone.
+ * @returns the install rows, name-ascending.
+ */
+list(cwd?: string): Promise<readonly SkillInstallRow[]>
+```
+
+Source: [`packages/skill/skill-install/src/types.ts`](../../packages/skill/skill-install/src/types.ts)
+
 <a id="ctxskills--skillregistry"></a>
 
 ### `ctx.skills` — `SkillRegistry`

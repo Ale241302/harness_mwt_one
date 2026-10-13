@@ -46,7 +46,7 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @returns the trigger and, while open, the two-level menu.
  */
 export function ModelSelect(
-  { locked, available, directory, load, select, t }:
+  { locked, available, directory, load, refresh, select, t }:
   ModelSelectInjected & { locked: boolean } & PropsLocale<'model'>,
 ) {
   const state = useSyncExternalStore(
@@ -110,6 +110,15 @@ export function ModelSelect(
     lastActionRef.current = 'load'
     load()
   }
+
+  // The catalog's own freshness: computed at render time (the menu re-renders
+  // on open and on every store change), never a subscription of its own.
+  const updatedLabel = state.lastCheckedAt === null
+    ? undefined
+    : (() => {
+      const minutes = Math.floor((Date.now() - state.lastCheckedAt) / 60_000)
+      return minutes < 1 ? t('status.updatedNow') : t('status.updatedAgo', { minutes })
+    })()
 
   useEffect(() => {
     if (!open) return
@@ -316,8 +325,21 @@ export function ModelSelect(
 
           {pane === 'model' && (
             <>
-              {state.status === 'loading' && (
-                <div className={css.status}>{t('status.loading')}</div>
+              {(state.status === 'loading' || updatedLabel !== undefined) && (
+                <div className={css.freshness}>
+                  <span>{state.status === 'loading' ? t('status.loading') : updatedLabel}</span>
+                  <button
+                    type="button"
+                    className={css.retry}
+                    disabled={state.status === 'loading'}
+                    onClick={() => {
+                      lastActionRef.current = 'load'
+                      refresh()
+                    }}
+                  >
+                    {t('action.refresh')}
+                  </button>
+                </div>
               )}
               {state.error !== null && lastActionRef.current === 'load' && (
                 <div className={css.error}>
@@ -327,7 +349,11 @@ export function ModelSelect(
               )}
               {state.failures.map(failure => (
                 <div className={css.warning} key={failure.id}>
-                  <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
+                  <span>
+                    {failure.code === 'MISSING_CREDENTIAL'
+                      ? t('failure.noCredential', { name: failure.name })
+                      : t('warning.groupLoad', { name: failure.name, message: failure.message })}
+                  </span>
                   <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
                 </div>
               ))}
@@ -353,6 +379,13 @@ export function ModelSelect(
                           >
                             <span className={css.optionCopy}>
                               <span className={css.modelName}>{model.name}</span>
+                              {/* Provider-declared facts only: a capacity discovery did
+                                  not report stays absent rather than inventing a number. */}
+                              {model.contextWindow !== undefined && (
+                                <span className={css.modelMeta}>
+                                  {t('option.context', { tokens: String(model.contextWindow) })}
+                                </span>
+                              )}
                             </span>
                             <span className={css.check}>
                               {selected ? <IconCheckOutline16 /> : null}
@@ -365,7 +398,7 @@ export function ModelSelect(
                 })}
               </div>
               {state.status === 'ready' && choices.length === 0 && (
-                <div className={css.empty}>{t('empty.models')}</div>
+                <div className={css.empty}>{t('empty.results')}</div>
               )}
             </>
           )}

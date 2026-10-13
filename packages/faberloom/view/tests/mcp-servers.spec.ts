@@ -12,6 +12,7 @@ function savedServer(overrides: Partial<Record<string, unknown>> = {}) {
     headers: [],
     enabled: true,
     mounted: true,
+    error: null,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-02T00:00:00Z',
     ...overrides,
@@ -60,10 +61,15 @@ describe('FaberLoomViewService MCP servers', () => {
     expect(rows).toEqual([{
       name: 'docs',
       transport: 'stdio',
+      target: 'npx -y server-docs',
+      command: 'npx',
+      args: ['-y', 'server-docs'],
+      cwd: '/tmp',
       env: [{ name: 'DOCS_TOKEN', present: true }],
       headers: [],
       enabled: true,
       mounted: true,
+      error: null,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-02T00:00:00Z',
     }])

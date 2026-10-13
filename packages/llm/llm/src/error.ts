@@ -95,8 +95,15 @@ export function isContextWindowExceededError(detail: string): boolean {
  * flattens that body to its message before some adapters classify it, so the
  * structured `code` alone is not always available. The pattern asserts an absent
  * balance; a throttling message names a rate instead, so it cannot match.
+ *
+ * The billing-period patterns cover a cycle-scoped quota, whose wording states a
+ * period ("monthly", "daily", "weekly", or a billing/next cycle) rather than a
+ * balance. Kimi's coding plan answers this way ("You've reached your monthly
+ * usage limit for this billing cycle. Your quota will be refreshed in the next
+ * cycle."). A throttle names a sub-hour window ("resets in one minute"), which
+ * no period word matches, so the two stay distinct.
  * @param detail - provider error code/type/message text joined into one string.
- * @returns true only for terminal quota, balance, credit, budget, or usage-limit wording.
+ * @returns true only for terminal quota, balance, credit, budget, usage-limit, or billing-cycle wording.
  */
 export function isQuotaExceededError(detail: string): boolean {
   return /\binsufficient[\s_-]+(?:quota|balance|credits?)\b/i.test(detail)
@@ -105,6 +112,8 @@ export function isQuotaExceededError(detail: string): boolean {
     || /\b(?:balance|credits?)[\s_-]+(?:exhausted|depleted)\b/i.test(detail)
     || /\bout[\s_-]+of[\s_-]+(?:credits?|budget)\b/i.test(detail)
     || /\bno[\s_-]+(?:credits?|funds?|balance)[\s_-]+(?:remaining|left)\b/i.test(detail)
+    || /\b(?:quota|usage[\s_-]*limit)\b[^.]{0,60}\b(?:billing[\s_-]*cycle|next[\s_-]*cycle|this[\s_-]*cycle)\b/i.test(detail)
+    || /\b(?:monthly|daily|weekly)\b[^.]{0,40}\b(?:quota|usage[\s_-]*limit)\b/i.test(detail)
 }
 
 /**

@@ -38,10 +38,15 @@ function server(overrides: Partial<FaberLoomMcpServerRow> = {}): FaberLoomMcpSer
   return {
     name: 'docs',
     transport: 'stdio',
+    target: 'npx -y @acme/docs-mcp',
+    command: 'npx',
+    args: ['-y', '@acme/docs-mcp'],
+    cwd: '',
     env: [{ name: 'DOCS_TOKEN', present: true }],
     headers: [{ name: 'HTTP_AUTH', present: false }],
     enabled: true,
     mounted: false,
+    error: null,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-02T00:00:00Z',
     ...overrides,
@@ -94,23 +99,31 @@ describe('McpServersSection', () => {
 
     const row = (await screen.findByText('docs')).closest('li')
     expect(row).not.toBeNull()
-    // The transport, state, and credential presence all belong to the row; the
-    // form's own transport option carries the same label, so scope to the row.
+    // The transport and the proven-or-not state belong to the row; the form's
+    // own transport option carries the same label, so scope to the row.
     expect(within(row as HTMLElement).getByText('Local process (stdio)')).toBeTruthy()
-    expect(within(row as HTMLElement).getByText('Enabled')).toBeTruthy()
-    expect(within(row as HTMLElement).getByText('Not mounted')).toBeTruthy()
+    expect(within(row as HTMLElement).getByText('Saved but not proven')).toBeTruthy()
     // The credential is reported by presence, and its value never reaches the page.
     expect(within(row as HTMLElement).getByText('DOCS_TOKEN: stored')).toBeTruthy()
     expect(within(row as HTMLElement).getByText('HTTP_AUTH: absent')).toBeTruthy()
+    // The scope is stated on the section, not per row.
+    expect(screen.getByText(/Only for your user/)).toBeTruthy()
   })
 
-  it('reports a server with no credentials, and the empty state when none is installed', async () => {
+  it('reports a mounted server as tested and working, a bare one, and the empty state', async () => {
+    const working = server({ env: [], headers: [], mounted: true })
+    const on = render(<McpServersSection {...props({ load: vi.fn(async () => ok([working])) })} />)
+    const row = (await screen.findByText('docs')).closest('li')
+    expect(row).not.toBeNull()
+    expect(within(row as HTMLElement).getByText('Tested and working')).toBeTruthy()
+    on.unmount()
+
     const bare = server({ env: [], headers: [], mounted: true, enabled: false })
     const none = render(<McpServersSection {...props({ load: vi.fn(async () => ok([bare])) })} />)
-    const row = (await screen.findByText('no credentials')).closest('li')
-    expect(row).not.toBeNull()
-    expect(within(row as HTMLElement).getByText('Disabled')).toBeTruthy()
-    expect(within(row as HTMLElement).getByText('Mounted')).toBeTruthy()
+    const off = (await screen.findByText('docs')).closest('li')
+    expect(off).not.toBeNull()
+    expect(within(off as HTMLElement).getByText('no credentials')).toBeTruthy()
+    expect(within(off as HTMLElement).getByText('Disabled')).toBeTruthy()
     none.unmount()
 
     render(<McpServersSection {...props()} />)
@@ -240,13 +253,36 @@ describe('McpServersSection', () => {
     const names = screen.getAllByLabelText('Variable or header name')
     fireEvent.change(names[0] as HTMLInputElement, { target: { value: 'A' } })
     fireEvent.change(names[1] as HTMLInputElement, { target: { value: 'B' } })
+    const values = screen.getAllByLabelText('Value')
+    fireEvent.change(values[0] as HTMLInputElement, { target: { value: 'a-value' } })
+    fireEvent.change(values[1] as HTMLInputElement, { target: { value: 'b-value' } })
     // Removing the second row leaves the first one edited in place.
     fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1] as HTMLButtonElement)
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(save).toHaveBeenCalledWith({ name: 'docs', transport: 'stdio', command: 'npx', env: { A: '' }, enabled: true })
+      expect(save).toHaveBeenCalledWith({ name: 'docs', transport: 'stdio', command: 'npx', env: { A: 'a-value' }, enabled: true })
     })
+  })
+
+  it('refuses a named credential with no value and a value with no name', async () => {
+    const save = vi.fn(async () => ok([]))
+    render(<McpServersSection {...props({ save })} />)
+    await screen.findByText('No MCP servers installed yet.')
+    typeName('docs')
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'npx' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add credential' }))
+    fireEvent.change(screen.getByLabelText('Variable or header name'), { target: { value: 'DOCS_TOKEN' } })
+
+    expect(await screen.findByText('A key is missing: the credential has a name but no value.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true)
+    expect(save).not.toHaveBeenCalled()
+
+    // Clearing the name while a value remains is refused the other way.
+    fireEvent.change(screen.getByLabelText('Variable or header name'), { target: { value: '' } })
+    typeSecretValue('typed')
+    expect(await screen.findByText('A credential with a value needs a name.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true)
   })
 
   it('switches back to the stdio branch before saving', async () => {
@@ -320,7 +356,7 @@ describe('McpServersSection', () => {
     typeName('docs')
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'npx' } })
     fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
-    expect(await screen.findByText('Connection succeeded: Tools found mcp__docs__search, mcp__docs__read')).toBeTruthy()
+    expect(await screen.findByText('Tested and working: Tools found mcp__docs__search, mcp__docs__read')).toBeTruthy()
     view.unmount()
 
     const none = render(<McpServersSection {...props({ test: vi.fn(async () => ok<FaberLoomMcpProbeResult>({ ok: true, tools: [] })) })} />)
@@ -328,23 +364,38 @@ describe('McpServersSection', () => {
     typeName('docs')
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'npx' } })
     fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
-    expect(await screen.findByText('Connection succeeded: No tool was published.')).toBeTruthy()
+    expect(await screen.findByText('Tested and working: No tool was published.')).toBeTruthy()
     none.unmount()
 
-    const failures: readonly { readonly failure: 'unreachable' | 'bad-credential' | 'protocol'; readonly text: string }[] = [
-      { failure: 'unreachable', text: 'The server could not be reached: connect ECONNREFUSED' },
-      { failure: 'bad-credential', text: 'The credential was rejected: HTTP 401 with [redacted]' },
-      { failure: 'protocol', text: 'The server answered something unexpected: bad frames' },
+    const failures = [
+      {
+        failure: 'unreachable' as const,
+        label: 'No answer',
+        detail: 'connect ECONNREFUSED',
+        next: 'Check the URL, that the program is installed, or that the server is running.',
+      },
+      {
+        failure: 'bad-credential' as const,
+        label: 'The credential was rejected',
+        detail: 'HTTP 401 with [redacted]',
+        next: 'Replace the key with a valid one; the server rejected it.',
+      },
+      {
+        failure: 'protocol' as const,
+        label: 'The server answered something unexpected',
+        detail: 'bad frames',
+        next: 'The address does not answer as an MCP server; check that it is the right endpoint.',
+      },
     ]
     for (const entry of failures) {
       const probeView = render(<McpServersSection {...props({
-        test: vi.fn(async () => ok<FaberLoomMcpProbeResult>({ ok: false, failure: entry.failure, detail: entry.text.slice(entry.text.indexOf(': ') + 2) })),
+        test: vi.fn(async () => ok<FaberLoomMcpProbeResult>({ ok: false, failure: entry.failure, detail: entry.detail })),
       })} />)
       await screen.findByText('No MCP servers installed yet.')
       typeName('docs')
       fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'npx' } })
       fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
-      expect(await screen.findByText(entry.text)).toBeTruthy()
+      expect(await screen.findByText(`${entry.label}: ${entry.detail} ${entry.next}`)).toBeTruthy()
       probeView.unmount()
     }
   })
@@ -416,5 +467,102 @@ describe('McpServersSection', () => {
     await waitFor(() => {
       expect(save).toHaveBeenCalledWith({ name: 'docs', transport: 'stdio', command: 'npx', enabled: false })
     })
+  })
+
+  it('lists many servers, filters them by name or target, and reports no match', async () => {
+    const many = [
+      server({ name: 'docs' }),
+      server({ name: 'weather', target: 'https://weather.example.com/mcp', transport: 'streamable-http', url: 'https://weather.example.com/mcp' }),
+      server({ name: 'gitlab' }),
+      server({ name: 'notes' }),
+    ]
+    render(<McpServersSection {...props({ load: vi.fn(async () => ok(many)) })} />)
+    await screen.findByText('docs')
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
+
+    const search = screen.getByLabelText('Search servers')
+    fireEvent.change(search, { target: { value: 'weather' } })
+    await waitFor(() => { expect(screen.getAllByRole('listitem')).toHaveLength(1) })
+    expect(screen.getByText('weather')).toBeTruthy()
+
+    fireEvent.change(search, { target: { value: 'example.com' } })
+    await waitFor(() => { expect(screen.getAllByRole('listitem')).toHaveLength(1) })
+
+    fireEvent.change(search, { target: { value: 'zzz' } })
+    expect(await screen.findByText('No server matches the search.')).toBeTruthy()
+  })
+
+  it('shows one server\'s error with its reason without hiding the others', async () => {
+    render(<McpServersSection {...props({
+      load: vi.fn(async () => ok([
+        server({ name: 'broken', mounted: false, error: 'the credential is not configured' }),
+        server({ name: 'fine', mounted: true }),
+      ])),
+    })} />)
+    await screen.findByText('broken')
+    expect(screen.getByText('Error: the credential is not configured')).toBeTruthy()
+    expect(screen.getByText('fine')).toBeTruthy()
+    expect(screen.getByText('Tested and working')).toBeTruthy()
+  })
+
+  it('enables and disables one server without touching its saved credentials', async () => {
+    const save = vi.fn(async () => ok([server({ enabled: false })]))
+    render(<McpServersSection {...props({ load: vi.fn(async () => ok([server()])), save })} />)
+    await screen.findByText('docs')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disable' }))
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith({
+        name: 'docs',
+        transport: 'stdio',
+        command: 'npx',
+        args: ['-y', '@acme/docs-mcp'],
+        cwd: '',
+        enabled: false,
+      })
+    })
+    // The refreshed row flips the action to Enable.
+    expect(await screen.findByRole('button', { name: 'Enable' })).toBeTruthy()
+  })
+
+  it('edits one server in place, prefilling its target and requiring the saved values again', async () => {
+    const save = vi.fn(async () => ok([]))
+    render(<McpServersSection {...props({
+      load: vi.fn(async () => ok([server({ headers: [] })])),
+      save,
+    })} />)
+    await screen.findByText('docs')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(await screen.findByText('Editing docs')).toBeTruthy()
+    expect(screen.getByLabelText('Name')).toHaveProperty('value', 'docs')
+    expect(screen.getByLabelText('Command')).toHaveProperty('value', 'npx')
+    // The saved value is never shown, so the prefilled row must be re-entered.
+    expect(await screen.findByText('A key is missing: the credential has a name but no value.')).toBeTruthy()
+
+    typeSecretValue('rotated-key')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith({
+        name: 'docs',
+        transport: 'stdio',
+        command: 'npx',
+        args: ['-y', '@acme/docs-mcp'],
+        env: { DOCS_TOKEN: 'rotated-key' },
+        enabled: true,
+      })
+    })
+  })
+
+  it('leaves edit mode on cancel without writing', async () => {
+    const save = vi.fn(async () => ok([]))
+    render(<McpServersSection {...props({ load: vi.fn(async () => ok([server()])), save })} />)
+    await screen.findByText('docs')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    await screen.findByText('Editing docs')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => { expect(screen.queryByText('Editing docs')).toBeNull() })
+    expect(screen.getByLabelText('Name')).toHaveProperty('value', '')
+    expect(save).not.toHaveBeenCalled()
   })
 })

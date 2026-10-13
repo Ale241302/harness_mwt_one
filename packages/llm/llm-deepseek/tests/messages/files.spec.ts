@@ -10,7 +10,7 @@ import type { Config } from '../../src/config.ts'
 import { DeepSeekMessagesAdapter } from '../../src/protocols/messages/adapter.ts'
 import { prepareImages } from '../../src/protocols/messages/images.ts'
 import { providerErrorDetail } from '../../src/protocols/messages/transport.ts'
-import { chunks, options, prepareExtensions, sse, textEvents, user } from './helpers.ts'
+import { chunks, options, prepareExtensions, REVIEWED_MODELS, sse, textEvents, user } from './helpers.ts'
 
 const model = 'deepseek-flash'
 const ref: ImageAttachmentRef = { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), width: 1, height: 1, mediaType: 'image/png', bytes: 3 }
@@ -37,7 +37,7 @@ function harness(config: Config = {}) {
   const attachments = { readImageRequest } as unknown as AttachmentStore
   const prepare = vi.fn(prepareExtensions)
   const adapter = new DeepSeekMessagesAdapter({
-    connection: () => resolveAdapterOptions(Object.assign({ baseURL: 'https://gateway.example/custom' }, config)),
+    connection: () => resolveAdapterOptions(Object.assign({ baseURL: 'https://gateway.example/custom', models: REVIEWED_MODELS }, config)),
     apiKey: async () => 'test-key', userId: () => 'test-user', attachments: () => attachments,
     imageAccess: () => ({ readonlyPath: '/workspace/image.png' }), files: () => files, prepareExtensions: prepare,
   })

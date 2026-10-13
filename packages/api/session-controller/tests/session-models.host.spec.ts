@@ -428,6 +428,84 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('folds discovery into the projection, exposing an id no source hardcodes with its declared capacities', async () => {
+    const { ctx } = await harness()
+    ctx.llm.registerAdapter(['quasar-route'], new CatalogAdapter('Quasar Provider', [
+      { provider: 'quasar-route', id: 'quasar-9-ultra', name: 'Quasar 9 Ultra' },
+    ]))
+    const discover = vi.fn(() => Promise.resolve([
+      { id: 'quasar-9-ultra', contextWindow: 262_144, maxOutputTokens: 65_536 },
+    ]))
+    ctx.provide('faberloomModelCatalog', {
+      providers: () => [{ id: 'quasar', routes: ['quasar-route'], credentialRef: 'QUASAR_API_KEY' }],
+      discover,
+    } as never)
+    createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'quasar-route', model: 'quasar-9-ultra' }), cwd: '/tmp' })
+
+    const catalog = await buildModelCatalog(ctx)
+
+    expect(discover).toHaveBeenCalledWith('quasar', 'QUASAR_API_KEY')
+    expect(catalog.groups).toContainEqual({
+      id: 'quasar-route',
+      name: 'Quasar Provider',
+      models: [{
+        id: 'quasar-9-ultra',
+        name: 'Quasar 9 Ultra',
+        contextWindow: 262_144,
+        maxOutputTokens: 65_536,
+      }],
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('leaves a route the catalog does not link alone, and never invents a capacity discovery omitted', async () => {
+    const { ctx } = await harness()
+    ctx.llm.registerAdapter(['unlinked-route'], new CatalogAdapter('Unlinked Provider', [
+      { provider: 'unlinked-route', id: 'unlinked-model', name: 'Unlinked Model' },
+    ]))
+    const discover = vi.fn(() => Promise.reject(new Error('must not run for an unlinked route')))
+    ctx.provide('faberloomModelCatalog', {
+      providers: () => [{ id: 'other', routes: ['some-other-route'], credentialRef: 'OTHER_API_KEY' }],
+      discover,
+    } as never)
+    createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'unlinked-route', model: 'unlinked-model' }), cwd: '/tmp' })
+
+    const catalog = await buildModelCatalog(ctx)
+
+    expect(discover).not.toHaveBeenCalled()
+    // No contextWindow/maxOutputTokens keys at all: an undeclared capacity is absent.
+    expect(catalog.groups).toContainEqual({
+      id: 'unlinked-route',
+      name: 'Unlinked Provider',
+      models: [{ id: 'unlinked-model', name: 'Unlinked Model' }],
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('reports a discovery refusal for a route that then advertises nothing, instead of a fabricated group', async () => {
+    const { ctx } = await harness()
+    ctx.llm.registerAdapter(['keyless-route'], new CatalogAdapter('Keyless Provider', []))
+    const refusal = Object.assign(new Error('no credential configured for reference "DEEPSEEK_API_KEY"'), {
+      code: 'MISSING_CREDENTIAL',
+    })
+    ctx.provide('faberloomModelCatalog', {
+      providers: () => [{ id: 'keyless', routes: ['keyless-route'], credentialRef: 'DEEPSEEK_API_KEY' }],
+      discover: () => Promise.reject(refusal),
+    } as never)
+    createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'keyless-route', model: 'anything' }), cwd: '/tmp' })
+
+    const catalog = await buildModelCatalog(ctx)
+
+    expect(catalog.failures).toContainEqual({
+      id: 'keyless-route',
+      name: 'Keyless Provider',
+      message: 'no credential configured for reference "DEEPSEEK_API_KEY"',
+      code: 'MISSING_CREDENTIAL',
+    })
+    expect(catalog.groups.some(group => group.id === 'keyless-route')).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
   it('accepts an advisory-unlisted model, rejects an unavailable provider, and switches only after the next assembly', async () => {
     const { ctx, agent, sessionId } = await harness()
     const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })

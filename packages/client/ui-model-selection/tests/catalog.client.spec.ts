@@ -10,12 +10,37 @@ const catalog = (model: string): ModelCatalog => ({
   failures: [],
 })
 
-function directory(models: () => Promise<unknown>): ModelCatalogDirectory {
+function directory(models: () => Promise<unknown>, ttlMs = 60_000): ModelCatalogDirectory {
   // The providing plugin's context, scripted down to the one method it calls.
-  return new ModelCatalogDirectory({ remote: { session: { modelCatalog: models } } } as never)
+  return new ModelCatalogDirectory({ remote: { session: { modelCatalog: models } } } as never, ttlMs)
 }
 
 describe('ModelCatalogDirectory', () => {
+  it('serves a freshly loaded value from cache without another request', async () => {
+    const models = vi.fn().mockResolvedValue({ ok: true, value: catalog('cached') })
+    const subject = directory(models)
+
+    await subject.load()
+    const again = await subject.load()
+
+    expect(models).toHaveBeenCalledTimes(1)
+    expect(again).toEqual(catalog('cached'))
+    expect(subject.store.getSnapshot().lastCheckedAt).toBeGreaterThan(0)
+  })
+
+  it('re-reads the catalog once the freshness window lapses', async () => {
+    // ttl 0 makes every read stale, which is the same code path a live TTL
+    // takes once it lapses.
+    const models = vi.fn()
+      .mockResolvedValueOnce({ ok: true, value: catalog('old') })
+      .mockResolvedValueOnce({ ok: true, value: catalog('new') })
+    const subject = directory(models, 0)
+
+    await subject.load()
+    await expect(subject.load()).resolves.toEqual(catalog('new'))
+    expect(models).toHaveBeenCalledTimes(2)
+  })
+
   it('shares one failing request, exposes the RPC error, and permits a retry', async () => {
     const models = vi.fn()
       .mockResolvedValueOnce({
@@ -80,15 +105,15 @@ describe('ModelCatalogDirectory', () => {
 
     subject.refresh()
     await vi.waitFor(() => {
-      expect(subject.store.getSnapshot()).toEqual({
+      expect(subject.store.getSnapshot()).toMatchObject({
         value: catalog('old'), status: 'error', error: 'refresh failed',
       })
     })
 
     subject.resetGeneration()
     await vi.waitFor(() => {
-      expect(subject.store.getSnapshot()).toEqual({
-        value: null, status: 'error', error: 'reset failed',
+      expect(subject.store.getSnapshot()).toMatchObject({
+        value: null, status: 'error', error: 'reset failed', lastCheckedAt: null,
       })
     })
   })

@@ -10,6 +10,7 @@ import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/d
 import { DeepSeekAdapter } from './adapter.ts'
 import { Config, resolveAdapterOptions } from './config.ts'
 import type { ResolvedDeepSeekOptions } from './config.ts'
+import type { DiscoveredCatalogRow } from './common/models.ts'
 
 export { Config, resolveAdapterOptions, PUBLIC_BASE_URL, MESSAGES_BASE_URL } from './config.ts'
 export type { ResolvedDeepSeekOptions } from './config.ts'
@@ -57,16 +58,46 @@ export const inject = ['llm']
 const NS = 'llm-deepseek'
 const PROVIDER = 'deepseek-official'
 
+/**
+ * Structural view of the deployment's model catalog service, read through
+ * `ctx.get` because that service arrives from a higher layer than this adapter.
+ * Only its cached snapshots are read; the adapter never triggers discovery.
+ */
+interface DiscoveryCatalog {
+  models(): readonly {
+    readonly providerId: string
+    readonly at: number
+    readonly models: readonly DiscoveredCatalogRow[]
+  }[]
+}
+
+/**
+ * Read the deployment's discovered rows for this provider's route.
+ * @param ctx - the plugin context holding the optional catalog service.
+ * @returns the snapshot time and rows; time 0 and no rows when nothing has been discovered.
+ */
+function discoveredDeepSeekRows(ctx: Context): { at: number; models: readonly DiscoveredCatalogRow[] } {
+  const catalog = ctx.get('faberloomModelCatalog') as DiscoveryCatalog | undefined
+  const snapshot = catalog?.models().find(entry => entry.providerId === 'deepseek')
+  return snapshot === undefined ? { at: 0, models: [] } : { at: snapshot.at, models: snapshot.models }
+}
+
 export function apply(ctx: Context, config: Config): void {
   let current: () => Config = () => config
   let lastRaw: Config | undefined
+  let lastDiscoveredAt: number | undefined
   let lastGood: ResolvedDeepSeekOptions | undefined
   const options = (): ResolvedDeepSeekOptions => {
     const raw = current()
-    if (raw === lastRaw && lastGood !== undefined) return lastGood
+    const discovery = discoveredDeepSeekRows(ctx)
+    // A new discovery snapshot is a new catalog, so it invalidates the memo the
+    // same way a new configuration does — a model the provider starts serving
+    // reaches the next request without a restart.
+    if (raw === lastRaw && discovery.at === lastDiscoveredAt && lastGood !== undefined) return lastGood
     try {
-      const next = resolveAdapterOptions(raw, launchEnvironmentOf(ctx))
+      const next = resolveAdapterOptions(raw, launchEnvironmentOf(ctx), discovery.models)
       lastRaw = raw
+      lastDiscoveredAt = discovery.at
       lastGood = next
       return next
     } catch (error) {
@@ -75,6 +106,7 @@ export function apply(ctx: Context, config: Config): void {
       // keep serving the last good facts and say so once per bad snapshot.
       if (lastGood === undefined) throw error
       lastRaw = raw
+      lastDiscoveredAt = discovery.at
       ctx.logger.error('llm-deepseek: keeping the last good configuration after an invalid settings section')
       ctx.logger.error(error)
       return lastGood

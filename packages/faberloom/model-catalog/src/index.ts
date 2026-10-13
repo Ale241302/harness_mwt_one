@@ -17,15 +17,18 @@ import {
   QUOTA_EXCEEDED_CODE,
   assertUsableApiKey,
   errorChain,
-  isQuotaExceededError,
+  isContextWindowExceededError,
+  providerAccountFailureCode,
 } from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type {
   DiscoveredModel,
   ModelCatalogSnapshot,
-  ProbeKind,
+  ProbeFailureKind,
   ProviderDescriptor,
+  ProviderErrorShape,
   ProviderModelCatalog,
   ProviderProtocol,
 } from './types.ts'
@@ -43,6 +46,40 @@ const ANTHROPIC_VERSION = '2023-06-01'
  * A bound on the emitted text, not a deployment choice.
  */
 const MAX_DETAIL_CHARS = 300
+
+/**
+ * Machine code a probe or discovery failure carries when no credential value
+ * resolved for the reference. Deliberately distinct from credential rejection:
+ * "configure a key" and "replace the key" are different states.
+ */
+export const NO_CREDENTIAL_CODE = 'MISSING_CREDENTIAL'
+
+/** Machine code a provider throttle (429 without billing wording) carries. */
+export const RATE_LIMITED_CODE = 'RATE_LIMIT'
+
+/** Machine code a provider-refused request (400 without credential wording) carries. */
+export const BAD_REQUEST_CODE = 'BAD_REQUEST'
+
+/** Machine code an incomplete models request carries: transport failure or timeout. */
+export const UNREACHABLE_CODE = 'TRANSPORT'
+
+/** Machine code a status or provider id this catalog cannot classify carries. */
+export const UNSUPPORTED_CODE = 'UNSUPPORTED'
+
+/**
+ * Stable machine code for every probe failure kind. The user-facing text is
+ * chosen by the surface that renders a verdict; this table is the routing
+ * vocabulary, and it is the only place a kind's code is spelled.
+ */
+export const PROBE_FAILURE_CODES: Readonly<Record<ProbeFailureKind, string>> = Object.freeze({
+  'no-credential': NO_CREDENTIAL_CODE,
+  'invalid-credential': INVALID_CREDENTIAL_CODE,
+  'quota-exhausted': QUOTA_EXCEEDED_CODE,
+  'rate-limited': RATE_LIMITED_CODE,
+  'bad-request': BAD_REQUEST_CODE,
+  'unreachable': UNREACHABLE_CODE,
+  'unsupported': UNSUPPORTED_CODE,
+})
 
 /** Cordis plugin name. */
 export const name = 'faberloom-model-catalog'
@@ -98,6 +135,11 @@ export const PROVIDERS: readonly ProviderDescriptor[] = Object.freeze([
     origin: 'https://api.deepseek.com/v1',
     protocol: 'openai',
     modelsPath: '/models',
+    auth: Object.freeze({ kind: 'bearer' }),
+    errorShape: 'openai',
+    docs: Object.freeze(['https://api-docs.deepseek.com/api/list-models']),
+    routes: Object.freeze(['deepseek-official']),
+    credentialRef: credentialRef('DEEPSEEK_API_KEY'),
   }),
   Object.freeze<ProviderDescriptor>({
     id: 'openai',
@@ -105,6 +147,11 @@ export const PROVIDERS: readonly ProviderDescriptor[] = Object.freeze([
     origin: 'https://api.openai.com/v1',
     protocol: 'openai',
     modelsPath: '/models',
+    auth: Object.freeze({ kind: 'bearer' }),
+    errorShape: 'openai',
+    docs: Object.freeze(['https://platform.openai.com/docs/api-reference/models/list']),
+    routes: Object.freeze([]),
+    credentialRef: credentialRef('OPENAI_API_KEY'),
   }),
   Object.freeze<ProviderDescriptor>({
     id: 'anthropic',
@@ -112,40 +159,70 @@ export const PROVIDERS: readonly ProviderDescriptor[] = Object.freeze([
     origin: 'https://api.anthropic.com',
     protocol: 'messages',
     modelsPath: '/v1/models',
+    auth: Object.freeze({
+      kind: 'header',
+      name: 'x-api-key',
+      static: Object.freeze({ 'anthropic-version': ANTHROPIC_VERSION }),
+    }),
+    errorShape: 'anthropic',
+    docs: Object.freeze(['https://docs.anthropic.com/en/api/models-list']),
+    routes: Object.freeze([]),
+    credentialRef: credentialRef('ANTHROPIC_API_KEY'),
   }),
+  // `kimi` is the Kimi Code (coding-plan) surface the product's `kimi` route
+  // calls: its models endpoint answers at `https://api.kimi.com/coding/v1/models`
+  // (measured live today: 200 with a `{ "data": [ ... ] }` list under either
+  // `x-api-key` or `Authorization: Bearer`, 401 with no credential). The
+  // published platform docs state the Kimi Code API is independent of the
+  // pay-as-you-go API and the two keys are not interchangeable
+  // (https://platform.kimi.ai/docs/guide/product-plans), which is why this entry
+  // names the product site as its documentation source. `llm-pi-ai` aliases the
+  // route `kimi` to its installed `kimi-coding` catalog entry, whose baseUrl is
+  // `https://api.kimi.com/coding`; this entry's origin agrees with that surface.
   Object.freeze<ProviderDescriptor>({
     id: 'kimi',
-    label: 'Kimi (Moonshot)',
+    label: 'Kimi Code',
+    origin: 'https://api.kimi.com/coding/v1',
+    protocol: 'openai',
+    modelsPath: '/models',
+    auth: Object.freeze({ kind: 'bearer' }),
+    errorShape: 'openai',
+    docs: Object.freeze(['https://www.kimi.ai/code', 'https://platform.kimi.ai/docs/guide/product-plans']),
+    routes: Object.freeze([]),
+    credentialRef: credentialRef('KIMI_API_KEY'),
+  }),
+  // `moonshotai` is the pay-as-you-go platform surface: a distinct product with
+  // its own key that lists at `https://api.moonshot.ai/v1/models`, documented at
+  // the source URL below. The PRC console issues keys for
+  // `https://api.moonshot.cn/v1`, which exposes the same path.
+  Object.freeze<ProviderDescriptor>({
+    id: 'moonshotai',
+    label: 'Moonshot (platform)',
     origin: 'https://api.moonshot.ai/v1',
     protocol: 'openai',
     modelsPath: '/models',
+    auth: Object.freeze({ kind: 'bearer' }),
+    errorShape: 'openai',
+    docs: Object.freeze(['https://platform.kimi.ai/docs/api/list-models']),
+    routes: Object.freeze([]),
+    credentialRef: credentialRef('MOONSHOT_API_KEY'),
   }),
+  // Google reports an invalid key as a 400 with status `API_KEY_INVALID` and
+  // the message "API key not valid", so the `google` error shape is what keeps
+  // that case out of `bad-request`.
   Object.freeze<ProviderDescriptor>({
     id: 'google',
     label: 'Google Gemini',
     origin: 'https://generativelanguage.googleapis.com/v1beta',
     protocol: 'google',
     modelsPath: '/models',
+    auth: Object.freeze({ kind: 'query', name: 'key' }),
+    errorShape: 'google',
+    docs: Object.freeze(['https://ai.google.dev/api/models#method:-models.list']),
+    routes: Object.freeze([]),
+    credentialRef: credentialRef('GOOGLE_API_KEY'),
   }),
 ])
-
-/** How each protocol carries the credential on a models request. */
-const CREDENTIAL_TRANSPORTS: Readonly<Record<ProviderProtocol, 'bearer' | 'x-api-key' | 'query'>> = Object.freeze({
-  openai: 'bearer',
-  messages: 'x-api-key',
-  google: 'query',
-})
-
-/** One non-`ok` probe verdict, as the failure classifiers return it. */
-type ProbeFailureKind = Exclude<ProbeKind, 'ok'>
-
-/** Stable machine code each probe failure kind maps to in a thrown discovery error. */
-const FAILURE_CODES: Readonly<Record<ProbeFailureKind, string>> = Object.freeze({
-  'invalid-credential': INVALID_CREDENTIAL_CODE,
-  'quota-exhausted': QUOTA_EXCEEDED_CODE,
-  'unreachable': 'TRANSPORT',
-  'unsupported': 'UNSUPPORTED',
-})
 
 /** Read one JSON object as a plain record, or `undefined` when it is not one. */
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -175,6 +252,17 @@ function effortLevels(effort: unknown): readonly string[] | undefined {
   return fields === undefined ? undefined : stringList(fields.supported_levels)
 }
 
+/**
+ * Read the provider's declared mid-conversation system-prompt handling. DeepSeek
+ * reports it per protocol family under `api_capabilities`; only `in-history` is a
+ * capability this harness models, so any other spelling stays absent rather than
+ * claiming a behavior the harness would then apply.
+ */
+function systemPromptUpdate(capabilities: unknown): 'in-history' | undefined {
+  const declared = stringField(atPath(capabilities, 'anthropic_messages.system_prompt_update'))
+  return declared === 'in-history' ? 'in-history' : undefined
+}
+
 /** Fields one provider row contributes to a {@link DiscoveredModel}. */
 interface ModelFields {
   readonly id: string
@@ -184,6 +272,7 @@ interface ModelFields {
   readonly inputModalities?: readonly string[] | undefined
   readonly outputModalities?: readonly string[] | undefined
   readonly effortLevels?: readonly string[] | undefined
+  readonly systemPromptUpdate?: 'in-history' | undefined
 }
 
 /** Build the frozen normalized row, keeping only the fields the provider declared. */
@@ -196,6 +285,7 @@ function model(fields: ModelFields): DiscoveredModel {
     ...fields.inputModalities === undefined ? {} : { inputModalities: fields.inputModalities },
     ...fields.outputModalities === undefined ? {} : { outputModalities: fields.outputModalities },
     ...fields.effortLevels === undefined ? {} : { effortLevels: fields.effortLevels },
+    ...fields.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: fields.systemPromptUpdate },
   })
 }
 
@@ -207,20 +297,27 @@ function modelRows(body: unknown, key: 'data' | 'models'): readonly unknown[] | 
   return Array.isArray(value) ? value : undefined
 }
 
-/** One OpenAI-compatible provider row, keeping the richer fields DeepSeek adds. */
+/** One OpenAI-compatible provider row, keeping the richer fields DeepSeek and Moonshot add. */
 function openAiModel(row: unknown): DiscoveredModel | undefined {
   const fields = record(row)
   if (fields === undefined) return undefined
   const id = stringField(fields.id)
   if (id === undefined) return undefined
+  // Two documented spellings of the same facts: DeepSeek answers
+  // `context_window`/`max_output_tokens`, Moonshot answers `context_length`
+  // and the boolean `supports_image_in`. Reading both is what keeps a
+  // discovered capacity from being dropped as unknown.
+  const declaredInput = stringList(fields.input_modalities)
   return model({
     id,
     name: stringField(fields.name),
-    contextWindow: numberField(fields.context_window),
+    contextWindow: numberField(fields.context_window) ?? numberField(fields.context_length),
     maxOutputTokens: numberField(fields.max_output_tokens),
-    inputModalities: stringList(fields.input_modalities),
+    inputModalities: declaredInput
+      ?? (fields.supports_image_in === true ? Object.freeze(['text', 'image']) : undefined),
     outputModalities: stringList(fields.output_modalities),
     effortLevels: effortLevels(fields.effort),
+    systemPromptUpdate: systemPromptUpdate(fields.api_capabilities),
   })
 }
 
@@ -295,18 +392,100 @@ function probeDetail(error: unknown, secret?: string): string {
   return secret === undefined ? text : redact(text, secret)
 }
 
-/** Classify one rejected models request into the probe kind that reports it. */
-function failureKind(status: number, body: string): ProbeFailureKind {
-  if (isQuotaExceededError(body)) return 'quota-exhausted'
-  if (status === 402) return 'quota-exhausted'
-  if (status === 401 || status === 403) return 'invalid-credential'
+/** One provider's own error fields, read out of a rejected models response body. */
+interface ProviderErrorBody {
+  /** The provider's human message, when it carried one. */
+  readonly message?: string
+  /** Provider identifiers (a code, a type, or a status token) that classify the failure. */
+  readonly identifiers: readonly string[]
+}
+
+/** Read a dotted field path out of one parsed body, or `undefined` when the path is absent. */
+function atPath(body: unknown, path: string): unknown {
+  let current: unknown = body
+  for (const segment of path.split('.')) {
+    const fields = record(current)
+    if (fields === undefined) return undefined
+    current = fields[segment]
+  }
+  return current
+}
+
+/** Collect the non-empty string spellings of the named paths. */
+function tokens(body: unknown, paths: readonly string[]): readonly string[] {
+  return paths.flatMap((path) => {
+    const field = stringField(atPath(body, path))
+    return field === undefined ? [] : [field]
+  })
+}
+
+/**
+ * Read one provider's error body through its own error shape.
+ *
+ * Google is the reason this is per provider rather than one parser: it puts its
+ * classification token in `error.status` (`API_KEY_INVALID`, `RESOURCE_EXHAUSTED`),
+ * while the OpenAI-compatible body puts it in `error.type` and `error.code`.
+ * @param shape - the provider's error-body family.
+ * @param body - the parsed provider response, when it parsed as JSON.
+ * @returns the provider message and its classification identifiers.
+ */
+function readErrorBody(shape: ProviderErrorShape, body: unknown): ProviderErrorBody {
+  const message = stringField(atPath(body, 'error.message'))
+  const identifiers = shape === 'google'
+    ? tokens(body, ['error.status'])
+    : shape === 'anthropic'
+      ? tokens(body, ['error.type'])
+      : tokens(body, ['error.type', 'error.code'])
+  return {
+    ...message === undefined ? {} : { message },
+    identifiers,
+  }
+}
+
+/** Whether provider text names the credential itself as the problem, which Google reports on a 400. */
+const CREDENTIAL_WORDING = /\b(?:api[\s_-]?key|credential|unauthoriz|unauthenticat|permission[\s_-]?denied|invalid[\s_-]?auth)\b/i
+
+/**
+ * Classify one rejected models request into the probe kind that reports it.
+ *
+ * Account-level outcomes are read through the same classifier the LLM adapters
+ * use, so a verdict agrees with the adapter that will serve the next request:
+ * HTTP 401 is a rejected credential, and any status whose body carries quota
+ * wording is an exhausted account — the ordering matters because Kimi's coding
+ * plan reports a cycle-scoped quota on 403, which a status table would call a
+ * permissions failure and send the user to replace a working key. Only then does
+ * the status decide a transient throttle or a request the provider refused.
+ * @param status - the provider HTTP status.
+ * @param detail - the provider's own message and identifiers joined into one string.
+ * @returns the failure kind the probe reports.
+ */
+function failureKind(status: number, detail: string): ProbeFailureKind {
+  const account = providerAccountFailureCode(status, detail)
+  if (account === 'AUTH') return 'invalid-credential'
+  if (account === QUOTA_EXCEEDED_CODE) return 'quota-exhausted'
+  if (status === 429) return 'rate-limited'
+  if (status === 400) {
+    // A context overflow is the request's shape, not the credential. Google
+    // reports an invalid key as a 400, so its body wording decides the rest.
+    if (isContextWindowExceededError(detail)) return 'bad-request'
+    return CREDENTIAL_WORDING.test(detail) ? 'invalid-credential' : 'bad-request'
+  }
+  if (status === 403) return 'invalid-credential'
   return 'unsupported'
 }
 
-/** Classify one rejected models response, keeping a bounded excerpt as its detail. */
-function classifyFailure(status: number, body: string): { kind: ProbeFailureKind; detail?: string } {
-  const kind = failureKind(status, body)
-  const detail = body.trim().slice(0, MAX_DETAIL_CHARS)
+/**
+ * Classify one rejected models response: its kind plus the provider's own
+ * message excerpt, bounded and already scrubbed of the credential.
+ * @param status - the provider HTTP status.
+ * @param bodyText - the response body, with the credential already replaced.
+ * @param shape - the provider's error-body family.
+ * @returns the failure kind and the provider's message excerpt when it carried one.
+ */
+function classifyFailure(status: number, bodyText: string, shape: ProviderErrorShape): { kind: ProbeFailureKind; detail?: string } {
+  const error = readErrorBody(shape, parseJson(bodyText))
+  const kind = failureKind(status, [error.message, ...error.identifiers].join(' '))
+  const detail = (error.message ?? bodyText.trim()).slice(0, MAX_DETAIL_CHARS)
   return detail.length === 0 ? { kind } : { kind, detail }
 }
 
@@ -332,14 +511,15 @@ async function resolveCredential(ctx: Context, ref: CredentialRef): Promise<stri
     if (ambient !== undefined && ambient.value.length > 0) return assertUsableApiKey(ambient.value, PACKAGE, ref)
   }
   throw new LlmError(
-    `${PACKAGE}: no API key for credential reference "${ref}"; store it through the credentials service`
-    + ` or export ${ref} in the launching environment`,
-    'MISSING_CREDENTIAL',
+    `${PACKAGE}: no credential configured for provider reference "${ref}"; store it through the credentials`
+    + ` service or export ${ref} in the launching environment`,
+    NO_CREDENTIAL_CODE,
   )
 }
 
 /**
- * Send one models request, carrying the key the way the protocol expects.
+ * Send one models request, carrying the key the way the provider's own
+ * credential transport declares.
  * @param descriptor - the provider to reach.
  * @param key - the resolved credential.
  * @param timeoutMs - milliseconds allowed before the request is abandoned.
@@ -348,14 +528,14 @@ async function resolveCredential(ctx: Context, ref: CredentialRef): Promise<stri
 async function requestModelList(descriptor: ProviderDescriptor, key: string, timeoutMs: number): Promise<Response> {
   const url = new URL(`${descriptor.origin.replace(/\/+$/, '')}${descriptor.modelsPath}`)
   const headers = new Headers({ accept: 'application/json' })
-  const transport = CREDENTIAL_TRANSPORTS[descriptor.protocol]
-  if (transport === 'bearer') {
+  const auth = descriptor.auth
+  if (auth.kind === 'bearer') {
     headers.set('authorization', `Bearer ${key}`)
-  } else if (transport === 'x-api-key') {
-    headers.set('x-api-key', key)
-    headers.set('anthropic-version', ANTHROPIC_VERSION)
+  } else if (auth.kind === 'header') {
+    headers.set(auth.name, key)
+    for (const [name, value] of Object.entries(auth.static ?? {})) headers.set(name, value)
   } else {
-    url.searchParams.set('key', key)
+    url.searchParams.set(auth.name, key)
   }
   return fetch(url, { method: 'GET', headers, signal: AbortSignal.timeout(timeoutMs) })
 }
@@ -389,15 +569,15 @@ function createModelCatalog(ctx: Context, config: Config): ProviderModelCatalog 
       try {
         response = await requestModelList(descriptor, key, requestTimeoutMs)
       } catch (error) {
-        throw new LlmError(`${PACKAGE}: the models request to "${providerId}" did not complete`, 'TRANSPORT', { cause: error })
+        throw new LlmError(`${PACKAGE}: the models request to "${providerId}" did not complete`, UNREACHABLE_CODE, { cause: error })
       }
       const text = await response.text()
       if (!response.ok) {
-        const failure = classifyFailure(response.status, redact(text, key))
+        const failure = classifyFailure(response.status, redact(text, key), descriptor.errorShape)
         const suffix = failure.detail === undefined ? '' : `: ${failure.detail}`
         throw new LlmError(
           `${PACKAGE}: model discovery for "${providerId}" failed (${failure.kind})${suffix}`,
-          FAILURE_CODES[failure.kind],
+          PROBE_FAILURE_CODES[failure.kind],
           { status: response.status },
         )
       }
@@ -418,13 +598,19 @@ function createModelCatalog(ctx: Context, config: Config): ProviderModelCatalog 
       try {
         key = await resolveCredential(ctx, credentialRef)
       } catch (error) {
-        return { kind: 'invalid-credential', detail: probeDetail(error) }
+        // Absent and malformed are different states: the surface tells the user
+        // to configure a key for one and to replace it for the other.
+        const missing = error instanceof LlmError && error.code === NO_CREDENTIAL_CODE
+        return {
+          kind: missing ? 'no-credential' : 'invalid-credential',
+          detail: probeDetail(error),
+        }
       }
       try {
         const response = await requestModelList(descriptor, key, requestTimeoutMs)
         const text = await response.text()
         if (!response.ok) {
-          const failure = classifyFailure(response.status, redact(text, key))
+          const failure = classifyFailure(response.status, redact(text, key), descriptor.errorShape)
           return failure.detail === undefined
             ? { kind: failure.kind, status: response.status }
             : { kind: failure.kind, status: response.status, detail: failure.detail }

@@ -1035,7 +1035,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/model-catalog/src/index.ts:65`](../packages/faberloom/model-catalog/src/index.ts)
+Source: [`packages/faberloom/model-catalog/src/index.ts:102`](../packages/faberloom/model-catalog/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-routines"></a>
 
@@ -1471,7 +1471,11 @@ export interface Config {
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
   defaultContextWindow?: number
-  /** Advisory models shown by discovery consumers; defaults to V41 Flash, V4 Flash, V4 Pro, and V4 Flash Vision Exp. */
+  /**
+   * Advisory models shown by discovery consumers. A written list wins over
+   * discovery; omission advertises exactly the discovered set, and none when
+   * nothing has been discovered.
+   */
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
@@ -1535,7 +1539,7 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`SystemPromptUpdate`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/config.ts:25`](../packages/llm/llm-deepseek/src/config.ts)
+Source: [`packages/llm/llm-deepseek/src/config.ts:26`](../packages/llm/llm-deepseek/src/config.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -2700,6 +2704,22 @@ export interface Config {
 ```
 
 Source: [`packages/skill/skill-filesystem/src/index.ts:49`](../packages/skill/skill-filesystem/src/index.ts)
+
+<a id="deepseek-aidsh-skill-install"></a>
+
+## `@deepseek-ai/dsh-skill-install`
+
+Requires: `tools`
+
+```ts config-catalog
+/** Installer configuration. */
+export interface Config {
+  /** DeepSeek Harness home the global scope installs under. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+}
+```
+
+Source: [`packages/skill/skill-install/src/index.ts:89`](../packages/skill/skill-install/src/index.ts)
 
 <a id="deepseek-aidsh-spill-local"></a>
 

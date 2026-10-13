@@ -80,7 +80,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     const trigger = page.getByRole('button', { name: /^Select model, current/ })
     await trigger.click()
     await page.getByRole('menuitem', { name: /^Model\b/ }).click()
-    await page.getByRole('menuitemradio', { name, exact: true }).click()
+    await page.getByRole('menuitemradio', { name }).click()
     await expect.poll(() => trigger.getAttribute('aria-label')).toContain(name)
     // The durable projection can update the label before the selection reply closes the menu.
     await expect.poll(() => trigger.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('false')

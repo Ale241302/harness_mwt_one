@@ -5,6 +5,7 @@
  * without a restart.
  */
 
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
@@ -27,6 +28,24 @@ const TOKEN = 'fixture-secret-marker-9c1'
 /** Fixed timestamps seeded into boot records. */
 const CREATED = '2026-01-01T00:00:00.000Z'
 const UPDATED = '2026-01-02T00:00:00.000Z'
+
+/** The real stdio MCP fixture, run as a child process by the installed Node. */
+const STDIO_SERVER = fileURLToPath(new URL('./stdio-fixture-server.ts', import.meta.url))
+
+/** The package directory the child runs in, so it resolves the SDK from node_modules. */
+const PACKAGE_DIR = fileURLToPath(new URL('..', import.meta.url))
+
+/** The token the stdio fixture requires in its environment. */
+const STDIO_TOKEN = 'expected-token'
+
+/** One stdio candidate pointed at the real fixture. */
+function stdioFixture(name: string, token: string): McpServerInput {
+  return {
+    name,
+    transport: { transport: 'stdio', command: process.execPath, args: [STDIO_SERVER], cwd: PACKAGE_DIR },
+    env: { FIXTURE_TOKEN: token },
+  }
+}
 
 afterEach(closeFixtures)
 
@@ -368,5 +387,113 @@ describe('probe', () => {
       transport: { transport: 'stdio', command: process.execPath, args: ['-e', 'process.exit(1)'] },
     })
     expect(result.ok).toBe(false)
+  })
+})
+
+describe('stdio servers (real child process)', () => {
+  it('probes a real stdio server with the right value and mounts its tools globally', async () => {
+    const { ctx, registry, fiber } = await harness()
+    const input = stdioFixture('local', STDIO_TOKEN)
+
+    expect(await registry.probe(input)).toEqual({ ok: true, tools: ['mcp__local__ping'] })
+    expect(globalToolNames(ctx)).not.toContain('mcp__local__ping')
+
+    const saved = await registry.save('a@x', input)
+    expect(saved).toMatchObject({ enabled: true, mounted: true })
+    expect(globalToolNames(ctx)).toContain('mcp__local__ping')
+    await fiber.dispose()
+    expect(globalToolNames(ctx)).not.toContain('mcp__local__ping')
+  })
+
+  it('fails a stdio probe when the value is wrong and saves nothing', async () => {
+    const { registry } = await harness({ config: { probeTimeoutMs: 4_000 } })
+    const result = await registry.probe(stdioFixture('local', 'wrong-token'))
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.detail).not.toContain('wrong-token')
+    expect(await registry.list('a@x')).toEqual([])
+  })
+})
+
+describe('several servers for one user', () => {
+  it('keeps two servers over different transports side by side and removes only the named one', async () => {
+    const fixture = await startMcpFixture()
+    const { ctx, registry, fiber } = await harness()
+
+    await registry.save('a@x', stdioFixture('local', STDIO_TOKEN))
+    await registry.save('a@x', { name: 'remote', transport: { transport: 'streamable-http', url: fixture.url } })
+
+    const listed = await registry.list('a@x')
+    expect(listed.map(server => [server.name, server.mounted, server.error])).toEqual([
+      ['local', true, null], ['remote', true, null],
+    ])
+    const before = globalToolNames(ctx)
+    expect(before).toContain('mcp__local__ping')
+    expect(before).toContain('mcp__remote__ping')
+
+    expect(await registry.remove('a@x', 'local')).toBe(true)
+    const after = globalToolNames(ctx)
+    expect(after).not.toContain('mcp__local__ping')
+    expect(after).toContain('mcp__remote__ping')
+    expect((await registry.list('a@x')).map(server => server.name)).toEqual(['remote'])
+    await fiber.dispose()
+  })
+
+  it('reports one server whose mount failed without disturbing the other', async () => {
+    const fixture = await startMcpFixture()
+    const records: McpServerRecord[] = [
+      {
+        ownerId: 'a@x', name: 'good', transport: { transport: 'streamable-http', url: fixture.url },
+        env: [], headers: [], enabled: true, createdAt: CREATED, updatedAt: UPDATED,
+      },
+      {
+        ownerId: 'a@x', name: 'bad', transport: { transport: 'streamable-http', url: fixture.url },
+        env: [{ name: 'TOKEN', credentialRef: mcpSecretCredentialRef('a@x', 'bad', 'TOKEN') }],
+        headers: [], enabled: true, createdAt: CREATED, updatedAt: UPDATED,
+      },
+    ]
+    const { ctx, registry } = await harness({ seed: records })
+
+    const listed = await registry.list('a@x')
+    expect(listed.map(server => [server.name, server.mounted, server.error === null])).toEqual([
+      ['bad', false, false], ['good', true, true],
+    ])
+    // The failing server's reason is its own; the other server keeps its tools.
+    expect(listed[0]?.error).toContain('not configured')
+    expect(globalToolNames(ctx)).toContain('mcp__good__ping')
+    expect(globalToolNames(ctx)).not.toContain('mcp__bad__ping')
+  })
+
+  it('replaces only the named server on a re-save and leaves the other mounted', async () => {
+    const fixture = await startMcpFixture()
+    const { ctx, registry } = await harness()
+
+    await registry.save('a@x', { name: 'one', transport: { transport: 'streamable-http', url: fixture.url } })
+    await registry.save('a@x', { name: 'two', transport: { transport: 'streamable-http', url: fixture.url } })
+    await registry.save('a@x', { name: 'one', transport: { transport: 'streamable-http', url: fixture.url }, enabled: false })
+
+    const listed = await registry.list('a@x')
+    expect(listed.map(server => [server.name, server.enabled, server.mounted])).toEqual([
+      ['one', false, false], ['two', true, true],
+    ])
+    expect(globalToolNames(ctx)).not.toContain('mcp__one__ping')
+    expect(globalToolNames(ctx)).toContain('mcp__two__ping')
+  })
+
+  it('leaves the mounted servers untouched when one candidate probe fails', async () => {
+    const fixture = await startMcpFixture()
+    const { ctx, registry } = await harness()
+    await registry.save('a@x', { name: 'local', transport: { transport: 'streamable-http', url: fixture.url } })
+    await registry.save('a@x', { name: 'remote', transport: { transport: 'streamable-http', url: fixture.url } })
+
+    const verdict = await registry.probe({
+      name: 'candidate',
+      transport: { transport: 'streamable-http', url: await closedEndpoint() },
+    })
+
+    expect(verdict.ok).toBe(false)
+    expect(globalToolNames(ctx)).toContain('mcp__local__ping')
+    expect(globalToolNames(ctx)).toContain('mcp__remote__ping')
+    expect((await registry.list('a@x')).map(server => server.mounted)).toEqual([true, true])
   })
 })

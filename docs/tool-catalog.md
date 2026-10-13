@@ -30,7 +30,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-fs` | `edit`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (image-tool registration)`, `ctx.llm + an image-capable route (image-tool execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | `ctx.tools`, `ctx.subprocess`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments. |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
-| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_files_create`, `faberloom_files_delete`, `faberloom_files_rename`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_mcp_add`, `faberloom_mcp_list`, `faberloom_mcp_remove`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_skill_install`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_ask`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_followup`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source` | `ctx.tools`, `ctx.faberloomSpaces`, `ctx.faberloomMcpRegistry` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
+| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_files_create`, `faberloom_files_delete`, `faberloom_files_rename`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_mcp_add`, `faberloom_mcp_install`, `faberloom_mcp_list`, `faberloom_mcp_remove`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_skill_install`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_ask`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_followup`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source` | `ctx.tools`, `ctx.faberloomSpaces`, `ctx.faberloomMcpRegistry` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
@@ -2812,7 +2812,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_mcp_add`
 
-Install an MCP server the user asked for, from the documentation they handed over: give it a local name and how to reach it, plus any value it authenticates with. The harness connects once to prove the server works before saving it. The stdio branch runs a local program; the streamable-http branch calls a network address. The user's own key or token belongs in env (environment variables) or headers (request headers) as a value, and is stored as their secret and never returned. Installing a name that already exists replaces it. If the server cannot be reached or rejects the credentials, nothing is saved and the reason is reported.
+Install one MCP server the user asked for when you already know how it is reached: give it a local name and how to reach it, plus any value it authenticates with. The user may have many servers; this adds or replaces exactly one and leaves the others untouched. When the user hands you the server's documentation rather than its facts, use faberloom_mcp_install instead. The harness connects once to prove the server works before saving it. The stdio branch runs a local program; the streamable-http branch calls a network address. The user's own key or token belongs in env (environment variables) or headers (request headers) as a value, and is stored as their secret and never returned. A name that is already installed is reported with the existing server's state and nothing is saved unless replace is true, so a working server is never overwritten silently. If the server cannot be reached or rejects the credentials, nothing is saved and the reason is reported.
 
 ```json
 {
@@ -2888,12 +2888,54 @@ Install an MCP server the user asked for, from the documentation they handed ove
     },
     "enabled": {
       "type": "boolean",
-      "description": "Whether the server becomes available in every chat as soon as it is saved; defaults to true. Set false to save it without turning it on."
+      "description": "Whether the server becomes available in every workspace and Space as soon as it is saved; defaults to true. Set false to save it without turning it on."
+    },
+    "replace": {
+      "type": "boolean",
+      "description": "Whether to replace an already-installed server of the same name. Defaults to false: a name already in use is reported and nothing is saved, so a working server is never overwritten silently. Set true only after the user chooses to reinstall, and pass a different name instead to keep both."
     }
   },
   "required": [
     "name",
     "transport"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mcp_install`
+
+Install ONE more MCP server from the documentation the user handed over: paste the page (the text they gave you, including any `mcpServers` JSON block) and the harness reads how the server is reached and which values it needs. The user may have many servers, one per purpose; this adds exactly one and leaves the others working as before. It never invents a value: a value the documentation asks for but does not supply is asked of the user through the product question surface, and if that surface is unavailable you receive the list of missing values to ask the user for and then call this tool again with them. It connects once to prove the server works before saving; a server that cannot be reached or rejects a value is not saved, and the reason is reported. A name that is already installed is reported with the existing server's state and nothing is saved unless replace is true, so a working server is never overwritten silently. The server is saved for the user, so every workspace and Space of theirs can use it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "documentation": {
+      "type": "string",
+      "description": "The MCP server documentation text, exactly as the user handed it over: prose, a fenced command, a server URL, or a `mcpServers` JSON block. Do not summarize it; paste it whole so no required value is dropped."
+    },
+    "name": {
+      "type": "string",
+      "description": "Local name for the server when you want to override the one the documentation suggests: 1 to 32 letters, digits, dashes, or underscores. Pass a different name when the suggested one is already installed and the user wants to keep both."
+    },
+    "values": {
+      "type": "object",
+      "description": "Values the user supplied for the inputs the documentation asks for, keyed by their exact name (for example {\"GITHUB_TOKEN\": \"...\"}). Each value is stored as the user's secret and never returned. Never guess a value; omit anything the user has not given.",
+      "additionalProperties": true
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether the server becomes available in every workspace and Space as soon as it is saved; defaults to true."
+    },
+    "replace": {
+      "type": "boolean",
+      "description": "Whether to replace an already-installed server of the same name. Defaults to false: a name already in use is reported and nothing is saved, so a working server is never overwritten silently. Set true only after the user chooses to reinstall, and pass a different name instead to keep both."
+    }
+  },
+  "required": [
+    "documentation"
   ]
 }
 ```
@@ -2915,7 +2957,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_mcp_remove`
 
-Remove one installed MCP server by name and forget its saved credentials, so it stops being available in every chat. Removing a name that is not installed changes nothing.
+Remove one installed MCP server by name and forget its saved credentials, so it stops being available in every workspace and Space. Removing a name that is not installed changes nothing.
 
 ```json
 {

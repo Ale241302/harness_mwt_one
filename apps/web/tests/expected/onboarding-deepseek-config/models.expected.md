@@ -13,6 +13,9 @@
     - button "Agent 预设":
       - img
       - text: Agent 预设
+    - button "语言":
+      - img
+      - text: 语言
     - button "已归档会话":
       - img
       - text: 已归档会话
@@ -30,6 +33,7 @@
       - text: DeepSeek deepseek-official API 密钥
       - textbox "API 密钥":
         - /placeholder: 已配置——输入新值可替换
+      - button "显示密钥"
       - group:
         - text: 自定义设置 API 地址
         - textbox "API 地址":

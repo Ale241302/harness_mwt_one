@@ -190,6 +190,30 @@ describe('MenuView', () => {
     expect(onPick).toHaveBeenCalledWith('reference', 2)
   })
 
+  it('renders a note row as plain text rather than an option', () => {
+    const { onPick } = mount(openState({
+      groups: [{
+        source: 'reference',
+        status: 'ready',
+        items: [
+          { name: '空文件夹', section: '文件与文件夹', note: true },
+          { name: 'README.md', section: '文件与文件夹' },
+        ],
+      }],
+      highlight: { source: 'reference', index: 1 },
+    }))
+    // The note shares its section heading with the row that follows it, so the
+    // heading renders once and the option list holds the candidate alone.
+    expect(screen.getAllByText('文件与文件夹')).toHaveLength(1)
+    expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['README.md'])
+    const note = document.querySelector('[data-note]')
+    expect(note?.textContent).toBe('空文件夹')
+    expect(note?.getAttribute('role')).toBe('presentation')
+    expect(note?.hasAttribute('id')).toBe(false)
+    fireEvent.mouseDown(note as HTMLElement)
+    expect(onPick).not.toHaveBeenCalled()
+  })
+
   it('renders the drill chevron only on drillable rows and routes its own action', () => {
     const { onPick } = mount(openState({
       groups: [{
