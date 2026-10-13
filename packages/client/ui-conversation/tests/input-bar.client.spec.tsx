@@ -311,6 +311,17 @@ describe('composer placeholder visibility', () => {
   })
 })
 
+describe('weaving progress', () => {
+  it('draws the woven knot while the model works and not while idle', () => {
+    expect(bench().view.container.querySelector('[data-weaving-progress]')).toBeNull()
+    expect(bench({ running: true }).view.container.querySelector('[data-weaving-progress]')).not.toBeNull()
+  })
+
+  it('does not run on the idle hero', () => {
+    expect(bench({ variant: 'hero' }).view.container.querySelector('[data-weaving-progress]')).toBeNull()
+  })
+})
+
 describe('image draft rail', () => {
   it('collects clipboard files while preserving text from a mixed paste', async () => {
     const addFiles = vi.fn(() => null)

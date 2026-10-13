@@ -27,6 +27,8 @@ import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@dee
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
+// Type-only: the owner's MCP server registry, its probe, and the input it saves.
+import type { FaberLoomMcpRegistry, FaberLoomMcpServer, McpServerInput } from '@deepseek-ai/dsh-faberloom-mcp-registry'
 import type { SpaceActor, FaberLoomSpaceId, FaberLoomSpace, SpaceContext } from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the workspace registry, read through ctx.get like the product services.
@@ -60,6 +62,7 @@ import type {
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph, FaberLoomConsultationRow, FaberLoomContextExportRow,
   FaberLoomSkillInstallDestination, FaberLoomSkillCandidateReason,
   FaberLoomSkillInstallOutcome, FaberLoomSkillInstallReport, FaberLoomSkillInstallTargets, FaberLoomSkillInstallRow,
+  FaberLoomMcpServerRow, FaberLoomMcpServerInput, FaberLoomMcpSecretRow, FaberLoomMcpProbeResult,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -567,6 +570,66 @@ function readScope(value: unknown): WorkFlowScope | undefined {
 }
 
 /**
+ * Project one saved MCP server into the row the settings page reads, keeping
+ * only each entry's name and whether the seam holds a value; the credential
+ * reference and the value itself stay on the host.
+ * @param server - the saved server as the registry reads it.
+ * @returns the browser-facing row.
+ */
+function mcpServerRow(server: FaberLoomMcpServer): FaberLoomMcpServerRow {
+  const secret = (entry: { readonly name: string; readonly present: boolean }): FaberLoomMcpSecretRow => ({
+    name: entry.name,
+    present: entry.present,
+  })
+  return {
+    name: server.name,
+    transport: server.transport.transport,
+    env: server.env.map(secret),
+    headers: server.headers.map(secret),
+    enabled: server.enabled,
+    mounted: server.mounted,
+    createdAt: server.createdAt,
+    updatedAt: server.updatedAt,
+  }
+}
+
+/**
+ * Resolve one browser-supplied candidate into the registry's input, requiring
+ * the field its transport branch needs and carrying each secret value to the
+ * registry so it can be written to the credential seam.
+ * @param input - the candidate as the settings page sent it.
+ * @returns the registry input.
+ * @throws when the chosen transport's required field is missing.
+ */
+function mcpRegistryInput(input: FaberLoomMcpServerInput): McpServerInput {
+  if (input.transport === 'stdio') {
+    if (input.command === undefined || input.command.length === 0) {
+      throw new Error('faberloom: an MCP server over stdio needs a command')
+    }
+    return {
+      name: input.name,
+      transport: {
+        transport: 'stdio',
+        command: input.command,
+        args: [...input.args ?? []],
+        cwd: input.cwd ?? '',
+      },
+      ...input.env === undefined ? {} : { env: input.env },
+      ...input.enabled === undefined ? {} : { enabled: input.enabled },
+    }
+  }
+  if (input.url === undefined || input.url.length === 0) {
+    throw new Error('faberloom: an MCP server over streamable-http needs a url')
+  }
+  return {
+    name: input.name,
+    transport: { transport: 'streamable-http', url: input.url },
+    ...input.headers === undefined ? {} : { headers: input.headers },
+    ...input.enabled === undefined ? {} : { enabled: input.enabled },
+  }
+}
+
+/**
  * Workspace view (`ctx.faberloomView`) over the mounted product services and the
  * agent-memory core. Reads and writes both return the fresh overview so the
  * panels refresh from one value instead of recomputing.
@@ -583,6 +646,18 @@ export class FaberLoomViewService extends TypertRemoteService {
   private connectionsService(): FaberLoomConnections {
     const service = this.ctx.get('faberloomConnections')
     if (service === undefined) throw new Error('faberloom: the connections service is not mounted')
+    return service
+  }
+
+  /**
+   * The MCP server registry, resolved lazily so a deployment that does not mount
+   * it keeps every other panel working.
+   * @returns the mounted MCP server registry.
+   * @throws when the deployment did not mount it.
+   */
+  private mcpRegistryService(): FaberLoomMcpRegistry {
+    const service = this.ctx.get('faberloomMcpRegistry')
+    if (service === undefined) throw new Error('faberloom: the MCP server registry is not mounted')
     return service
   }
 
@@ -4669,6 +4744,58 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revoke MCP tokens')
     await this.ctx.faberloomMcpServer.revokeToken(token)
     return await this.mcpTokens()
+  }
+
+  /**
+   * List the MCP servers this owner installed, name-ascending, each carrying
+   * its transport, whether it is enabled and mounted, and its credential entry
+   * names with whether the seam holds a value; no value or reference crosses.
+   * @returns the owner's saved servers.
+   */
+  @Remote('mcpServers')
+  async mcpServers(): Promise<readonly FaberLoomMcpServerRow[]> {
+    return (await this.mcpRegistryService().list(this.actor().id)).map(mcpServerRow)
+  }
+
+  /**
+   * Install or replace one MCP server for this owner and mount it when enabled.
+   * Every environment or header value goes to the credential seam, so a read
+   * never returns one.
+   * @param input - the server's name, transport, secret values, and enabled flag.
+   * @returns the refreshed server list.
+   * @throws when the identity is read-only or the transport's required field is missing.
+   */
+  @Remote('saveMcpServer')
+  async saveMcpServer(input: FaberLoomMcpServerInput): Promise<readonly FaberLoomMcpServerRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot install MCP servers')
+    await this.mcpRegistryService().save(this.actor().id, mcpRegistryInput(input))
+    return await this.mcpServers()
+  }
+
+  /**
+   * Remove one MCP server, unmounting it and dropping the credentials its
+   * entries held.
+   * @param name - the server to remove.
+   * @returns the refreshed server list.
+   * @throws when the identity is read-only.
+   */
+  @Remote('removeMcpServer')
+  async removeMcpServer(name: string): Promise<readonly FaberLoomMcpServerRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove MCP servers')
+    await this.mcpRegistryService().remove(this.actor().id, name)
+    return await this.mcpServers()
+  }
+
+  /**
+   * Test one candidate MCP server before it is saved, reporting the tools it
+   * registered or the named reason it failed with every supplied secret
+   * redacted. Nothing is written and no seam value is read.
+   * @param input - the candidate server with its secret values.
+   * @returns `{ ok: true, tools }`, or a named failure with its redacted detail.
+   */
+  @Remote('probeMcpServer')
+  async probeMcpServer(input: FaberLoomMcpServerInput): Promise<FaberLoomMcpProbeResult> {
+    return await this.mcpRegistryService().probe(mcpRegistryInput(input))
   }
 
   /**

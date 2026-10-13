@@ -33,6 +33,8 @@ A file closes completion as an atomic inline reference displayed with a file gly
 
 A session pick inserts an atomic inline reference whose hidden `ref` and clipboard representation is the canonical `@[label](dsh-session:…)` mention returned by the Host; its visible form is a chat-bubble glyph plus the session title. Sending carries the mention through `session.prompt`, and the session-reference service validates it and captures model context at `agent/pre-step`.
 
+Every file row carries a second verb beside its mention: the attach row reads the file's bytes through the Host (`workspaceFiles/readAll`) and hands them to the composer's existing attachment intake, so the draft gains the same background upload, rail card, and staged receipt a browser-picked file gets. Attaching never truncates: a file the Host refuses — too large, gone, or not a regular file — shows one readable notice and nothing joins the draft. The mention keeps pointing at a path; the attach row hands over the content.
+
 ### Failure behavior
 
 One unavailable or failed candidate domain yields no rows for that domain while the other still lists. A directory that cannot be listed — gone, outside the workspace, not a directory, or an unclassified Host failure — shows one row naming the reason instead of an empty file section, and a listing cut by the Host's entry cap ends with a row saying some entries are not shown. A session-reference preparation failure occurs after prompt acceptance and terminates that agent turn.

@@ -3147,6 +3147,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-session':
         specifier: workspace:^
         version: link:../ui-session
+      '@deepseek-ai/dsh-client-ui-settings':
+        specifier: workspace:^
+        version: link:../ui-settings
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: workspace:^
         version: link:../ui-sidebar
@@ -7143,6 +7146,12 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
+      '@deepseek-ai/dsh-agent-loop':
+        specifier: workspace:^
+        version: link:../../core/agent-loop
+      '@deepseek-ai/dsh-agent-loop-testkit':
+        specifier: workspace:^
+        version: link:../../test-support/agent-loop-testkit
       '@deepseek-ai/dsh-faberloom-agent-plane':
         specifier: workspace:^
         version: link:../agent-plane
@@ -7152,6 +7161,12 @@ importers:
       '@deepseek-ai/dsh-faberloom-spaces':
         specifier: workspace:^
         version: link:../spaces
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
@@ -7331,6 +7346,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-learning':
         specifier: workspace:^
         version: link:../learning
+      '@deepseek-ai/dsh-faberloom-mcp-registry':
+        specifier: workspace:^
+        version: link:../mcp-registry
       '@deepseek-ai/dsh-faberloom-mcp-server':
         specifier: workspace:^
         version: link:../mcp-server

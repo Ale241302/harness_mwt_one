@@ -14,6 +14,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 // Type-only: pulls the renderer-owned slots service and its bound-action type.
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the settings shell's SlotMap merge (the 'settings.section' entry).
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the shared MainPanelId used as the sidebar id and main key.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: the sidebar shell's `sidebar.brand.name` and `sidebar.panellist` slots.
@@ -27,6 +29,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { FaberloomBrandName, FaberloomBrandMark, FABERLOOM_SECTIONS, sectionBadge, type FaberloomPanelInjected } from './panels.tsx'
+import { McpServersSection, type McpServersSectionInjected } from './mcp-servers-section.tsx'
 import { WorkspaceShareDialog, WorkspaceShareMenuItem, createWorkspaceShareStore, type WorkspaceShareInjected } from './workspace-share.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
@@ -388,6 +391,27 @@ export function apply(ctx: ClientContext): void {
       inject: () => ({}),
     }, section.Icon))
   }
+
+  // MCP servers live in the Settings modal rather than a sidebar row: installing
+  // one is deployment configuration the model can also do from a chat (the
+  // `faberloom_mcp_add` tools), not a daily-work panel, and Settings is where the
+  // product already keeps the surfaces that configure the harness (theme,
+  // language, agent presets). The section reads and writes through the product's
+  // own view Remote, so no host registry code reaches the browser.
+  const mcpServersInjected = (): McpServersSectionInjected => ({
+    load: () => ctx.remote.faberloomView.mcpServers(),
+    save: input => ctx.remote.faberloomView.saveMcpServer(input),
+    remove: name => ctx.remote.faberloomView.removeMcpServer(name),
+    test: input => ctx.remote.faberloomView.probeMcpServer(input),
+  })
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'faberloom-mcp-servers',
+    order: 30,
+    label: () => t('mcp.servers.nav'),
+    locale: NS,
+    inject: mcpServersInjected,
+  }, McpServersSection))
 
   // Share a Workspace's mirrored Space from the sidebar row menu. The overlay
   // host owns the dialog so it outlives the dropdown; both registrations share

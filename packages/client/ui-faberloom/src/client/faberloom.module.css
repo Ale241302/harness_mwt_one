@@ -288,6 +288,16 @@
   font-weight: 600;
 }
 
+/* Exact values (dates, ids, versions) read as data with tabular digits; a cell
+   of prose keeps the UI-body role the table sets. The two were one shared
+   span, which made a date inherit the body face. */
+.cellData {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-data);
+  font-variant-numeric: var(--dsw-font-data-font-variant-numeric);
+  white-space: nowrap;
+}
+
 .emailModal {
   display: flex;
   flex-direction: column;

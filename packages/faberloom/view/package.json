@@ -67,6 +67,7 @@
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
     "@deepseek-ai/dsh-faberloom-inbound": "workspace:^",
     "@deepseek-ai/dsh-faberloom-learning": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-mcp-registry": "workspace:^",
     "@deepseek-ai/dsh-faberloom-mcp-server": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",

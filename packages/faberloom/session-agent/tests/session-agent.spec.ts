@@ -52,6 +52,7 @@ async function harness(
   const agent = {
     session: { header: { cwd, parentSession } },
     ctx: {
+      on: vi.fn(() => vi.fn()),
       inject: vi.fn((_names: string[], cb: (scope: unknown) => void) => {
         captured.cb = cb
         return { dispose: vi.fn(async () => {}) }
@@ -175,7 +176,7 @@ describe('FaberLoomSessionAgent composition', () => {
     ctx.emit('agent/created', { agent: agent as never, source: 'startup' })
     const late = {
       session: { header: { cwd: '/home/SICOP', parentSession: undefined } },
-      ctx: { inject: vi.fn(() => ({ dispose: vi.fn(async () => {}) })) },
+      ctx: { on: vi.fn(() => vi.fn()), inject: vi.fn(() => ({ dispose: vi.fn(async () => {}) })) },
     }
     ctx.emit('agent/created', { agent: late as never, source: 'startup' })
     ctx.emit('agent/created', { agent: late as never, source: 'startup' })

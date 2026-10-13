@@ -54,6 +54,9 @@
       "path": "../mcp-server"
     },
     {
+      "path": "../mcp-registry"
+    },
+    {
       "path": "../workflows"
     },
     {

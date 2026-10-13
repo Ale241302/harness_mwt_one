@@ -1,0 +1,70 @@
+/* Woven-knot progress state. The threads draw on in a short loop and the weft
+   bobs across the warp, so the knot reads as working rather than decorative.
+   Nothing runs outside a running turn: the composer mounts this only while the
+   model works, and the idle hero draws the shared static mark. */
+
+.root {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/* Static fallback for a reader who asked for less motion. */
+.static {
+  display: block;
+}
+
+.weave {
+  display: inline-flex;
+}
+
+/* Draw-on window: the 24-unit dash covers every thread (the longest is 12
+   units), so a thread is hidden at offset 24 and fully drawn at 0 before it
+   slips away again. */
+.weave path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: weaving-thread 1.4s ease-in-out infinite;
+}
+
+/* One thread at a time, warp then weft: the stagger is the weave. */
+.weave path:nth-child(1) { animation-delay: 0ms; }
+.weave path:nth-child(2) { animation-delay: 70ms; }
+.weave path:nth-child(3) { animation-delay: 140ms; }
+.weave path:nth-child(4) { animation-delay: 210ms; }
+.weave path:nth-child(5) { animation-delay: 280ms; }
+.weave path:nth-child(6) { animation-delay: 350ms; }
+.weave path:nth-child(7) { animation-delay: 420ms; }
+.weave path:nth-child(8) { animation-delay: 490ms; }
+.weave path:nth-child(9) { animation-delay: 560ms; }
+.weave path:nth-child(10) { animation-delay: 630ms; }
+.weave path:nth-child(11) { animation-delay: 700ms; }
+.weave path:nth-child(12) { animation-delay: 770ms; }
+.weave path:nth-child(13) { animation-delay: 840ms; }
+.weave path:nth-child(14) { animation-delay: 910ms; }
+.weave path:nth-child(15) { animation-delay: 980ms; }
+
+/* Weft threads cross over the warp: a short bob marks the pass. */
+.weave path:nth-child(n+8) {
+  animation-name: weaving-weft;
+}
+
+@keyframes weaving-thread {
+  0% { stroke-dashoffset: 24; }
+  60%, 100% { stroke-dashoffset: -24; }
+}
+
+@keyframes weaving-weft {
+  0% { stroke-dashoffset: 24; transform: translateY(0); }
+  30% { transform: translateY(-1px); }
+  60% { stroke-dashoffset: -24; transform: translateY(0); }
+  100% { stroke-dashoffset: -24; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weave path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

@@ -1874,8 +1874,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'faberloomSessionAgent',
-    summary: 'The Space session composition service: resolves one session\'s Space agent and installs its persona, tool mask, and skills.',
-    description: 'The Space session composition service: resolves one session\'s Space agent and installs its persona, tool mask, and skills.',
+    summary: 'The Space session composition service: resolves one session\'s Space agent, installs its persona, tool mask, and skills, and makes an `@Name` mention route its turn to that catalog agent.',
+    description: 'The Space session composition service: resolves one session\'s Space agent, installs its persona, tool mask, and skills, and makes an `@Name` mention route its turn to that catalog agent.',
     methods: [
       {
         signature: 'routeFor(agent: Agent): SessionAgentRoute | undefined',
@@ -2919,6 +2919,32 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Revoke one MCP client token.',
         parameters: [{ name: 'token', description: 'the token to revoke.' }],
         returns: 'the refreshed token list.',
+      },
+      {
+        signature: '@Remote(\'mcpServers\') async mcpServers(): Promise<readonly FaberLoomMcpServerRow[]>',
+        description: 'List the MCP servers this owner installed, name-ascending, each carrying its transport, whether it is enabled and mounted, and its credential entry names with whether the seam holds a value; no value or reference crosses.',
+        parameters: [],
+        returns: 'the owner\'s saved servers.',
+      },
+      {
+        signature: '@Remote(\'saveMcpServer\') async saveMcpServer(input: FaberLoomMcpServerInput): Promise<readonly FaberLoomMcpServerRow[]>',
+        description: 'Install or replace one MCP server for this owner and mount it when enabled. Every environment or header value goes to the credential seam, so a read never returns one.',
+        parameters: [{ name: 'input', description: 'the server\'s name, transport, secret values, and enabled flag.' }],
+        returns: 'the refreshed server list.',
+        throws: ['when the identity is read-only or the transport\'s required field is missing.'],
+      },
+      {
+        signature: '@Remote(\'removeMcpServer\') async removeMcpServer(name: string): Promise<readonly FaberLoomMcpServerRow[]>',
+        description: 'Remove one MCP server, unmounting it and dropping the credentials its entries held.',
+        parameters: [{ name: 'name', description: 'the server to remove.' }],
+        returns: 'the refreshed server list.',
+        throws: ['when the identity is read-only.'],
+      },
+      {
+        signature: '@Remote(\'probeMcpServer\') async probeMcpServer(input: FaberLoomMcpServerInput): Promise<FaberLoomMcpProbeResult>',
+        description: 'Test one candidate MCP server before it is saved, reporting the tools it registered or the named reason it failed with every supplied secret redacted. Nothing is written and no seam value is read.',
+        parameters: [{ name: 'input', description: 'the candidate server with its secret values.' }],
+        returns: '`{ ok: true, tools }`, or a named failure with its redacted detail.',
       },
       {
         signature: '@Remote(\'performance\') async performance(agentId?: string, task?: string): Promise<FaberLoomPerformanceRow>',
@@ -7235,12 +7261,36 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomMcpClientStatus {\n    readonly name: string;\n    readonly tools: readonly string[];\n}',
   },
   {
+    name: 'FaberLoomMcpProbeFailure',
+    declaration: 'export type FaberLoomMcpProbeFailure = \'unreachable\' | \'bad-credential\' | \'protocol\';',
+  },
+  {
+    name: 'FaberLoomMcpProbeResult',
+    declaration: 'export type FaberLoomMcpProbeResult = {\n    readonly ok: true;\n    readonly tools: readonly string[];\n} | {\n    readonly ok: false;\n    readonly failure: FaberLoomMcpProbeFailure;\n    readonly detail: string;\n};',
+  },
+  {
+    name: 'FaberLoomMcpSecretRow',
+    declaration: 'export interface FaberLoomMcpSecretRow {\n    readonly name: string;\n    readonly present: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomMcpServerInput',
+    declaration: 'export interface FaberLoomMcpServerInput {\n    readonly name: string;\n    readonly transport: FaberLoomMcpTransportKind;\n    readonly command?: string;\n    readonly args?: readonly string[];\n    readonly cwd?: string;\n    readonly url?: string;\n    readonly env?: Readonly<Record<string, string>>;\n    readonly headers?: Readonly<Record<string, string>>;\n    readonly enabled?: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomMcpServerRow',
+    declaration: 'export interface FaberLoomMcpServerRow {\n    readonly name: string;\n    readonly transport: FaberLoomMcpTransportKind;\n    readonly env: readonly FaberLoomMcpSecretRow[];\n    readonly headers: readonly FaberLoomMcpSecretRow[];\n    readonly enabled: boolean;\n    readonly mounted: boolean;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
     name: 'FaberLoomMcpToken',
     declaration: 'export interface FaberLoomMcpToken {\n    readonly token: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly revokedAt: string | null;\n    readonly scopes: readonly string[] | null;\n}',
   },
   {
     name: 'FaberLoomMcpTokenRow',
     declaration: 'export interface FaberLoomMcpTokenRow {\n    readonly token: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly revokedAt: string | null;\n    readonly scopes: readonly string[] | null;\n}',
+  },
+  {
+    name: 'FaberLoomMcpTransportKind',
+    declaration: 'export type FaberLoomMcpTransportKind = \'stdio\' | \'streamable-http\';',
   },
   {
     name: 'FaberLoomMemoryRow',

@@ -31,7 +31,14 @@ export interface ClientSessionContext {
 }
 
 /** Trigger character a source binds to. */
-export type TriggerChar = '/' | '@'
+export type TriggerChar = '/' | '@' | '!'
+
+/**
+ * Triggers whose hot `lexicon` decorates plain-text reference tokens. The
+ * composer's decoration scan reads these two only, so the published lexicon
+ * stays keyed by them even though {@link TriggerChar} also carries `!`.
+ */
+export type ReferenceTriggerChar = '/' | '@'
 
 /** Where the trigger token sits in the draft: leading (trimmed draft starts with it) or inline. */
 export type TriggerPosition = 'leading' | 'inline'
@@ -235,6 +242,6 @@ export interface InputTriggerSource {
 
 /** Trigger availability tier, derived from the input phase by the wiring layer. */
 export interface TriggerGuard {
-  /** plain: '/' and '@' live; claimed: '/' suppressed, '@' live; frozen: none. */
+  /** plain: '/', '@' and '!' live; claimed: '/' suppressed, '@' and '!' live; frozen: none. */
   readonly tier: 'plain' | 'claimed' | 'frozen'
 }

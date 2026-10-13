@@ -10,6 +10,13 @@
  * key), which a session controller reads through {@link FaberLoomSessionAgent.routeFor}
  * and uses as the session's default route; an unrouted or unkeyed agent
  * contributes no route, so the deployment default applies.
+ *
+ * The same service makes a message that opens with `@Name` run its turn on that
+ * catalog agent's route: an `agent/request` listener applies the named agent's
+ * provider, model, and key reference to that turn alone, and restores the
+ * session's own route on the next turn without a mention. An unknown name, a
+ * missing catalog or plane, or an agent without a complete keyed route leaves
+ * the request untouched, so nothing here fails a turn.
  * @module @deepseek-ai/dsh-faberloom-session-agent
  */
 
@@ -17,12 +24,15 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
+import { toolSourcesOf, type AgentToolSources } from '@deepseek-ai/dsh-faberloom-agent-plane'
 import type { SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
-import { toolSourcesOf } from '@deepseek-ai/dsh-faberloom-agent-plane'
+import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
+import type { UserMessage } from '@deepseek-ai/dsh-session'
 // Type-only: resolves the ctx.systemPrompt and ctx.tools declarations used in the
 // inject window, and the optional ctx.faberloom* services read through ctx.get.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
+import { latestUserText, matchMentionedAgent } from './mention.ts'
 import type { SessionComposition, SessionAgentRoute } from './types.ts'
 
 export type * from './types.ts'
@@ -67,9 +77,54 @@ interface WorkspaceRegistryView {
   list(): readonly WorkspaceView[]
 }
 
+/** The provider route fields one request carries, as the loop's waterfall resolves them. */
+interface RequestRoute {
+  /** Registered provider route. */
+  readonly provider: string
+  /** Provider-owned model id. */
+  readonly model: string
+  /** Key reference the request authenticates with, or `undefined` for the route's own. */
+  readonly credentialRef: SessionAgentRoute['credentialRef'] | undefined
+  /** Adapter-owned reasoning effort, or `undefined` for the route's own. */
+  readonly reasoningEffort: LlmCallConfig['reasoningEffort']
+}
+
 /**
- * The Space session composition service: resolves one session's Space agent and
- * installs its persona, tool mask, and skills.
+ * Copy the route fields one resolved request config carries.
+ * @param config - the config the loop's waterfall resolved.
+ * @returns the provider, model, key reference, and effort fields.
+ */
+function routeOf(config: LlmCallConfig): RequestRoute {
+  return {
+    provider: config.provider,
+    model: config.model,
+    credentialRef: config.credentialRef,
+    reasoningEffort: config.reasoningEffort,
+  }
+}
+
+/**
+ * Replace the route fields of one request config, dropping a field the route
+ * does not set (an absent key reference must not keep the replaced route's).
+ * @param config - the config to rewrite.
+ * @param route - the provider route fields to carry.
+ * @returns a replacement config.
+ */
+function withRoute(config: LlmCallConfig, route: RequestRoute): LlmCallConfig {
+  const { credentialRef: _credentialRef, reasoningEffort: _reasoningEffort, ...rest } = config
+  return {
+    ...rest,
+    provider: route.provider,
+    model: route.model,
+    ...route.credentialRef === undefined ? {} : { credentialRef: route.credentialRef },
+    ...route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort },
+  }
+}
+
+/**
+ * The Space session composition service: resolves one session's Space agent,
+ * installs its persona, tool mask, and skills, and makes an `@Name` mention
+ * route its turn to that catalog agent.
  */
 export class FaberLoomSessionAgent extends Service {
   static inject = ['agents']
@@ -78,6 +133,8 @@ export class FaberLoomSessionAgent extends Service {
   private readonly pending = new Set<Agent>()
   /** The resolved model route of each composed session, keyed by its agent. */
   private readonly routes = new Map<Agent, SessionAgentRoute | undefined>()
+  /** The disposers of the per-turn mention listeners each live agent registered. */
+  private readonly mentionListeners = new Map<Agent, () => void>()
 
   /**
    * @param ctx - Cordis context owning the service fiber.
@@ -120,18 +177,30 @@ export class FaberLoomSessionAgent extends Service {
         this.pending.delete(agent)
       }
     }
-    for (const agent of ctx.agents.list()) void install(agent)
-    ctx.on('agent/created', async ({ agent }) => { await install(agent) })
+    const attach = (agent: Agent): void => {
+      this.attachMentionRoute(agent)
+      void install(agent)
+    }
+    for (const agent of ctx.agents.list()) attach(agent)
+    ctx.on('agent/created', async ({ agent }) => {
+      this.attachMentionRoute(agent)
+      await install(agent)
+    })
     ctx.on('agent/disposed', ({ agent }) => {
       const fiber = this.fibers.get(agent)
       this.fibers.delete(agent)
       this.routes.delete(agent)
+      this.mentionListeners.get(agent)?.()
+      this.mentionListeners.delete(agent)
       void fiber?.dispose()
     })
     ctx.effect(() => async () => {
       const fibers = [...this.fibers.values()]
       this.fibers.clear()
       this.routes.clear()
+      const mentions = [...this.mentionListeners.values()]
+      this.mentionListeners.clear()
+      for (const off of mentions) off()
       await Promise.all(fibers.map(fiber => fiber.dispose()))
     }, 'faberloom-session-agent: compositions')
   }
@@ -148,6 +217,83 @@ export class FaberLoomSessionAgent extends Service {
    */
   routeFor(agent: Agent): SessionAgentRoute | undefined {
     return this.routes.get(agent)
+  }
+
+  /**
+   * Register the per-turn `@Name` route for one live agent.
+   *
+   * The mention is read from the messages a step claims: the `agent/request`
+   * payload carries no messages, and the loop commits the claimed batch to the
+   * log only after that waterfall, so `agent/pre-step` is the point where the
+   * turn's user text is still available. The request listener is registered
+   * outermost (`prepend`) so the route it applies wins over the session's own.
+   * @param agent - the live agent the route applies to.
+   */
+  private attachMentionRoute(agent: Agent): void {
+    if (this.mentionListeners.has(agent)) return
+    // The current turn's routed mention, plus the route the session used before
+    // the mention and the mention route itself, kept until a mention-free turn.
+    // The loop logs the header the request used, so a mention would otherwise
+    // stay the session's route; the captured pair restores the earlier one.
+    const state: {
+      mention: SessionAgentRoute | undefined
+      previous: { readonly base: RequestRoute; applied: SessionAgentRoute } | undefined
+    } = { mention: undefined, previous: undefined }
+    const offPreStep = agent.ctx.on('agent/pre-step', async ({ messages, step }, next) => {
+      if (step === 1) state.mention = await this.mentionRouteFor(messages)
+      return next()
+    })
+    const offRequest = agent.ctx.on('agent/request', async (_payload, next) => {
+      const resolved = await next()
+      if (state.mention !== undefined) {
+        // Keep the base captured before the first override so consecutive
+        // mentions all restore the session's own route; track the newest applied.
+        const previous = state.previous ?? { base: routeOf(resolved), applied: state.mention }
+        previous.applied = state.mention
+        state.previous = previous
+        return withRoute(resolved, {
+          provider: state.mention.provider,
+          model: state.mention.model,
+          credentialRef: state.mention.credentialRef,
+          reasoningEffort: undefined,
+        })
+      }
+      const previous = state.previous
+      state.previous = undefined
+      // Restore only while the logged route is still the mention's; a route the
+      // session changed meanwhile (an explicit selection) is left in force.
+      if (previous === undefined
+        || resolved.provider !== previous.applied.provider
+        || resolved.model !== previous.applied.model) return resolved
+      return withRoute(resolved, previous.base)
+    }, { prepend: true })
+    this.mentionListeners.set(agent, () => { offPreStep(); offRequest() })
+  }
+
+  /**
+   * Resolve the route one step's messages name through an `@Name` mention. An
+   * unknown name, a missing catalog or plane, or an agent without all of a
+   * provider, a model, and a key resolves to `undefined`, leaving the request on
+   * its own route rather than failing the turn.
+   * @param messages - messages removed from the inbox for the step.
+   * @returns the mentioned agent's route, or `undefined`.
+   */
+  private async mentionRouteFor(messages: readonly UserMessage[]): Promise<SessionAgentRoute | undefined> {
+    const text = latestUserText(messages)
+    if (text === undefined || !text.startsWith('@')) return undefined
+    const fleet = this.ctx.get('faberloomAgents')
+    const plane = this.ctx.get('faberloomAgentPlane')
+    if (fleet === undefined || plane === undefined) return undefined
+    const agent = matchMentionedAgent(text, await fleet.listAgents())
+    if (agent === undefined) return undefined
+    const resolved = plane.resolve(agent, this.toolSources())
+    if (resolved.provider === undefined || resolved.model === undefined || resolved.credentialRef === undefined) return undefined
+    return { provider: resolved.provider, model: resolved.model, credentialRef: resolved.credentialRef }
+  }
+
+  /** The registered tool names grouped by source, as the agent plane reads them. */
+  private toolSources(): AgentToolSources {
+    return toolSourcesOf(this.ctx.get('tools')?.schemas() ?? [])
   }
 
   /**
@@ -183,7 +329,7 @@ export class FaberLoomSessionAgent extends Service {
     const space = (await spaces.list(actor)).find(candidate => candidate.workspaceId === workspace.id)
     if (space === undefined || space.agentId === undefined) return undefined
     const catalogAgent = await fleet.getAgent(space.agentId as FaberLoomAgentId)
-    const resolved = plane.resolve(catalogAgent, toolSourcesOf(this.ctx.get('tools')?.schemas() ?? []))
+    const resolved = plane.resolve(catalogAgent, this.toolSources())
     const route: SessionAgentRoute | undefined = resolved.provider !== undefined
       && resolved.model !== undefined
       && resolved.credentialRef !== undefined

@@ -18,6 +18,7 @@ import type {
   RemoteFailure, WorkspaceDirectoryEntry, WorkspaceDirectoryListing,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { InputTriggerCandidate } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import { IconPaperclipOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { ReferenceKey } from './locales.ts'
@@ -115,19 +116,49 @@ export function browseCandidates(
   for (const entry of orderEntries(listing.entries)) {
     if (entry.type === 'other') continue
     if (needle !== '' && !entry.name.toLowerCase().includes(needle)) continue
-    const kind = entry.type === 'directory' ? 'directory' : 'file'
-    const mention = formatFileMention({ path: childListingPath(listing.path, entry.name), kind }, preserveQuote)
+    const path = childListingPath(listing.path, entry.name)
+    if (entry.type === 'directory') {
+      const mention = formatFileMention({ path, kind: 'directory' }, preserveQuote)
+      if (mention === undefined) continue
+      rows.push({
+        name: `${entry.name}/`,
+        icon: 'folder',
+        section: t('section.files'),
+        value: encodeCandidate({ kind: 'file', fileKind: 'directory', label: entry.name, mention }),
+        drill: true,
+      })
+      continue
+    }
+    const mention = formatFileMention({ path, kind: 'file' }, preserveQuote)
     if (mention === undefined) continue
     rows.push({
-      name: entry.type === 'directory' ? `${entry.name}/` : entry.name,
-      icon: entry.type === 'directory' ? 'folder' : 'file',
+      name: entry.name,
+      icon: 'file',
       section: t('section.files'),
-      value: encodeCandidate({ kind: 'file', fileKind: kind, label: entry.name, mention }),
-      ...(entry.type === 'directory' ? { drill: true } : {}),
+      value: encodeCandidate({ kind: 'file', fileKind: 'file', label: entry.name, mention }),
     })
+    rows.push(attachCandidate(entry.name, path, t))
   }
   if (listing.truncated) rows.push({ name: t('listing.truncated'), section: t('section.files') })
   return rows
+}
+
+/**
+ * The attach verb that sits beside one file's mention row: choosing it reads
+ * the file's bytes through the Host and adds them to the composer rail, while
+ * the mention row keeps inserting the plain path.
+ * @param name - the file's basename, shown in the row label.
+ * @param path - the file's workspace-relative path, carried as the pick payload.
+ * @param t - the reference dictionary.
+ * @returns the attach row.
+ */
+export function attachCandidate(name: string, path: string, t: Translate): InputTriggerCandidate {
+  return {
+    name: t('candidate.attach', { name }),
+    icon: IconPaperclipOutline16,
+    section: t('section.files'),
+    value: encodeCandidate({ kind: 'attach', label: name, path }),
+  }
 }
 
 /**
@@ -161,6 +192,24 @@ function failureLine(failure: RemoteFailure, t: Translate): string {
 export type ReferenceCandidateValue =
   | { readonly kind: 'file'; readonly fileKind: 'file' | 'directory'; readonly label: string; readonly mention: string }
   | { readonly kind: 'session'; readonly label: string; readonly mention: string }
+  | { readonly kind: 'attach'; readonly label: string; readonly path: string }
+
+/**
+ * Name a failed workspace-file read in the reader's words, one line per refusal
+ * the Host declares. Carrier and unclassified failures reach the reader as
+ * themselves, so an oversized or non-text file is never silently dropped.
+ * @param failure - the settled Remote failure.
+ * @param t - the reference dictionary.
+ * @returns the line to show for that read.
+ */
+export function attachFailureLine(failure: RemoteFailure, t: Translate): string {
+  switch (failure.code) {
+    case 'workspace-file/not-found': return t('attach.error.notFound')
+    case 'workspace-file/too-large': return t('attach.error.tooLarge')
+    case 'workspace-file/not-regular-file': return t('attach.error.notRegularFile')
+    default: return t('attach.error.unavailable', { message: failure.message })
+  }
+}
 
 /**
  * Encode one row's pick payload for its candidate `value`.

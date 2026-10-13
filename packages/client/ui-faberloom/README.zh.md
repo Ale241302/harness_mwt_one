@@ -1,5 +1,5 @@
 ---
-description: "FaberLoom 的 Web 界面：身份令牌、品牌名，以及 faberloom 配置提供的全局面板（Conversar、Mesa de trabajo、Espacios、Agentes、Rutinas、Flujos、Memoria、Conexiones）；面向 FaberLoom 工作区的用户与维护者。"
+description: "FaberLoom 的 Web 界面：身份令牌、品牌名、faberloom 配置提供的全局面板（Conversar、Mesa de trabajo、Espacios、Agentes、Rutinas、Flujos、Memoria、Conexiones），以及 Settings 中的 MCP 服务器页面；面向 FaberLoom 工作区的用户与维护者。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoom 身份覆盖强调色令牌、标注侧边栏品牌名，并为每个 FaberLoom 分区注册一个全局面板。每个面板从声明的 store 读取同一份总览；Espacios 与 Agentes 通过 `ctx.remote.faberloomView` 创建与重命名，每次写入都会重新发布刷新后的总览，因此所有面板同时更新。Conversar 面板把用户交给由 harness 拥有的对话与输入框。Flujos 面板绘制工作流图。该包仅由 `faberloom` 配置挂载。
+FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoom 身份覆盖强调色令牌、标注侧边栏品牌名，并为每个 FaberLoom 分区注册一个全局面板。每个面板从声明的 store 读取同一份总览；Espacios 与 Agentes 通过 `ctx.remote.faberloomView` 创建与重命名，每次写入都会重新发布刷新后的总览，因此所有面板同时更新。Conversar 面板把用户交给由 harness 拥有的对话与输入框。Flujos 面板绘制工作流图。它还向 Settings 模态框贡献 MCP 服务器页面，列出该所有者已安装的服务器，并通过 `ctx.remote.faberloomView` 安装、测试与移除。该包仅由 `faberloom` 配置挂载。
 
 ## 目录
 
@@ -29,9 +29,10 @@ FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoo
 - `sidebar.brand.name` 的双色字标，以及 `sidebar.brand.mark` 与 `conversation.hero.brand.mark` 的等距图标占用者；
 - 十个 `sidebar.panellist` 行覆盖十二个 `main` 面板，以共享的 `MainPanelId` 寻址（对话落地页与技能面板保留路由但不占侧边栏行）；
 - 聊天手势：一个 `@` 触发器源，列出所有者的活跃代理（选中会插入 `@name`），以及一个带弹窗的 `/routine` 命令贡献，用于启动选中的例程；两者都由工作区总览经 `ctx.remote.faberloomView` 提供；
-- 技能面板的安装控件：它打开已挂载的目录选择器，提供当前工作区或全局技能根目录两个目标并显示各自解析后的根目录，通过 `ctx.remote.faberloomView.installSkill` 安装，并列出该身份已记录的安装及其移除操作。
+- 技能面板的安装控件：它打开已挂载的目录选择器，提供当前工作区或全局技能根目录两个目标并显示各自解析后的根目录，通过 `ctx.remote.faberloomView.installSkill` 安装，并列出该身份已记录的安装及其移除操作；
+- Settings 模态框中的 MCP 服务器页面：列出该所有者已安装的服务器及其传输方式、是否启用与挂载、以及存在哪些凭据（绝不显示值，也不显示凭据引用）；在保存前测试一个候选连接（显示它发现的工具，或带遮蔽明细的具名失败）；安装时每个值都写入凭据接缝；移除前先就地确认。它只通过 `ctx.remote.faberloomView`（`mcpServers`、`saveMcpServer`、`removeMcpServer`、`probeMcpServer`）访问宿主注册表，因此宿主注册表代码不会进入浏览器。
 
-侧边栏脚部只保留 Settings 控件，本包不再向 `sidebar.footer.action` 注册任何内容。产品的调色板与界面语言在 Settings 模态框中选取：调色板位于 **Apariencia**（外观）分区，界面语言位于 **Idioma**（语言）分区。
+侧边栏脚部只保留 Settings 控件，本包不再向 `sidebar.footer.action` 注册任何内容。产品的调色板、界面语言与 MCP 服务器都在该控件打开的 Settings 模态框中选取：调色板位于 **Apariencia**（外观）分区，界面语言位于 **Idioma**（语言）分区，MCP 服务器位于 **Servidores MCP**（MCP 服务器）分区。
 
 Espacios 详情把业务空间与 harness 工作区连接起来：`spaceWorkspace` 投射该空间的对话区域（其 `fw_` 工作目录注册为工作区，标题取自空间），而「在此空间新建对话」会在其中打开一个会话，因此侧边栏的工作区分组与空间始终是同一个东西。Mesa de trabajo（工作台）可带备注评审、提交新的已准备修订、让条目经过异常状态（请求数据、失败、完成），并列出已记录的效果及其明细与日期。
 

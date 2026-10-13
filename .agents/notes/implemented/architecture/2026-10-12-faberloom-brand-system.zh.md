@@ -14,7 +14,11 @@ Status: implemented
 
 **字体。** 三款自托管的 OFL 字体承载产品：界面与正文用 Geist，数据、标识符与代码用 Geist Mono，标题与字标用 EB Garamond 斜体。`packages/client/ui-theme/src/styles/fonts.css` 声明它们，并由 `--dsw-font-family`、`--ds-font-family-code` 以及新增的 `--dsw-font-family-serif` 绑定，因此 Web 客户端、桌面内置客户端与 gateway 的无会话页面一起变化。woff2 二进制分别位于 `apps/web/public/fonts`（以 `/fonts/*` 提供）、`apps/desktop/renderer/fonts`（登录前文档从磁盘加载）与 `gateway/assets/fonts`（gateway 以 `GET /fonts/:file` 白名单自行提供），每份旁边都带 SIL OFL 文本。品牌的排版文档还固定了界面字号阶，并将其作为共享 token 发布在 `packages/client/ui-theme/src/styles/app-type-scale.css`（紧随 `base.css` 之后挂载）：app 标题、屏幕标题、面板标签、UI 正文、控件、说明文字、overline 与数据（等宽数字），每项都是一个复合 `--dsw-font-<role>` 加上其字体族、字重、字号、行高与字形伴生变量。该字号阶属于排版而非调色板，在每套主题中都相同：等宽 overline 是唯一的 11px 界面档，`--dsh-content-font-size` 仍留给用户自行调节的会话正文字号；产品的各个界面与侧栏都消费这些 token，而不是各自写死字面值。
 
+**等宽数据角色中的精确值。** 字号阶中带等宽数字的数据角色现在承载产品的表格：日期、标识符或版本通过 `cellData` class 渲染（`font: var(--dsw-font-data)` 加 `--dsw-font-data-font-variant-numeric`），而正文单元格保持表格所设的 `font: var(--dsw-font-ui-body)` 角色。`packages/client/ui-faberloom/tests/table-data-role.client.spec.ts` 钉住这一区分，因为此前两者是同一个共享 span，会让日期继承正文字体。
+
 **标记与字标。** `packages/client/ui-primitives` 拥有 `FaberLoomMark`——品牌 48 单位面上的 3×3 织结，低于 24px 时收敛为单一织十字——以及双色 `BrandWordmark`：`Faber` 持珊瑚色，`Loom` 取其所在底色的墨色。侧边栏的品牌占位同时使用两者：`sidebar.brand.mark` 用等距图标取代鲸鱼图形，`sidebar.brand.name` 则渲染共享的 `BrandWordmark`（衬线斜体），因此 `Faber` 显示珊瑚色别名，`Loom` 取其所在底色的墨色：浅色调色板上为墨色，深色调色板上为奶油色。`packages/client/ui-theme/tests/themes.client.spec.ts` 在五套调色板上钉住这两个半边，因此调色板改动无法再把字标变成单色。同样的标记与字标取代官方品牌占位与对话 hero 中的鲸鱼图形；hero 原有的鲸鱼游动变形改为品牌那枚珊瑚色实心锚点，在悬停时出现。
+
+**织造进度状态。** 品牌只把动效留给一个状态，而它已交付：`packages/client/ui-conversation` 只在 Session 运行期间把 `WeavingProgress` 挂载到输入框的尾部控件上，其线在 3×3 网格上绘入并上下穿行（`WeavingProgress.module.css`），纬线每过一次就轻微穿动。该组件提供的只是状态与动效，绝不提供第二个标记：空闲的 hero 与侧栏保持共享 `FaberLoomMark` 为静态，而要求减少动态效果的用户得到的是同一个静态标记、没有任何动画。
 
 **图标。** `packages/client/ui-primitives/src/icons/faberloom.tsx` 在同一套 24×24、描边 1.75 的网格上承载品牌的十个字形与其文档化的标准库（共 45 个）。客户端的侧边栏面板行、Settings 触发器与 hero 都使用它们，使产品自身的界面语言成为一套；品牌文档未描述的外部字形（文件类型、编辑器界面）保留现有图形，另行迁移。
 

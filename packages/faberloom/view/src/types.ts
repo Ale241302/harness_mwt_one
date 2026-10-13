@@ -611,6 +611,71 @@ export interface FaberLoomMcpClientStatus {
   readonly tools: readonly string[]
 }
 
+/** Transport a saved MCP server is reached through. */
+export type FaberLoomMcpTransportKind = 'stdio' | 'streamable-http'
+
+/** One saved environment-variable or request-header entry, and whether the credential seam holds a value. */
+export interface FaberLoomMcpSecretRow {
+  /** Environment-variable or header name. */
+  readonly name: string
+  /** Whether the credential seam resolves a value for this entry; the value never crosses the boundary. */
+  readonly present: boolean
+}
+
+/** One saved MCP server as the settings page reads it; no field carries a secret value. */
+export interface FaberLoomMcpServerRow {
+  /** Local namespace for the server's tool names. */
+  readonly name: string
+  /** Transport the server is reached through. */
+  readonly transport: FaberLoomMcpTransportKind
+  /** Environment entries and whether the seam holds a value for each. */
+  readonly env: readonly FaberLoomMcpSecretRow[]
+  /** Header entries and whether the seam holds a value for each. */
+  readonly headers: readonly FaberLoomMcpSecretRow[]
+  /** Whether the server mounts while the process runs. */
+  readonly enabled: boolean
+  /** Whether the server's MCP client is mounted in this process right now. */
+  readonly mounted: boolean
+  /** ISO-8601 instant the record was created. */
+  readonly createdAt: string
+  /** ISO-8601 instant the record was last written. */
+  readonly updatedAt: string
+}
+
+/**
+ * One MCP server the settings page saves or tests. `env` holds the secret
+ * values a `stdio` server needs and `headers` those a `streamable-http` server
+ * needs; both reach the credential seam and are never returned by a read.
+ */
+export interface FaberLoomMcpServerInput {
+  /** Local namespace for the server's tool names; `[A-Za-z0-9_-]{1,32}`. */
+  readonly name: string
+  /** Transport the server is reached through. */
+  readonly transport: FaberLoomMcpTransportKind
+  /** Executable a `stdio` server spawns; required for that transport. */
+  readonly command?: string
+  /** Arguments passed directly to the executable, without shell interpolation. */
+  readonly args?: readonly string[]
+  /** Working directory for the `stdio` child process; empty means the process default. */
+  readonly cwd?: string
+  /** Absolute HTTP(S) endpoint a `streamable-http` server is reached at; required for that transport. */
+  readonly url?: string
+  /** Environment-variable secret values, for a `stdio` server. */
+  readonly env?: Readonly<Record<string, string>>
+  /** Request-header secret values, for a `streamable-http` server. */
+  readonly headers?: Readonly<Record<string, string>>
+  /** Whether the server mounts after save; omitted preserves the saved state, and a new server defaults to enabled. */
+  readonly enabled?: boolean
+}
+
+/** Why testing a candidate MCP server could not establish that it works. */
+export type FaberLoomMcpProbeFailure = 'unreachable' | 'bad-credential' | 'protocol'
+
+/** The verdict of one candidate test: the tools it registered, or a named failure with its redacted detail. */
+export type FaberLoomMcpProbeResult =
+  | { readonly ok: true; readonly tools: readonly string[] }
+  | { readonly ok: false; readonly failure: FaberLoomMcpProbeFailure; readonly detail: string }
+
 /** A space's conversation area as the Spaces panel reads it. */
 export interface FaberLoomSpaceWorkspace {
   /** Whether a workspace is already registered for the space's workdir. */

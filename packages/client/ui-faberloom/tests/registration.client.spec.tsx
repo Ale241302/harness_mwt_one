@@ -9,10 +9,11 @@ import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts
 import { es as commonEs } from '@deepseek-ai/dsh-client-locale/src/locales/es.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { resolveSlotLabel, type PropsRenderSlots, type PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { apply, inject } from '../src/client/index.ts'
 import { FABERLOOM_SECTIONS, resolveSectionNav, sectionBadge } from '../src/client/panels.tsx'
+import { McpServersSection, type McpServersSectionInjected } from '../src/client/mcp-servers-section.tsx'
 import { en as faberloomEn, es as faberloomEs, zh as faberloomZh, type FaberloomKey } from '../src/client/locales.ts'
 import css from '../src/client/faberloom.module.css'
 
@@ -173,6 +174,10 @@ async function bench(
   const saveSpaceAttachment = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { files: [] } }))
   const sendSpaceFileByEmail = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { messageId: '<m@x>', accepted: [] } }))
   const exportSpaceViewToFolder = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { path: '/tmp/x', bytes: 1 } }))
+  const mcpServers = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const saveMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const removeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const probeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { ok: true, tools: [] } }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
@@ -196,6 +201,7 @@ async function bench(
     syncContext, workflowPendingChanges, acceptWorkflowChange, rejectWorkflowChange,
     setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
     saveSpaceAttachment, sendSpaceFileByEmail, exportSpaceViewToFolder,
+    mcpServers, saveMcpServer, removeMcpServer, probeMcpServer,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -233,6 +239,7 @@ async function bench(
     'sidebar.brand.name': { kind: 'single', scope: 'root' },
     'sidebar.panellist': { kind: 'list', scope: 'root' },
     'sidebar.footer.action': { kind: 'list', scope: 'root' },
+    'settings.section': { kind: 'list', scope: 'root' },
     main: { kind: 'keyed', scope: 'root' },
   }, Frame)
   // Record every registration the surface makes, so the sidebar row metadata
@@ -256,6 +263,7 @@ async function bench(
     workflowTemplates, createWorkflowFromTemplate, importWorkflow,
     setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
     saveRoutine, createRoutine, routineDetail, removeRoutine, setRoutineActive,
+    mcpServers, saveMcpServer, removeMcpServer, probeMcpServer,
   }
 }
 
@@ -305,6 +313,28 @@ describe('faberloom surface', () => {
     expect(registrations.filter(options => options.name === 'sidebar.footer.action')).toEqual([])
     expect(runtime.slots.entries('sidebar.footer.action')).toEqual([])
     await surface.dispose()
+  })
+
+  it('contributes the MCP-servers page to Settings, reading through the product Remote', async () => {
+    const { runtime, mcpServers, saveMcpServer, removeMcpServer, probeMcpServer } = await bench()
+    const section = runtime.slots.entries('settings.section')[0]
+    if (section === undefined) throw new Error('the MCP servers section is not registered')
+    expect(section.component).toBe(McpServersSection)
+    expect(section.options).toMatchObject({ id: 'faberloom-mcp-servers', order: 30 })
+    expect(section.locale).toBe('faberloom')
+    expect(resolveSlotLabel(section.options.label)).toBe('MCP servers')
+
+    // The section reaches the host registry only through the product's own view
+    // Remote; its face carries the four calls the page needs and nothing else.
+    const injected = (section.inject as unknown as () => McpServersSectionInjected)()
+    await injected.load()
+    await injected.save({ name: 'docs', transport: 'stdio', command: 'npx' })
+    await injected.remove('docs')
+    await injected.test({ name: 'docs', transport: 'stdio', command: 'npx' })
+    expect(mcpServers).toHaveBeenCalledOnce()
+    expect(saveMcpServer).toHaveBeenCalledWith({ name: 'docs', transport: 'stdio', command: 'npx' })
+    expect(removeMcpServer).toHaveBeenCalledWith('docs')
+    expect(probeMcpServer).toHaveBeenCalledWith({ name: 'docs', transport: 'stdio', command: 'npx' })
   })
 
   it('renders the two-tone wordmark: coral on "Faber", the ground ink on "Loom"', async () => {
@@ -549,6 +579,20 @@ describe('faberloom surface', () => {
     setMemoryVisibility.mockRejectedValueOnce(new Error('vis-boom'))
     fireEvent.click(view.getByRole('button', { name: 'Make private' }))
     expect(await view.findByText(/vis-boom/)).toBeTruthy()
+  })
+
+  it('renders a date in the data role and a prose cell in the UI-body role', async () => {
+    const entry = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', text: 'El precio se consulta antes de cotizar.' }
+    const { runtime, view } = await bench({ ok: true, value: OVERVIEW }, undefined, {}, [entry])
+    act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
+
+    // A date is an exact value: it carries the data-role class, not the prose one.
+    const date = await view.findByText('2026-09-25T00:00:00Z')
+    expect(date.className).toBe(css.cellData)
+    // The text beside it is prose and keeps the UI-body role.
+    const prose = await view.findByText('El precio se consulta antes de cotizar.')
+    expect(prose.className).toBe(css.cellName)
+    expect(prose.className).not.toBe(css.cellData)
   })
 
   it('marks read and trashes a message from the Email panel', async () => {

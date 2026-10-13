@@ -1413,7 +1413,7 @@ function emailScreen() {
       ? [
         { key: 'from', header: t('col.from'), cell: row => <span className={styles.cellName}>{(row as FaberLoomInboxRow).from ?? '—'}</span> },
         { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.cellMuted}>{(row as FaberLoomInboxRow).subject ?? '—'}</span> },
-        { key: 'date', header: t('col.date'), cell: row => <span className={styles.cellMuted}>{(row as FaberLoomInboxRow).date ?? ''}</span> },
+        { key: 'date', header: t('col.date'), cell: row => <span className={styles.cellData}>{(row as FaberLoomInboxRow).date ?? ''}</span> },
       ]
       : [
         { key: 'to', header: t('col.to'), cell: row => <span className={styles.cellName}>{(row as FaberLoomEmailDraftRow).to.join(', ')}</span> },
@@ -2424,7 +2424,7 @@ function memoryScreen() {
       { key: 'text', header: t('col.text'), cell: row => <span className={styles.cellName}>{snippet(row.text)}</span> },
       { key: 'type', header: t('col.type'), cell: row => <Chip>{kindOf(row.text)}</Chip> },
       { key: 'space', header: t('col.space'), cell: row => <span className={styles.cellMuted}>{spaceNames(row.spaceIds)}</span> },
-      { key: 'at', header: t('col.date'), cell: row => <span className={styles.cellMuted}>{row.createdAt}</span> },
+      { key: 'at', header: t('col.date'), cell: row => <span className={styles.cellData}>{row.createdAt}</span> },
     ]
 
     return (
@@ -4146,7 +4146,13 @@ function workflowsScreen() {
               <Modal open={versionsOpen} onClose={() => { setVersionsOpen(false) }} title={t('wf.versions')} closeLabel={t('action.close')}>
                 {flowVersions.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.noVersions')}</span> : flowVersions.map(version => (
                   <div key={version.version} className={styles.workflowRunRow}>
-                    <span>{String(version.version)} · {version.name} · {version.nodes}/{version.edges} · {version.createdAt}</span>
+                    <span>
+                      <span className={styles.cellData}>{String(version.version)}</span>
+                      {' · '}{version.name}{' · '}
+                      <span className={styles.cellData}>{`${String(version.nodes)}/${String(version.edges)}`}</span>
+                      {' · '}
+                      <span className={styles.cellData}>{version.createdAt}</span>
+                    </span>
                     <button type="button" onClick={() => { act(() => workflows.restoreWorkflow(selected, version.version)); setVersionsOpen(false) }}>{t('ctx.restore')}</button>
                   </div>
                 ))}
@@ -4280,7 +4286,7 @@ function contextScreen() {
       { key: 'visibility', header: t('ctx.visibility'), cell: row => <Chip>{visibilityLabel(row.visibility)}</Chip> },
       { key: 'space', header: t('col.space'), cell: row => <span className={styles.cellMuted}>{contextSpaceName(t, overview?.spaces ?? [], row.spaceId)}</span> },
       { key: 'version', header: t('ctx.version'), align: 'end', cell: row => <span className={styles.cellMuted}>{versionLabel(row.version)}</span> },
-      { key: 'updated', header: t('col.date'), cell: row => <span className={styles.cellMuted}>{row.updatedAt}</span> },
+      { key: 'updated', header: t('col.date'), cell: row => <span className={styles.cellData}>{row.updatedAt}</span> },
     ]
 
     return (
@@ -4450,7 +4456,7 @@ function approvalsScreen() {
     }
     const contextColumns: readonly Column<FaberLoomContextRow>[] = [
       { key: 'title', header: t('col.title'), cell: row => <span className={styles.cellName}>{row.title}</span> },
-      { key: 'author', header: t('approvals.author'), cell: row => <span className={styles.cellMuted}>{row.authorId}</span> },
+      { key: 'author', header: t('approvals.author'), cell: row => <span className={styles.cellData}>{row.authorId}</span> },
       { key: 'space', header: t('col.space'), cell: row => <span className={styles.cellMuted}>{contextSpaceName(t, overview?.spaces ?? [], row.spaceId)}</span> },
       { key: 'body', header: t('ctx.body'), cell: row => <span className={styles.cellMuted}>{preview(row.body)}</span> },
       {
@@ -4489,7 +4495,13 @@ function approvalsScreen() {
             : changes.map(change => (
               <div key={change.workflowId} className={styles.workflowSection}>
                 <div className={styles.workflowRunRow}>
-                  <span className={styles.cellName}>{change.name} · {t('approvals.proposedBy')} {change.proposerId} · {String(change.baseVersion)}</span>
+                  <span className={styles.cellName}>
+                    {change.name}
+                    {' · '}{t('approvals.proposedBy')}{' '}
+                    <span className={styles.cellData}>{change.proposerId}</span>
+                    {' · '}
+                    <span className={styles.cellData}>{String(change.baseVersion)}</span>
+                  </span>
                   <span className={styles.tools}>
                     <button className={styles.primary} type="button" onClick={() => {
                       void approvals.acceptWorkflow(change.workflowId).then((result) => { if (result.ok) setChanges(result.value) })

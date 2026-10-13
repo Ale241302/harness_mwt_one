@@ -1428,7 +1428,7 @@ Source: [`packages/faberloom/routines/src/index.ts`](../../packages/faberloom/ro
 
 ### `ctx.faberloomSessionAgent` — `FaberLoomSessionAgent`
 
-The Space session composition service: resolves one session's Space agent and installs its persona, tool mask, and skills.
+The Space session composition service: resolves one session's Space agent, installs its persona, tool mask, and skills, and makes an `@Name` mention route its turn to that catalog agent.
 
 ```ts cordis-catalog
 /**
@@ -2934,6 +2934,42 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the refreshed token list.
  */
 @Remote('revokeMcpToken') async revokeMcpToken(token: string): Promise<readonly FaberLoomMcpTokenRow[]>
+
+/**
+ * List the MCP servers this owner installed, name-ascending, each carrying
+ * its transport, whether it is enabled and mounted, and its credential entry
+ * names with whether the seam holds a value; no value or reference crosses.
+ * @returns the owner's saved servers.
+ */
+@Remote('mcpServers') async mcpServers(): Promise<readonly FaberLoomMcpServerRow[]>
+
+/**
+ * Install or replace one MCP server for this owner and mount it when enabled.
+ * Every environment or header value goes to the credential seam, so a read
+ * never returns one.
+ * @param input - the server's name, transport, secret values, and enabled flag.
+ * @returns the refreshed server list.
+ * @throws when the identity is read-only or the transport's required field is missing.
+ */
+@Remote('saveMcpServer') async saveMcpServer(input: FaberLoomMcpServerInput): Promise<readonly FaberLoomMcpServerRow[]>
+
+/**
+ * Remove one MCP server, unmounting it and dropping the credentials its
+ * entries held.
+ * @param name - the server to remove.
+ * @returns the refreshed server list.
+ * @throws when the identity is read-only.
+ */
+@Remote('removeMcpServer') async removeMcpServer(name: string): Promise<readonly FaberLoomMcpServerRow[]>
+
+/**
+ * Test one candidate MCP server before it is saved, reporting the tools it
+ * registered or the named reason it failed with every supplied secret
+ * redacted. Nothing is written and no seam value is read.
+ * @param input - the candidate server with its secret values.
+ * @returns `{ ok: true, tools }`, or a named failure with its redacted detail.
+ */
+@Remote('probeMcpServer') async probeMcpServer(input: FaberLoomMcpServerInput): Promise<FaberLoomMcpProbeResult>
 
 /**
  * Read the owner's contextual performance evidence.

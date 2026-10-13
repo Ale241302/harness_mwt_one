@@ -303,6 +303,37 @@ describe('Conversation inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('attaches caller-read workspace bytes through the existing file intake', async () => {
+    const b = await bench()
+    const upload = vi.spyOn(b.runtime.fileUpload, 'upload')
+    b.runtime.sessions.scope(ROOT)!.get('conversation')!.attachWorkspaceFile('spec.pdf', Uint8Array.of(9, 8))
+    const ids = b.inputApi(ROOT).state.getSnapshot().attachmentIds
+    expect(ids).toHaveLength(1)
+    await vi.waitFor(() => { expect(upload).toHaveBeenCalledOnce() })
+    const [sessionId, data] = upload.mock.calls[0]!
+    expect(sessionId).toBe(ROOT)
+    expect(data).toBeInstanceOf(File)
+    const uploaded = data as File
+    expect(uploaded.name).toBe('spec.pdf')
+    expect([...new Uint8Array(await uploaded.arrayBuffer())]).toEqual([9, 8])
+    await b.runtime.dispose()
+  })
+
+  it('releases a workspace draft when the busy composer refuses admission', async () => {
+    const b = await bench()
+    const controller = b.runtime.ctx.conversation as unknown as {
+      releaseDraftAttachments(attachments: readonly unknown[]): void
+    }
+    const release = vi.spyOn(controller, 'releaseDraftAttachments')
+    const hub = b.runtime.ctx.conversation.input as unknown as { for(ctx: unknown): unknown }
+    const refuse = vi.spyOn(hub, 'for').mockReturnValue({ addAttachments: () => false })
+    b.runtime.sessions.scope(ROOT)!.get('conversation')!.attachWorkspaceFile('spec.pdf', Uint8Array.of(1))
+    expect(release).toHaveBeenCalledOnce()
+    refuse.mockRestore()
+    expect(b.inputApi(ROOT).state.getSnapshot().attachmentIds).toEqual([])
+    await b.runtime.dispose()
+  })
+
   it('fails loud for an unknown binding or an unloaded scoped service', async () => {
     const b = await bench()
     const entry = b.entryOf('conversation.composer.bar')

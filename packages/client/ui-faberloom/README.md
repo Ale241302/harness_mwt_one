@@ -1,5 +1,5 @@
 ---
-description: "FaberLoom surface for the Web GUI: the identity tokens, the brand name, and the global panels (Conversar, Mesa de trabajo, Espacios, Agentes, Rutinas, Flujos, Memoria, Conexiones) that the faberloom profile serves; for users and maintainers of the FaberLoom workspace."
+description: "FaberLoom surface for the Web GUI: the identity tokens, the brand name, the global panels (Conversar, Mesa de trabajo, Espacios, Agentes, Rutinas, Flujos, Memoria, Conexiones), and the MCP servers page in Settings that the faberloom profile serves; for users and maintainers of the FaberLoom workspace."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The FaberLoom surface turns the shared Web shell into the FaberLoom workspace: it overrides the accent token with the FaberLoom identity, labels the sidebar brand, and registers one global panel per FaberLoom section. Every panel reads one shared overview from a declared store; Espacios and Agentes create and rename their records through `ctx.remote.faberloomView`, and each write republishes the refreshed overview so all panels update at once. The Conversar panel hands the user to the harness conversation, which owns the composer. The Flujos panel draws the Work Flow graph. The package is mounted only by the `faberloom` profile.
+The FaberLoom surface turns the Web shell into the FaberLoom workspace: it overrides the accent token with the FaberLoom identity, labels the sidebar brand, and registers one panel per section plus the MCP servers page in Settings. The panels read one shared overview from a declared store; Espacios and Agentes create and rename records through `ctx.remote.faberloomView`, and each write republishes the overview so all panels update at once, while the MCP page lists, tests, and removes the owner's servers through the same remote. Conversar and Flujos open the conversation and the Work Flow graph. Only the `faberloom` profile mounts it.
 
 ## Table of Contents
 
@@ -29,9 +29,10 @@ Mount this plugin where `ctx.slots`, `ctx.locale`, and `ctx.theme` are present. 
 - the `sidebar.brand.name` two-tone wordmark and the `sidebar.brand.mark` and `conversation.hero.brand.mark` isotipo occupant;
 - ten `sidebar.panellist` rows over twelve `main` panels, addressed by the shared `MainPanelId` (the Chat landing and the Skills panel keep their routes without a sidebar row);
 - the chat gestures: an `@` trigger source that lists the owner's active agents (a pick inserts `@name`) and a `/routine` command contribution with a popup that starts the picked routine, both fed by the workspace overview through `ctx.remote.faberloomView`;
-- the Skills panel's install control: it opens the mounted directory picker, offers the current workspace or the global skills root with the resolved root of each shown, installs through `ctx.remote.faberloomView.installSkill`, and lists this identity's recorded installs with a remove action.
+- the Skills panel's install control: it opens the mounted directory picker, offers the current workspace or the global skills root with the resolved root of each shown, installs through `ctx.remote.faberloomView.installSkill`, and lists this identity's recorded installs with a remove action;
+- the MCP servers page in the Settings modal: it lists the owner's installed servers with their transport, whether they are enabled and mounted, and which credentials are present (never a value and never the credential reference), tests one candidate connection before it is saved (showing the tools it found or the named failure with its redacted detail), installs it with every value going to the credential seam, and removes one after an inline confirmation. It reaches the host registry only through `ctx.remote.faberloomView` (`mcpServers`, `saveMcpServer`, `removeMcpServer`, `probeMcpServer`), so no host registry code reaches the browser.
 
-The sidebar foot carries only the Settings control, and this package registers nothing into `sidebar.footer.action`. The product's palettes and its interface language are chosen in the Settings modal that control opens: the palettes in the **Apariencia** (Appearance) section and the interface language in the **Idioma** (Language) section.
+The sidebar foot carries only the Settings control, and this package registers nothing into `sidebar.footer.action`. The product's palettes, its interface language, and its MCP servers are chosen in the Settings modal that control opens: the palettes in the **Apariencia** (Appearance) section, the interface language in the **Idioma** (Language) section, and the MCP servers in the **Servidores MCP** (MCP servers) section.
 
 The Spaces detail links the business space to the harness workspace: `spaceWorkspace` projects the space's conversation area (its `fw_` workdir registered as a workspace, titled after the space) and "New conversation in this space" opens a session in it, so the sidebar's workspace group and the space stay the same thing. The Work bench reviews with a note, submits new prepared revisions, moves items through the exception states (request data, fail, complete), and lists recorded effects with detail and date.
 

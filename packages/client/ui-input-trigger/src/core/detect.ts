@@ -6,6 +6,7 @@
 import { activeAtToken } from '@deepseek-ai/dsh-file-reference/grammar'
 import type { TriggerChar } from '../types.ts'
 import type { DetectTrigger } from './contract.ts'
+import { activeShellToken } from './shell-command.ts'
 
 const WORD_CHAR = /[\p{L}\p{N}_]/u
 const WHITESPACE = /\s/u
@@ -31,11 +32,13 @@ function boundaryOk(draft: string, index: number, char: TriggerChar): boolean {
 
 /**
  * Detect a trigger token at the caret. `@` first uses the shared grammar,
- * including an open quoted token that may span whitespace. Slash detection
- * scans left to the first whitespace; slashes failing the word boundary are
- * treated as ordinary token chars and the scan continues (URL slashes).
- * Guard tiers: plain = both chars live; claimed = '/' fully suppressed,
- * '@' live; frozen = none.
+ * including an open quoted token that may span whitespace, so an `@` inside a
+ * shell command still reaches file and session references; `!` then uses its
+ * own grammar, whose command is the rest of the line. Slash detection scans
+ * left to the first whitespace; slashes failing the word boundary are treated
+ * as ordinary token chars and the scan continues (URL slashes).
+ * Guard tiers: plain = `@` and `!` live; claimed = '/' fully suppressed, `@`
+ * and `!` live; frozen = none.
  *
  * @param draft - Full draft text.
  * @param caret - Caret offset into `draft`.
@@ -54,6 +57,17 @@ export const detectTrigger: DetectTrigger = (draft, caret, guard) => {
       trigger: '@',
       query: at.query,
       quoted: at.quoted,
+      position: draft.search(/\S/) === start ? 'leading' : 'inline',
+      span: { start, end: caret, draftRev: 0 },
+    }
+  }
+  const shell = activeShellToken(draft, caret)
+  if (shell !== undefined) {
+    const start = caret - shell.prefix.length
+    return {
+      trigger: '!',
+      query: shell.command,
+      quoted: false,
       position: draft.search(/\S/) === start ? 'leading' : 'inline',
       span: { start, end: caret, draftRev: 0 },
     }

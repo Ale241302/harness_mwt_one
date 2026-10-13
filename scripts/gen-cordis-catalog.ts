@@ -1110,6 +1110,9 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   SessionDeleteOrphansValue: 'Host session-controller result contract is owned by packages/api/session-controller/src/types.ts',
   SessionAgentRoute: 'product consumer type is owned by packages/faberloom/session-agent/src/types.ts',
   ModelReconciliation: 'product consumer type is owned by packages/faberloom/agents/src/types.ts',
+  FaberLoomMcpServerRow: 'product consumer type is owned by packages/faberloom/view/src/types.ts',
+  FaberLoomMcpServerInput: 'product consumer type is owned by packages/faberloom/view/src/types.ts',
+  FaberLoomMcpProbeResult: 'product consumer type is owned by packages/faberloom/view/src/types.ts',
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */

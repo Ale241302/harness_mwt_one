@@ -60,6 +60,34 @@ describe('detectTrigger word boundaries', () => {
   })
 })
 
+describe('detectTrigger shell commands', () => {
+  it('opens on `!` and takes the whole command as the query', () => {
+    expect(atEnd('!git status --short')).toMatchObject({
+      trigger: '!',
+      query: 'git status --short',
+      quoted: false,
+      position: 'leading',
+      span: { start: 0, end: 19 },
+    })
+  })
+
+  it('opens after whitespace and reports an inline position', () => {
+    expect(atEnd('please run !ls -la')).toMatchObject({ trigger: '!', query: 'ls -la', position: 'inline' })
+  })
+
+  it('does not trigger inside another token or on the `!=` operator', () => {
+    expect(atEnd('a!b')).toBeNull()
+    expect(atEnd('wow!')).toBeNull()
+    expect(atEnd('a != b')).toBeNull()
+  })
+
+  it('lets an `@` reference inside a shell command win the caret', () => {
+    // `@` is detected first, so a file reference typed inside a command still
+    // opens the reference menu.
+    expect(atEnd('!echo @re')).toMatchObject({ trigger: '@', query: 're' })
+  })
+})
+
 describe('detectTrigger position', () => {
   it('treats a draft whose leading trim (incl. newlines) starts at the token as leading', () => {
     expect(atEnd('\n\n/goal')).toMatchObject({ position: 'leading' })
@@ -73,10 +101,12 @@ describe('detectTrigger position', () => {
 })
 
 describe('detectTrigger guard tiers', () => {
-  it('claimed suppresses "/" everywhere but keeps "@"', () => {
+  it('claimed suppresses "/" everywhere but keeps "@" and "!"', () => {
     expect(atEnd('/co', claimed)).toBeNull()
     expect(atEnd('args /path', claimed)).toBeNull()
     expect(atEnd('/goal @wor', claimed)).toMatchObject({ trigger: '@', query: 'wor' })
+    expect(atEnd('!ls', claimed)).toMatchObject({ trigger: '!', query: 'ls' })
+    expect(atEnd('/goal !ls', claimed)).toMatchObject({ trigger: '!', query: 'ls' })
   })
 
   it('a suppressed "/" is scanned through like an ordinary char', () => {
@@ -84,9 +114,10 @@ describe('detectTrigger guard tiers', () => {
     expect(detectTrigger('/goal /x', 8, claimed)).toBeNull()
   })
 
-  it('frozen suppresses both triggers', () => {
+  it('frozen suppresses every trigger', () => {
     expect(atEnd('/co', frozen)).toBeNull()
     expect(atEnd('@wo', frozen)).toBeNull()
+    expect(atEnd('!ls', frozen)).toBeNull()
   })
 })
 
@@ -111,6 +142,11 @@ describe('detectTrigger span and query', () => {
   it('cuts the query at a mid-token caret', () => {
     const hit = detectTrigger('/goal', 3, plain)
     expect(hit).toMatchObject({ query: 'go', span: { start: 0, end: 3 } })
+  })
+
+  it('spans a shell command from its `!` to a mid-command caret', () => {
+    const hit = detectTrigger('run !git status', 7, plain)
+    expect(hit).toMatchObject({ trigger: '!', query: 'gi', span: { start: 4, end: 7 } })
   })
 
   it('returns null at caret 0 and on empty drafts', () => {

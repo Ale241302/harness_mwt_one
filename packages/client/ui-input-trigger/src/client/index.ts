@@ -13,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { InputTriggerService } from './service.ts'
 import type { MenuViewInjected } from './slots.ts'
 import { MenuView } from './MenuView.tsx'
+import { createShellCommandSource } from './shell-source.ts'
 import { en, es, zh, type MenuKey } from './locales.ts'
 
 export { InputTriggerService } from './service.ts'
@@ -24,9 +25,9 @@ export type { MenuKey } from './locales.ts'
 export type {
   ArbitrateKey, ArbitrateOutcome, BeginCommandRequest, CandidateRequest, ClientSessionContext,
   CommandClaim, ConsumeTokenRequest, HeaderRequest, InsertReferenceRequest, PickOutcome, PickVia,
-  ReferenceCodec, ReferenceInsert, InputTriggerCandidate, InputTriggerCrumb, InputTriggerPick,
-  InputTriggerSource, SubmitAttachment, SubmitEnvelope, SubmitOutcome, TokenSpan, TriggerChar,
-  TriggerGuard, TriggerPosition,
+  ReferenceCodec, ReferenceInsert, ReferenceTriggerChar, InputTriggerCandidate, InputTriggerCrumb,
+  InputTriggerPick, InputTriggerSource, SubmitAttachment, SubmitEnvelope, SubmitOutcome, TokenSpan,
+  TriggerChar, TriggerGuard, TriggerPosition,
 } from '../types.ts'
 export type { DetectTrigger, ExactMatch, MenuEvent, MenuReduce, MenuState, TriggerHit } from '../core/contract.ts'
 export type { InputTriggerServiceContract } from './contract.ts'
@@ -59,6 +60,15 @@ export const inject = ['sessions', 'locale']
 export function apply(ctx: ClientContext): void {
   ctx.plugin(InputTriggerService)
   ctx.effect(() => ctx.locale.register(MENU_NS, { zh, en, es }), 'ui-input-trigger: menu dictionaries')
+  // Built-in `!` source: the command is the live query, so no data-owning
+  // package needs to contribute it (unlike the `@` file and session sources).
+  const menuT = ctx.locale.bind(MENU_NS)
+  ctx.inject(['inputTriggers'], (scope: ClientContext) => {
+    scope.effect(
+      () => scope.inputTriggers.registerSource(createShellCommandSource(menuT)),
+      'ui-input-trigger: shell source',
+    )
+  })
   ctx.inject(['slots', 'inputTriggers', 'sessions'], (scope: ClientContext) => {
     const inputTriggers = scope.inputTriggers
     const sessions = scope.sessions

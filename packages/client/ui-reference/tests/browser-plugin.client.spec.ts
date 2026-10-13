@@ -85,6 +85,18 @@ function request(
   }
 }
 
+type ReadAllLookup = (
+  sessionId: SessionId,
+  path: string,
+  signal?: AbortSignal,
+) => Promise<RemoteEnvelope<{ data: string }>>
+
+/** The composer intake face the `@` source reaches through the scoped conversation service. */
+interface AttachFace {
+  attachWorkspaceFile(name: string, data: Uint8Array): void
+  readonly input: { for(ctx: unknown): { notify(level: 'info' | 'error', text: string): void } }
+}
+
 async function bench(
   files: RemoteLookup<FileReferenceCandidate> = vi.fn(() => Promise.resolve({
     ok: true as const,
@@ -106,11 +118,16 @@ async function bench(
   })),
   listed: Record<string, { cwd?: string; updatedAt?: number }> = { target: { cwd: ROOT } },
   workspaceFiles: ListingLookup = vi.fn(() => Promise.resolve({ ok: true as const, value: ROOT_LISTING })),
+  readAll: ReadAllLookup = vi.fn(() => Promise.resolve({ ok: true as const, value: { data: '' } })),
+  over: { scopeConversation?: AttachFace | null } = {},
 ): Promise<{
   ctx: Context
   fiber: ReturnType<Context['plugin']>
   source: InputTriggerSource
   workspaceFiles: ListingLookup
+  readAll: ReadAllLookup
+  attach: ReturnType<typeof vi.fn>
+  notify: ReturnType<typeof vi.fn>
 }> {
   const ctx = new Context()
   ctx.provide('sidebarRight', { openResource: vi.fn() })
@@ -131,13 +148,22 @@ async function bench(
   new RemoteService(ctx)
   ctx.provide('remote.fileReferences', { list: files })
   ctx.provide('remote.sessionReferenceResolver', { candidates: sessions })
-  ctx.provide('remote.workspaceFiles', { list: workspaceFiles })
+  ctx.provide('remote.workspaceFiles', { list: workspaceFiles, readAll })
   ctx.provide('locale', new LocaleRuntime(ctx))
-  ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: listed }) } })
+  const attach = vi.fn()
+  const notify = vi.fn()
+  const conversation: AttachFace = { attachWorkspaceFile: attach, input: { for: () => ({ notify }) } }
+  const scopedConversation = over.scopeConversation === null ? undefined : (over.scopeConversation ?? conversation)
+  ctx.provide('sessions', {
+    list: { getSnapshot: () => ({ byId: listed }) },
+    scope: (id: SessionId) => id === sid('target')
+      ? { get: (name: string) => name === 'conversation' ? scopedConversation : undefined }
+      : undefined,
+  })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   if (source === undefined) throw new Error('reference source was not registered')
-  return { ctx, fiber, source, workspaceFiles }
+  return { ctx, fiber, source, workspaceFiles, readAll, attach, notify }
 }
 
 describe('apply', () => {
@@ -231,7 +257,8 @@ describe('candidates', () => {
     expect(sessions).toHaveBeenCalledTimes(1)
     releaseSessions()
     releaseFiles()
-    await expect(pending).resolves.toEqual([
+    const rows = await pending
+    expect(rows).toEqual([
       {
         name: 'src/',
         icon: 'folder',
@@ -246,12 +273,18 @@ describe('candidates', () => {
         section: 'Files & folders',
       }),
       expect.objectContaining({
+        name: 'Attach a b.md',
+        section: 'Files & folders',
+      }),
+      expect.objectContaining({
         name: 'Research',
         description: '~/project · 1h',
         icon: 'session',
         section: 'Sessions',
       }),
     ])
+    // The attach row carries the paperclip element, not a glyph token.
+    expect(rows[2]?.icon).toBeTypeOf('function')
   })
 
   it('suppresses sessions for an open quoted path and degrades each failed domain independently', async () => {
@@ -277,7 +310,8 @@ describe('candidates', () => {
     }))
     const { source } = await bench(files, sessions)
     const quoted = await source.candidates(session, request('READ', { quoted: true }))
-    expect(quoted).toEqual([expect.objectContaining({ name: 'README.md', icon: 'file' })])
+    expect(quoted[0]).toEqual(expect.objectContaining({ name: 'README.md', icon: 'file' }))
+    expect(quoted[1]).toEqual(expect.objectContaining({ name: 'Attach README.md' }))
     expect(source.onPick({
       candidate: quoted[0]!,
       session,
@@ -422,6 +456,7 @@ describe('workspace browsing', () => {
           { name: 'alpha', type: 'directory' as const },
           { name: 'odd', type: 'other' as const },
           { name: 'bad\nname', type: 'file' as const },
+          { name: 'bad\ndir', type: 'directory' as const },
         ],
         truncated: false,
       },
@@ -429,8 +464,9 @@ describe('workspace browsing', () => {
     const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
     const rows = await source.candidates(session, request(''))
     expect(workspaceFiles).toHaveBeenCalledWith(sid('target'), ROOT, expect.any(AbortSignal))
-    expect(rows.map(row => row.name)).toEqual(['alpha/', 'src/', 'zeta.txt'])
-    expect(rows.map(row => row.icon)).toEqual(['folder', 'folder', 'file'])
+    expect(rows.map(row => row.name)).toEqual(['alpha/', 'src/', 'zeta.txt', 'Attach zeta.txt'])
+    expect(rows.slice(0, 3).map(row => row.icon)).toEqual(['folder', 'folder', 'file'])
+    expect(rows[3]?.icon).toBeTypeOf('function')
     expect(rows.filter(row => row.drill === true).map(row => row.name)).toEqual(['alpha/', 'src/'])
   })
 
@@ -461,7 +497,7 @@ describe('workspace browsing', () => {
     expect(descends).toEqual({ text: '@src/', continue: true })
     const drilled = await source.candidates(session, { ...request('src/'), drilled: true })
     expect(workspaceFiles).toHaveBeenNthCalledWith(2, sid('target'), `${ROOT}/src`, expect.any(AbortSignal))
-    expect(drilled.map(row => row.name)).toEqual(['index.html'])
+    expect(drilled.map(row => row.name)).toEqual(['index.html', 'Attach index.html'])
     const crumbs = source.header?.(session, { query: 'src/', drilled: true })
     expect(crumbs?.map(crumb => crumb.label)).toEqual(['Workspace', 'src'])
     // The root crumb is the drill back to the workspace root.
@@ -494,7 +530,7 @@ describe('workspace browsing', () => {
     const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
     const rows = await source.candidates(session, request('src/ind'))
     expect(workspaceFiles).toHaveBeenCalledWith(sid('target'), `${ROOT}/src`, expect.any(AbortSignal))
-    expect(rows.map(row => row.name)).toEqual(['index.ts'])
+    expect(rows.map(row => row.name)).toEqual(['index.ts', 'Attach index.ts'])
   })
 
   it('keeps the fuzzy workspace search for a query with no separator', async () => {
@@ -507,7 +543,7 @@ describe('workspace browsing', () => {
     const rows = await source.candidates(session, request('ind'))
     expect(files).toHaveBeenCalledWith(sid('target'), 'ind', expect.any(AbortSignal))
     expect(workspaceFiles).not.toHaveBeenCalled()
-    expect(rows.map(row => row.name)).toEqual(['index.ts'])
+    expect(rows.map(row => row.name)).toEqual(['index.ts', 'Attach index.ts'])
     expect(rows[0]?.description).toBe('src/module1')
   })
 
@@ -587,6 +623,79 @@ describe('workspace browsing', () => {
       },
     })
   })
+
+  it('reads the picked attach row through the Host and hands its bytes to the composer intake', async () => {
+    const readAll = vi.fn(() => Promise.resolve({ ok: true as const, value: { data: 'AAEC' } }))
+    const { source, attach } = await bench(undefined, noSessions, undefined, undefined, readAll)
+    const rows = await source.candidates(session, request(''))
+    const row = rows.find(entry => entry.name === 'Attach a b.md')
+    expect(row).toBeDefined()
+    expect(source.onPick({
+      candidate: row!,
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'pick',
+      span: { start: 0, end: 1, draftRev: 1 },
+    })).toBe('handled')
+    await vi.waitFor(() => { expect(attach).toHaveBeenCalledOnce() })
+    expect(readAll).toHaveBeenCalledWith(sid('target'), 'a b.md', expect.any(AbortSignal))
+    const [name, data] = attach.mock.calls[0] as [string, Uint8Array]
+    expect(name).toBe('a b.md')
+    expect([...data]).toEqual([0, 1, 2])
+  })
+
+  it.each([
+    ['workspace-file/not-found', 'attach.error.notFound'],
+    ['workspace-file/too-large', 'attach.error.tooLarge'],
+    ['workspace-file/not-regular-file', 'attach.error.notRegularFile'],
+    ['gateway/internal', 'attach.error.unavailable'],
+  ] as const)('surfaces a %s read refusal instead of attaching an empty file', async (code, key) => {
+    const readAll = vi.fn(() => Promise.resolve({
+      ok: false as const,
+      error: new RemoteError(code, 'broker lost', { path: 'a b.md', limit: 10 }),
+    }))
+    const { source, attach, notify } = await bench(undefined, noSessions, undefined, undefined, readAll)
+    const rows = await source.candidates(session, request(''))
+    const row = rows.find(entry => entry.name === 'Attach a b.md')
+    source.onPick({
+      candidate: row!,
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'pick',
+      span: { start: 0, end: 1, draftRev: 1 },
+    })
+    await vi.waitFor(() => { expect(notify).toHaveBeenCalledOnce() })
+    expect(attach).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith('error', en[key].replace('{message}', 'broker lost'))
+  })
+
+  it('drops an attach pick whose Session scope or composer is gone', async () => {
+    const { source, attach } = await bench()
+    const rows = await source.candidates(session, request(''))
+    const candidate = rows.find(entry => entry.name === 'Attach a b.md')!
+    const pickFrom = (sessionId: SessionId) => source.onPick({
+      candidate, session: { sessionId }, position: 'inline', via: 'menu', action: 'pick',
+      span: { start: 0, end: 1, draftRev: 1 },
+    })
+    expect(pickFrom(sid('ghost'))).toBe('handled')
+    await Promise.resolve()
+    expect(attach).not.toHaveBeenCalled()
+
+    const gone = await bench(undefined, noSessions, undefined, undefined, undefined, { scopeConversation: null })
+    const goneRows = await gone.source.candidates(session, request(''))
+    gone.source.onPick({
+      candidate: goneRows.find(entry => entry.name === 'Attach a b.md')!,
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'pick',
+      span: { start: 0, end: 1, draftRev: 1 },
+    })
+    await Promise.resolve()
+    expect(gone.attach).not.toHaveBeenCalled()
+  })
 })
 
 describe('directory header', () => {
@@ -658,7 +767,8 @@ describe('directory header', () => {
     const sessions = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))
     const { source } = await bench(undefined, sessions, undefined, workspaceFiles)
     const rows = await source.candidates(session, drilledRequest('src/module1/'))
-    expect(rows).toEqual([expect.objectContaining({ name: 'index.html', icon: 'file' })])
+    expect(rows[0]).toEqual(expect.objectContaining({ name: 'index.html', icon: 'file' }))
+    expect(rows[1]).toEqual(expect.objectContaining({ name: 'Attach index.html' }))
     expect(rows[0]).not.toHaveProperty('description')
     expect(source.header?.(session, { query: 'src/module1/', drilled: true })).not.toBeUndefined()
   })

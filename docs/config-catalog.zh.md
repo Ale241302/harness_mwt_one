@@ -1077,7 +1077,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/faberloom/session-agent/src/index.ts:37`](../packages/faberloom/session-agent/src/index.ts)
+来源：[`packages/faberloom/session-agent/src/index.ts:47`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 
@@ -1161,7 +1161,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:70`](../packages/faberloom/view/src/index.ts)
+来源：[`packages/faberloom/view/src/index.ts:227`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 

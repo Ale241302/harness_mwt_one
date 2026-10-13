@@ -1,0 +1,242 @@
+/* MCP-servers Settings section. Semantic tokens only: every color, radius, and
+   type role resolves through the active theme, so light and dark stay
+   consistent. Identifiers (server names, credential names, a test verdict)
+   carry the data role; descriptions and hints carry the UI-body role. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.intro {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+.status {
+  margin: 0;
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-ui-body);
+}
+
+.error {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-ui-body);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 13px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.rowHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.name {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-data-strong);
+}
+
+.tag {
+  padding: 2px 7px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  corner-shape: round;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+.credentials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.credential {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-data);
+}
+
+.meta {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.formTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  font-weight: 600;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+}
+
+.hint {
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+}
+
+.secrets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.secretRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.secretRow input {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+}
+
+.test {
+  margin: 0;
+  font: var(--dsw-font-data);
+}
+
+.test[data-state='fail'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.test[data-state='ok'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.test[data-state='testing'] {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Control roles, scoped here: a CSS module cannot reach the panels' sheet. */
+.primary {
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  color: var(--dsw-alias-bg-base);
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
+  cursor: pointer;
+}
+
+.primary:disabled {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-caption);
+  cursor: not-allowed;
+}
+
+.secondary {
+  padding: 9px 13px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
+  cursor: pointer;
+}
+
+.secondary:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.ghost {
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
+  cursor: pointer;
+}
+
+.danger {
+  padding: 8px 11px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
+  cursor: pointer;
+}
+
+/* Phone widths: the credential rows and the actions stack, so the form stays
+   usable in a narrow settings column. */
+@media (max-width: 767px) {
+  .secretRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+}

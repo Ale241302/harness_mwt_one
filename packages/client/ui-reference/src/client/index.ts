@@ -37,8 +37,9 @@ import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/typ
 import type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
 import { abbreviateHomePath, fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import {
-  browseCandidates, browseFailureCandidates, directoryValue, encodeCandidate, listingPath,
-  parseCandidate, splitBrowseQuery, type BrowseTarget, type ReferenceCandidateValue, type Translate,
+  attachCandidate, attachFailureLine, browseCandidates, browseFailureCandidates, directoryValue,
+  encodeCandidate, listingPath, parseCandidate, splitBrowseQuery,
+  type BrowseTarget, type ReferenceCandidateValue, type Translate,
 } from './browse.ts'
 import { en, es, NS, zh } from './locales.ts'
 
@@ -99,8 +100,14 @@ export function apply(ctx: ClientContext): void {
     header(_session: ClientSessionContext, req) {
       return crumbsFor(req.query, req.quoted === true, req.drilled, t)
     },
-    onPick({ candidate, action }) {
+    onPick({ candidate, action, session }) {
       const value = parseCandidate(candidate.value)
+      if (value?.kind === 'attach') {
+        // The attach verb reads bytes through the Host and hands them to the
+        // composer intake; the token resolves nothing and the menu closes.
+        void attachWorkspaceFile(ctx, sessions, session.sessionId, value.path, value.label, t)
+        return 'handled'
+      }
       if (value?.kind === 'file') {
         // A directory row carries two verbs: the settling pick resolves the
         // folder itself as an atomic reference, while the drill action (Tab /
@@ -246,7 +253,7 @@ function fileCandidate(
     label: name,
     mention,
   }
-  return [{
+  const rows: InputTriggerCandidate[] = [{
     name: `${name}${directory ? '/' : ''}`,
     // The location is the parent alone: repeating the name the row already
     // shows says nothing, and a workspace-root entry has no parent to name.
@@ -256,6 +263,8 @@ function fileCandidate(
     value: encodeCandidate(value),
     ...(directory ? { drill: true } : {}),
   }]
+  if (!directory) rows.push(attachCandidate(name, candidate.path, t))
+  return rows
 }
 
 /** Project one session discovery candidate as a menu row. */
@@ -285,4 +294,56 @@ function sessionCandidate(
     section: t('section.sessions'),
     value: encodeCandidate(value),
   }
+}
+
+/** Composer intake face one attach row reaches through the scoped conversation service. */
+interface AttachConversationFace {
+  attachWorkspaceFile(name: string, data: Uint8Array): void
+  readonly input: {
+    for(actx: ClientContext): { notify(level: 'info' | 'error', text: string): void }
+  }
+}
+
+/**
+ * Read one workspace file through the Host and hand its bytes to the composer's
+ * attachment intake. A Host refusal — too large, gone, or not a regular file —
+ * reaches the composer as a readable notice, and nothing is ever truncated:
+ * the model receives the complete file or nothing at all.
+ * @param ctx - client root context carrying the Remote face.
+ * @param sessions - the Session list supplying the scope.
+ * @param sessionId - Session whose workspace holds the file.
+ * @param path - workspace-relative path the row carried.
+ * @param name - display name of the file.
+ * @param t - the reference dictionary.
+ */
+async function attachWorkspaceFile(
+  ctx: ClientContext,
+  sessions: ISessions,
+  sessionId: SessionId,
+  path: string,
+  name: string,
+  t: Translate,
+): Promise<void> {
+  const result = await ctx.remote.workspaceFiles.readAll(sessionId, path, new AbortController().signal)
+  const scoped = sessions.scope(sessionId)
+  if (scoped === undefined) return
+  const conversation = scoped.get('conversation') as AttachConversationFace | undefined
+  if (conversation === undefined) return
+  if (!result.ok) {
+    conversation.input.for(scoped).notify('error', attachFailureLine(result.error, t))
+    return
+  }
+  conversation.attachWorkspaceFile(name, decodeBase64(result.value.data))
+}
+
+/**
+ * Raw bytes of one base64 Remote payload; an empty payload decodes to no bytes.
+ * @param data - the window's bytes in base64, as the wire carries them.
+ * @returns the decoded bytes.
+ */
+function decodeBase64(data: string): Uint8Array {
+  const binary = atob(data)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
 }

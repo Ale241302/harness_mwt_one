@@ -18,8 +18,11 @@ import { MENU_CLOSED, menuReduce, seedGroups } from '../core/menu.ts'
 import type { MenuEvent, MenuState, TriggerHit } from '../core/contract.ts'
 import type {
   ClientSessionContext, InputTriggerCandidate, InputTriggerCrumb, InputTriggerSource, PickAction,
-  SubmitEnvelope, TriggerChar, TriggerGuard,
+  ReferenceTriggerChar, SubmitEnvelope, TriggerGuard,
 } from '../types.ts'
+
+/** Reference triggers the hot lexicon is published for, in menu order. */
+const REFERENCE_TRIGGERS: readonly ReferenceTriggerChar[] = ['/', '@']
 
 /** Roster access the controller borrows from the root service (registration order preserved). */
 export interface SourceRoster {
@@ -60,8 +63,9 @@ export class InputTriggerController {
   readonly headers: SnapshotStore<ReadonlyMap<string, readonly InputTriggerCrumb[]>> =
     createSnapshotStore<ReadonlyMap<string, readonly InputTriggerCrumb[]>>(new Map())
   /**
-   * Aggregated hot reference lexicon, grouped by trigger (plain-text-reference decision;
-   * see .agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md):
+   * Aggregated hot reference lexicon, grouped by reference trigger
+   * (plain-text-reference decision; see
+   * .agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md):
    * sources implementing the lexicon hook are polled with the session
    * projection; undefined answers (roll not hot yet) are skipped; multiple
    * sources on one trigger concatenate in registration order. A snapshot
@@ -69,8 +73,8 @@ export class InputTriggerController {
    * spawn/exit) — render-side consumers subscribe instead of re-reading a
    * mutable answer.
    */
-  readonly lexicon: SnapshotStore<ReadonlyMap<TriggerChar, readonly string[]>> =
-    createSnapshotStore<ReadonlyMap<TriggerChar, readonly string[]>>(new Map())
+  readonly lexicon: SnapshotStore<ReadonlyMap<ReferenceTriggerChar, readonly string[]>> =
+    createSnapshotStore<ReadonlyMap<ReferenceTriggerChar, readonly string[]>>(new Map())
 
   /** The authoritative hit: single truth for span CAS material (menu snapshot never carries it alone). */
   private hit: TriggerHit | null = null
@@ -430,22 +434,27 @@ export class InputTriggerController {
   /** Re-poll every lexicon-bearing source and publish the aggregated rolls (see the store doc). */
   private refreshLexicon(): void {
     const projection = this.project()
-    const rolls = new Map<TriggerChar, readonly string[]>()
-    for (const src of this.deps.roster.all()) {
-      if (src.lexicon === undefined) continue
-      let names: readonly string[] | undefined
-      try {
-        names = src.lexicon(projection)
-      } catch (error) {
-        // A faulty source drops silently with a console record (the
-        // candidate-fetch failure policy); the refresh runs inside
-        // notification callbacks, where a throw would starve other consumers.
-        console.error(`[ui-input-trigger] source "${src.name}" lexicon failed:`, error)
-        continue
+    const rolls = new Map<ReferenceTriggerChar, readonly string[]>()
+    // The roll feeds plain-text reference decoration, which scans the
+    // reference triggers alone; walking them keeps the published key domain
+    // exact and leaves a source on any other trigger out of it.
+    for (const trigger of REFERENCE_TRIGGERS) {
+      for (const src of this.deps.roster.sources(trigger)) {
+        if (src.lexicon === undefined) continue
+        let names: readonly string[] | undefined
+        try {
+          names = src.lexicon(projection)
+        } catch (error) {
+          // A faulty source drops silently with a console record (the
+          // candidate-fetch failure policy); the refresh runs inside
+          // notification callbacks, where a throw would starve other consumers.
+          console.error(`[ui-input-trigger] source "${src.name}" lexicon failed:`, error)
+          continue
+        }
+        if (names === undefined) continue
+        const prev = rolls.get(trigger)
+        rolls.set(trigger, prev === undefined ? names : [...prev, ...names])
       }
-      if (names === undefined) continue
-      const prev = rolls.get(src.trigger)
-      rolls.set(src.trigger, prev === undefined ? names : [...prev, ...names])
     }
     this.lexicon.set(rolls)
   }

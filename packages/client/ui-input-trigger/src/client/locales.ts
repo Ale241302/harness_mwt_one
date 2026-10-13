@@ -1,7 +1,8 @@
 /**
  * `slash.menu` namespace dictionaries: group titles keyed by source name
  * (the lookup chain returns the key itself, so an unknown source shows its
- * raw name), the pending row, and the listbox and header aria labels.
+ * raw name), the `!` source's row description, the pending row, and the
+ * listbox and header aria labels.
  */
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
@@ -9,6 +10,8 @@ export const zh = {
   'command': '指令',
   'skill': '技能',
   'subagent': '子智能体',
+  'shell': '命令行',
+  'shell.run': '运行这条命令',
   'loading': '正在加载…',
   'drill.aria': '进入目录',
   'drill.hint': '进入目录',
@@ -25,6 +28,8 @@ export const en = {
   'command': 'Commands',
   'skill': 'Skills',
   'subagent': 'Subagents',
+  'shell': 'Shell',
+  'shell.run': 'Run this command',
   'loading': 'Loading…',
   'drill.aria': 'Browse folder',
   'drill.hint': 'Browse folder',
@@ -38,6 +43,8 @@ export const es = {
   'command': 'Comandos',
   'skill': 'Skills',
   'subagent': 'Subagentes',
+  'shell': 'Shell',
+  'shell.run': 'Ejecutar este comando',
   'loading': 'Cargando…',
   'drill.aria': 'Abrir carpeta',
   'drill.hint': 'Abrir carpeta',
