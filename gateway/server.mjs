@@ -1909,7 +1909,7 @@ const AUTH_APPEARANCE_EARLY = `
     } catch (error) {
       document.documentElement.setAttribute('data-appearance', 'light')
     }
-  })()
+  })();
 `
 const AUTH_SUN = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">'
   + '<circle cx="8" cy="8" r="3.1" fill="none" stroke="currentColor" stroke-width="1.3"/>'
@@ -1944,8 +1944,8 @@ const AUTH_APPEARANCE_SCRIPT = `
       var next = current() === 'dark' ? 'light' : 'dark'
       paint(next)
       try { localStorage.setItem(key, next) } catch (error) { /* almacenamiento bloqueado */ }
-    })
-  })()
+    });
+  })();
 `
 const AUTH_CSS = `
   ${AUTH_FONTS}
