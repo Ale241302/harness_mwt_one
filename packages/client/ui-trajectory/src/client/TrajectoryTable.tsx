@@ -753,7 +753,7 @@ function TokenRows({ cell, t }: { cell: TrajectoryCellProps; t: TrajectoryTransl
     <>
       <div>
         <dt>{t('usage.tokens')}</dt>
-        <dd>{cell.output === undefined ? '—' : t('unit.tokens', { value: cell.output })}</dd>
+        <dd>{cell.output === undefined ? t('cell.none') : t('unit.tokens', { value: cell.output })}</dd>
       </div>
       {cell.think !== undefined && (
         <div className={css.requestTokenDetail}>
@@ -1110,12 +1110,12 @@ function RecordListText({
   if (toolCallOnly) {
     return <span className={css.toolCallOnly}>{t('record.toolCallOnly')}</span>
   }
-  if (toolCallText === undefined) return displayText || '—'
+  if (toolCallText === undefined) return displayText || t('cell.none')
   return (
     <>
       <span className={css.toolCallNameTypeface}>
         {toolCallText.program && <IconCodeOutline16 className={css.programIcon} size={12} />}
-        {toolCallText.name || '—'}
+        {toolCallText.name || t('cell.none')}
       </span>
       {toolCallText.args !== undefined && (
         <span className={toolCallText.program ? css.programSummary : css.toolCallPayload}>
@@ -2969,7 +2969,7 @@ export function TrajectoryTable({
                   <>
                     <span className={css.requestDetailsDot} aria-hidden="true" />
                     <span className={css.requestDetailsName}>
-                      {t('request.label', { request: selectedRequestNumber ?? '—' })}
+                      {selectedRequestNumber === null || selectedRequestNumber === undefined ? t('request.none') : t('request.label', { request: selectedRequestNumber })}
                     </span>
                     <span className={css.detailsLocation}>
                       {selectedRequestInfo.purpose === 'compaction'
@@ -3227,7 +3227,7 @@ export function TrajectoryTable({
                   </div>
                   <div>
                     <dt>{t('usage.tokens')}</dt>
-                    <dd>—</dd>
+                    <dd>{t('cell.none')}</dd>
                   </div>
                 </dl>
                 {selected.cell.outputDetail !== undefined && (
@@ -3295,7 +3295,7 @@ export function TrajectoryTable({
                               selectRequest(selectedAssistantRequestTarget)
                             }}
                           >
-                            <span>{t('request.label', { request: selectedAssistantRequest ?? '—' })}</span>
+                            <span>{selectedAssistantRequest === null || selectedAssistantRequest === undefined ? t('request.none') : t('request.label', { request: selectedAssistantRequest })}</span>
                             <IconChevronRightOutline14
                               className={css.overviewHierarchyJumpIconTight}
                               size={11}

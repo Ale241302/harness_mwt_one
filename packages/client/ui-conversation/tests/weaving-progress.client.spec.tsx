@@ -1,41 +1,55 @@
 // @vitest-environment jsdom
-// The weaving progress state: the knot draws while work runs and falls back to
-// the static shared mark when the reader asked for reduced motion.
+// The weaving progress state's render: the knot's weft is threaded one segment
+// at a time while work is in flight. The reduced-motion arm is a stylesheet
+// property rather than a render branch, so it is pinned against the stylesheet
+// itself by weaving-progress-styles.client.spec.ts.
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { WeavingProgress } from '../src/client/skeleton/WeavingProgress.tsx'
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
 })
 
+/** The knot's threads in render order, split by the role the pass gives them. */
+function threads(status: HTMLElement): { warp: SVGPathElement[]; weft: SVGPathElement[] } {
+  const paths = [...status.querySelectorAll('path')] as SVGPathElement[]
+  return {
+    warp: paths.filter(path => path.getAttribute('data-weave') === 'warp'),
+    weft: paths.filter(path => path.getAttribute('data-weave') === 'weft'),
+  }
+}
+
 describe('WeavingProgress', () => {
-  it('draws the knot when motion is allowed', () => {
-    // jsdom ships no matchMedia: absent media API means motion is allowed.
+  it('draws the woven knot as a decorative, named status', () => {
     const view = render(<WeavingProgress label="The agent is working" className="seat" />)
     const status = view.getByRole('status')
     expect(status.getAttribute('aria-label')).toBe('The agent is working')
     expect(status.hasAttribute('data-weaving-progress')).toBe(true)
-    // The animated arm wraps the shared mark so the drawing CSS can target it.
-    expect(status.querySelector(':scope > span > svg')).not.toBeNull()
-    expect(status.querySelector(':scope > svg')).toBeNull()
+    // The drawing carries no accessible name of its own; the status does.
+    const svg = status.querySelector(':scope > svg')
+    expect(svg?.getAttribute('aria-hidden')).toBe('true')
+    expect(svg?.getAttribute('viewBox')).toBe('0 0 48 48')
   })
 
-  it('falls back to the static mark when the reader asked for less motion', () => {
-    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true }) as MediaQueryList))
-    const view = render(<WeavingProgress label="El agente está trabajando" size={32} />)
-    const status = view.getByRole('status')
-    expect(status.getAttribute('aria-label')).toBe('El agente está trabajando')
-    // The static arm renders the mark directly: no animated wrapper.
-    expect(status.querySelector(':scope > svg')).not.toBeNull()
-    expect(status.querySelector(':scope > span')).toBeNull()
+  it('keeps the warp drawn and threads the weft one segment at a time, top to bottom', () => {
+    const { warp, weft } = threads(render(<WeavingProgress label="working" />).getByRole('status'))
+    // The 3x3 weave: seven warp threads over eight weft segments.
+    expect(warp).toHaveLength(7)
+    expect(weft).toHaveLength(8)
+    // The prepared structure does not move.
+    expect(warp.every(path => path.style.animationDelay === '')).toBe(true)
+    // One pass, one thread at a time, in render order.
+    expect(weft.map(path => path.style.animationDelay))
+      .toEqual(['0ms', '100ms', '200ms', '300ms', '400ms', '500ms', '600ms', '700ms'])
   })
 
-  it('draws the knot when the media API reports motion is allowed', () => {
-    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false }) as MediaQueryList))
-    const view = render(<WeavingProgress label="The agent is working" />)
-    expect(view.getByRole('status').querySelector(':scope > span > svg')).not.toBeNull()
+  it('collapses to the woven cross below the weave size, still in flight', () => {
+    const { warp, weft } = threads(render(<WeavingProgress label="working" size={16} />).getByRole('status'))
+    // The cross is one vertical thread crossed by two edge stubs.
+    expect(warp).toHaveLength(1)
+    expect(weft).toHaveLength(2)
+    expect(weft.map(path => path.style.animationDelay)).toEqual(['0ms', '100ms'])
   })
 })

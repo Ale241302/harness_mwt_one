@@ -52,7 +52,7 @@ describe('InstallSkillRow', () => {
     expect(view.container.querySelector('[data-tool="install_skill"]')?.getAttribute('data-state')).toBe('running')
     expect(view.container.textContent).toContain('安装 skill')
     expect(view.container.textContent).toContain('/work/that-folder')
-    expect(view.container.textContent).toContain('你的全局用户')
+    expect(view.container.textContent).toContain('全局用于你的用户')
     expect(view.container.textContent).toContain('正在安装 skill')
   })
 
@@ -61,7 +61,7 @@ describe('InstallSkillRow', () => {
       call: { name: 'install_skill', argsRaw: '{"source":"/work/that-folder"}' },
       content: [{ type: 'text', text: '{"status":"installed","destination":"global"}' }],
     }))} />)
-    expect(view.container.textContent).toContain('你的全局用户')
+    expect(view.container.textContent).toContain('全局用于你的用户')
     expect(view.container.textContent).toContain('已安装')
     expect(view.container.querySelector('[data-state="error"]')).toBeNull()
   })
@@ -69,7 +69,7 @@ describe('InstallSkillRow', () => {
   it('reports a repeat install, a skip, and a refusal with their own copy', () => {
     const cases: [string, string][] = [
       ['already-installed', '已存在，无需重装'],
-      ['skipped', '已跳过，同名已存在'],
+      ['skipped', '已跳过：已存在同名 skill'],
       ['refused', '已拒绝'],
       ['replaced', '已替换'],
       ['cancelled', '已取消'],
@@ -152,13 +152,13 @@ describe('InstallSkillRow', () => {
       call: { name: 'install_skill', argsRaw: '{"source":"/x","destination":"global"}' },
       content: [{ type: 'reasoning', text: 'thinking' }],
     }))} />)
-    expect(view.container.textContent).toContain('你的全局用户')
+    expect(view.container.textContent).toContain('全局用于你的用户')
     expect(view.container.textContent).not.toContain('已安装')
   })
 
   it('carries the neutral Spanish copy for the install surface', () => {
     expect(es['install.title']).toBe('Instalar skill')
-    expect(es['install.scope.workspace']).toBe('Solo este espacio')
+    expect(es['install.scope.workspace']).toBe('Solo este espacio de trabajo')
     expect(es['install.scope.global']).toBe('Global para tu usuario')
     expect(es['install.status.alreadyInstalled']).toBe('Ya estaba instalada')
     expect(es['install.notASkill']).toBe('Esa carpeta no es una skill')

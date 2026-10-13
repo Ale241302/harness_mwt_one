@@ -78,14 +78,26 @@
 
 # The skill REGISTRY lives in the host composition and is layered per scope:
 # these rows register into THIS preset's layer of it, so they need no realm.
-# `skill-filesystem` contributes local-root discovery for agents on this preset, and
-# `tool-skill` gives them the catalog and loader; the merged catalog also
-# carries whatever the deployment registered globally (repository plugins).
+# `skill-filesystem` contributes local-root discovery for agents on this preset,
+# `tool-skill` gives them the catalog and loader, and `skill-install` gives them
+# the two folder-install tools; the merged catalog also carries whatever the
+# deployment registered globally (repository plugins).
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
+
+# The installer publishes `ctx.skillInstall`, so it needs an entry-local realm
+# inside a preset; its two tools register into this preset's tool layer.
+- id: skills
+  name: cordis:group
+  group: true
+  isolate:
+    skillInstall: true
+  config:
+    - id: skill-install
+      name: '@deepseek-ai/dsh-skill-install'
 
 # ── goals ───────────────────────────────────────────────────────────────────
 

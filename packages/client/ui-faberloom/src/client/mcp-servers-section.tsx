@@ -342,16 +342,19 @@ export function McpServersSection(props: McpServersSectionProps): ReactNode {
             <>
               {rows.length > 3
                 ? (
-                  <label className={styles.field}>
-                    <span className={styles.label}>{t('mcp.servers.count')}</span>
-                    <input
-                      type="search"
-                      value={search}
-                      placeholder={t('mcp.servers.search')}
-                      aria-label={t('mcp.servers.search')}
-                      onChange={(event) => { setSearch(event.target.value) }}
-                    />
-                  </label>
+                  <>
+                    <p className={styles.status}>{t('mcp.servers.count')}</p>
+                    <label className={styles.field}>
+                      <span className={styles.label}>{t('mcp.servers.search')}</span>
+                      <input
+                        type="search"
+                        value={search}
+                        placeholder={t('mcp.servers.search')}
+                        aria-label={t('mcp.servers.search')}
+                        onChange={(event) => { setSearch(event.target.value) }}
+                      />
+                    </label>
+                  </>
                 )
                 : null}
               {visible.length === 0

@@ -209,9 +209,36 @@ describe('MenuView', () => {
     const note = document.querySelector('[data-note]')
     expect(note?.textContent).toBe('空文件夹')
     expect(note?.getAttribute('role')).toBe('presentation')
-    expect(note?.hasAttribute('id')).toBe(false)
+    // The id only names the description target; the row stays presentation-only.
+    expect(note?.id).toBeTruthy()
     fireEvent.mouseDown(note as HTMLElement)
     expect(onPick).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['en', 'No files here'],
+    ['zh', '这里没有文件'],
+    ['es', 'No hay archivos aquí'],
+  ])('describes the listbox with the %s note text so an option-only traversal still hears it', (_language, note) => {
+    mount(openState({
+      groups: [{
+        source: 'reference',
+        status: 'ready',
+        items: [
+          { name: note, section: '文件与文件夹', note: true },
+          { name: 'README.md', section: '文件与文件夹' },
+          { name: '条目太多，只显示了一部分。', section: '文件与文件夹', note: true },
+        ],
+      }],
+      highlight: { source: 'reference', index: 1 },
+    }))
+    const listbox = screen.getByRole('listbox')
+    const describedBy = listbox.getAttribute('aria-describedby')?.split(' ') ?? []
+    // The listbox is described by the note rows' own text, so a reader that
+    // traverses options alone gets the explanation instead of an empty list.
+    expect(describedBy.map(id => document.getElementById(id)?.textContent))
+      .toEqual([note, '条目太多，只显示了一部分。'])
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['README.md'])
   })
 
   it('renders the drill chevron only on drillable rows and routes its own action', () => {

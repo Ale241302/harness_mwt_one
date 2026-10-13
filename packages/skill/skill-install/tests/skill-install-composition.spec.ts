@@ -131,4 +131,13 @@ describe('skill installer real composition', () => {
       },
     ])
   })
+
+  it('offers both installer tools in the composed model-visible tool plane', async () => {
+    const { ctx } = await compose()
+    // The base bundle mounts these same packages; the assertion pins that the
+    // shipped composition reaches the model-visible list, not just the service.
+    const names = ctx.tools.schemas().map(tool => tool.name)
+    expect(names).toContain('install_skill')
+    expect(names).toContain('uninstall_skill')
+  })
 })

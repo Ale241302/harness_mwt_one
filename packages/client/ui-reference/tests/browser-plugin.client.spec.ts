@@ -572,7 +572,7 @@ describe('workspace browsing', () => {
     expect(note?.section).toBe(en['section.files'])
   })
 
-  it('says an empty folder at any level instead of leaving the file section bare', async () => {
+  it('says the folder has no files at any level instead of leaving the file section bare', async () => {
     const workspaceFiles = vi.fn()
       .mockResolvedValueOnce({ ok: true as const, value: { path: '', entries: [], truncated: false } })
       // A drilled level lists on its own, so it answers for itself.
@@ -628,6 +628,25 @@ describe('workspace browsing', () => {
     ])
     await expect(source.candidates(session, request('docs/zzz'))).resolves.toEqual([
       { name: dict['listing.noResults'], section: dict['section.files'], note: true },
+    ])
+  })
+
+  it.each([
+    ['en', en, 'No files here'],
+    ['zh', zh, '这里没有文件'],
+    ['es', es, 'No hay archivos aquí'],
+  ] as const)('names a folder whose only children are non-regular entries without claiming it is empty, in %s', async (id, dict, copy) => {
+    // The folder holds an entry, so "empty" would be false; the line only says
+    // there is nothing here the menu can list.
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: { path: '', entries: [{ name: 'agent.sock', type: 'other' as const }], truncated: false },
+    }))
+    const { ctx, source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    ctx.locale.setLocale(id)
+    expect(dict['listing.empty']).toBe(copy)
+    await expect(source.candidates(session, request(''))).resolves.toEqual([
+      { name: copy, section: dict['section.files'], note: true },
     ])
   })
 

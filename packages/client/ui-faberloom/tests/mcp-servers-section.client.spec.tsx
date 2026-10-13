@@ -102,7 +102,7 @@ describe('McpServersSection', () => {
     // The transport and the proven-or-not state belong to the row; the form's
     // own transport option carries the same label, so scope to the row.
     expect(within(row as HTMLElement).getByText('Local process (stdio)')).toBeTruthy()
-    expect(within(row as HTMLElement).getByText('Saved but not proven')).toBeTruthy()
+    expect(within(row as HTMLElement).getByText('Saved but not verified')).toBeTruthy()
     // The credential is reported by presence, and its value never reaches the page.
     expect(within(row as HTMLElement).getByText('DOCS_TOKEN: stored')).toBeTruthy()
     expect(within(row as HTMLElement).getByText('HTTP_AUTH: absent')).toBeTruthy()
@@ -110,12 +110,12 @@ describe('McpServersSection', () => {
     expect(screen.getByText(/Only for your user/)).toBeTruthy()
   })
 
-  it('reports a mounted server as tested and working, a bare one, and the empty state', async () => {
+  it('reports a mounted server as connected, a bare one, and the empty state', async () => {
     const working = server({ env: [], headers: [], mounted: true })
     const on = render(<McpServersSection {...props({ load: vi.fn(async () => ok([working])) })} />)
     const row = (await screen.findByText('docs')).closest('li')
     expect(row).not.toBeNull()
-    expect(within(row as HTMLElement).getByText('Tested and working')).toBeTruthy()
+    expect(within(row as HTMLElement).getByText('Connected')).toBeTruthy()
     on.unmount()
 
     const bare = server({ env: [], headers: [], mounted: true, enabled: false })
@@ -274,7 +274,7 @@ describe('McpServersSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add credential' }))
     fireEvent.change(screen.getByLabelText('Variable or header name'), { target: { value: 'DOCS_TOKEN' } })
 
-    expect(await screen.findByText('A key is missing: the credential has a name but no value.')).toBeTruthy()
+    expect(await screen.findByText('The value is missing: the credential has a name but no value.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true)
     expect(save).not.toHaveBeenCalled()
 
@@ -356,7 +356,7 @@ describe('McpServersSection', () => {
     typeName('docs')
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'npx' } })
     fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
-    expect(await screen.findByText('Tested and working: Tools found mcp__docs__search, mcp__docs__read')).toBeTruthy()
+    expect(await screen.findByText('Test passed: Tools found mcp__docs__search, mcp__docs__read')).toBeTruthy()
     view.unmount()
 
     const none = render(<McpServersSection {...props({ test: vi.fn(async () => ok<FaberLoomMcpProbeResult>({ ok: true, tools: [] })) })} />)
@@ -364,13 +364,13 @@ describe('McpServersSection', () => {
     typeName('docs')
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'npx' } })
     fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
-    expect(await screen.findByText('Tested and working: No tool was published.')).toBeTruthy()
+    expect(await screen.findByText('Test passed: No tool was published.')).toBeTruthy()
     none.unmount()
 
     const failures = [
       {
         failure: 'unreachable' as const,
-        label: 'No answer',
+        label: 'The server did not answer',
         detail: 'connect ECONNREFUSED',
         next: 'Check the URL, that the program is installed, or that the server is running.',
       },
@@ -378,7 +378,7 @@ describe('McpServersSection', () => {
         failure: 'bad-credential' as const,
         label: 'The credential was rejected',
         detail: 'HTTP 401 with [redacted]',
-        next: 'Replace the key with a valid one; the server rejected it.',
+        next: 'Replace the value with a valid one; the server rejected it.',
       },
       {
         failure: 'protocol' as const,
@@ -500,9 +500,9 @@ describe('McpServersSection', () => {
       ])),
     })} />)
     await screen.findByText('broken')
-    expect(screen.getByText('Error: the credential is not configured')).toBeTruthy()
+    expect(screen.getByText('This server failed: the credential is not configured')).toBeTruthy()
     expect(screen.getByText('fine')).toBeTruthy()
-    expect(screen.getByText('Tested and working')).toBeTruthy()
+    expect(screen.getByText('Connected')).toBeTruthy()
   })
 
   it('enables and disables one server without touching its saved credentials', async () => {
@@ -538,7 +538,7 @@ describe('McpServersSection', () => {
     expect(screen.getByLabelText('Name')).toHaveProperty('value', 'docs')
     expect(screen.getByLabelText('Command')).toHaveProperty('value', 'npx')
     // The saved value is never shown, so the prefilled row must be re-entered.
-    expect(await screen.findByText('A key is missing: the credential has a name but no value.')).toBeTruthy()
+    expect(await screen.findByText('The value is missing: the credential has a name but no value.')).toBeTruthy()
 
     typeSecretValue('rotated-key')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))

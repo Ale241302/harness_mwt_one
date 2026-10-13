@@ -26,6 +26,8 @@ const REFUSAL_KEY: Record<FaberLoomSkillInstallRefusal, FaberloomKey> = {
   'source-missing': 'skills.install.why.sourceMissing',
   'outside-workspace': 'skills.install.why.outsideWorkspace',
   'not-a-skill': 'skills.install.why.notASkill',
+  'name-missing': 'skills.install.why.nameMissing',
+  'name-illegal': 'skills.install.why.nameIllegal',
 }
 
 /** The localized wording for one refused or skipped candidate. */

@@ -45,7 +45,7 @@ The two destinations are the current workspace (`<projectRoot>/.dsh/skills`, sou
 
 ### Installing, repeating, and removing
 
-A first install copies the whole skill directory, assets included, and records a provenance marker beside `SKILL.md`. Installing the same content again is reported as already installed and writes nothing; changed content is skipped unless `replace` is set. `uninstall_skill` removes only a directory that carries the marker, so a hand-authored skill of the same name is never deleted.
+A first install copies the whole skill directory, assets included, and writes a `.dsh-skill-install.json` marker beside `SKILL.md` holding the source folder and the installed `SKILL.md` digest. Installing the same content again is reported as already installed and writes nothing; changed content is skipped unless `replace` is set. `uninstall_skill` removes only a directory that carries the marker, so a hand-authored skill of the same name is never deleted.
 
 ```json
 { "status": "installed", "source": "/work/skills/greet", "destination": "workspace", "root": "/work/.dsh/skills", "outcomes": [{ "name": "greet", "status": "installed" }] }
@@ -101,7 +101,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-The model sees the `install_skill` and `uninstall_skill` parameter schemas: a required `source` folder, an optional `destination` of `workspace` or `global`, and an optional `replace` flag. The generated tool catalog does not list them yet, because this disabled-by-default plugin is not in its boot manifest.
+The model sees the `install_skill` and `uninstall_skill` parameter schemas: a required `source` folder, an optional `destination` of `workspace` or `global`, and an optional `replace` flag. The generated tool catalog lists both under `@deepseek-ai/dsh-skill-install`.
 
 #### Token effect
 
@@ -135,7 +135,6 @@ These limits define when the installer is a poor fit. They are current package c
 - **A workspace install writes into the user's repository** — the workspace root is `<projectRoot>/.dsh/skills`, so the installed skill is version-controlled with the project unless the user ignores it.
 - **The installer writes through Node filesystem calls, not the sandboxed `ctx.fs`** — a global install outside the workspace is not confined by the sandbox policy; the caller's own permissions decide.
 - **Only the two built-in scopes exist** — a shared, per-role, or remote skills root is not an install destination.
-- **The generated tool catalog does not list these tools yet** — `docs/tool-catalog.md` is regenerated from a boot manifest that still excludes this disabled-by-default plugin; adding the entry belongs in a regeneration window with no other in-flight tool-package change.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -143,6 +142,6 @@ These limits define when the installer is a poor fit. They are current package c
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The installer ships in the base bundle as a disabled row, exactly like `skill-badge`: enabling it by default would change every recorded request's tool list, which the keyless session snapshots pin. A profile that wants the feature enables the row in its overlay.
+The installer ships enabled in the base bundle and in the `standard`, `cordis`, and `ptc` agent presets, so `install_skill` and `uninstall_skill` appear in every recorded tool list and in the generated tool catalog. This supersedes the earlier choice to ship the row disabled alongside `skill-badge`; [the consolidation note](../../../.agents/notes/implemented/feature/2026-10-13-one-native-skill-install-path.md) records why the recorded expectations were re-recorded instead.
 
 </details>

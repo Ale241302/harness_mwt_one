@@ -3,10 +3,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import Storage from '@deepseek-ai/dsh-storage'
-import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
+import * as skillInstall from '@deepseek-ai/dsh-skill-install'
 import { FaberLoomViewService } from '../src/index.ts'
+
+/**
+ * The view's install surface is a thin adapter over the native installer, so
+ * these tests boot the real installer (and the real filesystem) to assert the
+ * observable reports and the copied directories, not the adapter internals.
+ */
 
 const homes: string[] = []
 const fibers: { dispose: () => Promise<void> }[] = []
@@ -38,17 +42,15 @@ function tempDir(prefix: string): string {
 }
 
 /**
- * Boot the real storage/domain composition plus the view service. `workspaceRoot`
- * omitted leaves `ctx.sandboxPolicy` unmounted, so a workspace install has no
- * workspace to write under.
+ * Boot the view over the real native installer. `workspaceRoot` omitted leaves
+ * `ctx.sandboxPolicy` unmounted, so a workspace install has no workspace to write
+ * under; `mountInstaller: false` boots the view without the installer.
  */
-async function harness(options: { workspaceRoot?: string; readOnly?: boolean; ownerId?: string } = {}) {
+async function harness(
+  options: { workspaceRoot?: string; readOnly?: boolean; ownerId?: string; mountInstaller?: boolean } = {},
+) {
   const ctx = new Context()
-  await ctx.plugin(Storage)
-  ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
-  const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
-  ctx.storage.mount('domain', facility)
-  ctx.provide('storageDomain', facility)
+  ctx.provide('tools', { register: () => () => {} } as never)
   for (const name of [
     'faberloomSpaces', 'faberloomAgents', 'faberloomBoard', 'faberloomRoutines',
     'faberloomMemory', 'faberloomAccess', 'faberloomMcpServer', 'faberloomBackup',
@@ -58,13 +60,14 @@ async function harness(options: { workspaceRoot?: string; readOnly?: boolean; ow
       resolve: () => ({ mode: 'workspace-write', workspaceRoot: options.workspaceRoot as string }),
     } as never)
   }
+  if (options.mountInstaller !== false) await ctx.plugin(skillInstall)
   const fiber = await ctx.plugin(FaberLoomViewService, {
     ownerId: options.ownerId ?? 'owner@muitowork.com',
     role: 'admin',
     readOnly: options.readOnly === true,
   })
   fibers.push(fiber)
-  return { ctx, view: ctx.faberloomView, facility }
+  return { ctx, view: ctx.faberloomView }
 }
 
 describe('FaberLoomViewService skill install', () => {
@@ -115,8 +118,10 @@ describe('FaberLoomViewService skill install', () => {
     })
     expect(readFileSync(join(root, 'saluda', 'SKILL.md'), 'utf8')).toContain('name: saluda')
     expect(readFileSync(join(root, 'saluda', 'assets.txt'), 'utf8')).toBe('peso')
-    // The publisher marker of a shared skill never travels with the copy.
-    expect(existsSync(join(root, 'saluda', '.shared-by'))).toBe(false)
+    // The installer copies the whole directory; the install marker is the
+    // record, so a publisher marker travels with the copy.
+    expect(readFileSync(join(root, 'saluda', '.shared-by'), 'utf8')).toBe('otro@x.com')
+    expect(existsSync(join(root, 'saluda', '.dsh-skill-install.json'))).toBe(true)
 
     expect(await view.skillInstalls()).toEqual([{
       name: 'saluda',
@@ -144,15 +149,18 @@ describe('FaberLoomViewService skill install', () => {
 
     writeSkill(source, 'beta', skillMarkdown('beta', 'version nueva'))
     const second = await view.installSkill('catalogo', 'workspace')
+    // `alfa` is unchanged, so the installer reports it already installed; the
+    // changed `beta` is skipped until replace is asked for.
     expect(second.outcomes).toEqual([
-      { name: 'alfa', status: 'skipped', reason: 'exists' },
+      { name: 'alfa', status: 'skipped' },
       { name: 'beta', status: 'skipped', reason: 'exists' },
     ])
     expect(readFileSync(join(workspace, '.dsh', 'skills', 'beta', 'SKILL.md'), 'utf8')).toContain('hace algo')
 
     const replaced = await view.installSkill('catalogo', 'workspace', true)
+    // `alfa` still matches its marker, so only the changed `beta` is replaced.
     expect(replaced.outcomes).toEqual([
-      { name: 'alfa', status: 'replaced' },
+      { name: 'alfa', status: 'skipped' },
       { name: 'beta', status: 'replaced' },
     ])
     expect(readFileSync(join(workspace, '.dsh', 'skills', 'beta', 'SKILL.md'), 'utf8')).toContain('version nueva')
@@ -192,12 +200,12 @@ describe('FaberLoomViewService skill install', () => {
 
     // Every candidate is validated before any of them is written, so the legal
     // one installs while each illegal one is refused with its own reason.
-    expect(report.outcomes).toEqual([
-      { name: 'Mala Nombre', status: 'refused', reason: 'name-illegal' },
-      { name: 'buena', status: 'installed' },
-      { name: 'sin-nombre', status: 'refused', reason: 'name-missing' },
-      { name: 'sin-yaml', status: 'refused', reason: 'name-missing' },
-    ])
+    expect(Object.fromEntries(report.outcomes.map(outcome => [outcome.name, outcome]))).toEqual({
+      'Mala Nombre': { name: 'Mala Nombre', status: 'refused', reason: 'name-illegal' },
+      buena: { name: 'buena', status: 'installed' },
+      'sin-nombre': { name: 'sin-nombre', status: 'refused', reason: 'name-missing' },
+      'sin-yaml': { name: 'sin-yaml', status: 'refused', reason: 'name-missing' },
+    })
     expect(existsSync(join(workspace, '.dsh', 'skills', 'buena', 'SKILL.md'))).toBe(true)
     expect(existsSync(join(workspace, '.dsh', 'skills', 'sin-nombre'))).toBe(false)
     expect((await view.skillInstalls()).map(row => row.name)).toEqual(['buena'])
@@ -212,7 +220,7 @@ describe('FaberLoomViewService skill install', () => {
 
     const report = await view.installSkill(join(workspace, 'fuente', 'una'), 'workspace')
 
-    expect(report.outcomes).toEqual([{ name: 'una', status: 'refused', reason: 'name-illegal' }])
+    expect(report).toMatchObject({ refused: 'name-illegal', outcomes: [] })
     expect(existsSync(join(workspace, '.dsh'))).toBe(false)
   })
 
@@ -232,7 +240,7 @@ describe('FaberLoomViewService skill install', () => {
     expect(existsSync(join(workspace, '.dsh'))).toBe(false)
   })
 
-  it('refuses a source that is missing or holds no skill', async () => {
+  it('refuses a source that is missing, a file, empty, or holds no skill', async () => {
     const home = tempDir('view-install-')
     const workspace = tempDir('view-ws-')
     vi.stubEnv('DSH_HOME', home)
@@ -242,7 +250,7 @@ describe('FaberLoomViewService skill install', () => {
     mkdirSync(join(workspace, 'sin-skills', 'notas'), { recursive: true })
 
     expect((await view.installSkill('no-existe', 'workspace')).refused).toBe('source-missing')
-    expect((await view.installSkill('plano.md', 'workspace')).refused).toBe('source-missing')
+    expect((await view.installSkill('plano.md', 'workspace')).refused).toBe('not-a-skill')
     expect((await view.installSkill('vacia', 'workspace')).refused).toBe('not-a-skill')
     expect((await view.installSkill('sin-skills', 'workspace')).refused).toBe('not-a-skill')
   })
@@ -258,30 +266,27 @@ describe('FaberLoomViewService skill install', () => {
 
     expect(report).toEqual({
       destination: 'workspace',
-      root: join(workspace, '.dsh', 'skills'),
+      root: '',
       refused: 'read-only',
       outcomes: [],
     })
   })
 
-  it('lists only this identity’s installs and removes one install at a time', async () => {
+  it('lists the marked installs under the roots and removes one install at a time', async () => {
     const home = tempDir('view-install-')
     const workspace = tempDir('view-ws-')
     vi.stubEnv('DSH_HOME', home)
-    const { view, facility } = await harness({ workspaceRoot: workspace })
+    const { view } = await harness({ workspaceRoot: workspace })
     writeSkill(workspace, 'propia', skillMarkdown('propia'))
     writeSkill(workspace, 'alfa', skillMarkdown('alfa'))
+    writeSkill(join(workspace, 'global-fuente'), 'global-uno', skillMarkdown('global-uno'))
     await view.installSkill('propia', 'workspace')
     await view.installSkill('alfa', 'workspace')
+    await view.installSkill(join(workspace, 'global-fuente', 'global-uno'), 'global')
 
-    const installsTable = facility.get('faberloom_skill_installs')?.table('installs')
-    await installsTable?.put('otro@x.com\u0000global\u0000ajena', {
-      ownerId: 'otro@x.com', name: 'ajena', sourcePath: '/tmp/ajena',
-      destination: 'global', destinationRoot: join(home, 'skills'), installedAt: '2026-01-01T00:00:00Z',
-    })
-    expect((await view.skillInstalls()).map(row => row.name)).toEqual(['alfa', 'propia'])
+    expect((await view.skillInstalls()).map(row => row.name)).toEqual(['alfa', 'global-uno', 'propia'])
 
-    expect((await view.uninstallSkill('propia', 'workspace')).map(row => row.name)).toEqual(['alfa'])
+    expect((await view.uninstallSkill('propia', 'workspace')).map(row => row.name)).toEqual(['alfa', 'global-uno'])
     expect(existsSync(join(workspace, '.dsh', 'skills', 'propia'))).toBe(false)
     await expect(view.uninstallSkill('propia', 'workspace')).rejects.toThrow('not an install')
   })
@@ -293,24 +298,11 @@ describe('FaberLoomViewService skill install', () => {
     await expect(view.uninstallSkill('x', 'global')).rejects.toThrow('read-only')
   })
 
-  it('closes the install domain with the service fiber', async () => {
+  it('fails loudly when the deployment mounts no installer', async () => {
     const home = tempDir('view-install-')
-    const workspace = tempDir('view-ws-')
     vi.stubEnv('DSH_HOME', home)
-    const { view, facility } = await harness({ workspaceRoot: workspace })
-    writeSkill(workspace, 'efimera', skillMarkdown('efimera'))
-    await view.installSkill('efimera', 'workspace')
-    expect(Boolean(facility.get('faberloom_skill_installs'))).toBe(true)
-
-    const fiber = fibers.pop()
-    await fiber?.dispose()
-
-    expect(Boolean(facility.get('faberloom_skill_installs'))).toBe(false)
-  })
-
-  it('disposes cleanly when no install ever opened the domain', async () => {
-    await harness()
-    const fiber = fibers.pop()
-    await fiber?.dispose()
+    const { view } = await harness({ mountInstaller: false })
+    expect(() => view.skillInstallTargets()).toThrow('not mounted')
+    await expect(view.skillInstalls()).rejects.toThrow('not mounted')
   })
 })

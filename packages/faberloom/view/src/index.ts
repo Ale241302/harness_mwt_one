@@ -5,7 +5,7 @@
  * argument, so a panel cannot ask for another owner's rows.
  */
 import { randomUUID } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -62,6 +62,7 @@ import type {
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph, FaberLoomConsultationRow, FaberLoomContextExportRow,
   FaberLoomSkillInstallDestination, FaberLoomSkillCandidateReason,
   FaberLoomSkillInstallOutcome, FaberLoomSkillInstallReport, FaberLoomSkillInstallTargets, FaberLoomSkillInstallRow,
+  FaberLoomSkillInstallRefusal,
   FaberLoomMcpServerRow, FaberLoomMcpServerInput, FaberLoomMcpSecretRow, FaberLoomMcpProbeResult,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
@@ -84,9 +85,12 @@ import type { FaberLoomContext, FaberLoomContextEntry } from '@deepseek-ai/dsh-f
 // Type-only: resolves the ctx.faberloomAgentRuntime declaration used through ctx.get.
 import type {} from '@deepseek-ai/dsh-faberloom-agent-runtime'
 import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-ai/dsh-faberloom-session-shares'
-import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
-import { skillInstallDomainSpec, type SkillInstallRecord } from './spec.ts'
+// Type-only: the native skill installer the install Remote methods route through.
+import type {
+  SkillFolderRejection, SkillInstallOutcomeStatus, SkillInstallRefusal, SkillInstallService,
+} from '@deepseek-ai/dsh-skill-install'
+import type {} from '@deepseek-ai/dsh-skill-install'
 // Type-only: pulls the ctx.sessionQuery merge for cross-member Session capture.
 import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -187,40 +191,66 @@ function isInsidePath(root: string, target: string): boolean {
   return target === normalized || target.startsWith(normalized + sep)
 }
 
-/**
- * The candidate skill directories inside one install source: the source itself
- * when it holds a `SKILL.md`, otherwise each immediate child directory that
- * does. A source with none is not a skill folder.
- * @param source - the resolved absolute source path.
- * @returns the candidate directories, or undefined when the source holds no skill.
- */
-function skillCandidates(source: string): readonly string[] | undefined {
-  if (existsSync(join(source, 'SKILL.md'))) return [source]
-  const children = readdirSync(source, { withFileTypes: true })
-    .filter(entry => entry.isDirectory() && existsSync(join(source, entry.name, 'SKILL.md')))
-    .map(entry => join(source, entry.name))
-    .sort()
-  return children.length === 0 ? undefined : children
+/** The view's refusal value for each refusal the native installer can report. */
+const INSTALL_REFUSAL: Record<SkillInstallRefusal, FaberLoomSkillInstallRefusal> = {
+  missing: 'source-missing',
+  'not-a-directory': 'not-a-skill',
+  empty: 'not-a-skill',
+  'missing-skill-md': 'not-a-skill',
+  'bad-frontmatter': 'name-missing',
+  'missing-name': 'name-missing',
+  'invalid-name': 'name-illegal',
+  'unavailable-destination': 'no-workspace',
+  // The view always names a destination and never routes the installer's scope
+  // question, so these two refusals cannot reach it.
+  'no-interaction': 'not-a-skill',
+  'unknown-scope': 'not-a-skill',
+}
+
+/** The view's reason for each reason the native installer reports per candidate. */
+const OUTCOME_REASON: Record<SkillFolderRejection | 'exists', FaberLoomSkillCandidateReason | undefined> = {
+  exists: 'exists',
+  'invalid-name': 'name-illegal',
+  'missing-name': 'name-missing',
+  // Unreadable front matter carries no name, so it reads as a missing one.
+  'bad-frontmatter': 'name-missing',
+  // A candidate without `SKILL.md` is skipped by detection, so the remaining
+  // source-level rejections never name one candidate.
+  missing: undefined,
+  'not-a-directory': undefined,
+  empty: undefined,
+  'missing-skill-md': undefined,
 }
 
 /**
- * Read one candidate's front matter name and check it against the skill naming
- * rule before anything is written.
- * @param dir - the candidate skill directory.
- * @returns the legal name, or the reason the candidate is refused.
+ * The view's refusal value for one refusal the native installer reported.
+ * @param reason - the installer's whole-call refusal reason.
+ * @returns the view's refusal value.
  */
-function readSkillName(dir: string): { kind: 'ok'; name: string } | { kind: 'refused'; reason: FaberLoomSkillCandidateReason } {
-  const front = readFileSync(join(dir, 'SKILL.md'), 'utf8').match(/^---\s*\n([\s\S]*?)\n---/)
-  const line = (front?.[1] ?? '').split('\n').find(candidate => candidate.trimStart().startsWith('name:'))
-  const name = line?.slice(line.indexOf(':') + 1).trim().replace(/^["']|["']$/g, '') ?? ''
-  if (name.length === 0) return { kind: 'refused', reason: 'name-missing' }
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) return { kind: 'refused', reason: 'name-illegal' }
-  return { kind: 'ok', name }
+function refusalOfInstall(reason: SkillInstallRefusal): FaberLoomSkillInstallRefusal {
+  return INSTALL_REFUSAL[reason]
 }
 
-/** Keep one user's shared-skill marker from travelling with a copied folder. */
-function copyExceptSharedMarker(source: string): boolean {
-  return basename(source) !== '.shared-by'
+/**
+ * The view's reason for one candidate the installer refused or skipped, or
+ * undefined when it reported none.
+ * @param reason - the installer's per-candidate reason.
+ * @returns the view's reason, or undefined.
+ */
+function outcomeReasonOf(
+  reason: SkillFolderRejection | 'exists' | undefined,
+): FaberLoomSkillCandidateReason | undefined {
+  return reason === undefined ? undefined : OUTCOME_REASON[reason]
+}
+
+/**
+ * The view's status for one install outcome: the installer's unchanged repeat
+ * install reads as a skip, and the rest of its vocabulary passes through.
+ * @param status - the installer's outcome status.
+ * @returns the view's outcome status.
+ */
+function outcomeStatusOf(status: SkillInstallOutcomeStatus): FaberLoomSkillInstallOutcome['status'] {
+  return status === 'already-installed' ? 'skipped' : status
 }
 
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
@@ -644,7 +674,7 @@ function mcpRegistryInput(input: FaberLoomMcpServerInput): McpServerInput {
  * panels refresh from one value instead of recomputing.
  */
 export class FaberLoomViewService extends TypertRemoteService {
-  static inject = ['faberloomSpaces', 'faberloomAgents', 'faberloomBoard', 'faberloomRoutines', 'faberloomMemory', 'faberloomAccess', 'faberloomMcpServer', 'faberloomBackup', 'storageDomain']
+  static inject = ['faberloomSpaces', 'faberloomAgents', 'faberloomBoard', 'faberloomRoutines', 'faberloomMemory', 'faberloomAccess', 'faberloomMcpServer', 'faberloomBackup']
 
   /**
    * The connections service, resolved lazily so a deployment that does not
@@ -721,7 +751,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomView')
-    ctx.effect(() => () => this.closeInstallDomain(), 'faberloom.view.skillInstallDomainClose')
     // The Space and its registered Workspace are the same area; deleting the
     // workspace from the sidebar must drop the Space, or the record and its
     // agent link outlive the area the user removed.
@@ -3133,31 +3162,6 @@ export class FaberLoomViewService extends TypertRemoteService {
     return await this.skills()
   }
 
-  /** The skill-install domain handle, opened once per service. */
-  private installDomainPromise: Promise<Domain<typeof skillInstallDomainSpec>> | undefined
-
-  /** Close the lazily opened install domain, if any, when the service fiber unloads. */
-  private async closeInstallDomain(): Promise<void> {
-    if (this.installDomainPromise === undefined) return
-    await (await this.installDomainPromise).close()
-  }
-
-  /** Open the skill-install domain once and keep its handle. */
-  private installDomain(): Promise<Domain<typeof skillInstallDomainSpec>> {
-    this.installDomainPromise ??= this.ctx.storageDomain.open(skillInstallDomainSpec)
-    return this.installDomainPromise
-  }
-
-  /** The durable installs table handle. */
-  private async installs(): Promise<KvTable<string, SkillInstallRecord>> {
-    return (await this.installDomain()).table('installs')
-  }
-
-  /** The durable key one install occupies: owner, destination, and name. */
-  private installKey(ownerId: string, destination: FaberLoomSkillInstallDestination, name: string): string {
-    return `${ownerId}\u0000${destination}\u0000${name}`
-  }
-
   /** The session-or-deployment workspace root a workspace install may write under. */
   private workspaceRoot(): string | undefined {
     const policy = this.ctx.get('sandboxPolicy')
@@ -3167,27 +3171,37 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * The native skill installer, resolved lazily so a deployment that does not
+   * mount it keeps every other panel working.
+   * @returns the mounted installer.
+   * @throws when the deployment did not mount it.
+   */
+  private skillInstallService(): SkillInstallService {
+    const service = this.ctx.get('skillInstall')
+    if (service === undefined) throw new Error('faberloom: the skill installer is not mounted')
+    return service
+  }
+
+  /**
    * The two roots an install may target, so the panel can show the resolved
    * destination before it writes anything.
    * @returns the workspace skills root (null without a workspace) and the global root.
    */
   @Remote('skillInstallTargets')
   skillInstallTargets(): Promise<FaberLoomSkillInstallTargets> {
-    const workspaceRoot = this.workspaceRoot()
-    return Promise.resolve({
-      workspace: workspaceRoot === undefined ? null : join(workspaceRoot, '.dsh', 'skills'),
-      global: join(this.dshHome(), 'skills'),
-    })
+    return this.skillInstallService().targets(this.workspaceRoot())
   }
 
   /**
-   * Install one or more skills from a folder the user named. The source is a
-   * single skill directory (holding `SKILL.md`) or a directory of skill
-   * directories; every candidate's front matter is validated before anything is
-   * written, each whole skill directory is copied with its assets, and an
-   * existing skill of the same name is left alone unless `replace` is set.
+   * Install one or more skills from a folder the user named, through the native
+   * installer, so the copies and their `.dsh-skill-install.json` markers are the
+   * ones the skill provider reads back. The source is a single skill directory (holding
+   * `SKILL.md`) or a directory of skill directories; the installer validates
+   * every candidate before writing, copies each whole skill directory with its
+   * assets, reports an unchanged repeat install instead of copying again, and
+   * skips an existing name unless `replace` is set.
    * @param source - folder to install from; resolved inside the workspace when the call has one.
-   * @param destination - `workspace` writes under `<workspace>/.dsh/skills`, `global` under `$DSH_HOME/skills`.
+   * @param destination - `workspace` writes under the workspace project skills root, `global` under `$DSH_HOME/skills`.
    * @param replace - true replaces a skill of the same name; false skips it.
    * @param workspaceRoot - the session's resolved workspace root; omitted uses the deployment default.
    * @returns the resolved destination root and one outcome per candidate.
@@ -3203,87 +3217,64 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (destination === 'workspace' && reference === undefined) {
       return { destination, root: '', refused: 'no-workspace', outcomes: [] }
     }
-    const root = destination === 'global' ? join(this.dshHome(), 'skills') : join(reference as string, '.dsh', 'skills')
-    if (this.actor().readOnly) return { destination, root, refused: 'read-only', outcomes: [] }
+    if (this.actor().readOnly) return { destination, root: '', refused: 'read-only', outcomes: [] }
     const resolvedSource = resolve(reference ?? process.cwd(), source)
     if (reference !== undefined && !isInsidePath(reference, resolvedSource)) {
-      return { destination, root, refused: 'outside-workspace', outcomes: [] }
+      return { destination, root: '', refused: 'outside-workspace', outcomes: [] }
     }
-    if (!existsSync(resolvedSource) || !statSync(resolvedSource).isDirectory()) {
-      return { destination, root, refused: 'source-missing', outcomes: [] }
+    const report = await this.skillInstallService().install({
+      source: resolvedSource,
+      destination,
+      ...reference === undefined ? {} : { cwd: reference },
+      ...replace === undefined ? {} : { replace },
+    })
+    return {
+      destination,
+      root: report.root ?? '',
+      ...report.reason === undefined ? {} : { refused: refusalOfInstall(report.reason) },
+      outcomes: report.outcomes.map((outcome) => {
+        const reason = outcomeReasonOf(outcome.reason)
+        return {
+          name: outcome.name,
+          status: outcomeStatusOf(outcome.status),
+          ...reason === undefined ? {} : { reason },
+        }
+      }),
     }
-    const candidates = skillCandidates(resolvedSource)
-    if (candidates === undefined) return { destination, root, refused: 'not-a-skill', outcomes: [] }
-    // Validate every candidate's front matter before writing any of them, so a
-    // refused name can never leave a half-installed folder set behind.
-    const checked = candidates.map(candidate => ({ candidate, name: readSkillName(candidate) }))
-    const ownerId = this.actor().id
-    const outcomes: FaberLoomSkillInstallOutcome[] = []
-    for (const entry of checked) {
-      if (entry.name.kind === 'refused') {
-        outcomes.push({ name: basename(entry.candidate), status: 'refused', reason: entry.name.reason })
-        continue
-      }
-      const name = entry.name.name
-      const target = join(root, name)
-      const exists = existsSync(target)
-      if (exists && !replace) {
-        outcomes.push({ name, status: 'skipped', reason: 'exists' })
-        continue
-      }
-      rmSync(target, { recursive: true, force: true })
-      mkdirSync(root, { recursive: true })
-      cpSync(entry.candidate, target, { recursive: true, filter: copyExceptSharedMarker })
-      await (await this.installs()).put(this.installKey(ownerId, destination, name), {
-        ownerId,
-        name,
-        sourcePath: entry.candidate,
-        destination,
-        destinationRoot: root,
-        installedAt: new Date().toISOString(),
-      })
-      outcomes.push({ name, status: exists ? 'replaced' : 'installed' })
-    }
-    return { destination, root, outcomes }
   }
 
   /**
-   * List the skills this identity installed from a folder.
+   * List the skills installed from a folder under the global root and, when a
+   * workspace resolves, the workspace root, read back from the installer's
+   * `.dsh-skill-install.json` markers.
    * @returns the install rows, sorted by name.
    */
   @Remote('skillInstalls')
   async skillInstalls(): Promise<readonly FaberLoomSkillInstallRow[]> {
-    const ownerId = this.actor().id
-    const rows: FaberLoomSkillInstallRow[] = []
-    for (const [, record] of (await this.installs()).entries()) {
-      if (record.ownerId !== ownerId) continue
-      rows.push({
-        name: record.name,
-        sourcePath: record.sourcePath,
-        destination: record.destination,
-        destinationRoot: record.destinationRoot,
-        installedAt: record.installedAt,
-      })
-    }
-    return rows.sort((left, right) => left.name.localeCompare(right.name))
+    const rows = await this.skillInstallService().list(this.workspaceRoot())
+    return rows.map(row => ({
+      name: row.name,
+      sourcePath: row.source,
+      destination: row.destination,
+      destinationRoot: row.root,
+      installedAt: row.installedAt,
+    }))
   }
 
   /**
-   * Remove one recorded install: the copied skill directory and its ledger row.
+   * Remove one recorded install through the native installer, which removes a
+   * directory only when it carries the install marker.
    * @param name - installed skill name.
    * @param destination - root the install landed in.
    * @returns the refreshed install rows.
-   * @throws when the identity is read-only or holds no such install.
+   * @throws when the identity is read-only or names no marked install.
    */
   @Remote('uninstallSkill')
   async uninstallSkill(name: string, destination: FaberLoomSkillInstallDestination): Promise<readonly FaberLoomSkillInstallRow[]> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove skills')
-    const table = await this.installs()
-    const key = this.installKey(this.actor().id, destination, name)
-    const record = table.get(key)
-    if (record === undefined) throw new Error('faberloom: that skill is not an install of this identity')
-    rmSync(join(record.destinationRoot, record.name), { recursive: true, force: true })
-    await table.delete(key)
+    const cwd = this.workspaceRoot()
+    const report = await this.skillInstallService().uninstall(cwd === undefined ? { name, destination } : { name, destination, cwd })
+    if (report.status !== 'removed') throw new Error('faberloom: that skill is not an install')
     return await this.skillInstalls()
   }
 

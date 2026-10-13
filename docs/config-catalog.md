@@ -1121,7 +1121,7 @@ Source: [`packages/faberloom/shares/src/index.ts:29`](../packages/faberloom/shar
 
 ## `@deepseek-ai/dsh-faberloom-view`
 
-Requires: `faberloomSpaces` · `faberloomAgents` · `faberloomBoard` · `faberloomRoutines` · `faberloomMemory` · `faberloomAccess` · `faberloomMcpServer` · `faberloomBackup` · `storageDomain`
+Requires: `faberloomSpaces` · `faberloomAgents` · `faberloomBoard` · `faberloomRoutines` · `faberloomMemory` · `faberloomAccess` · `faberloomMcpServer` · `faberloomBackup`
 
 ```ts config-catalog
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
@@ -1161,7 +1161,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:227`](../packages/faberloom/view/src/index.ts)
+Source: [`packages/faberloom/view/src/index.ts:257`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 

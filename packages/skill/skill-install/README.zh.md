@@ -45,7 +45,7 @@ kind: "package-reference"
 
 ### 安装、重复与移除
 
-首次安装会复制整个技能目录（含其资源），并在 `SKILL.md` 旁记录来源标记。再次安装相同内容会被报告为已安装且不写入任何内容；内容变化时会跳过，除非设置 `replace`。`uninstall_skill` 只移除带标记的目录，因此同名的手写 skill 绝不会被删除。
+首次安装会复制整个技能目录（含其资源），并在 `SKILL.md` 旁写入 `.dsh-skill-install.json` 标记，记录源文件夹与已安装 `SKILL.md` 的摘要。再次安装相同内容会被报告为已安装且不写入任何内容；内容变化时会跳过，除非设置 `replace`。`uninstall_skill` 只移除带标记的目录，因此同名的手写 skill 绝不会被删除。
 
 ```json
 { "status": "installed", "source": "/work/skills/greet", "destination": "workspace", "root": "/work/.dsh/skills", "outcomes": [{ "name": "greet", "status": "installed" }] }
@@ -101,7 +101,7 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-模型会看到 `install_skill` 与 `uninstall_skill` 的参数 schema：必填的 `source` 文件夹、可选的 `destination`（`workspace` 或 `global`），以及可选的 `replace` 标志。生成的工具目录尚未列出它们，因为该默认禁用的插件不在其启动清单中。
+模型会看到 `install_skill` 与 `uninstall_skill` 的参数 schema：必填的 `source` 文件夹、可选的 `destination`（`workspace` 或 `global`），以及可选的 `replace` 标志。生成的工具目录在 `@deepseek-ai/dsh-skill-install` 下列出了这两者。
 
 #### Token 影响
 
@@ -135,7 +135,6 @@ kind: "package-reference"
 - **工作区安装会写入用户的仓库**——工作区根是 `<projectRoot>/.dsh/skills`，因此安装的 skill 会随项目纳入版本控制，除非用户忽略它。
 - **安装器通过 Node 文件系统调用写入，而非沙箱化的 `ctx.fs`**——工作区之外的全局安装不受沙箱策略限制；由调用方自身权限决定。
 - **仅存在两个内置作用域**——共享、按角色或远程的 skill 根尚不是安装目标。
-- **生成的工具目录尚未列出这些工具**——`docs/tool-catalog.md` 由启动清单重新生成，而该清单仍排除这个默认禁用的插件；新增该条目的时机应选在没有其他工具包改动在途的重新生成窗口。
 
 <a id="dev-note"></a>
 ### 开发备注
@@ -143,6 +142,6 @@ kind: "package-reference"
 <details>
 <summary>维护者的工作上下文——点击展开</summary>
 
-安装器与 `skill-badge` 一样，以禁用行随基础 bundle 发布：默认启用会改变每条已记录请求的工具列表，而无需密钥的会话快照正是以此为基准。需要该功能的 profile 在其 overlay 中启用该行。
+安装器在基础 bundle 以及 `standard`、`cordis` 与 `ptc` agent preset 中随产品启用，因此 `install_skill` 与 `uninstall_skill` 会出现在每条已记录的工具列表以及生成的工具目录中。这取代了此前与 `skill-badge` 一样以禁用行发布的选择；[合并说明](../../../.agents/notes/implemented/feature/2026-10-13-one-native-skill-install-path.zh.md)记录了为何改为重新录制已记录的预期。
 
 </details>

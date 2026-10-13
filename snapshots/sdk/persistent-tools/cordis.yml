@@ -68,6 +68,10 @@
   name: '@deepseek-ai/dsh-tool-skill'
   disabled: true
 
+- id: skill-install
+  name: '@deepseek-ai/dsh-skill-install'
+  disabled: true
+
 - id: tool-jobs
   name: '@deepseek-ai/dsh-tool-jobs'
   disabled: true

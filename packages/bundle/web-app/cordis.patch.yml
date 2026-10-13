@@ -401,13 +401,17 @@
 # `skill-filesystem` registers into that preset's layer, and each agent reads the
 # merged catalog its scope chain selects. Only the per-agent rows move behind
 # presets: the base host `skill-filesystem` row is disabled here (presets own local
-# discovery), and `tool-skill` is what a preset mounts to give its agent the
-# catalog and loader at all.
+# discovery), `tool-skill` is what a preset mounts to give its agent the
+# catalog and loader at all, and `skill-install` is a preset row for the same
+# reason its two tools must not land in the empty global layer.
 
 - id: skill-filesystem
   disabled: true
 
 - id: tool-skill
+  disabled: true
+
+- id: skill-install
   disabled: true
 
 # The goal service and session driver stay on the host plane, where Gateway

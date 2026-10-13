@@ -269,5 +269,16 @@
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
 
+# The installer publishes `ctx.skillInstall`, so it needs an entry-local realm
+# inside a preset; its two tools register into this preset's tool layer.
+- id: skills
+  name: cordis:group
+  group: true
+  isolate:
+    skillInstall: true
+  config:
+    - id: skill-install
+      name: '@deepseek-ai/dsh-skill-install'
+
 - id: present
   name: '@deepseek-ai/dsh-tool-present'

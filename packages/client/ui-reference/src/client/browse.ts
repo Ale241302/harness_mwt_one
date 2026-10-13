@@ -9,9 +9,9 @@
  * into the directory to list and the name filter inside it, ordering and
  * consulting one listing, naming a failed listing in the reader's words, and
  * encoding the payload a pick hands back. Everything the file section says
- * that is not a candidate — an empty folder, a filter with no match, a cut
- * listing, a failed listing — is a note row, which the menu never highlights
- * and never picks.
+ * that is not a candidate — a folder with no files to list, a filter with no
+ * match, a cut listing, a failed listing — is a note row, which the menu never
+ * highlights and never picks.
  *
  * A mention is built from the listing's own workspace-relative `path` plus the
  * entry name, so it stays plain path text the model reads and the Host resolves
@@ -99,7 +99,7 @@ function childListingPath(directory: string, name: string): string {
  * Project one directory listing into menu rows: directories first, then files,
  * each with the glyph and mention its pick uses, and a trailing note when the
  * endpoint's entry cap dropped children. A listing with nothing to show says
- * so — an empty folder, or a listing the filter left empty — so the file
+ * so — a folder with no files, or a listing the filter left empty — so the file
  * section is never a silently blank area.
  *
  * A child that is neither a regular file nor a directory has no mention the
@@ -148,8 +148,9 @@ export function browseCandidates(
     shownEntries += 1
   }
   // Nothing to show reads differently by cause: a directory whose children are
-  // all outside the menu's vocabulary is empty, while one whose children the
-  // filter excluded has results the user simply has not reached.
+  // all outside the menu's vocabulary has no files to list — the copy must not
+  // call it empty, since it may hold sockets or device nodes — while one whose
+  // children the filter excluded has results the user simply has not reached.
   if (shownEntries === 0) {
     const someEntry = listing.entries.some(entry => entry.type !== 'other')
     rows.push(noteCandidate(someEntry ? t('listing.noResults') : t('listing.empty'), t))

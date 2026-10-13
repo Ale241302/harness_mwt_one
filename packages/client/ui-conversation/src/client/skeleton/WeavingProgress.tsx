@@ -1,25 +1,40 @@
 /**
- * The brand's woven knot as an honest progress state.
+ * The brand's woven knot as the product's "in use" state.
  *
- * While a turn runs, the threads of the 3x3 knot draw on and pass over and
- * under one another; a reader who asked the operating system for less motion
- * gets the static mark instead. The shared {@link FaberLoomMark} stays the only
- * drawing of the knot: this component supplies the state and the motion, never
- * a second mark, and nothing here animates the idle hero or the sidebar.
+ * The 3x3 plain weave has a still half and a moving half: the warp threads are
+ * the prepared structure and stay drawn, while the weft is thrown across them
+ * segment after segment from the top of the loom and the shuttle then draws
+ * each pass back out — a weaving motion, not a spinner. The brand reserves
+ * motion for this one state, so only the two surfaces that are genuinely in
+ * flight mount it: the composer while a turn runs, and the conversation column
+ * while a session opens. A reader who asked the operating system for less
+ * motion gets the finished knot at rest, pinned by the stylesheet rather than
+ * by a second render path.
+ *
+ * The drawing stays single-sourced: the geometry (and the collapsed cross) come
+ * from the shared mark constants, and this component supplies only the state,
+ * the warp/weft split, and the per-thread stagger.
  */
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import { FaberLoomMark } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  FABERLOOM_MARK_CROSS_PATHS, FABERLOOM_MARK_CROSS_STROKE, FABERLOOM_MARK_SIMPLIFY_BELOW,
+  FABERLOOM_MARK_WEAVE_PATHS, FABERLOOM_MARK_WEAVE_STROKE,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './WeavingProgress.module.css'
 
-/** The mark edge that keeps the full 3x3 weave instead of the collapsed cross. */
+/** Square edge the knot is drawn at when the caller names no size. */
 const WEAVE_SIZE = 24
 
-/** Whether the operating system asked for reduced motion (absent media API = motion allowed). */
-function prefersReducedMotion(): boolean {
-  const matchMedia = (window as unknown as { matchMedia?: Window['matchMedia'] }).matchMedia
-  return matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-}
+/** Offset between two threads of one pass: the loom is threaded one at a time. */
+const THREAD_STEP_MS = 100
+
+/**
+ * Leading threads of each mark that are warp: the full weave draws its seven
+ * vertical threads first, the collapsed cross its single one. The remaining
+ * threads are weft and carry the motion.
+ */
+const WARP_THREADS = { weave: 7, cross: 1 } as const
 
 /** Progress props: the accessible status label, the mark edge, and placement. */
 export interface WeavingProgressProps {
@@ -33,14 +48,41 @@ export interface WeavingProgressProps {
 /**
  * Render the woven-knot progress state.
  * @param props - localized label, optional edge, and placement class.
- * @returns the drawing knot while motion is allowed, the static mark when it is reduced.
+ * @returns the knot with its weft in motion, or the same knot at rest when motion is reduced.
  */
 export function WeavingProgress({ label, size = WEAVE_SIZE, className }: WeavingProgressProps): ReactNode {
+  const simplified = size < FABERLOOM_MARK_SIMPLIFY_BELOW
+  const threads = simplified ? FABERLOOM_MARK_CROSS_PATHS : FABERLOOM_MARK_WEAVE_PATHS
+  const warp = simplified ? WARP_THREADS.cross : WARP_THREADS.weave
   return (
     <span className={clsx(css.root, className)} role="status" aria-label={label} data-weaving-progress>
-      {prefersReducedMotion()
-        ? <FaberLoomMark size={size} className={css.static} />
-        : <span className={css.weave} aria-hidden="true"><FaberLoomMark size={size} /></span>}
+      <svg
+        className={css.knot}
+        width={size}
+        height={size}
+        viewBox="0 0 48 48"
+        fill="none"
+        aria-hidden="true"
+      >
+        <g
+          stroke="currentColor"
+          strokeWidth={simplified ? FABERLOOM_MARK_CROSS_STROKE : FABERLOOM_MARK_WEAVE_STROKE}
+          strokeLinecap="round"
+        >
+          {threads.map((d, index) => {
+            const weft = index >= warp
+            return (
+              <path
+                key={d}
+                d={d}
+                className={weft ? css.weft : undefined}
+                data-weave={weft ? 'weft' : 'warp'}
+                style={weft ? { animationDelay: `${(index - warp) * THREAD_STEP_MS}ms` } : undefined}
+              />
+            )
+          })}
+        </g>
+      </svg>
     </span>
   )
 }

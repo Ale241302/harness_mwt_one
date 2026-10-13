@@ -7406,9 +7406,9 @@ importers:
       '@deepseek-ai/dsh-session-query':
         specifier: workspace:^
         version: link:../../session-query/session-query
-      '@deepseek-ai/dsh-storage-domain':
+      '@deepseek-ai/dsh-skill-install':
         specifier: workspace:^
-        version: link:../../storage/storage-domain
+        version: link:../../skill/skill-install
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess

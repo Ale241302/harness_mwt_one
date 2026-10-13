@@ -891,6 +891,8 @@ export type FaberLoomSkillInstallRefusal =
   | 'source-missing'
   | 'outside-workspace'
   | 'not-a-skill'
+  | 'name-missing'
+  | 'name-illegal'
 
 /** Why one candidate skill was refused or skipped. */
 export type FaberLoomSkillCandidateReason = 'name-missing' | 'name-illegal' | 'exists'

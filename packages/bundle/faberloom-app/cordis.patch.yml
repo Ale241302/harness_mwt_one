@@ -107,6 +107,13 @@
     - id: ui-faberloom
       name: '@deepseek-ai/dsh-client-ui-faberloom'
 
+# The product's Skills panel installs through `ctx.skillInstall`, so the host
+# instance must exist here even though `web-app` disables the base row and the
+# shipped presets carry their own (their tools shadow this global pair). See
+# `.agents/notes/implemented/feature/2026-10-13-one-native-skill-install-path.md`.
+- id: skill-install
+  disabled: false
+
 # The Settings modal is the product's only home for the theme and the language,
 # each with its own section, so this composition does not mount the Models page
 # nor the archived-sessions page. Both packages stay in the repository for other

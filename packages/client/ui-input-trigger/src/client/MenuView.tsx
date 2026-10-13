@@ -10,7 +10,9 @@
  * aria-activedescendant on the listbox). A candidate marked `note` renders as
  * plain text in the row's place instead of an option: the reducer never
  * highlights it, so it takes no highlight tint, no pick, and no drill
- * chevron. A row reads title, then the command-name alias when the title is
+ * chevron, and its id joins the listbox's aria-describedby so a reader that
+ * traverses options alone still hears the text. A row reads title, then the
+ * command-name alias when the title is
  * not the name in another letter case (a localized title), then the
  * description right-aligned. A source publishing crumbs gets a breadcrumb
  * header pinned above the scrolling list.
@@ -32,6 +34,11 @@ const MAX_HEIGHT = 400
 /** DOM id of one option row (the aria-activedescendant target). */
 function optionId(source: string, index: number): string {
   return `dsh-slash-option-${source}-${index}`
+}
+
+/** DOM id of one informational note row (a listbox aria-describedby target). */
+function noteId(source: string, index: number): string {
+  return `dsh-slash-note-${source}-${index}`
 }
 
 /**
@@ -64,6 +71,12 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
     updateOverflowHint()
   }, [state, maxHeight, updateOverflowHint])
   const highlight = state.open ? state.highlight : null
+  // Note rows are presentation-only, so an option-only traversal would hear an
+  // empty list; the listbox is described by every note line instead (a folder
+  // with no files, no results, cut or failed listing), so the explanation still
+  // reaches assistive tech. Item indexes match the render below.
+  const noteIds = state.groups.flatMap(group =>
+    group.items.flatMap((item, index) => item.note === true ? [noteId(group.source, index)] : []))
   // Focus stays in the textarea (combobox pattern), so the browser never
   // scrolls the active option into view on keyboard moves — do it here.
   useEffect(() => {
@@ -126,6 +139,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
         className={css.viewport}
         role="listbox"
         aria-label={t('suggestions.aria')}
+        aria-describedby={noteIds.length === 0 ? undefined : noteIds.join(' ')}
         aria-activedescendant={highlight !== null ? optionId(highlight.source, highlight.index) : undefined}
         onScroll={updateOverflowHint}
       >
@@ -156,10 +170,10 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
                       {item.note === true
                         // Informational row: the listbox may carry it as plain
                         // text (same as a section title), and it is not an
-                        // option, so it takes no id, no aria-selected state,
-                        // and no pick handler.
+                        // option, so it takes no aria-selected state and no pick
+                        // handler; its id only feeds the listbox's description.
                         ? (
-                          <div className={clsx(css.item, css.note)} role="presentation" data-note="">
+                          <div id={noteId(group.source, index)} className={clsx(css.item, css.note)} role="presentation" data-note="">
                             <span className={css.noteText}>{item.label ?? item.name}</span>
                           </div>
                         )

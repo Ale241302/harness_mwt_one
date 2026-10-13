@@ -291,7 +291,7 @@ describe('ModelSelect reasoning effort', () => {
     // The provider-declared context reaches the row; the undeclared id keeps no
     // meta line rather than inventing a number.
     expect(screen.getByRole('menuitemradio', { name: /Quasar 9 Ultra/ }).textContent)
-      .toContain('上下文 262144')
+      .toContain('上下文 262144 tokens')
     expect(screen.getByRole('menuitemradio', { name: /Quasar Lite/ }).textContent)
       .toBe('Quasar Lite')
   })
@@ -319,7 +319,7 @@ describe('ModelSelect reasoning effort', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '选择模型' }))
     fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
-    expect(screen.getByText('DeepSeek：没有可用的凭证')).toBeTruthy()
+    expect(screen.getByText('DeepSeek：未配置凭证')).toBeTruthy()
     expect(screen.getByText('没有结果')).toBeTruthy()
     // The raw discovery diagnosis is not the user-facing copy.
     expect(screen.queryByText(/no credential configured/)).toBeNull()

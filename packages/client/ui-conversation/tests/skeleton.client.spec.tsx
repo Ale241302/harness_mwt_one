@@ -529,6 +529,23 @@ describe('ConversationRoot resident composer', () => {
     expect(root?.getAttribute('data-phase')).toBe('settling')
   })
 
+  it('settling phase: the woven knot stands in for the column that has not landed', () => {
+    const b = mount(sessionSnapshotOf({ blank: true, openState: 'loading' }))
+    const knot = b.view.container.querySelector('[data-conversation-settling] [data-weaving-progress]')
+    expect(knot?.getAttribute('aria-label')).toBe('正在打开会话')
+    // The knot never displaces the composer seat it stands over.
+    expect(b.view.container.querySelector('[data-composer-seat]')).not.toBeNull()
+  })
+
+  it('mounts the settling knot only while the column is actually settling', () => {
+    const settled = ['hero', 'active'] as const
+    for (const landed of settled) {
+      const b = mount(sessionSnapshotOf({ blank: landed === 'hero' }))
+      expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe(landed)
+      expect(b.view.container.querySelector('[data-conversation-settling]')).toBeNull()
+    }
+  })
+
   it('startup auto-selection: a summary-proven blank session opens straight into the hero', () => {
     const b = mount(
       sessionSnapshotOf({ blank: true, openState: 'loading' }),

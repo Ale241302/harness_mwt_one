@@ -408,7 +408,7 @@ export function ModelSelect(
               {state.error !== null && lastActionRef.current === 'load' && (
                 <div className={css.error}>
                   <span>{t('error.action', { message: state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
                 </div>
               )}
               {effortChoices.length === 0

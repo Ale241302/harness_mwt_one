@@ -61,6 +61,10 @@
   name: '@deepseek-ai/dsh-tool-skill'
   disabled: true
 
+- id: skill-install
+  name: '@deepseek-ai/dsh-skill-install'
+  disabled: true
+
 - id: tool-fs-search
   name: '@deepseek-ai/dsh-tool-fs-search'
   config:

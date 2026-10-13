@@ -141,7 +141,10 @@
 }
 
 .folderActive {
-  color: var(--dsw-alias-brand-primary);
+  /* The product's identity accent: the same alias the brand's own theme override
+     pins to the coral, so the active folder follows the mark rather than a
+     general "primary" that another theme could repoint. */
+  color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
 

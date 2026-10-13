@@ -177,10 +177,16 @@ it('displays disconnect, close and exit states and offers explicit reconnection 
   h.update({ ...idle, info: { ...info, state: 'exited', exitCode: 5 }, phase: 'connected' })
   expect(h.view.getByRole('status').textContent).toBe('Process exited (5)')
   h.update({ ...idle, info: { ...info, state: 'exited', error: 'provider stopped' }, phase: 'connected' })
-  expect(h.view.getByRole('status').textContent).toBe('Process exited (—)')
+  expect(h.view.getByRole('status').textContent).toBe(`Process exited (${en['cell.none']})`)
   expect(h.view.getByRole('alert').textContent).toContain('provider stopped')
   h.update({ ...idle, info: { ...info, state: 'failed', error: 'provider unreachable' }, phase: 'connected' })
   expect(h.view.getByRole('status').textContent).toBe(en.unavailable)
+})
+
+it.each([en, zh, es])('renders a missing exit code with the no-value label from the active dictionary', (dictionary) => {
+  const h = mount({ ...idle, info: { ...info, state: 'exited', error: 'provider stopped' }, phase: 'connected' }, dictionary)
+  expect(h.view.getByRole('status').textContent).toBe(dictionary.exited.replace('{code}', dictionary['cell.none']))
+  expect(h.view.getByRole('status').textContent).not.toContain('\u2014')
 })
 
 it('updates screen, cursor and selection colors without replacing the terminal or clearing output', () => {

@@ -3,8 +3,7 @@ import type { MouseEvent, MutableRefObject, RefObject } from 'react'
 import type { LexicalEditor } from 'lexical'
 import type { ComposerKeyboard } from '../../contract/draft-editor.ts'
 import type { ComposerBarProps } from '../../contract/slots.ts'
-import type { BusyEnterBehavior } from '../../contract/composer-submission.ts'
-import { resolveSubmitMode } from '../submission-policy.ts'
+import { resolveSubmitMode, type BusyEnterBehavior } from '../../contract/composer-submission.ts'
 import { registerComposerKeymap } from './keymap.ts'
 
 interface DraftViewGate {

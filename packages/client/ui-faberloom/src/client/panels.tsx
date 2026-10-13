@@ -1411,8 +1411,8 @@ function emailScreen() {
 
     const columns: readonly Column<{ id: string }>[] = mode === 'inbox'
       ? [
-        { key: 'from', header: t('col.from'), cell: row => <span className={styles.cellName}>{(row as FaberLoomInboxRow).from ?? '—'}</span> },
-        { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.cellMuted}>{(row as FaberLoomInboxRow).subject ?? '—'}</span> },
+        { key: 'from', header: t('col.from'), cell: row => <span className={styles.cellName}>{(row as FaberLoomInboxRow).from ?? t('cell.none')}</span> },
+        { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.cellMuted}>{(row as FaberLoomInboxRow).subject ?? t('cell.none')}</span> },
         { key: 'date', header: t('col.date'), cell: row => <span className={styles.cellData}>{(row as FaberLoomInboxRow).date ?? ''}</span> },
       ]
       : [
@@ -1479,7 +1479,7 @@ function emailScreen() {
               <button className={styles.primary} type="button" onClick={() => { if (chosenMail !== null) openCompose(chosenMail) }}>{t('email.reply')}</button>
             </>
           )}>
-          <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail?.from ?? '—'}</span></Field>
+          <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail?.from ?? t('cell.none')}</span></Field>
           <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenMail?.date ?? ''}</span></Field>
           <Field label={t('field.body')}>
             {mailBody.kind === 'loading'
@@ -1707,7 +1707,7 @@ function skillsScreen() {
 
     const columns: readonly Column<FaberLoomSkillRow>[] = [
       { key: 'name', header: t('col.name'), cell: skill => <span className={styles.cellName}>{skill.name}</span> },
-      { key: 'module', header: t('col.module'), cell: skill => <span className={styles.cellMuted}>{skill.module ?? '—'}{skill.action === null ? '' : ` · ${skill.action}`}</span> },
+      { key: 'module', header: t('col.module'), cell: skill => <span className={styles.cellMuted}>{skill.module ?? t('cell.none')}{skill.action === null ? '' : ` · ${skill.action}`}</span> },
       { key: 'origin', header: t('col.origin'), cell: skill => <Chip tone={skill.origin === 'owner' ? 'accent' : 'muted'}>{skill.origin === 'owner' ? t('skills.own') : skill.origin === 'shared' ? t('skills.shared') : skill.origin === 'incoming' ? t('skills.incoming') : t('skills.role')}</Chip> },
       { key: 'used', header: t('col.usedBy'), cell: skill => <span className={styles.cellMuted}>{skill.assignedTo.length === 0 ? t('skills.unused') : String(skill.assignedTo.length)}</span> },
     ]
@@ -1753,8 +1753,8 @@ function skillsScreen() {
               ? <StateBlock kind="empty" title={t('skills.selectTitle')} text={t('skills.selectText')} />
               : (
                 <>
-                  <Field label={t('field.module')}><span className={styles.cellMuted}>{chosen.module ?? '—'}{chosen.action === null ? '' : ` · ${chosen.action}`}</span></Field>
-                  <Field label={t('field.description')}><span className={styles.cellMuted}>{chosen.description.length === 0 ? '—' : chosen.description}</span></Field>
+                  <Field label={t('field.module')}><span className={styles.cellMuted}>{chosen.module ?? t('cell.none')}{chosen.action === null ? '' : ` · ${chosen.action}`}</span></Field>
+                  <Field label={t('field.description')}><span className={styles.cellMuted}>{chosen.description.length === 0 ? t('cell.none') : chosen.description}</span></Field>
                   <Field label={t('field.usedBy')}>
                     {chosen.assignedTo.length === 0
                       ? <span className={styles.cellMuted}>{t('skills.unused')}</span>
@@ -1999,7 +1999,7 @@ function boardScreen() {
           <Field label={t('field.revision')}>
             <span className={styles.cellMuted}>{String(value.version)}{value.approvedRevision === null ? '' : ` · ${t('board.approved')} ${String(value.approvedRevision)}`}</span>
           </Field>
-          <Field label={t('field.summary')}><span className={styles.summary}>{value.summary.length === 0 ? '—' : value.summary}</span></Field>
+          <Field label={t('field.summary')}><span className={styles.summary}>{value.summary.length === 0 ? t('cell.none') : value.summary}</span></Field>
           <Field label={t('field.evidence')}>
             {value.evidence.length === 0
               ? <span className={styles.cellMuted}>{t('board.noEvidence')}</span>
@@ -2077,9 +2077,9 @@ function boardScreen() {
 
     const inboxBody = chosenInbox === null ? null : (
       <>
-        <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenInbox.from ?? '—'}</span></Field>
+        <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenInbox.from ?? t('cell.none')}</span></Field>
         <Field label={t('col.subject')}><span className={styles.cellMuted}>{chosenInbox.subject ?? t('workbench.untitled')}</span></Field>
-        <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenInbox.date ?? '—'}</span></Field>
+        <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenInbox.date ?? t('cell.none')}</span></Field>
       </>
     )
 
@@ -2721,7 +2721,7 @@ function connectionsScreen() {
     const columns: readonly Column<FaberLoomConnection>[] = [
       { key: 'label', header: t('col.name'), cell: row => <span className={styles.cellName}>{row.label}{row.kind !== 'backup' && row.primary ? <span className={styles.chips}> <Chip tone="accent">{t('connections.primary')}</Chip></span> : null}</span> },
       { key: 'kind', header: t('col.kind'), cell: row => <Chip tone={row.kind === 'backup' ? 'muted' : 'accent'}>{row.kind === 'imap' ? t('connections.imap') : row.kind === 'smtp' ? t('connections.smtp') : t('connections.backup')}</Chip> },
-      { key: 'security', header: t('col.security'), cell: row => row.kind === 'backup' ? <span className={styles.cellMuted}>{t('connections.notApplicable')}</span> : <Chip tone={row.secure || row.starttls ? 'accent' : 'muted'}>{row.secure ? t('connections.modeTls') : row.starttls ? t('connections.modeStarttls') : t('connections.modeNone')}</Chip> },
+      { key: 'security', header: t('col.security'), cell: row => row.kind === 'backup' ? <span className={styles.cellMuted}>{t('cell.none')}</span> : <Chip tone={row.secure || row.starttls ? 'accent' : 'muted'}>{row.secure ? t('connections.modeTls') : row.starttls ? t('connections.modeStarttls') : t('connections.modeNone')}</Chip> },
       { key: 'target', header: t('col.target'), cell: row => <span className={styles.cellMuted}>{row.kind === 'imap' || row.kind === 'smtp' ? [row.username, row.host].filter(part => part !== null && part.length > 0).join(' · ') : row.destination ?? ''}</span> },
     ]
 

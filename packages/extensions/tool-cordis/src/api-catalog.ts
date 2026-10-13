@@ -2579,22 +2579,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'installSkill\') async installSkill( source: string, destination: FaberLoomSkillInstallDestination, replace?: boolean, workspaceRoot?: string, ): Promise<FaberLoomSkillInstallReport>',
-        description: 'Install one or more skills from a folder the user named. The source is a single skill directory (holding `SKILL.md`) or a directory of skill directories; every candidate\'s front matter is validated before anything is written, each whole skill directory is copied with its assets, and an existing skill of the same name is left alone unless `replace` is set.',
-        parameters: [{ name: 'source', description: 'folder to install from; resolved inside the workspace when the call has one.' }, { name: 'destination', description: '`workspace` writes under `<workspace>/.dsh/skills`, `global` under `$DSH_HOME/skills`.' }, { name: 'replace', description: 'true replaces a skill of the same name; false skips it.' }, { name: 'workspaceRoot', description: 'the session\'s resolved workspace root; omitted uses the deployment default.' }],
+        description: 'Install one or more skills from a folder the user named, through the native installer, so the copies and their `.dsh-skill-install.json` markers are the ones the skill provider reads back. The source is a single skill directory (holding `SKILL.md`) or a directory of skill directories; the installer validates every candidate before writing, copies each whole skill directory with its assets, reports an unchanged repeat install instead of copying again, and skips an existing name unless `replace` is set.',
+        parameters: [{ name: 'source', description: 'folder to install from; resolved inside the workspace when the call has one.' }, { name: 'destination', description: '`workspace` writes under the workspace project skills root, `global` under `$DSH_HOME/skills`.' }, { name: 'replace', description: 'true replaces a skill of the same name; false skips it.' }, { name: 'workspaceRoot', description: 'the session\'s resolved workspace root; omitted uses the deployment default.' }],
         returns: 'the resolved destination root and one outcome per candidate.',
       },
       {
         signature: '@Remote(\'skillInstalls\') async skillInstalls(): Promise<readonly FaberLoomSkillInstallRow[]>',
-        description: 'List the skills this identity installed from a folder.',
+        description: 'List the skills installed from a folder under the global root and, when a workspace resolves, the workspace root, read back from the installer\'s `.dsh-skill-install.json` markers.',
         parameters: [],
         returns: 'the install rows, sorted by name.',
       },
       {
         signature: '@Remote(\'uninstallSkill\') async uninstallSkill(name: string, destination: FaberLoomSkillInstallDestination): Promise<readonly FaberLoomSkillInstallRow[]>',
-        description: 'Remove one recorded install: the copied skill directory and its ledger row.',
+        description: 'Remove one recorded install through the native installer, which removes a directory only when it carries the install marker.',
         parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'destination', description: 'root the install landed in.' }],
         returns: 'the refreshed install rows.',
-        throws: ['when the identity is read-only or holds no such install.'],
+        throws: ['when the identity is read-only or names no marked install.'],
       },
       {
         signature: '@Remote(\'connections\') async connections(): Promise<readonly FaberLoomConnection[]>',
@@ -7527,7 +7527,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSkillInstallRefusal',
-    declaration: 'export type FaberLoomSkillInstallRefusal = \'read-only\' | \'no-workspace\' | \'source-missing\' | \'outside-workspace\' | \'not-a-skill\';',
+    declaration: 'export type FaberLoomSkillInstallRefusal = \'read-only\' | \'no-workspace\' | \'source-missing\' | \'outside-workspace\' | \'not-a-skill\' | \'name-missing\' | \'name-illegal\';',
   },
   {
     name: 'FaberLoomSkillInstallReport',

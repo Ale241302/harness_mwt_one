@@ -7,8 +7,8 @@
  * `@deepseek-ai/dsh-skill-filesystem` scans (`<projectRoot>/.dsh/skills` for
  * `project-dsh`, `<dshHome>/skills` for `user-dsh`), so an installed skill is
  * first-class in the provider's catalog and becomes loadable through the
- * provider's watcher without a restart. Installed skills carry a provenance
- * marker, which makes a repeat install a reported no-op and keeps an uninstall
+ * provider's watcher without a restart. Installed skills carry a
+ * `.dsh-skill-install.json` marker, which makes a repeat install a reported no-op and keeps an uninstall
  * from deleting a hand-authored skill of the same name.
  *
  * The model-facing surface is the `install_skill` and `uninstall_skill` tools.

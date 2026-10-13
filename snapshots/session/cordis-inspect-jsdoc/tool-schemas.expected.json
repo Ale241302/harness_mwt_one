@@ -373,6 +373,34 @@
       }
     },
     {
+      "name": "install_skill",
+      "description": "Install a skill from a folder the user points at. The folder is either one skill directory holding SKILL.md or a directory of skill directories. By default the user is asked whether to install it into the current workspace or globally for their user. A folder already installed unchanged is reported, not copied again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Folder to install from."
+          },
+          "destination": {
+            "type": "string",
+            "description": "Scope to install into. Omit to ask the user which of the two they want.",
+            "enum": [
+              "workspace",
+              "global"
+            ]
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Replace an existing skill of the same name instead of skipping it."
+          }
+        },
+        "required": [
+          "source"
+        ]
+      }
+    },
+    {
       "name": "interrupt_agent",
       "description": "Request cancellation of a background agent's current turn by its agent id. The target may be your direct child or a deeper agent created under you. Only the current turn stops: messages already queued for the agent stay parked until a later send_message, agents it started keep running, and the agent itself stays available for follow-ups. This call returns as soon as the stop request is accepted, so the target may keep running briefly; interrupting an agent that already finished is an accepted no-op.",
       "parameters": {
@@ -653,6 +681,31 @@
         },
         "required": [
           "todos"
+        ]
+      }
+    },
+    {
+      "name": "uninstall_skill",
+      "description": "Remove a skill that was previously installed from a folder. Only an install recorded by install_skill is removed; a skill authored in place is never deleted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The installed skill name."
+          },
+          "destination": {
+            "type": "string",
+            "description": "Scope the skill was installed into.",
+            "enum": [
+              "workspace",
+              "global"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "destination"
         ]
       }
     },

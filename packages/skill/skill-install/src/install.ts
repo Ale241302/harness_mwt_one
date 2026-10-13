@@ -1,6 +1,6 @@
 /**
  * Filesystem side of the native skill installer: copy a validated skill folder
- * into a scanned skills root, record provenance beside it, and remove it again.
+ * into a scanned skills root, write an install marker beside it, and remove it again.
  *
  * The two roots this module writes through are the exact directories
  * `@deepseek-ai/dsh-skill-filesystem` scans as `project-dsh` and `user-dsh`, so
@@ -24,7 +24,7 @@ import type { DetectedSkill, SkillInstallOutcome, SkillInstallRow, SkillScope, S
 /** Instruction file every skill directory must hold; also the idempotence identity. */
 export const SKILL_FILE = 'SKILL.md'
 
-/** Provenance marker written into an installed skill directory. */
+/** Marker written into an installed skill directory; only a marked directory can be removed as an install. */
 export const INSTALL_MARKER_FILE = '.dsh-skill-install.json'
 
 /** What one installed skill's marker records. */

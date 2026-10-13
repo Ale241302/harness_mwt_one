@@ -1,6 +1,15 @@
 /** Source-line helpers shared by the plain renderer and the document scroller. */
-import type { DocumentTextPage } from '../document/contract.ts'
-import type { TextPage } from '../store.ts'
+import type { DocumentTextPage } from './document.ts'
+
+/**
+ * One page as the store keeps it: its text and the Host's line count, which
+ * tells a page past the file's last line (`lines: 0`) from a page holding one
+ * empty line (`lines: 1`, `text: ''`).
+ */
+export interface TextPage {
+  readonly text: string
+  readonly lines: number
+}
 
 /**
  * Split a loaded page into its source lines.

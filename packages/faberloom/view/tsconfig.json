@@ -78,6 +78,9 @@
       "path": "../../storage/storage-domain"
     },
     {
+      "path": "../../skill/skill-install"
+    },
+    {
       "path": "../../sandbox/sandbox-policy"
     },
     {

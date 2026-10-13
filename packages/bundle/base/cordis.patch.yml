@@ -280,9 +280,11 @@
       name: '@deepseek-ai/dsh-skill-badge'
       disabled: true
 
+    # Ships enabled: the installer is the one path that writes the roots
+    # `skill-filesystem` scans, so its two tools belong in every recorded tool
+    # list. (`.agents/notes/implemented/feature/2026-10-13-one-native-skill-install-path.md`)
     - id: skill-install
       name: '@deepseek-ai/dsh-skill-install'
-      disabled: true
 
     - id: tool-skill
       name: '@deepseek-ai/dsh-tool-skill'

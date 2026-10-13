@@ -4,7 +4,11 @@ import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/cl
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
+import { WeavingProgress } from './WeavingProgress.tsx'
 import css from './ConversationRoot.module.css'
+
+/** Edge of the knot the column shows while it settles: the hero mark's own 34px. */
+const SETTLING_KNOT_SIZE = 34
 
 type ConversationContentProps = Omit<ConversationSlotProps, 'useSession' | 'useConversation'> & {
   session: SessionSnapshot | undefined
@@ -268,6 +272,16 @@ export function ConversationContent({
         {sessionId === undefined ? null : renderSlot('conversation.session', {})}
         {composerSeat}
       </div>
+      {/* Settling: the session is still opening, so the column has no settled
+          occupant to show. The brand's woven knot stands in for it — the one
+          progress state the brand sanctions, and only ever while the open is
+          genuinely in flight. Its delayed reveal keeps a fast open from
+          flashing a mark that was already gone. */}
+      {phase === 'settling' && (
+        <div className={css.settling} data-conversation-settling="">
+          <WeavingProgress label={t('progress.opening')} size={SETTLING_KNOT_SIZE} />
+        </div>
+      )}
       {/* Width handles only while a transcript is on screen; the hero has no
           content column to size. */}
       {phase === 'active' && (['left', 'right'] as const).map(side => (
