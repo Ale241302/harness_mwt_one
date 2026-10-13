@@ -20,7 +20,11 @@ const DARK_BACKGROUND = '#151517'
 function bootThemeStyle(preference: ThemePreference): string {
   const palette = paletteById(preference)
   if (palette !== undefined) {
-    return `:root{color-scheme:${palette.colorScheme}}body{background-color:${palette.ground};--dsh-boot-bg:${palette.ground}}`
+    // The palette's own aliases ride the same rule as the ground: the interval
+    // before the theme presenter runs otherwise paints the base sheet's tokens,
+    // which is a different palette.
+    const tokens = Object.entries(palette.tokens).map(([name, value]) => `${name}:${value}`).join(';')
+    return `:root{color-scheme:${palette.colorScheme}}body{background-color:${palette.ground};--dsh-boot-bg:${palette.ground};${tokens}}`
   }
   const light = `:root{color-scheme:light}body{background-color:${LIGHT_BACKGROUND};--dsh-boot-bg:${LIGHT_BACKGROUND}}`
   const dark = `:root{color-scheme:dark}body{background-color:${DARK_BACKGROUND};--dsh-boot-bg:${DARK_BACKGROUND}}`
