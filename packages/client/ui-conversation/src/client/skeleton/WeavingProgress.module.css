@@ -3,7 +3,19 @@
    at a time and the shuttle then draws each pass back out, so the knot is
    always either being woven or unwound. Nothing here runs on a still surface:
    the composer mounts the knot only while a turn runs and the conversation
-   column only while a session opens. */
+   column only while a session opens.
+
+   One vocabulary, two arms. The pass below is the shipped one: at 32px and up a
+   weft thread renders eight pixels or more and the two-unit thread ends stay
+   above a pixel, so the thread itself can be seen growing across the grid. At
+   the brand's minimum weave size — the composer's 24px, where those thread ends
+   are a single pixel and a growth-based pass reads as fragments — the dense arm
+   keeps the same vocabulary on a surface where a thread cannot be seen moving
+   along its length: the knot is drawn formed and faint, and the shuttle brings
+   each weft thread up to the brand's coral as it is thrown, so the pass rides
+   the weft's brightness instead of its length and the formed knot is legible in
+   every frame. The warp is untouched in both arms: the prepared structure never
+   moves. */
 
 .root {
   display: inline-flex;
@@ -31,6 +43,15 @@
   animation: dsh-faberloom-weave 2800ms ease-in-out infinite;
 }
 
+/* The dense arm, at the brand's minimum weave size (see the sheet header): the
+   knot is drawn formed and faint and the shuttle throws each weft thread up to
+   full coral in turn. `stroke-dasharray` is cleared because this arm never
+   relies on a dash to hide a thread. */
+.knot[data-weave-pass='dense'] .weft {
+  stroke-dasharray: none;
+  animation: dsh-faberloom-throw 2800ms linear infinite;
+}
+
 @keyframes dsh-faberloom-weave {
   0% {
     stroke-dashoffset: 24;
@@ -49,9 +70,39 @@
   }
 }
 
-/* Reduced motion: the finished knot, complete and calm. */
+/* The dense pass, one thread at a time in the component's own stagger: the weft
+   comes up to full coral as the shuttle lays it, the finished knot holds, then
+   each thread falls back as the shuttle draws the pass out. The faint and full
+   values live in the keyframes rather than on the element, so stopping the
+   animation below leaves every thread drawn at the mark's own weight. */
+@keyframes dsh-faberloom-throw {
+  0% {
+    opacity: 0.45;
+  }
+
+  3.6% {
+    opacity: 1;
+  }
+
+  67.9% {
+    opacity: 1;
+  }
+
+  71.4% {
+    opacity: 0.45;
+  }
+
+  100% {
+    opacity: 0.45;
+  }
+}
+
+/* Reduced motion: the finished knot, complete and calm. Both arms stop, and the
+   weft is left drawn — `stroke-dashoffset: 0` stops the weave arm's dash from
+   parking over the thread and leaving it hidden. */
 @media (prefers-reduced-motion: reduce) {
-  .knot .weft {
+  .knot .weft,
+  .knot[data-weave-pass='dense'] .weft {
     animation: none;
     stroke-dashoffset: 0;
   }

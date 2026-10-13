@@ -30,5 +30,15 @@ describe('WeavingProgress.module.css', () => {
     expect(reducedMotion).toContain('animation: none')
     // Every thread drawn: without this the weft would be left hidden at rest.
     expect(reducedMotion).toContain('stroke-dashoffset: 0')
+    // Both arms stop, including the dense one the composer mounts.
+    expect(reducedMotion).toContain(".knot[data-weave-pass='dense'] .weft")
+  })
+
+  it('rides the weft brightness at the minimum weave size, where a thread cannot be seen growing', () => {
+    expect(css).toContain('@keyframes dsh-faberloom-throw')
+    expect(css).toContain(".knot[data-weave-pass='dense'] .weft {")
+    expect(css).toContain('animation: dsh-faberloom-throw')
+    // The arm never hides a thread behind a dash, so it clears the array.
+    expect(css).toContain('stroke-dasharray: none')
   })
 })

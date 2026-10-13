@@ -8,6 +8,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { WeavingProgress } from '../src/client/skeleton/WeavingProgress.tsx'
 
+/** The pass the svg declares, read back after each render is torn down. */
+function passAt(size: number): string | null {
+  const view = render(<WeavingProgress label="working" size={size} />)
+  const svg = view.getByRole('status').querySelector(':scope > svg')
+  const pass = svg?.getAttribute('data-weave-pass') ?? null
+  cleanup()
+  return pass
+}
+
 afterEach(() => {
   cleanup()
 })
@@ -51,5 +60,14 @@ describe('WeavingProgress', () => {
     expect(warp).toHaveLength(1)
     expect(weft).toHaveLength(2)
     expect(weft.map(path => path.style.animationDelay)).toEqual(['0ms', '100ms'])
+  })
+
+  it('rides the weft brightness at the brand minimum weave size, and the full pass above it', () => {
+    // At the composer's 24px a weft thread is a one- to two-pixel nub, so the
+    // weave pass cannot be seen growing and the dense arm carries the state
+    // instead; the settling column's 34px keeps the full pass.
+    expect(passAt(24)).toBe('dense')
+    expect(passAt(16)).toBe('dense')
+    expect(passAt(34)).toBe('full')
   })
 })

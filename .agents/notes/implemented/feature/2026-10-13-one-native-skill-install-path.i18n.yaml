@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-13-one-native-skill-install-path.md
-2026-10-13-one-native-skill-install-path.md: 0799c5e52ce3d1fcdbea29b4901920a80a825318
-2026-10-13-one-native-skill-install-path.zh.md: ef1709fb5953e6fea735dbb7a30aafbd2971bb41
+2026-10-13-one-native-skill-install-path.md: 053a7eec706226ab632b0282bdfcedb7a60f03c3
+2026-10-13-one-native-skill-install-path.zh.md: 9004faa3dda04e347043d452b2b42bd19897153b

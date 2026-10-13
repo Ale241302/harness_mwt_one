@@ -6,7 +6,7 @@ English | [中文](2026-10-13-one-native-skill-install-path.zh.md)
 
 ## Problem
 
-Two code paths installed a skill folder. The native installer (`packages/skill/skill-install`) recognised a folder, asked the destination through `ctx.userQuestions`, copied it into the roots `@deepseek-ai/dsh-skill-filesystem` scans, marked the copy, and exposed `install_skill`/`uninstall_skill` as model tools — but the base bundle shipped its row `disabled: true`, so the tools never reached a request and the generated tool catalog omitted them. The older FaberLoom-admin path (`packages/faberloom/view`, surfaced by the Skills panel in `packages/client/ui-faberloom`) copied the same folders into the same roots with its own validation, its own `faberloom_skill_installs` storage domain, its own refusal vocabulary, and a model tool of its own. The two disagreed on roots, on provenance, and on what a repeat install means, and the second one duplicated the first's validation and copy logic inside a product panel.
+Two code paths installed a skill folder. The native installer (`packages/skill/skill-install`) recognised a folder, asked the destination through `ctx.userQuestions`, copied it into the roots `@deepseek-ai/dsh-skill-filesystem` scans, marked the copy, and exposed `install_skill`/`uninstall_skill` as model tools — but the base bundle shipped its row `disabled: true`, so the tools never reached a request and the generated tool catalog omitted them. The older FaberLoom-admin path (`packages/faberloom/view`, surfaced by the Skills panel in `packages/client/ui-faberloom`) copied the same folders into the same roots with its own validation, its own `faberloom_skill_installs` storage domain, its own refusal vocabulary, and a model tool of its own. The two disagreed on roots, on origin, and on what a repeat install means, and the second one duplicated the first's validation and copy logic inside a product panel.
 
 ## Decision
 
@@ -36,10 +36,10 @@ The tools are visible in every recorded request of the shipped headless profile 
 
 The panel loses its per-identity install list and its leader-row uninstall: it now shows every marked install under the roots and removes one through the installer, which refuses a directory with no marker. This is observable in a multi-user deployment and is the cost of one record.
 
-An install copies the whole source directory, so a `.shared-by` publisher marker travels with the copy where the old view stripped it. The marker is provenance, not configuration, and the panel's remove still works because removal follows the install marker rather than the publisher marker.
+An install copies the whole source directory, so a `.shared-by` publisher marker travels with the copy where the old view stripped it. The marker records origin, not configuration, and the panel's remove still works because removal follows the install marker rather than the publisher marker.
 
 The view's refusal vocabulary is coarser than the installer's: a source that is not a directory, is empty, or holds no `SKILL.md` all read as "not a skill", and unreadable or missing front matter reads as a missing or illegal name, reusing the panel's existing copy. The workspace containment check stays, so `outside-workspace` remains reachable.
 
 ## Testing
 
-The installer's real-composition spec boots the skill registry and provider over temp roots; `packages/faberloom/view/tests/install-skill.spec.ts` boots the real installer and asserts the panel's reports, the copied directories, the marker, and removal; and the headless snapshot lane replays the shipped profile with the two new schema entries.
+The installer's real-composition spec boots the skill registry and provider over temp roots; `packages/faberloom/view/tests/install-skill.spec.ts` boots the real installer and asserts the panel's reports, the copied directories, the marker, and removal; and the headless snapshot lane replays the shipped profile with the two new schema entries plus the authored `skill-install` and `skill-uninstall` scenarios, where the model calls `install_skill` and `uninstall_skill` against a temporary harness home so the refused folder, the copied destination, and the post-uninstall catalog withdrawal are pinned end to end.

@@ -42,4 +42,4 @@ Status: implemented
 
 ## Testing
 
-安装器的真实组合规格在临时根上启动技能注册表与提供方；`packages/faberloom/view/tests/install-skill.spec.ts` 启动真实安装器并断言面板的报告、被复制的目录、标记与移除；无密钥快照通道以两条新 schema 条目重放已发布 profile。
+安装器的真实组合规格在临时根上启动技能注册表与提供方；`packages/faberloom/view/tests/install-skill.spec.ts` 启动真实安装器并断言面板的报告、被复制的目录、标记与移除；无密钥快照通道以两条新 schema 条目重放已发布 profile，并重放作者手写的 `skill-install` 与 `skill-uninstall` 场景——其中模型对临时 harness home 调用 `install_skill` 与 `uninstall_skill`，从而把被拒绝的文件夹、被复制的目标以及卸载后的目录撤回端到端地固定下来。
