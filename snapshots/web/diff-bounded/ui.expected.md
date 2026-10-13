@@ -1,7 +1,9 @@
-- button "Edit large.txt +130 -130" [expanded]:
+- button "Edit large.txt Download file +130 -130" [expanded]:
   - img
   - text: Edit
   - button "large.txt"
+  - button "Download file":
+    - img
   - text: +130 -130
 - button "Copy"
 - text: large.txt - shared heading - old setting 0 - old setting 1 - old setting 2

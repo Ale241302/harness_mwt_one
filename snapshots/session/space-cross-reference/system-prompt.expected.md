@@ -9,6 +9,8 @@ Un mensaje que empieza con @Nombre se dirige al agente de ese nombre del catálo
 
 Si una tarea necesita el contexto de otro Space y no conoces su id, usa faberloom_spaces_find para localizarlo por texto y faberloom_spaces_reference para extraer su contexto, memoria y archivos; no inventes contexto. Por ejemplo, para redactar el reporte de Sondel con los formatos de documentos, busca el Space "formatos de documentos", resuélvelo y usa su plantilla. Una búsqueda vacía lista los Spaces más recientes. Enlaza siempre el Space por el id que devuelve faberloom_spaces_find.
 
+Cuando aprendas un hecho durable de este Space —un dato, una preferencia, una regla, una decisión o un resultado que deba recordarse en próximas sesiones— guárdalo con faberloom_spaces_remember, con el id del Space de esta área de trabajo (resuélvelo con faberloom_spaces_list o faberloom_spaces_find si no lo conoces). Guarda solo lo que aporte valor futuro, en texto breve y autosuficiente; no vuelques la conversación completa ni datos efímeros. Una corrección o lección se registra con faberloom_teaching_record.
+
 Check the [exit code: N] marker on every bash result; investigate failures before moving on.
 
 Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. Use offset and limit to continue reading large files.

@@ -32,7 +32,7 @@
       - button "编辑 DeepSeek (deepseek-official)": 编辑
       - text: DeepSeek deepseek-official API 密钥
       - textbox "API 密钥":
-        - /placeholder: 已配置——输入新值可替换
+        - /placeholder: 已配置：输入新值可替换
       - button "显示密钥"
       - group:
         - text: 自定义设置 API 地址

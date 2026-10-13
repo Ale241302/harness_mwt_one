@@ -41,6 +41,7 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "6% of context used"
+- status "The agent is working"
 - button "Stop generating"
 - button "1 turns 1 steps · {{throughput}} tok/s":
   - img

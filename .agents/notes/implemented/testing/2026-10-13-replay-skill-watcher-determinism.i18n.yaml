@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-10-13-replay-skill-watcher-determinism.md
+2026-10-13-replay-skill-watcher-determinism.md: 22957abbd85f725230c039ce439c5953889e6a00
+2026-10-13-replay-skill-watcher-determinism.zh.md: 94189d40fa6afb5e7e8835651e9ed0b8ec5a6220

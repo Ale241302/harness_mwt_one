@@ -13,6 +13,9 @@
     - button "Agent 预设":
       - img
       - text: Agent 预设
+    - button "语言":
+      - img
+      - text: 语言
     - button "已归档会话":
       - img
       - text: 已归档会话
@@ -24,20 +27,13 @@
   - button "工作区内修改":
     - text: 工作区内修改
     - img
-  - text: 语言
-  - button "中文":
-    - text: 中文
-    - img
-  - text: 外观
-  - button "浅色":
-    - img
-    - text: 浅色
-  - button "深色":
-    - img
-    - text: 深色
-  - button "跟随系统" [pressed]:
-    - img
-    - text: 跟随系统
+  - text: 外观 深色
+  - button "Faber Warm"
+  - button "Slate"
+  - button "Ink"
+  - text: 浅色
+  - button "Paper" [pressed]
+  - button "Bond"
   - text: 字号大小 仅影响会话内容的字号 14
   - button "增大字号":
     - img

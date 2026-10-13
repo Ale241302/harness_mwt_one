@@ -132,6 +132,15 @@ interface ToolArgsMap {
     /** One glob filter for which files to search (e.g. "*.ts", "*.{js,jsx}"). Not a list; negation is not supported. */
     include?: string;
   } & Record<string, JsonValue>;
+  /** Install a skill from a folder the user points at. The folder is either one skill directory holding SKILL.md or a directory of skill directories. By default the user is asked whether to install it into the current workspace or globally for their user. A folder already installed unchanged is reported, not copied again. */
+  install_skill: {
+    /** Folder to install from. */
+    source: string;
+    /** Scope to install into. Omit to ask the user which of the two they want. */
+    destination?: "workspace" | "global";
+    /** Replace an existing skill of the same name instead of skipping it. */
+    replace?: boolean;
+  } & Record<string, JsonValue>;
   /** Request cancellation of a background agent's current turn by its agent id. The target may be your direct child or a deeper agent created under you. Only the current turn stops: messages already queued for the agent stay parked until a later send_message, agents it started keep running, and the agent itself stays available for follow-ups. This call returns as soon as the stop request is accepted, so the target may keep running briefly; interrupting an agent that already finished is an accepted no-op. */
   interrupt_agent: {
     /** The agent id of the running agent to interrupt. */
@@ -222,6 +231,13 @@ interface ToolArgsMap {
       /** pending (not started) | in_progress (now) | completed (done). */
       status: "pending" | "in_progress" | "completed";
     })[];
+  } & Record<string, JsonValue>;
+  /** Remove a skill that was previously installed from a folder. Only an install recorded by install_skill is removed; a skill authored in place is never deleted. */
+  uninstall_skill: {
+    /** The installed skill name. */
+    name: string;
+    /** Scope the skill was installed into. */
+    destination: "workspace" | "global";
   } & Record<string, JsonValue>;
   /** Update the exact current goal revision. edit, pause, and resume require a direct top-level human request. During an automatic continuation of the current goal, complete and blocked are also allowed. blocked is rejected before the configured minimum round count; the model remains responsible for judging that the same condition persisted across those rounds and must explain it in blocked_reason. */
   update_goal: {
@@ -348,6 +364,18 @@ interface ToolOutputMap {
       lineNumber: number;
       line: string;
     }[];
+  };
+  install_skill: {
+    status: "installed" | "already-installed" | "skipped" | "refused" | "invalid" | "cancelled";
+    source: string;
+    destination?: "workspace" | "global";
+    root?: string;
+    reason?: string;
+    outcomes: ({
+      name: string;
+      status: "installed" | "replaced" | "already-installed" | "skipped" | "refused";
+      reason?: string;
+    })[];
   };
   interrupt_agent: {
     accepted: boolean;
@@ -480,6 +508,12 @@ interface ToolOutputMap {
       inProgress: number;
       completed: number;
     };
+  };
+  uninstall_skill: {
+    status: "removed" | "not-found" | "not-an-install";
+    name: string;
+    destination: "workspace" | "global";
+    root?: string;
   };
   update_goal: {
     goal: null;

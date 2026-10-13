@@ -3,6 +3,6 @@
   - button "刷新"
   - group "DeepSeek":
     - text: DeepSeek
-    - menuitemradio "Messages Flash 上下文 1000000" [checked]:
-      - text: Messages Flash 上下文 1000000
+    - menuitemradio "Messages Flash 上下文 1000000 tokens" [checked]:
+      - text: Messages Flash 上下文 1000000 tokens
       - img
