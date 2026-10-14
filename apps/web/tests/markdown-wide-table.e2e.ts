@@ -71,6 +71,12 @@ const TABLE_NAMES = ['fill', 'wide', 'long-cell']
  */
 const WIDTHS = [1680, 1100, 640]
 
+/** Shell band boundaries, mirrored from ui-layout's columns.ts (Host compiler face). */
+const SHELL_TABLET_BREAKPOINT = 1024
+const SHELL_PHONE_BREAKPOINT = 768
+/** Collapsed rail track, mirrored from ui-layout's SIDEBAR_COLLAPSED. */
+const SIDEBAR_COLLAPSED = 56
+
 /** A sentence long enough that three of them cannot sit unwrapped in the 748px column. */
 const SENTENCE = 'This cell carries one full sentence so the unwrapped table is far wider than the message column.'
 /** Unbroken path-like token (no scheme, so GFM does not autolink it and no anchor joins the tab order). */
@@ -205,24 +211,33 @@ interface TableStop {
 }
 
 /**
- * Wait for collapsed columns, completed grid transitions, and the
- * ConversationRoot ResizeObserver's width publication before measuring tables.
+ * Wait until `width` has been applied and the frame has settled in the band that
+ * width lands in: completed grid transitions, that band's rail track, and the
+ * ConversationRoot ResizeObserver's width publication — before measuring tables.
+ * The width pin is load-bearing: without it the gate can return on the previous
+ * stop's layout, and every reading must belong to the stop it names.
  * @param target - the page whose frame to read.
+ * @param width - the viewport width the caller just requested.
  */
-async function awaitTableLayout(target: Page): Promise<void> {
+async function awaitTableLayout(target: Page, width: number): Promise<void> {
   await target.evaluate(async () => { await document.fonts.ready })
-  await target.waitForFunction(() => {
+  await target.waitForFunction((expected) => {
     const element = document.querySelector('[data-sidebar-collapsed][data-rightbar-collapsed]')
     if (element === null) return false
+    if (window.innerWidth !== expected.width) return false
+    const regime = expected.width >= expected.tablet ? 'wide'
+      : expected.width >= expected.phone ? 'tablet' : 'phone'
+    if (element.getAttribute('data-shell-regime') !== regime) return false
     const tracks = getComputedStyle(element).gridTemplateColumns.split(' ').map(Number.parseFloat)
     const root = element.querySelector<HTMLElement>('div[data-phase]')
-    // Mirrored from ui-layout's SIDEBAR_COLLAPSED; these tests use the Host compiler face.
-    return tracks[0] === 56 && tracks.at(-1) === 0
+    // Only the in-flow (wide) band reserves the collapsed rail; the tablet and
+    // phone bands take the sidebar off canvas, so its track is 0 there.
+    return tracks[0] === (regime === 'wide' ? expected.rail : 0) && tracks.at(-1) === 0
       && element.getAnimations().every(animation =>
         animation.playState === 'finished' || animation.playState === 'idle')
       && root !== null
       && root.style.getPropertyValue('--dsh-conversation-column-width') === `${String(root.offsetWidth)}px`
-  }, undefined, { timeout: 10_000 })
+  }, { width, tablet: SHELL_TABLET_BREAKPOINT, phone: SHELL_PHONE_BREAKPOINT, rail: SIDEBAR_COLLAPSED }, { timeout: 10_000 })
 }
 
 /**
@@ -288,7 +303,9 @@ describe('web e2e: markdown tables fill the column, wide ones break out and scro
     // viewport identically on every platform, which is what keeps one
     // committed golden true for all lanes.
     await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
-    await awaitTableLayout(page)
+    const initialWidth = page.viewportSize()?.width
+    if (initialWidth === undefined) throw new Error('the lane page must carry a viewport width')
+    await awaitTableLayout(page, initialWidth)
   }, 180_000)
 
   afterAll(async () => {
@@ -305,7 +322,7 @@ describe('web e2e: markdown tables fill the column, wide ones break out and scro
    */
   const settleAt = async (width: number): Promise<TableReading[]> => {
     await page.setViewportSize({ width, height: 900 })
-    await awaitTableLayout(page)
+    await awaitTableLayout(page, width)
     return readTables(page)
   }
 
@@ -466,7 +483,9 @@ describe('web e2e: markdown tables fill the column, wide ones break out and scro
       await sessionRow.click()
       await hidpiPage.getByText(TAIL_MARKER, { exact: true }).waitFor({ timeout: 15_000 })
       await hidpiPage.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
-      await awaitTableLayout(hidpiPage)
+      const hidpiWidth = hidpiPage.viewportSize()?.width
+      if (hidpiWidth === undefined) throw new Error('the high-DPI page must carry a viewport width')
+      await awaitTableLayout(hidpiPage, hidpiWidth)
       const readings = await readTables(hidpiPage)
       const baseline = (await sweep()).find(stop => stop.width === 1100)!
       const relations = (tables: TableReading[]) => tables.map(table => ({
