@@ -1,14 +1,15 @@
 import { expect, it } from 'vitest'
-import { DEFAULT_GATEWAY_URL, resolveGatewayUrl } from '../src/gateway.ts'
+import { GATEWAY_URL_ENV, resolveGatewayRequest } from '../src/gateway.ts'
 
-it('defaults to the shared gateway', () => {
-  expect(resolveGatewayUrl({})).toBe(DEFAULT_GATEWAY_URL)
+it('defers to the stored choice when the environment names nothing', () => {
+  expect(resolveGatewayRequest({})).toEqual({ kind: 'none' })
 })
 
-it('accepts a deployment override', () => {
-  expect(resolveGatewayUrl({ DSH_DESKTOP_GATEWAY_URL: 'https://staging.example.test/' })).toBe('https://staging.example.test/')
+it('takes a trimmed deployment override as the gateway origin', () => {
+  expect(resolveGatewayRequest({ [GATEWAY_URL_ENV]: ' https://staging.example.test/ ' }))
+    .toEqual({ kind: 'override', url: 'https://staging.example.test/' })
 })
 
-it.each(['', '   '])('selects the local harness for a blank override: %o', (value) => {
-  expect(resolveGatewayUrl({ DSH_DESKTOP_GATEWAY_URL: value })).toBeUndefined()
+it.each(['', '   '])('asks for the local harness for a blank override: %o', (value) => {
+  expect(resolveGatewayRequest({ [GATEWAY_URL_ENV]: value })).toEqual({ kind: 'local' })
 })

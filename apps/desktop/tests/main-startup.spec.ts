@@ -1,5 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DEFAULT_GATEWAY_URL } from '../src/gateway.ts'
+import { BACKEND_CHOICE_FILENAME, writeBackendChoice } from '../src/backend-choice.ts'
 import { DESKTOP_IPC } from '../src/ipc.ts'
 
 const harness = await vi.hoisted(async () => {
@@ -16,10 +20,12 @@ const harness = await vi.hoisted(async () => {
   const handlers = new Map<string, (event: { senderFrame: { url: string } }, ...args: unknown[]) => unknown>()
   const nativeTheme = { shouldUseDarkColors: false }
   let pluginsEnabled = false
+  let home = ''
   let preparing = deferred()
   let prepared = deferred()
   let hostStarted = deferred()
   let navigated = deferred()
+  let gatewayLoaded = deferred()
   let errorPublished = deferred()
   let quitCompleted = deferred()
   class FakeWindow extends EventEmitter {
@@ -36,13 +42,15 @@ const harness = await vi.hoisted(async () => {
     readonly show = vi.fn()
     readonly focus = vi.fn()
     readonly restore = vi.fn()
-    constructor(readonly options: { show: boolean }) { super(); windows.push(this) }
+    constructor(readonly options: { show: boolean; webPreferences?: { partition?: string } }) { super(); windows.push(this) }
     isDestroyed() { return this.destroyed }
     isMinimized() { return false }
     async loadURL(url: string) {
       this.urls.push(url)
       if (url === 'dsh-app://app/index.html') navigated.resolve()
+      if (/^https:/u.test(url)) gatewayLoaded.resolve()
     }
+    destroy() { this.destroyed = true; this.emit('closed') }
     static getAllWindows() { return windows.filter(window => !window.destroyed) }
     close() { this.destroyed = true; this.emit('closed') }
   }
@@ -80,19 +88,28 @@ const harness = await vi.hoisted(async () => {
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     assertProfileRuntime: vi.fn(),
     canRecoverProfile: vi.fn(() => true),
+    get home() { return home },
     get preparing() { return preparing }, get prepared() { return prepared },
     get hostStarted() { return hostStarted }, get navigated() { return navigated },
+    get gatewayLoaded() { return gatewayLoaded },
     get errorPublished() { return errorPublished }, get quitCompleted() { return quitCompleted },
     nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
     get pluginsEnabled() { return pluginsEnabled },
     set pluginsEnabled(value: boolean) { pluginsEnabled = value },
+    cleanup() {
+      if (home === '') return
+      rmSync(home, { recursive: true, force: true })
+      home = ''
+    },
     reset() {
       windows.length = 0; hosts.length = 0; managerRuntimes.length = 0; handlers.clear(); app.removeAllListeners()
       app.isPackaged = true
       pluginsEnabled = false
       nativeTheme.shouldUseDarkColors = false
+      if (home !== '') rmSync(home, { recursive: true, force: true })
+      home = mkdtempSync(join(tmpdir(), 'desktop-main-home-'))
       preparing = deferred(); prepared = deferred(); hostStarted = deferred()
-      navigated = deferred(); errorPublished = deferred(); quitCompleted = deferred()
+      navigated = deferred(); gatewayLoaded = deferred(); errorPublished = deferred(); quitCompleted = deferred()
     },
   }
 })
@@ -112,6 +129,7 @@ vi.mock('electron', () => ({
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
 }))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
+vi.mock('@deepseek-ai/dsh-home-paths', () => ({ resolveDshHome: () => harness.home }))
 vi.mock('../src/project-manager.ts', () => ({
   DesktopProjectManager: class {
     readonly applyRelease = harness.applyRelease
@@ -159,9 +177,12 @@ beforeEach(() => {
   vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'test-runtime')
   vi.stubGlobal('process', { ...process, resourcesPath: 'desktop-test-resources' })
   vi.stubEnv('DSH_DESKTOP_HOST_INSPECT_PORT', undefined)
-  // These cases exercise the local harness; remote mode is covered by gateway.spec.ts.
+  // These cases exercise the local harness; the shipped default and the stored
+  // choice are covered by backend-choice.spec.ts.
   vi.stubEnv('DSH_DESKTOP_GATEWAY_URL', '')
 })
+
+afterAll(() => { harness.cleanup() })
 
 afterEach(async () => {
   harness.prepared.resolve()
@@ -401,5 +422,86 @@ describe('desktop main startup', () => {
     expect(host.stop).toHaveBeenCalledTimes(1)
     expect(window.urls).toEqual(['dsh-app://shell/startup.html'])
     expect(harness.windows).toHaveLength(1)
+  })
+})
+
+describe('desktop backend selection', () => {
+  it('boots the local harness when the environment defers and the home stored nothing', async () => {
+    vi.stubEnv('DSH_DESKTOP_GATEWAY_URL', undefined)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    expect(window.options.webPreferences?.partition).toBeUndefined()
+    expect(window.urls).toEqual(['dsh-app://shell/startup.html'])
+    expect(invoke(DESKTOP_IPC.backendSelectionGet)).toEqual({ mode: 'local', fixed: false })
+  })
+
+  it('loads the stored gateway origin in its persistent session partition', async () => {
+    vi.stubEnv('DSH_DESKTOP_GATEWAY_URL', undefined)
+    writeBackendChoice(harness.home, { mode: 'gateway' })
+    await import('../src/main.ts')
+    await harness.gatewayLoaded.promise
+    const window = harness.windows[0]!
+    expect(window.options.webPreferences?.partition).toBe('persist:gateway')
+    expect(window.urls).toEqual([DEFAULT_GATEWAY_URL])
+    expect(invoke(DESKTOP_IPC.backendSelectionGet)).toEqual({ mode: 'gateway', fixed: false })
+    expect(harness.hosts).toHaveLength(0)
+  })
+
+  it('reports the backend the launching environment fixed and refuses a switch', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    expect(invoke(DESKTOP_IPC.backendSelectionGet)).toEqual({ mode: 'local', fixed: true })
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.backendSelectionSet, 'gateway')))
+      .rejects.toThrow('the launching environment fixes the backend')
+  })
+
+  it('rejects a backend the shell does not ship', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.backendSelectionSet, 'cloud')))
+      .rejects.toThrow('backend must be local or gateway')
+  })
+
+  it('persists a switch to the gateway and rebuilds the window in its partition', async () => {
+    vi.stubEnv('DSH_DESKTOP_GATEWAY_URL', undefined)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    harness.hosts[0]!.ready.resolve()
+    await harness.navigated.promise
+    const first = harness.windows[0]!
+    const switched = Promise.resolve(invoke(DESKTOP_IPC.backendSelectionSet, 'gateway'))
+    await harness.hosts[0]!.stopping.promise
+    harness.hosts[0]!.exited.resolve()
+    await switched
+    await harness.gatewayLoaded.promise
+    expect(JSON.parse(readFileSync(join(harness.home, BACKEND_CHOICE_FILENAME), 'utf8'))).toEqual({ mode: 'gateway' })
+    expect(first.destroyed).toBe(true)
+    expect(harness.windows).toHaveLength(2)
+    const second = harness.windows[1]!
+    expect(second.options.webPreferences?.partition).toBe('persist:gateway')
+    expect(second.urls).toEqual([DEFAULT_GATEWAY_URL])
+  })
+
+  it('returns to the local harness from the gateway without a stored choice', async () => {
+    vi.stubEnv('DSH_DESKTOP_GATEWAY_URL', undefined)
+    writeBackendChoice(harness.home, { mode: 'gateway' })
+    await import('../src/main.ts')
+    await harness.gatewayLoaded.promise
+    const first = harness.windows[0]!
+    const switched = Promise.resolve(invoke(DESKTOP_IPC.backendSelectionSet, 'local'))
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    harness.hosts[0]!.ready.resolve()
+    await harness.navigated.promise
+    await switched
+    expect(first.destroyed).toBe(true)
+    expect(harness.windows).toHaveLength(2)
+    expect(harness.windows[1]!.options.webPreferences?.partition).toBeUndefined()
+    expect(JSON.parse(readFileSync(join(harness.home, BACKEND_CHOICE_FILENAME), 'utf8'))).toEqual({ mode: 'local' })
+    expect(invoke(DESKTOP_IPC.backendStatus)).toEqual({ phase: 'ready' })
   })
 })

@@ -19,6 +19,8 @@ const startup: DshDesktopStartupApi = {
       ipcRenderer.on(DESKTOP_IPC.backendState, handle)
       return () => { ipcRenderer.off(DESKTOP_IPC.backendState, handle) }
     },
+    selection: () => ipcRenderer.invoke(DESKTOP_IPC.backendSelectionGet) as ReturnType<DshDesktopStartupApi['backend']['selection']>,
+    select: mode => ipcRenderer.invoke(DESKTOP_IPC.backendSelectionSet, mode) as Promise<void>,
   },
   identity: {
     status: () => ipcRenderer.invoke(DESKTOP_IPC.identityStatus) as ReturnType<DshDesktopStartupApi['identity']['status']>,

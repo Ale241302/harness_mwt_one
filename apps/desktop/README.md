@@ -37,9 +37,13 @@ Beside it, a language group offers the three shell locales (English, Español, �
 
 ### Backend selection
 
-`DSH_DESKTOP_GATEWAY_URL` selects the backend. By default the Desktop is a client of the shared multi-user gateway (`https://harness.mwt.one/`): the window loads that origin in a persistent session partition, the gateway's own sign-in is the only credential step, and every product module — Spaces, Workflows, Memory, Routines, Context, Approvals, Agents & Skills, Connections, and Email — shows the same data as the Web UI because it is the same backend. "Sign out" from the application menu clears that partition. An empty `DSH_DESKTOP_GATEWAY_URL` selects the local single-user harness instead: the bundled `faberloom` profile, the sign-in form above, and the Harness-home data owned by this machine.
+The Desktop launches one of two backends, and every installation remembers which one it launched. The local harness is the shipped default: the bundled `faberloom` profile, the sign-in form above, and the Harness-home data owned by this machine, which is what lets a Workspace be a folder of this computer. The shared multi-user gateway is the other choice: the window loads `https://harness.mwt.one/` in a persistent session partition, the gateway's own sign-in is the only credential step, and every product module (Spaces, Workflows, Memory, Routines, Context, Approvals, Agents & Skills, Connections, and Email) shows the same data as the Web UI because it is the same backend. "Sign out" from the application menu clears that partition.
 
-Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
+`desktop-backend.json` in the shared Harness home holds the choice, written when the operator picks a backend on the sign-in screen or in the application menu's **Backend** group. The launching environment outranks the file: `DSH_DESKTOP_GATEWAY_URL` names a gateway origin, an empty `DSH_DESKTOP_GATEWAY_URL` asks for the local harness, and an unset one defers to the stored choice. An installation the environment configured keeps that backend, and the shell hides the sign-in group and disables the menu items rather than offering a switch it would ignore.
+
+Switching stops the running backend, records the choice, and rebuilds the application window, because a window's session partition is fixed when it is created: gateway mode loads the remote origin in `persist:gateway`, and local mode loads the shell's own pages in the default partition. The two backends keep separate data, which the sign-in note states, and the menu asks for confirmation before it switches.
+
+Electron chooses typed English, Spanish, or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 
 ### Runtime and plugin activation
 

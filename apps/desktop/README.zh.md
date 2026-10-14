@@ -37,9 +37,13 @@ Desktop 在启动 Host 之前先登录。未登录时，壳渲染登录表单而
 
 ### 后端选择
 
-`DSH_DESKTOP_GATEWAY_URL` 选择后端。默认情况下 Desktop 是共享多用户网关（`https://harness.mwt.one/`）的客户端：窗口在持久会话分区中加载该源，网关自身的登录是唯一的凭据步骤，且每个产品模块——Spaces、Workflows、Memory、Routines、Context、Approvals、Agents & Skills、Connections 与 Email——展示与 Web UI 相同的数据，因为它们共用同一个后端。应用菜单中的“退出登录”会清除该分区。`DSH_DESKTOP_GATEWAY_URL` 为空时改为选择本机单用户 harness：内置 `faberloom` profile、上文的登录表单，以及本机拥有的 Harness home 数据。
+Desktop 启动两种后端之一，且每次安装都会记住它启动的是哪一种。本机 harness 是出厂默认：内置 `faberloom` profile、上文的登录表单，以及本机拥有的 Harness home 数据，这正是让 Workspace 可以是一台电脑上的真实文件夹的前提。另一个选择是共享多用户网关：窗口在持久会话分区中加载 `https://harness.mwt.one/`，网关自身的登录是唯一的凭据步骤，且每个产品模块（Spaces、Workflows、Memory、Routines、Context、Approvals、Agents & Skills、Connections 与 Email）展示与 Web UI 相同的数据，因为它们共用同一个后端。应用菜单中的“退出登录”会清除该分区。
 
-Electron 根据应用 locale 选择类型化的英文或中文桌面壳文案，并以英文作为 fallback。菜单、原生对话框、启动页与插件管理渲染进程使用同一 locale 数据；仓库的 Client UI i18n gate 会检查这些桌面源文件。
+选择保存在共享 Harness home 的 `desktop-backend.json`，由操作者在登录界面或应用菜单的 **Backend** 组中选择时写入。启动环境优先于该文件：`DSH_DESKTOP_GATEWAY_URL` 指定网关源，该变量为空表示使用本机 harness，未设置时交由已保存的选择决定。由环境配置的安装会保持该后端，壳会隐藏登录页的分组并禁用菜单项，而不是提供一个会被忽略的切换。
+
+切换会停止正在运行的后端、记录选择并重建应用窗口，因为窗口的会话分区在创建时即已固定：网关模式在 `persist:gateway` 中加载远程源，本机模式在默认分区中加载壳自有页面。两种后端各自保有独立数据，登录页的说明会写明这一点，菜单在切换前会先请求确认。
+
+Electron 根据应用 locale 选择类型化的英文、西班牙文或中文桌面壳文案，并以英文作为 fallback。菜单、原生对话框、启动页与插件管理渲染进程使用同一 locale 数据；仓库的 Client UI i18n gate 会检查这些桌面源文件。
 
 ### 运行时与插件激活
 

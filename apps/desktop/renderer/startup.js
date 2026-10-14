@@ -33,6 +33,7 @@ async function main() {
     document.querySelector('#signin-description').textContent = messages.signInDescription
     document.querySelector('#signin-user-label').textContent = messages.signInUser
     document.querySelector('#signin-password-label').textContent = messages.signInPassword
+    markBackend()
     setSignInBusy(loginPending)
   }
 
@@ -67,6 +68,38 @@ async function main() {
       }).catch(() => {
         // A refused switch keeps the language the screen is already showing.
       })
+    })
+  }
+
+  // Backend: the shell owns the list and the stored choice, and it rebuilds the
+  // application window on a switch, so this control only reports and requests.
+  const backend = document.querySelector('#backend')
+  const backendNote = document.querySelector('#backend-note')
+  const backendSelection = await api.backend.selection()
+  let backendMode = backendSelection.mode
+  for (const mode of ['local', 'gateway']) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.dataset.backend = mode
+    button.textContent = mode === 'local' ? messages.backendLocal : messages.backendGateway
+    backend.append(button)
+  }
+  const backendButtons = [...backend.querySelectorAll('button')]
+  function markBackend() {
+    backend.setAttribute('aria-label', messages.backendGroupTitle)
+    backend.hidden = backendSelection.fixed
+    backendNote.textContent = backendSelection.fixed ? messages.backendFixedNote : messages.backendDataNote
+    for (const button of backendButtons) {
+      button.setAttribute('aria-pressed', String(button.dataset.backend === backendMode))
+    }
+  }
+  for (const button of backendButtons) {
+    button.addEventListener('click', () => {
+      const next = button.dataset.backend
+      if (next === undefined || next === backendMode) return
+      backendMode = next
+      markBackend()
+      api.backend.select(next).catch(() => { markBackend() })
     })
   }
 

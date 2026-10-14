@@ -61,6 +61,16 @@ export const en = {
   appearanceToDark: 'Switch to dark appearance',
   appearanceToLight: 'Switch to light appearance',
   languageTitle: 'Language',
+  backendMenu: 'Backend',
+  backendLocal: 'This computer',
+  backendGateway: 'MWT.ONE',
+  backendGroupTitle: 'Backend',
+  backendDataNote: 'Each backend keeps its own data. This computer reads and writes the folders of this machine; MWT.ONE shares Spaces, sessions, and every product module with the web app.',
+  backendFixedNote: 'The launching environment fixed the backend for this installation.',
+  backendSwitchTitle: 'Switch backend',
+  backendSwitchConfirmation: 'Switch to {backend}? Faberloom reloads and shows the data of that backend. The other one keeps its own.',
+  backendSwitchConfirm: 'Switch',
+  backendSwitchCancel: 'Cancel',
 } as const
 
 /** Every Desktop locale supplies the complete English key set. */
@@ -127,6 +137,16 @@ export const zh = {
   appearanceToDark: '切换到深色外观',
   appearanceToLight: '切换到浅色外观',
   languageTitle: '语言',
+  backendMenu: '后端',
+  backendLocal: '本机',
+  backendGateway: 'MWT.ONE',
+  backendGroupTitle: '后端',
+  backendDataNote: '每个后端各自保有数据。本机后端读写这台电脑上的文件夹；MWT.ONE 与 web 应用共享 Space、会话与全部产品模块。',
+  backendFixedNote: '本次安装的后端由启动环境固定。',
+  backendSwitchTitle: '切换后端',
+  backendSwitchConfirmation: '切换到 {backend}？Faberloom 将重新加载并显示该后端的数据，另一个后端仍保有自己的数据。',
+  backendSwitchConfirm: '切换',
+  backendSwitchCancel: '取消',
 } as const satisfies DesktopMessages
 
 /**
@@ -196,6 +216,16 @@ export const es = {
   appearanceToDark: 'Cambiar al modo oscuro',
   appearanceToLight: 'Cambiar al modo claro',
   languageTitle: 'Idioma',
+  backendMenu: 'Backend',
+  backendLocal: 'Este equipo',
+  backendGateway: 'MWT.ONE',
+  backendGroupTitle: 'Backend',
+  backendDataNote: 'Cada backend conserva sus propios datos. Este equipo lee y escribe las carpetas de esta máquina; MWT.ONE comparte espacios, sesiones y todos los módulos con la aplicación web.',
+  backendFixedNote: 'El entorno de arranque fijó el backend de esta instalación.',
+  backendSwitchTitle: 'Cambiar de backend',
+  backendSwitchConfirmation: '¿Cambiar a {backend}? Faberloom se recarga y muestra los datos de ese backend. El otro conserva los suyos.',
+  backendSwitchConfirm: 'Cambiar',
+  backendSwitchCancel: 'Cancelar',
 } as const satisfies DesktopMessages
 
 /** Locale payload exposed to the Desktop-owned renderer. */

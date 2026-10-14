@@ -13,11 +13,17 @@ interface AppearanceOptions {
   readonly stored?: 'light' | 'dark'
 }
 
+interface BackendOptions {
+  readonly mode: 'local' | 'gateway'
+  readonly fixed: boolean
+}
+
 function startup(
   locale = 'en',
   status: Promise<DesktopBackendState> = Promise.resolve({ phase: 'starting' }),
   signedIn = true,
   appearance: AppearanceOptions = {},
+  backend: BackendOptions = { mode: 'local', fixed: false },
 ) {
   const dom = new JSDOM(readFileSync(new URL('../renderer/startup.html', import.meta.url), 'utf8'), { runScripts: 'outside-only' })
   onTestFinished(() => {
@@ -37,6 +43,7 @@ function startup(
   const getAppearance = vi.fn(async (): Promise<'light' | 'dark'> => appearance.stored ?? (appearance.osDark === true ? 'dark' : 'light'))
   const setAppearance = vi.fn(async (_value: 'light' | 'dark') => {})
   const setLocale = vi.fn(async (id: Parameters<DshDesktopStartupApi['setLocale']>[0]) => resolveDesktopLocale(id))
+  const selectBackend = vi.fn(async (_mode: BackendOptions['mode']) => {})
   const queried = Promise.withResolvers<undefined>()
   const api: DshDesktopStartupApi = {
     protocolVersion: 1,
@@ -46,6 +53,8 @@ function startup(
     backend: {
       status: () => { queried.resolve(undefined); return status },
       subscribe: (listener) => { listeners.add(listener); return unsubscribe },
+      selection: async () => backend,
+      select: selectBackend,
     },
     identity: {
       status: async () => ({ signedIn, consolaBase: 'https://consola.mwt.one/api', ...(signedIn ? { email: 'a@b.c', role: 'admin' } : {}) }),
@@ -78,7 +87,8 @@ function startup(
         : [element(selector).textContent]),
   ].join('\n')
   return { dom, document, element, button, publish, copy, submitSignIn,
-    disablePlugins, resetConfiguration, restart, unsubscribe, login, getAppearance, setAppearance, setLocale, queried: queried.promise }
+    disablePlugins, resetConfiguration, restart, unsubscribe, login, getAppearance,
+    setAppearance, setLocale, selectBackend, queried: queried.promise }
 }
 
 it('renders the sign-in form instead of loading while signed out', async () => {
@@ -289,6 +299,43 @@ it('offers only restart before emergency profile recovery is available', () => {
   const dom = new JSDOM(startupFailureDocument(resolveDesktopLocale('en'), 'Resources unavailable'))
   expect([...dom.window.document.querySelectorAll('form')].map(form => form.action)).toEqual(['dsh-recovery://restart'])
   dom.window.close()
+})
+
+it('offers the two backends and marks the one this installation launches', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  const buttons = [...page.document.querySelectorAll<HTMLButtonElement>('#backend button')]
+  expect(buttons.map(button => button.textContent)).toEqual(['This computer', 'MWT.ONE'])
+  expect(buttons[0]?.getAttribute('aria-pressed')).toBe('true')
+  expect(buttons[1]?.getAttribute('aria-pressed')).toBe('false')
+  expect(page.element('#backend').getAttribute('aria-label')).toBe('Backend')
+  expect(page.element('#backend-note').textContent).toContain('Each backend keeps its own data')
+})
+
+it('requests the other backend and marks it while the shell rebuilds the window', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  const buttons = [...page.document.querySelectorAll<HTMLButtonElement>('#backend button')]
+  buttons[1]?.click()
+  expect(page.selectBackend).toHaveBeenCalledWith('gateway')
+  expect(buttons[1]?.getAttribute('aria-pressed')).toBe('true')
+  expect(buttons[0]?.getAttribute('aria-pressed')).toBe('false')
+})
+
+it('marks the backend group in Spanish with the rest of the screen', async () => {
+  const page = startup('es', Promise.resolve({ phase: 'starting' }), false)
+  await expect.poll(() => page.element('#heading').textContent).toBe('Entrar a MWT.ONE')
+  const buttons = [...page.document.querySelectorAll<HTMLButtonElement>('#backend button')]
+  expect(buttons.map(button => button.textContent)).toEqual(['Este equipo', 'MWT.ONE'])
+  expect(buttons[0]?.getAttribute('aria-pressed')).toBe('true')
+  expect(page.element('#backend-note').textContent).toContain('Cada backend conserva sus propios datos')
+})
+
+it('hides the backend choice and explains it when the environment fixed the backend', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false, {}, { mode: 'gateway', fixed: true })
+  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  expect(page.element('#backend').hidden).toBe(true)
+  expect(page.element('#backend-note').textContent).toBe('The launching environment fixed the backend for this installation.')
 })
 
 it('switches the shell language from the sign-in screen and re-labels it', async () => {
