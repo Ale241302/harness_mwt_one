@@ -27,7 +27,7 @@ import {
   launchWebScaffold, parseSeedFixture, realizeSeedFixture, recordFixture, renderSeedFixture, seedSession, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
+import { computedTokenColor, expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/seeded-history', import.meta.url))
 const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
@@ -406,10 +406,13 @@ describe('web e2e: seeded history renders through cold resume', () => {
         scrolls: element.scrollHeight > element.clientHeight,
       }
     })
+    // The body's ink is the palette's tertiary label alias; the code-block
+    // ground stays the base sheet's neutral. Read the ink from its token so the
+    // warm palette's muted ink is pinned without freezing the palette literal.
     expect(style).toEqual({
       backgroundColor: 'rgb(249, 250, 251)',
       borderRadius: '8px',
-      color: 'rgb(129, 133, 140)',
+      color: await computedTokenColor(page, '--dsw-alias-label-tertiary'),
       fontSize: '11px',
       lineHeight: '16px',
       padding: ['10px', '16px', '12px', '12px'],

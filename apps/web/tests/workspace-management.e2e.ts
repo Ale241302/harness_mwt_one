@@ -343,6 +343,14 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await expect.poll(() => page.getByText('Ungrouped', { exact: true }).count(), { timeout: 15_000 })
       .toBeGreaterThanOrEqual(1)
+    // The reload re-derives the tree from the registry and the log: the retained
+    // Session is listed under Ungrouped, but the deleted registration leaves no
+    // active row on boot (the selection asserted above is in-memory only), so the
+    // surviving row is reached and focused the way a user reaches it.
+    const retainedRow = page.locator('[role="treeitem"][aria-selected]')
+    await expect.poll(() => retainedRow.count(), { timeout: 15_000 }).toBe(1)
+    expect(await retainedRow.getAttribute('aria-selected')).toBe('false')
+    await retainedRow.click()
     await expect.poll(
       () => page.locator('[role="treeitem"][aria-selected="true"]').count(),
       { timeout: 15_000 },

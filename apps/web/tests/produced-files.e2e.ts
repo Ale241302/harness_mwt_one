@@ -142,8 +142,12 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
     const row = page.locator('[data-produced-files-row]')
     await row.waitFor({ timeout: 15_000 })
-    const chips = row.getByRole('button')
+    // Each shown file is an "Open <path>" chip beside a "Download <path>"
+    // control; scope the count and the names to the chip labels so the browser
+    // save affordance neither inflates the count nor shifts an index.
+    const chips = row.getByRole('button', { name: /^Open / })
     await expect.poll(() => chips.count()).toBe(6)
+    await expect.poll(() => row.getByRole('button', { name: /^Download / }).count()).toBe(6)
     await expect.poll(() => row.getByText('+ 4 files', { exact: true }).isVisible()).toBe(true)
 
     await page.setViewportSize({ width: 750, height: 900 })
@@ -158,6 +162,7 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
           animation.playState === 'finished' || animation.playState === 'idle')
     }, undefined, { timeout: 10_000 })
     await expect.poll(() => chips.count()).toBe(4)
+    await expect.poll(() => row.getByRole('button', { name: /^Download / }).count()).toBe(4)
     const laneWidth = await row.evaluate(element => element.clientWidth)
     // Keep font-metric differences away from the 479px and 583px container-query edges.
     expect(laneWidth).toBeGreaterThan(503)

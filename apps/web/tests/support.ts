@@ -197,3 +197,25 @@ export async function saveFailureShot(page: Page, name: string): Promise<void> {
 export function conversationContextKey(kind: string, id: string): string {
   return `${kind.length}:${kind}${id}`
 }
+
+/**
+ * Resolve one theme token to the colour the browser paints for it. The theme
+ * presenter writes the active palette's alias tokens as inline variables on
+ * body, so an assertion pins the token's computed value instead of a frozen
+ * palette colour that the next palette rotates.
+ * @param page - page carrying the active theme.
+ * @param token - a custom property name, e.g. `--dsw-alias-link`.
+ * @returns the computed colour (`rgb(...)` or `rgba(...)`).
+ */
+export async function computedTokenColor(page: Page, token: string): Promise<string> {
+  return await page.evaluate((name) => {
+    const raw = getComputedStyle(document.body).getPropertyValue(name).trim()
+    if (raw === '') throw new Error(`theme token ${name} is not defined on the page`)
+    const probe = document.createElement('span')
+    probe.style.color = `var(${name})`
+    document.body.append(probe)
+    const value = getComputedStyle(probe).color
+    probe.remove()
+    return value
+  }, token)
+}

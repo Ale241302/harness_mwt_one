@@ -76,10 +76,13 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await deepSeekRow.locator('xpath=ancestor::li').getByRole('button', { name: '编辑' }).click()
     const configuredInput = settings.getByLabel('API 密钥', { exact: true })
     await configuredInput.waitFor({ timeout: 10_000 })
+    // The write-only placeholder is the Models dictionary's `keyStored` copy.
+    // These specs compile in the Host aggregate, which cannot import the Client
+    // dictionary, so the shipped copy is pinned verbatim here.
     await expect.poll(
       () => configuredInput.getAttribute('placeholder'),
       { timeout: 10_000 },
-    ).toBe('已配置——输入新值可替换')
+    ).toBe('已配置：输入新值可替换')
 
     const secondReloadWarnings = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
@@ -172,10 +175,11 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await settings.getByLabel('上下文窗口 1').fill('131072')
     await settings.getByLabel('最大输出 token 数 1').fill('64K')
 
+    // Same write-only placeholder copy as the row editor above.
     await expect.poll(
       () => settings.getByLabel('API 密钥', { exact: true }).getAttribute('placeholder'),
       { timeout: 10_000 },
-    ).toBe('已配置——输入新值可替换')
+    ).toBe('已配置：输入新值可替换')
     const modelEditor = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MODELS_EXPECTED, modelEditor, MODE)
     await settings.getByRole('button', { name: '保存', exact: true }).click()

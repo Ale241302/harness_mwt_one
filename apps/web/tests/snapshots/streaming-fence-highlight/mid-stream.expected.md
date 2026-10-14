@@ -32,6 +32,7 @@
 - button "Select model, current streaming-fence-highlight-test/streaming-fence":
   - text: streaming-fence-highlight-test/streaming-fence
   - img
+- status "The agent is working"
 - button "Stop generating"
 
 ---

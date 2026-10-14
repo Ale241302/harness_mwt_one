@@ -15,7 +15,7 @@ import {
   type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
+  connectFreshWorkspace, computedTokenColor, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
 } from './support.ts'
 
 const MODE = webSnapshotMode()
@@ -115,6 +115,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     expect(await disclosures.count()).toBe(2)
     expect(await phaseDisclosure.getAttribute('aria-expanded')).toBe('true')
     const lightColor = await member.locator('[data-member-label]').evaluate(element => getComputedStyle(element).color)
+    const linkAlias = await computedTokenColor(page, '--dsw-alias-link')
     await page.setViewportSize({ width: 560, height: 800 })
     await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
     // Exercise keyboard focus after the responsive layout has changed.
@@ -153,7 +154,11 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     })
     expect(darkNarrow.clientWidth).toBe(356)
     expect(darkNarrow.scrollWidth).toBeLessThanOrEqual(darkNarrow.clientWidth)
-    expect(darkNarrow.color).not.toBe(lightColor)
+    // The member label rides the palette's link alias in every scheme; the
+    // theme presenter keeps palette aliases inline on body, so the
+    // attribute-only dark switch moves the base sheet, not this colour.
+    expect(lightColor).toBe(linkAlias)
+    expect(darkNarrow.color).toBe(linkAlias)
     expect(darkNarrow.decoration).toContain('underline')
     expect(Number.parseFloat(darkNarrow.focusWidth)).toBeGreaterThanOrEqual(2)
     expect(darkNarrow.statusWidth).toBe(64)
