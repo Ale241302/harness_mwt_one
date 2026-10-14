@@ -347,12 +347,44 @@ repositorio: requiere el certificado y el cambio en Cloudflare/nginx.
 
 ## Distribución y escritorio (E9)
 
-Decisión vigente: **el navegador es el acceso principal del piloto**. La aplicación
-de escritorio del harness upstream ejecuta un runtime local; convertirla en cliente
-del servidor permanente exige empaquetado propio, identidad de aplicación, firma y
-canal de actualización, y no aporta al piloto ninguna capacidad que el navegador no
-tenga. Se pospone hasta que exista un requisito operativo concreto (trabajo sin
-conexión, integración con el sistema de archivos del usuario o notificaciones
-nativas). Mientras tanto la experiencia FaberLoom viaja en la superficie web con sus
-tokens y paneles, y el "instalador" es la URL de `harness.mwt.one` con el login de la
-consola.
+Decisión vigente: **el navegador es la superficie compartida y la aplicación de
+escritorio es el acceso con los archivos del equipo**. La condición que esta decisión
+esperaba (integración con el sistema de archivos del usuario) ya existe, así que la
+posposición se retira.
+
+La aplicación FaberLoom de escritorio levanta el harness en el equipo del usuario:
+Electron arranca un `dsh` hijo con el Node y el pnpm que trae empaquetados, sin abrir
+ningún puerto y sin que el usuario escriba un comando, y sirve el front del producto
+por el protocolo propio `dsh-app://`. El perfil que arranca es el mismo del
+despliegue (`dsh-base` + `dsh-web-app` + `dsh-faberloom-app`), así que los módulos de
+producto viajan enteros.
+
+Dos modos, un solo back-end por sesión:
+
+| Modo | Selección | Front | Datos | Archivos del equipo |
+|---|---|---|---|---|
+| Gateway | por defecto hoy | `harness.mwt.one` | compartidos con la web | no |
+| Local | `DSH_DESKTOP_GATEWAY_URL` vacío | bundle del runtime | del equipo del usuario | sí |
+
+Consecuencias aceptadas de cada modo:
+
+- En modo gateway el trabajo vive en el volumen del contenedor
+  (`HOME=/data/users/<id>`), el selector de Workspace lista el servidor y un cambio de
+  front o de back se despliega en el VPS sin publicar la aplicación.
+- En modo local el usuario ve y usa sus carpetas con el selector del sistema
+  operativo, y un cambio de front obliga a publicar la aplicación, porque el front
+  sale del bundle del runtime.
+- Los datos de un usuario no se espejan entre modos. Lo compartido viaja por
+  `faberloom-shares` y `faberloom-session-shares`, que llevan Spaces, Work Flows y
+  sesiones compartidas a la consola.
+
+Pendiente para darlo por cerrado:
+
+- La elección de modo se persiste en el home del harness y se ofrece en la pantalla de
+  arranque; hoy solo se puede fijar con `DSH_DESKTOP_GATEWAY_URL` en el entorno de
+  lanzamiento.
+- Los MCP de MWT.ONE y de SICOP los inyecta hoy el gateway por usuario. En modo local
+  hay que montarlos con el token de consola del inicio de sesión o con un parche de
+  producto, y comprobarlo.
+- Empaquetado propio, identidad de aplicación, firma y canal de actualización
+  propios, en lugar de los del upstream.
