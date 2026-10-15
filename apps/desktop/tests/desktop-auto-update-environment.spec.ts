@@ -30,6 +30,25 @@ describe('desktop auto-update environment', () => {
     })
   })
 
+  it('lets a deployment host the production channel on its own origin', () => {
+    expect(resolveDesktopAutoUpdateConfig({
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+      DOWNLOAD_PROD_ORIGIN: 'https://updates.faberloom.example/',
+    }, 'win32', 'x64')).toMatchObject({
+      environment: 'production',
+      origin: 'https://updates.faberloom.example',
+      publicUrl: 'https://updates.faberloom.example/_/harness/desktop/stable/win-x64/',
+    })
+    expect(() => resolveDesktopAutoUpdateConfig({
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+      DOWNLOAD_PROD_ORIGIN: 'http://updates.faberloom.example',
+    }, 'win32', 'x64')).toThrow('must be an absolute HTTPS origin')
+    expect(() => resolveDesktopAutoUpdateConfig({
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+      DOWNLOAD_PROD_ORIGIN: 'https://updates.faberloom.example/a-path',
+    }, 'win32', 'x64')).toThrow('without a path, credentials, query, or fragment')
+  })
+
   it('selects the production URL for packages and bucket for uploads', () => {
     expect(resolveDesktopAutoUpdateConfig({
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
