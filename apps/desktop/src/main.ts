@@ -18,16 +18,16 @@ import {
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
-  DESKTOP_BACKEND_MODES,
   isDesktopBackendMode,
   resolveBackend,
   writeBackendChoice,
+  DESKTOP_BACKEND_MODES,
   type DesktopBackend,
   type DesktopBackendMode,
 } from './backend-choice.ts'
 import { resolveGatewayRequest } from './gateway.ts'
 import { resolveDesktopPaths } from './paths.ts'
-import { ensureHomeEnvFile, resolveHomeEnvDefaults } from './home-env.ts'
+import { ensureHomeEnvFile, readHomeEnv, resolveHomeEnvDefaults } from './home-env.ts'
 import { readAppearance, writeAppearance } from './appearance.ts'
 import {
   DEFAULT_CONSOLA_API_BASE,
@@ -482,7 +482,9 @@ async function main(): Promise<void> {
     try {
       const base = readIdentity(home)?.consolaBase ?? consolaBase
       const { identity, credentials } = await signInToConsole(base, usuario.trim(), password)
-      writeIdentity(home, identity, credentials)
+      // The child boots from the Harness-home `.env` layer under the launching
+      // environment, so which product MCP servers mount is decided from both.
+      writeIdentity(home, identity, credentials, { ...readHomeEnv(home), ...process.env })
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     }

@@ -94,6 +94,27 @@ function definedNames(content: string): Set<string> {
 }
 
 /**
+ * Read the names and values the Harness-home `.env` layer assigns. The layer
+ * ranks below the managed credential store and the inherited environment, so a
+ * caller that needs the environment a child boots with reads this first and lets
+ * the launching process override it.
+ * @param dshHome - the resolved Harness home holding the `.env` layer.
+ * @returns every assignment in the file, with later lines winning.
+ */
+export function readHomeEnv(dshHome: string): Record<string, string> {
+  const path = join(dshHome, HOME_ENV_FILENAME)
+  if (!existsSync(path)) return {}
+  const values: Record<string, string> = {}
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/u)) {
+    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/u.exec(line)
+    if (match === null || match[1] === undefined || match[2] === undefined) continue
+    const quoted = /^(['"])(.*)\1$/u.exec(match[2].trim())
+    values[match[1]] = quoted?.[2] ?? match[2].trim()
+  }
+  return values
+}
+
+/**
  * Ensure `$DSH_HOME/.env` assigns each default name, appending only the missing
  * ones so a value an operator or the Models page already wrote is never
  * replaced. Existing comments and formatting survive untouched. The credential

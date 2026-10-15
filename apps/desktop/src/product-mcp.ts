@@ -1,0 +1,142 @@
+/**
+ * Product MCP servers for the local harness.
+ *
+ * The shared gateway injects these servers per user through its own Cordis
+ * patch. A local installation needs the same rows, from the environment the
+ * child boots with rather than from the deployment's configuration:
+ *
+ * - SICOP is public and carries no identity, so it mounts unless the operator
+ *   blanks its URL.
+ * - The MWT.ONE and FaberLoom servers live on the deployment network. A local
+ *   installation mounts one exactly when a reachable URL and its shared key are
+ *   both resolved, because a URL that only the container network can reach
+ *   would leave a row that retries and never connects.
+ *
+ * Secret values are never written here. Each header that carries one holds the
+ * environment name, which the Cordis loader resolves from the child's process
+ * environment when it mounts the row, exactly as the gateway's patch does.
+ */
+
+/** Name resolving the SICOP MCP URL, and the public URL used when it is unset. */
+export const SICOP_MCP_URL_ENV = 'SICOP_MCP_URL'
+export const DEFAULT_SICOP_MCP_URL = 'https://sicop.vlinte.work/mcp'
+
+/** Names resolving the MWT.ONE MCP server and the shared key its headers carry. */
+export const MWT_MCP_URL_ENV = 'MWT_MCP_URL'
+export const MWT_MCP_GATEWAY_KEY_ENV = 'MWT_MCP_GATEWAY_KEY'
+
+/** Names resolving the FaberLoom MCP server and the shared key its headers carry. */
+export const FABERLOOM_MCP_URL_ENV = 'FABERLOOM_MCP_URL'
+export const FABERLOOM_GATEWAY_KEY_ENV = 'FABERLOOM_GATEWAY_KEY'
+
+/** Tool-call budget every product MCP server gets, matching the gateway's rows. */
+const TOOL_CALL_TIMEOUT_MS = 120_000
+
+/** One header value: a literal, or an environment name the loader resolves. */
+type HeaderValue =
+  | { readonly literal: string }
+  | { readonly environment: string }
+
+/** One product MCP server to mount in the local harness. */
+interface ProductMcpServer {
+  readonly id: string
+  readonly serverName: string
+  readonly url: string
+  readonly headers: Readonly<Record<string, HeaderValue>>
+}
+
+/** Render one YAML single-quoted scalar. */
+function yamlScalar(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`
+}
+
+/** Render one header line, resolving an environment name through the loader. */
+function headerLine(name: string, value: HeaderValue): string {
+  const rendered = 'literal' in value ? yamlScalar(value.literal) : `!!js process.env.${value.environment} ?? ''`
+  return `          ${name}: ${rendered}`
+}
+
+/**
+ * Render one `insert` entry mounting a streamable-HTTP MCP server. The fields
+ * match the rows the gateway's per-user patch carries, so the two deployments
+ * mount the same servers with the same reconnect and timeout behavior.
+ * @param server - the resolved server to mount.
+ * @returns the YAML block for one patch entry.
+ */
+function renderEntry(server: ProductMcpServer): string {
+  const headers = Object.entries(server.headers).map(([name, value]) => headerLine(name, value))
+  return [
+    `    - id: ${server.id}`,
+    "      name: '@deepseek-ai/dsh-mcp-client'",
+    '      config:',
+    `        serverName: ${server.serverName}`,
+    '        transport: streamable-http',
+    `        url: ${yamlScalar(server.url)}`,
+    ...(headers.length === 0 ? [] : ['        headers:', ...headers]),
+    '        failOnStartupError: false',
+    '        reconnect:',
+    '          enabled: true',
+    '          maxAttempts: 30',
+    `        toolCallTimeoutMs: ${TOOL_CALL_TIMEOUT_MS}`,
+  ].join('\n')
+}
+
+/** Whether the environment resolves a usable value for one name. */
+function resolved(environment: NodeJS.ProcessEnv, name: string): string | undefined {
+  const value = environment[name]
+  return value === undefined || value === '' ? undefined : value
+}
+
+/**
+ * Resolve the product MCP servers a local installation mounts.
+ * @param environment - the environment the child boots with, with the Harness-home `.env` layer under the launching environment.
+ * @returns the servers to mount, in patch order.
+ */
+export function resolveProductMcpServers(
+  environment: NodeJS.ProcessEnv,
+  ownerId: string,
+): ProductMcpServer[] {
+  const servers: ProductMcpServer[] = []
+  const mwtUrl = resolved(environment, MWT_MCP_URL_ENV)
+  if (mwtUrl !== undefined && resolved(environment, MWT_MCP_GATEWAY_KEY_ENV) !== undefined) {
+    servers.push({
+      id: 'mcp-mwt',
+      serverName: 'mwt',
+      url: mwtUrl,
+      headers: {
+        'X-Forwarded-User-Email': { literal: ownerId },
+        'X-MWT-Gateway-Key': { environment: MWT_MCP_GATEWAY_KEY_ENV },
+        // The console MCP answers an OAuth challenge without a bearer value.
+        Authorization: { literal: 'Bearer dsh-gateway' },
+      },
+    })
+  }
+  const sicopUrl = environment[SICOP_MCP_URL_ENV] ?? DEFAULT_SICOP_MCP_URL
+  if (sicopUrl !== '') {
+    servers.push({ id: 'mcp-sicop', serverName: 'sicop', url: sicopUrl, headers: {} })
+  }
+  const faberloomUrl = resolved(environment, FABERLOOM_MCP_URL_ENV)
+  if (faberloomUrl !== undefined && resolved(environment, FABERLOOM_GATEWAY_KEY_ENV) !== undefined) {
+    servers.push({
+      id: 'mcp-faberloom',
+      serverName: 'faberloom',
+      url: faberloomUrl,
+      headers: {
+        'X-Faberloom-User-Id': { literal: ownerId },
+        'X-Faberloom-Gateway-Key': { environment: FABERLOOM_GATEWAY_KEY_ENV },
+      },
+    })
+  }
+  return servers
+}
+
+/**
+ * Render the `- insert:` entries the local harness mounts for the product's MCP
+ * servers.
+ * @param environment - the environment the child boots with, with the Harness-home `.env` layer under the launching environment.
+ * @param ownerId - the signed-in owner the mounted servers act for.
+ * @returns one rendered entry per mounted server, in patch order.
+ */
+export function renderProductMcpEntries(environment: NodeJS.ProcessEnv, ownerId: string): string[] {
+  return resolveProductMcpServers(environment, ownerId).map(renderEntry)
+}

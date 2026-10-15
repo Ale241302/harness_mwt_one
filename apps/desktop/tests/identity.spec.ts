@@ -67,18 +67,43 @@ it('reports refused credentials and unreachable consoles distinctly', async () =
   await expect(signInToConsole('https://consola.mwt.one/api', 'a', 'p')).rejects.toThrow(/No se pudo contactar la consola/u)
 })
 
-it('renders the identity patch with the signed-in owner and no token', () => {
-  const patch = renderIdentityPatch(identity, 'C:/home/.dsh')
+it('renders the identity patch with the signed-in owner, the public MCP server, and no token', () => {
+  const patch = renderIdentityPatch(identity, 'C:/home/.dsh', {})
   expect(patch).toContain('ownerId: "alejandro@muitowork.com"')
   expect(patch).toContain('role: "admin"')
   expect(patch).toContain('- id: faberloom-defaults')
+  expect(patch).toContain('- id: mcp-sicop')
+  expect(patch).not.toContain('X-Forwarded-User-Email')
   expect(patch).not.toContain('sk-')
+})
+
+it('mounts the deployment MCP servers only when a URL and its key are resolved', () => {
+  const environment = {
+    MWT_MCP_URL: 'https://harness.mwt.one/mwt/mcp',
+    MWT_MCP_GATEWAY_KEY: 'gateway-key',
+    FABERLOOM_MCP_URL: 'https://harness.mwt.one/faberloom/mcp',
+    FABERLOOM_GATEWAY_KEY: 'faberloom-key',
+  }
+  const patch = renderIdentityPatch(identity, 'C:/home/.dsh', environment)
+  expect(patch).toContain('- id: mcp-mwt')
+  expect(patch).toContain("X-Forwarded-User-Email: 'alejandro@muitowork.com'")
+  expect(patch).toContain("X-MWT-Gateway-Key: !!js process.env.MWT_MCP_GATEWAY_KEY ?? ''")
+  expect(patch).toContain("Authorization: 'Bearer dsh-gateway'")
+  expect(patch).toContain('- id: mcp-faberloom')
+  expect(patch).not.toContain('gateway-key')
+  expect(patch).not.toContain('faberloom-key')
+})
+
+it('omits every MCP entry when the operator blanks their URLs', () => {
+  const patch = renderIdentityPatch(identity, 'C:/home/.dsh', { SICOP_MCP_URL: '' })
+  expect(patch).not.toContain('- insert:')
+  expect(patch).not.toContain('dsh-mcp-client')
 })
 
 it('writes the env layer, the patch, and the identity record', () => {
   const home = fixture()
   writeFileSync(join(home, '.env'), 'DEEPSEEK_API_KEY=sk-keep\n')
-  writeIdentity(home, identity, { token: 'tok-1' })
+  writeIdentity(home, identity, { token: 'tok-1' }, {})
   expect(readFileSync(join(home, '.env'), 'utf8')).toBe('DEEPSEEK_API_KEY=sk-keep\nCONSOLA_API_BASE=https://consola.mwt.one/api\nCONSOLA_TOKEN=tok-1\n')
   expect(readFileSync(join(home, IDENTITY_PATCH_FILENAME), 'utf8')).toContain('ownerId: "alejandro@muitowork.com"')
   expect(readIdentity(home)).toEqual(identity)
@@ -87,14 +112,14 @@ it('writes the env layer, the patch, and the identity record', () => {
 it('replaces an existing console token instead of duplicating it', () => {
   const home = fixture()
   writeFileSync(join(home, '.env'), 'CONSOLA_TOKEN=old\nOTHER=1\n')
-  writeIdentity(home, identity, { token: 'new' })
+  writeIdentity(home, identity, { token: 'new' }, {})
   const env = readFileSync(join(home, '.env'), 'utf8')
   expect(env).toBe('CONSOLA_TOKEN=new\nOTHER=1\nCONSOLA_API_BASE=https://consola.mwt.one/api\n')
 })
 
 it('signs out by clearing the record, the patch, and the console token only', () => {
   const home = fixture()
-  writeIdentity(home, identity, { token: 'tok-1' })
+  writeIdentity(home, identity, { token: 'tok-1' }, {})
   writeFileSync(join(home, '.env'), 'DEEPSEEK_API_KEY=sk-keep\nCONSOLA_API_BASE=https://consola.mwt.one/api\nCONSOLA_TOKEN=tok-1\n')
   expect(signOut(home)).toEqual(['CONSOLA_TOKEN'])
   expect(readIdentity(home)).toBeUndefined()

@@ -35,6 +35,12 @@ Desktop 在启动 Host 之前先登录。未登录时，壳渲染登录表单而
 
 外观按钮旁是语言组，每个按钮对应一种 shell 语言（English、Español、中文）。所选语言写入 `desktop-locale.json`，并就地重新标注整个界面——包括 shell 自有的恢复与更新页面；未做选择时跟随操作系统语言，任何西语区域标签（`es-AR`、`es-MX` 等）都落在西语文案上。这仅作用于 Electron shell 自身的页面；登录后的应用从 Host 用户设置文档读取语言，与主题偏好所在位置相同。
 
+### 产品 MCP 服务器
+
+本机 harness 通过登录所写的同一份身份 patch，从子进程启动时的环境挂载产品的外部工具。SICOP 是公开的且不携带身份，因此除非 `SICOP_MCP_URL` 为空，它总会挂载。MWT.ONE 与 FaberLoom 服务器位于部署网络内，只有在 URL（`MWT_MCP_URL`、`FABERLOOM_MCP_URL`）与其共享密钥（`MWT_MCP_GATEWAY_KEY`、`FABERLOOM_GATEWAY_KEY`）都解析出值时，才会挂载其中之一。密钥不会写进 patch：每个请求头只保存环境变量名，由 Cordis loader 在挂载该行时解析，与网关自身的按用户 patch 完全一致。
+
+共享 Harness home 的 `.env` 层与启动环境都会计入，因为子进程是在后者之下从前者启动的。改动其中任一处都需要退出登录并重新登录，因为那时才重写 patch。出厂 `MWT.ONE` 与 FaberLoom 的 URL 指向容器主机名，因此本机模式只有在部署把别人电脑也能解析的端点发布出来之后，才挂载那两个服务器；没有该端点时，本机 harness 只带 SICOP 运行，错误是缺席而不是被重连循环反复重试。
+
 ### 后端选择
 
 Desktop 启动两种后端之一，且每次安装都会记住它启动的是哪一种。本机 harness 是出厂默认：内置 `faberloom` profile、上文的登录表单，以及本机拥有的 Harness home 数据，这正是让 Workspace 可以是一台电脑上的真实文件夹的前提。另一个选择是共享多用户网关：窗口在持久会话分区中加载 `https://harness.mwt.one/`，网关自身的登录是唯一的凭据步骤，且每个产品模块（Spaces、Workflows、Memory、Routines、Context、Approvals、Agents & Skills、Connections 与 Email）展示与 Web UI 相同的数据，因为它们共用同一个后端。应用菜单中的“退出登录”会清除该分区。

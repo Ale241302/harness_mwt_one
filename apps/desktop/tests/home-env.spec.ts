@@ -5,6 +5,7 @@ import { afterEach, expect, it } from 'vitest'
 import {
   ensureHomeEnvFile,
   parseHomeEnvDefaults,
+  readHomeEnv,
   resolveHomeEnvDefaults,
   HOME_ENV_FILENAME,
 } from '../src/home-env.ts'
@@ -89,4 +90,34 @@ it('falls back to the bundled resource and then to no defaults', () => {
   writeFileSync(join(resources, 'desktop-home-env.json'), '{"A":"bundled"}')
   expect(resolveHomeEnvDefaults({}, resources)).toEqual({ A: 'bundled' })
   expect(resolveHomeEnvDefaults({}, fixture())).toEqual({})
+})
+
+it('reads every assignment the Harness-home layer carries', () => {
+  const home = fixture()
+  expect(readHomeEnv(home)).toEqual({})
+  writeFileSync(join(home, HOME_ENV_FILENAME), [
+    '# comment',
+    'PLAIN=value',
+    'export EXPORTED=other',
+    'SPACED = padded ',
+    'QUOTED="with spaces"',
+    "SINGLE='single'",
+    'EMPTY=',
+    'BROKEN lower',
+    '',
+  ].join('\n'))
+  expect(readHomeEnv(home)).toEqual({
+    PLAIN: 'value',
+    EXPORTED: 'other',
+    SPACED: 'padded',
+    QUOTED: 'with spaces',
+    SINGLE: 'single',
+    EMPTY: '',
+  })
+})
+
+it('lets a later assignment win when the layer repeats a name', () => {
+  const home = fixture()
+  writeFileSync(join(home, HOME_ENV_FILENAME), 'NAME=first\nNAME=second\n')
+  expect(readHomeEnv(home)).toEqual({ NAME: 'second' })
 })
