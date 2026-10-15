@@ -51,6 +51,12 @@ Switching stops the running backend, records the choice, and rebuilds the applic
 
 Electron chooses typed English, Spanish, or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 
+### Release coupling
+
+The Electron shell, the bundled dsh runtime, Node.js, pnpm, the profile, and the Web front the Host serves are one qualified release unit, so a Web change reaches an installation one of two ways. In gateway mode the window is a client of the deployment: a front or backend change ships by deploying the server, and no Desktop release is involved. In local mode the Host serves the front from its packaged runtime, so a front change ships in a Desktop release, which the installed application picks up through its own update channel; nobody rebuilds or reinstalls by hand.
+
+The Host never serves a front fetched from the deployment while the local backend is running. The front, the Host's remote API, and the plugin graph are qualified together, so a front from a different revision would meet a Host, an API surface, and client plugin bundles it was not built against. Working on the front uses the supported inner loop instead: `pnpm run dev:web` against a `dsh web` Host with HMR, and `pnpm run dev:desktop` for the shell itself.
+
 ### Runtime and plugin activation
 
 The signed `resources/dsh/desktop-runtime.json` binds the shell version, bundled Node version, platform, architecture, shared package versions, and final file inventory. Startup reads the metadata and checks shared package records. Release schema, shell version, target compatibility, and file integrity are verified during packaging. Core packages are never copied into profile storage or installed by pnpm at first launch.

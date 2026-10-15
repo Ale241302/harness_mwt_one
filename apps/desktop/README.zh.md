@@ -51,6 +51,12 @@ Desktop 启动两种后端之一，且每次安装都会记住它启动的是哪
 
 Electron 根据应用 locale 选择类型化的英文、西班牙文或中文桌面壳文案，并以英文作为 fallback。菜单、原生对话框、启动页与插件管理渲染进程使用同一 locale 数据；仓库的 Client UI i18n gate 会检查这些桌面源文件。
 
+### 发布耦合
+
+Electron 壳、内置 dsh 运行时、Node.js、pnpm、profile，以及 Host 所提供的前端，共同构成一个经过整体验证的发布单元，因此 Web 改动通过两种途径之一到达安装：网关模式下窗口是部署的客户端，前端或后端改动随服务器部署生效，不涉及 Desktop 发布；本机模式下 Host 从打包运行时提供前端，因此前端改动随一次 Desktop 发布交付，已安装的应用通过自身的更新通道获取，没有人需要手工重建或重装。
+
+Host 绝不会在本机后端运行时提供从部署抓取的前端。前端、Host 的远端 API 与插件图是一起验证的，来自不同版本的前端会遇到它不是据此构建的 Host、API 面与客户端插件 bundle。开发前端请使用受支持的内环：对着 `dsh web` Host 运行 `pnpm run dev:web` 并启用 HMR，壳本身用 `pnpm run dev:desktop`。
+
 ### 运行时与插件激活
 
 签名资源中的 `resources/dsh/desktop-runtime.json` 绑定 shell 版本、内置 Node 版本、平台、架构、共享包版本和最终文件清单。启动读取元数据，并检查共享包记录。发布 schema、shell 版本、目标兼容性和文件完整性在打包时验证。首次启动不会把核心包复制到 profile 存储或通过 pnpm 安装核心包。
