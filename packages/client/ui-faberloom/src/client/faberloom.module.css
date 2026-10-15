@@ -1091,6 +1091,24 @@
   min-width: min(680px, 94vw);
 }
 
+/* A dialog that replaces an inspector: those editors carry two-column field
+   rows, so the default 380px card is too narrow for them. */
+.panelDialog {
+  min-width: min(620px, 94vw);
+}
+
+/* A file input's label painted as a button. The user-agent rule gives a
+   `button` border-box and leaves a `label` content-box, so the shared
+   `min-height` lands on the label's content box and the control paints about
+   20px taller than the buttons beside it. Measured in a browser: 64px before,
+   44px after, with the same top and bottom as its neighbours. */
+.fileAction {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .workflowActions {
   display: flex;
   gap: 8px;

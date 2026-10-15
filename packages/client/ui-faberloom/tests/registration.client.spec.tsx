@@ -24,6 +24,9 @@ const MEMORY = 'faberloom-memory' as MainPanelId
 const EMAIL = 'faberloom-email' as MainPanelId
 const WORKFLOWS = 'faberloom-workflows' as MainPanelId
 const ROUTINES = 'faberloom-routines' as MainPanelId
+const SKILLS = 'faberloom-agents' as MainPanelId
+const CONNECTIONS = 'faberloom-connections' as MainPanelId
+const CONTEXT = 'faberloom-context' as MainPanelId
 
 const OVERVIEW = {
   spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null, agentId: 'agent-1', agentName: 'Proformas', workspaceId: 'ws-1' }],
@@ -52,6 +55,7 @@ async function bench(
   spaceDetailResult: unknown = { ok: true, value: undefined },
   email: { drafts?: unknown[]; inbox?: unknown[] } = {},
   memoryRows: unknown[] = [],
+  panels: { skills?: unknown[]; connections?: unknown[]; context?: unknown[] } = {},
 ) {
   const runtime = await SlotTestRuntime.create()
   runtimes.add(runtime)
@@ -120,8 +124,11 @@ async function bench(
   const tickRoutine = vi.fn(async () => ({ ok: true, value: [] }))
   const reconcileExecution = vi.fn(async () => ({ ok: true, value: [] }))
   const cancelExecutionEffect = vi.fn(async () => ({ ok: true, value: [] }))
-  const connections = vi.fn(async () => ({ ok: true, value: [] }))
-  const skills = vi.fn(async () => ({ ok: true, value: [] }))
+  const connections = vi.fn(async () => ({ ok: true, value: panels.connections ?? [] }))
+  const skills = vi.fn(async () => ({ ok: true, value: panels.skills ?? [] }))
+  const contextEntries = vi.fn(async () => ({ ok: true, value: panels.context ?? [] }))
+  const contextVersions = vi.fn(async () => ({ ok: true, value: [] }))
+  const contextAction = vi.fn(async () => ({ ok: true, value: panels.context ?? [] }))
   const saveConnection = vi.fn(async () => ({ ok: true, value: [] }))
   const removeConnection = vi.fn(async () => ({ ok: true, value: [] }))
   const probeConnection = vi.fn(async () => ({ ok: true, value: { ok: true, detail: 'ok' } }))
@@ -187,6 +194,29 @@ async function bench(
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
     skills,
+    saveSkill: vi.fn(async () => ({ ok: true, value: panels.skills ?? [] })),
+    removeSkill: vi.fn(async () => ({ ok: true, value: panels.skills ?? [] })),
+    shareSkill: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
+    shareAgent: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
+    shares: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
+    unshareShare: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
+    pickSkillFolder: vi.fn(async () => ({ ok: true, value: null })),
+    modelCatalog: vi.fn(async () => ({ ok: true, value: { providers: [] } })),
+    mcpTokens: vi.fn(async () => ({ ok: true, value: [] })),
+    mintMcpToken: vi.fn(async () => ({ ok: true, value: [] })),
+    revokeMcpToken: vi.fn(async () => ({ ok: true, value: [] })),
+    grants: vi.fn(async () => ({ ok: true, value: [] })),
+    grant: vi.fn(async () => ({ ok: true, value: [] })),
+    revokeGrant: vi.fn(async () => ({ ok: true, value: [] })),
+    backups: vi.fn(async () => ({ ok: true, value: [] })),
+    createBackup: vi.fn(async () => ({ ok: true, value: [] })),
+    verifyBackup: vi.fn(async () => ({ ok: true, value: [] })),
+    restoreBackup: vi.fn(async () => ({ ok: true, value: [] })),
+    deleteBackup: vi.fn(async () => ({ ok: true, value: [] })),
+    contextEntries, createContext: contextAction, updateContext: contextAction, contextVersions,
+    restoreContext: contextAction, approveContext: contextAction, rejectContext: contextAction,
+    removeContext: contextAction, exportContext: vi.fn(async () => ({ ok: true, value: { filename: 'c.json', content: '{}' } })),
+    importContext: contextAction,
     skillInstallTargets: vi.fn(async () => ({ ok: true, value: { workspace: null, global: '/home/skills' } })),
     skillInstalls: vi.fn(async () => ({ ok: true, value: [] })),
     installSkill: vi.fn(async () => ({ ok: true, value: { destination: 'global', root: '/home/skills', outcomes: [] } })),
@@ -256,6 +286,7 @@ async function bench(
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace,
     deleteBoardItem, emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
+    connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connectNode, disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,
@@ -1008,6 +1039,120 @@ describe('faberloom work-flow canvas', () => {
     setWorkflowVisibility.mockRejectedValueOnce(new Error('wf-vis-boom'))
     fireEvent.click(view.getByRole('button', { name: 'Make private' }))
     expect(await view.findByText(/wf-vis-boom/)).toBeTruthy()
+  })
+})
+
+describe('faberloom panel editors', () => {
+  const SKILL_ROW = {
+    id: 'skill-1', name: 'mwt-admin-builder-crear', module: 'builder', action: 'create',
+    description: 'Crea una orden de compra', origin: 'owner', assignedTo: [],
+  }
+  const CONNECTION_ROW = {
+    id: 'conn-1', kind: 'imap', label: '506@muitowork.com', host: 'imap.hostinger.com', port: 993,
+    secure: true, starttls: false, username: '506@muitowork.com', destination: null,
+    retentionDays: null, primary: true, hasSecret: true,
+  }
+  const CONTEXT_ROW = {
+    id: 'ctx-1', title: 'Precios Eguisa', body: 'Verificado en MWT', visibility: 'local',
+    spaceId: null, version: 1, updatedAt: '2026-10-14', shared: false, canDelete: true,
+  }
+
+  it('lists skills in two columns, with no inspector beside the table', async () => {
+    const { runtime, view } = await bench(undefined, undefined, {}, [], { skills: [SKILL_ROW] })
+    act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
+    await view.findByText(SKILL_ROW.name)
+
+    expect([...view.container.querySelectorAll('th')].map(head => head.textContent))
+      .toEqual([faberloomEn['col.name'], faberloomEn['col.module']])
+    // The table is a direct child of the screen: no table+inspector grid wraps it.
+    expect(view.container.querySelector(`.${css.tableCard}`)?.parentElement?.className).toBe(css.screen)
+    const screen = [...view.container.querySelectorAll(`.${css.screen}`)]
+      .find(element => element.textContent?.includes(SKILL_ROW.name))
+    expect(screen?.querySelector(`.${css.inspector}`) ?? null).toBeNull()
+  })
+
+  it('opens a skill detail in a dialog when its row is clicked', async () => {
+    const { runtime, view } = await bench(undefined, undefined, {}, [], { skills: [SKILL_ROW] })
+    act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
+    fireEvent.click(await view.findByText(SKILL_ROW.name))
+
+    const dialog = await view.findByRole('dialog')
+    expect(dialog.getAttribute('aria-label')).toBe(SKILL_ROW.name)
+    expect(dialog.textContent).toContain(SKILL_ROW.description)
+    // The two facts the table no longer carries stay in the detail.
+    expect(dialog.textContent).toContain(faberloomEn['field.usedBy'])
+    expect(dialog.textContent).toContain(faberloomEn['field.origin'])
+    fireEvent.click(view.getAllByRole('button', { name: faberloomEn['action.close'] })[0] as HTMLButtonElement)
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+  })
+
+  it('mounts the folder install block only inside the Desktop application', async () => {
+    const { runtime, view } = await bench(undefined, undefined, {}, [], { skills: [SKILL_ROW] })
+    act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
+    await view.findByText(SKILL_ROW.name)
+
+    expect(view.queryByText(faberloomEn['skills.install'])).toBeNull()
+    expect(view.getByText(faberloomEn['skills.upload'])).toBeTruthy()
+
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true })
+    try {
+      // Remount the panel and reopen the Skills tab, so the block reads the marker.
+      act(() => { runtime.panelInfo.set({ activePanelId: null }) })
+      act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
+      fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
+      expect(await view.findByText(faberloomEn['skills.install'])).toBeTruthy()
+    } finally {
+      Reflect.deleteProperty(globalThis, 'dshDesktop')
+    }
+  })
+
+  it('opens the connection editor as a dialog from the button and from a row', async () => {
+    const { runtime, view, saveConnection } = await bench(undefined, undefined, {}, [], { connections: [CONNECTION_ROW] })
+    act(() => { runtime.panelInfo.set({ activePanelId: CONNECTIONS }) })
+    await view.findByText(CONNECTION_ROW.label)
+    // The connections table itself sits directly under the screen; the blocks
+    // below it keep their own two-pane layout untouched.
+    expect(view.container.querySelector(`.${css.tableCard}`)?.parentElement?.className).toBe(css.screen)
+
+    // A new connection opens on an empty form, never on the last edited record.
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['connections.new'] }))
+    const editor = await view.findByRole('dialog')
+    expect(editor.getAttribute('aria-label')).toBe(faberloomEn['connections.newTitle'])
+    expect((view.getByRole('textbox', { name: faberloomEn['field.name'] }) as HTMLInputElement).value).toBe('')
+    fireEvent.click(view.getAllByRole('button', { name: faberloomEn['action.close'] })[0] as HTMLButtonElement)
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+
+    // A row opens the same editor on that record.
+    fireEvent.click(view.getByText(CONNECTION_ROW.label))
+    const loaded = await view.findByRole('dialog')
+    expect(loaded.getAttribute('aria-label')).toBe(CONNECTION_ROW.label)
+    expect((view.getByRole('textbox', { name: faberloomEn['field.name'] }) as HTMLInputElement).value)
+      .toBe(CONNECTION_ROW.label)
+    expect(view.getByRole('textbox', { name: faberloomEn['field.host'] })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.save'] }))
+    await waitFor(() => { expect(saveConnection).toHaveBeenCalled() })
+  })
+
+  it('opens a task detail and a context entry as dialogs', async () => {
+    const { runtime, view } = await bench(undefined, undefined, {}, [], { context: [CONTEXT_ROW] })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByText('Preparar proforma'))
+    expect((await view.findByRole('dialog')).getAttribute('aria-label')).toBe('Preparar proforma')
+    fireEvent.click(view.getAllByRole('button', { name: faberloomEn['action.close'] })[0] as HTMLButtonElement)
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: CONTEXT }) })
+    fireEvent.click(await view.findByText(CONTEXT_ROW.title))
+    expect((await view.findByRole('dialog')).getAttribute('aria-label')).toBe(CONTEXT_ROW.title)
+    // The panel that shows the row keeps no table+inspector grid.
+    const screens = [...view.container.querySelectorAll(`.${css.screen}`)]
+    const screen = screens.find(element => element.textContent?.includes(CONTEXT_ROW.title))
+    expect(screen?.querySelector(`.${css.inspector}`) ?? null).toBeNull()
+    expect(screen?.querySelector(`.${css.tableCard}`)?.parentElement).toBe(screen)
   })
 })
 

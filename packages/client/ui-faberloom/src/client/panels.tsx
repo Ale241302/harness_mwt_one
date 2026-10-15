@@ -44,6 +44,7 @@ import type {
   FaberLoomSkillInstallDestination, FaberLoomSkillInstallReport, FaberLoomSkillInstallRow, FaberLoomSkillInstallTargets,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
+import { isDesktopApplication } from './desktop-app.ts'
 import { SkillInstallBlock } from './skill-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import type { createWorkspaceStore } from './store.ts'
@@ -1708,8 +1709,6 @@ function skillsScreen() {
     const columns: readonly Column<FaberLoomSkillRow>[] = [
       { key: 'name', header: t('col.name'), cell: skill => <span className={styles.cellName}>{skill.name}</span> },
       { key: 'module', header: t('col.module'), cell: skill => <span className={styles.cellMuted}>{skill.module ?? t('cell.none')}{skill.action === null ? '' : ` · ${skill.action}`}</span> },
-      { key: 'origin', header: t('col.origin'), cell: skill => <Chip tone={skill.origin === 'owner' ? 'accent' : 'muted'}>{skill.origin === 'owner' ? t('skills.own') : skill.origin === 'shared' ? t('skills.shared') : skill.origin === 'incoming' ? t('skills.incoming') : t('skills.role')}</Chip> },
-      { key: 'used', header: t('col.usedBy'), cell: skill => <span className={styles.cellMuted}>{skill.assignedTo.length === 0 ? t('skills.unused') : String(skill.assignedTo.length)}</span> },
     ]
 
     return (
@@ -1722,82 +1721,97 @@ function skillsScreen() {
               <option value="">{t('skills.allModules')}</option>
               {modules.map(module => <option key={module} value={module}>{module}</option>)}
             </select>
-            <label className={styles.secondary}>
+            <label className={`${styles.secondary} ${styles.fileAction}`}>
               {uploading ? t('skills.uploading') : t('skills.upload')}
               <input type="file" accept=".md,text/markdown" multiple style={{ display: 'none' }} onChange={(event) => { onFiles(event.target.files) }} />
             </label>
           </>
         )}>
         <Feedback t={t} message={message} />
-        <SkillInstallBlock
-          t={t}
-          pickFolder={pickSkillFolder}
-          loadTargets={skillInstallTargets}
-          loadInstalls={skillInstalls}
-          install={installSkill}
-          uninstall={uninstallSkill}
-          onChanged={() => { void skills().then(apply) }}
-        />
-        <div className={styles.split}>
-          {list === null
-            ? <StateBlock kind="loading" title={t('state.loading')} />
-            : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
-              emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />}
-          <Inspector title={chosen?.name ?? t('skills.detail')}
-            footer={chosen === null || chosen.origin !== 'owner' ? undefined : (
-              <button className={styles.danger} type="button" onClick={() => {
-                void removeSkill(chosen.name).then((result) => { apply(result); setSelected(null) })
-              }}>{t('action.delete')}</button>
-            )}>
-            {chosen === null
-              ? <StateBlock kind="empty" title={t('skills.selectTitle')} text={t('skills.selectText')} />
-              : (
-                <>
-                  <Field label={t('field.module')}><span className={styles.cellMuted}>{chosen.module ?? t('cell.none')}{chosen.action === null ? '' : ` · ${chosen.action}`}</span></Field>
-                  <Field label={t('field.description')}><span className={styles.cellMuted}>{chosen.description.length === 0 ? t('cell.none') : chosen.description}</span></Field>
-                  <Field label={t('field.usedBy')}>
-                    {chosen.assignedTo.length === 0
-                      ? <span className={styles.cellMuted}>{t('skills.unused')}</span>
-                      : <span className={styles.chips}>{chosen.assignedTo.map(id => <Chip key={id}>{id.slice(0, 8)}</Chip>)}</span>}
-                  </Field>
-                  <Field label={t('field.origin')}><Chip tone={chosen.origin === 'owner' ? 'accent' : 'muted'}>{chosen.origin === 'owner' ? t('skills.own') : chosen.origin === 'shared' ? t('skills.shared') : chosen.origin === 'incoming' ? t('skills.incoming') : t('skills.role')}</Chip></Field>
-                  {chosen.sharedBy === undefined ? null : <Field label={t('skills.sharedBy')}><span className={styles.cellMuted}>{chosen.sharedBy}</span></Field>}
-                  {chosen.origin !== 'owner' ? null : (
-                    <Field label={t('skills.share')} hint={t('skills.shareHint')}>
-                      <input type="text" value={shareEmails} placeholder={t('agents.sharePlaceholder')} onChange={(event) => { setShareEmails(event.target.value) }} />
-                      <label className={styles.stepFlag}>
-                        <input type="checkbox" checked={shareAll} onChange={(event) => { setShareAll(event.target.checked) }} />
-                        <span>{t('agents.shareAll')}</span>
-                      </label>
-                      <div className={styles.grid2}>
-                        <button className={styles.ghost} type="button" onClick={() => {
-                          const emails = shareEmails.split(',').map(value => value.trim()).filter(value => value.length > 0)
-                          if (!shareAll && emails.length === 0) { setShareMsg(t('agents.shareNeedTarget')); return }
-                          void shareSkill(chosen.name, emails, shareAll)
-                            .then((result) => {
-                              if (!result.ok) setShareMsg(result.error.message)
-                              else { setShareMsg(t('agents.shareDone')); setShareEmails(''); setShareAll(false); setOutShares(result.value.outgoing) }
-                            })
-                            .catch((cause: unknown) => { setShareMsg(String(cause)) })
-                        }}>{t('skills.share')}</button>
-                        {shareMsg === null ? null : <span className={styles.cellMuted}>{shareMsg}</span>}
-                      </div>
-                      {outShares.filter(share => share.kind === 'skill' && share.name === chosen.name).map(share => (
-                        <div key={share.id} className={styles.grid2}>
-                          <span className={styles.cellMuted}>{share.share_all ? t('agents.shareAllShort') : share.shared_emails.join(', ')}</span>
-                          <button className={styles.ghost} type="button" onClick={() => {
-                            void unshareShare(share.id)
-                              .then((result) => { if (result.ok) setOutShares(result.value.outgoing) })
-                              .catch(() => {})
-                          }}>{t('agents.unshare')}</button>
-                        </div>
-                      ))}
-                    </Field>
-                  )}
-                </>
+        {/* Installing from a folder is only meaningful where the folder is the
+            operator's own, which is the Desktop running the Host locally. */}
+        {isDesktopApplication()
+          ? (
+            <SkillInstallBlock
+              t={t}
+              pickFolder={pickSkillFolder}
+              loadTargets={skillInstallTargets}
+              loadInstalls={skillInstalls}
+              install={installSkill}
+              uninstall={uninstallSkill}
+              onChanged={() => { void skills().then(apply) }}
+            />
+          )
+          : null}
+        {list === null
+          ? <StateBlock kind="loading" title={t('state.loading')} />
+          : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />}
+        <Modal
+          open={chosen !== null}
+          onClose={() => { setSelected(null) }}
+          title={chosen?.name ?? t('skills.detail')}
+          closeLabel={t('action.close')}
+          className={styles.panelDialog ?? ''}
+          footer={chosen === null ? undefined : (
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+              {chosen.origin !== 'owner' ? null : (
+                <button className={styles.danger} type="button" onClick={() => {
+                  void removeSkill(chosen.name).then((result) => { apply(result); setSelected(null) })
+                }}>{t('action.delete')}</button>
               )}
-          </Inspector>
-        </div>
+            </>
+          )}
+        >
+          {chosen === null
+            ? null
+            : (
+              <>
+                <Field label={t('field.module')}><span className={styles.cellMuted}>{chosen.module ?? t('cell.none')}{chosen.action === null ? '' : ` · ${chosen.action}`}</span></Field>
+                <Field label={t('field.description')}><span className={styles.cellMuted}>{chosen.description.length === 0 ? t('cell.none') : chosen.description}</span></Field>
+                <Field label={t('field.usedBy')}>
+                  {chosen.assignedTo.length === 0
+                    ? <span className={styles.cellMuted}>{t('skills.unused')}</span>
+                    : <span className={styles.chips}>{chosen.assignedTo.map(id => <Chip key={id}>{id.slice(0, 8)}</Chip>)}</span>}
+                </Field>
+                <Field label={t('field.origin')}><Chip tone={chosen.origin === 'owner' ? 'accent' : 'muted'}>{chosen.origin === 'owner' ? t('skills.own') : chosen.origin === 'shared' ? t('skills.shared') : chosen.origin === 'incoming' ? t('skills.incoming') : t('skills.role')}</Chip></Field>
+                {chosen.sharedBy === undefined ? null : <Field label={t('skills.sharedBy')}><span className={styles.cellMuted}>{chosen.sharedBy}</span></Field>}
+                {chosen.origin !== 'owner' ? null : (
+                  <Field label={t('skills.share')} hint={t('skills.shareHint')}>
+                    <input type="text" value={shareEmails} placeholder={t('agents.sharePlaceholder')} onChange={(event) => { setShareEmails(event.target.value) }} />
+                    <label className={styles.stepFlag}>
+                      <input type="checkbox" checked={shareAll} onChange={(event) => { setShareAll(event.target.checked) }} />
+                      <span>{t('agents.shareAll')}</span>
+                    </label>
+                    <div className={styles.grid2}>
+                      <button className={styles.ghost} type="button" onClick={() => {
+                        const emails = shareEmails.split(',').map(value => value.trim()).filter(value => value.length > 0)
+                        if (!shareAll && emails.length === 0) { setShareMsg(t('agents.shareNeedTarget')); return }
+                        void shareSkill(chosen.name, emails, shareAll)
+                          .then((result) => {
+                            if (!result.ok) setShareMsg(result.error.message)
+                            else { setShareMsg(t('agents.shareDone')); setShareEmails(''); setShareAll(false); setOutShares(result.value.outgoing) }
+                          })
+                          .catch((cause: unknown) => { setShareMsg(String(cause)) })
+                      }}>{t('skills.share')}</button>
+                      {shareMsg === null ? null : <span className={styles.cellMuted}>{shareMsg}</span>}
+                    </div>
+                    {outShares.filter(share => share.kind === 'skill' && share.name === chosen.name).map(share => (
+                      <div key={share.id} className={styles.grid2}>
+                        <span className={styles.cellMuted}>{share.share_all ? t('agents.shareAllShort') : share.shared_emails.join(', ')}</span>
+                        <button className={styles.ghost} type="button" onClick={() => {
+                          void unshareShare(share.id)
+                            .then((result) => { if (result.ok) setOutShares(result.value.outgoing) })
+                            .catch(() => {})
+                        }}>{t('agents.unshare')}</button>
+                      </div>
+                    ))}
+                  </Field>
+                )}
+              </>
+            )}
+        </Modal>
       </Screen>
     )
   }
@@ -2091,39 +2105,40 @@ function boardScreen() {
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
-        <div className={styles.split}>
-          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => { setDrafting(false); setSelected(id); setNote('') }}
-            emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
-          <Inspector title={inspectorTitle()}
-            status={drafting || value === undefined ? undefined : <Chip>{value.status}</Chip>}
-            footer={footer}>
-            {drafting
-              ? <Field label={t('col.title')}><input type="text" autoComplete="off" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
-              : selected === null
-                ? <StateBlock kind="empty" title={t('board.selectTitle')} text={t('board.selectText')} />
-                : (
-                  <>
-                    <Field label={t('workbench.agent')} hint={t('workbench.agentHint')}>
-                      <select value={assignedAgent} aria-label={t('workbench.agent')} onChange={(event) => { setAssignedAgent(event.target.value) }}>
-                        <option value="">{t('workbench.liveAgent')}</option>
-                        {(overview?.agents ?? [])
-                          .filter(agent => agent.active)
-                          .map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-                      </select>
-                    </Field>
-                    {chosenDraft !== null
-                      ? draftBody
-                      : chosenInbox !== null
-                        ? inboxBody
-                        : detail.kind === 'loading'
-                          ? <StateBlock kind="loading" title={t('state.loading')} />
-                          : detail.kind === 'error'
-                            ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
-                            : boardBody}
-                  </>
-                )}
-          </Inspector>
-        </div>
+        <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => { setDrafting(false); setSelected(id); setNote('') }}
+          emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
+        <Modal
+          open={drafting || selected !== null}
+          onClose={() => { setDrafting(false); setSelected(null) }}
+          title={inspectorTitle()}
+          closeLabel={t('action.close')}
+          className={styles.panelDialog ?? ''}
+          footer={footer ?? undefined}
+        >
+          {drafting
+            ? <Field label={t('col.title')}><input type="text" autoComplete="off" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
+            : (
+              <>
+                <Field label={t('workbench.agent')} hint={t('workbench.agentHint')}>
+                  <select value={assignedAgent} aria-label={t('workbench.agent')} onChange={(event) => { setAssignedAgent(event.target.value) }}>
+                    <option value="">{t('workbench.liveAgent')}</option>
+                    {(overview?.agents ?? [])
+                      .filter(agent => agent.active)
+                      .map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                  </select>
+                </Field>
+                {chosenDraft !== null
+                  ? draftBody
+                  : chosenInbox !== null
+                    ? inboxBody
+                    : detail.kind === 'loading'
+                      ? <StateBlock kind="loading" title={t('state.loading')} />
+                      : detail.kind === 'error'
+                        ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+                        : boardBody}
+              </>
+            )}
+        </Modal>
       </Screen>
     )
   }
@@ -2637,6 +2652,7 @@ function connectionsScreen() {
     const { t, connections, saveConnection, removeConnection, probeConnection } = props
     const [list, setList] = useState<readonly FaberLoomConnection[] | null>(null)
     const [selected, setSelected] = useState<string | null>(null)
+    const [editorOpen, setEditorOpen] = useState(false)
     const [message, setMessage] = useState<string | null>(null)
     const [probe, setProbe] = useState<{ state: 'probing' | 'ok' | 'fail'; text: string } | null>(null)
     const [kind, setKind] = useState<'imap' | 'smtp' | 'backup'>('imap')
@@ -2696,6 +2712,24 @@ function connectionsScreen() {
       else setMessage(result.error.message)
     }
 
+    /** Open the editor on a fresh record: a new connection must not inherit the last one's values. */
+    const startNewConnection = (): void => {
+      setSelected(null)
+      setMessage(null)
+      setProbe(null)
+      setKind('imap')
+      setLabel('')
+      setHost('')
+      setPort('993')
+      setSecure(true)
+      setStarttls(false)
+      setUsername('')
+      setSecret('')
+      setDestination('')
+      setRetention('30')
+      setEditorOpen(true)
+    }
+
     const save = (): void => {
       setMessage(null)
       const defaultLabel = kind === 'imap' ? t('connections.mailLabel') : kind === 'smtp' ? t('connections.smtpLabel') : t('connections.backupLabel')
@@ -2727,94 +2761,103 @@ function connectionsScreen() {
 
     return (
       <Screen title={t('panel.connections.title')} subtitle={t('panel.connections.intro')}
-        trailing={<button className={styles.primary} type="button" onClick={() => { setSelected(null); setMessage(null) }}>{t('connections.new')}</button>}>
+        trailing={<button className={styles.primary} type="button" onClick={startNewConnection}>{t('connections.new')}</button>}>
         <Feedback t={t} message={message} />
-        <div className={styles.split}>
-          {list === null
-            ? <StateBlock kind="loading" title={t('state.loading')} />
-            : <DataTable columns={columns} rows={list.map(row => ({ ...row }))} selectedId={selected} onSelect={setSelected}
-              emptyTitle={t('connections.emptyTitle')} emptyText={t('connections.emptyText')} labels={tableLabels(t)} />}
-          <Inspector title={chosen?.label ?? t('connections.newTitle')}
-            footer={(
-              <>
-                <span className={styles.tools}>
-                  {chosen === null ? null : <button className={styles.danger} type="button" onClick={() => { void removeConnection(chosen.id).then(apply); setSelected(null) }}>{t('action.delete')}</button>}
-                  {chosen === null ? null : (
-                    <button className={styles.secondary} type="button" onClick={() => { runProbe(chosen.id) }}>{t('connections.probe')}</button>
-                  )}
-                  {chosen === null || chosen.kind === 'backup' || chosen.primary ? null : (
-                    <button className={styles.secondary} type="button" onClick={() => {
-                      setMessage(null)
-                      void saveConnection({ id: chosen.id, kind: chosen.kind, label: chosen.label, primary: true })
-                        .then(apply)
-                        .catch((cause: unknown) => { setMessage(String(cause)) })
-                    }}>{t(chosen.kind === 'smtp' ? 'connections.makePrimarySmtp' : 'connections.makePrimary')}</button>
-                  )}
-                </span>
-                <button className={styles.primary} type="button" onClick={save}>{t('action.save')}</button>
-              </>
-            )}>
-            <Field label={t('field.kind')}>
-              <select value={kind} onChange={(event) => {
-                const next = event.target.value === 'smtp' ? 'smtp' as const : event.target.value === 'backup' ? 'backup' as const : 'imap' as const
-                setKind(next)
-                // Follow each protocol's usual default port on a kind switch.
-                if (next === 'smtp' && (port === '993' || port === '143')) { setPort('465'); setSecure(true); setStarttls(false) }
-                if (next === 'imap' && (port === '465' || port === '587' || port === '25')) { setPort('993'); setSecure(true); setStarttls(false) }
-              }}>
-                <option value="imap">{t('connections.imap')}</option>
-                <option value="smtp">{t('connections.smtp')}</option>
-                <option value="backup">{t('connections.backup')}</option>
-              </select>
-            </Field>
-            <Field label={t('field.name')}>
-              <input type="text" value={label} onChange={(event) => { setLabel(event.target.value) }} />
-            </Field>
-            {kind === 'imap' || kind === 'smtp'
-              ? (
-                <>
-                  <div className={styles.grid2}>
-                    <Field label={t('field.host')}><input type="text" value={host} placeholder={kind === 'smtp' ? 'smtp.dominio.com' : 'imap.dominio.com'} onChange={(event) => { setHost(event.target.value) }} /></Field>
-                    <Field label={t('field.port')}><input type="text" value={port} onChange={(event) => { setPort(event.target.value) }} /></Field>
-                  </div>
-                  <div className={styles.grid2}>
-                    <Field label={t('field.username')}><input type="text" value={username} onChange={(event) => { setUsername(event.target.value) }} /></Field>
-                    <Field label={t('field.password')} hint={chosen?.hasSecret === true ? t('connections.secretKept') : undefined}>
-                      <SecretInput value={secret} showLabel={t('field.showSecret')} hideLabel={t('field.hideSecret')} onChange={(event) => { setSecret(event.target.value) }} />
-                    </Field>
-                  </div>
-                  <Field label={t('field.tls')} hint={t('connections.securityHint')}>
-                    <select value={secure ? 'tls' : starttls ? 'starttls' : 'none'} onChange={(event) => {
-                      const mode = event.target.value
-                      setSecure(mode === 'tls')
-                      setStarttls(mode === 'starttls')
-                      // Follow the protocol's usual port unless a custom one is set.
-                      if (kind === 'imap' && (port === '993' || port === '143')) setPort(mode === 'tls' ? '993' : '143')
-                      if (kind === 'smtp' && (port === '465' || port === '587' || port === '25')) setPort(mode === 'tls' ? '465' : mode === 'starttls' ? '587' : '25')
-                    }}>
-                      <option value="tls">{t(kind === 'smtp' ? 'connections.smtpTls' : 'connections.tlsImplicit')}</option>
-                      <option value="starttls">{t(kind === 'smtp' ? 'connections.smtpStarttls' : 'connections.tlsStarttls')}</option>
-                      <option value="none">{t(kind === 'smtp' ? 'connections.smtpNone' : 'connections.tlsNone')}</option>
-                    </select>
-                  </Field>
-                </>
-              )
-              : (
-                <div className={styles.grid2}>
-                  <Field label={t('field.destination')} hint={t('connections.destHint')}>
-                    <input type="text" value={destination} placeholder={t('connections.destPlaceholder')} onChange={(event) => { setDestination(event.target.value) }} />
-                  </Field>
-                  <Field label={t('field.retention')}><input type="text" value={retention} onChange={(event) => { setRetention(event.target.value) }} /></Field>
-                </div>
+        {list === null
+          ? <StateBlock kind="loading" title={t('state.loading')} />
+          : <DataTable columns={columns} rows={list.map(row => ({ ...row }))} selectedId={selected}
+            onSelect={(id) => { setSelected(id); setEditorOpen(true) }}
+            emptyTitle={t('connections.emptyTitle')} emptyText={t('connections.emptyText')} labels={tableLabels(t)} />}
+        <Modal
+          open={editorOpen}
+          onClose={() => { setEditorOpen(false) }}
+          title={chosen?.label ?? t('connections.newTitle')}
+          closeLabel={t('action.close')}
+          className={styles.panelDialog ?? ''}
+          footer={(
+            <>
+              {chosen === null ? null : (
+                <button className={styles.danger} type="button" onClick={() => {
+                  void removeConnection(chosen.id).then(apply)
+                  setSelected(null)
+                  setEditorOpen(false)
+                }}>{t('action.delete')}</button>
               )}
-            {probe === null ? null : (
-              <StateBlock
-                kind={probe.state === 'ok' ? 'empty' : probe.state === 'fail' ? 'error' : 'loading'}
-                title={probe.text}
-              />
+              {chosen === null ? null : (
+                <button className={styles.secondary} type="button" onClick={() => { runProbe(chosen.id) }}>{t('connections.probe')}</button>
+              )}
+              {chosen === null || chosen.kind === 'backup' || chosen.primary ? null : (
+                <button className={styles.secondary} type="button" onClick={() => {
+                  setMessage(null)
+                  void saveConnection({ id: chosen.id, kind: chosen.kind, label: chosen.label, primary: true })
+                    .then(apply)
+                    .catch((cause: unknown) => { setMessage(String(cause)) })
+                }}>{t(chosen.kind === 'smtp' ? 'connections.makePrimarySmtp' : 'connections.makePrimary')}</button>
+              )}
+              <button className={styles.ghost} type="button" onClick={() => { setEditorOpen(false) }}>{t('action.close')}</button>
+              <button className={styles.primary} type="button" onClick={save}>{t('action.save')}</button>
+            </>
+          )}>
+          <Field label={t('field.kind')}>
+            <select value={kind} onChange={(event) => {
+              const next = event.target.value === 'smtp' ? 'smtp' as const : event.target.value === 'backup' ? 'backup' as const : 'imap' as const
+              setKind(next)
+              // Follow each protocol's usual default port on a kind switch.
+              if (next === 'smtp' && (port === '993' || port === '143')) { setPort('465'); setSecure(true); setStarttls(false) }
+              if (next === 'imap' && (port === '465' || port === '587' || port === '25')) { setPort('993'); setSecure(true); setStarttls(false) }
+            }}>
+              <option value="imap">{t('connections.imap')}</option>
+              <option value="smtp">{t('connections.smtp')}</option>
+              <option value="backup">{t('connections.backup')}</option>
+            </select>
+          </Field>
+          <Field label={t('field.name')}>
+            <input type="text" value={label} onChange={(event) => { setLabel(event.target.value) }} />
+          </Field>
+          {kind === 'imap' || kind === 'smtp'
+            ? (
+              <>
+                <div className={styles.grid2}>
+                  <Field label={t('field.host')}><input type="text" value={host} placeholder={kind === 'smtp' ? 'smtp.dominio.com' : 'imap.dominio.com'} onChange={(event) => { setHost(event.target.value) }} /></Field>
+                  <Field label={t('field.port')}><input type="text" value={port} onChange={(event) => { setPort(event.target.value) }} /></Field>
+                </div>
+                <div className={styles.grid2}>
+                  <Field label={t('field.username')}><input type="text" value={username} onChange={(event) => { setUsername(event.target.value) }} /></Field>
+                  <Field label={t('field.password')} hint={chosen?.hasSecret === true ? t('connections.secretKept') : undefined}>
+                    <SecretInput value={secret} showLabel={t('field.showSecret')} hideLabel={t('field.hideSecret')} onChange={(event) => { setSecret(event.target.value) }} />
+                  </Field>
+                </div>
+                <Field label={t('field.tls')} hint={t('connections.securityHint')}>
+                  <select value={secure ? 'tls' : starttls ? 'starttls' : 'none'} onChange={(event) => {
+                    const mode = event.target.value
+                    setSecure(mode === 'tls')
+                    setStarttls(mode === 'starttls')
+                    // Follow the protocol's usual port unless a custom one is set.
+                    if (kind === 'imap' && (port === '993' || port === '143')) setPort(mode === 'tls' ? '993' : '143')
+                    if (kind === 'smtp' && (port === '465' || port === '587' || port === '25')) setPort(mode === 'tls' ? '465' : mode === 'starttls' ? '587' : '25')
+                  }}>
+                    <option value="tls">{t(kind === 'smtp' ? 'connections.smtpTls' : 'connections.tlsImplicit')}</option>
+                    <option value="starttls">{t(kind === 'smtp' ? 'connections.smtpStarttls' : 'connections.tlsStarttls')}</option>
+                    <option value="none">{t(kind === 'smtp' ? 'connections.smtpNone' : 'connections.tlsNone')}</option>
+                  </select>
+                </Field>
+              </>
+            )
+            : (
+              <div className={styles.grid2}>
+                <Field label={t('field.destination')} hint={t('connections.destHint')}>
+                  <input type="text" value={destination} placeholder={t('connections.destPlaceholder')} onChange={(event) => { setDestination(event.target.value) }} />
+                </Field>
+                <Field label={t('field.retention')}><input type="text" value={retention} onChange={(event) => { setRetention(event.target.value) }} /></Field>
+              </div>
             )}
-          </Inspector>
-        </div>
+          {probe === null ? null : (
+            <StateBlock
+              kind={probe.state === 'ok' ? 'empty' : probe.state === 'fail' ? 'error' : 'loading'}
+              title={probe.text}
+            />
+          )}
+        </Modal>
         <MwtBlock t={t} mwtStatus={props.mwtStatus} />
         <McpBlock t={t} mcpTokens={props.mcpTokens} mintMcpToken={props.mintMcpToken} revokeMcpToken={props.revokeMcpToken} />
         <GrantsBlock t={t} grants={props.grants} grant={props.grant} revokeGrant={props.revokeGrant} />
@@ -4320,7 +4363,7 @@ function contextScreen() {
                 URL.revokeObjectURL(url)
               })
             }}>{t('ctx.export')}</button>
-            <label className={styles.secondary} style={{ cursor: 'pointer' }}>
+            <label className={`${styles.secondary} ${styles.fileAction}`} style={{ cursor: 'pointer' }}>
               {t('ctx.import')}
               <input type="file" accept="application/json,.json" style={{ display: 'none' }} aria-label={t('ctx.import')} onChange={(event) => {
                 const file = event.target.files?.[0]
@@ -4332,61 +4375,58 @@ function contextScreen() {
           </>
         )}>
         <Feedback t={t} message={list.kind === 'error' ? list.message : message} />
-        <div className={styles.split}>
-          <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={open}
-            emptyTitle={t('state.empty.title')} emptyText={t('ctx.empty')} labels={tableLabels(t)} />
-          <Inspector
-            title={chosen === null ? t('ctx.detail') : chosen.title}
-            status={chosen === null ? undefined : <Chip>{visibilityLabel(chosen.visibility)}</Chip>}
-            footer={selected === null ? undefined : (
-              <>
-                <span className={styles.tools}>
-                  {chosen?.shared === true && chosen.canDelete !== true ? null : (
-                    <button className={styles.danger} type="button" onClick={() => {
-                      void props.context.remove(selected).then((result) => { if (result.ok) setSelected(null); refresh(result) })
-                    }}>{t('ctx.remove')}</button>
-                  )}
-                  <button className={styles.secondary} type="button" onClick={() => {
-                    void props.context.approve(selected).then((result) => {
-                      refresh(result); reloadVersions(selected)
-                    })
-                  }}>{t('ctx.approve')}</button>
-                  <button className={styles.secondary} type="button" onClick={() => {
-                    void props.context.reject(selected).then((result) => {
-                      refresh(result); reloadVersions(selected)
-                    })
-                  }}>{t('ctx.reject')}</button>
-                </span>
-                <span className={styles.tools}>
-                  <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
-                  <button className={styles.primary} type="button" onClick={() => {
-                    void props.context.update(selected, title, body).then((result) => { refresh(result); reloadVersions(selected) })
-                  }}>{t('ctx.save')}</button>
-                </span>
-              </>
-            )}>
-            {selected === null
-              ? <StateBlock kind="empty" title={t('ctx.select')} text={t('ctx.createHint')} />
-              : (
-                <>
-                  <Field label={t('ctx.title')}><input aria-label={t('ctx.title')} value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
-                  <Field label={t('ctx.body')}><textarea aria-label={t('ctx.body')} value={body} onChange={(event) => { setBody(event.target.value) }} /></Field>
-                  <p className={styles.hint}>{t('ctx.approveHint')}</p>
-                  <h4>{t('ctx.versions')}</h4>
-                  {versions.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.noVersions')}</span> : versions.map(version => (
-                    <div key={version.version} className={styles.workflowRunRow}>
-                      <span className={styles.cellMuted}>{versionDetail(version)}</span>
-                      <button className={styles.ghost} type="button" onClick={() => {
-                        void props.context.restore(selected, version.version).then((result) => {
-                          refresh(result); reloadVersions(selected)
-                        })
-                      }}>{t('ctx.restore')}</button>
-                    </div>
-                  ))}
-                </>
+        <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={open}
+          emptyTitle={t('state.empty.title')} emptyText={t('ctx.empty')} labels={tableLabels(t)} />
+        <Modal
+          open={selected !== null}
+          onClose={() => { setSelected(null) }}
+          title={chosen === null ? t('ctx.detail') : chosen.title}
+          closeLabel={t('action.close')}
+          className={styles.panelDialog ?? ''}
+          footer={selected === null ? undefined : (
+            <span className={styles.tools}>
+              {chosen?.shared === true && chosen.canDelete !== true ? null : (
+                <button className={styles.danger} type="button" onClick={() => {
+                  void props.context.remove(selected).then((result) => { if (result.ok) setSelected(null); refresh(result) })
+                }}>{t('ctx.remove')}</button>
               )}
-          </Inspector>
-        </div>
+              <button className={styles.secondary} type="button" onClick={() => {
+                void props.context.approve(selected).then((result) => {
+                  refresh(result); reloadVersions(selected)
+                })
+              }}>{t('ctx.approve')}</button>
+              <button className={styles.secondary} type="button" onClick={() => {
+                void props.context.reject(selected).then((result) => {
+                  refresh(result); reloadVersions(selected)
+                })
+              }}>{t('ctx.reject')}</button>
+              <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+              <button className={styles.primary} type="button" onClick={() => {
+                void props.context.update(selected, title, body).then((result) => { refresh(result); reloadVersions(selected) })
+              }}>{t('ctx.save')}</button>
+            </span>
+          )}>
+          {selected === null
+            ? null
+            : (
+              <>
+                <Field label={t('ctx.title')}><input aria-label={t('ctx.title')} value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
+                <Field label={t('ctx.body')}><textarea aria-label={t('ctx.body')} value={body} onChange={(event) => { setBody(event.target.value) }} /></Field>
+                <p className={styles.hint}>{t('ctx.approveHint')}</p>
+                <h4>{t('ctx.versions')}</h4>
+                {versions.length === 0 ? <span className={styles.workflowEmpty}>{t('ctx.noVersions')}</span> : versions.map(version => (
+                  <div key={version.version} className={styles.workflowRunRow}>
+                    <span className={styles.cellMuted}>{versionDetail(version)}</span>
+                    <button className={styles.ghost} type="button" onClick={() => {
+                      void props.context.restore(selected, version.version).then((result) => {
+                        refresh(result); reloadVersions(selected)
+                      })
+                    }}>{t('ctx.restore')}</button>
+                  </div>
+                ))}
+              </>
+            )}
+        </Modal>
       </Screen>
     )
   }

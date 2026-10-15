@@ -29,7 +29,7 @@ FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoo
 - `sidebar.brand.name` 的双色字标，以及 `sidebar.brand.mark` 与 `conversation.hero.brand.mark` 的等距图标占用者；
 - 十个 `sidebar.panellist` 行覆盖十二个 `main` 面板，以共享的 `MainPanelId` 寻址（对话落地页与技能面板保留路由但不占侧边栏行）；
 - 聊天手势：一个 `@` 触发器源，列出所有者的活跃代理（选中会插入 `@name`），以及一个带弹窗的 `/routine` 命令贡献，用于启动选中的例程；两者都由工作区总览经 `ctx.remote.faberloomView` 提供；
-- 技能面板的安装控件：它打开已挂载的目录选择器，提供当前工作区或全局技能根目录两个目标并显示各自解析后的根目录，通过 `ctx.remote.faberloomView.installSkill` 安装，并列出该身份已记录的安装及其移除操作；
+- 技能面板的安装控件：它打开已挂载的目录选择器，提供当前工作区或全局技能根目录两个目标并显示各自解析后的根目录，通过 `ctx.remote.faberloomView.installSkill` 安装，并列出该身份已记录的安装及其移除操作。该控件只出现在 Desktop 应用中：浏览器端会隐藏它，因为在浏览器里选择器列出的是宿主文件系统，而不是操作者自己的文件夹；
 - Settings 模态框中的 MCP 服务器页面：它声明服务器仅属于该用户，并在其所有工作区和空间中可用；列出该所有者已安装的服务器及其传输方式与验证状态（仅当服务器已启用且已挂载时才读作*已连接*；已启用但未挂载的读作*已保存但未验证*并附上遮蔽后的原因，已停用的读作*已停用*），以及存在哪些凭据（绝不显示值，也不显示凭据引用）。用户可能有很多服务器，各有用途；每个都保留自己的行、状态与操作，因此一个服务器的失败绝不会隐藏其他服务器；安装超过几个后会出现搜索框。它在保存前测试一个候选连接（显示它发现的工具，或具名失败——*服务器无响应*、*凭据被拒绝*、*服务器返回了意外的响应*——及其遮蔽明细和下一步操作）；当具名凭据没有值（*缺少值*）或有值却没有名称时拒绝保存；安装时每个值都写入凭据接缝；并允许所有者就地编辑某一行（重新输入那些从不显示的值）、启用或停用它，或经就地确认后移除。它只通过 `ctx.remote.faberloomView`（`mcpServers`、`saveMcpServer`、`removeMcpServer`、`probeMcpServer`）访问宿主注册表，因此宿主注册表代码不会进入浏览器。
 
 侧边栏脚部只保留 Settings 控件，本包不再向 `sidebar.footer.action` 注册任何内容。产品的调色板、界面语言与 MCP 服务器都在该控件打开的 Settings 模态框中选取：调色板位于 **Apariencia**（外观）分区，界面语言位于 **Idioma**（语言）分区，MCP 服务器位于 **Servidores MCP**（MCP 服务器）分区。
@@ -37,6 +37,8 @@ FaberLoom 界面把共享的 Web 外壳变成 FaberLoom 工作区：用 FaberLoo
 Espacios 详情把业务空间与 harness 工作区连接起来：`spaceWorkspace` 投射该空间的对话区域（其 `fw_` 工作目录注册为工作区，标题取自空间），而「在此空间新建对话」会在其中打开一个会话，因此侧边栏的工作区分组与空间始终是同一个东西。Mesa de trabajo（工作台）可带备注评审、提交新的已准备修订、让条目经过异常状态（请求数据、失败、完成），并列出已记录的效果及其明细与日期。
 
 这些行按设计的三种导航模式分组——「`Operar`」（Mesa、Espacios、Rutinas、Flujos、Correo）、「`Aprender`」（Memoria、Contexto、Aprobaciones）与「`Admin`」（Agentes y Skills、Conexiones）——并且只在总览已经计数其记录时才带徽标；没有真实数字的分区不显示徽标。
+
+一次只处理一条记录的四个界面，会在整宽的表格之上以对话框打开该记录：技能详情、工作台任务、连接编辑器与上下文条目。点击行会打开它，`Nueva tarea` 与 `+ Nueva conexión` 以新记录打开同一个对话框，按 Escape、点击遮罩、标题栏的关闭控件或页脚的 `Cerrar` 都会关闭它。Memoria 此前已经如此，其余四个现在也如此，因此没有任何详情编辑器与它的列表分享宽度。新建连接会打开一张空表单，而不是编辑器上一次持有的记录。
 
 所有注册都是调用方 fiber 上的 effect，并随其消失。
 
