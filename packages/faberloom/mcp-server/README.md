@@ -47,7 +47,8 @@ The tools act as the owner and use the same operations the panels do:
 
 - `faberloom_overview`, `faberloom_routines`, `faberloom_executions`;
 - `faberloom_teachings`, `faberloom_teaching_record`, `faberloom_teaching_revoke`;
-- `faberloom_routine_run`, which goes through the routines engine and therefore obeys the same autonomy guard: a step that records an effect still needs an active grant.
+- `faberloom_routine_run`, which goes through the routines engine and therefore obeys the same autonomy guard: a step that records an effect still needs an active grant;
+- `faberloom_mirror_export`, which returns this home's product rows and skill files as one versioned transfer document, and `faberloom_mirror_apply`, which applies a document back. Both require the `faberloom-mirror` row; a process without it refuses with a readable error.
 
 -----
 

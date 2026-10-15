@@ -14,9 +14,11 @@ import FaberLoomBackup from '../../backup/src/index.ts'
 import FaberLoomBoard from '../../board/src/index.ts'
 import FaberLoomConnections from '../../connections/src/index.ts'
 import FaberLoomLearning from '../../learning/src/index.ts'
+import FaberLoomMirror from '../../mirror/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
 import FaberLoomSpaces from '../../spaces/src/index.ts'
 import FaberLoomMcpServer from '../src/index.ts'
+import { FaberLoomToolHost } from '../src/tools.ts'
 import { dispatch, PROTOCOL_VERSION } from '../src/protocol.ts'
 
 const OWNER = 'compras2@sondelsa.com'
@@ -46,6 +48,7 @@ async function harness() {
   await ctx.plugin(FaberLoomRoutines)
   await ctx.plugin(FaberLoomBackup)
   await ctx.plugin(FaberLoomConnections)
+  await ctx.plugin(FaberLoomMirror, { enabled: false })
   const port = await freePort()
   await ctx.plugin(FaberLoomMcpServer, { ownerId: OWNER, enabled: true, socketPath: '', port })
   return { ctx, server: ctx.faberloomMcpServer, endpoint: { port }, routines: ctx.faberloomRoutines, memory: ctx.faberloomMemory }
@@ -181,6 +184,73 @@ describe('FaberLoomMcpServer', () => {
     await routines.activateRoutine(OWNER, routine.id)
     const denied = await post(endpoint.port, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'faberloom_routine_run', arguments: { routineId: String(routine.id), idempotencyKey: 'mcp-1' } } }, token)
     expect((JSON.parse(denied.text) as { result: { content: { text: string }[] } }).result.content[0]!.text).toContain('NOT_AUTHORIZED')
+  })
+
+  it('F04 — the mirror tools export this home and apply a document onto it', async () => {
+    const { server, endpoint, ctx } = await harness()
+    await waitForServer(endpoint.port)
+    const token = (await server.mintToken('Espejo')).token
+    // Reading the catalogue opens the agent domain, which is what a mounted
+    // product module does on boot; the mirror then has a table to write into.
+    await ctx.faberloomAgents.listAgents()
+
+    // The tool advertises the document this home holds, and applying a refused
+    // version writes nothing.
+    const exported = await post(endpoint.port, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'faberloom_mirror_export', arguments: {} } }, token)
+    const document = JSON.parse((JSON.parse(exported.text) as { result: { content: { text: string }[] } }).result.content[0]!.text) as {
+      document: { version: number; platform: string; domains: Record<string, unknown> }
+    }
+    expect(document.document.version).toBe(1)
+    expect(document.document.platform).toBe('desktop')
+    // The document names the product domains this process holds open; a domain
+    // that is not open is reported as skipped rather than read as empty.
+    expect(Object.keys(document.document.domains)).toContain('faberloom_mcp')
+
+    const refused = await post(endpoint.port, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'faberloom_mirror_apply', arguments: { document: { version: 99, platform: 'web', domains: {}, skills: {} } } },
+    }, token)
+    expect((JSON.parse(refused.text) as { result: { isError?: boolean; content: { text: string }[] } }).result.content[0]!.text)
+      .toContain('unsupported format version')
+
+    const applied = await post(endpoint.port, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'faberloom_mirror_apply',
+        arguments: {
+          document: {
+            version: 1,
+            platform: 'web',
+            domains: { faberloom_agents: { tables: { agents: { ag1: { deleted: false, value: { id: 'ag1', name: 'Desde la web' } } } } } },
+            skills: { 'informe-diario': '# Informe\n\nCuerpo.' },
+          },
+        },
+      },
+    }, token)
+    const appliedBody = JSON.parse((JSON.parse(applied.text) as { result: { content: { text: string }[] } }).result.content[0]!.text) as {
+      applied: { domain: string; table: string; key: string }[]
+      skillsApplied: string[]
+    }
+    expect(appliedBody.applied).toEqual([{ domain: 'faberloom_agents', table: 'agents', key: 'ag1' }])
+    expect(appliedBody.skillsApplied).toEqual(['informe-diario'])
+    // The mirror writes the stored row; the product service reads it as its own.
+    expect(ctx.storageDomain.get('faberloom_agents')?.table('agents').get('ag1')).toMatchObject({ name: 'Desde la web' })
+  })
+
+  it('F04 — the mirror tools refuse a process that does not mount the mirror row', async () => {
+    const ctx = new Context()
+    await ctx.plugin(Storage)
+    ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
+    const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+    ctx.storage.mount('domain', facility)
+    ctx.provide('storageDomain', facility)
+    const host = new FaberLoomToolHost(ctx, OWNER, null)
+    await expect(host.call('faberloom_mirror_export', {})).rejects.toThrow('not mounted')
+    await expect(host.call('faberloom_mirror_apply', { document: {} })).rejects.toThrow('not mounted')
   })
 
   it('F04 — a scoped token lists and calls only its tools', async () => {

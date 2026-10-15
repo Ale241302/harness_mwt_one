@@ -24,7 +24,7 @@
 
 /* The shell mirrors the deployed sign-in page: one raised card on the cream (or
    warm-dark) ground, the wordmark above it, and the accent reserved for the
-   primary action, the focus ring, and the wordmark's first half. */
+   focus ring and the wordmark's first half. */
 :root {
   color-scheme: light;
   --ground: #F4F1ED;
@@ -34,7 +34,11 @@
   --meta: #8A8278;
   --hairline: #D8D0C0;
   --accent: #C96442;
-  --accent-hover: #B9573A;
+  /* The primary action paints this surface instead of the brand accent: #A24E2C
+     carries the cream label `#F4F1ED` at 5.09:1, where the accent measures
+     3.46:1. The hover `#94472A` measures 5.84:1. */
+  --accent-surface: #A24E2C;
+  --accent-surface-hover: #94472A;
   --accent-text: #F4F1ED;
   --accent-ring: rgba(201, 100, 66, 0.18);
   --field: #FFFFFF;
@@ -60,7 +64,8 @@
     --meta: #9A9186;
     --hairline: #3D3A34;
     --accent: #CD6B4A;
-    --accent-hover: #D97757;
+    --accent-surface: #CD6B4A;
+    --accent-surface-hover: #D97757;
     --accent-text: #1F1E1C;
     --field: #1B1A18;
     --danger: #D9695A;
@@ -79,7 +84,8 @@
   --meta: #9A9186;
   --hairline: #3D3A34;
   --accent: #CD6B4A;
-  --accent-hover: #D97757;
+  --accent-surface: #CD6B4A;
+  --accent-surface-hover: #D97757;
   --accent-text: #1F1E1C;
   --field: #1B1A18;
   --danger: #D9695A;
@@ -147,8 +153,8 @@ p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.6; }
 
 #actions { margin-top: 24px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 
-button { min-height: 44px; padding: 10px 18px; border: 1px solid transparent; border-radius: 10px; color: var(--accent-text); background: var(--accent); font: inherit; cursor: pointer; }
-button:hover { background: var(--accent-hover); }
+button { min-height: 44px; padding: 10px 18px; border: 1px solid transparent; border-radius: 10px; color: var(--accent-text); background: var(--accent-surface); font: inherit; cursor: pointer; }
+button:hover { background: var(--accent-surface-hover); }
 #actions button { color: var(--text); background: transparent; border-color: var(--hairline); }
 #actions button:hover { background: transparent; border-color: var(--text-2); }
 button:disabled { opacity: 0.5; cursor: default; }
@@ -212,8 +218,8 @@ dialog::backdrop { background: rgba(31, 30, 28, 0.45); }
 #recovery-actions { margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px; }
 #recovery-actions button { background: transparent; color: var(--text); border-color: var(--hairline); }
 #recovery-actions button:hover { background: transparent; border-color: var(--text-2); }
-#recovery-actions #recovery-submit { background: var(--accent); color: var(--accent-text); border-color: transparent; }
-#recovery-actions #recovery-submit:hover { background: var(--accent-hover); }
+#recovery-actions #recovery-submit { background: var(--accent-surface); color: var(--accent-text); border-color: transparent; }
+#recovery-actions #recovery-submit:hover { background: var(--accent-surface-hover); }
 
 /* The application window has an 880px floor, so the pinned controls never meet.
    A narrower rendering (a screenshot, a hostile zoom) drops the language group

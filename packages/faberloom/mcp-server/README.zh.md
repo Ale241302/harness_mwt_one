@@ -47,7 +47,8 @@ owner 在 **Conexiones → Servidor MCP** 创建令牌并交给另一个智能�
 
 - `faberloom_overview`、`faberloom_routines`、`faberloom_executions`；
 - `faberloom_teachings`、`faberloom_teaching_record`、`faberloom_teaching_revoke`；
-- `faberloom_routine_run`，它经由例程引擎，因此遵守同一套自主权守卫：记录效果的步骤仍然需要有效授权。
+- `faberloom_routine_run`，它经由例程引擎，因此遵守同一套自主权守卫：记录效果的步骤仍然需要有效授权；
+- `faberloom_mirror_export`，把本 home 的产品行与技能文件作为唯一一份带版本的传输文档返回，以及 `faberloom_mirror_apply`，把一份文档应用回来。两者都要求 `faberloom-mirror` 行；没有该行的进程会以可读错误拒绝。
 
 -----
 

@@ -40,7 +40,7 @@ The application has one identity. It reads the folders of the computer it runs o
 
 The sign-in card now duplicates the deployed page's design, so a change to that page is a change in two places; the shell keeps the two controls the page does not have. Recovery needs the console reachable, which signing in already needs.
 
-The primary button still paints `#F4F1ED` on the brand accent `#C96442`, which measures 3.46:1 and misses the 4.5:1 bar for text at its size. That pairing is shared by the gateway's login page and `packages/client/ui-theme`, so it needs one change across those surfaces; this change preserves the pairing rather than adding a third variant of it.
+The primary button's cream label on the brand accent, `#F4F1ED` on `#C96442`, measures 3.46:1 and misses the 4.5:1 bar for text at its size; this change carried that pairing into the shell rather than adding a third variant of it. The [primary-button contrast Agent Note](../bug-fix/2026-10-15-primary-button-contrast.md) replaces the pairing with a dedicated primary surface across the shell, the gateway's login page, and `packages/client/ui-theme`.
 
 ## Testing
 

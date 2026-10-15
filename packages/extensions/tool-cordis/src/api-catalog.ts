@@ -1659,6 +1659,66 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomMirror',
+    summary: 'The desktop side of the product mirror.',
+    description: 'The desktop side of the product mirror. It owns the compare-and-apply rule, the row journal, and the push debounce; the gateway owns the transport and the owner\'s own home.',
+    methods: [
+      {
+        signature: 'skillsRoot(): string',
+        description: 'The owner skills root this side reads and writes.',
+        parameters: [],
+        returns: 'the absolute skills root.',
+      },
+      {
+        signature: 'clearTimers(): void',
+        description: 'Clear the running timers without ending the mirror, for a service this process keeps.',
+        parameters: [],
+      },
+      {
+        signature: 'stop(): void',
+        description: 'Stop the timers; a stopped mirror never starts another cycle.',
+        parameters: [],
+      },
+      {
+        signature: 'async sync(): Promise<FaberLoomMirrorSyncResult | undefined>',
+        description: 'One full cycle: pull and apply the remote document, then push every local row the journal does not already match.',
+        parameters: [],
+        returns: 'what the cycle did, or undefined when the mirror is unwired.',
+      },
+      {
+        signature: 'async importDocument(received: unknown): Promise<FaberLoomMirrorImportResult>',
+        description: 'Apply one document another side sent, without a cycle of this process: validate the version, write or delete the rows, and write the skill files.',
+        parameters: [{ name: 'received', description: 'the parsed document the caller sent.' }],
+        returns: 'what landed and the locations this process could not reach.',
+        throws: ['when the document version or its structure is refused.'],
+      },
+      {
+        signature: 'async exportDocument(): Promise<FaberLoomMirrorExportResult>',
+        description: 'Read this home as one transfer document, for the side that serves it.',
+        parameters: [],
+        returns: 'the document and the locations this process cannot reach.',
+      },
+      {
+        signature: 'async writeMirroredSkills( skills: Readonly<Record<string, string | null>>, ): Promise<{ written: string[]; skipped: FaberLoomMirrorSkip[] }>',
+        description: 'Write the skill bundles one received document carries.',
+        parameters: [{ name: 'skills', description: 'bundle name to `SKILL.md` text; a null entry is skipped.' }],
+        returns: 'the bundles written and the names refused or unreadable.',
+      },
+      {
+        signature: 'async pull(): Promise<FaberLoomMirrorDocument | undefined>',
+        description: 'Read the remote document from the gateway.',
+        parameters: [],
+        returns: 'the parsed document, or undefined when the request failed.',
+      },
+      {
+        signature: 'async readSkills(): Promise<{ skills: Record<string, string>; skipped: readonly FaberLoomMirrorSkip[] }>',
+        description: 'Read every skill bundle this owner holds as `name -> SKILL.md` text.',
+        parameters: [],
+        returns: 'the bundle texts and the bundles with no readable `SKILL.md`.',
+      },
+    ],
+  },
+  {
     key: 'faberloomModelCatalog',
     summary: 'The model catalog service, published as `ctx.faberloomModelCatalog`.',
     description: 'The model catalog service, published as `ctx.faberloomModelCatalog`.\n\nEvery call resolves its credential reference through the credentials seam, or through the launch environment while no seam is mounted, so a changed reference reaches the next call with no restart. No method caches a credential value.',
@@ -7350,6 +7410,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomMigrationReport {\n    readonly applied: string[];\n    readonly skipped: string[];\n}',
   },
   {
+    name: 'FaberLoomMirrorDocument',
+    declaration: 'export interface FaberLoomMirrorDocument {\n    readonly version: number;\n    readonly platform: \'web\' | \'desktop\';\n    readonly domains: Readonly<Record<string, FaberLoomMirrorDomain>>;\n    readonly skills: Readonly<Record<string, string | null>>;\n}',
+  },
+  {
+    name: 'FaberLoomMirrorDomain',
+    declaration: 'export interface FaberLoomMirrorDomain {\n    readonly tables: Readonly<Record<string, Readonly<Record<string, FaberLoomMirrorRow>>>>;\n}',
+  },
+  {
+    name: 'FaberLoomMirrorExportResult',
+    declaration: 'export interface FaberLoomMirrorExportResult {\n    readonly document: FaberLoomMirrorDocument;\n    readonly skipped: readonly FaberLoomMirrorSkip[];\n}',
+  },
+  {
+    name: 'FaberLoomMirrorImportResult',
+    declaration: 'export interface FaberLoomMirrorImportResult {\n    readonly rows: readonly FaberLoomMirrorRowChange[];\n    readonly applied: readonly FaberLoomMirrorRowChange[];\n    readonly skipped: readonly FaberLoomMirrorSkip[];\n    readonly skillsApplied: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomMirrorRow',
+    declaration: 'export interface FaberLoomMirrorRow {\n    readonly deleted: boolean;\n    readonly value?: unknown;\n}',
+  },
+  {
+    name: 'FaberLoomMirrorRowChange',
+    declaration: 'export interface FaberLoomMirrorRowChange {\n    readonly domain: string;\n    readonly table: string;\n    readonly key: string;\n}',
+  },
+  {
+    name: 'FaberLoomMirrorSkip',
+    declaration: 'export interface FaberLoomMirrorSkip {\n    readonly domain: string;\n    readonly table: string;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'FaberLoomMirrorSyncResult',
+    declaration: 'export interface FaberLoomMirrorSyncResult {\n    readonly rows: readonly FaberLoomMirrorRowChange[];\n    readonly applied: readonly FaberLoomMirrorRowChange[];\n    readonly keptLocal: readonly FaberLoomMirrorRowChange[];\n    readonly pushed: readonly FaberLoomMirrorRowChange[];\n    readonly skillsApplied: readonly string[];\n    readonly skipped: readonly FaberLoomMirrorSkip[];\n}',
+  },
+  {
     name: 'FaberLoomModel',
     declaration: 'export interface FaberLoomModel {\n    readonly id: FaberLoomModelId;\n    readonly provider: string;\n    readonly model: string;\n    readonly capabilities: readonly string[];\n    readonly contextWindow: number | undefined;\n    readonly maxOutput: number | undefined;\n    readonly inputPerMillion: number | undefined;\n    readonly outputPerMillion: number | undefined;\n    readonly currency: string | undefined;\n    readonly available: boolean;\n    readonly checkedAt: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
@@ -7587,7 +7679,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSpaceMemoryRow',
-    declaration: 'export interface FaberLoomSpaceMemoryRow {\n    readonly id: string;\n    readonly text: string;\n    readonly spaceIds: readonly string[];\n    readonly createdAt: string;\n    readonly visibility?: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
+    declaration: 'export interface FaberLoomSpaceMemoryRow {\n    readonly id: string;\n    readonly text: string;\n    readonly spaceIds: readonly string[];\n    readonly createdAt: string;\n    readonly sessionId: string | null;\n    readonly visibility?: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
   },
   {
     name: 'FaberLoomSpaceRow',

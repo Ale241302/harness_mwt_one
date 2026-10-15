@@ -7,7 +7,9 @@
  * (Faber Warm — the default —, Slate and Ink) and two light (Paper — the
  * default — and Bond). Each one is transcribed verbatim and mapped by role onto
  * the shared `--dsw-alias-*` tokens, so every surface that already consumes an
- * alias follows the chosen palette without its own branch.
+ * alias follows the chosen palette without its own branch. Only the primary
+ * button's fill and its hover are derived instead of transcribed: the palette's
+ * coral is too light to carry the palette's canvas ink as text.
  *
  * Only the built-in palettes are listed here. A theme registered at runtime by
  * another plugin lives in the registry alone: it is selectable and composed like
@@ -44,8 +46,10 @@ interface Palette {
   readonly borderStrong: string
   /** Coral accent: the maker. */
   readonly coral: string
-  /** Coral under the pointer. */
-  readonly coralDeep: string
+  /** Coral as a background behind text: the primary button fill. Repeats `coral` where that already clears the palette's ink. */
+  readonly coralSurface: string
+  /** The primary fill under the pointer. */
+  readonly coralSurfaceHover: string
   /** Coral wash for a selected or active surface. */
   readonly coralSoft: string
   /** Sage: approved. */
@@ -96,13 +100,16 @@ function paletteTokens(palette: Palette): Readonly<Record<string, string>> {
     '--dsw-alias-border-l2-darkmode-thin': palette.borderSubtle,
     '--dsw-alias-border-l3': palette.borderStrong,
     '--dsw-alias-border-l4': palette.borderStrong,
-    // The accent: action and AI.
+    // The accent: action and AI. The filled primary button paints a surface of
+    // its own, because the coral itself measures under 4.5:1 against the
+    // palette's canvas ink (3.20:1 on Paper, 3.46:1 on Bond); the fill and its
+    // hover clear 4.5:1 on every palette.
     '--dsw-alias-brand-primary': palette.coral,
     '--dsw-alias-brand-primary-new-colorprimary-new-color': palette.coral,
     '--dsw-alias-brand-text': palette.coral,
     '--dsw-alias-link': palette.coral,
-    '--dsw-alias-button-primary-fill': palette.coral,
-    '--dsw-alias-button-primary-hover': palette.coralDeep,
+    '--dsw-alias-button-primary-fill': palette.coralSurface,
+    '--dsw-alias-button-primary-hover': palette.coralSurfaceHover,
     '--dsw-alias-button-primary-dimmed': palette.coralSoft,
     '--dsw-alias-interactive-bg-hover-accent': palette.coralSoft,
     // Functional states; the glyph never changes shape, only colour.
@@ -127,7 +134,7 @@ const WARM: Palette = {
   scrim: 'rgba(0, 0, 0, 0.55)',
   textPrimary: '#F4F1ED', textSecondary: '#B8B0A4', textMuted: '#8A8278', textFaint: '#645E55',
   borderSubtle: '#302C26', borderDefault: '#3D3A34', borderStrong: '#514B42',
-  coral: '#CD6B4A', coralDeep: '#A84F33', coralSoft: 'rgba(205, 107, 74, 0.14)',
+  coral: '#CD6B4A', coralSurface: '#CD6B4A', coralSurfaceHover: '#D97757', coralSoft: 'rgba(205, 107, 74, 0.14)',
   sage: '#6FBE92', sageDeep: '#2F6B49', sageSoft: 'rgba(111, 190, 146, 0.14)',
   amber: '#D9A24E', amberDeep: '#8A6420', amberSoft: 'rgba(217, 162, 78, 0.14)',
   vino: '#D9695A', vinoDeep: '#7E342B', vinoSoft: 'rgba(217, 105, 90, 0.13)',
@@ -140,7 +147,7 @@ const SLATE: Palette = {
   scrim: 'rgba(0, 0, 0, 0.55)',
   textPrimary: '#EEF1F4', textSecondary: '#C2C8CF', textMuted: '#8B939C', textFaint: '#5C636B',
   borderSubtle: '#262A2F', borderDefault: '#383D44', borderStrong: '#4A5058',
-  coral: '#CD6B4A', coralDeep: '#A84F33', coralSoft: 'rgba(205, 107, 74, 0.14)',
+  coral: '#CD6B4A', coralSurface: '#CD6B4A', coralSurfaceHover: '#D97757', coralSoft: 'rgba(205, 107, 74, 0.14)',
   sage: '#6FBE92', sageDeep: '#2F6B49', sageSoft: 'rgba(111, 190, 146, 0.14)',
   amber: '#D9A24E', amberDeep: '#8A6420', amberSoft: 'rgba(217, 162, 78, 0.14)',
   vino: '#D9695A', vinoDeep: '#7E342B', vinoSoft: 'rgba(217, 105, 90, 0.13)',
@@ -153,7 +160,7 @@ const MONO: Palette = {
   scrim: 'rgba(0, 0, 0, 0.7)',
   textPrimary: '#F7F5F2', textSecondary: '#CAC4BA', textMuted: '#857E73', textFaint: '#565047',
   borderSubtle: '#221F1B', borderDefault: '#37332D', borderStrong: '#4A453D',
-  coral: '#D6724E', coralDeep: '#A84F33', coralSoft: 'rgba(214, 114, 78, 0.15)',
+  coral: '#D6724E', coralSurface: '#D6724E', coralSurfaceHover: '#E08760', coralSoft: 'rgba(214, 114, 78, 0.15)',
   sage: '#6FBE92', sageDeep: '#2F6B49', sageSoft: 'rgba(111, 190, 146, 0.14)',
   amber: '#D9A24E', amberDeep: '#8A6420', amberSoft: 'rgba(217, 162, 78, 0.14)',
   vino: '#DC6B5A', vinoDeep: '#7E342B', vinoSoft: 'rgba(220, 107, 90, 0.14)',
@@ -166,7 +173,7 @@ const PAPER: Palette = {
   scrim: 'rgba(40, 34, 28, 0.35)',
   textPrimary: '#1F1E1C', textSecondary: '#5A544C', textMuted: '#8A8278', textFaint: '#A99F8E',
   borderSubtle: '#E4DCCD', borderDefault: '#D8D0C0', borderStrong: '#BEB29B',
-  coral: '#C96442', coralDeep: '#A84F33', coralSoft: 'rgba(201, 100, 66, 0.12)',
+  coral: '#C96442', coralSurface: '#A24E2C', coralSurfaceHover: '#94472A', coralSoft: 'rgba(201, 100, 66, 0.12)',
   sage: '#2F8F5E', sageDeep: '#245F40', sageSoft: 'rgba(47, 143, 94, 0.13)',
   amber: '#B07A1E', amberDeep: '#8A6015', amberSoft: 'rgba(176, 122, 30, 0.15)',
   vino: '#B4452E', vinoDeep: '#8E3424', vinoSoft: 'rgba(180, 69, 46, 0.1)',
@@ -179,7 +186,7 @@ const CLOUD: Palette = {
   scrim: 'rgba(40, 34, 28, 0.3)',
   textPrimary: '#1F1E1C', textSecondary: '#5A544C', textMuted: '#8A8278', textFaint: '#ABA191',
   borderSubtle: '#EDE7DC', borderDefault: '#D8D0C0', borderStrong: '#C2B8A6',
-  coral: '#C96442', coralDeep: '#A84F33', coralSoft: 'rgba(201, 100, 66, 0.12)',
+  coral: '#C96442', coralSurface: '#A24E2C', coralSurfaceHover: '#94472A', coralSoft: 'rgba(201, 100, 66, 0.12)',
   sage: '#2F8F5E', sageDeep: '#245F40', sageSoft: 'rgba(47, 143, 94, 0.13)',
   amber: '#B07A1E', amberDeep: '#8A6015', amberSoft: 'rgba(176, 122, 30, 0.15)',
   vino: '#B4452E', vinoDeep: '#8E3424', vinoSoft: 'rgba(180, 69, 46, 0.1)',

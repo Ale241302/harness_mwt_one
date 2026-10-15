@@ -17,9 +17,9 @@ import type { ConnectionKind } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
+import type { FaberLoomMirror } from '@deepseek-ai/dsh-faberloom-mirror'
 import type { McpToolDefinition, ToolHost, ToolResult } from './protocol.ts'
 import { value } from './protocol.ts'
-
 /** Longest list a single tool result returns. */
 const MAX_ROWS = 50
 
@@ -100,6 +100,13 @@ function num(args: Record<string, unknown>, name: string): number | undefined {
 /** The acting identity every MCP call uses; the deployment injects the owner. */
 function actor(id: string): SpaceActor {
   return { id, role: 'client_b2b', companyId: undefined, readOnly: false }
+}
+
+/** Resolve the mirror service, refusing a call when the row is not mounted. */
+function requireMirror(context: Context): FaberLoomMirror {
+  const mirror = context.get('faberloomMirror')
+  if (mirror === undefined) throw new Error('the mirror is not mounted in this process; mount the faberloom-mirror row')
+  return mirror
 }
 
 /** The catalogue, in the order a client lists it. */
@@ -1025,6 +1032,36 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     },
     run: async (context, ownerId) => context.faberloomBackup.runMigrations(ownerId),
+  },
+  // ── Mirror ─────────────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_mirror_export',
+      description: 'Lee los datos de producto de este equipo como un documento de espejo versionado: agentes, espacios, rutinas, mesa, memoria, contexto, flujos, conexiones, concesiones y skills.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async (context, _ownerId) => {
+      const local = await requireMirror(context).exportDocument()
+      return { document: local.document, skipped: local.skipped }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_mirror_apply',
+      description: 'Aplica un documento de espejo versionado sobre los datos de producto de este equipo: escribe o borra filas por (dominio, tabla, clave) y escribe los archivos de skills que traiga.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['document'],
+        properties: {
+          document: {
+            type: 'object',
+            description: 'Documento de espejo: {version, platform, domains, skills}. La version debe ser la que este build habla.',
+          },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => requireMirror(context).importDocument(args['document']),
   },
   // ── Connections ────────────────────────────────────────────────────
   {

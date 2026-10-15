@@ -51,6 +51,7 @@
     "@deepseek-ai/dsh-faberloom-backup": "workspace:^",
     "@deepseek-ai/dsh-faberloom-execution": "workspace:^",
     "@deepseek-ai/dsh-faberloom-learning": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-mirror": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",
     "@deepseek-ai/dsh-faberloom-spaces": "workspace:^",
     "@deepseek-ai/dsh-faberloom-view": "workspace:^",

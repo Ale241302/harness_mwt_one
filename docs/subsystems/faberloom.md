@@ -1131,6 +1131,69 @@ async importKnowledge( ownerId: string, snapshot: KnowledgeSnapshot, ): Promise<
 
 Source: [`packages/faberloom/learning/src/index.ts`](../../packages/faberloom/learning/src/index.ts)
 
+<a id="ctxfaberloommirror--faberloommirror"></a>
+
+### `ctx.faberloomMirror` — `FaberLoomMirror`
+
+The desktop side of the product mirror. It owns the compare-and-apply rule, the row journal, and the push debounce; the gateway owns the transport and the owner's own home.
+
+```ts cordis-catalog
+/**
+ * The owner skills root this side reads and writes.
+ * @returns the absolute skills root.
+ */
+skillsRoot(): string
+
+/** Clear the running timers without ending the mirror, for a service this process keeps. */
+clearTimers(): void
+
+/** Stop the timers; a stopped mirror never starts another cycle. */
+stop(): void
+
+/**
+ * One full cycle: pull and apply the remote document, then push every local
+ * row the journal does not already match.
+ * @returns what the cycle did, or undefined when the mirror is unwired.
+ */
+async sync(): Promise<FaberLoomMirrorSyncResult | undefined>
+
+/**
+ * Apply one document another side sent, without a cycle of this process:
+ * validate the version, write or delete the rows, and write the skill files.
+ * @param received - the parsed document the caller sent.
+ * @returns what landed and the locations this process could not reach.
+ * @throws when the document version or its structure is refused.
+ */
+async importDocument(received: unknown): Promise<FaberLoomMirrorImportResult>
+
+/**
+ * Read this home as one transfer document, for the side that serves it.
+ * @returns the document and the locations this process cannot reach.
+ */
+async exportDocument(): Promise<FaberLoomMirrorExportResult>
+
+/**
+ * Write the skill bundles one received document carries.
+ * @param skills - bundle name to `SKILL.md` text; a null entry is skipped.
+ * @returns the bundles written and the names refused or unreadable.
+ */
+async writeMirroredSkills( skills: Readonly<Record<string, string | null>>, ): Promise<{ written: string[]; skipped: FaberLoomMirrorSkip[] }>
+
+/**
+ * Read the remote document from the gateway.
+ * @returns the parsed document, or undefined when the request failed.
+ */
+async pull(): Promise<FaberLoomMirrorDocument | undefined>
+
+/**
+ * Read every skill bundle this owner holds as `name -> SKILL.md` text.
+ * @returns the bundle texts and the bundles with no readable `SKILL.md`.
+ */
+async readSkills(): Promise<{ skills: Record<string, string>; skipped: readonly FaberLoomMirrorSkip[] }>
+```
+
+Source: [`packages/faberloom/mirror/src/index.ts`](../../packages/faberloom/mirror/src/index.ts)
+
 <a id="ctxfaberloommodelcatalog--providermodelcatalog"></a>
 
 ### `ctx.faberloomModelCatalog` — `ProviderModelCatalog`

@@ -1012,6 +1012,39 @@ export interface Config {
 
 来源：[`packages/faberloom/mcp-server/src/index.ts:45`](../packages/faberloom/mcp-server/src/index.ts)
 
+<a id="deepseek-aidsh-faberloom-mirror"></a>
+
+## `@deepseek-ai/dsh-faberloom-mirror`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Deployment-supplied wiring of the desktop side of the mirror. */
+export interface Config {
+  /** Whether the mirror runs at all. It is off when absent. */
+  enabled?: boolean
+  /** Gateway origin holding the mirror route, for example `https://harness.mwt.one`. */
+  gatewayUrl?: string
+  /** Owning account email the gateway resolves the socket and rows from. */
+  ownerId?: string
+  /** Console bearer token the gateway authenticates the owner with. */
+  consoleToken?: string
+  /** Console API base the installation signs in with; the harness origin is derived from it. */
+  consoleBase?: string
+  /** Internal credential the owner's product MCP server accepts on its socket. */
+  mirrorKey?: string
+  /** Owner skills root; defaults to `$DSH_HOME/skills`. */
+  skillsRoot?: string
+  /** Milliseconds between two cycles. */
+  intervalMs?: number
+  /** Milliseconds a local change waits before it is pushed. */
+  debounceMs?: number
+  /** Milliseconds one request may take. */
+  timeoutMs?: number
+}
+```
+
+来源：[`packages/faberloom/mirror/src/index.ts:69`](../packages/faberloom/mirror/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-model-catalog"></a>
 

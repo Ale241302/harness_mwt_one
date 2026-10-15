@@ -16,6 +16,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import express from 'express'
 import httpProxy from 'http-proxy'
 
+import { installMirrorRoute } from './mirror-route.mjs'
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // Lee un secreto desde `<NAME>_FILE` (Docker secret / archivo montado) y, si no
@@ -85,6 +87,10 @@ const cfg = {
   // FaberLoom · MCP propio (espacios) por usuario.
   faberloomUrl: process.env.FABERLOOM_MCP_URL || '',
   faberloomGatewayKey: readSecret('FABERLOOM_GATEWAY_KEY'),
+  // Espejo de producto: la credencial con la que el gateway habla con el servidor
+  // MCP del propietario para leer y escribir sus filas. Sin ella la ruta responde
+  // 503 y el cliente local no se activa, para que el espejo nunca sea un no-op mudo.
+  mirrorKey: readSecret('FABERLOOM_MIRROR_KEY'),
   sessionSecret: readSecret('SESSION_SECRET'),
   // Sesión del gateway (la del harness dura 30 días por defecto).
   cookieName: 'hgate',
@@ -1295,6 +1301,7 @@ function startInstance(user, memory) {
         // el proceso hijo debe recibir el valor resuelto (env o *_FILE).
         ...(cfg.mcpGatewayKey ? { MWT_MCP_GATEWAY_KEY: cfg.mcpGatewayKey } : {}),
         ...(cfg.faberloomGatewayKey ? { FABERLOOM_GATEWAY_KEY: cfg.faberloomGatewayKey } : {}),
+        ...(cfg.mirrorKey ? { FABERLOOM_MIRROR_KEY: cfg.mirrorKey } : {}),
         // El servicio de compartir llama a la consola como el propio usuario: el
         // parche lee estos dos nombres como `!!js process.env.*`.
         CONSOLA_API_BASE: cfg.consolaApi,
@@ -1824,6 +1831,12 @@ app.get('/logout', (req, res) => {
   res.redirect(303, '/login?e=bye')
 })
 
+// Espejo de producto: el escritorio lee y escribe a través de esta ruta las filas
+// de su propia casa en el despliegue, autenticada con el token de consola del
+// propietario y reenviada a su servidor MCP. Sin la credencial responde 503, así
+// que un despliegue que no lo configura lo dice en vez de fingir que sincroniza.
+installMirrorRoute(app, { dataDir: cfg.dataDir, userStateFile: cfg.userStateFile, mirrorKey: cfg.mirrorKey })
+
 // Catch-all: exige sesión y proxya al dsh del usuario. M3 · si la sesión firmada
 // sigue viva pero el proceso dsh se perdió (p. ej. tras un redeploy), se vuelve a
 // arrancar en el momento desde gateway-users.json, sin obligar a re-login.
@@ -1978,9 +1991,14 @@ const AUTH_APPEARANCE_SCRIPT = `
 `
 const AUTH_CSS = `
   ${AUTH_FONTS}
+  /* --auth-primary is the surface behind the submit label, so it is deeper than
+     the brand coral: #A24E2C carries the cream #F4F1ED at 5.09:1, where the
+     coral #C96442 measures 3.46:1. The hover #94472A measures 5.84:1.
+     --auth-coral keeps the brand value for the wordmark. On the dark theme the
+     coral #CD6B4A already carries the ink label #1F1E1C at 4.60:1. */
   :root{color-scheme:light;--auth-bg:#F4F1ED;--auth-card:#fff;--auth-ink:#1F1E1C;--auth-text2:#5A544C;
-        --auth-line:#D8D0C0;--auth-field:#fff;--auth-coral:#C96442;--auth-primary:#C96442;--auth-primary-ink:#F4F1ED;
-        --auth-primary-hover:#B9573A;--auth-err:#B4452E;--auth-shadow:0 16px 48px rgba(31,30,28,.10)}
+        --auth-line:#D8D0C0;--auth-field:#fff;--auth-coral:#C96442;--auth-primary:#A24E2C;--auth-primary-ink:#F4F1ED;
+        --auth-primary-hover:#94472A;--auth-err:#B4452E;--auth-shadow:0 16px 48px rgba(31,30,28,.10)}
   :root[data-appearance=dark]{color-scheme:dark;--auth-bg:#1F1E1C;--auth-card:#2A2724;--auth-ink:#F4F1ED;--auth-text2:#BEB6AB;
         --auth-line:#3D3A34;--auth-field:#1B1A18;--auth-coral:#CD6B4A;--auth-primary:#CD6B4A;--auth-primary-ink:#1F1E1C;
         --auth-primary-hover:#D97757;--auth-err:#D9695A;--auth-shadow:0 20px 56px rgba(0,0,0,.45)}

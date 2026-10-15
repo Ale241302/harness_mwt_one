@@ -83,6 +83,16 @@
     - id: faberloom-backup
       name: '@deepseek-ai/dsh-faberloom-backup'
 
+    # Mirror entre este equipo y el despliegue: lee el documento versionado del
+    # gateway y aplica las filas y los archivos de skills, y empuja los cambios
+    # locales con retardo. Queda inerte hasta que el despliegue lo enciende
+    # (FABERLOOM_MIRROR_ENABLED=1) y nombra su credencial
+    # (FABERLOOM_MIRROR_URL y FABERLOOM_MIRROR_KEY); sin ellas el servidor MCP
+    # no acepta ninguna llamada de espejo y la bitácora lo dice.
+    - id: faberloom-mirror
+      name: '@deepseek-ai/dsh-faberloom-mirror'
+      disabled: !!js process.env.FABERLOOM_MIRROR_ENABLED !== '1'
+
     # Conexiones propias del usuario (IMAP y respaldo), ajenas al MCP.
     - id: faberloom-connections
       name: '@deepseek-ai/dsh-faberloom-connections'

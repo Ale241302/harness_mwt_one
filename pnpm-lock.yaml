@@ -1812,6 +1812,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-mcp-server':
         specifier: workspace:^
         version: link:../../faberloom/mcp-server
+      '@deepseek-ai/dsh-faberloom-mirror':
+        specifier: workspace:^
+        version: link:../../faberloom/mirror
       '@deepseek-ai/dsh-faberloom-model-catalog':
         specifier: workspace:^
         version: link:../../faberloom/model-catalog
@@ -7095,12 +7098,30 @@ importers:
       '@deepseek-ai/dsh-faberloom-learning':
         specifier: workspace:^
         version: link:../learning
+      '@deepseek-ai/dsh-faberloom-mirror':
+        specifier: workspace:^
+        version: link:../mirror
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines
       '@deepseek-ai/dsh-faberloom-spaces':
         specifier: workspace:^
         version: link:../spaces
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+
+  packages/faberloom/mirror:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-access':
+        specifier: workspace:^
+        version: link:../access
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain

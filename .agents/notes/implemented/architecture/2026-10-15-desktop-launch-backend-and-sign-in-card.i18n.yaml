@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-15-desktop-launch-backend-and-sign-in-card.md
-2026-10-15-desktop-launch-backend-and-sign-in-card.md: adeb37c4736f785e7477eb2263b62e66bbbbe8b5
-2026-10-15-desktop-launch-backend-and-sign-in-card.zh.md: e7ccd6005699ee18eb29ee22b87402357646a8d5
+2026-10-15-desktop-launch-backend-and-sign-in-card.md: 06184dfac5c399dfd88ca35c186f7e534c481b72
+2026-10-15-desktop-launch-backend-and-sign-in-card.zh.md: 323b8f9953414b84a9f6b384171e22f6dfd2ca72

@@ -125,3 +125,37 @@ describe('wordmark halves across the built-in palettes', () => {
     }
   })
 })
+
+/**
+ * The filled primary button paints `--dsw-alias-button-primary-fill` behind
+ * `--dsw-alias-label-primary-foreground`, which is the palette's canvas. The
+ * brand coral sits under that ink at 3.20:1 (Paper) and 3.46:1 (Bond), so the
+ * fill and its hover are held to WCAG AA by measurement, not by eye.
+ */
+describe('primary button contrast across the built-in palettes', () => {
+  /** WCAG relative luminance of one palette colour. */
+  const luminance = (hex: string): number => {
+    const linear = [1, 3, 5].map((at) => {
+      const channel = Number.parseInt(hex.slice(at, at + 2), 16) / 255
+      return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+  }
+
+  /** WCAG contrast ratio between two palette colours. */
+  const contrast = (one: string, other: string): number => {
+    const [bright, dark] = [luminance(one), luminance(other)].sort((left, right) => right - left)
+    return (bright! + 0.05) / (dark! + 0.05)
+  }
+
+  it.each([
+    '--dsw-alias-button-primary-fill',
+    '--dsw-alias-button-primary-hover',
+  ] as const)('keeps %s at 4.5:1 or more under the palette ink', (role) => {
+    for (const entry of THEME_PALETTES) {
+      const ink = entry.tokens['--dsw-alias-label-primary-foreground'] ?? ''
+      const ratio = contrast(entry.tokens[role] ?? '', ink)
+      expect(ratio, `${entry.id} ${role}`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+})

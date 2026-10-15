@@ -126,6 +126,7 @@ const pwshCoverageExclusions = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProf
 const testIncludes = [
   'packages/*/*/tests/**/*.spec.{ts,tsx}',
   'apps/*/tests/**/*.spec.ts',
+  'gateway/tests/**/*.spec.mjs',
   'scripts/**/*.spec.ts',
   'website/tests/**/*.spec.ts',
 ]

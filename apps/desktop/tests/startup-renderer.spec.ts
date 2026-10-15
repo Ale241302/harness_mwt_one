@@ -208,6 +208,10 @@ it('ships cream and warm-dark brand variants with referenceable fonts', () => {
   expect(css).toContain('#F4F1ED')
   expect(css).toContain('#1F1E1C')
   expect(css).toContain('#C96442')
+  // The primary action paints the deeper surface, not the brand accent: the
+  // accent carries the cream label at 3.46:1.
+  expect(css).toContain('#A24E2C')
+  expect(css).toContain('#94472A')
   expect(css).toContain('[data-appearance="dark"]')
   expect(css).toContain('fonts/geist.woff2')
   expect(css).toContain('fonts/geist-mono.woff2')
