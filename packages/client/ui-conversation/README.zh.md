@@ -42,7 +42,7 @@ target package 通过 declaration merge 扩展 snapshot 与 Location data map，
 
 已认领的命令在仅删除参数和末尾分隔空格时保留身份与高亮，改动命令名才会释放认领。所有命令和语言使用相同规则，包括 `/goal`、`/目标`、`/plan` 和 `/计划`。输入法组合输入期间，命令提示和普通占位文字持续隐藏，直到编辑器提交最终文字且对应输入为空时才重新显示。
 
-工作区选择使用 `uiWorkspace.openWorkspace` 准备目标并提交导航。草稿文字和附件仅在该请求仍为当前请求时，通过它的同步准备回调搬移；后续导航或所有者释放会保留原草稿。
+工作区选择使用 `uiWorkspace.openWorkspace` 准备目标并提交导航。不使用工作区的启动走 `uiWorkspace.openUnassignedSession`，规则相同，因此 Hero 可以在完全没有工作区的情况下物化一个会话，chip 也会标明这一状态。草稿文字和附件仅在该请求仍为当前请求时，通过同步准备回调搬移；后续导航或所有者释放会保留原草稿。
 
 本包占据 root 作用域 `main` 中的 `conversation` key，其包装层声明 optional-Session `main.conversation` shell。本包注册 strict Session header/body、View list、composer chain 与 bar、输入区域、Hero 区域、queue dock、草稿持久化和 phase 计算。`ctx.uiSession.provide()` 从同一个 Session binding 物化 Conversation 与 input source，并将 `inputActions` 作为稳定标准 prop 提供。
 
@@ -50,7 +50,7 @@ View 选择规则固定：有效且已注册的持久化选择优先，其次是
 
 Session 首次绑定或缓存的 Session 成为 current 时，shell 会在渲染前读取持久化 View 偏好，激活已注册的偏好 View 或 Chat fallback，并在后续 tab 或 focus 选择写入 store 前先激活对应 target。blank Session 仍不渲染 `conversation.view` slot；未选中的 target 不会激活。
 
-常驻 composer 在无 Session 与有 Session 之间保持挂载。输入空白字符会隐藏占位提示；没有附件的纯空白草稿无法发送。无 Session 时，同一个编辑器表面保持 inert，Workspace picker 连接 blank Session。该表面是 shell 所有的 Lexical 编辑器：引用 chip 是携带 owner 序列化身份的原子 decorator 节点（提交时经 owner codec 展开），已认领的 slash command 保持为带样式的行首文本，文件夹文本引用以图标前缀携带文件夹图形，草稿的剪贴板投影镜像到逐 Session Conversation store。Queue 操作通过 scoped `ctx.conversation` service 寻址准确的 queue occurrence；queue 预览经 `ui-primitives` 的共享行内引用投影渲染已发送文本（wire 会话形式折叠为其标签），并按原始附件顺序展示本地或持久化的图片和文件。图片使用缩略图，文件使用紧凑的名称与大小卡片。编辑态展示字面发送文本，持久化缩略图通过会话图片 URL 缓存解析。繁忙时 Enter 行为保存在 Host-backed `ui-conversation` settings namespace。
+常驻 composer 在无 Session 与有 Session 之间保持挂载。输入空白字符会隐藏占位提示；没有附件的纯空白草稿无法发送。无 Session 时，同一个编辑器表面保持 inert，Workspace picker 连接 blank Session；只要 Session 存在就可对话，不属于任何工作区的会话同样如此。该表面是 shell 所有的 Lexical 编辑器：引用 chip 是携带 owner 序列化身份的原子 decorator 节点（提交时经 owner codec 展开），已认领的 slash command 保持为带样式的行首文本，文件夹文本引用以图标前缀携带文件夹图形，草稿的剪贴板投影镜像到逐 Session Conversation store。Queue 操作通过 scoped `ctx.conversation` service 寻址准确的 queue occurrence；queue 预览经 `ui-primitives` 的共享行内引用投影渲染已发送文本（wire 会话形式折叠为其标签），并按原始附件顺序展示本地或持久化的图片和文件。图片使用缩略图，文件使用紧凑的名称与大小卡片。编辑态展示字面发送文本，持久化缩略图通过会话图片 URL 缓存解析。繁忙时 Enter 行为保存在 Host-backed `ui-conversation` settings namespace。
 
 scoped `ctx.conversation` service 还承载工作区附加动词。`ConversationController.attachWorkspaceFile(name, data)` 把调用方读取的字节经由与浏览器选取文件相同的草稿创建与 rail 准入流程暂存，因此附加的 Space 文件进入同一个后台上传队列，并以暂存回执到达模型；`@` 菜单读取字节，composer 持有 rail、上传状态与面向模型的附件。`WeavingProgress` 是产品唯一被许可的进度状态，也是品牌唯一保留的动效：已备好的经线保持绘出，纬线在 3×3 网格上逐段投入，随后再沿原路抽回，织成的结使用品牌自己的珊瑚色。这套动效按绘制尺寸分为两臂：32px 及以上时，一根纬线足够长、能看出沿线移动，因此投入的是线本身；而在 composer 的 24px——品牌织造尺寸的下限，一根纬线只有一两像素——结保持完整绘出且较淡，每根纬线随梭子投入而亮到品牌珊瑚色，于是动效靠纬线的明度而非长度来呈现。只有两个真正处于飞行中的界面会挂载它，且仅在其飞行期间挂载——轮次运行期间的 composer 尾部控件，以及 Session 仍在打开期间的会话列（settling 阶段），后者在短暂延迟后才显现，因此快速打开不会出现一个已经消失的标记。要求减少动态效果的用户看到的是同一个完整而静止的结，因为停止织造的是样式表本身，而不是第二条渲染路径。
 

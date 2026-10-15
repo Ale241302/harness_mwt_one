@@ -27,6 +27,14 @@ export interface UiWorkspace {
    */
   openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>
   /**
+   * Add a Session that belongs to no Workspace and open it unless a later
+   * navigation supersedes it. The Host resolves the working directory (its own
+   * default), so the Session attaches to no Workspace and stays Ungrouped.
+   * @param beforeOpen - optional synchronous preparation for the created Session, skipped after supersession.
+   * @returns completion; a superseded request may still create a Session but does not open it.
+   */
+  openUnassignedSession(beforeOpen?: (sessionId: SessionId) => void): Promise<void>
+  /**
    * Fork a Session and open the child unless a later navigation supersedes it.
    * @param sessionId - source Session.
    * @returns completion; a superseded request leaves its child available without selecting it.
@@ -145,6 +153,15 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     const isCurrent = (): boolean => !navigation.aborted
     const sessionId = await this.connectWorkspace(workspaceId)
+    if (!isCurrent()) return
+    beforeOpen?.(sessionId)
+    if (isCurrent()) this.openSession(sessionId)
+  }
+
+  async openUnassignedSession(beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
+    const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
+    const isCurrent = (): boolean => !navigation.aborted
+    const sessionId = await this.sessions.create()
     if (!isCurrent()) return
     beforeOpen?.(sessionId)
     if (isCurrent()) this.openSession(sessionId)

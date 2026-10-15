@@ -25,7 +25,7 @@ host 侧 `session.create(workspaceId)` 一体产出 Session + Agent + cwd（作�
 
 - 会话身份自出生即为 host 真身：sessionId 由 `session.create` 响应 / `host/session-added` 帧带来，client 侧一切寻址（scope tag、slot store 键、RPC 地址）用的都是同一个 id。
 - 实体化时点 = 用户选定 Workspace（cwd 确定）的瞬间：client 当场调 `session.create({workspaceId})`，拿到完整实体。
-- 「New Session 且未选 workspace」是**纯视图态**（一个导航位置），不对应任何会话/scope 实体；选定之前 composer 整体锁死（无 slash、无纯文本）。
+- 「New Session 且未选 workspace」是**纯视图态**（一个导航位置），不对应任何会话/scope 实体；选定之前 composer 整体锁死（无 slash、无纯文本）。选定也可以完全不指定 Workspace：[Hero 的不使用工作区目标](../feature/2026-10-14-workspace-less-hero-session.zh.md)会在 Host 的默认目录上物化该会话，此后会话即存在、可对话。
 - 「空会话」就是一个日志还空着的普通实体化会话；对 host 上所有 Agent-scope 插件（goal/plan/skill（技能）/…）它与任何会话无异，slash/plan 天然全活。
 
 ### Agent scope：actx 是 client 侧 cordis 世界的唯一会话载体
@@ -70,12 +70,13 @@ Session 实例与 scope 同生命周期，存活资格 = host listed（一个判
 - 列表纪律：store 保留全部行；Workspace browser 的分组、平铺、搜索和计数共用同一可见投影——所有非 blank 会话都显示，blank 会话只显示 `session.id === sessions.current` 的一条，并强制标题为 `New Session`。切换 Workspace 后，旧 blank 实体仍在镜像中但从列表隐藏，目标 Workspace 的 current blank 显示；因此用户可见面全局至多一条 blank 行。
 - 残留账零 GC：刷新后 blank 会话带位回来，下次同 workspace 且仍为成员时复用，普通单端路径使每个 workspace 至多保留一个；host 重启后 blank 无盘痕自然蒸发；多 tab 竞态多出的空壳只会成为非 current 隐藏行，后续复用消化，不做协调。
 
-### connectWorkspace：New Session 的唯一入口
+### connectWorkspace：New Session 的各个入口
 
 `workspaces.connectWorkspace(workspaceId): Promise<SessionId>`（归属 WorkspaceRuntime——它同时持有 workspace 规范 path 与 sessions 引用）：
 
 - 复用臂：list mirror 中找 `blank && cwd == workspace.path && sessionIds.includes(id)`——host 自己的成员规则，绝不只按 cwd。没有账户槽位的 cwd 匹配（CLI（命令行界面）/TUI 在 host cwd 创建的会话，或已删除/重建的注册）会打开一个任何分组表面都无法显示在该工作区下的会话，因此落到新建臂（见[成员复用修复](../../archived/bug-fix/2026-08-05-workspace-blank-session-reuse-membership.md)）；命中直接返回该 id，不新建。
 - 新建臂：未命中则 `session.create({workspaceId})`，返回新 id。
+- 不带 Workspace 的臂：`openUnassignedSession(beforeOpen?)` 调用 `session.create()`，既不指定 Workspace 也不指定 cwd，因此由 Host 解析自身默认目录，且不挂任何账户槽位；该会话保持 Ungrouped。它与其他两臂享有同样的解析保证、同样的替代规则和同样的同步准备回调，并且是 [Hero 的不使用工作区目标](../feature/2026-10-14-workspace-less-hero-session.zh.md)。
 - 未知 workspaceId fail loud（不静默创建到别处）。
 - 解析保证（两臂同约定）：promise resolve 时返回的 id 已在 list store 且 `sessions.binding(id)` 同步可解析——`SessionRuntime.create` 在 RPC 成功后同步投影列表再 resolve，使 draft 搬运方可以在 open 之前往新 scope 的 machine 写文本，不等 notifier flush。
 - 调用方拿 id 自行 `sessions.open`；首条提示词发送就是普通 `session.prompt`——会话本来就在，失败即普通提示词失败，draft 文本还在 machine 里，重试即再次发送。

@@ -315,6 +315,56 @@ describe('UiWorkspaceService', () => {
     expect(b.sessions.open).not.toHaveBeenCalled()
   })
 
+  it('starts a Workspace-less Session with the Host default directory and opens it', async () => {
+    const b = bench()
+    await b.uiWorkspace.openUnassignedSession()
+    // No workspaceId and no cwd: the Host resolves its own default directory,
+    // so nothing attaches the Session to a Workspace.
+    expect(b.sessions.create).toHaveBeenCalledWith()
+    expect(b.sessions.open).toHaveBeenCalledExactlyOnceWith(sid('created-none'))
+    expect(b.selectPanel).toHaveBeenCalledWith(null)
+  })
+
+  it('prepares a Workspace-less Session before opening it and skips both when superseded', async () => {
+    const b = bench()
+    const prepared = vi.fn()
+    const preparedId = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValueOnce(preparedId.promise)
+    const first = b.uiWorkspace.openUnassignedSession(prepared)
+    preparedId.resolve(sid('prepared'))
+    await first
+    expect(prepared).toHaveBeenCalledWith(sid('prepared'))
+    expect(b.sessions.open).toHaveBeenCalledExactlyOnceWith(sid('prepared'))
+
+    const late = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValueOnce(late.promise)
+    const skipped = vi.fn()
+    const second = b.uiWorkspace.openUnassignedSession(skipped)
+    b.layout.selectPanel('panel-a' as MainPanelId)
+    late.resolve(sid('late'))
+    await second
+    expect(skipped).not.toHaveBeenCalled()
+    expect(b.sessions.open).toHaveBeenCalledOnce()
+    expect(b.selectPanel).toHaveBeenLastCalledWith('panel-a')
+
+    // Superseded by the preparation itself: the created Session is never opened.
+    b.sessions.create.mockResolvedValueOnce(sid('prepared-elsewhere'))
+    await b.uiWorkspace.openUnassignedSession(() => { b.layout.selectPanel('panel-b' as MainPanelId) })
+    expect(b.sessions.open).toHaveBeenCalledOnce()
+    expect(b.selectPanel).toHaveBeenLastCalledWith('panel-b')
+  })
+
+  it('does not open a Workspace-less Session after the navigation owner is disposed', async () => {
+    const b = bench()
+    const resolved = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValue(resolved.promise)
+    const pending = b.uiWorkspace.openUnassignedSession()
+    await b.ctx.fiber.dispose()
+    resolved.resolve(sid('late'))
+    await pending
+    expect(b.sessions.open).not.toHaveBeenCalled()
+  })
+
   it('opens a fork only while its navigation is current and preserves fork failures', async () => {
     const b = bench()
     await b.uiWorkspace.forkSession(sid('source'))

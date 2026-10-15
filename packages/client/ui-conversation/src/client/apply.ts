@@ -91,6 +91,7 @@ interface WorkspaceNavigation {
     workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
     beforeOpen: (sessionId: SessionId) => void,
   ): Promise<void>
+  openUnassignedSession(beforeOpen: (sessionId: SessionId) => void): Promise<void>
 }
 
 /** Action registration used by the composer without importing its command-UI consumer. */
@@ -252,32 +253,38 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
-    inject: (sessionId: SessionId | undefined): ConversationInjected => ({
-      hooks: {
-        composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
-      },
-      selectWorkspace: workspaceId => workspaceNavigation.openWorkspace(workspaceId, (nextId) => {
-        if (sessionId !== undefined && nextId !== sessionId) {
-          const from = inputHub.shell(sessionId)
-          const draft = from.snapshot.draft
-          const attachmentIds = from.snapshot.attachmentIds
-          const next = inputHub.shell(nextId)
-          if (attachmentIds.length === 0 || next.addAttachments(attachmentIds)) {
-            if (sessions.binding(nextId) === undefined) {
-              throw new Error(`ui-conversation: session "${nextId}" resolved no binding`)
-            }
-            concreteConversation(ctx).rebindDraftFiles(nextId, attachmentIds)
-            if (draft !== '') {
-              next.setDraft(draft)
-              from.setDraft('')
-            }
-            if (attachmentIds.length > 0) {
-              for (const id of attachmentIds) from.removeAttachment(id)
-            }
+    inject: (sessionId: SessionId | undefined): ConversationInjected => {
+      // Draft and attachments follow the Session that navigation lands on, so
+      // neither picking a Workspace nor starting without one drops the text
+      // already typed. A no-op move (same Session) leaves the source intact.
+      const carryDraft = (nextId: SessionId): void => {
+        if (sessionId === undefined || nextId === sessionId) return
+        const from = inputHub.shell(sessionId)
+        const draft = from.snapshot.draft
+        const attachmentIds = from.snapshot.attachmentIds
+        const next = inputHub.shell(nextId)
+        if (attachmentIds.length === 0 || next.addAttachments(attachmentIds)) {
+          if (sessions.binding(nextId) === undefined) {
+            throw new Error(`ui-conversation: session "${nextId}" resolved no binding`)
+          }
+          concreteConversation(ctx).rebindDraftFiles(nextId, attachmentIds)
+          if (draft !== '') {
+            next.setDraft(draft)
+            from.setDraft('')
+          }
+          if (attachmentIds.length > 0) {
+            for (const id of attachmentIds) from.removeAttachment(id)
           }
         }
-      }),
-    }),
+      }
+      return {
+        hooks: {
+          composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
+        },
+        selectWorkspace: workspaceId => workspaceNavigation.openWorkspace(workspaceId, carryDraft),
+        openUnassignedSession: () => workspaceNavigation.openUnassignedSession(carryDraft),
+      }
+    },
   }, ConversationRoot)
 
   const registerConversationSession = () => slots.register({

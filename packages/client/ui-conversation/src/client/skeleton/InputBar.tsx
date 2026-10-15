@@ -120,7 +120,7 @@ export const InputBar = memo(function InputBar({
   const continuable = subagent?.address.mode === 'continuable'
   const parentOffline = continuable && subagent.parentAvailable !== true
   // Running input stays free; locked = session removed, the
-  // inert no-workspace state, the machine faces absent (no session), or a
+  // inert no-Session state, the machine faces absent, or a
   // parent-offline continuable child. An owner block also disables input;
   // adjudicating and submitting render read-only so the draft stays visible.
   const disabled = removed || inert || !live || blocked !== undefined || parentOffline

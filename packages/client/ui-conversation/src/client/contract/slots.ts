@@ -262,6 +262,12 @@ export type ConvViewProps = PropsRuntime<'conversation.view'>
 export interface ConversationInjected {
   /** Connect and open a blank Session in the selected Workspace. */
   selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
+  /**
+   * Add a blank Session that belongs to no Workspace and open it. The Host
+   * resolves the working directory (its own default) and attaches no
+   * Workspace, so the Session stays Ungrouped.
+   */
+  openUnassignedSession: () => Promise<void>
   /** Session-addressed composer block source, or the stable absent source. */
   hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
 }
@@ -412,5 +418,7 @@ export interface EmptyWorkspaceOwnerProps {
   /** Currently selected Workspace, when available. */
   selectedId?: WorkspaceId | undefined
   onPick: (workspaceId: WorkspaceId) => void
+  /** Start a blank Session that belongs to no Workspace. */
+  onOpenUnassignedSession?: (() => void) | undefined
   onClose: () => void
 }

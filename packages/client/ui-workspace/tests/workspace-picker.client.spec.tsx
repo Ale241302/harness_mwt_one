@@ -88,6 +88,7 @@ function mount(
   items: readonly WorkspaceView[] = [workspace('alpha', 'Alpha')],
   createWorkspace = vi.fn(),
   occupancy = occupancySource(),
+  openUnassignedSession?: () => void,
 ) {
   const onPick = vi.fn()
   const onClose = vi.fn()
@@ -102,6 +103,7 @@ function mount(
       usePanelInfo={usePanelInfo} useResource={useResource}
       useWorkspaces={hook(workspaceState(nextItems))}
       onPick={onPick}
+      {...openUnassignedSession === undefined ? {} : { onOpenUnassignedSession: openUnassignedSession }}
       onClose={onClose}
       createWorkspace={createWorkspace}
       useDirectoryFlow={occupancy.useDirectoryFlow}
@@ -316,5 +318,50 @@ describe('WorkspacePicker', () => {
     expect(b.probe.owner!.open).toBe(false)
     expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: 'Alpha' }).disabled).toBe(false)
     expect(screen.queryByRole('menuitem', { name: '添加工作区…' })).toBeNull()
+  })
+})
+
+describe('WorkspacePicker without a Workspace target', () => {
+  /** The owner-supplied no-Workspace action's menu label in the zh seat. */
+  const NO_WORKSPACE = '不使用工作区聊天'
+
+  it('leads the menu with the no-Workspace action and forwards the selection', () => {
+    const openUnassignedSession = vi.fn()
+    const b = mount([workspace('alpha', 'Alpha')], vi.fn(), occupancySource(), openUnassignedSession)
+    const entries = screen.getAllByRole('menuitem')
+    expect(entries[0]!.textContent).toContain(NO_WORKSPACE)
+    fireEvent.click(screen.getByRole('menuitem', { name: NO_WORKSPACE }))
+    expect(openUnassignedSession).toHaveBeenCalledOnce()
+    expect(b.onPick).not.toHaveBeenCalled()
+    expect(b.createWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('keeps the menu, and the no-Workspace target, reachable with nothing listed', () => {
+    const openUnassignedSession = vi.fn()
+    const b = mount([], vi.fn(), occupancySource(), openUnassignedSession)
+    // A no-Workspace target is a real choice, so the one-entry jump into the
+    // directory flow no longer applies: the menu is up with both entries.
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    expect(screen.getByRole('menuitem', { name: NO_WORKSPACE })).toBeTruthy()
+    chooseAdd()
+    expect(b.probe.owner!.open).toBe(true)
+    expect(openUnassignedSession).not.toHaveBeenCalled()
+  })
+
+  it('shows the menu with an empty directory-flow hole instead of claiming nothing to pick', () => {
+    const openUnassignedSession = vi.fn()
+    mount([], vi.fn(), occupancySource(false), openUnassignedSession)
+    expect(screen.getByRole('menuitem', { name: NO_WORKSPACE })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: '添加工作区…' })).toBeNull()
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+  })
+
+  it('gates the no-Workspace action on the same in-flight adoption as every other entry', () => {
+    const openUnassignedSession = vi.fn()
+    const b = mount([workspace('alpha', 'Alpha')], vi.fn(), occupancySource(), openUnassignedSession)
+    chooseAdd()
+    expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: NO_WORKSPACE }).disabled).toBe(true)
+    act(() => { b.probe.owner!.onCancel() })
+    expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: NO_WORKSPACE }).disabled).toBe(false)
   })
 })
