@@ -38,7 +38,7 @@ The palette's dark hover moves off `coralDeep` `#A84F33`, which measured 3.17:1 
 
 One light primary-surface value serves all three surfaces, so a brand revision touches it in three places. The shell's disabled states and focus rings are untouched. The Web client's dark primary button keeps its rest fill and gains a lighter hover.
 
-Two sheets still paint the coral behind text: `.primary` in `packages/client/ui-faberloom/src/client/faberloom.module.css` and in `packages/client/ui-faberloom/src/client/mcp-servers-section.module.css` both set `background: var(--dsw-alias-brand-primary-new-colorprimary-new-color)` under the palette canvas label, which measures 3.20:1 on Paper and 3.46:1 on Bond. They are outside this change; the fix there is to consume `--dsw-alias-button-primary-fill`.
+Two sheets painted the coral behind text for the same reason: `.primary` in `packages/client/ui-faberloom/src/client/faberloom.module.css` and in `packages/client/ui-faberloom/src/client/mcp-servers-section.module.css` set `background: var(--dsw-alias-brand-primary-new-colorprimary-new-color)` under the palette canvas label, which measures 3.20:1 on Paper and 3.46:1 on Bond. Both were closed in the same pass: each now consumes `--dsw-alias-button-primary-fill` and `--dsw-alias-label-primary-foreground`, so every primary button in the product uses the surface this decision defines.
 
 ## Testing
 

@@ -518,8 +518,8 @@
   padding: 9px 14px;
   border: 0;
   border-radius: 8px;
-  background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
-  color: var(--dsw-alias-bg-base);
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
   font: var(--dsw-font-control);
   min-height: var(--dsw-control-hit-target);
   cursor: pointer;

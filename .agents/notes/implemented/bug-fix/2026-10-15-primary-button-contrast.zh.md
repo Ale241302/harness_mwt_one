@@ -38,7 +38,7 @@ Status: implemented
 
 一个浅色主按钮表面色同时服务三个界面，因此品牌改版要在三处修改它。壳的禁用态与焦点环未改动。Web 客户端深色主按钮的静止底色不变，悬停色变亮。
 
-仍有两个样式表把珊瑚色当作文字底色：`packages/client/ui-faberloom/src/client/faberloom.module.css` 与 `packages/client/ui-faberloom/src/client/mcp-servers-section.module.css` 中的 `.primary` 都用 `background: var(--dsw-alias-brand-primary-new-colorprimary-new-color)` 配调色板画布色标签，在 Paper 上为 3.20:1，在 Bond 上为 3.46:1。它们不在本次改动范围内；那里的修法是改用 `--dsw-alias-button-primary-fill`。
+有两个样式表出于同样原因把珊瑚色当作文字底色：`packages/client/ui-faberloom/src/client/faberloom.module.css` 与 `packages/client/ui-faberloom/src/client/mcp-servers-section.module.css` 中的 `.primary` 都用 `background: var(--dsw-alias-brand-primary-new-colorprimary-new-color)` 配调色板画布色标签，在 Paper 上为 3.20:1，在 Bond 上为 3.46:1。两者已在同一轮收口：现在都改用 `--dsw-alias-button-primary-fill` 与 `--dsw-alias-label-primary-foreground`，因此产品里的每个主按钮都使用本决策定义的表层。
 
 ## Testing
 
