@@ -40,6 +40,8 @@ The rows group by the design's three navigation modes — `Operar` (Mesa, Espaci
 
 The four screens whose work is one record at a time open that record in a dialog over a full-width table: the Skills detail, the work-bench task, the connection editor, and the context entry. A row click opens it, `Nueva tarea` and `+ Nueva conexión` open the same dialog on a new record, and Escape, the mask, the header close control, or the footer's `Cerrar` dismisses it. Memoria already worked that way; the other four follow it, so no detail editor shares the width with its list. A new connection opens on an empty form rather than on the last record the editor held.
 
+Memoria's dialog also names the conversation behind a distilled line. Saving a turn stores the Session that captured it, and the dialog resolves that Session's title and offers `Abrir conversación`, which opens the Session and leaves the panel; a Session this host no longer lists reads as gone rather than offering an action that cannot run. A line recorded by hand, or captured from an email or a document, states that origin instead.
+
 All registrations are effects on the calling plugin's fiber and disappear with it.
 
 -----

@@ -183,6 +183,11 @@ export interface FaberLoomSpaceMemoryRow {
   readonly spaceIds: readonly string[]
   /** ISO-8601 creation instant. */
   readonly createdAt: string
+  /**
+   * Session that captured the entry, when a finished turn wrote it. The row's
+   * text is that turn distilled, so this is the conversation behind it.
+   */
+  readonly sessionId: string | null
   /** `shared` or `private`; a private entry stays to its owner. */
   readonly visibility?: string
   /** True when another member shared the entry; it is read-only here. */

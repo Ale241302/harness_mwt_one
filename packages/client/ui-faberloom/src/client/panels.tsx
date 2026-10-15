@@ -277,7 +277,7 @@ export interface FaberloomPanelInjected {
   /** Start a new conversation in a space's own area. */
   startSpaceSession: (spaceId: string) => void
   /** Open one chat session (a local or mirrored Session) in the conversation view. */
-  openSharedSession: (sessionId: string) => void
+  openSession: (sessionId: string) => void
   /** Replace the permissions one grantee holds on a Space, keeping it active. */
   setSpacePermissions: (
     id: string,
@@ -458,7 +458,7 @@ function spacesScreen() {
     const {
       t, createSpace, deleteSpace, goToWorkspace, adoptSpaceWorkspace, exportContextToFolder,
       spaceDetail, saveSpace, spaceWorkspace, startSpaceSession,
-      sessionsShare, openSharedSession, setSpacePermissions, workflows,
+      sessionsShare, openSession, setSpacePermissions, workflows,
     } = props
     const { overview, status, error } = useOverview(props)
     const [draft, setDraft] = useState('')
@@ -517,7 +517,7 @@ function spacesScreen() {
     }, [selected, workflows])
 
     /** Open one shared Session as the chat view, following its mirrored local copy. */
-    const openShared = (session: FaberLoomSharedSessionRow): void => { openSharedSession(session.sessionId) }
+    const openShared = (session: FaberLoomSharedSessionRow): void => { openSession(session.sessionId) }
 
     /** Open the module-permission editor for one identity the Space is shared with. */
     const editGrant = (grant: FaberLoomShareGrantRow): void => {
@@ -2404,7 +2404,7 @@ function routinesScreen() {
 /** Memoria: the owner's rows from the agent-memory server plus the recall form. */
 function memoryScreen() {
   return function FaberloomMemory(props: ScreenProps) {
-    const { t, remember, spaceMemory, deleteSpaceMemory, setMemoryVisibility } = props
+    const { t, remember, spaceMemory, deleteSpaceMemory, setMemoryVisibility, openSession } = props
     const { overview, error } = useOverview(props)
     const [draft, setDraft] = useState('')
     const [spaceId, setSpaceId] = useState('')
@@ -2417,6 +2417,14 @@ function memoryScreen() {
     )
     const rows = memory.kind === 'ready' ? memory.value : []
     const chosen = rows.find(row => row.id === selected) ?? null
+    // A memory that a finished turn captured carries that Session, and its text
+    // is the turn distilled, so the conversation is the evidence behind the row.
+    // The list names it; a Session this host no longer lists reads as gone
+    // instead of offering an action that cannot run.
+    const sourceSessionId = chosen?.sessionId ?? null
+    const sourceSession = props.useSessions(state => sourceSessionId === null
+      ? null
+      : state.byId[sourceSessionId as never] ?? null)
     // A space that no longer exists is named as deleted instead of leaking its
     // id: the memory outlives the space, so its origin must read as history.
     const spaceNames = (ids: readonly string[]): string => ids.length === 0
@@ -2495,6 +2503,22 @@ function memoryScreen() {
               )}
             </>
           )}>
+          {/* A row rather than a Field: this one can hold a button, and a button
+              inside a label takes the whole field as its accessible name. */}
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>{t('field.origin')}</span>
+            {sourceSessionId === null
+              ? <span className={styles.cellMuted}>{kindOf(chosen?.text ?? '')}</span>
+              : sourceSession === null
+                ? <span className={styles.cellMuted}>{t('memory.conversationGone')}</span>
+                : (
+                  <span className={styles.tools}>
+                    <span className={styles.cellMuted}>{sourceSession.displayTitle}</span>
+                    <button className={styles.secondary} type="button"
+                      onClick={() => { openSession(sourceSession.id) }}>{t('memory.openConversation')}</button>
+                  </span>
+                )}
+          </div>
           <Field label={t('memory.fullText')}><span className={styles.cellMuted}>{chosen?.text ?? ''}</span></Field>
           <Field label={t('col.space')}><span className={styles.cellMuted}>{chosen === null ? '' : spaceNames(chosen.spaceIds)}</span></Field>
           <Field label={t('field.date')}><span className={styles.cellMuted}>{chosen?.createdAt ?? ''}</span></Field>

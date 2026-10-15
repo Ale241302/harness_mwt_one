@@ -253,7 +253,7 @@ export function apply(ctx: ClientContext): void {
             .then((sessionId) => { ctx.sessions.open(sessionId); ctx.layout.selectPanel(null) })
         })
       },
-      openSharedSession: (sessionId) => {
+      openSession: (sessionId) => {
         ctx.sessions.open(sessionId as never)
         ctx.layout.selectPanel(null)
       },

@@ -5399,6 +5399,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       text: entry.text,
       spaceIds: entry.spaceIds.map(String),
       createdAt: entry.createdAt,
+      sessionId: entry.sessionId,
       visibility: entry.visibility,
       ...shared.has(entry.id) ? { shared: true, canDelete: deletable.has(entry.id) } : {},
     }))

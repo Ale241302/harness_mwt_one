@@ -597,6 +597,33 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(deleteSpaceMemory).toHaveBeenCalledWith('m1') })
   })
 
+  it('names the conversation a memory came from, opens it, and admits when it is gone', async () => {
+    const captured = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', sessionId: 'sess-chat', text: 'Resultado: el usuario saludó' }
+    const orphaned = { id: 'm2', spaceIds: [], createdAt: '2026-09-26T00:00:00Z', sessionId: 'sess-gone', text: 'Resultado: otra conversación' }
+    const { runtime, layout, view } = await bench({ ok: true, value: OVERVIEW }, undefined, {}, [captured, orphaned])
+    await runtime.sessions.add({ id: 'sess-chat', summary: { displayTitle: 'Saludo inicial' } }, { current: false })
+    act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
+    await view.findByText('Resultado: el usuario saludó')
+
+    const row = (text: string): HTMLTableRowElement =>
+      view.getAllByRole('row').find(candidate => candidate.textContent?.includes(text)) as HTMLTableRowElement
+
+    // The distilled line names the conversation that produced it, and the modal
+    // is how the operator reads that conversation instead of the summary alone.
+    fireEvent.click(row('Resultado: el usuario saludó'))
+    expect(await view.findByText('Saludo inicial')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Open conversation' }))
+    await waitFor(() => { expect(layout.selectPanel).toHaveBeenCalledWith(null) })
+    expect(runtime.sessions.calls.some(call => call.method === 'open' && call.args[0] === 'sess-chat')).toBe(true)
+
+    // A Session this host no longer lists reads as gone: no action that cannot run.
+    act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
+    await view.findByText('Resultado: otra conversación')
+    fireEvent.click(row('Resultado: otra conversación'))
+    expect(await view.findByText('That conversation is no longer on this computer.')).toBeTruthy()
+    expect(view.queryByRole('button', { name: 'Open conversation' })).toBeNull()
+  })
+
   it('surfaces a memory visibility failure, resolved and rejected', async () => {
     const entry = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', text: 'Correo «PO 1»' }
     const { runtime, view, setMemoryVisibility } = await bench({ ok: true, value: OVERVIEW }, undefined, {}, [entry])

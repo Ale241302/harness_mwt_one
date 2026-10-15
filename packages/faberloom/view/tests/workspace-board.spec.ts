@@ -61,6 +61,7 @@ function harness(options: {
   const defaultSpace = (id: string): MockSpace => ({
     id, title: 'Eguisa', parentId: null, inheritContext: true, excluded: [], members: [], sources: [], context: {},
   })
+  type MockMemory = { id: string; spaceIds: string[]; text: string; createdAt: string; sessionId: string | null }
   const spaces = {
     list: vi.fn(async (): Promise<readonly MockSpace[]> => spaceRecords),
     get: vi.fn(async (_actor?: unknown, id?: string): Promise<MockSpace> => spaceRecords.find(record => record.id === id) ?? defaultSpace(id ?? 'sp1')),
@@ -88,8 +89,8 @@ function harness(options: {
     resolveWorkdir: vi.fn(async (_actor?: unknown, _id?: string): Promise<{ kind: 'opaque'; ref: string }> => ({ kind: 'opaque', ref: 'fw_abc123' })),
     remember: vi.fn(async (): Promise<{ id: string; spaceIds: string[]; text: string; createdAt: string }> =>
       ({ id: 'm1', spaceIds: [], text: '', createdAt: '2026-01-01T00:00:00Z' })),
-    listMemory: vi.fn(async (): Promise<readonly { id: string; spaceIds: string[]; text: string; createdAt: string }[]> => []),
-    effectiveMemory: vi.fn(async (): Promise<readonly { id: string; spaceIds: string[]; text: string; createdAt: string }[]> => []),
+    listMemory: vi.fn(async (): Promise<readonly MockMemory[]> => []),
+    effectiveMemory: vi.fn(async (): Promise<readonly MockMemory[]> => []),
     importShared: vi.fn(async (input: { id: string; title: string }): Promise<MockSpace> =>
       ({ id: input.id, title: input.title, parentId: null })),
     forgetMemory: vi.fn(async (): Promise<boolean> => true),
@@ -562,11 +563,11 @@ describe('FaberLoomViewService space lifecycle', () => {
     vi.stubEnv('DSH_HOME', home)
     const { view, spaces } = harness()
     spaces.effectiveMemory.mockResolvedValue([
-      { id: 'm1', spaceIds: ['sp1'], text: 'dato', createdAt: '2026-01-01T00:00:00Z' },
+      { id: 'm1', spaceIds: ['sp1'], text: 'dato', createdAt: '2026-01-01T00:00:00Z', sessionId: 'sess-7' },
     ])
 
     expect(await view.spaceMemory('sp1')).toEqual([
-      { id: 'm1', text: 'dato', spaceIds: ['sp1'], createdAt: '2026-01-01T00:00:00Z' },
+      { id: 'm1', text: 'dato', spaceIds: ['sp1'], createdAt: '2026-01-01T00:00:00Z', sessionId: 'sess-7' },
     ])
     expect(spaces.effectiveMemory).toHaveBeenCalledWith(expect.anything(), 'sp1')
 
@@ -787,7 +788,7 @@ describe('FaberLoomViewService board actions', () => {
     vi.stubEnv('DSH_HOME', home)
     const { view, spaces, context, shares } = harness()
     spaces.list.mockResolvedValue([{ id: 'sp-remote', title: 'SICOP', parentId: null, workspaceId: 'ws-1', ownerId: 'ana@sondelsa.com' }])
-    spaces.listMemory.mockResolvedValue([{ id: 'm-own', spaceIds: ['sp-remote'], text: 'propia', createdAt: '2026-01-01T00:00:00Z' }])
+    spaces.listMemory.mockResolvedValue([{ id: 'm-own', spaceIds: ['sp-remote'], text: 'propia', createdAt: '2026-01-01T00:00:00Z', sessionId: null }])
     spaces.remember.mockResolvedValue({ id: 'm-copy', spaceIds: ['sp-remote'], text: 'cliente Sondel', createdAt: '2026-01-01T00:00:00Z' })
     context.list.mockResolvedValue([])
     const imported = (over: Record<string, unknown> = {}) => ({
