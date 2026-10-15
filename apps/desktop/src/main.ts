@@ -273,8 +273,12 @@ async function main(): Promise<void> {
   const backend = new DesktopBackendController((onFailure) => {
     if (development === undefined) manager.assertProfileRuntime(activeProject)
     const hostInspectPort = developmentHostInspectPort(development !== undefined)
+    // The Harness-home `.env` layer boots the child as real environment names, with
+    // the launching process environment outranking it, exactly as the gateway
+    // injects its own values; rows whose `!!js process.env.*` reads gate on a name
+    // (the product MCP keys, the mirror credential) then resolve on a desktop too.
     const host = new DesktopHostProcess(resources.node, development ?? resources.dsh, activeProject,
-      hostInspectPort, { ...process.env, DSH_HOME: home, DSH_IDENTITY_PATCH: identityPatchPath }, onFailure)
+      hostInspectPort, { ...readHomeEnv(home), ...process.env, DSH_HOME: home, DSH_IDENTITY_PATCH: identityPatchPath }, onFailure)
     return {
       start: () => host.start(),
       stop: () => host.stop(),
