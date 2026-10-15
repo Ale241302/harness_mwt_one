@@ -29,7 +29,7 @@ Desktop 在 Host 启动前补全共享 Harness home 的 `.env` 层：只追加�
 
 ### 登录
 
-Desktop 在启动 Host 之前先登录。未登录时，壳渲染登录卡片——字标、控制台提示、账号或邮箱与密码字段（含显示/隐藏控件）、强调色提交按钮，以及找回链接——而非加载页，后端不会启动。找回链接用操作者输入的邮箱向控制台请求重置链接（`POST {CONSOLA_API_BASE}/users/forgot-password/`），并原地显示控制台的中性答复。提交后向控制台认证（`POST {CONSOLA_API_BASE}/auth/login/`），并把两个文件写入共享 Harness home：控制台地址与令牌写入 `.env`，`desktop-identity.patch.yml` 则把已登录的 `ownerId`、角色与只读标志写入每个产品行。`runDesktopHost` 把该 patch 作为最后一层组合应用，因此 `faberloom-defaults` 会为已登录 owner 播种 agent 与 routine，而不是返回 `no owner configured`。退出登录会删除该 patch 与身份记录，并清除控制台令牌。Spaces、会话、技能及其它所有按 home 记录都保留在本机：控制台只传输用户显式共享的内容。
+Desktop 在启动 Host 之前先登录。未登录时，壳渲染登录卡片，即字标、控制台提示、账号或邮箱与密码字段（含显示/隐藏控件）、强调色提交按钮以及找回链接，而非加载页，后端不会启动。找回链接用操作者输入的邮箱向控制台请求重置链接（`POST {CONSOLA_API_BASE}/users/forgot-password/`），并原地显示控制台的中性答复。提交后向控制台认证（`POST {CONSOLA_API_BASE}/auth/login/`），并把两个文件写入共享 Harness home：控制台地址与令牌写入 `.env`，`desktop-identity.patch.yml` 则把已登录的 `ownerId`、角色与只读标志写入每个产品行。`runDesktopHost` 把该 patch 作为最后一层组合应用，因此 `faberloom-defaults` 会为已登录 owner 播种 agent 与 routine，而不是返回 `no owner configured`。退出登录会删除该 patch 与身份记录，并清除控制台令牌。Spaces、会话、技能及其它所有按 home 记录都保留在本机：控制台只传输用户显式共享的内容。
 
 登录界面左上角提供外观切换按钮，可在米色浅色主题与暖色深色主题之间切换整个界面。所选外观写入共享 Harness home 的 `desktop-appearance.json`，并在下次启动首帧前应用，因此重启不会闪现错误主题；未做选择时跟随操作系统。
 
