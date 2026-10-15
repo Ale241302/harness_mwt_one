@@ -78,6 +78,12 @@ export function createElectronBuilderConfig(
     ],
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
+      // The product's skill and agent catalogs, mounted read-only by the local
+      // harness the same way the deployment mounts its copies, so an installation
+      // offers the catalog the Web UI shows instead of an empty local directory.
+      { from: join(import.meta.dirname, '..', '..', 'skills-catalog'), to: 'catalogs/skills-catalog' },
+      { from: join(import.meta.dirname, '..', '..', 'skills-shared'), to: 'catalogs/skills-shared' },
+      { from: join(import.meta.dirname, '..', '..', 'agents-shared'), to: 'catalogs/agents-shared' },
       // Deployment defaults for the first-run Harness-home `.env`, injected at
       // packaging time so no value lives in the repository.
       ...env.DSH_DESKTOP_HOME_ENV_FILE === undefined || env.DSH_DESKTOP_HOME_ENV_FILE === ''

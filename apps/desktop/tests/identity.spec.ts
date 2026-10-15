@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   readIdentity,
+  refreshIdentityPatch,
   renderIdentityPatch,
   signInToConsole,
   signOut,
@@ -107,6 +108,53 @@ it('writes the env layer, the patch, and the identity record', () => {
   expect(readFileSync(join(home, '.env'), 'utf8')).toBe('DEEPSEEK_API_KEY=sk-keep\nCONSOLA_API_BASE=https://consola.mwt.one/api\nCONSOLA_TOKEN=tok-1\n')
   expect(readFileSync(join(home, IDENTITY_PATCH_FILENAME), 'utf8')).toContain('ownerId: "alejandro@muitowork.com"')
   expect(readIdentity(home)).toEqual(identity)
+})
+
+it('mounts the catalogs an installation ships instead of an empty local directory', () => {
+  const home = fixture()
+  const catalogRoot = join(home, 'catalogs')
+  const sharedRoot = join(catalogRoot, 'shared')
+  const agentsRoot = join(catalogRoot, 'agents')
+  const role = (identity.role.length > 0 ? identity.role : 'client_b2b').toLowerCase()
+  mkdirSync(join(catalogRoot, role), { recursive: true })
+  mkdirSync(sharedRoot, { recursive: true })
+  const patch = renderIdentityPatch(identity, home, {}, {
+    skillsCatalogRoot: catalogRoot,
+    skillsSharedRoot: sharedRoot,
+    agentsSharedRoot: agentsRoot,
+  })
+  expect(patch).toContain(`skillsCatalogRoot: ${JSON.stringify(catalogRoot)}`)
+  expect(patch).toContain(`skillsSharedRoot: ${JSON.stringify(sharedRoot)}`)
+  expect(patch).toContain(`agentsSharedRoot: ${JSON.stringify(agentsRoot)}`)
+  expect(patch).toContain('- id: faberloom-skills')
+  expect(patch).toContain(`      - ${JSON.stringify(join(catalogRoot, role))}`)
+  expect(patch).toContain(`      - ${JSON.stringify(sharedRoot)}`)
+})
+
+it('mounts no catalog directory that the installation does not carry', () => {
+  const home = fixture()
+  const patch = renderIdentityPatch(identity, home, {}, {
+    skillsCatalogRoot: join(home, 'absent'),
+    skillsSharedRoot: join(home, 'absent-too'),
+    agentsSharedRoot: join(home, 'absent-agents'),
+  })
+  expect(patch).not.toContain('- id: faberloom-skills')
+})
+
+it('rewrites the patch for a stored identity without touching the console token', () => {
+  const home = fixture()
+  writeIdentity(home, identity, { token: 'tok-1' }, {})
+  const catalogRoot = join(home, 'catalogs')
+  const role = (identity.role.length > 0 ? identity.role : 'client_b2b').toLowerCase()
+  mkdirSync(join(catalogRoot, role), { recursive: true })
+  expect(refreshIdentityPatch(home, {}, {
+    skillsCatalogRoot: catalogRoot,
+    skillsSharedRoot: join(catalogRoot, 'shared'),
+    agentsSharedRoot: join(catalogRoot, 'agents'),
+  })).toBe(true)
+  expect(readFileSync(join(home, IDENTITY_PATCH_FILENAME), 'utf8')).toContain(`skillsCatalogRoot: ${JSON.stringify(catalogRoot)}`)
+  expect(readFileSync(join(home, '.env'), 'utf8')).toContain('CONSOLA_TOKEN=tok-1')
+  expect(refreshIdentityPatch(join(home, 'empty'), {}, undefined)).toBe(false)
 })
 
 it('replaces an existing console token instead of duplicating it', () => {

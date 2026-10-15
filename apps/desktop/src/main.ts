@@ -25,10 +25,12 @@ import {
   DEFAULT_CONSOLA_API_BASE,
   IDENTITY_PATCH_FILENAME,
   readIdentity,
+  refreshIdentityPatch,
   requestPasswordReset,
   signInToConsole,
   signOut,
   writeIdentity,
+  type DesktopCatalogs,
 } from './identity.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
@@ -192,6 +194,14 @@ async function main(): Promise<void> {
   ensureHomeEnvFile(home, resolveHomeEnvDefaults(process.env, process.resourcesPath))
   const identityPatchPath = join(home, IDENTITY_PATCH_FILENAME)
   const consolaBase = process.env.DSH_DESKTOP_CONSOLA_API_BASE ?? DEFAULT_CONSOLA_API_BASE
+  // The catalogs this installation ships, mounted read-only by the local harness
+  // exactly as the deployment mounts its copies. A development run points at
+  // resources it does not have, which mounts nothing, the same as before.
+  const desktopCatalogs: DesktopCatalogs = {
+    skillsCatalogRoot: join(process.resourcesPath, 'catalogs', 'skills-catalog'),
+    skillsSharedRoot: join(process.resourcesPath, 'catalogs', 'skills-shared'),
+    agentsSharedRoot: join(process.resourcesPath, 'catalogs', 'agents-shared'),
+  }
   const identityStatus = (): DesktopIdentityStatus => {
     const identity = readIdentity(home)
     if (identity === undefined) return { signedIn: false, consolaBase }
@@ -325,6 +335,9 @@ async function main(): Promise<void> {
         publishBackend(backendState())
         return
       }
+      // An installation that now ships product catalogs mounts them on this
+      // launch, so a new release does not wait for the operator to sign in again.
+      refreshIdentityPatch(home, { ...readHomeEnv(home), ...process.env }, desktopCatalogs)
       await backend.start(async () => {
         if (development === undefined) {
           await manager.applyRelease()
@@ -466,7 +479,7 @@ async function main(): Promise<void> {
       const { identity, credentials } = await signInToConsole(base, usuario.trim(), password)
       // The child boots from the Harness-home `.env` layer under the launching
       // environment, so which product MCP servers mount is decided from both.
-      writeIdentity(home, identity, credentials, { ...readHomeEnv(home), ...process.env })
+      writeIdentity(home, identity, credentials, { ...readHomeEnv(home), ...process.env }, desktopCatalogs)
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     }

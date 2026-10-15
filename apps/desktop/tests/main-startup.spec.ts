@@ -150,6 +150,7 @@ vi.mock('../src/identity.ts', () => ({
   DEFAULT_CONSOLA_API_BASE: 'https://consola.mwt.one/api',
   IDENTITY_PATCH_FILENAME: 'desktop-identity.patch.yml',
   readIdentity: () => ({ email: 'test@example.test', role: 'admin', readOnly: false, consolaBase: 'https://consola.mwt.one/api' }),
+  refreshIdentityPatch: vi.fn(() => true),
   signInToConsole: vi.fn(),
   signOut: vi.fn(),
   writeIdentity: vi.fn(),
