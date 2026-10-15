@@ -1,4 +1,4 @@
-/** Validate packaged Desktop update artifacts before any network upload begins. */
+/** Validate packaged Desktop update artifacts and lay them out for their update channel. */
 
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
@@ -9,6 +9,7 @@ import type { DesktopPackageTargetName } from './package-target.ts'
 import {
   desktopBuildRecordFilename,
   desktopUpdateMetadataFilename,
+  resolveDesktopAutoUpdateConfig,
   resolveDesktopUploadConfig,
 } from './desktop-auto-update-environment.mjs'
 import { desktopTargetBuildPaths } from './desktop-build-paths.mjs'
@@ -35,20 +36,30 @@ export interface DesktopUploadArtifact {
   readonly channelMetadata: boolean
 }
 
-/** A fully validated upload operation with channel metadata ordered last. */
-export interface DesktopUploadPlan {
+/** A validated release with the channel directory that must serve it. */
+export interface DesktopChannelPlan {
+  /** Selected deployment name. */
   readonly environment: 'test' | 'production'
+  /** Selected platform and architecture. */
   readonly target: DesktopPackageTargetName
+  /** Desktop version every artifact must carry. */
   readonly version: string
+  /** Public directory the updater reads, trailing slash included. */
   readonly publicUrl: string
-  readonly bucket: string
-  readonly secretIdEnvName: string
-  readonly secretKeyEnvName: string
+  /** Path of the release inside its channel, without a trailing slash. */
+  readonly keyPrefix: string
   readonly artifacts: readonly DesktopUploadArtifact[]
 }
 
-/** Filesystem and environment inputs used to validate one upload. */
-export interface DesktopUploadPlanOptions {
+/** A channel plan with the private COS destination that receives it. */
+export interface DesktopUploadPlan extends DesktopChannelPlan {
+  readonly bucket: string
+  readonly secretIdEnvName: string
+  readonly secretKeyEnvName: string
+}
+
+/** Filesystem and environment inputs used to validate one release. */
+export interface DesktopReleasePlanOptions {
   readonly environment?: NodeJS.ProcessEnv
   readonly repositoryRoot?: string
   readonly appRoot?: string
@@ -165,14 +176,14 @@ function uploadArtifact(
 
 /**
  * Validate the completed package record, dsh version, update metadata, hashes, and target files.
- * @param targetName - Fixed platform and architecture selected by the upload command.
+ * @param targetName - Fixed platform and architecture selected by the release command.
  * @param options - Optional filesystem roots and environment for tests or release automation.
- * @returns An upload plan whose mutable channel metadata is the final entry.
+ * @returns A channel plan whose mutable channel metadata is the final entry.
  */
-export async function createDesktopUploadPlan(
+export async function createDesktopChannelPlan(
   targetName: DesktopPackageTargetName,
-  options: DesktopUploadPlanOptions = {},
-): Promise<DesktopUploadPlan> {
+  options: DesktopReleasePlanOptions = {},
+): Promise<DesktopChannelPlan> {
   const target = TARGETS[targetName]
   if (target === undefined) {
     throw new Error(`desktop upload: unsupported target ${String(targetName)}`)
@@ -187,7 +198,7 @@ export async function createDesktopUploadPlan(
     throw new Error(`desktop upload: desktop version ${desktopVersion} does not match current dsh version ${dshVersion}`)
   }
 
-  const update = resolveDesktopUploadConfig(environment, target.platform, target.arch)
+  const update = resolveDesktopAutoUpdateConfig(environment, target.platform, target.arch)
   const buildRecord = await jsonFile(
     join(artifactsRoot, desktopBuildRecordFilename(targetName)),
     `${targetName} package completion record`,
@@ -249,9 +260,35 @@ export async function createDesktopUploadPlan(
     target: targetName,
     version: dshVersion,
     publicUrl: update.publicUrl,
-    bucket: update.bucket,
-    secretIdEnvName: update.secretIdEnvName,
-    secretKeyEnvName: update.secretKeyEnvName,
+    keyPrefix: update.keyPrefix,
     artifacts,
+  }
+}
+
+/**
+ * Validate one release and resolve the private COS destination that receives it.
+ * @param targetName - Fixed platform and architecture selected by the upload command.
+ * @param options - Optional filesystem roots and environment for tests or release automation.
+ * @returns The channel plan plus the bucket and credential variable names for the transfer.
+ */
+export async function createDesktopUploadPlan(
+  targetName: DesktopPackageTargetName,
+  options: DesktopReleasePlanOptions = {},
+): Promise<DesktopUploadPlan> {
+  const target = TARGETS[targetName]
+  if (target === undefined) {
+    throw new Error(`desktop upload: unsupported target ${String(targetName)}`)
+  }
+  const channel = await createDesktopChannelPlan(targetName, options)
+  const destination = resolveDesktopUploadConfig(
+    options.environment ?? process.env,
+    target.platform,
+    target.arch,
+  )
+  return {
+    ...channel,
+    bucket: destination.bucket,
+    secretIdEnvName: destination.secretIdEnvName,
+    secretKeyEnvName: destination.secretKeyEnvName,
   }
 }

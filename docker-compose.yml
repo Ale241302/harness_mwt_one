@@ -28,6 +28,10 @@ services:
       # directorio antes de arrancar, así /healthz compara el SHA construido con el
       # manifiesto realmente desplegado y no con el que quedó cocido en la imagen.
       MANIFEST_FILE: /opt/mwt/harness-manifest/MANIFEST.md
+      # Canal de actualización del escritorio FaberLoom: el gateway sirve
+      # `/_/harness/desktop/stable/<target>/` desde este directorio, que
+      # scripts/publish-desktop-channel.ps1 llena en el host.
+      DESKTOP_CHANNEL_DIR: /opt/mwt/harness-desktop-channel
     volumes:
       - harness_users:/data
       # M9 · estado del último backup, escrito por scripts/backup-harness.sh en el
@@ -37,6 +41,9 @@ services:
       # M9 · manifiesto que /healthz compara. Se monta el directorio (no el file)
       # porque cada push reemplaza el archivo y cambiaría el inodo del mount.
       - /opt/mwt/harness-manifest:/opt/mwt/harness-manifest:ro
+      # Canal de actualización del escritorio: un directorio, por el mismo motivo
+      # que el manifiesto, porque cada publicación reemplaza los archivos dentro.
+      - /opt/mwt/harness-desktop-channel:/opt/mwt/harness-desktop-channel:ro
     networks:
       - harness-net
       - consola-mwt-one-net

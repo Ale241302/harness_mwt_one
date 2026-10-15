@@ -3,6 +3,17 @@
 /** Environment variable that supplies the Electron application identifier. */
 export const DESKTOP_APP_ID_ENV = 'DSH_DESKTOP_APP_ID'
 
+/**
+ * Application identifier used when the packaging environment supplies none.
+ *
+ * The identifier names the product that owns the installation: the operating
+ * system records it for the application, its uninstaller, and its file
+ * associations, so an installation of this fork must not claim the upstream
+ * project. A deployment that distributes under another identity overrides it
+ * with DSH_DESKTOP_APP_ID.
+ */
+export const DEFAULT_DESKTOP_APP_ID = 'one.mwt.faberloom'
+
 /** Environment variable that supplies electron-builder's macOS certificate qualifier. */
 export const MACOS_SIGNING_IDENTITY_ENV = 'DSH_DESKTOP_MACOS_SIGNING_IDENTITY'
 
@@ -35,10 +46,10 @@ function requireEnvironmentValue(env, name) {
 /**
  * Resolve and validate the application identifier shared by every platform target.
  * @param {NodeJS.ProcessEnv} env - Packaging environment.
- * @returns {string} Reverse-DNS application identifier.
+ * @returns {string} Reverse-DNS application identifier, this product's own when the environment supplies none.
  */
 export function resolveDesktopAppId(env) {
-  const appId = requireEnvironmentValue(env, DESKTOP_APP_ID_ENV)
+  const appId = env[DESKTOP_APP_ID_ENV]?.trim() || DEFAULT_DESKTOP_APP_ID
   if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/u.test(appId)) {
     throw new Error(`desktop release environment: ${DESKTOP_APP_ID_ENV} must be a reverse-DNS identifier`)
   }

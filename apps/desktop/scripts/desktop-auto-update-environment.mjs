@@ -14,11 +14,12 @@ const UPDATE_ENVIRONMENTS = {
     secretKeyEnvName: 'DOWNLOAD_TEST_COS_SECRET_KEY',
   },
   production: {
-    // A deployment that hosts its own release channel points production at its
-    // own origin; the vendor origin stays the default, so an installation that
-    // sets nothing keeps the shipped channel.
+    // This fork's release channel is its own deployment: the origin that
+    // already serves the product hosts the update feed, so no vendor origin
+    // and no third-party storage account take part in a release. A deployment
+    // that distributes from elsewhere overrides it with DOWNLOAD_PROD_ORIGIN.
     originEnvName: 'DOWNLOAD_PROD_ORIGIN',
-    fixedOrigin: 'https://download.deepseek.com',
+    fixedOrigin: 'https://harness.mwt.one',
     bucketEnvName: 'DOWNLOAD_PROD_COS_BUCKET',
     secretIdEnvName: 'DOWNLOAD_PROD_COS_SECRET_ID',
     secretKeyEnvName: 'DOWNLOAD_PROD_COS_SECRET_KEY',

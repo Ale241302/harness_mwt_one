@@ -49,13 +49,16 @@ describe('desktop auto-update environment', () => {
     }, 'win32', 'x64')).toThrow('without a path, credentials, query, or fragment')
   })
 
-  it('selects the production URL for packages and bucket for uploads', () => {
+  it('selects the fork release origin for packages and bucket for uploads', () => {
+    // The fork distributes from its own deployment; no vendor origin and no
+    // environment are needed to package against it.
     expect(resolveDesktopAutoUpdateConfig({
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
     }, 'win32', 'x64')).toMatchObject({
       environment: 'production',
       target: 'win-x64',
-      publicUrl: 'https://download.deepseek.com/_/harness/desktop/stable/win-x64/',
+      origin: 'https://harness.mwt.one',
+      publicUrl: 'https://harness.mwt.one/_/harness/desktop/stable/win-x64/',
     })
     expect(resolveDesktopUploadConfig({
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',

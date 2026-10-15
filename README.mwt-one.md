@@ -378,13 +378,36 @@ Consecuencias aceptadas de cada modo:
   `faberloom-shares` y `faberloom-session-shares`, que llevan Spaces, Work Flows y
   sesiones compartidas a la consola.
 
-Pendiente para darlo por cerrado:
+Cerrado desde este documento:
 
-- La elección de modo se persiste en el home del harness y se ofrece en la pantalla de
-  arranque; hoy solo se puede fijar con `DSH_DESKTOP_GATEWAY_URL` en el entorno de
-  lanzamiento.
-- Los MCP de MWT.ONE y de SICOP los inyecta hoy el gateway por usuario. En modo local
-  hay que montarlos con el token de consola del inicio de sesión o con un parche de
-  producto, y comprobarlo.
-- Empaquetado propio, identidad de aplicación, firma y canal de actualización
-  propios, en lugar de los del upstream.
+- La elección de modo se persiste en el home del harness (`desktop-backend.json`), el
+  modo local es el que trae una instalación nueva, el gateway queda a un clic en la
+  pantalla de arranque y el menú avisa de que cada modo tiene datos distintos.
+- En modo local el harness monta los MCP de producto desde el entorno resuelto
+  (`apps/desktop/src/product-mcp.ts`), así que no depende de que el gateway los inyecte
+  por usuario.
+- Empaquetado, identidad de aplicación y canal de actualización propios: el paquete se
+  identifica como `one.mwt.faberloom` y busca sus actualizaciones en el origen de este
+  despliegue en lugar del del upstream.
+
+Queda una sola cosa fuera del alcance del repositorio, porque es una compra y no un
+cambio de código: el certificado de firma. Windows pide uno EV con token SafeNet y macOS
+un certificado Developer ID con credenciales de notarización. Sin ellos no hay instalador
+firmado, y un paquete sin firma no lleva canal de actualización: se distribuye a mano. El
+día que exista el certificado, publicar es un comando; ver `apps/desktop/README.md`.
+
+### Servir el canal de actualización desde este despliegue
+
+El canal de producción es el origen de este despliegue (`https://harness.mwt.one` por
+defecto), así que publicar no usa ninguna cuenta de almacenamiento de terceros. El
+paquete calcula su URL de actualizador como `/_/harness/desktop/stable/<target>/`. El
+gateway sirve esa ruta desde `/opt/mwt/harness-desktop-channel`, que su propio stack
+monta en solo lectura (`DESKTOP_CHANNEL_DIR` en `docker-compose.yml`); nginx le pasa el
+prefijo sin buffering, y el gateway responde con `no-cache` para la metadata del canal y
+con un año de caché para los artefactos, cuyo nombre lleva la versión.
+`scripts/publish-desktop-channel.ps1` valida el paquete terminado, lo deja en ese
+directorio por `scp` y comprueba la metadata por HTTPS.
+
+El bloque de nginx vive en `nginx/harness.conf`, que es un bind-mount de archivo: el
+push no lo sube, así que se aplica en el VPS y se recarga nginx (ver "Mount de nginx de
+archivo" en la sección de despliegue).

@@ -26,7 +26,10 @@
     "package:win:x64:dir": "tsx scripts/package-target.ts win-x64 --dir",
     "upload:mac:arm64": "tsx scripts/upload-target.ts mac-arm64",
     "upload:mac:x64": "tsx scripts/upload-target.ts mac-x64",
-    "upload:win:x64": "tsx scripts/upload-target.ts win-x64"
+    "upload:win:x64": "tsx scripts/upload-target.ts win-x64",
+    "channel:mac:arm64": "tsx scripts/stage-target-channel.ts mac-arm64",
+    "channel:mac:x64": "tsx scripts/stage-target-channel.ts mac-x64",
+    "channel:win:x64": "tsx scripts/stage-target-channel.ts win-x64"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",

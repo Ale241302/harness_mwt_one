@@ -1,6 +1,6 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-09-faberloom-context-agents` (commit `0ad08d19d09e593b318d29ee735607e86b32ac23`: contexto y agentes entre Spaces (P0–P7) — puente Contexto↔Spaces, plano de capacidades por agente, sesión del Space como su agente, consulta durable (`continuable`+`followup`), export/import/replace del registro de contexto y búsqueda con embeddings/Knowledge Hub; endurecimiento por revisión ECC. Sobre `148006210382d3e9bd5cf643686971926664469f`).
+**Tag de despliegue:** `deploy-2026-10-15-faberloom-desktop-local` (escritorio FaberLoom con archivos locales (H0-H3), releases desacoplados (H4), canal de actualizacion propio en este mismo origen (H5) y el puente PC a VPS registrado como spike (H6). El commit exacto de cada despliegue lo sella la cabecera **Imagen desplegada actual** de abajo).
 **Imagen desplegada actual:** build de `main` @ `0ad08d19d09e593b318d29ee735607e86b32ac23` (deploy caliente).
 **Verificado en el VPS:** 9 de octubre de 2026.
 
@@ -22,6 +22,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |
+| Canal de actualización del escritorio | `/opt/mwt/harness-desktop-channel`, servido en `/_/harness/desktop/stable/<target>/` | nginx (`nginx/harness.conf`); lo llena `scripts/publish-desktop-channel.ps1`; vacío hasta que exista un instalador firmado |
 
 ## Redes
 

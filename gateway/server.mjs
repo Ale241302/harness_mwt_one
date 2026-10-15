@@ -1457,6 +1457,35 @@ app.get('/fonts/:file', (req, res) => {
   res.sendFile(path.join(import.meta.dirname, 'assets', 'fonts', file))
 })
 
+// Canal de actualización del escritorio FaberLoom. El paquete calcula la URL de su
+// actualizador como <origen>/_/harness/desktop/stable/<target>/<archivo>, así que esta
+// ruta sirve el árbol que scripts/publish-desktop-channel.ps1 deja en el directorio
+// montado. No se acepta un nombre arbitrario del cliente: el target tiene que ser uno
+// de los tres del canal, el nombre tiene que ser simple, y la ruta resuelta tiene que
+// seguir dentro del directorio de ese target, de modo que ningún nombre salga del canal.
+const DESKTOP_CHANNEL_ROOT = process.env.DESKTOP_CHANNEL_DIR || '/opt/mwt/harness-desktop-channel'
+const DESKTOP_CHANNEL_TARGETS = new Set(['mac-arm64', 'mac-x64', 'win-x64'])
+const DESKTOP_CHANNEL_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+app.get('/_/harness/desktop/stable/:target/:file', (req, res) => {
+  const target = String(req.params.target)
+  const file = String(req.params.file)
+  const targetRoot = path.join(DESKTOP_CHANNEL_ROOT, '_', 'harness', 'desktop', 'stable', target)
+  const filePath = path.join(targetRoot, file)
+  if (!DESKTOP_CHANNEL_TARGETS.has(target)
+    || !DESKTOP_CHANNEL_FILE.test(file)
+    || !filePath.startsWith(`${targetRoot}${path.sep}`)) {
+    res.status(404).end()
+    return
+  }
+  // La metadata del canal es la única pieza mutable: servirla cacheada dejaría al
+  // cliente sin ver nunca una versión nueva. Los artefactos sí se cachean un año,
+  // porque su nombre lleva la versión que contienen.
+  res.set('cache-control', file.endsWith('.yml') ? 'no-cache' : 'public, max-age=31536000, immutable')
+  res.sendFile(filePath, (error) => {
+    if (error !== undefined && !res.headersSent) res.status(404).end()
+  })
+})
+
 app.get('/login', (req, res) => {
   const sess = getSession(req)
   if (sess) {

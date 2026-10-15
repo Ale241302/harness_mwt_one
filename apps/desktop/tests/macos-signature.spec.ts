@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { NotarizeOptions } from '@electron/notarize'
 import {
+  DEFAULT_DESKTOP_APP_ID,
   resolveDesktopAppId,
   resolveMacOSNotarizationEnvironment,
   resolveMacOSSigningEnvironment,
@@ -174,8 +175,12 @@ describe('desktop macOS release signature', () => {
     }).toThrow(`TeamIdentifier=${expected.teamId}`)
   })
 
-  it('rejects missing and malformed release identifiers', () => {
-    expect(() => resolveDesktopAppId({})).toThrow(/DSH_DESKTOP_APP_ID/u)
+  it('rejects malformed release identifiers and defaults the product application identifier', () => {
+    // An installation records the identifier the OS shows for it, so the
+    // product supplies its own and the environment only overrides it.
+    expect(resolveDesktopAppId({})).toBe(DEFAULT_DESKTOP_APP_ID)
+    expect(resolveDesktopAppId({ DSH_DESKTOP_APP_ID: '  ' })).toBe(DEFAULT_DESKTOP_APP_ID)
+    expect(resolveDesktopAppId({ DSH_DESKTOP_APP_ID: 'one.mwt.other' })).toBe('one.mwt.other')
     expect(() => resolveDesktopAppId({ DSH_DESKTOP_APP_ID: 'not-a-bundle-id' })).toThrow(/reverse-DNS/u)
     expect(() => resolveMacOSSigningEnvironment({})).toThrow(/DSH_DESKTOP_MACOS_SIGNING_IDENTITY/u)
     expect(() => resolveMacOSSigningEnvironment({

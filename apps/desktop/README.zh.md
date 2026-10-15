@@ -95,7 +95,7 @@ Workspace 开发使用调用命令的 Node.js 运行当前 CLI 与私有 Desktop
 
 ## 打包
 
-正常打包只需执行一条完整命令。该命令会先准备发布资源，再生成宿主平台的安装包与更新元数据。所有目标都要求通过 `DSH_DESKTOP_APP_ID` 提供反向域名形式的应用 ID。macOS 目标还要求通过 `DSH_DESKTOP_MACOS_SIGNING_IDENTITY` 提供 electron-builder 证书限定名，通过 `DSH_DESKTOP_MACOS_TEAM_ID` 提供对应的 10 字符 Apple Team ID，并提供一套完整的 notarytool 凭据方案。App Store Connect API Key 方式使用以下变量：
+正常打包只需执行一条完整命令。该命令会先准备发布资源，再生成宿主平台的安装包与更新元数据。所有目标都带一个反向域名形式的应用 ID：默认使用本产品自己的 `one.mwt.faberloom`（安装会为应用、其卸载程序与文件关联记录该 ID），可用 `DSH_DESKTOP_APP_ID` 覆盖。macOS 目标还要求通过 `DSH_DESKTOP_MACOS_SIGNING_IDENTITY` 提供 electron-builder 证书限定名，通过 `DSH_DESKTOP_MACOS_TEAM_ID` 提供对应的 10 字符 Apple Team ID，并提供一套完整的 notarytool 凭据方案。App Store Connect API Key 方式使用以下变量：
 
 ```sh
 export DSH_DESKTOP_APP_ID='<reverse-DNS application ID>'
@@ -140,14 +140,32 @@ pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Electron $Electron
 
 ### 上传更新
 
-`DSH_DESKTOP_AUTO_UPDATE_ENV` 同时选择打包时写入的更新 URL 与后续 COS 上传目标，可取 `test` 或 `production`；未设置时使用 `test`。测试打包必须通过 `DOWNLOAD_TEST_ORIGIN` 提供 HTTPS origin。生产默认使用 `https://download.deepseek.com`；当 `DOWNLOAD_PROD_ORIGIN` 给出一个不含路径、凭据、查询或片段的 HTTPS origin 时，改用部署自己的通道。上传还必须通过 `DOWNLOAD_TEST_COS_BUCKET` 或 `DOWNLOAD_PROD_COS_BUCKET` 提供所选环境的 COS bucket。目标路径为 `_/harness/desktop/stable/<target>/`，其中 `target` 为 `mac-arm64`、`mac-x64` 或 `win-x64`。
+`DSH_DESKTOP_AUTO_UPDATE_ENV` 同时选择打包时写入的更新 URL 与后续的传输目标，可取 `test` 或 `production`；未设置时使用 `test`。测试打包必须通过 `DOWNLOAD_TEST_ORIGIN` 提供 HTTPS origin。生产默认使用本 fork 自己的 origin `https://harness.mwt.one`，让发布通道与产品同处一台主机；当 `DOWNLOAD_PROD_ORIGIN` 给出一个不含路径、凭据、查询或片段的 HTTPS origin 时改用该地址。COS 上传还必须通过 `DOWNLOAD_TEST_COS_BUCKET` 或 `DOWNLOAD_PROD_COS_BUCKET` 提供所选环境的 bucket。目标路径为 `_/harness/desktop/stable/<target>/`，其中 `target` 为 `mac-arm64`、`mac-x64` 或 `win-x64`。未签名的包完全不写入更新源，因此只有已签名的发布才存在通道。
 
 更新目标与上传凭据都与所选环境对应：
 
 | 环境 | 公开 origin | COS bucket | COS 凭据 |
 |---|---|---|---|
 | `test` 或未设置 | `DOWNLOAD_TEST_ORIGIN` | `DOWNLOAD_TEST_COS_BUCKET` | `DOWNLOAD_TEST_COS_SECRET_ID`、`DOWNLOAD_TEST_COS_SECRET_KEY` |
-| `production` | 优先 `DOWNLOAD_PROD_ORIGIN`，否则 `https://download.deepseek.com` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`、`DOWNLOAD_PROD_COS_SECRET_KEY` |
+| `production` | 优先 `DOWNLOAD_PROD_ORIGIN`，否则 `https://harness.mwt.one` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`、`DOWNLOAD_PROD_COS_SECRET_KEY` |
+
+### 将通道发布到产品自己的主机
+
+已服务本产品的部署也可以服务它的发布通道，此时一次发布不需要任何存储账号或第三方凭据。staging 会用与 COS 上传相同的检查验证已完成的包，并把要服务的目录结构写入 origin 映射到其根目录的那个目录：
+
+```sh
+export DSH_DESKTOP_AUTO_UPDATE_ENV='production'
+export DSH_DESKTOP_CHANNEL_DIR='<directory the update origin serves>'
+pnpm run channel:win:x64
+```
+
+`scripts/publish-desktop-channel.ps1` 会 staging 一个目标、把目录树复制到服务该 origin 的主机，并通过 HTTPS 校验通道元数据：
+
+```powershell
+pwsh -File scripts/publish-desktop-channel.ps1 -Target win-x64
+```
+
+staging 只重建所发布目标的目录，被取代的安装包或 blockmap 会停止被服务而不是留在当前版本旁边，其他目标则保留各自最后一次发布。origin 必须服务 `/_/harness/desktop/`：gateway 从它自己的 stack 以只读方式挂载的目录（[docker-compose.yml](../../docker-compose.yml) 中的 `DESKTOP_CHANNEL_DIR`）提供该前缀，[harness.conf](../../nginx/harness.conf) 不做缓冲地把该前缀代理过去，而 gateway 对通道元数据回答 `no-cache`、对带版本的产物回答一年缓存。
 
 同一目标必须在同一环境下完成打包与上传。例如，默认测试环境使用：
 
@@ -179,7 +197,7 @@ pnpm run package:desktop:mac:arm64 -- --unsigned
 pnpm run package:desktop:mac:x64 -- --unsigned
 ```
 
-这些命令要求设置 `DSH_DESKTOP_APP_ID` 并具备常规构建依赖，包括编译原生模块所需的 Python 与原生工具链（Windows 上为带 Windows SDK 的 Visual C++ 构建工具，macOS 上为 Xcode 命令行工具）。Python 不在 `PATH` 中时，将 `PYTHON` 设置为其可执行文件路径。每条命令把安装包写入 `.desktop-build/targets/<target>/unsigned-artifacts/`，省略自动更新配置，清除签名凭据，且不生成发布完成记录。未签名的 macOS 构建会跳过代码签名与公证，因此其应用只能在构建它的机器上运行（macOS Gatekeeper 会隔离下载来的副本）。签名打包和上传命令仍遵循正式发布要求。
+这些命令要求具备常规构建依赖，包括编译原生模块所需的 Python 与原生工具链（Windows 上为带 Windows SDK 的 Visual C++ 构建工具，macOS 上为 Xcode 命令行工具）。Python 不在 `PATH` 中时，将 `PYTHON` 设置为其可执行文件路径。每个包都带本产品自己的应用 ID（除非用 `DSH_DESKTOP_APP_ID` 覆盖），每条命令把安装包写入 `.desktop-build/targets/<target>/unsigned-artifacts/`，省略自动更新配置，清除签名凭据，且不生成发布完成记录。未签名的 macOS 构建会跳过代码签名与公证，因此其应用只能在构建它的机器上运行（macOS Gatekeeper 会隔离下载来的副本）。签名打包和上传命令仍遵循正式发布要求。
 
 `.github/workflows/desktop-installer-unsigned.yml` 在 GitHub 的 `windows-latest`、`macos-14` 与 `macos-13` runner 上运行同样的三条命令（这些 runner 已自带原生工具链），并把每个安装包作为 workflow artifact 上传。它由手动触发（`workflow_dispatch`）；把仓库 secret `DESKTOP_HOME_ENV` 设为每次安装追加到其 Harness home `.env` 的部署默认值文档，或通过其 `home_env` 输入传入同一 JSON。
 

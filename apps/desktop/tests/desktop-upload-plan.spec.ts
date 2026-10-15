@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDesktopUploadPlan } from '../scripts/desktop-upload-plan.ts'
-import { desktopUpdateMetadataFilename } from '../scripts/desktop-auto-update-environment.mjs'
+import { desktopUpdateMetadataFilename, resolveDesktopAutoUpdateConfig } from '../scripts/desktop-auto-update-environment.mjs'
 import type { DesktopPackageTargetName } from '../scripts/package-target.ts'
 
 const temporaryDirectories: string[] = []
@@ -39,9 +39,15 @@ async function fixture(
 
   const [os, arch] = target.split('-') as ['mac' | 'win', 'arm64' | 'x64']
   const base = `faberloom-${version}-${os}-${arch}`
-  const origin = environment === 'test'
-    ? TEST_ORIGIN
-    : 'https://download.deepseek.com'
+  // The completion record names the destination the packaging resolved, so the
+  // fixture reads it from that same resolver instead of repeating the URL.
+  const origin = resolveDesktopAutoUpdateConfig(
+    environment === 'test'
+      ? { DOWNLOAD_TEST_ORIGIN: TEST_ORIGIN }
+      : { DSH_DESKTOP_AUTO_UPDATE_ENV: 'production' },
+    os === 'mac' ? 'darwin' : 'win32',
+    arch,
+  ).origin
   await writeFile(join(artifactsRoot, `${target}-release.json`), `${JSON.stringify({
     schemaVersion: 1,
     target,
@@ -138,7 +144,7 @@ describe('desktop upload plan', () => {
       'latest.yml',
     ])
     expect(plan).toMatchObject({
-      publicUrl: 'https://download.deepseek.com/_/harness/desktop/stable/win-x64/',
+      publicUrl: 'https://harness.mwt.one/_/harness/desktop/stable/win-x64/',
       bucket: PRODUCTION_BUCKET,
     })
   })

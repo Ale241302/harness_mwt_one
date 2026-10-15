@@ -95,7 +95,7 @@ Workspace development runs the current CLI and private Desktop Host packages und
 
 ## Package
 
-The normal packaging path is one complete command. It performs release preparation before creating the host platform's installers and update metadata. Every target requires a reverse-DNS `DSH_DESKTOP_APP_ID`. macOS targets additionally require the electron-builder certificate qualifier in `DSH_DESKTOP_MACOS_SIGNING_IDENTITY`, its 10-character Apple Team ID in `DSH_DESKTOP_MACOS_TEAM_ID`, and one complete notarytool credential strategy. The App Store Connect API-key strategy uses these variables:
+The normal packaging path is one complete command. It performs release preparation before creating the host platform's installers and update metadata. Every target carries a reverse-DNS application identifier: this product's own `one.mwt.faberloom`, which an installation records for the application, its uninstaller, and its file associations, unless `DSH_DESKTOP_APP_ID` overrides it. macOS targets additionally require the electron-builder certificate qualifier in `DSH_DESKTOP_MACOS_SIGNING_IDENTITY`, its 10-character Apple Team ID in `DSH_DESKTOP_MACOS_TEAM_ID`, and one complete notarytool credential strategy. The App Store Connect API-key strategy uses these variables:
 
 ```sh
 export DSH_DESKTOP_APP_ID='<reverse-DNS application ID>'
@@ -140,14 +140,32 @@ pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Electron $Electron
 
 ### Upload updates
 
-`DSH_DESKTOP_AUTO_UPDATE_ENV` selects `test` or `production` for both the URL embedded during packaging and the later COS upload; an absent value selects `test`. Test packaging requires its HTTPS origin in `DOWNLOAD_TEST_ORIGIN`. Production defaults to `https://download.deepseek.com` and moves to the deployment's own channel when `DOWNLOAD_PROD_ORIGIN` names an HTTPS origin without a path, credentials, query, or fragment. Upload additionally requires the selected deployment's COS bucket in `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`. The target path is `_/harness/desktop/stable/<target>/`, where `target` is `mac-arm64`, `mac-x64`, or `win-x64`.
+`DSH_DESKTOP_AUTO_UPDATE_ENV` selects `test` or `production` for both the URL embedded during packaging and the later transfer; an absent value selects `test`. Test packaging requires its HTTPS origin in `DOWNLOAD_TEST_ORIGIN`. Production defaults to this fork's own origin, `https://harness.mwt.one`, so the release channel lives on the host that already serves the product, and it moves elsewhere when `DOWNLOAD_PROD_ORIGIN` names an HTTPS origin without a path, credentials, query, or fragment. The COS upload additionally requires the selected deployment's bucket in `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`. The target path is `_/harness/desktop/stable/<target>/`, where `target` is `mac-arm64`, `mac-x64`, or `win-x64`. An unsigned package embeds no update feed at all, so a channel only exists for a signed release.
 
 The update destination and upload credentials follow the selected deployment:
 
 | Environment | Public origin | COS bucket | COS credentials |
 |---|---|---|---|
 | `test` or unset | `DOWNLOAD_TEST_ORIGIN` | `DOWNLOAD_TEST_COS_BUCKET` | `DOWNLOAD_TEST_COS_SECRET_ID`, `DOWNLOAD_TEST_COS_SECRET_KEY` |
-| `production` | `DOWNLOAD_PROD_ORIGIN`, else `https://download.deepseek.com` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`, `DOWNLOAD_PROD_COS_SECRET_KEY` |
+| `production` | `DOWNLOAD_PROD_ORIGIN`, else `https://harness.mwt.one` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`, `DOWNLOAD_PROD_COS_SECRET_KEY` |
+
+### Publish the channel to the product's own host
+
+The deployment that serves this product can also serve its channel, in which case a release needs no storage account and no third-party credentials. Staging validates the completed package with the same checks as the COS upload and writes the served layout into the directory the origin maps to its root:
+
+```sh
+export DSH_DESKTOP_AUTO_UPDATE_ENV='production'
+export DSH_DESKTOP_CHANNEL_DIR='<directory the update origin serves>'
+pnpm run channel:win:x64
+```
+
+`scripts/publish-desktop-channel.ps1` stages one target, copies the tree to the host that serves the origin, and checks the channel metadata over HTTPS:
+
+```powershell
+pwsh -File scripts/publish-desktop-channel.ps1 -Target win-x64
+```
+
+Staging rebuilds only the published target's directory, so a superseded installer or blockmap stops being served instead of lingering beside the current one, while the other targets keep their last release. The origin must serve `/_/harness/desktop/`: the gateway serves that prefix from the directory its own stack mounts read-only (`DESKTOP_CHANNEL_DIR` in [docker-compose.yml](../../docker-compose.yml)), [harness.conf](../../nginx/harness.conf) proxies it there without buffering, and the gateway answers with `no-cache` for the channel metadata and a one-year cache for the versioned artifacts.
 
 Package and upload one target under the same environment. For example, the default test deployment uses:
 
@@ -179,7 +197,7 @@ pnpm run package:desktop:mac:arm64 -- --unsigned
 pnpm run package:desktop:mac:x64 -- --unsigned
 ```
 
-The commands require `DSH_DESKTOP_APP_ID` and the normal build dependencies, including Python and the native toolchain (Visual C++ build tools with the Windows SDK on Windows, the Xcode command-line tools on macOS). Set `PYTHON` to the Python executable when it is absent from `PATH`. Each writes its installer to `.desktop-build/targets/<target>/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. An unsigned macOS build skips code signing and notarization, so its application runs only on the machine that built it (macOS Gatekeeper quarantines a downloaded copy). The signed packaging and upload commands retain their release requirements.
+The commands require the normal build dependencies, including Python and the native toolchain (Visual C++ build tools with the Windows SDK on Windows, the Xcode command-line tools on macOS). Set `PYTHON` to the Python executable when it is absent from `PATH`. Each package carries this product's own application identifier unless `DSH_DESKTOP_APP_ID` overrides it, and each writes its installer to `.desktop-build/targets/<target>/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. An unsigned macOS build skips code signing and notarization, so its application runs only on the machine that built it (macOS Gatekeeper quarantines a downloaded copy). The signed packaging and upload commands retain their release requirements.
 
 `.github/workflows/desktop-installer-unsigned.yml` runs the same three commands on GitHub's `windows-latest`, `macos-14`, and `macos-13` runners, which already carry the native toolchain, and uploads each installer as a workflow artifact. It is manual (`workflow_dispatch`); set the repository secret `DESKTOP_HOME_ENV` to the deployment defaults document each installation appends to its Harness-home `.env`, or pass the same JSON through its `home_env` input.
 
