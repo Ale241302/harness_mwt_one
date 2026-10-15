@@ -136,6 +136,30 @@ export async function signInToConsole(
   }
 }
 
+/**
+ * Ask the console to email a password-reset link. The console answers the same
+ * way whether or not the account exists, so a rejection is a transport or
+ * service failure rather than a missing account.
+ * @param consolaBase - console API base the installation signs in against.
+ * @param email - the address the operator typed.
+ * @throws when the console is unreachable or refuses the request.
+ */
+export async function requestPasswordReset(consolaBase: string, email: string): Promise<void> {
+  const base = consolaBase.replace(/\/+$/, '')
+  let response: Response
+  try {
+    response = await fetch(`${base}/users/forgot-password/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ email }),
+      signal: AbortSignal.timeout(15_000),
+    })
+  } catch (error) {
+    throw new Error(`No se pudo contactar la consola (${base}): ${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (!response.ok) throw new Error(`La consola rechazó la solicitud de restablecimiento (HTTP ${response.status})`)
+}
+
 /** Render one YAML double-quoted scalar. */
 function yamlScalar(value: string): string {
   return JSON.stringify(value)

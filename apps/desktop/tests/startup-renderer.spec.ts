@@ -13,17 +13,11 @@ interface AppearanceOptions {
   readonly stored?: 'light' | 'dark'
 }
 
-interface BackendOptions {
-  readonly mode: 'local' | 'gateway'
-  readonly fixed: boolean
-}
-
 function startup(
   locale = 'en',
   status: Promise<DesktopBackendState> = Promise.resolve({ phase: 'starting' }),
   signedIn = true,
   appearance: AppearanceOptions = {},
-  backend: BackendOptions = { mode: 'local', fixed: false },
 ) {
   const dom = new JSDOM(readFileSync(new URL('../renderer/startup.html', import.meta.url), 'utf8'), { runScripts: 'outside-only' })
   onTestFinished(() => {
@@ -40,10 +34,10 @@ function startup(
   const resetConfiguration = vi.fn(async () => {})
   const restart = vi.fn(async () => {})
   const login = vi.fn(async (): Promise<{ ok: boolean; message?: string }> => ({ ok: true }))
+  const requestPasswordReset = vi.fn(async (): Promise<{ ok: boolean; message?: string }> => ({ ok: true }))
   const getAppearance = vi.fn(async (): Promise<'light' | 'dark'> => appearance.stored ?? (appearance.osDark === true ? 'dark' : 'light'))
   const setAppearance = vi.fn(async (_value: 'light' | 'dark') => {})
   const setLocale = vi.fn(async (id: Parameters<DshDesktopStartupApi['setLocale']>[0]) => resolveDesktopLocale(id))
-  const selectBackend = vi.fn(async (_mode: BackendOptions['mode']) => {})
   const queried = Promise.withResolvers<undefined>()
   const api: DshDesktopStartupApi = {
     protocolVersion: 1,
@@ -53,13 +47,12 @@ function startup(
     backend: {
       status: () => { queried.resolve(undefined); return status },
       subscribe: (listener) => { listeners.add(listener); return unsubscribe },
-      selection: async () => backend,
-      select: selectBackend,
     },
     identity: {
       status: async () => ({ signedIn, consolaBase: 'https://consola.mwt.one/api', ...(signedIn ? { email: 'a@b.c', role: 'admin' } : {}) }),
       login,
       signOut: async () => ({ signedIn: false, consolaBase: 'https://consola.mwt.one/api' }),
+      requestPasswordReset,
     },
     disablePlugins, resetConfiguration, restart,
   }
@@ -80,26 +73,31 @@ function startup(
   const submitSignIn = (): void => {
     element('#signin').dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
   }
+  const submitRecovery = (): void => {
+    element('#recovery-form').dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
+  }
+  const signedOut = (): Promise<void> => expect.poll(() => element('#signin').hidden).toBe(false)
   const copy = (): string => [element('#heading').textContent, element('#description').textContent,
     ...['#reset-advice', '#reinstall-advice', '#error', '#actions'].filter(selector => !element(selector).hidden)
       .flatMap(selector => selector === '#actions'
         ? [...document.querySelectorAll<HTMLButtonElement>('#actions button')].filter(button => !button.hidden).map(button => button.textContent)
         : [element(selector).textContent]),
   ].join('\n')
-  return { dom, document, element, button, publish, copy, submitSignIn,
+  return { dom, document, element, button, publish, copy, submitSignIn, submitRecovery, signedOut,
     disablePlugins, resetConfiguration, restart, unsubscribe, login, getAppearance,
-    setAppearance, setLocale, selectBackend, queried: queried.promise }
+    setAppearance, setLocale, requestPasswordReset, queried: queried.promise }
 }
 
-it('renders the sign-in form instead of loading while signed out', async () => {
+it('renders the sign-in card instead of loading while signed out', async () => {
   const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
-  await expect.poll(() => page.element('#heading').textContent).not.toBe('')
-  expect(page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  await page.signedOut()
   expect(page.element('#title').textContent).toBe('FaberLoom')
-  expect(page.element('#signin').hidden).toBe(false)
+  expect(page.element('#signin-description').textContent).toBe('Sign in with your console user')
   expect(page.element('#spinner').hidden).toBe(true)
-  expect(page.element('#signin-user-label').textContent).toBe('User')
+  expect(page.element('#status').hidden).toBe(true)
+  expect(page.element('#signin-user-label').textContent).toBe('User or email')
   expect(page.element('#signin-submit').textContent).toBe('Sign in')
+  expect(page.element('#signin-forgot').textContent).toBe('Forgot your password?')
 })
 
 it('carries the two-tone wordmark and a locale-owned appearance toggle', async () => {
@@ -132,7 +130,7 @@ it('applies the stored appearance over the OS default', async () => {
 
 it('shows an inline spinner in the submit button while signing in', async () => {
   const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
-  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  await page.signedOut()
   const pending = Promise.withResolvers<{ ok: boolean; message?: string }>()
   page.login.mockReturnValueOnce(pending.promise)
   page.submitSignIn()
@@ -152,13 +150,57 @@ it('shows an inline spinner in the submit button while signing in', async () => 
 
 it('restores the idle submit button after a successful sign-in', async () => {
   const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
-  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  await page.signedOut()
   page.submitSignIn()
   await expect.poll(() => page.element('#signin').hidden).toBe(true)
   expect(page.element('#signin-submit-spinner').hidden).toBe(true)
   expect(page.element('#signin-submit-label').textContent).toBe('Sign in')
   expect(page.button('#signin-submit').hasAttribute('aria-busy')).toBe(false)
   expect(page.document.querySelector<HTMLInputElement>('#signin-password')?.value).toBe('')
+})
+
+it('reveals and hides the password without leaving the form', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await page.signedOut()
+  const field = page.document.querySelector<HTMLInputElement>('#signin-password')!
+  const toggle = page.button('#signin-password-toggle')
+  expect(field.type).toBe('password')
+  expect(toggle.getAttribute('aria-label')).toBe('Show password')
+  expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  toggle.click()
+  expect(field.type).toBe('text')
+  expect(toggle.getAttribute('aria-label')).toBe('Hide password')
+  expect(toggle.getAttribute('aria-pressed')).toBe('true')
+  toggle.click()
+  expect(field.type).toBe('password')
+  expect(toggle.getAttribute('aria-pressed')).toBe('false')
+})
+
+it('asks the console for a reset link and reports the neutral outcome', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await page.signedOut()
+  page.button('#signin-forgot').click()
+  page.submitRecovery()
+  await expect.poll(() => page.element('#recovery-error').hidden).toBe(false)
+  expect(page.element('#recovery-error').textContent).toBe('Enter your email.')
+  expect(page.requestPasswordReset).not.toHaveBeenCalled()
+
+  page.document.querySelector<HTMLInputElement>('#recovery-email')!.value = 'a@b.c'
+  page.submitRecovery()
+  await expect.poll(() => page.element('#recovery-sent').hidden).toBe(false)
+  expect(page.requestPasswordReset).toHaveBeenCalledWith('a@b.c')
+  expect(page.element('#recovery-sent').textContent).toBe('If the account exists and is active, the link is on its way.')
+  expect(page.element('#recovery-error').hidden).toBe(true)
+})
+
+it('reports a refused reset request without leaking the transport detail', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await page.signedOut()
+  page.requestPasswordReset.mockResolvedValueOnce({ ok: false, message: 'HTTP 500' })
+  page.document.querySelector<HTMLInputElement>('#recovery-email')!.value = 'a@b.c'
+  page.submitRecovery()
+  await expect.poll(() => page.element('#recovery-error').hidden).toBe(false)
+  expect(page.element('#recovery-error').textContent).toBe('We could not send the link. Try again.')
 })
 
 it('ships cream and warm-dark brand variants with referenceable fonts', () => {
@@ -301,56 +343,20 @@ it('offers only restart before emergency profile recovery is available', () => {
   dom.window.close()
 })
 
-it('offers the two backends and marks the one this installation launches', async () => {
+it('switches the shell language from the sign-in card and re-labels it', async () => {
   const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
-  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
-  const buttons = [...page.document.querySelectorAll<HTMLButtonElement>('#backend button')]
-  expect(buttons.map(button => button.textContent)).toEqual(['This computer', 'MWT.ONE'])
-  expect(buttons[0]?.getAttribute('aria-pressed')).toBe('true')
-  expect(buttons[1]?.getAttribute('aria-pressed')).toBe('false')
-  expect(page.element('#backend').getAttribute('aria-label')).toBe('Backend')
-  expect(page.element('#backend-note').textContent).toContain('Each backend keeps its own data')
-})
-
-it('requests the other backend and marks it while the shell rebuilds the window', async () => {
-  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
-  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
-  const buttons = [...page.document.querySelectorAll<HTMLButtonElement>('#backend button')]
-  buttons[1]?.click()
-  expect(page.selectBackend).toHaveBeenCalledWith('gateway')
-  expect(buttons[1]?.getAttribute('aria-pressed')).toBe('true')
-  expect(buttons[0]?.getAttribute('aria-pressed')).toBe('false')
-})
-
-it('marks the backend group in Spanish with the rest of the screen', async () => {
-  const page = startup('es', Promise.resolve({ phase: 'starting' }), false)
-  await expect.poll(() => page.element('#heading').textContent).toBe('Entrar a MWT.ONE')
-  const buttons = [...page.document.querySelectorAll<HTMLButtonElement>('#backend button')]
-  expect(buttons.map(button => button.textContent)).toEqual(['Este equipo', 'MWT.ONE'])
-  expect(buttons[0]?.getAttribute('aria-pressed')).toBe('true')
-  expect(page.element('#backend-note').textContent).toContain('Cada backend conserva sus propios datos')
-})
-
-it('hides the backend choice and explains it when the environment fixed the backend', async () => {
-  const page = startup('en', Promise.resolve({ phase: 'starting' }), false, {}, { mode: 'gateway', fixed: true })
-  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
-  expect(page.element('#backend').hidden).toBe(true)
-  expect(page.element('#backend-note').textContent).toBe('The launching environment fixed the backend for this installation.')
-})
-
-it('switches the shell language from the sign-in screen and re-labels it', async () => {
-  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
-  await expect.poll(() => page.element('#heading').textContent).toBe('Sign in to MWT.ONE')
+  await page.signedOut()
   const buttons = [...page.document.querySelectorAll<HTMLButtonElement>('#language button')]
   expect(buttons.map(button => button.textContent)).toEqual(['English', 'Español', '中文'])
   expect(buttons[0]?.getAttribute('aria-pressed')).toBe('true')
   expect(page.element('#language').getAttribute('aria-label')).toBe('Language')
 
   buttons[1]?.click()
-  await expect.poll(() => page.element('#heading').textContent).toBe('Entrar a MWT.ONE')
+  await expect.poll(() => page.element('#signin-description').textContent).toBe('Entra con tu usuario de la consola')
   expect(page.setLocale).toHaveBeenCalledWith('es')
   expect(page.document.documentElement.lang).toBe('es')
   expect(page.element('#signin-submit-label').textContent).toBe('Entrar')
+  expect(page.element('#signin-forgot').textContent).toBe('¿Olvidaste tu contraseña?')
   expect(page.element('#language').getAttribute('aria-label')).toBe('Idioma')
   const after = [...page.document.querySelectorAll<HTMLButtonElement>('#language button')]
   expect(after[1]?.getAttribute('aria-pressed')).toBe('true')

@@ -1,6 +1,7 @@
 # Agent Note: 桌面后端选择持久化在 Harness home
 
 Status: implemented
+Archived: 2026-10-15
 
 [English](2026-10-14-desktop-backend-choice.md) | 中文
 

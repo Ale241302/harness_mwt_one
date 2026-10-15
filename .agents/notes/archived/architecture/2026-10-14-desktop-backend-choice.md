@@ -1,6 +1,7 @@
 # Agent Note: Desktop backend selection persists in the Harness home
 
 Status: implemented
+Archived: 2026-10-15
 
 English | [中文](2026-10-14-desktop-backend-choice.zh.md)
 

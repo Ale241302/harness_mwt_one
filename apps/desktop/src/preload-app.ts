@@ -19,13 +19,12 @@ const startup: DshDesktopStartupApi = {
       ipcRenderer.on(DESKTOP_IPC.backendState, handle)
       return () => { ipcRenderer.off(DESKTOP_IPC.backendState, handle) }
     },
-    selection: () => ipcRenderer.invoke(DESKTOP_IPC.backendSelectionGet) as ReturnType<DshDesktopStartupApi['backend']['selection']>,
-    select: mode => ipcRenderer.invoke(DESKTOP_IPC.backendSelectionSet, mode) as Promise<void>,
   },
   identity: {
     status: () => ipcRenderer.invoke(DESKTOP_IPC.identityStatus) as ReturnType<DshDesktopStartupApi['identity']['status']>,
     login: (usuario, password) => ipcRenderer.invoke(DESKTOP_IPC.identityLogin, usuario, password) as ReturnType<DshDesktopStartupApi['identity']['login']>,
     signOut: () => ipcRenderer.invoke(DESKTOP_IPC.identitySignOut) as ReturnType<DshDesktopStartupApi['identity']['signOut']>,
+    requestPasswordReset: email => ipcRenderer.invoke(DESKTOP_IPC.identityPasswordReset, email) as ReturnType<DshDesktopStartupApi['identity']['requestPasswordReset']>,
   },
   disablePlugins: () => ipcRenderer.invoke(DESKTOP_IPC.pluginsDisableAll) as Promise<void>,
   restart: () => ipcRenderer.invoke(DESKTOP_IPC.applicationRestart) as Promise<void>,

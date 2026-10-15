@@ -14,18 +14,10 @@ import {
   session,
   shell,
   type IpcMainInvokeEvent,
-  type MenuItemConstructorOptions,
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import {
-  isDesktopBackendMode,
-  resolveBackend,
-  writeBackendChoice,
-  DESKTOP_BACKEND_MODES,
-  type DesktopBackend,
-  type DesktopBackendMode,
-} from './backend-choice.ts'
-import { resolveGatewayRequest } from './gateway.ts'
+import { resolveBackend, type DesktopBackend } from './launch-backend.ts'
+import { DEFAULT_GATEWAY_URL } from './gateway.ts'
 import { resolveDesktopPaths } from './paths.ts'
 import { ensureHomeEnvFile, readHomeEnv, resolveHomeEnvDefaults } from './home-env.ts'
 import { readAppearance, writeAppearance } from './appearance.ts'
@@ -33,6 +25,7 @@ import {
   DEFAULT_CONSOLA_API_BASE,
   IDENTITY_PATCH_FILENAME,
   readIdentity,
+  requestPasswordReset,
   signInToConsole,
   signOut,
   writeIdentity,
@@ -40,7 +33,7 @@ import {
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
 import { DesktopBackendController, type DesktopBackendState } from './backend-controller.ts'
-import { DESKTOP_IPC, type DesktopBackendSelection, type DesktopIdentityStatus, type DesktopSignInResult, type DesktopUpdateState } from './ipc.ts'
+import { DESKTOP_IPC, type DesktopIdentityStatus, type DesktopSignInResult, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, desktopLocaleOf, isDesktopLocaleId, resolveDesktopLocale, type DesktopLocale } from './locale.ts'
 import { readLocaleChoice, writeLocaleChoice } from './locale-choice.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
@@ -211,12 +204,11 @@ async function main(): Promise<void> {
     }
   }
   const development = app.isPackaged ? undefined : join(app.getAppPath(), '.desktop-build', 'development', 'project')
-  // The launching environment outranks the stored choice, so a deployment or a
-  // development run that configured the backend keeps it and the shell offers no
-  // switch. Otherwise the stored choice decides, and the shipped default is the
-  // local harness, which reads the files of the computer it runs on.
-  const backendFixed = resolveGatewayRequest(process.env).kind !== 'none'
-  let launch: DesktopBackend = resolveBackend(home, process.env)
+  // Only the launching environment can point an installation at a gateway, so a
+  // deployment or a development run that configured one keeps it and the operator
+  // has no switch. Otherwise the local harness runs, which reads the files of the
+  // computer it runs on.
+  const launch: DesktopBackend = resolveBackend(process.env)
   gatewayOrigin = launch.mode === 'gateway' ? new URL(launch.url).origin : undefined
   const activeProject = development ?? paths.profile
   const manager = new DesktopProjectManager(paths, resources)
@@ -427,16 +419,6 @@ async function main(): Promise<void> {
     if (value !== 'light' && value !== 'dark') throw new Error('dsh desktop: appearance must be light or dark')
     writeAppearance(home, value)
   })
-  ipcMain.handle(DESKTOP_IPC.backendSelectionGet, (event): DesktopBackendSelection => {
-    assertDesktopSender(event, ['shell'])
-    return { mode: launch.mode, fixed: backendFixed }
-  })
-  ipcMain.handle(DESKTOP_IPC.backendSelectionSet, async (event, mode: unknown): Promise<void> => {
-    assertDesktopSender(event, ['shell'])
-    if (!isDesktopBackendMode(mode)) throw new Error('dsh desktop: backend must be local or gateway')
-    if (backendFixed) throw new Error('dsh desktop: the launching environment fixes the backend')
-    await switchBackend(mode)
-  })
   ipcMain.handle(DESKTOP_IPC.pluginsList, (event) => {
     assertDesktopSender(event, ['shell'])
     if (development !== undefined) return []
@@ -494,6 +476,17 @@ async function main(): Promise<void> {
   ipcMain.handle(DESKTOP_IPC.identitySignOut, async (event): Promise<DesktopIdentityStatus> => {
     assertDesktopSender(event, ['shell'])
     return await signOutIdentity()
+  })
+  ipcMain.handle(DESKTOP_IPC.identityPasswordReset, async (event, email: unknown): Promise<DesktopSignInResult> => {
+    assertDesktopSender(event, ['shell'])
+    if (typeof email !== 'string' || email.trim() === '') return { ok: false, message: messages.passwordRecoveryMissing }
+    try {
+      await requestPasswordReset(readIdentity(home)?.consolaBase ?? consolaBase, email.trim())
+      return { ok: true }
+    } catch (error) {
+      console.error(error)
+      return { ok: false, message: messages.passwordRecoveryFailed }
+    }
   })
   ipcMain.handle(DESKTOP_IPC.applicationRestart, async (event) => {
     assertDesktopSender(event, ['shell'])
@@ -581,34 +574,21 @@ async function main(): Promise<void> {
     void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
 
-  const requestBackendSwitch = async (mode: DesktopBackendMode): Promise<void> => {
-    if (mode === launch.mode) return
-    const backendName = mode === 'local' ? messages.backendLocal : messages.backendGateway
-    const result = await dialog.showMessageBox({
-      type: 'question',
-      title: messages.backendSwitchTitle,
-      message: formatDesktopMessage(messages.backendSwitchConfirmation, { backend: backendName }),
-      buttons: [messages.backendSwitchConfirm, messages.backendSwitchCancel],
-      defaultId: 0,
-      cancelId: 1,
-    })
-    if (result.response !== 0) return
-    await switchBackend(mode)
+  /**
+   * Open the shared web application in the browser. The deployment owns the
+   * Spaces, sessions, and product modules it serves, so the Desktop reaches them
+   * there instead of switching what its own window shows.
+   */
+  const openWebApplication = (): void => {
+    const origin = launch.mode === 'gateway' ? new URL(launch.url).origin : new URL(DEFAULT_GATEWAY_URL).origin
+    void shell.openExternal(origin)
   }
-
-  const backendMenuItems = (): MenuItemConstructorOptions[] => DESKTOP_BACKEND_MODES.map(mode => ({
-    label: mode === 'local' ? messages.backendLocal : messages.backendGateway,
-    type: 'radio',
-    checked: launch.mode === mode,
-    enabled: !backendFixed,
-    click: () => { void requestBackendSwitch(mode).catch((error: unknown) => { console.error(error) }) },
-  }))
 
   const buildApplicationMenu = (): void => {
     Menu.setApplicationMenu(Menu.buildFromTemplate([{
       label: process.platform === 'darwin' ? app.name : messages.application,
       submenu: [
-        { label: messages.backendMenu, submenu: backendMenuItems() },
+        { label: messages.openWebMenu, click: openWebApplication },
         { type: 'separator' },
         {
           label: development === undefined ? messages.pluginsMenu : messages.pluginsMenuPackagedOnly,
@@ -659,34 +639,6 @@ async function main(): Promise<void> {
     window.focus()
   }
 
-  /**
-   * Persist a backend choice and launch it. The window is rebuilt because its
-   * session partition is fixed when it is created: gateway mode loads the remote
-   * origin in a persistent partition, and local mode loads the shell's own pages
-   * in the default one.
-   */
-  async function switchBackend(mode: DesktopBackendMode): Promise<void> {
-    if (mode === launch.mode) return
-    writeBackendChoice(home, { mode })
-    launch = resolveBackend(home, process.env)
-    gatewayOrigin = launch.mode === 'gateway' ? new URL(launch.url).origin : undefined
-    await startup?.catch(() => undefined)
-    await backend.stop()
-    pageError = undefined
-    emergencyDocument = false
-    navigation = undefined
-    const previous = mainWindow
-    mainWindow = undefined
-    previous?.destroy()
-    buildApplicationMenu()
-    createMainWindow()
-    if (launch.mode === 'gateway') {
-      await navigateMain(launch.url).catch(async (error: unknown) => { await showEmergencyError(error) })
-      return
-    }
-    await reconcileBackend().catch(() => undefined)
-  }
-
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) focusPrimaryWindow()
   })
@@ -709,9 +661,7 @@ async function main(): Promise<void> {
     await navigateMain(launch.url).catch(async (error: unknown) => { await showEmergencyError(error) })
   }
   // Window lifecycle callbacks run while backend startup is pending.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (quitting) return
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (mainWindow !== undefined && development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }

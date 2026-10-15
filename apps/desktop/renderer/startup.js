@@ -11,15 +11,27 @@ async function main() {
   let id = initial.id
   let messages = initial.messages
   const signin = document.querySelector('#signin')
+  const statusCard = document.querySelector('#status')
   const submit = document.querySelector('#signin-submit')
   const submitSpinner = document.querySelector('#signin-submit-spinner')
   const submitLabel = document.querySelector('#signin-submit-label')
   const signinError = document.querySelector('#signin-error')
   const userInput = document.querySelector('#signin-user')
   const passwordInput = document.querySelector('#signin-password')
+  const passwordToggle = document.querySelector('#signin-password-toggle')
+  const forgot = document.querySelector('#signin-forgot')
+  const recovery = document.querySelector('#recovery')
+  const recoveryForm = document.querySelector('#recovery-form')
+  const recoveryEmail = document.querySelector('#recovery-email')
+  const recoveryError = document.querySelector('#recovery-error')
+  const recoverySent = document.querySelector('#recovery-sent')
+  const recoverySubmit = document.querySelector('#recovery-submit')
   let loginPending = false
+  let recoveryPending = false
+  let recoveryNotice
   let lastState = { phase: 'starting' }
   let signedIn = (await api.identity.status()).signedIn
+  let focusedSignIn = false
 
   /** Copy every static label the shell owns from the active dictionary. */
   function applyCopy() {
@@ -30,10 +42,17 @@ async function main() {
     document.querySelector('#reset-configuration').textContent = messages.resetConfiguration
     document.querySelector('#reset-advice').textContent = messages.startupConfigurationAdvice
     document.querySelector('#reinstall-advice').textContent = messages.startupReinstallAdvice
-    document.querySelector('#signin-description').textContent = messages.signInDescription
+    document.querySelector('#signin-description').textContent = messages.signInSubtitle
     document.querySelector('#signin-user-label').textContent = messages.signInUser
     document.querySelector('#signin-password-label').textContent = messages.signInPassword
-    markBackend()
+    document.querySelector('#recovery-title').textContent = messages.passwordRecoveryTitle
+    document.querySelector('#recovery-description').textContent = messages.passwordRecoveryDescription
+    document.querySelector('#recovery-email-label').textContent = messages.passwordRecoveryEmail
+    document.querySelector('#recovery-close').textContent = messages.passwordRecoveryClose
+    recoverySubmit.textContent = messages.passwordRecoverySubmit
+    forgot.textContent = messages.signInForgot
+    markPassword()
+    renderRecoveryNotice()
     setSignInBusy(loginPending)
   }
 
@@ -71,37 +90,21 @@ async function main() {
     })
   }
 
-  // Backend: the shell owns the list and the stored choice, and it rebuilds the
-  // application window on a switch, so this control only reports and requests.
-  const backend = document.querySelector('#backend')
-  const backendNote = document.querySelector('#backend-note')
-  const backendSelection = await api.backend.selection()
-  let backendMode = backendSelection.mode
-  for (const mode of ['local', 'gateway']) {
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.dataset.backend = mode
-    button.textContent = mode === 'local' ? messages.backendLocal : messages.backendGateway
-    backend.append(button)
+  // The password reveal keeps the value in the same field, so the form still
+  // submits exactly what the operator typed.
+  function markPassword() {
+    const visible = passwordInput.type === 'text'
+    const label = visible ? messages.signInHidePassword : messages.signInShowPassword
+    passwordToggle.setAttribute('aria-pressed', String(visible))
+    passwordToggle.setAttribute('aria-label', label)
+    passwordToggle.setAttribute('title', label)
   }
-  const backendButtons = [...backend.querySelectorAll('button')]
-  function markBackend() {
-    backend.setAttribute('aria-label', messages.backendGroupTitle)
-    backend.hidden = backendSelection.fixed
-    backendNote.textContent = backendSelection.fixed ? messages.backendFixedNote : messages.backendDataNote
-    for (const button of backendButtons) {
-      button.setAttribute('aria-pressed', String(button.dataset.backend === backendMode))
-    }
-  }
-  for (const button of backendButtons) {
-    button.addEventListener('click', () => {
-      const next = button.dataset.backend
-      if (next === undefined || next === backendMode) return
-      backendMode = next
-      markBackend()
-      api.backend.select(next).catch(() => { markBackend() })
-    })
-  }
+  passwordToggle.addEventListener('click', () => {
+    const visible = passwordInput.type === 'password'
+    passwordInput.type = visible ? 'text' : 'password'
+    markPassword()
+    passwordInput.focus()
+  })
 
   const toggle = document.querySelector('#appearance-toggle')
   let appearance = document.documentElement.dataset.appearance === 'dark' ? 'dark' : 'light'
@@ -128,21 +131,26 @@ async function main() {
 
   function render(state) {
     lastState = state
+    document.querySelector('main').setAttribute('aria-busy', String(signedIn && state.phase !== 'error'))
+    signin.hidden = signedIn
+    statusCard.hidden = !signedIn
     if (!signedIn) {
-      document.querySelector('main').setAttribute('aria-busy', 'false')
       document.querySelector('#spinner').hidden = true
-      document.querySelector('#heading').textContent = messages.signInTitle
-      document.querySelector('#description').textContent = messages.signInDescription
+      document.querySelector('#heading').textContent = ''
+      document.querySelector('#description').textContent = ''
       document.querySelector('#error').hidden = true
       document.querySelector('#actions').hidden = true
       document.querySelector('#reset-advice').hidden = true
       document.querySelector('#reinstall-advice').hidden = true
-      signin.hidden = false
+      // The card appears only after the stored identity is read, so the first
+      // paint of the form is also the moment to put the caret in it.
+      if (!focusedSignIn) {
+        focusedSignIn = true
+        userInput.focus()
+      }
       return
     }
-    signin.hidden = true
     const failed = state.phase === 'error'
-    document.querySelector('main').setAttribute('aria-busy', String(!failed))
     document.querySelector('#spinner').hidden = failed
     document.querySelector('#heading').textContent = failed ? messages.startupFailed : messages.startupLoading
     document.querySelector('#description').textContent = failed ? messages.startupErrorDescription : messages.startupLoadingDescription
@@ -203,7 +211,61 @@ async function main() {
     passwordInput.value = ''
     render({ phase: 'starting' })
   }
+
+  // Recovery asks the console for the reset link, the same call the deployed
+  // sign-in page makes, so the desktop never routes an operator through a browser.
+  function renderRecoveryNotice() {
+    const sent = recoveryNotice === 'sent'
+    const failure = recoveryNotice === 'missing' ? messages.passwordRecoveryMissing
+      : recoveryNotice === 'failed' ? messages.passwordRecoveryFailed : ''
+    recoverySent.hidden = !sent
+    recoverySent.textContent = sent ? messages.passwordRecoverySent : ''
+    recoveryError.hidden = failure === ''
+    recoveryError.textContent = failure
+  }
+  function openRecovery() {
+    recoveryEmail.value = userInput.value.includes('@') ? userInput.value : ''
+    recoveryNotice = undefined
+    renderRecoveryNotice()
+    if (typeof recovery.showModal === 'function') recovery.showModal()
+    else recovery.setAttribute('open', '')
+    recoveryEmail.focus()
+  }
+  function closeRecovery() {
+    if (typeof recovery.close === 'function') recovery.close()
+    else recovery.removeAttribute('open')
+  }
+  async function submitRecovery() {
+    if (recoveryPending) return
+    const email = recoveryEmail.value.trim()
+    if (email === '') {
+      recoveryNotice = 'missing'
+      renderRecoveryNotice()
+      return
+    }
+    recoveryPending = true
+    recoverySubmit.setAttribute('aria-busy', 'true')
+    recoverySubmit.setAttribute('aria-disabled', 'true')
+    recoveryNotice = undefined
+    renderRecoveryNotice()
+    try {
+      const result = await api.identity.requestPasswordReset(email)
+      recoveryNotice = result.ok ? 'sent' : 'failed'
+      if (result.ok) recoveryEmail.value = ''
+    } catch {
+      recoveryNotice = 'failed'
+    } finally {
+      recoveryPending = false
+      recoverySubmit.removeAttribute('aria-busy')
+      recoverySubmit.removeAttribute('aria-disabled')
+      renderRecoveryNotice()
+    }
+  }
+
   signin.addEventListener('submit', (event) => { event.preventDefault(); void submitSignIn() })
+  forgot.addEventListener('click', openRecovery)
+  document.querySelector('#recovery-close').addEventListener('click', closeRecovery)
+  recoveryForm.addEventListener('submit', (event) => { event.preventDefault(); void submitRecovery() })
   document.querySelector('#disable-plugins').addEventListener('click', () => { void recover(() => api.disablePlugins()) })
   document.querySelector('#reset-configuration').addEventListener('click', () => { void recover(() => api.resetConfiguration()) })
   document.querySelector('#restart').addEventListener('click', () => { void recover(() => api.restart()) })

@@ -4,7 +4,6 @@ import type { DesktopPluginRecord } from './project-manager.ts'
 import type { DesktopLocale, DesktopLocaleId } from './locale.ts'
 import type { DesktopBackendState } from './backend-controller.ts'
 import type { DesktopAppearance } from './appearance.ts'
-import type { DesktopBackendMode } from './backend-choice.ts'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
@@ -12,8 +11,6 @@ export const DESKTOP_IPC = {
   localeSet: 'dsh-desktop:locale-set',
   appearanceGet: 'dsh-desktop:appearance-get',
   appearanceSet: 'dsh-desktop:appearance-set',
-  backendSelectionGet: 'dsh-desktop:backend-selection-get',
-  backendSelectionSet: 'dsh-desktop:backend-selection-set',
   pluginsList: 'dsh-desktop:plugins-list',
   pluginsAdd: 'dsh-desktop:plugins-add',
   pluginsRemove: 'dsh-desktop:plugins-remove',
@@ -28,6 +25,7 @@ export const DESKTOP_IPC = {
   identityStatus: 'dsh-desktop:identity-status',
   identityLogin: 'dsh-desktop:identity-login',
   identitySignOut: 'dsh-desktop:identity-sign-out',
+  identityPasswordReset: 'dsh-desktop:identity-password-reset',
   updatesCheck: 'dsh-desktop:updates-check',
   updatesInstall: 'dsh-desktop:updates-install',
   updatesState: 'dsh-desktop:updates-state',
@@ -47,13 +45,6 @@ export interface DesktopIdentityStatus {
   readonly email?: string
   readonly role?: string
   readonly fullName?: string
-}
-
-/** Backend the shell is running, and whether the launching environment fixed it. */
-export interface DesktopBackendSelection {
-  readonly mode: DesktopBackendMode
-  /** The launching environment decided this backend, so the shell offers no switch. */
-  readonly fixed: boolean
 }
 
 /** Outcome of one sign-in attempt; a refusal is not an IPC failure. */
@@ -84,15 +75,13 @@ export interface DshDesktopApi {
     status(): Promise<DesktopBackendState>
     retry(): Promise<void>
     subscribe(listener: (state: DesktopBackendState) => void): () => void
-    /** Backend this installation launches, and whether it can be switched. */
-    selection(): Promise<DesktopBackendSelection>
-    /** Persist a backend choice and launch it. */
-    select(mode: DesktopBackendMode): Promise<void>
   }
   readonly identity: {
     status(): Promise<DesktopIdentityStatus>
     login(usuario: string, password: string): Promise<DesktopSignInResult>
     signOut(): Promise<DesktopIdentityStatus>
+    /** Ask the console to email a password-reset link. */
+    requestPasswordReset(email: string): Promise<DesktopSignInResult>
   }
   readonly updates: {
     check(): Promise<DesktopUpdateState>

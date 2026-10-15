@@ -23,11 +23,13 @@ it('provides startup controls and a removable state subscription to shell docume
   await api.appearance.get()
   await api.appearance.set('dark')
   await api.backend.status()
+  await api.identity.requestPasswordReset('a@b.c')
   await api.disablePlugins()
   await api.resetConfiguration()
   await api.restart()
   expect(electron.ipcRenderer.invoke.mock.calls).toEqual([
     [DESKTOP_IPC.localeGet], [DESKTOP_IPC.appearanceGet], [DESKTOP_IPC.appearanceSet, 'dark'], [DESKTOP_IPC.backendStatus],
+    [DESKTOP_IPC.identityPasswordReset, 'a@b.c'],
     [DESKTOP_IPC.pluginsDisableAll], [DESKTOP_IPC.configurationReset], [DESKTOP_IPC.applicationRestart],
   ])
   const listener = vi.fn()
