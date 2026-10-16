@@ -147,11 +147,14 @@ export class MirrorHomeStore implements MirrorDomainSource {
 
   /**
    * One domain of this home: the open domain when the facility holds one, the
-   * medium's document otherwise.
+   * medium's document otherwise. Only a domain the transfer scope carries is
+   * reachable, so a peer that still sends a record outside the scope cannot
+   * reach a service of this process through the store.
    * @param name - declared domain name.
-   * @returns the live domain, or undefined when neither holds it.
+   * @returns the live domain, or undefined when neither the scope nor the medium holds it.
    */
   get(name: string): MirrorLiveDomain | undefined {
+    if (FABERLOOM_MIRROR_DOMAINS[name] === undefined) return undefined
     const open = this.options.facility?.get(name)
     if (open !== undefined) return open
     if (!this.documents.has(name)) return undefined

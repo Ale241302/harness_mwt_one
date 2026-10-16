@@ -59,7 +59,9 @@ Creating a document needs the format version its owner stamps, and only the medi
 
 ### What it carries
 
-`FABERLOOM_MIRROR_DOMAINS` in `src/domains.ts` is the transfer scope: agents, routines, work flows, spaces (including the captured Space memory), context, connections, grants, board, inbound, the MCP tokens, the Space and session shares, and the workspace entities. A domain this process did not mount is reported as skipped, never read as empty, because the two homes keep different rows and an absent domain is not a deletion.
+`FABERLOOM_MIRROR_DOMAINS` in `src/domains.ts` is the transfer scope: agents, routines, work flows, spaces (including the captured Space memory), context, connections, grants, board, inbound, the MCP tokens, and the Space and session shares. A domain this process did not mount is reported as skipped, never read as empty, because the two homes keep different rows and an absent domain is not a deletion.
+
+The `workspace` registry is deliberately outside that scope. A Workspace record names an absolute folder and the Session identities of the machine that created it, and the service that owns the registry builds its ordered view once when it opens and never adopts a row written beside it — the Workspace feed drops an id it never knew — so a carried row would name a folder that does not exist on the other side in a registry that ignores it. The Space is the product's travelling work area, and it carries its memory and context with it.
 
 Skills travel as files: `$DSH_HOME/skills/<name>/SKILL.md` becomes one entry of the document's `skills` map. The deployment's own read-only catalogs (`/opt/skills-catalog/<role>`, `/opt/skills-shared`) are not mirrored, and neither is anything outside the owner's own skills root.
 
@@ -97,6 +99,7 @@ Independent of live requests: a cycle never touches a request prefix.
 - **Whole-document requests.** Each cycle pulls the complete document and pushes the changed subset; a home with very many rows pays for the full read on every interval. Per-table pages are the next slice.
 - **The deployment needs two lines.** The gateway must inject `FABERLOOM_MIRROR_KEY` into each child for the owner's `dsh` to accept a mirror call, and it must mount the route (`installMirrorRoute(app, { dataDir: DATA_DIR })`). Until then the mirror is off and says so in the log.
 - **Sessions do not travel.** A session log is a per-cwd artifact; `faberloom-session-shares` is the path for sharing one, and the mirror does not carry them.
+- **A Workspace registry entry does not travel.** Its folder and its sessions belong to the machine that created them; the Space is the travelling work area, and a Workspace is registered on each machine that holds the folder.
 - **Skills are files, not rows.** A skill holds no journal entry beyond its content digest, so a bundle renamed on both sides keeps both names.
 - **A non-JSON medium for a domain nobody opened is unreadable.** The store reads the medium's own `single`-layout document; a deployment that routes a mirrored domain to another medium reaches it only while a service holds it open.
 - **A new document needs the peer's version stamp.** A row whose domain neither side has materialized is reported (`domain-not-open`) instead of being written with a guessed version, because a wrong stamp would refuse the domain's next open.

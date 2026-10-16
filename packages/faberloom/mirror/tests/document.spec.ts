@@ -40,14 +40,17 @@ describe('mirror document', () => {
       'faberloom_context',
       'faberloom_shares',
       'faberloom_session_shares',
-      'workspace',
     ])
+    // El registro de Workspaces no viaja: sus filas nombran una carpeta y unas
+    // sesiones de una sola maquina, y su servicio no adopta una fila escrita al
+    // lado. El ambito que viaja es el Espacio.
+    expect(FABERLOOM_MIRROR_DOMAINS['workspace']).toBeUndefined()
     expect(FABERLOOM_MIRROR_DOMAINS['faberloom_spaces']).toEqual(['spaces', 'files', 'memory'])
     expect(FABERLOOM_MIRROR_DOMAINS['faberloom_workflows']).toEqual(['workflows', 'versions', 'pending'])
     expect(FABERLOOM_MIRROR_DOMAINS['faberloom_context']).toEqual(['entries', 'versions'])
     expect(FABERLOOM_MIRROR_DOMAINS['faberloom_shares']).toEqual(['grants', 'content'])
     expect(FABERLOOM_MIRROR_DOMAINS['faberloom_session_shares']).toEqual(['sessions'])
-    expect(FABERLOOM_MIRROR_DOMAINS['workspace']).toEqual(['workspaces'])
+    expect(FABERLOOM_MIRROR_DOMAINS['workspace']).toBeUndefined()
   })
 
   it('refuses a document whose version it does not know, before any row is inspected', () => {

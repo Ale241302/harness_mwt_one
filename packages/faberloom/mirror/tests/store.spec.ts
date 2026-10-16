@@ -159,6 +159,9 @@ describe('MirrorHomeStore', () => {
     const domains = new FakeDomains()
     const rows = domains.openTable('faberloom_grants', 'grants')
     await rows.put('g1', { id: 'abierto' })
+    // Un dominio que el alcance no lleva no es alcanzable aunque el proceso lo
+    // tenga abierto: el registro de Workspaces es local a una maquina.
+    domains.openTable('workspace', 'workspaces')
     const { store: homeStore, root } = await store(domains)
     await writeDocument(root, 'faberloom_grants', JSON.stringify({
       unit: { name: 'faberloom_grants', version: 3 },
@@ -172,6 +175,7 @@ describe('MirrorHomeStore', () => {
     expect(await homeStore.load()).toEqual([])
     expect(homeStore.versionOf('faberloom_grants')).toBeUndefined()
     expect(homeStore.get('faberloom_spaces')).toBeUndefined()
+    expect(homeStore.get('workspace')).toBeUndefined()
   })
 
   it('removes and rewrites one record of a medium document', async () => {
