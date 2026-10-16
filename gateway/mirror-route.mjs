@@ -257,9 +257,43 @@ async function readJsonBody(request, maxBodyBytes) {
 }
 
 /**
+ * Resolve an owner by asking the console whose access token this is. The Desktop
+ * signs into the console on its own, so the token it presents is never the one the
+ * gateway stored for the operator's Web session; validating it where it was minted
+ * is the only resolution that accepts both, and it also makes a token the console
+ * refreshed work without the gateway having held it first.
+ * @param {MirrorRouteOptions} options - route wiring; `consolaApi` names the console.
+ * @param {string} token - the presented console access token.
+ * @returns {Promise<MirrorOwner | undefined>} the owner, or undefined when refused.
+ */
+export async function resolveOwnerFromConsole(options, token) {
+  const base = (options.consolaApi ?? process.env.CONSOLA_API_BASE ?? '').replace(/\/+$/u, '')
+  if (base.length === 0 || token.length === 0) return undefined
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), options.consoleTimeoutMs ?? 8000)
+  try {
+    const response = await fetch(`${base}/portal/me/`, {
+      headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+      signal: controller.signal,
+    })
+    if (!response.ok) return undefined
+    const body = await response.json()
+    const email = body?.user?.email
+    if (typeof email !== 'string' || email.trim().length === 0) return undefined
+    const id = body?.user?.id
+    return { id: typeof id === 'string' && id.length > 0 ? id : email.trim(), email: email.trim() }
+  } catch {
+    return undefined
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
  * Mount the mirror route on one Express application.
  *
- * The caller wires it with one line:
+ * Every refusal names its reason, because the caller reading a gateway log is an
+ * operator. The caller wires it with one line:
  * `installMirrorRoute(app, { dataDir: DATA_DIR })`.
  * @param {object} app - the Express application to mount on.
  * @param {MirrorRouteOptions} [options] - the deployment's wiring; the defaults match `server.mjs`.
@@ -268,7 +302,11 @@ async function readJsonBody(request, maxBodyBytes) {
 export function installMirrorRoute(app, options = {}) {
   const log = options.log ?? true
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MIRROR_MAX_BODY_BYTES
-  const resolveOwner = options.resolveOwner ?? ((token) => resolveOwnerFromUserState(options, token))
+  const resolveOwner = options.resolveOwner ?? (async (token) => {
+    const fromConsole = await resolveOwnerFromConsole(options, token)
+    if (fromConsole !== undefined) return fromConsole
+    return await resolveOwnerFromUserState(options, token)
+  })
   app.post(MIRROR_ROUTE_PATH, (request, response) => {
     const refuse = (status, message) => {
       if (log) console.warn(`[gateway] mirror refuse ${String(status)}: ${message}`)

@@ -1835,7 +1835,7 @@ app.get('/logout', (req, res) => {
 // de su propia casa en el despliegue, autenticada con el token de consola del
 // propietario y reenviada a su servidor MCP. Sin la credencial responde 503, así
 // que un despliegue que no lo configura lo dice en vez de fingir que sincroniza.
-installMirrorRoute(app, { dataDir: cfg.dataDir, userStateFile: cfg.userStateFile, mirrorKey: cfg.mirrorKey })
+installMirrorRoute(app, { dataDir: cfg.dataDir, userStateFile: cfg.userStateFile, mirrorKey: cfg.mirrorKey, consolaApi: cfg.consolaApi })
 
 // Catch-all: exige sesión y proxya al dsh del usuario. M3 · si la sesión firmada
 // sigue viva pero el proceso dsh se perdió (p. ej. tras un redeploy), se vuelve a
