@@ -886,8 +886,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const workspace = await registry.resolveByPath(cwd)
     if (workspace === undefined) return
     const actor = this.actor()
-    const space = (await this.ctx.faberloomSpaces.list(actor))
-      .find(candidate => candidate.workspaceId === String(workspace.id))
+    const space = await this.spaceForWorkspace(String(workspace.id), workspace.title)
     if (space === undefined) return
     // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const text = sessionTurnMemory(session.snapshotEvents())
@@ -916,7 +915,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     // fila bajo esta identidad. La propia sí se republica, que es como el
     // contenido crece con la conversación.
     if (!imported.has(session.id)) {
-      await this.publishSessions(actor, space, [{ id: session.id, title: '' }])
+      await this.publishSessions(actor, space, [{ id: session.id, title: '' }], String(workspace.id))
     }
     await this.materializeSharedSessions(actor, space.id, workspace.id)
   }
@@ -929,11 +928,13 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param actor - the signed-in identity publishing.
    * @param space - the Space the Sessions belong to.
    * @param refs - the local Sessions to publish.
+   * @param workspaceId - the area Workspace on this host, as the row records it.
    */
   private async publishSessions(
     actor: SpaceActor,
     space: FaberLoomSpace,
     refs: readonly FaberLoomSharedSessionRef[],
+    workspaceId: string | null,
   ): Promise<void> {
     for (const session of refs) {
       const artifact = await this.readSessionArtifact(session.id)
@@ -942,11 +943,34 @@ export class FaberLoomViewService extends TypertRemoteService {
         spaceId: space.id,
         sessionId: session.id,
         title: artifact.title ?? (session.title.length > 0 ? session.title : session.id),
-        workspaceId: space.workspaceId ?? null,
+        workspaceId,
         messageCount: artifact.messageCount,
         content: artifact.content,
       })
     }
+  }
+
+  /**
+   * The Workspace that is one Space's conversation area **on this machine**: the
+   * stored id when it resolves here, this host's same-named Workspace when that
+   * id belongs to another machine, and otherwise the deterministic area the
+   * Space creates for itself. Without the middle step, a Space whose row came
+   * from the mirror reads an empty area, so its Sessions are neither published
+   * nor mirrored even though the conversation exists one workspace over.
+   * @param actor - the acting identity.
+   * @param space - the Space whose area is resolved.
+   * @returns the area's Workspace, or undefined when none can be resolved.
+   */
+  private async spaceAreaOnThisHost(actor: SpaceActor, space: FaberLoomSpace): Promise<Workspace | undefined> {
+    const registry = this.workspaceRegistryOrUndefined()
+    if (registry === undefined) return undefined
+    if (space.workspaceId !== undefined) {
+      const existing = registry.get(space.workspaceId as WorkspaceId)
+      if (existing !== undefined) return existing
+    }
+    const named = registry.list().find(workspace => workspace.title === space.title)
+    if (named !== undefined) return named
+    return await this.ensureSpaceWorkspace(actor, space)
   }
 
   /**
@@ -999,16 +1023,20 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Resolve the product Space mirrored by one registered Workspace.
+   * Resolve the product Space mirrored by one registered Workspace. A Space's
+   * stored `workspaceId` names the Workspace of the host that created it and the
+   * mirror carries Space rows between one owner's machines, so an id that does
+   * not resolve here falls back to the display name the pair shares (renaming
+   * either side renames the other).
    * @param workspaceId - the Workspace id.
+   * @param title - the Workspace's display title, when the caller has it.
    * @returns the mirrored Space, or `undefined` when none exists yet.
    */
-  private async spaceForWorkspace(workspaceId: string): Promise<FaberLoomSpace | undefined> {
+  private async spaceForWorkspace(workspaceId: string, title?: string): Promise<FaberLoomSpace | undefined> {
     const actor = this.actor()
-    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
-      if (space.workspaceId === workspaceId) return space
-    }
-    return undefined
+    const spaces = await this.ctx.faberloomSpaces.list(actor)
+    return spaces.find(space => space.workspaceId === workspaceId)
+      ?? (title === undefined ? undefined : spaces.find(space => space.title === title))
   }
 
   /**
@@ -2829,7 +2857,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   ): Promise<readonly FaberLoomSharedSessionRow[]> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
-    await this.publishSessions(actor, space, sessions)
+    await this.publishSessions(actor, space, sessions, space.workspaceId ?? null)
     return await this.spaceSessions(spaceId)
   }
 
@@ -2849,17 +2877,17 @@ export class FaberLoomViewService extends TypertRemoteService {
     const actor = this.actor()
     await service.sync(actor.id)
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    const workspace = await this.spaceAreaOnThisHost(actor, space)
     const catalog = await service.list({ id: actor.id }, spaceId)
     const published = new Set(catalog.map(row => row.sessionId))
     const imported = new Set(catalog.filter(row => row.ownerId !== actor.id).map(row => row.sessionId))
-    const area = space.workspaceId === null
-      ? []
-      : this.workspaceRegistryOrUndefined()?.get(space.workspaceId as WorkspaceId)?.sessionIds ?? []
-    const pending = area
+    const pending = (workspace?.sessionIds ?? [])
       .filter(id => !published.has(id) && !imported.has(id))
       .map(id => ({ id, title: '' }))
-    if (pending.length > 0) await this.publishSessions(actor, space, pending)
-    await this.materializeSharedSessions(actor, spaceId, space.workspaceId)
+    if (pending.length > 0) {
+      await this.publishSessions(actor, space, pending, workspace === undefined ? null : String(workspace.id))
+    }
+    await this.materializeSharedSessions(actor, spaceId, workspace === undefined ? undefined : String(workspace.id))
     return (await service.list({ id: actor.id }, spaceId)).map(row => this.sharedSessionRow(row))
   }
 

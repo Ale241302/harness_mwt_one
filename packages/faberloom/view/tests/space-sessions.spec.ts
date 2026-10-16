@@ -12,7 +12,7 @@ function row(overrides: Record<string, unknown> = {}) {
 }
 
 /** Boot the view over fake spaces, shares, shared-Session catalog, and query. */
-function harness(options: { query?: boolean; workspaceId?: string | null } = {}) {
+function harness(options: { query?: boolean; workspaceId?: string | null; foreignWorkspace?: boolean } = {}) {
   const catalog = {
     capture: vi.fn(async (_actor: { id: string }, _input: Record<string, unknown>) => row()),
     list: vi.fn(async (_actor: { id: string }, _spaceId: string) => [row()]),
@@ -28,12 +28,17 @@ function harness(options: { query?: boolean; workspaceId?: string | null } = {})
   }
   const workflows = { list: vi.fn(async () => [] as unknown[]) }
   const workspaceEntity = {
+    id: 'ws-1',
+    title: 'SICOP',
     sessionIds: ['s1'],
     path: '/data/owner/spaces/shared/3a4d6839',
     attachSession: vi.fn(async (_id: string) => {}),
     detachSession: vi.fn(async (_id: string) => {}),
   }
-  const registry = { get: vi.fn((id: string) => id === 'ws-1' ? workspaceEntity : undefined) }
+  const registry = {
+    get: vi.fn((id: string) => id === 'ws-1' ? workspaceEntity : undefined),
+    list: vi.fn(() => [workspaceEntity]),
+  }
   const persistence = {
     // The area's own Session exists; a not-yet-materialized shared one does not.
     stat: vi.fn(async (id: string) => id === 's1' ? { id } : undefined as unknown),
@@ -45,7 +50,14 @@ function harness(options: { query?: boolean; workspaceId?: string | null } = {})
   const emit = vi.fn()
   const ctx = {
     faberloomSpaces: {
-      get: vi.fn(async () => ({ id: 'sp-1', title: 'SICOP', ownerId: 'owner@muitowork.com', workspaceId: options.workspaceId === undefined ? 'ws-1' : options.workspaceId })),
+      get: vi.fn(async () => ({
+        id: 'sp-1',
+        title: 'SICOP',
+        ownerId: 'owner@muitowork.com',
+        workspaceId: options.foreignWorkspace === true
+          ? 'otro-host'
+          : options.workspaceId === undefined ? 'ws-1' : options.workspaceId,
+      })),
       listMemory: vi.fn(async () => [] as unknown[]),
     },
     faberloomShares: shares,
@@ -167,6 +179,21 @@ describe('FaberLoomViewService shared Sessions', () => {
     await view.spaceSessions('sp-1')
 
     expect(catalog.capture).not.toHaveBeenCalled()
+  })
+
+  it('resuelve el área por nombre cuando el id del Space es de otra máquina', async () => {
+    // El espejo lleva las filas del Space con el id de Workspace del host que las
+    // creó: en esta máquina ese id no existe, y el área es el Workspace del mismo
+    // nombre, que es donde vive la conversación que hay que publicar.
+    const { view, catalog } = harness({ foreignWorkspace: true })
+    catalog.list.mockResolvedValue([])
+
+    await view.spaceSessions('sp-1')
+
+    expect(catalog.capture).toHaveBeenCalledWith(
+      { id: 'owner@muitowork.com' },
+      expect.objectContaining({ spaceId: 'sp-1', sessionId: 's1', workspaceId: 'ws-1' }),
+    )
   })
 
   it('retires a captured Session whose log is gone and drops its dangling area slot', async () => {

@@ -14,7 +14,7 @@ Status: implemented
 
 视图暴露 `captureSpaceSessions`、`spaceSessions`、`spaceSessionContent` 与 `removeSpaceSession`。捕获通过已挂载的 `ctx.sessionQuery` 读取每个本地会话的可移植快照（`readSession` 加上折叠后的 `readTitle`），当查询服务缺失时回退到面板给出的标题与空正文。Espacios 面板新增 `Sesiones compartidas` 字段：一个 `Sincronizar` 动作对 Space 做双向同步并重新列出，每条记录打开一个只读转录弹窗，`Quitar` 撤回一条记录。
 
-只要 Space 的区域持有某个会话，它就会被发布，而不要求该 Space 已授权给任何人。该目录现在除控制台之外还由产品镜像携带（`faberloom_session_shares` 是 `FABERLOOM_MIRROR_DOMAINS` 之一），因此同一 owner 自己的机器也是读者：把发布交由授权把关，会让在一台机器上写下的对话在同一 owner 的另一台机器上不可见，而这正是镜像存在的场景。因此 `Sincronizar` 会在镜像对方记录之前，先发布区域中目录尚未持有的会话，这也是把一段已经存在的对话送出去的方式；由本机从其他成员导入的会话绝不会被重新发布，因为目录已经以作者的名义持有它。
+只要 Space 的区域持有某个会话，它就会被发布，而不要求该 Space 已授权给任何人。该目录现在除控制台之外还由产品镜像携带（`faberloom_session_shares` 是 `FABERLOOM_MIRROR_DOMAINS` 之一），因此同一 owner 自己的机器也是读者：把发布交由授权把关，会让在一台机器上写下的对话在同一 owner 的另一台机器上不可见，而这正是镜像存在的场景。由于 Space 记录会带着创建它的那台机器的 Workspace id 一起传输，区域按主机解析：该 id 在本机存在时用它，属于另一台机器时用本机同名的 Workspace，否则用 Space 为自己创建的确定性区域。因此 `Sincronizar` 会在镜像对方记录之前，先发布区域中目录尚未持有的会话，这也是把一段已经存在的对话送出去的方式；由本机从其他成员导入的会话绝不会被重新发布，因为目录已经以作者的名义持有它。
 
 控制台契约为 `${consoleBase}/harness/sessions`：`POST` 一条 `{ space_id, session_id, owner_email, title, workspace_id, created_at, updated_at, message_count, content }` 记录，`GET` 返回调用者可见的记录 `{ incoming: [...] }`，`DELETE /{id}`。本地捕获以 `owner:<spaceId>\u0000<ownerId>\u0000<sessionId>` 为键；导入记录以 `console:<readerId>\u0000<consoleId>` 为键，因此 `sync` 恰好清理某位读者的导入记录。
 
