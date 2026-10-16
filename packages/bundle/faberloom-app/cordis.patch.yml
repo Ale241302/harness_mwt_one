@@ -88,10 +88,14 @@
     # locales con retardo. Queda inerte hasta que el despliegue lo enciende
     # (FABERLOOM_MIRROR_ENABLED=1) y nombra su credencial
     # (FABERLOOM_MIRROR_URL y FABERLOOM_MIRROR_KEY); sin ellas el servidor MCP
-    # no acepta ninguna llamada de espejo y la bitácora lo dice.
+    # no acepta ninguna llamada de espejo y la bitácora lo dice. `disabled`
+    # decide si la fila se monta y `config.enabled` que el servicio lo sepa:
+    # sin el segundo, el servicio se monta y se declara apagado.
     - id: faberloom-mirror
       name: '@deepseek-ai/dsh-faberloom-mirror'
       disabled: !!js process.env.FABERLOOM_MIRROR_ENABLED !== '1'
+      config:
+        enabled: !!js process.env.FABERLOOM_MIRROR_ENABLED === '1'
 
     # Conexiones propias del usuario (IMAP y respaldo), ajenas al MCP.
     - id: faberloom-connections
