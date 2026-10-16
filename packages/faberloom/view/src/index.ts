@@ -63,8 +63,9 @@ import type {
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph, FaberLoomConsultationRow, FaberLoomContextExportRow,
   FaberLoomSkillInstallDestination, FaberLoomSkillCandidateReason,
-  FaberLoomSkillInstallOutcome, FaberLoomSkillInstallReport, FaberLoomSkillInstallTargets, FaberLoomSkillInstallRow,
+  FaberLoomSkillInstallOutcome, FaberLoomSkillInstallReport, FaberLoomSkillInstallRow,
   FaberLoomSkillInstallRefusal,
+  FaberLoomHarnessPartOutcome, FaberLoomHarnessRefusal, FaberLoomHarnessReport,
   FaberLoomHarnessProjection,
   FaberLoomMcpServerRow, FaberLoomMcpServerInput, FaberLoomMcpSecretRow, FaberLoomMcpProbeResult,
 } from './types.ts'
@@ -91,7 +92,8 @@ import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-a
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 // Type-only: the native skill installer the install Remote methods route through.
 import type {
-  AgentRejection, SkillFolderRejection, SkillInstallOutcomeStatus, SkillInstallRefusal, SkillInstallService,
+  AgentRejection, HarnessSourceRefusal, SkillFolderRejection, SkillInstallOutcomeStatus, SkillInstallRefusal,
+  SkillInstallService,
 } from '@deepseek-ai/dsh-skill-install'
 import type {} from '@deepseek-ai/dsh-skill-install'
 // Type-only: pulls the ctx.sessionQuery merge for cross-member Session capture.
@@ -236,6 +238,23 @@ const OUTCOME_REASON: Record<SkillFolderRejection | AgentRejection | 'exists', F
  */
 function refusalOfInstall(reason: SkillInstallRefusal): FaberLoomSkillInstallRefusal {
   return INSTALL_REFUSAL[reason]
+}
+
+/** The view's refusal value for each way the native installer can refuse a harness. */
+const HARNESS_REFUSAL: Record<HarnessSourceRefusal, FaberLoomHarnessRefusal> = {
+  missing: 'source-missing',
+  'not-a-harness': 'not-a-harness',
+  'archive-unreadable': 'archive-unreadable',
+}
+
+/**
+ * The view's refusal value for one refusal the native installer reported for a
+ * harness source.
+ * @param reason - the installer's refusal reason.
+ * @returns the view's refusal value.
+ */
+function harnessRefusalOf(reason: HarnessSourceRefusal): FaberLoomHarnessRefusal {
+  return HARNESS_REFUSAL[reason]
 }
 
 /**
@@ -3190,16 +3209,6 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * The two roots an install may target, so the panel can show the resolved
-   * destination before it writes anything.
-   * @returns the workspace skills root (null without a workspace) and the global root.
-   */
-  @Remote('skillInstallTargets')
-  skillInstallTargets(): Promise<FaberLoomSkillInstallTargets> {
-    return this.skillInstallService().targets(this.workspaceRoot())
-  }
-
-  /**
    * Install one or more skills from a folder the user named, through the native
    * installer, so the copies and their `.dsh-skill-install.json` markers are the
    * ones the skill provider reads back. The source is a single skill directory (holding
@@ -3239,6 +3248,45 @@ export class FaberLoomViewService extends TypertRemoteService {
       destination,
       root: report.root ?? '',
       ...report.reason === undefined ? {} : { refused: refusalOfInstall(report.reason) },
+      outcomes: report.outcomes.map((outcome) => {
+        const reason = outcomeReasonOf(outcome.reason)
+        return {
+          name: outcome.name,
+          status: outcomeStatusOf(outcome.status),
+          ...reason === undefined ? {} : { reason },
+        }
+      }),
+    }
+  }
+
+  /**
+   * Install a whole harness the operator picked — one folder, or one `.zip` —
+   * into the user's own Harness home, through the native installer: its skills,
+   * agents, rules, commands, scripts, hooks, and MCP server configurations,
+   * each into the root the product already reads that kind from, so the copies
+   * are live for every session of every Workspace and Space without a restart.
+   * The destination is not a choice: a harness is the user's own setup, and the
+   * rules land in the managed block of the home's own instructions file, which
+   * is what makes them always on.
+   * @param source - absolute folder or `.zip` the operator chose in the host's own dialog.
+   * @param replace - rewrite a piece that is already there instead of skipping it.
+   * @returns one part outcome per kind the source carried.
+   */
+  @Remote('installHarness')
+  async installHarness(source: string, replace?: boolean): Promise<FaberLoomHarnessReport> {
+    if (this.actor().readOnly) {
+      return { status: 'refused', source, root: '', refused: 'read-only', parts: [], outcomes: [] }
+    }
+    const report = await this.skillInstallService().installHarness({
+      source: resolve(source),
+      ...replace === undefined ? {} : { replace },
+    })
+    return {
+      status: report.status,
+      source: report.source,
+      root: report.root,
+      ...report.reason === undefined ? {} : { refused: harnessRefusalOf(report.reason) },
+      parts: report.parts.map((part): FaberLoomHarnessPartOutcome => ({ ...part })),
       outcomes: report.outcomes.map((outcome) => {
         const reason = outcomeReasonOf(outcome.reason)
         return {

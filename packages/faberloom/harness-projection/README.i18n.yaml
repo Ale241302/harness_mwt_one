@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/faberloom/harness-projection/README.md
-README.md: ac026c60366b07edae3c382b4a8a031d1e78dd2d
-README.zh.md: 281fe06be14c7482ec88d28d1f4a87c306fa0fc7
+README.md: 49f940d56104ab4639396abbbbabc3364067fe7b
+README.zh.md: 9bdbca8c3aaee18a9ddc02a5863703e04508108c

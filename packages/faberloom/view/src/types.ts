@@ -518,6 +518,7 @@ export interface FaberLoomHarnessProjection {
   readonly unreadableDomains: readonly string[]
 }
 
+/** One Space with its full editable configuration. */
 export interface FaberLoomSpaceDetail {
   /** Space id. */
   readonly id: string
@@ -961,6 +962,7 @@ export interface FaberLoomSkillInstallTargets {
   readonly global: string
 }
 
+
 /** One skill this owner installed from a folder. */
 export interface FaberLoomSkillInstallRow {
   /** Skill name (its directory under the destination root). */
@@ -973,6 +975,43 @@ export interface FaberLoomSkillInstallRow {
   readonly destinationRoot: string
   /** ISO-8601 install instant. */
   readonly installedAt: string
+}
+
+/** One kind of part a harness carries; each kind lands in a root the product reads. */
+export type FaberLoomHarnessPartKind = 'skills' | 'agents' | 'rules' | 'commands' | 'scripts' | 'hooks' | 'mcp-configs'
+
+/** What one harness install did with one part. */
+export type FaberLoomHarnessPartStatus = 'installed' | 'replaced' | 'skipped'
+
+/** Why a source the operator named is not an installable harness. */
+export type FaberLoomHarnessRefusal = 'read-only' | 'source-missing' | 'not-a-harness' | 'archive-unreadable'
+
+/** One part's result within a harness install. */
+export interface FaberLoomHarnessPartOutcome {
+  /** Which part the outcome is about. */
+  readonly kind: FaberLoomHarnessPartKind
+  /** What the install did with it. */
+  readonly status: FaberLoomHarnessPartStatus
+  /** Pieces written, or always-on rules and groups for the `rules` part. */
+  readonly count: number
+  /** Absolute destination the part landed in. */
+  readonly target: string
+}
+
+/** Result of one harness install. */
+export interface FaberLoomHarnessReport {
+  /** Summarised outcome across every part. */
+  readonly status: 'installed' | 'already-installed' | 'skipped' | 'refused'
+  /** The folder or archive the call inspected. */
+  readonly source: string
+  /** Harness root the parts were read from; the extraction directory for an archive. */
+  readonly root: string
+  /** Why the whole call changed nothing; absent when it ran. */
+  readonly refused?: FaberLoomHarnessRefusal
+  /** One result per part the source carried. */
+  readonly parts: readonly FaberLoomHarnessPartOutcome[]
+  /** One result per skill or agent candidate, refusals included. */
+  readonly outcomes: readonly FaberLoomSkillInstallOutcome[]
 }
 
 /** One agent with its full editable configuration. */

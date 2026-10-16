@@ -44,8 +44,14 @@ El código de salida es `0` cuando instaló o no había nada que hacer, `1` cuan
 
 Cuando el origen acaba en `.zip`, el instalador lo descomprime en una carpeta temporal con la herramienta del sistema (`tar -xf`, que en Windows 10+ es bsdtar, o `unzip`) y sigue desde dentro. Si el archivo empaqueta **una sola** carpeta raíz, esa es la del harness; si empaqueta los archivos sueltos, se usa la raíz del temporal. No hace falta ninguna dependencia nueva.
 
-## Lo que el panel hará con esto
+## Lo que el panel hace con esto
 
-El bloque actual de «Instalar skill / Elegir carpeta / Destino / Reemplazar» se retira y en su lugar va **un solo botón, «Instalar harness»**, junto a las pestañas Agentes y Skills: abre el selector de carpetas —y una opción para un `.zip`—, y al aceptar llama a este mismo motor y muestra el informe por pieza. El destino deja de preguntarse: skills, agentes y reglas van **siempre a la casa del usuario**, que es lo que significa «global pero solo para él»; lo que sí se conserva es la casilla de reemplazar.
+El botón **«Instalar harness»** vive en el panel de Skills junto a las pestañas y al botón de subir Markdown, y solo aparece dentro de la aplicación de escritorio, que es donde la carpeta elegida es la del propio operador. Ofrece **«Elegir carpeta»** y **«Elegir .zip»**: cada una abre el diálogo nativo del host (el mismo diálogo, en modo carpeta o en modo archivo), muestra la ruta elegida, y con la casilla de reemplazar instala todo de una vez. El destino no se pregunta: skills, agentes y reglas van siempre a la casa del usuario. Al terminar, el panel lista una línea por parte con su cuenta, su estado y su destino, nombra cada candidato rechazado con su motivo, y deja la lista de instaladas desde carpeta con su botón de quitar.
 
-Mientras ese botón no esté montado, el bloque de skills sigue siendo la única vía de instalación desde el panel, así que no se retira antes: la retirada y el botón van en el mismo cambio.
+El bloque anterior de «Instalar skill / Elegir carpeta / Destino / Reemplazar / Instalar» se retiró en el mismo cambio: el instalador de harness es un superconjunto (una sola skill y una carpeta de conocimiento son harnesses de una parte), así que mantener las dos rutas habría duplicado el vocabulario de rechazo para una sola decisión.
+
+Además del panel, un harness se puede instalar desde la línea de comandos con el motor [`scripts/install-harness.mjs`](../../scripts/install-harness.mjs), que aplica el mismo mapeo de piezas a raíces.
+
+## Reglas siempre activas que ya vienen puestas
+
+Un ámbito recién proyectado no arranca sin reglas: la proyección del harness escribe en su `AGENTS.md` una sección de reglas por defecto que manda consultar el grafo del proyecto (la skill `graphify` y su carpeta `graphify-out/`) antes de leer código, mantenerlo al día tras un cambio, y dibujar arquitectura y flujos con la skill `archify` en lugar de describirlos solo en prosa. Están en `DEFAULT_SCOPE_RULES` (`packages/faberloom/harness-projection/src/render.ts`), se escriben en todos los ámbitos, y no dependen de que el ámbito registre algo.

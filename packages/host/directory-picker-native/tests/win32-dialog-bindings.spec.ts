@@ -9,7 +9,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HRESULT_CANCELLED, runFolderDialog } from '../src/win32-dialog-logic.ts'
+import { HRESULT_CANCELLED, FOS_FORCEFILESYSTEM, FOS_NOCHANGEDIR, runFolderDialog } from '../src/win32-dialog-logic.ts'
 
 const E_FAIL = 0x80004005 | 0
 const WM_CLOSE = 0x10
@@ -343,10 +343,12 @@ describe('closeThreadWindows over the fake COM world', () => {
 describe('the worker entry over a mocked process boundary', () => {
   const originalSend = process.send?.bind(process)
   const originalTitle = process.env.DSH_DIALOG_TITLE
+  const originalKind = process.env.DSH_DIALOG_KIND
 
-  const installBoundary = (): { posted: { kind: string; message?: string }[] } => {
+  const installBoundary = (kind?: string): { posted: { kind: string; message?: string }[] } => {
     const posted: { kind: string; message?: string }[] = []
     process.env.DSH_DIALOG_TITLE = 'Pick'
+    if (kind !== undefined) process.env.DSH_DIALOG_KIND = kind
     // Never invoke the post callback: it runs the worker's disconnect(), and
     // this process is IPC-connected under the forks pool — severing vitest's
     // own channel would kill the test worker. The real close lifecycle
@@ -363,6 +365,8 @@ describe('the worker entry over a mocked process boundary', () => {
     if (originalSend !== undefined) (process as { send?: unknown }).send = originalSend
     if (originalTitle === undefined) delete process.env.DSH_DIALOG_TITLE
     else process.env.DSH_DIALOG_TITLE = originalTitle
+    if (originalKind === undefined) delete process.env.DSH_DIALOG_KIND
+    else process.env.DSH_DIALOG_KIND = originalKind
     vi.doUnmock('../src/win32-dialog-bindings.ts')
     vi.resetModules()
   })
@@ -421,6 +425,40 @@ describe('the worker entry over a mocked process boundary', () => {
     delete process.env.DSH_DIALOG_TITLE
     ;(process as { send?: unknown }).send = () => true
     await expect(import('../src/win32-dialog-worker.ts')).rejects.toThrow('DSH_DIALOG_TITLE is required')
+  })
+
+  it('refuses an unknown dialog kind', async () => {
+    process.env.DSH_DIALOG_TITLE = 'Pick'
+    process.env.DSH_DIALOG_KIND = 'archivos'
+    ;(process as { send?: unknown }).send = () => true
+    await expect(import('../src/win32-dialog-worker.ts')).rejects.toThrow('DSH_DIALOG_KIND must be "folders" or "files"')
+  })
+
+  it('selects one file when the payload asks for files', async () => {
+    const options: number[] = []
+    const { posted } = installBoundary('files')
+    vi.doMock('../src/win32-dialog-bindings.ts', () => ({
+      loadWin32DialogBindings: async () => ({
+        setThreadDpiAwareness: () => undefined,
+        coInitializeSta: () => 0,
+        coUninitialize: () => undefined,
+        currentThreadId: () => 11,
+        pressAltForForeground: () => undefined,
+        createFolderDialog: () => ({
+          setOptions: (flags: number) => { options.push(flags); return 0 },
+          setTitle: () => 0,
+          show: () => 0,
+          resultPath: () => ({ hr: 0, path: 'C:\\from-worker\\equipo.zip' }),
+          release: () => undefined,
+        }),
+      }),
+    }))
+    await import('../src/win32-dialog-worker.ts')
+    expect(options).toEqual([FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR])
+    expect(posted).toEqual([
+      { kind: 'showing', threadId: 11 },
+      { kind: 'done', path: 'C:\\from-worker\\equipo.zip' },
+    ])
   })
 
   it('refuses to run outside a child process', async () => {

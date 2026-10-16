@@ -300,6 +300,15 @@ install(request: SkillInstallRequest): Promise<SkillInstallReport>
 uninstall(request: SkillUninstallRequest): Promise<SkillUninstallReport>
 
 /**
+ * Install a whole harness — one folder or one `.zip` — into the user's own
+ * Harness home: its skills, agents, rules, commands, scripts, hooks, and MCP
+ * server configurations, each into the root the product reads that kind from.
+ * @param request - the absolute source and the replace flag.
+ * @returns one outcome per part the source carried.
+ */
+installHarness(request: HarnessInstallRequest): Promise<HarnessInstallReport>
+
+/**
  * List every folder-installed skill across the global root and, when a
  * workspace resolves, the workspace root.
  * @param cwd - session working directory; omitted lists the global root alone.

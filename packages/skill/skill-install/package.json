@@ -37,7 +37,8 @@
     "@deepseek-ai/dsh-user-questions": "workspace:^"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:^",
+    "fflate": "^0.8.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",

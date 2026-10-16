@@ -13,14 +13,14 @@ afterEach(async () => {
 
 /** A backend serving exactly the capability one case is about. */
 class StubPicker extends DirectoryPicker {
-  static capabilityStub: DirectoryPickerCapability = { kind: 'native', pick: async () => null }
+  static capabilityStub: DirectoryPickerCapability = { kind: 'native', pick: async () => null, pickFile: async () => null }
 
   capability(): DirectoryPickerCapability {
     return StubPicker.capabilityStub
   }
 }
 
-const NATIVE_STUB: DirectoryPickerCapability = { kind: 'native', pick: async () => null }
+const NATIVE_STUB: DirectoryPickerCapability = { kind: 'native', pick: async () => null, pickFile: async () => null }
 
 const BROWSE_STUB: DirectoryPickerCapability = {
   kind: 'browse',
@@ -69,7 +69,7 @@ async function refused(call: Promise<unknown>): Promise<{ code: string; message:
 
 describe('directoryPicker pick Remote', () => {
   it('answers the selected path or the operator\'s cancellation', async () => {
-    const selected = await harness({ kind: 'native', pick: async () => '/tmp/project' })
+    const selected = await harness({ kind: 'native', pick: async () => '/tmp/project', pickFile: async () => null })
     expect(await selected.pick(new AbortController().signal)).toBe('/tmp/project')
 
     const cancelled = await harness(NATIVE_STUB)
@@ -82,13 +82,18 @@ describe('directoryPicker pick Remote', () => {
       pick: signal => new Promise((_resolve, reject) => {
         signal.addEventListener('abort', () => { reject(new Error('aborted')) }, { once: true })
       }),
+      pickFile: async () => null,
     })
     const abort = new AbortController()
     const pending = refused(picker.pick(abort.signal))
     abort.abort()
     expect((await pending).code).toBe('gateway/cancelled')
 
-    const broken = await harness({ kind: 'native', pick: async () => { throw new Error('no chooser installed') } })
+    const broken = await harness({
+      kind: 'native',
+      pick: async () => { throw new Error('no chooser installed') },
+      pickFile: async () => null,
+    })
     const failure = await refused(broken.pick(new AbortController().signal))
     expect(failure.code).toBe('gateway/internal')
     expect(failure.message).toContain('no chooser installed')
@@ -100,6 +105,44 @@ describe('directoryPicker pick Remote', () => {
     expect(failure.code).toBe('directory-picker/unavailable')
     expect(failure.message).toContain('needs the native capability')
     expect(failure.details).toEqual({ capability: 'browse' })
+  })
+})
+
+describe('directoryPicker pickFile Remote', () => {
+  it('answers the selected file, cancellation, and an abort or failure the same way as pick', async () => {
+    const selected = await harness({ kind: 'native', pick: async () => null, pickFile: async () => '/tmp/equipo.zip' })
+    expect(await selected.pickFile(new AbortController().signal)).toBe('/tmp/equipo.zip')
+
+    const cancelled = await harness(NATIVE_STUB)
+    expect(await cancelled.pickFile(new AbortController().signal)).toBeNull()
+
+    const hanging = await harness({
+      kind: 'native',
+      pick: async () => null,
+      pickFile: signal => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => { reject(new Error('aborted')) }, { once: true })
+      }),
+    })
+    const abort = new AbortController()
+    const pending = refused(hanging.pickFile(abort.signal))
+    abort.abort()
+    expect((await pending).code).toBe('gateway/cancelled')
+
+    const broken = await harness({
+      kind: 'native',
+      pick: async () => null,
+      pickFile: async () => { throw new Error('no file chooser installed') },
+    })
+    const failure = await refused(broken.pickFile(new AbortController().signal))
+    expect(failure.code).toBe('gateway/internal')
+    expect(failure.message).toContain('file picker failed')
+  })
+
+  it('refuses the file verb under a browse composition', async () => {
+    const picker = await harness(BROWSE_STUB)
+    const failure = await refused(picker.pickFile(new AbortController().signal))
+    expect(failure.code).toBe('directory-picker/unavailable')
+    expect(failure.message).toContain('needs the native capability')
   })
 })
 

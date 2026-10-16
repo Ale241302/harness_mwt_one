@@ -138,6 +138,20 @@ function section(title: string, lines: readonly string[], cap: number): string[]
 }
 
 /**
+ * The rules every projected scope carries whether or not anybody asked: the
+ * two knowledge tools the product ships, written so an agent reaches for the
+ * project's graph before reading files, keeps that graph current, and draws
+ * what prose would otherwise only describe. They are defaults of the
+ * projection, not per-deployment options.
+ */
+export const DEFAULT_SCOPE_RULES: readonly string[] = [
+  '- Antes de leer código para responder o cambiar algo, consulta el grafo del proyecto: si existe `graphify-out/graph.json`, usa la skill `graphify` (`graphify query "<pregunta>"`, `graphify path "<A>" "<B>"`, `graphify explain "<concepto>"`) antes de `grep` o de abrir archivos enteros, porque responde con un subgrafo acotado.',
+  '- Si `graphify-out/wiki/index.md` existe, navega por ese wiki en lugar de leer archivos crudos; `graphify-out/GRAPH_REPORT.md` queda para revisar la arquitectura de conjunto.',
+  '- Después de modificar código en la sesión, ejecuta `graphify update .`: es solo AST, sin coste de API, y deja el grafo al día.',
+  '- Para explicar arquitectura, flujos, secuencias, estados o esquemas, dibuja con la skill `archify` (HTML autocontenido con SVG) en lugar de describirlo solo en prosa.',
+]
+
+/**
  * Render the instructions document one scope's clients read. The same text is
  * written to `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.gemini/AGENTS.md`, and
  * `.kimi/AGENTS.md`, because a client reads whichever of those names it knows
@@ -179,6 +193,10 @@ export function renderInstructions(input: HarnessPlanInput): string {
     ...section('Rutinas del ámbito', routines, maxListEntries),
     ...section('Memoria del ámbito', memory, maxListEntries),
     ...section('Contexto del ámbito', context, maxListEntries),
+    '## Reglas por defecto del ámbito',
+    '',
+    ...DEFAULT_SCOPE_RULES,
+    '',
     '## Cómo trabajar en este ámbito',
     '',
     '- Para delegar en un agente, menciónalo por su nombre con `@`; sin mención, el sistema usa el agente responsable del ámbito.',

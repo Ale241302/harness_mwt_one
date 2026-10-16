@@ -41,11 +41,11 @@ import type {
   FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomContextExportRow, FaberLoomWorkflowVersionRow,
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow,
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
-  FaberLoomSkillInstallDestination, FaberLoomSkillInstallReport, FaberLoomSkillInstallRow, FaberLoomSkillInstallTargets,
+  FaberLoomSkillInstallDestination, FaberLoomSkillInstallRow, FaberLoomHarnessReport,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { isDesktopApplication } from './desktop-app.ts'
-import { SkillInstallBlock } from './skill-install.tsx'
+import { HarnessInstallBlock } from './harness-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
@@ -169,23 +169,22 @@ export interface FaberloomPanelInjected {
   saveSkill: (name: string, markdown: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** Remove one uploaded skill. */
   removeSkill: (name: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
-  /** Read the two resolved skill-install destination roots. */
-  skillInstallTargets: () => Promise<Result<FaberLoomSkillInstallTargets>>
   /** List this identity's recorded skill installs. */
   skillInstalls: () => Promise<Result<readonly FaberLoomSkillInstallRow[]>>
-  /** Install a skill from a folder into a destination, replacing on request. */
-  installSkill: (
+  /** Install one harness (a folder or a `.zip`) into the user's own Harness home. */
+  installHarness: (
     source: string,
-    destination: FaberLoomSkillInstallDestination,
     replace: boolean,
-  ) => Promise<Result<FaberLoomSkillInstallReport>>
+  ) => Promise<Result<FaberLoomHarnessReport>>
   /** Remove one recorded skill install. */
   uninstallSkill: (
     name: string,
     destination: FaberLoomSkillInstallDestination,
   ) => Promise<Result<readonly FaberLoomSkillInstallRow[]>>
-  /** Open the directory picker for one skill-install source folder. */
-  pickSkillFolder: () => Promise<string | null>
+  /** Open the directory picker for one harness folder. */
+  pickFolder: () => Promise<string | null>
+  /** Open the file picker for one harness archive. */
+  pickArchive: () => Promise<string | null>
   /** List the owner's own connections (IMAP, SMTP, backup). */
   connections: () => Promise<Result<readonly FaberLoomConnection[]>>
   /** Create or replace one connection. */
@@ -1664,7 +1663,7 @@ function emailScreen() {
 function skillsScreen() {
   return function FaberloomSkills(props: ScreenProps & { tabs?: ReactNode }) {
     const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare,
-      skillInstallTargets, skillInstalls, installSkill, uninstallSkill, pickSkillFolder } = props
+      skillInstalls, installHarness, uninstallSkill, pickFolder, pickArchive } = props
     const [list, setList] = useState<readonly FaberLoomSkillRow[] | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -1742,16 +1741,17 @@ function skillsScreen() {
           </>
         )}>
         <Feedback t={t} message={message} />
-        {/* Installing from a folder is only meaningful where the folder is the
+        {/* Installing a whole harness — its skills, agents, rules, commands,
+            and scripts — is only meaningful where the folder is the
             operator's own, which is the Desktop running the Host locally. */}
         {isDesktopApplication()
           ? (
-            <SkillInstallBlock
+            <HarnessInstallBlock
               t={t}
-              pickFolder={pickSkillFolder}
-              loadTargets={skillInstallTargets}
+              pickFolder={pickFolder}
+              pickArchive={pickArchive}
+              install={installHarness}
               loadInstalls={skillInstalls}
-              install={installSkill}
               uninstall={uninstallSkill}
               onChanged={() => { void skills().then(apply) }}
             />

@@ -1,7 +1,7 @@
 /** Cross-platform native single-directory chooser behind the native backend's capability. */
 
 import { runNativeCommand, type NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
-import { pickWin32Directory } from './win32-dialog.ts'
+import { pickWin32Directory, pickWin32File } from './win32-dialog.ts'
 
 /** Testable command boundary; native implementations never invoke a shell. */
 export type DirectoryPickerRunner = NativeCommandRunner
@@ -104,4 +104,67 @@ export async function pickNativeDirectory(
   }
 
   throw new Error(`native directory picker is unsupported on ${platform}`)
+}
+
+/**
+ * Open the platform file picker: the same chooser as
+ * {@link pickNativeDirectory}, told to select one existing file.
+ * @param signal - caller/connection lifetime; abort terminates the native command.
+ * @param internals - Platform and runner hooks for deterministic tests.
+ * @returns the selected path, or null when the user cancels.
+ */
+export async function pickNativeFile(
+  signal: AbortSignal,
+  internals: DirectoryPickerInternals = {},
+): Promise<string | null> {
+  const platform = internals.platform ?? process.platform
+  const run = internals.run ?? runNativeCommand
+
+  if (platform === 'darwin') {
+    try {
+      const result = await run('osascript', [
+        '-e', 'set selectedFile to choose file with prompt "Select File"',
+        '-e', 'POSIX path of selectedFile',
+      ], signal)
+      return outputPath(result.stdout)
+    } catch (error: unknown) {
+      if (!signal.aborted && errorCode(error) === 1
+        && /(?:User canceled|-128)/i.test(errorStderr(error))) return null
+      throw error
+    }
+  }
+
+  if (platform === 'win32') {
+    const pickDialog = internals.pickWin32Dialog ?? pickWin32File
+    return await pickDialog(signal)
+  }
+
+  if (platform === 'linux') {
+    try {
+      const result = await run('zenity', [
+        '--file-selection', '--title=Select File',
+      ], signal)
+      return outputPath(result.stdout)
+    } catch (error: unknown) {
+      rethrowIfAborted(signal, error)
+      if (errorCode(error) === 1) return null
+      if (!isMissingCommand(error)) throw error
+    }
+
+    try {
+      const result = await run('kdialog', [
+        '--getopenfilename', '.', '--title', 'Select File',
+      ], signal)
+      return outputPath(result.stdout)
+    } catch (error: unknown) {
+      rethrowIfAborted(signal, error)
+      if (errorCode(error) === 1) return null
+      if (isMissingCommand(error)) {
+        throw new Error('no supported native file picker found (install zenity or kdialog)')
+      }
+      throw error
+    }
+  }
+
+  throw new Error(`native file picker is unsupported on ${platform}`)
 }

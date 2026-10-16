@@ -34,7 +34,7 @@ export type * from './types.ts'
 export { HARNESS_PROJECTION_VERSION } from './render.ts'
 export { HARNESS_SKILL_NAME, readScopeUsage, resolveScopeSpace } from './usage.ts'
 export type { HarnessDomainSource, HarnessDomainView, HarnessSkillLookup, HarnessSpaceView, HarnessScopeSpace, HarnessTableView } from './usage.ts'
-export { planProjection, renderAgentDocument, renderAgentsIndex, renderInstructions, renderManifest, renderSettings, renderSkillDocument } from './render.ts'
+export { DEFAULT_SCOPE_RULES, planProjection, renderAgentDocument, renderAgentsIndex, renderInstructions, renderManifest, renderSettings, renderSkillDocument } from './render.ts'
 export type { HarnessPlanInput, HarnessProjectionFile, HarnessProjectionPlan } from './render.ts'
 
 declare module '@deepseek-ai/cordis' {

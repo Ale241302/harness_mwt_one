@@ -9,8 +9,8 @@
 import { spawnSync } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
-import { pickWin32Directory, type Win32DialogInternals, type Win32DialogWorkerLike } from '../src/win32-dialog.ts'
-import type { Win32DialogWorkerMessage } from '../src/win32-dialog-worker.ts'
+import { DIALOG_FILE_TITLE, pickWin32Directory, pickWin32File, type Win32DialogInternals, type Win32DialogWorkerLike } from '../src/win32-dialog.ts'
+import type { Win32DialogWorkerData, Win32DialogWorkerMessage } from '../src/win32-dialog-worker.ts'
 
 class FakeWorker extends EventEmitter implements Win32DialogWorkerLike {
   kill = vi.fn(() => true)
@@ -111,6 +111,37 @@ describe('pickWin32Directory', () => {
     await expect(pickWin32Directory(controller.signal, { spawnWorker, closeThreadWindows: async () => undefined }))
       .rejects.toThrow('native directory picker aborted')
     expect(spawnWorker).not.toHaveBeenCalled()
+  })
+
+  it('drives the same protocol for one file, naming the file dialog to the child', async () => {
+    const worker = new FakeWorker()
+    const spawnWorker = vi.fn((data: Win32DialogWorkerData) => {
+      expect(data).toEqual({ title: DIALOG_FILE_TITLE, kind: 'files' })
+      return worker
+    })
+    const picked = pickWin32File(live(), { spawnWorker, closeThreadWindows: async () => undefined, closeRetryMs: 1 })
+    worker.post({ kind: 'done', path: 'C:\\equipo.zip' })
+    await expect(picked).resolves.toBe('C:\\equipo.zip')
+    expect(spawnWorker).toHaveBeenCalledOnce()
+
+    const never = vi.fn()
+    const aborted = new AbortController()
+    aborted.abort()
+    await expect(pickWin32File(aborted.signal, { spawnWorker: never, closeThreadWindows: async () => undefined }))
+      .rejects.toThrow('native file picker aborted')
+    expect(never).not.toHaveBeenCalled()
+  })
+
+  it('names the file dialog in the failure and exit it reports', async () => {
+    const failed = harness()
+    const reported = pickWin32File(live(), failed.internals)
+    failed.worker.post({ kind: 'error', message: 'CoCreateInstance failed' })
+    await expect(reported).rejects.toThrow('win32 file dialog failed: CoCreateInstance failed')
+
+    const silent = harness()
+    const crashed = pickWin32File(live(), silent.internals)
+    silent.worker.emit('exit', 1)
+    await expect(crashed).rejects.toThrow('win32 file dialog worker exited before reporting a result')
   })
 
   it('services an abort by closing the dialog thread windows until the worker reports', async () => {

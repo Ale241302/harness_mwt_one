@@ -14,7 +14,7 @@ import type { FaberLoomSpaceId } from '@deepseek-ai/dsh-faberloom-spaces'
 import type { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { SkillRegistry } from '@deepseek-ai/dsh-skill'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import FaberLoomHarnessProjection, { MANIFEST_PATH, planProjection, renderAgentDocument, renderAgentsIndex, renderInstructions, renderManifest, renderSettings, renderSkillDocument, readScopeUsage, resolveScopeSpace } from '../src/index.ts'
+import FaberLoomHarnessProjection, { DEFAULT_SCOPE_RULES, MANIFEST_PATH, planProjection, renderAgentDocument, renderAgentsIndex, renderInstructions, renderManifest, renderSettings, renderSkillDocument, readScopeUsage, resolveScopeSpace } from '../src/index.ts'
 import type { Config, HarnessDomainSource, HarnessScope, HarnessSkillLookup, HarnessUsage } from '../src/index.ts'
 
 /** ISO-8601 instant every hand-written record carries. */
@@ -291,7 +291,34 @@ describe('generated files', () => {
     expect(text).toContain('- `Tarifas`')
     expect(text).toContain('Skills declaradas sin definición cargable: `sin-catalogo`.')
     expect(text).toContain('Registros no leídos (dominio no abierto en este proceso): `faberloom_memory`.')
+    expect(text).toContain('## Reglas por defecto del ámbito')
+    expect(text).toContain('- Antes de leer código para responder o cambiar algo, consulta el grafo del proyecto')
+    expect(text).toContain('`graphify-out/GRAPH_REPORT.md` queda para revisar la arquitectura de conjunto.')
+    expect(text).toContain('ejecuta `graphify update .`')
+    expect(text).toContain('dibuja con la skill `archify`')
     expect(text.endsWith('\n')).toBe(true)
+  })
+
+  it('carries the default rules into every projection, even one with no record', () => {
+    const empty: HarnessUsage = {
+      spaceId: undefined,
+      agents: [],
+      skills: [],
+      unresolvedSkills: [],
+      workflows: [],
+      routines: [],
+      memory: [],
+      context: [],
+      unreadableDomains: [],
+    }
+    const instructions = renderInstructions({ scope: WORKSPACE_SCOPE, root: '/tmp/formatos', generatedAt: AT, usage: empty, maxListEntries: 1 })
+
+    // The two knowledge tools the product ships are the scope's own default: a
+    // fresh folder reaches for its graph before reading files, without anybody
+    // writing that rule into its instructions by hand.
+    expect(DEFAULT_SCOPE_RULES).toHaveLength(4)
+    for (const rule of DEFAULT_SCOPE_RULES) expect(instructions).toContain(rule)
+    expect(instructions.indexOf('## Reglas por defecto del ámbito')).toBeLessThan(instructions.indexOf('## Cómo trabajar en este ámbito'))
   })
 
   it('omits the sections a scope has nothing for', () => {

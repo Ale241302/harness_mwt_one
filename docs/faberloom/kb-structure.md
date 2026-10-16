@@ -57,6 +57,8 @@ El grafo y los diagramas son herramientas externas que el proyecto ya usa, y cad
 
 Las dos skills llevan su `name` en kebab-case y su `description` con el disparador, así que se instalan como cualquier otra —poniendo la carpeta de la skill en «Elegir carpeta»— y el `graphify-out/` del proyecto se consulta antes de leer el código: la pregunta «¿cómo funciona X?» se responde con `graphify query`. En Windows, graphify trae además `skill-windows.md` con la detección del intérprete de Python.
 
+Ese empujón ya no depende de que alguien lo escriba a mano: la proyección del harness escribe en el `AGENTS.md` de cada ámbito una sección de reglas por defecto (`DEFAULT_SCOPE_RULES`, en `packages/faberloom/harness-projection/src/render.ts`) que manda consultar el grafo con `graphify` antes de leer código, mantenerlo al día tras un cambio y dibujar con `archify` en lugar de describir solo en prosa. Y un harness entero —una carpeta con `skills/`, `agents/`, `rules/`, `commands/` o su `.zip`— se instala de una vez con el botón «Instalar harness» del panel o con `scripts/install-harness.mjs`, que además escribe las reglas del harness en un bloque gestionado del `AGENTS.md` de la casa del usuario.
+
 ## Árbol de una carpeta KB
 
 Una carpeta KB reúne el contenido de un equipo para instalarlo en cualquier equipo: skills y agentes sobre todo, más las rutinas, los flujos y el contexto que el producto ya sabe transportar por el espejo.

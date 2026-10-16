@@ -172,6 +172,118 @@ export interface SkillInstallRow {
   readonly installedAt: string
 }
 
+/** One kind of part a harness carries; each kind has a reader in the running deployment. */
+export type HarnessPartKind = 'skills' | 'agents' | 'rules' | 'commands' | 'scripts' | 'hooks' | 'mcp-configs'
+
+/** What one harness install did with one part. */
+export type HarnessPartStatus = 'installed' | 'replaced' | 'skipped'
+
+/** Why a named source is not an installable harness at all. */
+export type HarnessSourceRefusal = 'missing' | 'not-a-harness' | 'archive-unreadable'
+
+/** One always-on rule whose text goes into the home's managed block. */
+export interface HarnessRuleText {
+  /** Rule name, from its front matter or its file base name. */
+  readonly name: string
+  /** Rule body, with any front matter removed. */
+  readonly body: string
+}
+
+/** One rule group a harness carries by language or domain. */
+export interface HarnessRuleGroup {
+  /** Group directory name. */
+  readonly name: string
+  /** Absolute group directory. */
+  readonly directory: string
+  /** Rule root the group sits under, relative to the Harness home. */
+  readonly relative: string
+}
+
+/** One rule root copied whole, so the block can name a group by its installed path. */
+export interface HarnessRuleRoot {
+  /** Absolute source directory. */
+  readonly directory: string
+  /** Destination, relative to the Harness home. */
+  readonly relative: string
+}
+
+/** One whole-directory part a harness carries. */
+export interface HarnessCopy {
+  /** Which kind the directory carries. */
+  readonly kind: HarnessPartKind
+  /** Absolute source directory. */
+  readonly directory: string
+  /** Destination, relative to the Harness home. */
+  readonly relative: string
+}
+
+/**
+ * What one source turned out to carry. A source that is not a harness carries
+ * no part, names the `reason`, and installs nothing.
+ */
+export interface HarnessDetection {
+  /** The folder or archive the operator chose. */
+  readonly source: string
+  /** Harness root the parts were read from; the extraction directory for an archive. */
+  readonly root: string
+  /** Extraction directory the caller removes once the install ends; absent for a folder source. */
+  readonly temporary?: string
+  /** Why the source is not an installable harness; absent when it carries parts. */
+  readonly reason?: HarnessSourceRefusal
+  /** Skill candidates, deduplicated by name across roots. */
+  readonly skills: readonly DetectedSkill[]
+  /** Skill candidates that failed validation. */
+  readonly refusedSkills: readonly RefusedSkill[]
+  /** Agent candidates, deduplicated by id across roots. */
+  readonly agents: readonly DetectedAgent[]
+  /** Agent candidates that failed validation. */
+  readonly refusedAgents: readonly RefusedAgent[]
+  /** Always-on rule files in write order; the harness's own `AGENTS.md` leads. */
+  readonly rules: readonly string[]
+  /** Rule groups copied whole and named in the block. */
+  readonly ruleGroups: readonly HarnessRuleGroup[]
+  /** Rule roots copied whole. */
+  readonly ruleRoots: readonly HarnessRuleRoot[]
+  /** Whole-directory parts copied under the home. */
+  readonly copies: readonly HarnessCopy[]
+}
+
+/** One part's result within a harness install. */
+export interface HarnessPartOutcome {
+  /** Which part the outcome is about. */
+  readonly kind: HarnessPartKind
+  /** What the install did with it. */
+  readonly status: HarnessPartStatus
+  /** Pieces written, or always-on rules and groups for the `rules` part. */
+  readonly count: number
+  /** Absolute destination the part landed in. */
+  readonly target: string
+}
+
+/** One harness install request. */
+export interface HarnessInstallRequest {
+  /** Absolute folder or `.zip` the operator chose in the host's own dialog. */
+  readonly source: string
+  /** Rewrite a piece that is already there instead of skipping it. */
+  readonly replace?: boolean
+}
+
+/** Result of one harness install. */
+export interface HarnessInstallReport {
+  /** Summarised outcome across every part. */
+  readonly status: 'installed' | 'already-installed' | 'skipped' | 'refused'
+  /** The source the call inspected. */
+  readonly source: string
+  /** Harness root the parts were read from. */
+  readonly root: string
+  /** Why nothing was installed; absent when the call ran. */
+  readonly reason?: HarnessSourceRefusal
+  /** One result per part the source carried. */
+  readonly parts: readonly HarnessPartOutcome[]
+  /** One result per skill or agent candidate, refusals included. */
+  readonly outcomes: readonly SkillInstallOutcome[]
+}
+
 /** One install request. */
 export interface SkillInstallRequest {
   /** Folder to install from: a skill directory, or a directory of skill directories. */
@@ -243,6 +355,15 @@ export interface SkillInstallService {
    * @returns whether a marked install was removed.
    */
   uninstall(request: SkillUninstallRequest): Promise<SkillUninstallReport>
+
+  /**
+   * Install a whole harness — one folder or one `.zip` — into the user's own
+   * Harness home: its skills, agents, rules, commands, scripts, hooks, and MCP
+   * server configurations, each into the root the product reads that kind from.
+   * @param request - the absolute source and the replace flag.
+   * @returns one outcome per part the source carried.
+   */
+  installHarness(request: HarnessInstallRequest): Promise<HarnessInstallReport>
 
   /**
    * List every folder-installed skill across the global root and, when a

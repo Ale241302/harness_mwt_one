@@ -2608,13 +2608,6 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('removeSkill') async removeSkill(name: string): Promise<readonly FaberLoomSkillRow[]>
 
 /**
- * The two roots an install may target, so the panel can show the resolved
- * destination before it writes anything.
- * @returns the workspace skills root (null without a workspace) and the global root.
- */
-@Remote('skillInstallTargets') skillInstallTargets(): Promise<FaberLoomSkillInstallTargets>
-
-/**
  * Install one or more skills from a folder the user named, through the native
  * installer, so the copies and their `.dsh-skill-install.json` markers are the
  * ones the skill provider reads back. The source is a single skill directory (holding
@@ -2629,6 +2622,21 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the resolved destination root and one outcome per candidate.
  */
 @Remote('installSkill') async installSkill( source: string, destination: FaberLoomSkillInstallDestination, replace?: boolean, workspaceRoot?: string, ): Promise<FaberLoomSkillInstallReport>
+
+/**
+ * Install a whole harness the operator picked — one folder, or one `.zip` —
+ * into the user's own Harness home, through the native installer: its skills,
+ * agents, rules, commands, scripts, hooks, and MCP server configurations,
+ * each into the root the product already reads that kind from, so the copies
+ * are live for every session of every Workspace and Space without a restart.
+ * The destination is not a choice: a harness is the user's own setup, and the
+ * rules land in the managed block of the home's own instructions file, which
+ * is what makes them always on.
+ * @param source - absolute folder or `.zip` the operator chose in the host's own dialog.
+ * @param replace - rewrite a piece that is already there instead of skipping it.
+ * @returns one part outcome per kind the source carried.
+ */
+@Remote('installHarness') async installHarness(source: string, replace?: boolean): Promise<FaberLoomHarnessReport>
 
 /**
  * List the skills installed from a folder under the global root and, when a

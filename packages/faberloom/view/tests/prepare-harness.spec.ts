@@ -29,12 +29,22 @@ describe('prepareHarness', () => {
       generatedAt: '2026-10-16T00:00:00.000Z',
       written: ['AGENTS.md'],
       pruned: [],
-      usage: {},
+      usage: {
+        agents: [], skills: [], workflows: [], routines: [], memory: [], context: [],
+        unresolvedSkills: [], unreadableDomains: ['spaces'],
+      },
     }
     const refresh = vi.fn(async () => report)
     const view = harness({ refresh })
 
-    expect(await view.prepareHarness('space', 'sp1', 'ACME')).toEqual(report)
+    expect(await view.prepareHarness('space', 'sp1', 'ACME')).toEqual({
+      root: '/work/acme',
+      generatedAt: '2026-10-16T00:00:00.000Z',
+      written: ['AGENTS.md'],
+      pruned: [],
+      counts: { agents: 0, skills: 0, workflows: 0, routines: 0, memory: 0, context: 0 },
+      unreadableDomains: ['spaces'],
+    })
     expect(refresh).toHaveBeenCalledWith({ kind: 'space', id: 'sp1', title: 'ACME' })
   })
 

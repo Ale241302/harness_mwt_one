@@ -66,7 +66,7 @@ Workspace 或 Space 就是一份目录。本包写入该目录的 harness：该�
 
 ### 写入什么
 
-指令文档是一份文本，写入 `AGENTS.md`、`CLAUDE.md`、`GEMINI.md`、`.gemini/AGENTS.md` 与 `.kimi/AGENTS.md`：客户端认识哪个名字就读哪个，而它们都不会顺着指向另一个文件的指针走。每个智能体得到 `.agents/<agente>.md`、`.claude/agents/<agente>.md` 与 `.kimi/agents/<agente>.md` —— frontmatter 带 `name` 与 `description`，在智能体同时声明 provider 与 model 时带一行 `model`，正文则是智能体的职责，也就是产品安装的 persona。每项解析成功的技能从技能注册表自身的定义写入 `.claude/skills/<skill>/SKILL.md` 与 `.kimi/skills/<skill>/SKILL.md`。`.claude/settings.json` 携带显式的空权限策略，因此投影绝不会放宽用户自己配置所允许的东西。
+指令文档是一份文本，写入 `AGENTS.md`、`CLAUDE.md`、`GEMINI.md`、`.gemini/AGENTS.md` 与 `.kimi/AGENTS.md`：客户端认识哪个名字就读哪个，而它们都不会顺着指向另一个文件的指针走。每个被投影的作用域还携带同一组默认规则，无论该作用域是否登记了任何记录：在阅读代码之前先通过 `graphify` 技能查询项目的 `graphify-out/` 图谱，改动之后让该图谱保持最新，并用 `archify` 技能绘制架构与流程，而不是只用文字描述。这些规则是投影自身的默认值，集中列在 `DEFAULT_SCOPE_RULES` 中。每个智能体得到 `.agents/<agente>.md`、`.claude/agents/<agente>.md` 与 `.kimi/agents/<agente>.md` —— frontmatter 带 `name` 与 `description`，在智能体同时声明 provider 与 model 时带一行 `model`，正文则是智能体的职责，也就是产品安装的 persona。每项解析成功的技能从技能注册表自身的定义写入 `.claude/skills/<skill>/SKILL.md` 与 `.kimi/skills/<skill>/SKILL.md`。`.claude/settings.json` 携带显式的空权限策略，因此投影绝不会放宽用户自己配置所允许的东西。
 
 ### 剪除
 

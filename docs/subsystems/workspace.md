@@ -164,6 +164,14 @@ Host service backing the generated `ctx.remote.directoryPicker` namespace. The s
 @Remote('pick') async pick(signal: AbortSignal): Promise<string | null>
 
 /**
+ * Open the host's OS chooser for one file, for a caller that needs a path to
+ * something other than a directory (an archive to install, for instance).
+ * @param signal - caller lifetime; abort terminates the chooser.
+ * @returns the chosen absolute path, or null when the operator cancels.
+ */
+@Remote('pickFile') async pickFile(signal: AbortSignal): Promise<string | null>
+
+/**
  * List one directory level for a Remote caller's in-app browser.
  * @param path - absolute directory to list; absent lists the home directory.
  * @param signal - caller lifetime; abort stops the backend's scan instead of

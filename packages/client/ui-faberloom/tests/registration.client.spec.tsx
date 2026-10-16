@@ -201,7 +201,8 @@ async function bench(
     shareAgent: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
     shares: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
     unshareShare: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
-    pickSkillFolder: vi.fn(async () => ({ ok: true, value: null })),
+    pickFolder: vi.fn(async () => null),
+    pickArchive: vi.fn(async () => null),
     modelCatalog: vi.fn(async () => ({ ok: true, value: { providers: [] } })),
     mcpTokens: vi.fn(async () => ({ ok: true, value: [] })),
     mintMcpToken: vi.fn(async () => ({ ok: true, value: [] })),
@@ -218,9 +219,8 @@ async function bench(
     restoreContext: contextAction, approveContext: contextAction, rejectContext: contextAction,
     removeContext: contextAction, exportContext: vi.fn(async () => ({ ok: true, value: { filename: 'c.json', content: '{}' } })),
     importContext: contextAction,
-    skillInstallTargets: vi.fn(async () => ({ ok: true, value: { workspace: null, global: '/home/skills' } })),
     skillInstalls: vi.fn(async () => ({ ok: true, value: [] })),
-    installSkill: vi.fn(async () => ({ ok: true, value: { destination: 'global', root: '/home/skills', outcomes: [] } })),
+    installHarness: vi.fn(async () => ({ ok: true, value: { status: 'installed', source: '/fuentes/ECC', root: '/fuentes/ECC', parts: [], outcomes: [] } })),
     uninstallSkill: vi.fn(async () => ({ ok: true, value: [] })),
     spaceMemory, deleteSpaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
@@ -1122,7 +1122,7 @@ describe('faberloom panel editors', () => {
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
     await view.findByText(SKILL_ROW.name)
 
-    expect(view.queryByText(faberloomEn['skills.install'])).toBeNull()
+    expect(view.queryByText(faberloomEn['harness.title'])).toBeNull()
     expect(view.getByText(faberloomEn['skills.upload'])).toBeTruthy()
 
     Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true })
@@ -1131,7 +1131,7 @@ describe('faberloom panel editors', () => {
       act(() => { runtime.panelInfo.set({ activePanelId: null }) })
       act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
       fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
-      expect(await view.findByText(faberloomEn['skills.install'])).toBeTruthy()
+      expect(await view.findByText(faberloomEn['harness.title'])).toBeTruthy()
     } finally {
       Reflect.deleteProperty(globalThis, 'dshDesktop')
     }

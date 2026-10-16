@@ -1,6 +1,7 @@
 /**
  * Service Definition for the `ctx.directoryPicker` capability seam: how the web-GUI host lets an operator
- * select a workspace directory. Backends differ in interaction shape, not
+ * select a path on the host — a workspace directory, or one file such as a
+ * harness archive. Backends differ in interaction shape, not
  * just mechanism, so the service exposes a discriminated capability instead
  * of one method set: a `native` backend opens one OS chooser on the
  * host's display, while a `browse` backend serves listing/creation primitives
@@ -16,7 +17,7 @@ import type { DirectoryListing } from './types.ts'
 
 export type { DirectoryEntry, DirectoryListing } from './types.ts'
 
-/** The native interaction: one OS directory chooser on the host display. */
+/** The native interaction: one OS chooser on the host display. */
 export interface DirectoryPickerNativeCapability {
   kind: 'native'
   /**
@@ -25,6 +26,15 @@ export interface DirectoryPickerNativeCapability {
    * @returns the chosen absolute path, or null when the operator cancels.
    */
   pick(signal: AbortSignal): Promise<string | null>
+  /**
+   * Open the same chooser for one existing file. It exists beside {@link pick}
+   * because both are one conversation with the operator on the host display,
+   * told apart only by what the dialog selects; a backend that can show the
+   * directory chooser can show this one.
+   * @param signal - caller/connection lifetime; abort terminates the chooser.
+   * @returns the chosen absolute path, or null when the operator cancels.
+   */
+  pickFile(signal: AbortSignal): Promise<string | null>
 }
 
 /**

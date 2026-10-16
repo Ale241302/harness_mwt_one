@@ -49,7 +49,7 @@ A cancel returns `null`, not an error. Missing platform tooling, a failed choose
 
 ### Design concept
 
-The backend is a thin service over a platform chooser: `NativeDirectoryPicker` registers the `native` capability whose `pick` forwards to `pickNativeDirectory`, and the chooser runs as a subprocess so the host process never blocks on the dialog. The command boundary (`DirectoryPickerRunner`) and platform facts are injectable, and the shared no-shell subprocess runner lives in [`dsh-native-command`](../../util/native-command/README.md).
+The backend is a thin service over a platform chooser: `NativeDirectoryPicker` registers the `native` capability whose `pick` forwards to `pickNativeDirectory` and whose `pickFile` forwards to `pickNativeFile`, two option sets of one dialog rather than two dialogs, and the chooser runs as a subprocess so the host process never blocks on the dialog. The command boundary (`DirectoryPickerRunner`) and platform facts are injectable, and the shared no-shell subprocess runner lives in [`dsh-native-command`](../../util/native-command/README.md).
 
 ### Platform mechanics
 

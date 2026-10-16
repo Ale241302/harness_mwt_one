@@ -861,6 +861,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the chosen absolute path, or null when the operator cancels.',
       },
       {
+        signature: '@Remote(\'pickFile\') async pickFile(signal: AbortSignal): Promise<string | null>',
+        description: 'Open the host\'s OS chooser for one file, for a caller that needs a path to something other than a directory (an archive to install, for instance).',
+        parameters: [{ name: 'signal', description: 'caller lifetime; abort terminates the chooser.' }],
+        returns: 'the chosen absolute path, or null when the operator cancels.',
+      },
+      {
         signature: '@Remote(\'list\') async list(path: string | undefined, signal: AbortSignal): Promise<DirectoryListing>',
         description: 'List one directory level for a Remote caller\'s in-app browser.',
         parameters: [{ name: 'path', description: 'absolute directory to list; absent lists the home directory.' }, { name: 'signal', description: 'caller lifetime; abort stops the backend\'s scan instead of letting it outlive a disconnected caller.' }],
@@ -2695,16 +2701,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed skill list.',
       },
       {
-        signature: '@Remote(\'skillInstallTargets\') skillInstallTargets(): Promise<FaberLoomSkillInstallTargets>',
-        description: 'The two roots an install may target, so the panel can show the resolved destination before it writes anything.',
-        parameters: [],
-        returns: 'the workspace skills root (null without a workspace) and the global root.',
-      },
-      {
         signature: '@Remote(\'installSkill\') async installSkill( source: string, destination: FaberLoomSkillInstallDestination, replace?: boolean, workspaceRoot?: string, ): Promise<FaberLoomSkillInstallReport>',
         description: 'Install one or more skills from a folder the user named, through the native installer, so the copies and their `.dsh-skill-install.json` markers are the ones the skill provider reads back. The source is a single skill directory (holding `SKILL.md`) or a directory of skill directories; the installer validates every candidate before writing, copies each whole skill directory with its assets, reports an unchanged repeat install instead of copying again, and skips an existing name unless `replace` is set.',
         parameters: [{ name: 'source', description: 'folder to install from; resolved inside the workspace when the call has one.' }, { name: 'destination', description: '`workspace` writes under the workspace project skills root, `global` under `$DSH_HOME/skills`.' }, { name: 'replace', description: 'true replaces a skill of the same name; false skips it.' }, { name: 'workspaceRoot', description: 'the session\'s resolved workspace root; omitted uses the deployment default.' }],
         returns: 'the resolved destination root and one outcome per candidate.',
+      },
+      {
+        signature: '@Remote(\'installHarness\') async installHarness(source: string, replace?: boolean): Promise<FaberLoomHarnessReport>',
+        description: 'Install a whole harness the operator picked — one folder, or one `.zip` — into the user\'s own Harness home, through the native installer: its skills, agents, rules, commands, scripts, hooks, and MCP server configurations, each into the root the product already reads that kind from, so the copies are live for every session of every Workspace and Space without a restart. The destination is not a choice: a harness is the user\'s own setup, and the rules land in the managed block of the home\'s own instructions file, which is what makes them always on.',
+        parameters: [{ name: 'source', description: 'absolute folder or `.zip` the operator chose in the host\'s own dialog.' }, { name: 'replace', description: 'rewrite a piece that is already there instead of skipping it.' }],
+        returns: 'one part outcome per kind the source carried.',
       },
       {
         signature: '@Remote(\'skillInstalls\') async skillInstalls(): Promise<readonly FaberLoomSkillInstallRow[]>',
@@ -4824,6 +4830,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one skill previously installed from a folder.',
         parameters: [{ name: 'request', description: 'name, destination, and session cwd.' }],
         returns: 'whether a marked install was removed.',
+      },
+      {
+        signature: 'installHarness(request: HarnessInstallRequest): Promise<HarnessInstallReport>',
+        description: 'Install a whole harness — one folder or one `.zip` — into the user\'s own Harness home: its skills, agents, rules, commands, scripts, hooks, and MCP server configurations, each into the root the product reads that kind from.',
+        parameters: [{ name: 'request', description: 'the absolute source and the replace flag.' }],
+        returns: 'one outcome per part the source carried.',
       },
       {
         signature: 'list(cwd?: string): Promise<readonly SkillInstallRow[]>',
@@ -7068,7 +7080,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DirectoryPickerNativeCapability',
-    declaration: 'export interface DirectoryPickerNativeCapability {\n    kind: \'native\';\n    pick(signal: AbortSignal): Promise<string | null>;\n}',
+    declaration: 'export interface DirectoryPickerNativeCapability {\n    kind: \'native\';\n    pick(signal: AbortSignal): Promise<string | null>;\n    pickFile(signal: AbortSignal): Promise<string | null>;\n}',
   },
   {
     name: 'DirectoryRegistrationHandle',
@@ -7423,6 +7435,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomGrantRow {\n    readonly id: string;\n    readonly action: string;\n    readonly agentId: string | null;\n    readonly context: string | null;\n    readonly note: string | null;\n    readonly expiresAt: string | null;\n    readonly revoked: boolean;\n}',
   },
   {
+    name: 'FaberLoomHarnessPartKind',
+    declaration: 'export type FaberLoomHarnessPartKind = \'skills\' | \'agents\' | \'rules\' | \'commands\' | \'scripts\' | \'hooks\' | \'mcp-configs\';',
+  },
+  {
+    name: 'FaberLoomHarnessPartOutcome',
+    declaration: 'export interface FaberLoomHarnessPartOutcome {\n    readonly kind: FaberLoomHarnessPartKind;\n    readonly status: FaberLoomHarnessPartStatus;\n    readonly count: number;\n    readonly target: string;\n}',
+  },
+  {
+    name: 'FaberLoomHarnessPartStatus',
+    declaration: 'export type FaberLoomHarnessPartStatus = \'installed\' | \'replaced\' | \'skipped\';',
+  },
+  {
+    name: 'FaberLoomHarnessRefusal',
+    declaration: 'export type FaberLoomHarnessRefusal = \'read-only\' | \'source-missing\' | \'not-a-harness\' | \'archive-unreadable\';',
+  },
+  {
+    name: 'FaberLoomHarnessReport',
+    declaration: 'export interface FaberLoomHarnessReport {\n    readonly status: \'installed\' | \'already-installed\' | \'skipped\' | \'refused\';\n    readonly source: string;\n    readonly root: string;\n    readonly refused?: FaberLoomHarnessRefusal;\n    readonly parts: readonly FaberLoomHarnessPartOutcome[];\n    readonly outcomes: readonly FaberLoomSkillInstallOutcome[];\n}',
+  },
+  {
     name: 'FaberLoomInboxRow',
     declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
   },
@@ -7705,10 +7737,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomSkillInstallRow',
     declaration: 'export interface FaberLoomSkillInstallRow {\n    readonly name: string;\n    readonly sourcePath: string;\n    readonly destination: FaberLoomSkillInstallDestination;\n    readonly destinationRoot: string;\n    readonly installedAt: string;\n}',
-  },
-  {
-    name: 'FaberLoomSkillInstallTargets',
-    declaration: 'export interface FaberLoomSkillInstallTargets {\n    readonly workspace: string | null;\n    readonly global: string;\n}',
   },
   {
     name: 'FaberLoomSkillRow',
@@ -7999,8 +8027,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface HarnessContextUsage {\n    readonly id: string;\n    readonly title: string;\n}',
   },
   {
+    name: 'HarnessInstallReport',
+    declaration: 'export interface HarnessInstallReport {\n    readonly status: \'installed\' | \'already-installed\' | \'skipped\' | \'refused\';\n    readonly source: string;\n    readonly root: string;\n    readonly reason?: HarnessSourceRefusal;\n    readonly parts: readonly HarnessPartOutcome[];\n    readonly outcomes: readonly SkillInstallOutcome[];\n}',
+  },
+  {
+    name: 'HarnessInstallRequest',
+    declaration: 'export interface HarnessInstallRequest {\n    readonly source: string;\n    readonly replace?: boolean;\n}',
+  },
+  {
     name: 'HarnessMemoryUsage',
     declaration: 'export interface HarnessMemoryUsage {\n    readonly id: string;\n    readonly text: string;\n    readonly source: \'space\' | \'teaching\';\n}',
+  },
+  {
+    name: 'HarnessPartKind',
+    declaration: 'export type HarnessPartKind = \'skills\' | \'agents\' | \'rules\' | \'commands\' | \'scripts\' | \'hooks\' | \'mcp-configs\';',
+  },
+  {
+    name: 'HarnessPartOutcome',
+    declaration: 'export interface HarnessPartOutcome {\n    readonly kind: HarnessPartKind;\n    readonly status: HarnessPartStatus;\n    readonly count: number;\n    readonly target: string;\n}',
+  },
+  {
+    name: 'HarnessPartStatus',
+    declaration: 'export type HarnessPartStatus = \'installed\' | \'replaced\' | \'skipped\';',
   },
   {
     name: 'HarnessProjectionReport',
@@ -8017,6 +8065,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'HarnessSkillUsage',
     declaration: 'export interface HarnessSkillUsage {\n    readonly name: string;\n    readonly description: string;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'HarnessSourceRefusal',
+    declaration: 'export type HarnessSourceRefusal = \'missing\' | \'not-a-harness\' | \'archive-unreadable\';',
   },
   {
     name: 'HarnessSpaceScope',

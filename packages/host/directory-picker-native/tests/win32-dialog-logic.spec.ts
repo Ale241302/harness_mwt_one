@@ -7,7 +7,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   FOS_FORCEFILESYSTEM, FOS_NOCHANGEDIR, FOS_PICKFOLDERS, HRESULT_CANCELLED,
-  runFolderDialog, type Win32DialogBindings, type Win32FolderDialog,
+  runFileDialog, runFolderDialog, type Win32DialogBindings, type Win32FolderDialog,
 } from '../src/win32-dialog-logic.ts'
 
 const E_FAIL = 0x80004005 | 0
@@ -102,5 +102,27 @@ describe('runFolderDialog', () => {
     expect(() => runFolderDialog(bindings, 'Pick', vi.fn())).toThrow(`${what} failed: HRESULT 0x80004005`)
     expect(dialog.release).toHaveBeenCalledOnce()
     expect(uninitialize).toHaveBeenCalledOnce()
+  })
+})
+
+describe('runFileDialog', () => {
+  it('runs the same conversation with the file selector flags', () => {
+    const { bindings, dialog, uninitialize } = world()
+    const showing = vi.fn()
+    expect(runFileDialog(bindings, 'Pick a file', showing)).toBe('C:\\picked\\目录')
+    expect(dialog.setOptions).toHaveBeenCalledWith(FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR)
+    expect(dialog.setTitle).toHaveBeenCalledWith('Pick a file')
+    expect(showing).toHaveBeenCalledWith(4242)
+    expect(dialog.release).toHaveBeenCalledOnce()
+    expect(uninitialize).toHaveBeenCalledOnce()
+  })
+
+  it('maps cancellation to null and checks every step it shares with the folder dialog', () => {
+    const cancelled = world({ show: vi.fn(() => HRESULT_CANCELLED) })
+    expect(runFileDialog(cancelled.bindings, 'Pick a file', vi.fn())).toBeNull()
+    expect(cancelled.uninitialize).toHaveBeenCalledOnce()
+
+    const failed = world({ setOptions: vi.fn(() => E_FAIL) })
+    expect(() => runFileDialog(failed.bindings, 'Pick a file', vi.fn())).toThrow('SetOptions failed: HRESULT 0x80004005')
   })
 })

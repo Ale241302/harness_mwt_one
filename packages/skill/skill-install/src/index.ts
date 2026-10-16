@@ -19,6 +19,7 @@
  * @module @deepseek-ai/dsh-skill-install
  */
 
+import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -32,6 +33,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import { detectSkillFolder, refusedCandidateName } from './detect.ts'
 import { AGENT_PRESETS_DIRNAME, installAgents } from './agents.ts'
+import { detectHarness, installHarness } from './harness.ts'
 import {
   installSkillFolder,
   readInstalls,
@@ -40,6 +42,7 @@ import {
   summarizeOutcomes,
 } from './install.ts'
 import type {
+  HarnessInstallReport,
   SkillFolderDetection,
   SkillInstallOutcome,
   SkillInstallReport,
@@ -185,6 +188,25 @@ export function apply(ctx: Context, config: Config = {}): void {
         name: request.name,
         destination: request.destination,
         root,
+      }
+    },
+
+    async installHarness(request): Promise<HarnessInstallReport> {
+      const detection = await detectHarness(request.source)
+      try {
+        if (detection.reason !== undefined) {
+          return {
+            status: 'refused',
+            source: detection.source,
+            root: detection.root,
+            reason: detection.reason,
+            parts: [],
+            outcomes: [],
+          }
+        }
+        return await installHarness(detection, dshHome, request.replace ?? false)
+      } finally {
+        if (detection.temporary !== undefined) await rm(detection.temporary, { recursive: true, force: true })
       }
     },
 

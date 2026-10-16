@@ -71,24 +71,63 @@ async function harness(
 }
 
 describe('FaberLoomViewService skill install', () => {
-  it('lists the two resolved destination roots, with no workspace root when unmounted', async () => {
+  it('installs a harness folder into the user home, with its rules always on', async () => {
     const home = tempDir('view-install-')
+    const source = tempDir('view-harness-')
+    vi.stubEnv('DSH_HOME', home)
+    writeSkill(join(source, 'skills'), 'conciliacion', skillMarkdown('conciliacion'))
+    mkdirSync(join(source, 'agents'), { recursive: true })
+    writeFileSync(join(source, 'agents', 'contable.md'), '---\nname: Contable\ndescription: Cierra el mes.\n---\n\nEres el contable.\n', 'utf8')
+    mkdirSync(join(source, 'rules'), { recursive: true })
+    writeFileSync(join(source, 'rules', 'grafo.md'), 'Consulta el grafo antes de leer codigo.\n', 'utf8')
+    mkdirSync(join(source, 'scripts'), { recursive: true })
+    writeFileSync(join(source, 'scripts', 'run-gates.ts'), 'export {}\n', 'utf8')
+    const { view } = await harness()
+
+    const report = await view.installHarness(source)
+
+    expect(report.status).toBe('installed')
+    expect(report.root).toBe(source)
+    expect(report.parts.map(part => part.kind)).toEqual(['skills', 'agents', 'rules', 'scripts'])
+    expect(report.parts.find(part => part.kind === 'rules')).toMatchObject({ count: 1, target: join(home, 'AGENTS.md') })
+    expect(report.outcomes).toEqual([
+      { name: 'conciliacion', status: 'installed' },
+      { name: 'contable', status: 'installed' },
+    ])
+    expect(existsSync(join(home, 'skills', 'conciliacion', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(home, '.agent-presets', 'contable', 'preset.yml'))).toBe(true)
+    expect(readFileSync(join(home, 'AGENTS.md'), 'utf8')).toContain('Consulta el grafo antes de leer codigo.')
+    expect(readFileSync(join(home, 'scripts', 'run-gates.ts'), 'utf8')).toBe('export {}\n')
+
+    const repeated = await view.installHarness(source, true)
+    expect(repeated.parts.find(part => part.kind === 'rules')?.status).toBe('replaced')
+  })
+
+  it('reports each refusal a harness source can hit, and never installs for a read-only identity', async () => {
+    const home = tempDir('view-install-')
+    const source = tempDir('view-harness-')
     vi.stubEnv('DSH_HOME', home)
     const { view } = await harness()
-    expect(await view.skillInstallTargets()).toEqual({ workspace: null, global: join(home, 'skills') })
+    mkdirSync(join(source, 'vacia'), { recursive: true })
+    writeFileSync(join(source, 'roto.zip'), Buffer.from([1, 2, 3, 4]))
 
-    const withWorkspace = await harness({ workspaceRoot: join(home, 'proyecto') })
-    expect(await withWorkspace.view.skillInstallTargets()).toEqual({
-      workspace: join(home, 'proyecto', '.dsh', 'skills'),
-      global: join(home, 'skills'),
-    })
+    expect(await view.installHarness(join(source, 'no-existe')))
+      .toMatchObject({ status: 'refused', refused: 'source-missing', parts: [], outcomes: [] })
+    expect(await view.installHarness(join(source, 'vacia')))
+      .toMatchObject({ status: 'refused', refused: 'not-a-harness' })
+    expect(await view.installHarness(join(source, 'roto.zip')))
+      .toMatchObject({ status: 'refused', refused: 'archive-unreadable' })
+
+    const readOnly = await harness({ readOnly: true })
+    expect(await readOnly.view.installHarness(source))
+      .toEqual({ status: 'refused', source, root: '', refused: 'read-only', parts: [], outcomes: [] })
+    expect(existsSync(join(home, 'skills'))).toBe(false)
   })
 
   it('treats an empty deployment workspace root as no workspace', async () => {
     const home = tempDir('view-install-')
     vi.stubEnv('DSH_HOME', home)
     const { view } = await harness({ workspaceRoot: '' })
-    expect((await view.skillInstallTargets()).workspace).toBeNull()
     const report = await view.installSkill(join(home, 'origen'), 'workspace')
     expect(report).toMatchObject({ refused: 'no-workspace', root: '', outcomes: [] })
 
@@ -302,7 +341,7 @@ describe('FaberLoomViewService skill install', () => {
     const home = tempDir('view-install-')
     vi.stubEnv('DSH_HOME', home)
     const { view } = await harness({ mountInstaller: false })
-    expect(() => view.skillInstallTargets()).toThrow('not mounted')
+    await expect(view.installHarness(join(home, 'origen'))).rejects.toThrow('not mounted')
     await expect(view.skillInstalls()).rejects.toThrow('not mounted')
   })
 })

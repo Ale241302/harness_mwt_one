@@ -35,6 +35,22 @@ kind: "package-reference"
 { "kind": "found", "source": "/work/skills", "skills": [{ "name": "greet", "description": "Greets the team", "directory": "/work/skills/greet" }], "refused": [] }
 ```
 
+### 安装知识库
+
+既没有自带 `SKILL.md` 也没有可安装子目录的文件夹会被再检查一次，看它是否为知识库：`skills/` 贡献其技能目录，`agents/` 贡献其代理，二者之一即可。`agents/` 中的 preset 文件夹（含 `preset.yml` 的目录）会被整体复制；带 front matter 的单个 Markdown 代理会成为 persona 前缀即文件正文的 preset，因为产品的代理注册表只保存 `name` 与 `responsibility`，没有 prompt。代理始终写入用户自己的 Harness home——`<dshHome>/.agent-presets/<id>/`，即部署所播种、preset 发现所读取的布局——因此安装知识库无论选择了哪个技能作用域，都是“对该用户全局”。
+
+```json
+{ "status": "installed", "source": "/work/kb-contabilidad", "destination": "global", "root": "/home/u/.dsh/skills", "outcomes": [{ "name": "conciliacion", "status": "installed" }], "agents": [{ "name": "contable-jefe", "status": "installed" }], "agentsRoot": "/home/u/.dsh/.agent-presets" }
+```
+
+### 安装整个 harness
+
+团队的 harness 可通过一次调用安装：`installHarness` 按约定为每个部分识别其目录，并写入该用户自己的 Harness home，而每个 Workspace 与 Space 的每个会话都会读取它。`skills/`、`skills-shared/` 与 `skills-catalog/` 的每个角色成为 skill；`agents/` 与 `agents-shared/` 成为 preset agent；harness 自带的 `AGENTS.md` 与其 `rules/*.md` 成为 home 的 `AGENTS.md` 中受管块内的常驻规则，即每个会话首次请求所携带的用户级指令；`commands/`、`scripts/`、`hooks/` 与 `mcp-configs/` 原样复制并报告其目标。规则目录的子目录会被复制并在块中按路径列出，而不是被激活，因此按语言分组规则的 harness 不会同时开启所有语言。`source` 也可以指向一个 `.zip`，它会被解压到临时目录，并在完成后由该调用删除。
+
+```json
+{ "status": "installed", "source": "/work/ECC", "root": "/work/ECC", "parts": [{ "kind": "skills", "status": "installed", "count": 292, "target": "/home/u/.dsh/skills" }, { "kind": "rules", "status": "installed", "count": 3, "target": "/home/u/.dsh/AGENTS.md" }], "outcomes": [{ "name": "architect", "status": "installed" }] }
+```
+
 ### 选择作用域
 
 两个目标分别是当前工作区（`<projectRoot>/.dsh/skills`，来源 `project-dsh`）与用户账号（`<dshHome>/skills`，来源 `user-dsh`）。调用方省略目标时，`install_skill` 会通过 `ctx.userQuestions` 恰好给出这两个选项来询问用户。工作区目标需要会话工作目录；全局目标从不需要。
@@ -67,6 +83,8 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件：发布 `ctx.skillInstall`、注册两个工具并发出作用域问题 |
 | [`src/detect.ts`](src/detect.ts) | 文件夹识别及其拒绝原因，复用提供方的 front matter 解析器 |
+| [`src/harness.ts`](src/harness.ts) | 按部分识别 harness、受管规则块与分部分安装 |
+| [`src/archive.ts`](src/archive.ts) | `.zip` 解压及其保持在根内所用的条目名校验 |
 | [`src/install.ts`](src/install.ts) | 作用域根解析、目录复制、安装标记与移除 |
 | [`src/types.ts`](src/types.ts) | 消费方类型：作用域、识别结论、报告与服务 |
 | — | 不发布运行时不变式伴生入口；安装器没有独立的生命周期流，其写入的文件系统由 `@deepseek-ai/dsh-skill-filesystem` 拥有。 |
@@ -135,6 +153,10 @@ kind: "package-reference"
 - **工作区安装会写入用户的仓库**——工作区根是 `<projectRoot>/.dsh/skills`，因此安装的 skill 会随项目纳入版本控制，除非用户忽略它。
 - **安装器通过 Node 文件系统调用写入，而非沙箱化的 `ctx.fs`**——工作区之外的全局安装不受沙箱策略限制；由调用方自身权限决定。
 - **仅存在两个内置作用域**——共享、按角色或远程的 skill 根尚不是安装目标。
+- **代理只安装到用户 home，从不安装到工作区** - 知识库的 `agents/` 抵达 `<dshHome>/.agent-presets`，这是 preset 发现唯一读取的根；调用方选择的技能作用域不会移动它们。
+- **Markdown 代理只能成为 persona** - 生成的组合挂载 persona 与指令行，并不指定任何工具集，因此需要特定工具的知识库应提供 preset 文件夹而不是 Markdown 代理。
+- **harness 从调用方给出的路径安装，只有调用方自己的选择器构成约束**——`installHarness` 会把交给它的文件夹或归档写入 `<dshHome>`，不施加双作用域 skill 安装的工作区限制，因为 harness 是该用户自己的配置而非项目内容。
+- **`hooks/` 与 `mcp-configs/` 只被复制，未被接线**——产品从各 CLI 自身的设置读取 hook、从其自身的注册表读取 MCP 服务器，因此这两部分落在 home 中并报告其目标，而不会被激活。
 
 <a id="dev-note"></a>
 ### 开发备注

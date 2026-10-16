@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-skill-install` turns a folder the user points at into a loaded skill. It recognises whether the folder is one skill directory, a directory of skill directories, or neither, and states which rule failed when it is neither. Before writing anything it asks the human whether the skill belongs to the current workspace or to their user account, through the existing `ctx.userQuestions` seam. Installed skills land in the exact directories `@deepseek-ai/dsh-skill-filesystem` scans, so the provider's watcher makes them loadable without a restart; an unchanged repeat install is reported instead of copied again, and only a marked install can be removed.
+`dsh-skill-install` turns a folder the user points at into a loaded skill. It recognises whether the folder is one skill directory, a directory of skill directories, or neither, and states which rule failed when it is neither. Before writing anything it asks the human whether the skill belongs to the current workspace or to their user account, through the existing `ctx.userQuestions` seam. Installed skills land in the exact directories `@deepseek-ai/dsh-skill-filesystem` scans, so the provider's watcher makes them loadable without a restart; an unchanged repeat install is reported instead of copied again, and only a marked install can be removed. The same plugin installs a whole harness, one folder or one `.zip`, into the user's own Harness home: its skills, agents, always-on rules, commands, scripts, hooks, and MCP server configurations.
 
 ## Table of Contents
 
@@ -41,6 +41,14 @@ A folder that holds neither a `SKILL.md` of its own nor installable subdirectori
 
 ```json
 { "status": "installed", "source": "/work/kb-contabilidad", "destination": "global", "root": "/home/u/.dsh/skills", "outcomes": [{ "name": "conciliacion", "status": "installed" }], "agents": [{ "name": "contable-jefe", "status": "installed" }], "agentsRoot": "/home/u/.dsh/.agent-presets" }
+```
+
+### Installing a whole harness
+
+A team's harness installs as one call: `installHarness` recognises each part by the directory the convention gives it and writes it into the user's own Harness home, which every session of every Workspace and Space already reads. `skills/`, `skills-shared/`, and each role of `skills-catalog/` become skills; `agents/` and `agents-shared/` become preset agents; the harness's own `AGENTS.md` and its `rules/*.md` become always-on rules inside a managed block of the home's `AGENTS.md`, the user-level instructions the first request of every session carries; and `commands/`, `scripts/`, `hooks/`, and `mcp-configs/` are copied whole with their destination reported. A rule directory's subdirectories are copied and named by path in the block instead of being activated, so a harness that groups rules by language does not switch every language on. `source` may also name a `.zip`, which is expanded into a temporary directory the call removes once it is done.
+
+```json
+{ "status": "installed", "source": "/work/ECC", "root": "/work/ECC", "parts": [{ "kind": "skills", "status": "installed", "count": 292, "target": "/home/u/.dsh/skills" }, { "kind": "rules", "status": "installed", "count": 3, "target": "/home/u/.dsh/AGENTS.md" }], "outcomes": [{ "name": "architect", "status": "installed" }] }
 ```
 
 ### Choosing a scope
@@ -75,6 +83,8 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin: publishes `ctx.skillInstall`, registers both tools, and asks the scope question |
 | [`src/detect.ts`](src/detect.ts) | Folder detection and its rejection reasons, reusing the provider's front-matter parser |
+| [`src/harness.ts`](src/harness.ts) | Harness detection per part, the managed rule block, and the per-part install |
+| [`src/archive.ts`](src/archive.ts) | `.zip` expansion and the entry-name validation that keeps it inside its root |
 | [`src/install.ts`](src/install.ts) | Scope-root resolution, the directory copy, the install marker, and removal |
 | [`src/types.ts`](src/types.ts) | Consumer-facing types: scopes, detection verdicts, reports, and the service |
 | — | No runtime invariant companion is published; the installer owns no independent lifecycle stream, and the filesystem it writes to is owned by `@deepseek-ai/dsh-skill-filesystem`. |
@@ -145,6 +155,8 @@ These limits define when the installer is a poor fit. They are current package c
 - **Only the two built-in scopes exist** - a shared, per-role, or remote skills root is not an install destination.
 - **Agents install into the user's home, never into the workspace** - a knowledge base's `agents/` reaches `<dshHome>/.agent-presets`, which is the only root the preset discovery reads; the skill scope the caller chose does not move them.
 - **A Markdown agent becomes a persona and nothing more** - the generated composition mounts the persona and the instructions row and names no toolset, so a knowledge base that needs particular tools ships a preset folder instead of a Markdown agent.
+- **A harness installs from a path the caller names, and only the caller's own chooser confines it** - `installHarness` writes under `<dshHome>` whatever folder or archive it is handed, without the workspace confinement the two-scope skill install applies, because a harness is that user's setup rather than project content.
+- **`hooks/` and `mcp-configs/` are copied, not wired** - the product reads hooks from each CLI's own settings and MCP servers from its own registry, so those two parts land in the home and are reported with their destination instead of being activated.
 
 <a id="dev-note"></a>
 ### Dev Note
