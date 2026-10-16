@@ -4,15 +4,68 @@ Una carpeta KB es una carpeta portable que reúne el conocimiento de un equipo �
 
 Este documento es la especificación que comprueba [`scripts/validate-kb.mjs`](../../scripts/validate-kb.mjs) y el ejemplo real que la acompaña es [`examples/kb-contabilidad`](../../examples/kb-contabilidad).
 
-Lo que el producto lee hoy y lo que solo está propuesto se distinguen en cada sección: una carpeta que siga las propuestas instala sus skills igual que cualquier otra, y sus agentes, rutinas, flujos y contexto los da de alta una persona mientras no exista lector para ellos.
+Cada sección distingue lo que el producto lee hoy de lo que sigue propuesto: elegir la carpeta KB instala sus skills y sus agentes, en las dos formas que hay más abajo, mientras que las rutinas, los flujos y el contexto viajan por el espejo una vez dados de alta, y el resto lo hace una persona.
 
-## Árbol de la carpeta
+## El harness de una carpeta de trabajo
+
+Una carpeta que ya tiene su harness sigue la convención que usan los proyectos de este equipo: los archivos de la raíz solo redirigen, `.agents/` es la fuente de verdad, cada CLI tiene además su propia instalación, y el grafo y la bóveda de notas viven en sus dos carpetas.
+
+```
+<proyecto>/
+├── AGENTS.md                  entrypoint neutral: Kimi y cualquier CLI que siga la convención; apunta a .agents/
+├── CLAUDE.md                  entrypoint de Claude Code; apunta a .agents/
+├── GEMINI.md                  entrypoint de Gemini CLI; apunta a .agents/
+├── harness.config.yaml        configuración del harness del proyecto
+├── .agents/                   fuente de verdad del harness
+│   ├── config.yaml
+│   ├── rules/                 reglas siempre activas (por ejemplo harness.md y graphify.md)
+│   ├── subagents/             un archivo por rol: cuándo se usa y qué sabe hacer
+│   ├── skills/<nombre>/SKILL.md
+│   ├── tools/                 registry.yaml y los scripts que declara
+│   ├── workflows/             un archivo por flujo
+│   └── decisions/             ADR-0001-*.md
+├── .claude/                   instalación de Claude Code (agents/, skills/, commands/, settings.local.json)
+├── .gemini/                   instalación de Gemini (mcp-configs/, scripts/, .pi/extensions/)
+├── .kimi-code/                instalación de Kimi (agents/, commands/, rules/, skills/, mcp-configs/, AGENTS.md)
+├── .obsidian/                 bóveda de notas (app.json, core-plugins.json, graph.json, workspace.json)
+└── graphify-out/              grafo del proyecto (graph.json, GRAPH_REPORT.md, manifest.json, cache/, snapshots con fecha)
+```
+
+| Ruta | Qué es | Quién lo lee |
+|---|---|---|
+| `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` | Los tres entrypoints, cada uno con la convención de su CLI | El CLI correspondiente, que sigue el puntero a `.agents/` |
+| `.agents/rules/*.md` | Reglas que aplican siempre, sin invocación | El agente al arrancar en esa carpeta |
+| `.agents/subagents/*.md` | Los roles disponibles y cuándo se usan | El agente, al delegar o al adoptar un rol |
+| `.agents/skills/<n>/SKILL.md` | Una skill con su frontmatter y su procedimiento | El agente, cuando la tarea la invoca |
+| `.agents/tools/registry.yaml` | Las herramientas propias del proyecto y sus scripts | El agente, al necesitar una herramienta que no es del sistema |
+| `.agents/workflows/*.md` | Un flujo con sus pasos | El agente, cuando el trabajo sigue ese flujo |
+| `.agents/decisions/ADR-*.md` | Las decisiones del proyecto, con su contexto | Las personas y los agentes que revisan por qué algo es como es |
+| `.claude/`, `.gemini/`, `.kimi-code/` | La instalación de cada CLI (agentes, comandos, reglas, skills, MCP) | Cada CLI, con su propio formato |
+| `.obsidian/` | La bóveda de notas del proyecto | Obsidian |
+| `graphify-out/` | El grafo del código y su informe | Las personas y los agentes que consultan el grafo |
+
+FaberLoom escribe esta misma disposición cuando prepara un WorkSpace o un Espacio, y solo con lo que ese ámbito ha usado: los agentes y las skills que se invocaron allí, sus flujos, su memoria, su contexto y sus rutinas. Lo suyo vive bajo `.faberloom/`, que es el manifiesto con lo que escribió y lo que puede retirar.
+
+### Vectorizar (graphify) y dibujar (archify)
+
+El grafo y los diagramas son herramientas externas que el proyecto ya usa, y cada una tiene su carpeta de salida y su skill:
+
+| Herramienta | Paquete y versión | Comando | Salida | Skills |
+|---|---|---|---|---|
+| graphify | `graphifyy` 0.9.91 (Python) | `uv tool install --upgrade graphifyy` o `pip install -U graphifyy`; luego `graphify build`, `graphify query "<pregunta>"` | `graphify-out/` (`graph.json`, `GRAPH_REPORT.md`, `manifest.json`, `.graphify_labels.json`, `cache/` y una carpeta por fecha) | `graphify` (su `SKILL.md` viaja con el paquete: consulta el grafo antes de leer el código) |
+| archify | `archify` 3.1.0 (Node, `bin/archify.mjs`) | `node bin/archify.mjs finalize <tipo> <candidate.json> <salida.html> --repo-root <raíz> --quality showcase` | `.archify/<tipo>-<slug>-<AAAAMMDD-HHMMSS>/` con `candidate.json` y el HTML | `archify`, más `archify-review` y `archify-tuning` |
+
+Las dos skills llevan su `name` en kebab-case y su `description` con el disparador, así que se instalan como cualquier otra —poniendo la carpeta de la skill en «Elegir carpeta»— y el `graphify-out/` del proyecto se consulta antes de leer el código: la pregunta «¿cómo funciona X?» se responde con `graphify query`. En Windows, graphify trae además `skill-windows.md` con la detección del intérprete de Python.
+
+## Árbol de una carpeta KB
+
+Una carpeta KB reúne el contenido de un equipo para instalarlo en cualquier equipo: skills y agentes sobre todo, más las rutinas, los flujos y el contexto que el producto ya sabe transportar por el espejo.
 
 ```
 kb-contabilidad/
 ├── AGENTS.md                  reglas de la KB (las lee el agente cuando la carpeta es su directorio de trabajo)
 ├── kb.json                    manifiesto: nombre, versión, autor, descripción y contenido
-├── skills/                    una carpeta por skill, la única parte que el instalador lee hoy
+├── skills/                    una carpeta por skill; el instalador la lee y también la lee `skills/<n>/SKILL.md`
 │   ├── asientos-contables/
 │   │   ├── SKILL.md           frontmatter (name, description) y el procedimiento
 │   │   └── ...                referencias, plantillas o scripts que la skill necesite
@@ -22,14 +75,16 @@ kb-contabilidad/
 │   │   └── SKILL.md
 │   └── iva-declaraciones/
 │       └── SKILL.md
-├── agents/                    un archivo por agente (forma propuesta)
-│   ├── analista-fiscal.md
-│   ├── auditor-interno.md
-│   └── contable-jefe.md
-├── routines/                  definiciones de rutina en JSON (transporte propuesto)
+├── agents/                    un agente por carpeta de preset, o un archivo Markdown por agente
+│   ├── contable-jefe/
+│   │   ├── preset.yml         name y description; lo lee el descubrimiento de presets
+│   │   └── agent.cordis.yml   la composición del agente (persona, herramientas)
+│   ├── analista-fiscal.md     alternativa: el cuerpo del archivo se convierte en la persona
+│   └── auditor-interno.md
+├── routines/                  definiciones de rutina en JSON
 │   ├── cierre-mensual.json
 │   └── conciliacion-semanal.json
-├── workflows/                 definición de flujo en JSON (transporte propuesto)
+├── workflows/                 definición de flujo en JSON
 │   └── factura-a-asiento.json
 └── context/                   documentos de contexto para personas
     └── politica-contable.md
@@ -39,12 +94,13 @@ kb-contabilidad/
 |---|---|---|
 | `skills/<nombre>/SKILL.md` | Una skill: frontmatter `name` y `description`, y el procedimiento en el cuerpo | El instalador al instalar; el proveedor de skills en cada sesión |
 | `skills/<nombre>/**` | Los archivos que la skill necesita (plantillas, tablas, scripts) | El modelo, por la skill; la instalación copia la carpeta entera |
-| `agents/<nombre>.md` | Un agente: frontmatter con su responsabilidad, sus skills, sus herramientas y su modelo, y el cuerpo como prompt | Nadie todavía: es la forma propuesta para el instalador de agentes |
-| `routines/<nombre>.json` | Una rutina con disparadores y pasos | Nadie todavía: es transporte propuesto; el formato de los campos es el del registro del producto |
-| `workflows/<nombre>.json` | Un flujo con nodos y aristas | Nadie todavía: transporte propuesto, campos del registro del producto |
+| `agents/<nombre>/preset.yml` | Un agente como preset: `name` y `description`, más su `agent.cordis.yml` | El descubrimiento de presets, que lo copia a `<DSH_HOME>/.agent-presets/<nombre>/` |
+| `agents/<nombre>.md` | Un agente en Markdown: frontmatter con `name` y `description`, y el cuerpo como prompt | El instalador, que genera el preset y usa el cuerpo como persona |
+| `routines/<nombre>.json` | Una rutina con disparadores y pasos | El espejo, que la sube al registro del producto; el formato de los campos es el suyo |
+| `workflows/<nombre>.json` | Un flujo con nodos y aristas | El espejo, igual que las rutinas |
 | `context/<nombre>.md` | Contexto del equipo en texto | Una persona: se pega en el Contexto del espacio o se deja en la carpeta del espacio de trabajo |
 | `AGENTS.md` | Las reglas de la KB | El agente, cuando la carpeta KB es su directorio de trabajo (cadena de instrucciones del proyecto) |
-| `kb.json` | El manifiesto de la carpeta | Nadie todavía: lo usan el validador y quien instala a mano |
+| `kb.json` | El manifiesto de la carpeta | El validador y quien instala a mano |
 
 ## Qué lee el producto hoy
 
@@ -52,7 +108,7 @@ kb-contabilidad/
 
 El instalador nativo ([`packages/skill/skill-install/src/detect.ts`](../../packages/skill/skill-install/src/detect.ts)) acepta la carpeta que se le señale de dos maneras: si contiene un `SKILL.md` en su raíz, es una skill; si no, cada subcarpeta directa que contenga un `SKILL.md` es una skill candidata, y las subcarpetas ocultas (las que empiezan por punto) se ignoran.
 
-Ese es el motivo por el que en el diálogo se elige `<KB>/skills` y no la raíz de la KB: en la raíz no hay ningún `SKILL.md` y sus subcarpetas directas (`skills`, `agents`, `routines`...) tampoco lo llevan dentro, así que la instalación se rechaza con `missing-skill-md`.
+En el diálogo se puede elegir la raíz de la KB o su `skills/`: la raíz no trae ningún `SKILL.md` propio, así que el instalador la mira como KB y toma el catálogo de `skills/` y los agentes de `agents/`.
 
 Un `SKILL.md` válido empieza por una línea que es exactamente `---`, cierra el bloque con otra línea exactamente `---`, y declara `name` y `description` como cadenas no vacías; el `name` tiene que cumplir la gramática kebab-case del harness, `/^[a-z0-9]+(?:-[a-z0-9]+)*$/` ([`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts), `SKILL_NAME`).
 
@@ -66,17 +122,17 @@ El instalador copia la carpeta completa de cada skill candidata (los assets van 
 
 Lo que el instalador ignora sin decirlo: subcarpetas sin `SKILL.md`, subcarpetas ocultas, archivos sueltos que no acaban en `.md`, y cualquier candidata con frontmatter ilegible o nombre fuera de la gramática, que se reporta como rechazada.
 
-### Los agentes: `agents/<nombre>.md` es una propuesta
+### Los agentes: `agents/<nombre>/preset.yml` o `agents/<nombre>.md`
 
-Hoy el gesto de instalación solo detecta skills: `ctx.skillInstall` acepta carpetas con `SKILL.md`, y no hay ninguna ruta que lea la responsabilidad, el prompt o el modelo de un agente desde una carpeta que el usuario elija.
+El instalador lee los agentes de una KB igual que las skills: `ctx.skillInstall` reconoce `agents/<nombre>/` como carpeta de preset y `agents/<nombre>.md` como agente Markdown, y escribe los dos en `<DSH_HOME>/.agent-presets/<id>/`, la raíz que lee el descubrimiento de presets ([`packages/skill/skill-install/src/agents.ts`](../../packages/skill/skill-install/src/agents.ts)).
 
-La única vía de agentes por carpeta que existe es la del despliegue: `agents-shared/<id>/` con `preset.yml` (nombre y descripción) y `agent.cordis.yml` (la composición de plugins), que el gateway copia a `<DSH_HOME>/.agent-presets/<id>/` ([`gateway/server.mjs`](../../gateway/server.mjs)) y que [`packages/faberloom/defaults/src/index.ts`](../../packages/faberloom/defaults/src/index.ts) convierte en un agente sembrado, con `name` tomado de `name` y `responsibility` tomado de `description`.
+La forma de carpeta es la del despliegue: `preset.yml` con `name` y `description` más `agent.cordis.yml` con la composición de plugins, que es lo que el gateway copia a esa misma raíz ([`gateway/server.mjs`](../../gateway/server.mjs)) y lo que [`packages/faberloom/defaults/src/index.ts`](../../packages/faberloom/defaults/src/index.ts) convierte en un agente sembrado, con `name` tomado de `name` y `responsibility` tomado de `description`.
 
-Ese formato no sirve para una KB de usuario por dos motivos: su composición es una lista de filas de plugins (plugins que la KB no trae), y el catálogo del producto no guarda hoy ningún prompt, así que no hay campo donde poner el texto del agente.
+La forma Markdown no compone nada: el instalador genera el `preset.yml` con el frontmatter y un `agent.cordis.yml` cuya persona es el cuerpo del archivo, porque el catálogo del producto no guarda ningún prompt ([`packages/faberloom/agents/src/spec.ts`](../../packages/faberloom/agents/src/spec.ts)).
 
-El registro durable de agentes (`faberloom_agents`) guarda `name`, `responsibility`, `spaceId`, `skills`, `tools`, `subagents`, `provider`, `model`, `webAccess`, `mwtMcp`, `sicopMcp`, `mailConnectionIds`, `policy`, `lessons`, `active` y su revisión y marcas de tiempo, y no tiene ningún campo de prompt ([`packages/faberloom/agents/src/spec.ts`](../../packages/faberloom/agents/src/spec.ts) y [`.../types.ts`](../../packages/faberloom/agents/src/types.ts)).
+El registro durable de agentes (`faberloom_agents`) guarda `name`, `responsibility`, `spaceId`, `skills`, `tools`, `subagents`, `provider`, `model`, `webAccess`, `mwtMcp`, `sicopMcp`, `mailConnectionIds`, `policy`, `lessons`, `active` y su revisión y marcas de tiempo, y no tiene ningún campo de prompt ([`packages/faberloom/agents/src/types.ts`](../../packages/faberloom/agents/src/types.ts)).
 
-Por eso la convención que propone esta KB es un archivo Markdown por agente, `agents/<nombre>.md`, con el nombre del archivo como nombre del agente y este frontmatter.
+La convención de esta KB es un archivo Markdown por agente, `agents/<nombre>.md`, con el nombre del archivo como nombre del agente y este frontmatter.
 
 ```yaml
 ---
@@ -93,11 +149,11 @@ model: deepseek-flash               # opcional; modelo dentro del proveedor
 El cuerpo del archivo es el prompt del agente.
 ```
 
-El validador acepta además la forma de directorio `agents/<nombre>/AGENT.md` con el mismo frontmatter, por si la implementación reutiliza el escaneo de carpetas que ya usan las skills; las dos formas no se mezclan para un mismo agente.
+El validador acepta también la forma de carpeta `agents/<nombre>/AGENT.md` con el mismo frontmatter; el instalador no la lee, así que una KB que quiera instalar ese agente usa la carpeta de preset o el Markdown suelto.
 
 Los campos del frontmatter están elegidos para que se puedan copiar al registro sin traducción: `name`, `description`, `responsibility`, `skills`, `tools`, `provider` y `model` son campos o entradas directas de `AgentInput`.
 
-Lo que no define esta propuesta es el prompt: como el registro no lo guarda, un instalador de agentes tendrá que decidir dónde lo escribe (un campo nuevo del registro, o el prompt de la composición del preset); hasta que exista esa decisión, el cuerpo del archivo es el prompt declarado y el validador comprueba solo que no esté vacío.
+El prompt de un agente Markdown es el cuerpo del archivo, y el instalador lo escribe como persona del preset; un agente que necesite un juego de herramientas propio se entrega como carpeta de preset, porque el instalador no inventa una composición.
 
 ### Las rutinas y los flujos: formato del producto, transporte propuesto
 
@@ -133,7 +189,7 @@ El panel muestra la raíz resuelta antes de escribir nada y luego informa por ca
 
 El modelo tiene el mismo gesto con la herramienta `install_skill`, que cuando no se le dice el destino pregunta al usuario exactamente esas dos opciones ([`packages/skill/skill-install/src/index.ts`](../../packages/skill/skill-install/src/index.ts)).
 
-Para instalar la KB de contabilidad se elige `<KB>/skills` y el destino Global: es una carpeta de carpetas de skill, con cuatro candidatas válidas y ninguna rechazada.
+Para instalar la KB de contabilidad se elige su raíz (o su `skills/`) y el destino Global: la raíz aporta las cuatro skills de `skills/` y los tres agentes de `agents/`, y los agentes se escriben siempre en el home del usuario.
 
 | Destino | Raíz resuelta | Quién lo ve |
 |---|---|---|
@@ -159,7 +215,7 @@ Una skill instalada en Global queda en la raíz de usuario `$DSH_HOME/skills`, q
 | El informe dice `skipped` y el archivo no cambió | Ya existe una skill con ese nombre y no se marcó «Reemplazar si ya existe» | Marcar la casilla, o desinstalar la anterior desde el panel |
 | Los acentos salen como `Ã³` o `?` | El archivo se reescribió y se guardó con otra codificación (Latin-1, ANSI) | Reescribirlo en UTF-8 sin BOM desde el editor, sin pasar por un `Set-Content` que recodifique |
 | El panel rechaza la instalación con `outside-workspace` | El origen elegido está fuera de la raíz del espacio de trabajo de la sesión | Mover o copiar la carpeta dentro del espacio de trabajo, o instalar desde una ruta que esté dentro |
-| Los agentes de `agents/` no aparecen tras instalar | El instalador solo detecta `SKILL.md`: los agentes son la parte propuesta de esta KB | Instalar las skills con el diálogo y dar de alta los agentes con el panel, hasta que exista el instalador de agentes |
+| Los agentes de `agents/` no aparecen tras instalar | El agente no tiene `preset.yml` legible ni un Markdown con `name` y `description` | Añadir el descriptor, o reescribir el archivo Markdown con frontmatter; el instalador reporta el motivo del rechazo en el resultado |
 
 ## Validador
 
@@ -179,8 +235,8 @@ No es un analizador YAML completo: no valida el dialecto entero, solo las claves
 
 ## Propuestas
 
-1. **`agents/<nombre>.md` con el frontmatter de la tabla anterior y el cuerpo como prompt.** Es la única forma que permite transportar un agente entero en un archivo sin traer una composición de plugins; el validador ya la comprueba. Motivo: hoy no existe ninguna ruta que lea agentes de una carpeta elegida.
+1. **`agents/<nombre>/preset.yml` y `agents/<nombre>.md` como las dos formas de agente instalables.** La carpeta de preset trae su propia composición; el Markdown trae el prompt y el instalador lo convierte en persona. Motivo: el catálogo no guarda prompt, y el preset es lo único que el descubrimiento de presets lee.
 2. **`kb.json` como manifiesto.** Nombra el contenido para que la instalación pueda informar de lo que falta antes de copiar nada y para que el validador detecte referencias colgadas. Motivo: el producto hoy no lee ningún manifiesto de la carpeta.
 3. **`routines/` y `workflows/` en JSON con los campos del registro, como formato de transporte.** Motivo: los registros durables son la autoridad y no hay importador desde carpeta; el ejemplo usa un identificador de agente entre `<>` porque la KB no puede conocer el identificador que el catálogo asignará.
 4. **`context/` como texto portable y `AGENTS.md` como reglas de la KB.** Motivo: el módulo de Contexto importa un registro exportado, no una carpeta, y las instrucciones del proyecto se leen por la cadena de `AGENTS.md` cuando la KB es el directorio de trabajo.
-5. **El instalador de la KB no copia `AGENTS.md`, `context/`, `routines/` ni `workflows/` a ningún sitio.** Es una decisión pendiente, no un comportamiento: mientras no exista, la instalación de la KB mueve skills y el resto lo da de alta una persona.
+5. **El instalador de la KB no copia `AGENTS.md`, `context/`, `routines/` ni `workflows/` a ningún sitio.** Instala skills y agentes; el resto lo da de alta una persona o llega por el espejo desde el otro lado, que es quien lo escribe en los registros del producto.
