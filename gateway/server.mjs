@@ -1305,6 +1305,9 @@ function startInstance(user, memory) {
         ...(cfg.mcpGatewayKey ? { MWT_MCP_GATEWAY_KEY: cfg.mcpGatewayKey } : {}),
         ...(cfg.faberloomGatewayKey ? { FABERLOOM_GATEWAY_KEY: cfg.faberloomGatewayKey } : {}),
         ...(cfg.mirrorKey ? { FABERLOOM_MIRROR_KEY: cfg.mirrorKey } : {}),
+        // Este proceso ES el lado servido: el espejo lo reporta en su documento
+        // y en su documento de estado.
+        FABERLOOM_MIRROR_PLATFORM: 'web',
         // El servicio de compartir llama a la consola como el propio usuario: el
         // parche lee estos dos nombres como `!!js process.env.*`.
         CONSOLA_API_BASE: cfg.consolaApi,
