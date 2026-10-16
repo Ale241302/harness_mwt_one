@@ -305,6 +305,7 @@
       "@deepseek-ai/dsh-faberloom-model-catalog": ["./packages/faberloom/model-catalog/src"],
       "@deepseek-ai/dsh-faberloom-mcp-registry": ["./packages/faberloom/mcp-registry/src"],
       "@deepseek-ai/dsh-faberloom-mirror": ["./packages/faberloom/mirror/src"],
+      "@deepseek-ai/dsh-faberloom-harness-projection": ["./packages/faberloom/harness-projection/src"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

@@ -51,7 +51,7 @@ Workspace 或 Space 就是一份目录。本包写入该目录的 harness：该�
 
 ### 用法从何而来
 
-投影通过 `ctx.storageDomain.get(name)` 读取产品域，也就是 `faberloom-backup` 与 `faberloom-mirror` 所用的通用 `(domain, table, key)` 遍历。这里选择该遍历而非 `open(spec)`：投影面向的是领域而不是身份，而产品服务把每一次读取都挡在身份之后，因此它直接读取持久记录。本进程未打开的域会被列入 `unreadableDomains`，绝不读作空领域，因为缺失的域并不是空的域。
+投影通过 `ctx.storageDomain.get(name)` 读取产品域，也就是 `faberloom-backup` 与 `faberloom-mirror` 所用的通用 `(domain, table, key)` 遍历。这里选择该遍历而非 `open(spec)`：投影面向的是领域而不是身份，而产品服务把每一次读取都挡在身份之后，因此它直接读取持久记录。本进程未打开的域 —— 或者它所拒绝的某一张已声明的表 —— 会被列入 `unreadableDomains`，绝不读作空领域，因为缺失的域并不是空的域。
 
 | 生成的集合 | 产品记录 | 领域字段 |
 |---|---|---|
@@ -96,10 +96,11 @@ Workspace 或 Space 就是一份目录。本包写入该目录的 harness：该�
 <a id="known-limitations-and-deferred-work"></a>
 
 - **技能来自该领域智能体的声明，而不是加载历史。** 今天没有任何产品存储记录某个会话加载了哪项技能：技能注册表持有目录（`.dsh/skills` 根与用户自己的技能），会话日志持有 `skill` 工具调用或 `skill-invocation` 消息，但两者都不是投影所需的按领域寻址。因此投影携带该领域智能体声明的技能，并把没有提供者能解析的声明名报告在 `unresolvedSkills` 里。按领域的技能使用存储属于 TODO；那才是把这个集合变成加载历史的改动。
-- **智能体来自该领域登记的对象，而不是调用历史。** `faberloom_agents.agents` 通过 `spaceId` 携带领域，而 Space 的负责智能体正是会话组合自动安装的那一个；`selections` 与 `outcomes` 按智能体记录模型使用却不带领域，因此今天无法按领域过滤出调用历史。
+- **智能体来自该领域登记的对象，而不是调用历史。** `faberloom_agents.agents` 通过 `spaceId` 携带领域，而 Space 的负责智能体正是会话组合自动安装的那一个；`selections` 与 `outcomes` 按智能体记录模型使用却不带领域，因此今天无法按领域过滤出调用历史。`@Name` 提及针对整个目录库解析（`faberloomSessionAgent` 读取 `listAgents()`），因此仅通过该目录中提及被调用的智能体不属于本领域的集合。
 - **投影只走拉取。** 没有任何东西订阅 `domain.changed`；由调用方决定何时 `refresh`（保存 Space、打开 Workspace）。缺少该调用方时，目录会停留在上一次运行的投影。
 - **被多个 Space 镜像的 Workspace 会投影最旧的那个 Space。** `faberloom_view` 以同一方式解析这一对，因此两者指名同一条记录；想要让人选择的部署应改为暴露该冲突。
 - **写入需要领域的目录存在。** `project` 写入它收到的路径，并在其中创建所需的目录；调用方传入的若不是已注册的 Workspace 目录，就会在该路径里得到这份投影。
+- **`refresh` 把缺失的指称报告为没有目录。** 本进程未打开的 spaces 域所不持有的 Space 同样没有目录，因此 `refresh` 返回 `undefined`，而不是把异常抛回刚刚保存该 Space 的调用方；`project` 与 `readUsage` 则会响亮地拒绝它。
 
 未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
 

@@ -26,12 +26,13 @@ import z from '@deepseek-ai/schemastery'
 // ctx.skills and ctx.workspaceRegistry services read through ctx.get.
 import type {} from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-skill'
-import { planProjection } from './render.ts'
+import { HARNESS_PROJECTION_VERSION, planProjection } from './render.ts'
 import { readScopeUsage, resolveScopeSpace, type HarnessDomainSource, type HarnessSkillLookup } from './usage.ts'
 import type { HarnessProjectionReport, HarnessScope, HarnessUsage } from './types.ts'
 
 export type * from './types.ts'
-export { HARNESS_PROJECTION_DOMAINS, HARNESS_SKILL_NAME, readScopeUsage, resolveScopeSpace } from './usage.ts'
+export { HARNESS_PROJECTION_VERSION } from './render.ts'
+export { HARNESS_SKILL_NAME, readScopeUsage, resolveScopeSpace } from './usage.ts'
 export type { HarnessDomainSource, HarnessDomainView, HarnessSkillLookup, HarnessSpaceView, HarnessScopeSpace, HarnessTableView } from './usage.ts'
 export { planProjection, renderAgentDocument, renderAgentsIndex, renderInstructions, renderManifest, renderSettings, renderSkillDocument } from './render.ts'
 export type { HarnessPlanInput, HarnessProjectionFile, HarnessProjectionPlan } from './render.ts'
@@ -41,9 +42,6 @@ declare module '@deepseek-ai/cordis' {
     faberloomHarnessProjection: FaberLoomHarnessProjection
   }
 }
-
-/** Projection format version; bump only on an incompatible manifest change. */
-export const HARNESS_PROJECTION_VERSION = 1
 
 /** Manifest path inside a scope directory, relative to that directory. */
 export const MANIFEST_PATH = '.faberloom/harness.json'
@@ -192,10 +190,10 @@ export class FaberLoomHarnessProjection extends Service {
    * Resolve one scope's real directory and project it. It returns undefined
    * instead of writing when the scope has no registered folder: the projection
    * is disabled, the workspace registry is not mounted, the Workspace is not
-   * registered, or the Space mirrors no Workspace.
+   * registered, the Space mirrors no Workspace, or the open spaces domain does
+   * not hold the named Space.
    * @param scope - the scope to project.
    * @returns the projection report, or undefined when the scope has no folder.
-   * @throws when a Space scope names a Space the open spaces domain does not hold.
    */
   async refresh(scope: HarnessScope): Promise<HarnessProjectionReport | undefined> {
     if (this.config.enabled !== true) return undefined
@@ -240,7 +238,7 @@ export class FaberLoomHarnessProjection extends Service {
 
   /** The skill registry, or undefined when no provider is mounted. */
   private skillLookup(): HarnessSkillLookup | undefined {
-    return this.ctx.get('skills') as HarnessSkillLookup | undefined
+    return this.ctx.get('skills')
   }
 
   /** The real directory of one scope, or undefined when it has none. */

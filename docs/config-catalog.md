@@ -931,7 +931,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/harness-projection/src/index.ts:58`](../packages/faberloom/harness-projection/src/index.ts)
+Source: [`packages/faberloom/harness-projection/src/index.ts:56`](../packages/faberloom/harness-projection/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-inbound"></a>
 

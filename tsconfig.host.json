@@ -236,6 +236,7 @@
     { "path": "./packages/faberloom/access" },
     { "path": "./packages/faberloom/backup" },
     { "path": "./packages/faberloom/mirror" },
+    { "path": "./packages/faberloom/harness-projection" },
     { "path": "./packages/faberloom/tool-faberloom" },
     { "path": "./packages/faberloom/view" },
     { "path": "./packages/faberloom/connections" },

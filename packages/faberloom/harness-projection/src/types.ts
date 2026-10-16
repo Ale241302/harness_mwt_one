@@ -119,7 +119,10 @@ export interface HarnessUsage {
   readonly memory: readonly HarnessMemoryUsage[]
   /** Curated context entries of the Space, ordered by title then id. */
   readonly context: readonly HarnessContextUsage[]
-  /** Product domains this process does not hold open, in traversal order. */
+  /**
+   * Locations this process does not hold open, in traversal order: a product
+   * domain name, or `domain.table` when only one declared table is unreachable.
+   */
   readonly unreadableDomains: readonly string[]
 }
 

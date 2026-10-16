@@ -19,16 +19,6 @@ import type {
   HarnessWorkflowUsage,
 } from './types.ts'
 
-/** The product domains one projection reads, in traversal order. */
-export const HARNESS_PROJECTION_DOMAINS: readonly string[] = [
-  'faberloom_spaces',
-  'faberloom_agents',
-  'faberloom_workflows',
-  'faberloom_routines',
-  'faberloom_memory',
-  'faberloom_context',
-]
-
 /** A skill name the shipped skill grammar accepts. */
 export const HARNESS_SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 

@@ -27,6 +27,9 @@ const MAX_SLUG_LENGTH = 60
 /** Slug used when a display name carries no usable character. */
 const FALLBACK_SLUG = 'agente'
 
+/** Projection format version; bump only on an incompatible manifest change. */
+export const HARNESS_PROJECTION_VERSION = 1
+
 /** One file of a projection, addressed relative to the scope directory. */
 export interface HarnessProjectionFile {
   /** Path relative to the scope directory, with `/` separators. */
@@ -312,7 +315,7 @@ export function planProjection(input: HarnessPlanInput): HarnessProjectionPlan {
   return {
     files,
     manifest: {
-      version: 1,
+      version: HARNESS_PROJECTION_VERSION,
       scope: { kind: scope.kind, id: String(scope.id), title: oneLine(scope.title) },
       generatedAt,
       files: files.map(file => file.path),

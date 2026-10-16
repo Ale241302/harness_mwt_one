@@ -51,7 +51,7 @@ A scope is `{ kind: 'workspace', id, title }` or `{ kind: 'space', id, title }`.
 
 ### Where the usage comes from
 
-The projection reads the product domains through `ctx.storageDomain.get(name)`, the generic `(domain, table, key)` traversal `faberloom-backup` and `faberloom-mirror` use. That traversal is the choice here over `open(spec)`: the projection addresses a scope rather than an actor, and the product services gate every read behind one, so it reads the durable records directly. A domain this process does not hold open is named in `unreadableDomains` and never read as an empty scope, because an absent domain is not an empty one.
+The projection reads the product domains through `ctx.storageDomain.get(name)`, the generic `(domain, table, key)` traversal `faberloom-backup` and `faberloom-mirror` use. That traversal is the choice here over `open(spec)`: the projection addresses a scope rather than an actor, and the product services gate every read behind one, so it reads the durable records directly. A domain this process does not hold open — or a single declared table it refuses — is named in `unreadableDomains` and never read as an empty scope, because an absent domain is not an empty one.
 
 | Generated set | Product record | Scope field |
 |---|---|---|
@@ -96,10 +96,11 @@ A projection writes files and never touches a live request. In a session whose f
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Skills are the ones the scope's agents declare, not a load history.** No product store records which skill a session loaded today: the skill registry holds the catalogs (`.dsh/skills` roots and the owner's own skills) and the session log holds a `skill` tool call or a `skill-invocation` message, but neither is scope-addressed the way the projection needs. The projection therefore carries the declared skills of the scope's agents, and reports a declared name that no provider resolves in `unresolvedSkills`. A per-scope skill-use store is TODO; that is the change that turns this set into a load history.
-- **Agents are the ones the scope registers, not a call history.** `faberloom_agents.agents` carries the scope in `spaceId`, and the Space's responsible agent is the one the session composition installs automatically; `selections` and `outcomes` record model use per agent with no scope, so no call history can be filtered by scope today.
+- **Agents are the ones the scope registers, not a call history.** `faberloom_agents.agents` carries the scope in `spaceId`, and the Space's responsible agent is the one the session composition installs automatically; `selections` and `outcomes` record model use per agent with no scope, so no call history can be filtered by scope today. An `@Name` mention resolves against the whole catalog (`faberloomSessionAgent` reads `listAgents()`), so an agent invoked only by mention from this folder is not part of the scope's set.
 - **The projection is pull-only.** Nothing subscribes to `domain/changed`; a caller decides when to `refresh` (a Space save, a Workspace open). Without that caller, a folder keeps the projection of its last run.
 - **A Workspace mirrored by several Spaces projects the oldest Space.** `faberloom_view` resolves that pair the same way, so both name one record; a deployment that wants choosing surfaces the conflict instead.
 - **Writing needs the scope's folder to exist.** `project` writes into the path it is given and creates the directories it needs inside it; a caller that passes a path that is not a registered Workspace folder gets the projection inside that path.
+- **`refresh` reports a missing referent as no folder.** A Space the open spaces domain does not hold has no folder either, so `refresh` returns `undefined` instead of throwing into the caller that just saved the Space; `project` and `readUsage` refuse it loudly.
 
 No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
 
