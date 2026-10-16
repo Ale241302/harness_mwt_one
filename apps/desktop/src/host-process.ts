@@ -2,6 +2,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
+import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import {
@@ -100,12 +101,30 @@ export class DesktopHostProcess {
     private readonly inspectPort?: number,
     private readonly environment: NodeJS.ProcessEnv = process.env,
     private readonly onFailure?: (error: Error) => void,
+    private readonly logPath?: string,
   ) {}
+
+  /**
+   * Append the child's own diagnostics to the desktop log, when one is configured.
+   * The host composes every row of the product, so its stderr is the only place a
+   * row that failed to load names itself; without this a boot that loses a whole
+   * capability (a picker, a controller) leaves no trace on disk.
+   * @param text - the bytes the child wrote.
+   */
+  private log(text: string): void {
+    if (this.logPath === undefined) return
+    try {
+      appendFileSync(this.logPath, text, 'utf8')
+    } catch {
+      // A log that cannot be written must not take the boot down with it.
+    }
+  }
 
   /** Start the child once and resolve only after its complete composition is active. */
   async start(): Promise<DesktopHostReady> {
     if (this.child !== undefined) return this.readyPromise
     const entry = join(this.runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
+    this.log(`--- ${new Date().toISOString()} ${this.executable} ${entry}\n`)
     const child = spawn(this.executable, [
       ...(this.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(this.inspectPort)}`]),
       entry,
@@ -132,7 +151,10 @@ export class DesktopHostProcess {
     this.requestPipe = requestPipe
     this.responsePipe = responsePipe
     child.stderr?.setEncoding('utf8')
-    child.stderr?.on('data', (chunk: string) => { this.stderr += chunk })
+    child.stderr?.on('data', (chunk: string) => {
+      this.stderr += chunk
+      this.log(chunk)
+    })
     child.stdout?.pipe(process.stdout)
     responsePipe.on('data', (chunk: Buffer) => { this.acceptResponseBytes(chunk) })
     responsePipe.once('end', () => {

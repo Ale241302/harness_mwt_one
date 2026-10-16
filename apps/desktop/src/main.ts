@@ -278,7 +278,8 @@ async function main(): Promise<void> {
     // injects its own values; rows whose `!!js process.env.*` reads gate on a name
     // (the product MCP keys, the mirror credential) then resolve on a desktop too.
     const host = new DesktopHostProcess(resources.node, development ?? resources.dsh, activeProject,
-      hostInspectPort, { ...readHomeEnv(home), ...process.env, DSH_HOME: home, DSH_IDENTITY_PATCH: identityPatchPath }, onFailure)
+      hostInspectPort, { ...readHomeEnv(home), ...process.env, DSH_HOME: home, DSH_IDENTITY_PATCH: identityPatchPath }, onFailure,
+      join(home, 'desktop-host.log'))
     return {
       start: () => host.start(),
       stop: () => host.stop(),
@@ -678,7 +679,12 @@ async function main(): Promise<void> {
     await navigateMain(launch.url).catch(async (error: unknown) => { await showEmergencyError(error) })
   }
   // Window lifecycle callbacks run while backend startup is pending.
+  // Los dos `disable` son necesarios: `quitting` se pone a true en el manejador
+  // de cierre y `mainWindow` se asigna dentro de la funcion que crea la ventana,
+  // asi que el analisis de flujo no ve ninguna de las dos asignaciones.
+  /* oxlint-disable-next-line typescript/no-unnecessary-condition -- asignada fuera del alcance analizado */
   if (quitting) return
+  /* oxlint-disable-next-line typescript/no-unnecessary-condition -- asignada dentro del creador de la ventana */
   if (mainWindow !== undefined && development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
