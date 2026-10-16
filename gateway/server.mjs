@@ -17,6 +17,7 @@ import express from 'express'
 import httpProxy from 'http-proxy'
 
 import { installMirrorRoute } from './mirror-route.mjs'
+import { repairWorkspaceOrder } from './workspace-registry.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -1257,6 +1258,17 @@ function startInstance(user, memory) {
   fs.mkdirSync(home, { recursive: true })
   writeConsolaTokenFile(user)
   ensureWorkspaceDirs(home)
+  // El registro de Workspaces se niega a cargar si un registro quedó fuera de
+  // su orden, y con él caen el controlador de sesiones y el del selector de
+  // carpetas. Un registro así solo puede venir de una escritura ajena (el
+  // espejo transfería este dominio desde un escritorio), así que el orden se
+  // repara antes de arrancar en vez de dejar al dueño sin producto.
+  const repaired = repairWorkspaceOrder(home)
+  if (repaired.added.length > 0) {
+    console.error(`[gateway] orden de Workspaces de ${home} reparado: ${repaired.added.length} registro(s) fuera del orden (copia: ${repaired.backup})`)
+  } else if (repaired.unreadable !== undefined) {
+    console.error(`[gateway] no se pudo leer el registro de Workspaces de ${home}: ${repaired.unreadable}`)
+  }
   const patchFile = writeUserPatch(home, user, memory)
   writeUserInstructions(home)
   writeUserPresets(home)
