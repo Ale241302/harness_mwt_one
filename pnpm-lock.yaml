@@ -1797,6 +1797,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-handlers':
         specifier: workspace:^
         version: link:../../faberloom/handlers
+      '@deepseek-ai/dsh-faberloom-harness-projection':
+        specifier: workspace:^
+        version: link:../../faberloom/harness-projection
       '@deepseek-ai/dsh-faberloom-inbound':
         specifier: workspace:^
         version: link:../../faberloom/inbound
@@ -7440,6 +7443,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-execution':
         specifier: workspace:^
         version: link:../execution
+      '@deepseek-ai/dsh-faberloom-harness-projection':
+        specifier: workspace:^
+        version: link:../harness-projection
       '@deepseek-ai/dsh-faberloom-inbound':
         specifier: workspace:^
         version: link:../inbound
