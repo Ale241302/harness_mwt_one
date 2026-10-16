@@ -1,0 +1,44 @@
+{
+  "name": "Cierre mensual asistido",
+  "definition": {
+    "intent": "Dejar el periodo contable cerrado cada mes con las comprobaciones hechas y los pendientes repartidos entre el equipo.",
+    "triggers": [
+      {
+        "kind": "recurrence",
+        "match": "every:1d",
+        "businessDays": true
+      }
+    ],
+    "steps": [
+      {
+        "id": "cierre-corte",
+        "instruction": "Si hoy no es el primer día hábil del mes, termina sin hacer nada y dilo. Si lo es, fija el periodo que acaba de terminar y su fecha de corte, y confirma el alcance (sociedades, cuentas bancarias y almacenes).",
+        "handler": "agent",
+        "dependsOn": []
+      },
+      {
+        "id": "cierre-comprobaciones",
+        "instruction": "Aplica la skill cierre-mensual al periodo: corte, conciliaciones bancarias, cuadre de deudores y acreedores, IVA, existencias y periodificaciones, amortizaciones y cuentas de tránsito. Devuelve una línea por comprobación con su estado y, cuando haya diferencia, el importe exacto.",
+        "handler": "agent",
+        "dependsOn": ["cierre-corte"]
+      },
+      {
+        "id": "cierre-pendientes",
+        "instruction": "Por cada comprobación pendiente o con diferencia, crea una tarea en el banco de trabajo con faberloom_board_create: título con el pendiente y el periodo, resumen de una frase completa, y evidencia con referencias legibles (cuenta, documento, importe). No uses volcados de herramienta ni identificadores internos.",
+        "handler": "agent",
+        "dependsOn": ["cierre-comprobaciones"],
+        "effect": true
+      },
+      {
+        "id": "cierre-aprobacion",
+        "instruction": "Espera la aprobación del contable jefe antes de dar el cierre por terminado. Si no llega, el cierre queda abierto con sus tareas pendientes.",
+        "handler": "wait",
+        "dependsOn": ["cierre-pendientes"],
+        "waitFor": "aprobacion"
+      }
+    ],
+    "expectedResult": "El periodo queda cerrado con todas sus comprobaciones hechas, o con los pendientes repartidos en tareas con dueño.",
+    "permissions": [],
+    "failurePolicy": "review"
+  }
+}

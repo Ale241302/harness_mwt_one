@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "name": "kb-contabilidad",
+  "displayName": "KB de Contabilidad",
+  "version": "1.0.0",
+  "author": "Álvaro <contacto@ejemplo.invalid>",
+  "description": "Carpeta KB portable con las skills, los agentes, las rutinas, los flujos y el contexto que un equipo de contabilidad instala en FaberLoom.",
+  "content": {
+    "skills": [
+      "asientos-contables",
+      "cierre-mensual",
+      "conciliacion-bancaria",
+      "iva-declaraciones"
+    ],
+    "agents": [
+      "analista-fiscal",
+      "auditor-interno",
+      "contable-jefe"
+    ],
+    "routines": [
+      "cierre-mensual",
+      "conciliacion-semanal"
+    ],
+    "workflows": [
+      "factura-a-asiento"
+    ],
+    "context": [
+      "politica-contable.md"
+    ]
+  }
+}

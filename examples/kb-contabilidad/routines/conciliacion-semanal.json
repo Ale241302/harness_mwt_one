@@ -1,0 +1,42 @@
+{
+  "name": "Conciliación bancaria semanal",
+  "definition": {
+    "intent": "Mantener las cuentas bancarias conciliadas cada semana, de modo que el cierre de mes no arrastre diferencias antiguas.",
+    "triggers": [
+      {
+        "kind": "recurrence",
+        "match": "every:7d"
+      }
+    ],
+    "steps": [
+      {
+        "id": "conciliar-preparar",
+        "instruction": "Aplica la skill conciliacion-bancaria a la semana cerrada y a todas las cuentas del alcance: empareja movimientos, clasifica las diferencias y calcula los dos saldos conciliados de cada cuenta.",
+        "handler": "agent",
+        "dependsOn": []
+      },
+      {
+        "id": "conciliar-reportar",
+        "instruction": "Resume el resultado por cuenta: saldo del libro, saldo del extracto, los dos saldos conciliados y el recuento de movimientos emparejados. Si los dos saldos conciliados no coinciden, dilo con la cifra exacta de la diferencia y no cierres la cuenta.",
+        "handler": "agent",
+        "dependsOn": ["conciliar-preparar"]
+      },
+      {
+        "id": "conciliar-cargos",
+        "instruction": "Propón el asiento de los cargos y abonos del banco que corresponden a la semana y deja la propuesta para revisión: no la registres.",
+        "handler": "agent",
+        "dependsOn": ["conciliar-reportar"]
+      },
+      {
+        "id": "conciliar-aprobacion",
+        "instruction": "Espera la aprobación del contable jefe antes de dar las cuentas por conciliadas.",
+        "handler": "wait",
+        "dependsOn": ["conciliar-cargos"],
+        "waitFor": "aprobacion"
+      }
+    ],
+    "expectedResult": "Cada cuenta bancaria del alcance queda conciliada con su detalle de diferencias, o marcada con la diferencia exacta que hay que resolver.",
+    "permissions": [],
+    "failurePolicy": "review"
+  }
+}
