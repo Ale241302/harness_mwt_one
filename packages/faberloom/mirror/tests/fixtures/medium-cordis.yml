@@ -1,0 +1,26 @@
+# A test-only composition for the mirror over a real medium: the storage hub,
+# the JSON backend rooted at the home's own `storages` directory, the domain
+# form, and the mirror row. No product service is mounted, so every domain is
+# as lazy as it is in a freshly booted home: nothing has opened one, and the
+# records live on the medium the mirror has to read.
+- name: '@deepseek-ai/dsh-storage'
+
+- name: '@deepseek-ai/dsh-storage-json'
+  config:
+    root: !!js process.env.MIRROR_FAKE_STORAGES
+
+- name: '@deepseek-ai/dsh-storage-domain'
+  config:
+    backend: json
+
+- name: '@deepseek-ai/dsh-faberloom-mirror'
+  config:
+    enabled: true
+    gatewayUrl: !!js process.env.MIRROR_FAKE_GATEWAY
+    ownerId: compras2@sondelsa.com
+    consoleToken: consola-token-1
+    mirrorKey: mirror-key-1
+    storagesRoot: !!js process.env.MIRROR_FAKE_STORAGES
+    skillsRoot: !!js process.env.MIRROR_FAKE_SKILLS
+    intervalMs: 10000000
+    debounceMs: 10

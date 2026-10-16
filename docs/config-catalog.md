@@ -910,6 +910,29 @@ export interface Config {
 
 Source: [`packages/faberloom/execution/src/index.ts:33`](../packages/faberloom/execution/src/index.ts)
 
+<a id="deepseek-aidsh-faberloom-harness-projection"></a>
+
+## `@deepseek-ai/dsh-faberloom-harness-projection`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Deployment-supplied wiring of the harness projection. */
+export interface Config {
+  /**
+   * Whether {@link FaberLoomHarnessProjection.refresh} writes a projection at
+   * all. Absent means off, so a deployment that does not want folder digests
+   * does not get them; the explicit `project`, `readUsage`, and `clean` calls
+   * always act.
+   */
+  enabled?: boolean
+  /** Most entries one generated list renders; defaults to {@link DEFAULT_MAX_LIST_ENTRIES}. */
+  maxListEntries?: number
+}
+```
+
+Source: [`packages/faberloom/harness-projection/src/index.ts:58`](../packages/faberloom/harness-projection/src/index.ts)
+
 <a id="deepseek-aidsh-faberloom-inbound"></a>
 
 ## `@deepseek-ai/dsh-faberloom-inbound`
@@ -1006,6 +1029,12 @@ export interface Config {
   port?: number
   /** Largest request body accepted, in bytes. */
   maxBodyBytes?: number
+  /**
+   * Internal credential the deployment's gateway presents when it acts for the
+   * owner through the mirror route. Empty disables that path, so no other caller
+   * can borrow it.
+   */
+  mirrorKey?: string
 }
 ```
 
@@ -1032,8 +1061,17 @@ export interface Config {
   consoleBase?: string
   /** Internal credential the owner's product MCP server accepts on its socket. */
   mirrorKey?: string
-  /** Owner skills root; defaults to `$DSH_HOME/skills`. */
+  /** Owner skills root; defaults to `<home>/skills`. */
   skillsRoot?: string
+  /**
+   * Root holding the product's `single`-layout domain documents; defaults to
+   * `<home>/storages`, where the JSON backend keeps them. A deployment that
+   * routes its domains to another medium names it here, and the mirror then
+   * reaches only the domains this process holds open.
+   */
+  storagesRoot?: string
+  /** Which side this process is, as the transfer document reports it. */
+  platform?: 'web' | 'desktop'
   /** Milliseconds between two cycles. */
   intervalMs?: number
   /** Milliseconds a local change waits before it is pushed. */
@@ -1043,7 +1081,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/mirror/src/index.ts:69`](../packages/faberloom/mirror/src/index.ts)
+Source: [`packages/faberloom/mirror/src/index.ts:75`](../packages/faberloom/mirror/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-model-catalog"></a>
 

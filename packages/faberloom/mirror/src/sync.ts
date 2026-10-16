@@ -19,6 +19,12 @@ import type { FaberLoomMirrorDocument, FaberLoomMirrorRow, FaberLoomMirrorRowCha
 export interface MirrorDomainSource {
   /** One open domain, or undefined when this process did not mount it. */
   get(name: string): MirrorLiveDomain | undefined
+  /**
+   * Format version stamped on one domain's medium, when this source can read it.
+   * The peer needs it to create a document this side holds rows for; a source
+   * without a medium (a pure in-memory fake) omits it.
+   */
+  versionOf?(name: string): number | undefined
 }
 
 /** One open domain as the traversal reaches it. */
@@ -69,7 +75,8 @@ export function readMirrorDocument(source: MirrorDomainSource, platform: 'web' |
       for (const [key, value] of table.entries()) rows[key] = { deleted: false, value }
       domainTables[tableName] = rows
     }
-    domains[domainName] = { tables: domainTables }
+    const version = source.versionOf?.(domainName)
+    domains[domainName] = { ...version === undefined ? {} : { version }, tables: domainTables }
   }
   return { document: { version: FABERLOOM_MIRROR_FORMAT_VERSION, platform, domains, skills: {} }, skipped }
 }

@@ -16,6 +16,13 @@ export interface FaberLoomMirrorRow {
 
 /** One domain of a transfer document: declared tables, each keyed by record key. */
 export interface FaberLoomMirrorDomain {
+  /**
+   * Format version the emitting side's medium stamps for this domain. The
+   * receiver needs it to create a document it does not hold yet, because only
+   * the medium knows the version its owner validates. Absent when the emitting
+   * side had no medium to read it from.
+   */
+  readonly version?: number
   /** Declared table name to record key to row. */
   readonly tables: Readonly<Record<string, Readonly<Record<string, FaberLoomMirrorRow>>>>
 }

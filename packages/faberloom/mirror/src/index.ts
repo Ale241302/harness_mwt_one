@@ -16,7 +16,7 @@
  */
 
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
 import z from '@deepseek-ai/schemastery'
@@ -30,6 +30,7 @@ import {
   hashRow,
   hashSkill,
 } from './document.ts'
+import { MirrorHomeStore } from './store.ts'
 import { applyMirrorDocument, readMirrorDocument, type MirrorDomainSource } from './sync.ts'
 import type {
   FaberLoomMirrorDocument,
@@ -47,6 +48,8 @@ export {
   hashRow,
   hashSkill,
 } from './document.ts'
+export { MirrorHomeStore } from './store.ts'
+export type { MirrorHomeStoreOptions } from './store.ts'
 export { applyMirrorDocument, readMirrorDocument } from './sync.ts'
 export type { MirrorDomainSource, MirrorLiveDomain } from './sync.ts'
 
@@ -65,6 +68,9 @@ export const DEFAULT_MIRROR_DEBOUNCE_MS = 3_000
 /** Longest one mirror request may take, in milliseconds. */
 export const DEFAULT_MIRROR_TIMEOUT_MS = 30_000
 
+/** Name of the status document the mirror keeps in its home. */
+export const MIRROR_STATUS_FILE = 'mirror-status.json'
+
 /** Deployment-supplied wiring of the desktop side of the mirror. */
 export interface Config {
   /** Whether the mirror runs at all. It is off when absent. */
@@ -79,8 +85,17 @@ export interface Config {
   consoleBase?: string
   /** Internal credential the owner's product MCP server accepts on its socket. */
   mirrorKey?: string
-  /** Owner skills root; defaults to `$DSH_HOME/skills`. */
+  /** Owner skills root; defaults to `<home>/skills`. */
   skillsRoot?: string
+  /**
+   * Root holding the product's `single`-layout domain documents; defaults to
+   * `<home>/storages`, where the JSON backend keeps them. A deployment that
+   * routes its domains to another medium names it here, and the mirror then
+   * reaches only the domains this process holds open.
+   */
+  storagesRoot?: string
+  /** Which side this process is, as the transfer document reports it. */
+  platform?: 'web' | 'desktop'
   /** Milliseconds between two cycles. */
   intervalMs?: number
   /** Milliseconds a local change waits before it is pushed. */
@@ -98,6 +113,8 @@ export const Config: z<Config> = z.object({
   consoleBase: z.string(),
   mirrorKey: z.string(),
   skillsRoot: z.string(),
+  storagesRoot: z.string(),
+  platform: z.union(['web', 'desktop']),
   intervalMs: z.number(),
   debounceMs: z.number(),
   timeoutMs: z.number(),
@@ -187,6 +204,19 @@ export class FaberLoomMirror extends Service {
   private flushTimer: ReturnType<typeof setTimeout> | undefined
   private running = false
   private stopped = false
+  /** The home store of this side, built once so its medium reads stay coherent. */
+  private storeInstance: MirrorHomeStore | undefined
+  /** When this process mounted the mirror, as the status reports it. */
+  private readonly startedAt: string
+  private cycles = 0
+  private failedCycles = 0
+  private lastCycleAt: string | undefined
+  private lastError: string | undefined
+  /** Why the cycle in flight failed at the transport, if it did. */
+  private cycleError: string | undefined
+  private lastResult: FaberLoomMirrorSyncResult | undefined
+  /** What the last answered pull held, so an operator sees what the peer offered. */
+  private lastRemote: Record<string, unknown> | undefined
 
   /**
    * @param ctx - Cordis context owning the service fiber.
@@ -194,8 +224,10 @@ export class FaberLoomMirror extends Service {
    */
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomMirror')
+    this.startedAt = new Date().toISOString()
     if (this.config.enabled !== true) {
       this.ctx.logger.info('faberloom: mirror off (enabled is not true); the local home is not mirrored')
+      void this.refreshStatus()
       return
     }
     const missing = this.missingWiring()
@@ -203,6 +235,7 @@ export class FaberLoomMirror extends Service {
       this.ctx.logger.warn(
         `faberloom: mirror off (missing ${missing.join(', ')}); set FABERLOOM_MIRROR_URL, FABERLOOM_MIRROR_OWNER, CONSOLA_TOKEN and FABERLOOM_MIRROR_KEY (the per-account key the gateway prints) and restart`,
       )
+      void this.refreshStatus()
       return
     }
     const interval = this.config.intervalMs ?? DEFAULT_MIRROR_INTERVAL_MS
@@ -213,6 +246,27 @@ export class FaberLoomMirror extends Service {
       void this.tick()
       return () => { this.stop() }
     }, 'faberloom.mirror.lifecycle')
+  }
+
+  /**
+   * Write the status document and say where it lives, so an operator reading a
+   * host log has the state in one line instead of guessing from the panels. A
+   * panel may call it too; the cycle calls it after every attempt.
+   * @returns resolution after the document is written.
+   */
+  async refreshStatus(): Promise<void> {
+    const path = this.statusPath()
+    try {
+      await this.writeStatus()
+      this.ctx.logger.info(`faberloom: mirror ${this.active() ? 'active' : 'off'}; state in ${path}`)
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: mirror could not write its state to ${path}: ${String(error)}`)
+    }
+  }
+
+  /** Whether the mirror is wired and enabled, so a cycle runs. */
+  private active(): boolean {
+    return this.config.enabled === true && this.missingWiring().length === 0
   }
 
   /** The wiring names this side is still missing, in configuration order. */
@@ -264,8 +318,88 @@ export class FaberLoomMirror extends Service {
   skillsRoot(): string {
     const configured = this.config.skillsRoot
     if (configured !== undefined && configured.length > 0) return configured
-    const home = process.env['DSH_HOME']
-    return join(home === undefined || home.length === 0 ? process.cwd() : home, 'skills')
+    return join(this.harnessHome(), 'skills')
+  }
+
+  /** The harness home this side runs under: `DSH_HOME`, or the process directory. */
+  private harnessHome(): string {
+    const inherited = process.env['DSH_HOME']
+    return inherited === undefined || inherited.length === 0 ? process.cwd() : inherited
+  }
+
+  /**
+   * The home this side mirrors: the storage root's parent when a deployment named
+   * one, and the harness home otherwise. The status document belongs to the
+   * medium's home, which is why the two are separate.
+   * @returns the absolute home directory.
+   */
+  home(): string {
+    const configured = this.config.storagesRoot
+    if (configured !== undefined && configured.length > 0) return dirname(configured)
+    return this.harnessHome()
+  }
+
+  /** Absolute path of the status document this side keeps. */
+  statusPath(): string {
+    return join(this.home(), MIRROR_STATUS_FILE)
+  }
+
+  /**
+   * The rows of this home: the domains this process holds open, and every other
+   * mirrored domain read from its own document on the medium.
+   */
+  private store(): MirrorHomeStore {
+    this.storeInstance ??= new MirrorHomeStore({
+      ...this.config.storagesRoot === undefined ? {} : { storagesRoot: this.config.storagesRoot },
+      facility: this.ctx.storageDomain as unknown as MirrorDomainSource,
+    })
+    return this.storeInstance
+  }
+
+  /** Which side this process reports itself as in the transfer document. */
+  private platform(): 'web' | 'desktop' {
+    const configured = this.config.platform
+    if (configured !== undefined) return configured
+    return process.env['FABERLOOM_MIRROR_PLATFORM'] === 'web' ? 'web' : 'desktop'
+  }
+
+  /** One status snapshot: what the mirror is wired to and what its last cycle did. */
+  status(): Record<string, unknown> {
+    const missing = this.missingWiring()
+    const last = this.lastResult
+    return {
+      enabled: this.config.enabled === true,
+      active: this.active(),
+      missing,
+      url: this.base() ?? null,
+      owner: this.owner() ?? null,
+      platform: this.platform(),
+      home: this.home(),
+      storagesRoot: this.store().root(),
+      skillsRoot: this.skillsRoot(),
+      intervalMs: this.config.intervalMs ?? DEFAULT_MIRROR_INTERVAL_MS,
+      startedAt: this.startedAt,
+      lastCycleAt: this.lastCycleAt ?? null,
+      cycles: this.cycles,
+      failedCycles: this.failedCycles,
+      lastError: this.lastError ?? null,
+      lastRemote: this.lastRemote ?? null,
+      lastCycle: last === undefined ? null : {
+        rows: last.rows.length,
+        applied: last.applied.length,
+        keptLocal: last.keptLocal.length,
+        pushed: last.pushed.length,
+        skillsApplied: last.skillsApplied,
+        skipped: last.skipped,
+      },
+    }
+  }
+
+  /** Write the status document; a failure is logged, never fatal to a cycle. */
+  async writeStatus(): Promise<void> {
+    const target = this.statusPath()
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, `${JSON.stringify(this.status(), null, 2)}\n`, 'utf8')
   }
 
   /** Clear the running timers without ending the mirror, for a service this process keeps. */
@@ -283,34 +417,46 @@ export class FaberLoomMirror extends Service {
   }
 
   /**
-   * One full cycle: pull and apply the remote document, then push every local
-   * row the journal does not already match.
-   * @returns what the cycle did, or undefined when the mirror is unwired.
+   * One full cycle: read this home, pull the remote document and apply it, then
+   * push every local row the journal does not already match.
+   * @returns what the cycle did, or undefined when the mirror is unwired or the peer refused.
    */
   async sync(): Promise<FaberLoomMirrorSyncResult | undefined> {
-    if (this.missingWiring().length > 0) return undefined
+    if (!this.active()) return undefined
+    // One cycle owns one failure: the transport records a reason here and the
+    // guard that runs the cycle reads it, so a reason never outlives its cycle.
+    this.cycleError = undefined
+    const store = this.store()
+    const medium = await store.load()
     const remote = await this.pull()
     if (remote === undefined) return undefined
-    const local = await this.localDocument()
-    const pulled = await this.applyPulled(remote)
-    const pushed = await this.pushLocal(local)
+    this.lastRemote = describeDocument(remote)
+    // A row can only land in a document the medium holds, and only the peer
+    // knows the version its owner stamped; this is where that version arrives.
+    store.materialize(remote)
+    const pulled = await this.applyPulled(store, remote)
+    // Read the local side AFTER the apply: what the apply wrote is now the
+    // local value, and reading it before would read the overwritten rows as
+    // local changes and push them back over the pull.
+    const local = await this.localDocument(store)
+    const pushed = await this.pushLocal(local, remote)
     return {
       rows: [...pulled.rows, ...pushed.rows],
       applied: pulled.applied,
       keptLocal: pulled.kept,
       pushed: pushed.applied,
       skillsApplied: [...pulled.skillsApplied, ...pushed.skillsApplied],
-      skipped: [...pulled.skipped, ...pushed.skipped],
+      skipped: [...medium, ...pulled.skipped, ...pushed.skipped],
     }
   }
 
   /**
-   * Read this process's own rows and skill files as one transfer document.
+   * Read this home's rows and skill files as one transfer document.
+   * @param store - the home store this cycle reads.
    * @returns the local document and the locations this process cannot reach.
    */
-  private async localDocument(): Promise<FaberLoomMirrorExportResult> {
-    const source = this.ctx.storageDomain as unknown as MirrorDomainSource
-    const read = readMirrorDocument(source, 'desktop')
+  private async localDocument(store: MirrorHomeStore): Promise<FaberLoomMirrorExportResult> {
+    const read = readMirrorDocument(store, this.platform())
     const skills = await this.readSkills()
     const document: FaberLoomMirrorDocument = {
       version: read.document.version,
@@ -333,13 +479,17 @@ export class FaberLoomMirror extends Service {
     if (!checked.ok) {
       throw new Error(`mirror document refused: ${describeProblems(checked.problems)}`)
     }
-    const source = this.ctx.storageDomain as unknown as MirrorDomainSource
-    const applied = await applyMirrorDocument(source, checked.document)
+    const store = this.store()
+    const medium = await store.load()
+    // The document names the version its owner stamps, which is what a
+    // document this home does not hold yet must be created with.
+    store.materialize(checked.document)
+    const applied = await applyMirrorDocument(store, checked.document)
     const skills = await this.writeMirroredSkills(checked.document.skills)
     return {
       rows: applied.rows,
       applied: applied.applied,
-      skipped: [...applied.skipped, ...skills.skipped],
+      skipped: [...medium, ...applied.skipped, ...skills.skipped],
       skillsApplied: skills.written,
     }
   }
@@ -349,7 +499,10 @@ export class FaberLoomMirror extends Service {
    * @returns the document and the locations this process cannot reach.
    */
   async exportDocument(): Promise<FaberLoomMirrorExportResult> {
-    return this.localDocument()
+    const store = this.store()
+    const medium = await store.load()
+    const local = await this.localDocument(store)
+    return { document: local.document, skipped: [...medium, ...local.skipped] }
   }
 
   /**
@@ -384,13 +537,12 @@ export class FaberLoomMirror extends Service {
   }
 
   /** Apply one already-read remote document under the journal rule. */
-  private async applyPulled(remote: FaberLoomMirrorDocument): Promise<PullResult> {
-    const source = this.ctx.storageDomain as unknown as MirrorDomainSource
-    const result = await applyMirrorDocument(source, remote, {
+  private async applyPulled(store: MirrorHomeStore, remote: FaberLoomMirrorDocument): Promise<PullResult> {
+    const result = await applyMirrorDocument(store, remote, {
       overwrite: (domain, table, key) => {
         const row = remote.domains[domain]?.tables[table]?.[key]
         const remoteHash = row === undefined || row.deleted ? DELETED : hashRow(row.value)
-        return this.shouldOverwrite(domain, table, key, remoteHash)
+        return this.shouldOverwrite(store, domain, table, key, remoteHash)
       },
     })
     for (const change of result.applied) {
@@ -421,8 +573,8 @@ export class FaberLoomMirror extends Service {
   }
 
   /** Push every locally changed row and skill, recording what landed. */
-  private async pushLocal(local: FaberLoomMirrorExportResult): Promise<PushResult> {
-    const pending = this.pendingRows(local.document)
+  private async pushLocal(local: FaberLoomMirrorExportResult, remote: FaberLoomMirrorDocument): Promise<PushResult> {
+    const pending = this.pendingRows(local.document, remote)
     const skills: Record<string, string | null> = {}
     for (const [name, content] of Object.entries(local.document.skills)) {
       /* v8 ignore next -- readSkills returns only strings; null is the wire form of a deletion. */
@@ -435,7 +587,7 @@ export class FaberLoomMirror extends Service {
     }
     const document: FaberLoomMirrorDocument = {
       version: FABERLOOM_MIRROR_FORMAT_VERSION,
-      platform: 'desktop',
+      platform: this.platform(),
       domains: buildPendingDomains(pending, local.document),
       skills,
     }
@@ -481,15 +633,20 @@ export class FaberLoomMirror extends Service {
    * moved since then. A row changed on both sides keeps the local value, which
    * is then pushed back.
    */
-  private shouldOverwrite(domain: string, table: string, key: string, remoteHash: string): boolean {
+  private shouldOverwrite(store: MirrorHomeStore, domain: string, table: string, key: string, remoteHash: string): boolean {
     const entry = this.journal.get(journalKey(domain, table, key))
-    const localHash = this.currentRowHash(domain, table, key) ?? DELETED
+    const localHash = this.currentRowHash(store, domain, table, key) ?? DELETED
     if (entry === undefined) return localHash === DELETED
     return entry.syncedLocalHash === localHash && entry.syncedRemoteHash !== remoteHash
   }
 
-  /** Every row whose value moved since the journal recorded it, deletions included. */
-  private pendingRows(document: FaberLoomMirrorDocument): FaberLoomMirrorRowChange[] {
+  /**
+   * Every row whose value moved since the journal recorded it, deletions
+   * included, plus every journaled row the peer's own document no longer holds:
+   * a medium rewritten from an older state loses rows the journal had already
+   * recorded, and re-sending them is what makes a cycle self-healing.
+   */
+  private pendingRows(document: FaberLoomMirrorDocument, remote: FaberLoomMirrorDocument): FaberLoomMirrorRowChange[] {
     const pending: FaberLoomMirrorRowChange[] = []
     const seen = new Set<string>()
     for (const [domain, domainDocument] of Object.entries(document.domains)) {
@@ -506,16 +663,29 @@ export class FaberLoomMirror extends Service {
     }
     for (const [journal, change] of this.synced) {
       if (seen.has(journal)) continue
-      if (this.currentRowHash(change.domain, change.table, change.key) !== undefined) continue
       seen.add(journal)
+      const local = this.currentRowHash(this.store(), change.domain, change.table, change.key)
+      if (local === undefined) {
+        // Deleted here: the peer still holds the value it knew, and a tombstone
+        // is what tells it so.
+        pending.push(change)
+        continue
+      }
+      // Still here, and the peer answered for that domain without the row: it
+      // held the row once and its medium no longer does, so this cycle sends it
+      // again. A domain the peer could not read at all is not evidence of a
+      // deletion, and neither is a peer that never answered.
+      const peerDomain = remote.domains[change.domain]
+      if (peerDomain === undefined) continue
+      if (peerDomain.tables[change.table]?.[change.key] !== undefined) continue
       pending.push(change)
     }
     return pending
   }
 
   /** The digest of one local row, or undefined when it is absent. */
-  private currentRowHash(domain: string, table: string, key: string): string | undefined {
-    const live = (this.ctx.storageDomain as unknown as MirrorDomainSource).get(domain)
+  private currentRowHash(store: MirrorHomeStore, domain: string, table: string, key: string): string | undefined {
+    const live = store.get(domain)
     /* v8 ignore next -- A journaled row's domain is open: localDocument read it in this same cycle. */
     if (live === undefined) return undefined
     let target
@@ -555,17 +725,34 @@ export class FaberLoomMirror extends Service {
     await this.tick()
   }
 
-  /** One guarded cycle: a failure is logged and the next attempt retries. */
+  /** One guarded cycle: a failure is logged, recorded in the status, and the next attempt retries. */
   private async tick(): Promise<void> {
     /* v8 ignore next -- The interval and the debounce can overlap; one guard skips the surplus cycle. */
     if (this.stopped || this.running) return
     this.running = true
+    this.cycles += 1
     try {
-      await this.sync()
+      this.lastResult = await this.sync()
+      if (this.cycleError === undefined) {
+        this.lastError = undefined
+      } else {
+        // A refused request is not a thrown cycle: the transport answered and
+        // named a reason, and that reason is what an operator needs to read.
+        this.failedCycles += 1
+        this.lastError = this.cycleError
+      }
     } catch (error: unknown) {
-      this.ctx.logger.warn(`faberloom: mirror cycle failed: ${String(error)}`)
+      this.failedCycles += 1
+      this.lastError = error instanceof Error ? error.message : String(error)
+      this.ctx.logger.warn(`faberloom: mirror cycle failed: ${this.lastError}`)
     } finally {
       this.running = false
+      this.lastCycleAt = new Date().toISOString()
+      try {
+        await this.writeStatus()
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: mirror could not write its state to ${this.statusPath()}: ${String(error)}`)
+      }
     }
   }
 
@@ -594,12 +781,14 @@ export class FaberLoomMirror extends Service {
       })
       const text = await response.text()
       if (!response.ok) {
+        this.cycleError = `${body.action} refused (${String(response.status)}) ${text.slice(0, 200)}`
         this.ctx.logger.warn(`faberloom: mirror ${body.action} refused (${String(response.status)}) ${text.slice(0, 200)}`)
         return undefined
       }
       const parsed: unknown = parseJson(text)
       const checked = checkMirrorDocument(parsed)
       if (!checked.ok) {
+        this.cycleError = `${body.action} answered an unusable document: ${describeProblems(checked.problems)}`
         this.ctx.logger.warn(`faberloom: mirror ${body.action} answered an unusable document: ${describeProblems(checked.problems)}`)
         return undefined
       }
@@ -610,6 +799,7 @@ export class FaberLoomMirror extends Service {
         skipped: readSkips(parsed),
       }
     } catch (error: unknown) {
+      this.cycleError = `${body.action} failed: ${String(error)}`
       this.ctx.logger.warn(`faberloom: mirror ${body.action} failed: ${String(error)}`)
       return undefined
     }
@@ -739,6 +929,20 @@ function journalKey(domain: string, table: string, key: string): string {
 /** One journal key for a skill bundle. */
 function skillJournalKey(name: string): string {
   return `skills\u0000${name}\u0000${name}`
+}
+
+/** One document as the status reports it: what a cycle's peer offered, in counts. */
+function describeDocument(document: FaberLoomMirrorDocument): Record<string, unknown> {
+  const domains: Record<string, number> = {}
+  for (const [name, domain] of Object.entries(document.domains)) {
+    domains[name] = Object.values(domain.tables).reduce((total, rows) => total + Object.keys(rows).length, 0)
+  }
+  return {
+    version: document.version,
+    platform: document.platform,
+    domains,
+    skills: Object.keys(document.skills),
+  }
 }
 
 export default FaberLoomMirror

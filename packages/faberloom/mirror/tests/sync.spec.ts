@@ -1,8 +1,8 @@
 import { createServer, type Server } from 'node:http'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -41,6 +41,43 @@ interface FakeGateway {
   applyFailure?: { status: number; text: string } | undefined
   /** Extra fields merged into every successful answer, for malformed-list cases. */
   extras?: Record<string, unknown> | undefined
+  /** When set, a pushed document is reported as applied without being merged. */
+  refuseMerge?: boolean | undefined
+}
+
+/** The mutable form of the fake gateway's document, used to apply one push. */
+interface MutableDocument {
+  version: number
+  platform: 'web' | 'desktop'
+  domains: Record<string, { version?: number; tables: Record<string, Record<string, unknown>> }>
+  skills: Record<string, string | null>
+}
+
+/**
+ * Apply one pushed document onto the fake gateway's own, as the gateway route
+ * does before it answers: rows land, a tombstone removes the key, and the
+ * version the emitting side stamped is kept when the target had none.
+ * @param target - the fake's document, mutated in place.
+ * @param pushed - the document a client sent.
+ */
+function mergeInto(target: FaberLoomMirrorDocument, pushed: FaberLoomMirrorDocument): void {
+  const mutable = target as unknown as MutableDocument
+  for (const [domain, domainDocument] of Object.entries(pushed.domains)) {
+    const held = mutable.domains[domain] ?? { tables: {} }
+    if (held.version === undefined && domainDocument.version !== undefined) held.version = domainDocument.version
+    for (const [table, rows] of Object.entries(domainDocument.tables)) {
+      const records = held.tables[table] ?? {}
+      for (const [key, row] of Object.entries(rows)) {
+        if (row.deleted) Reflect.deleteProperty(records, key)
+        else records[key] = { deleted: false, value: row.value }
+      }
+      held.tables[table] = records
+    }
+    mutable.domains[domain] = held
+  }
+  for (const [name, content] of Object.entries(pushed.skills)) {
+    if (content !== null) mutable.skills[name] = content
+  }
 }
 
 /** Start the fake gateway origin and return it with its URL. */
@@ -69,6 +106,11 @@ async function startGateway(document: FaberLoomMirrorDocument): Promise<{ gatewa
         return
       }
       const document = pushed as FaberLoomMirrorDocument | undefined
+      // The route applies a pushed document and then answers with its own,
+      // freshly exported one; the fake keeps the same promise, so a spec that
+      // pushes sees the row it pushed in the next answer. A spec that needs a
+      // peer which reports an apply without keeping the row turns that off.
+      if (document !== undefined && gateway.refuseMerge !== true) mergeInto(gateway.document, document)
       const applied = document === undefined ? [] : Object.entries(document.domains).flatMap(([domain, domainDocument]) =>
         Object.entries(domainDocument.tables).flatMap(([table, rows]) => Object.keys(rows).map(key => ({ domain, table, key }))))
       const skillsApplied = document === undefined ? [] : Object.keys(document.skills)
@@ -100,7 +142,7 @@ afterEach(async () => {
   for (const extra of extraContexts.splice(0)) await extra.fiber.dispose()
   if (closeGateway !== undefined) await closeGateway()
   closeGateway = undefined
-  if (home !== undefined) rmSync(home, { recursive: true, force: true })
+  if (home !== undefined) rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   home = undefined
   delete process.env.FABERLOOM_MIRROR_URL
   delete process.env.FABERLOOM_MIRROR_OWNER
@@ -123,10 +165,11 @@ async function harness(document: FaberLoomMirrorDocument, debounceMs = 60_000) {
   ctx.provide('storageDomain', facility)
   await ctx.plugin(FaberLoomAccess)
   // The access service opens its domain on the first write, which is what a real
-  // boot does for the modules the mirror carries. The seeded row is removed so
-  // the remote document is the only source of the first pull.
-  await ctx.faberloomAccess.grant(OWNER, { action: 'mail.send' })
-  await grants(facility).delete('g1')
+  // boot does for the modules the mirror carries. The seeded row is removed — it
+  // carries a generated id, so the key comes from the grant the service returned
+  // — so the remote document is the only source of the first pull.
+  const seeded = await ctx.faberloomAccess.grant(OWNER, { action: 'mail.send' })
+  await grants(facility).delete(seeded.id)
   const mirror = new FaberLoomMirror(ctx, {
     enabled: true,
     gatewayUrl: fake.url,
@@ -185,6 +228,10 @@ describe('FaberLoomMirror', () => {
   it('stays off, with no request, when the wiring is missing', async () => {
     const fake = await startGateway(remoteDocument('sin tocar'))
     closeGateway = fake.close
+    // The status document goes to the medium's home, which this spec owns, so
+    // nothing a mirror writes lands outside its own temporary directory.
+    home = mkdtempSync(join(tmpdir(), 'faberloom-mirror-nowiring-'))
+    const storagesRoot = join(home, 'storages')
     const ctx = new Context()
     await ctx.plugin(Storage)
     ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
@@ -192,7 +239,7 @@ describe('FaberLoomMirror', () => {
     ctx.storage.mount('domain', facility)
     ctx.provide('storageDomain', facility)
     context = ctx
-    const mirror = new FaberLoomMirror(ctx, { enabled: true, gatewayUrl: fake.url })
+    const mirror = new FaberLoomMirror(ctx, { enabled: true, gatewayUrl: fake.url, storagesRoot })
     mirror.clearTimers()
     expect(await mirror.sync()).toBeUndefined()
     expect(await mirror.pull()).toBeUndefined()
@@ -201,7 +248,7 @@ describe('FaberLoomMirror', () => {
     // No gateway origin at all (and no console base to derive one from) names
     // that one in the log and stays off.
     const orphanCtx = await bootContext()
-    const orphan = new FaberLoomMirror(orphanCtx, { enabled: true, ownerId: OWNER, consoleToken: TOKEN, mirrorKey: KEY })
+    const orphan = new FaberLoomMirror(orphanCtx, { enabled: true, ownerId: OWNER, consoleToken: TOKEN, mirrorKey: KEY, storagesRoot })
     orphan.clearTimers()
     expect(await orphan.sync()).toBeUndefined()
 
@@ -214,6 +261,7 @@ describe('FaberLoomMirror', () => {
       ownerId: OWNER,
       consoleToken: TOKEN,
       mirrorKey: KEY,
+      storagesRoot,
     })
     defaults.clearTimers()
     expect(defaults.skillsRoot().endsWith('skills')).toBe(true)
@@ -313,8 +361,8 @@ describe('FaberLoomMirror', () => {
     ctx.storage.mount('domain', facility)
     ctx.provide('storageDomain', facility)
     await ctx.plugin(FaberLoomAccess)
-    await ctx.faberloomAccess.grant(OWNER, { action: 'mail.send' })
-    await grants(facility).delete('g1')
+    const seeded = await ctx.faberloomAccess.grant(OWNER, { action: 'mail.send' })
+    await grants(facility).delete(seeded.id)
     context = ctx
     const mirror = new FaberLoomMirror(ctx, { enabled: true, intervalMs: 10_000_000 })
     mirror.clearTimers()
@@ -476,5 +524,175 @@ describe('FaberLoomMirror', () => {
     // reports the pulled bundle and never creates one named `borrada`.
     expect(pulled?.skillsApplied).toEqual(['informe-diario'])
     expect((await mirror.readSkills()).skills).toEqual({ 'informe-diario': '# Informe\n\nCuerpo.' })
+  })
+
+  it('re-sends a row the peer reported as applied but its own document does not hold', async () => {
+    const empty = {
+      version: FABERLOOM_MIRROR_FORMAT_VERSION,
+      platform: 'web' as const,
+      domains: { faberloom_grants: { version: 1, tables: { grants: {} } } },
+      skills: {},
+    }
+    const { mirror, gateway, facility } = await harness(empty)
+    gateway.refuseMerge = true
+    await grants(facility).put('g1', { id: 'g1', action: 'mail.send' })
+    const first = await mirror.sync()
+    expect(first?.pushed).toEqual([{ domain: 'faberloom_grants', table: 'grants', key: 'g1' }])
+    // The peer confirmed the row and answered a document without it, so the
+    // journal keeps it unconfirmed and the next cycle sends it again.
+    const retried = await mirror.sync()
+    expect(retried?.pushed).toEqual([{ domain: 'faberloom_grants', table: 'grants', key: 'g1' }])
+  })
+
+  it('reports a cycle that rejected with something that is not an error', async () => {
+    const { mirror, ctx } = await harness(remoteDocument('rechazo raro'), 10)
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => ctx.logger)
+    vi.spyOn(mirror, 'sync').mockRejectedValue('no soy un error')
+    ctx.emit('domain/changed', {
+      domain: 'faberloom_grants',
+      table: 'grants',
+      key: 'g1',
+      operation: 'put',
+      value: { id: 'g1' },
+    })
+    const reported = await waitFor(() => warn.mock.calls.flat().join(' ').includes('no soy un error'))
+    expect(reported).toBe(true)
+    expect(mirror.status()['lastError']).toBe('no soy un error')
+  })
+
+  it('says it is off, and where its state lives, when it is not wired', async () => {
+    home = mkdtempSync(join(tmpdir(), 'faberloom-mirror-off-'))
+    process.env.DSH_HOME = home
+    const ctx = await bootContext()
+    const info = vi.spyOn(ctx.logger, 'info').mockImplementation(() => ctx.logger)
+    const mirror = new FaberLoomMirror(ctx)
+    mirror.clearTimers()
+    // The state document is what an operator opens instead of guessing from the
+    // panels, so it is written even when the mirror does nothing at all.
+    await mirror.refreshStatus()
+    const said = info.mock.calls.flat().join(' ')
+    expect(said).toContain('mirror off (enabled is not true)')
+    expect(said).toContain('state in')
+    expect(mirror.status()).toMatchObject({
+      enabled: false,
+      active: false,
+      missing: ['gatewayUrl', 'ownerId', 'consoleToken', 'mirrorKey'],
+      home,
+    })
+    // A wired mirror says the other word, so the line reads the real state.
+    const wiredCtx = await bootContext()
+    const wiredInfo = vi.spyOn(wiredCtx.logger, 'info').mockImplementation(() => wiredCtx.logger)
+    const wired = new FaberLoomMirror(wiredCtx, {
+      enabled: true,
+      gatewayUrl: 'https://harness.example/_/harness/mirror',
+      ownerId: OWNER,
+      consoleToken: TOKEN,
+      mirrorKey: KEY,
+      intervalMs: 10_000_000,
+    })
+    wired.clearTimers()
+    await wired.refreshStatus()
+    expect(wired.status()).toMatchObject({ active: true })
+    expect(wiredInfo.mock.calls.flat().join(' ')).toContain('mirror active')
+  })
+
+  it('reports which side it is and refuses a document of another format', async () => {
+    home = mkdtempSync(join(tmpdir(), 'faberloom-mirror-side-'))
+    process.env.DSH_HOME = home
+    const configured = new FaberLoomMirror(await bootContext(), { platform: 'web' })
+    configured.clearTimers()
+    expect(configured.status()).toMatchObject({ platform: 'web' })
+    const inherited = new FaberLoomMirror(await bootContext(), {})
+    inherited.clearTimers()
+    expect(inherited.status()).toMatchObject({ platform: 'desktop' })
+    process.env.FABERLOOM_MIRROR_PLATFORM = 'web'
+    try {
+      const named = new FaberLoomMirror(await bootContext(), {})
+      named.clearTimers()
+      expect(named.status()).toMatchObject({ platform: 'web' })
+      await expect(named.importDocument({ version: 99 })).rejects.toThrow(/mirror document refused/u)
+      await expect(named.importDocument({
+        version: FABERLOOM_MIRROR_FORMAT_VERSION,
+        platform: 'web',
+        domains: { faberloom_grants: { version: 1.5, tables: {} } },
+        skills: {},
+      })).rejects.toThrow(/domains.faberloom_grants.version/u)
+      expect(await named.exportDocument()).toMatchObject({ document: { platform: 'web' } })
+    } finally {
+      delete process.env.FABERLOOM_MIRROR_PLATFORM
+    }
+  })
+
+  it('re-sends a row the peer answered for but no longer holds', async () => {
+    const { mirror, gateway } = await harness(remoteDocument('se cura'))
+    // The peer answers for the domain without the row: it held the row once and
+    // its medium no longer does, so the next cycle sends it again.
+    gateway.document = {
+      version: FABERLOOM_MIRROR_FORMAT_VERSION,
+      platform: 'web',
+      domains: { faberloom_grants: { version: 1, tables: { grants: {} } } },
+      skills: {},
+    }
+    const healed = await mirror.sync()
+    expect(healed?.pushed).toEqual([{ domain: 'faberloom_grants', table: 'grants', key: 'g1' }])
+    // A peer that does not answer for the domain at all proves nothing, so the
+    // row is not re-sent from that silence.
+    gateway.document = {
+      version: FABERLOOM_MIRROR_FORMAT_VERSION,
+      platform: 'web',
+      domains: {},
+      skills: {},
+    }
+    const silent = await mirror.sync()
+    expect(silent?.pushed).toEqual([])
+  })
+
+  it('records a cycle it could not run and a state document it could not write', async () => {
+    const fake = await startGateway(remoteDocument('medio roto'))
+    closeGateway = fake.close
+    const ctx = await bootContext()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => ctx.logger)
+    home = mkdtempSync(join(tmpdir(), 'faberloom-mirror-status-'))
+    const storagesRoot = join(home, 'storages')
+    mkdirSync(join(storagesRoot, 'faberloom_spaces.json'), { recursive: true })
+    const mirror = new FaberLoomMirror(ctx, {
+      enabled: true,
+      gatewayUrl: fake.url,
+      ownerId: OWNER,
+      consoleToken: TOKEN,
+      mirrorKey: KEY,
+      intervalMs: 10,
+      storagesRoot,
+    })
+    const failed = await waitFor(() => (mirror.status()['failedCycles'] as number) >= 1)
+    expect(failed).toBe(true)
+    expect(warn.mock.calls.flat().join(' ')).toContain('mirror cycle failed')
+    // The reason survives in the state document, which is what makes a broken
+    // medium a line an operator can read instead of a silent stop.
+    expect(mirror.status()['lastError']).toMatch(/EISDIR|EPERM|EBADF|UNKNOWN/u)
+    mirror.stop()
+  })
+
+  it('names a state document it cannot write', async () => {
+    const fake = await startGateway(remoteDocument('estado imposible'))
+    closeGateway = fake.close
+    const ctx = await bootContext()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => ctx.logger)
+    home = mkdtempSync(join(tmpdir(), 'faberloom-mirror-status-file-'))
+    const blocker = join(home, 'no-es-directorio')
+    writeFileSync(blocker, 'x', 'utf8')
+    const mirror = new FaberLoomMirror(ctx, {
+      enabled: true,
+      gatewayUrl: fake.url,
+      ownerId: OWNER,
+      consoleToken: TOKEN,
+      mirrorKey: KEY,
+      intervalMs: 10,
+      storagesRoot: join(blocker, 'storages'),
+    })
+    await mirror.refreshStatus()
+    const cycled = await waitFor(() => warn.mock.calls.flat().join(' ').includes('could not write its state'))
+    expect(cycled).toBe(true)
+    mirror.stop()
   })
 })

@@ -39,13 +39,23 @@ The `faberloom-app` bundle mounts this row disabled; a deployment turns it on an
 | `ownerId` | `FABERLOOM_MIRROR_OWNER` | The signed-in account email. |
 | `consoleToken` | `CONSOLA_TOKEN` | The console bearer token the Desktop wrote at sign-in. |
 | `mirrorKey` | `FABERLOOM_MIRROR_KEY` | Internal credential the owner's product MCP server accepts. |
-| `skillsRoot` | - | Owner skills root; defaults to `$DSH_HOME/skills`. |
+| `skillsRoot` | - | Owner skills root; defaults to `<home>/skills`. |
+| `storagesRoot` | - | Root of the `single`-layout domain documents; defaults to `<home>/storages`. |
+| `platform` | `FABERLOOM_MIRROR_PLATFORM` | Which side this process reports itself as; `desktop` unless the deployment says `web`. |
 | `intervalMs` | - | Milliseconds between two cycles; defaults to 120000. |
 | `debounceMs` | - | Milliseconds a local change waits before it is pushed; defaults to 3000. |
 
 Every missing piece of wiring is named in the log, and the mirror then stays off. It never runs half-wired, and a failed cycle only logs: the next interval retries, so a gateway outage never breaks the Host.
 
+Every cycle writes `<home>/mirror-status.json`: whether it is enabled and active, which wiring is still missing, the route and the account it talks to, how many cycles ran and how many failed, the last reason a request or a cycle was refused, and a count per domain and skill of the last document the peer answered. That document is the operator's one line, and `ctx.faberloomMirror.refreshStatus()` rewrites it on demand.
+
 The internal credential is one shared secret the deployment sets on both sides (`FABERLOOM_MIRROR_KEY`): the gateway injects it into each child and compares it on the route, and the owner's `dsh` validates it on every mirror tool call. A deployment that prefers one key per account writes `<dataDir>/<id>/.mirror-key`, which the route reads before the shared value.
+
+### Where the rows are read and written
+
+A product domain opens lazily: `ctx.storageDomain.get(name)` answers `undefined` until its owning service first touches it, so a traversal that only asks the facility sees the handful of domains some other code happened to open and reports every other one as `domain-not-open` in a home that holds its records. `src/store.ts` answers for every mirrored domain instead: the open domain when the process holds one, whose in-memory state is authoritative and whose writes run on the domain's own write chain, and the medium's document otherwise — the very file that domain loads on its first open. A row written to the medium is read by a domain opened later, and a row written through an open domain is published by that domain as usual.
+
+Creating a document needs the format version its owner stamps, and only the medium carries it: the document a peer sends names it per domain, and a domain neither side has materialized stays unaddressed and is reported instead of guessed.
 
 ### What it carries
 
@@ -58,6 +68,8 @@ Skills travel as files: `$DSH_HOME/skills/<name>/SKILL.md` becomes one entry of 
 Each synced row has a journal entry holding two digests: the local value and the remote value as of the last sync that touched it. An incoming remote row is written only when the local side still holds what that sync left there and the remote value moved since then. A row both sides changed keeps the local value, is reported as `keptLocal`, and is pushed back. A row only the local side changed is pushed. A row the local side does not hold at all is written, which is how a first pull lands the other home's rows.
 
 Local deletions are pushed as tombstones, and remote tombstones are applied, so a delete travels in both directions under the same rule.
+
+A row the journal recorded as synced whose value is still local while the peer answered for that domain without it is pushed again: a medium rewritten from an older state loses rows the journal had already recorded, and re-sending them is what makes a cycle self-healing. A domain the peer could not read at all is not evidence of a deletion, and neither is a peer that never answered.
 
 -----
 
@@ -86,6 +98,9 @@ Independent of live requests: a cycle never touches a request prefix.
 - **The deployment needs two lines.** The gateway must inject `FABERLOOM_MIRROR_KEY` into each child for the owner's `dsh` to accept a mirror call, and it must mount the route (`installMirrorRoute(app, { dataDir: DATA_DIR })`). Until then the mirror is off and says so in the log.
 - **Sessions do not travel.** A session log is a per-cwd artifact; `faberloom-session-shares` is the path for sharing one, and the mirror does not carry them.
 - **Skills are files, not rows.** A skill holds no journal entry beyond its content digest, so a bundle renamed on both sides keeps both names.
+- **A non-JSON medium for a domain nobody opened is unreadable.** The store reads the medium's own `single`-layout document; a deployment that routes a mirrored domain to another medium reaches it only while a service holds it open.
+- **A new document needs the peer's version stamp.** A row whose domain neither side has materialized is reported (`domain-not-open`) instead of being written with a guessed version, because a wrong stamp would refuse the domain's next open.
+- **Wiring is read once, at load.** `consoleToken` and `gatewayUrl` come from the process environment, which the Desktop fills when it starts the harness, so a token the installation renews mid-run is picked up at the next start and not before.
 
 No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
 
@@ -95,6 +110,6 @@ No invariant companion is published because this service exposes no independent 
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-`src/document.ts` owns the version rule, the route path, and the row and skill digests; `src/domains.ts` owns the transfer scope; `src/sync.ts` owns the storage-domain traversal the product backup also uses. The document version is refused before any row is inspected, so an unknown format never reaches a write.
+`src/document.ts` owns the version rule, the route path, and the row and skill digests; `src/domains.ts` owns the transfer scope; `src/store.ts` owns the medium view (the open domain first, the medium's document otherwise) and `src/sync.ts` the storage-domain traversal over it that the product backup also uses. The document version is refused before any row is inspected, so an unknown format never reaches a write. `tests/medium.spec.ts` boots a test-only `cordis.yml` over the real JSON backend and pins the case the store exists for; `tests/store.spec.ts` pins every medium shape the store must refuse.
 
 </details>

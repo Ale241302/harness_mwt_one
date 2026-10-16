@@ -40,15 +40,19 @@ afterEach(async () => {
   context = undefined
   if (gateway !== undefined) await new Promise<void>((resolve) => { gateway?.close(() => { resolve() }) })
   gateway = undefined
-  if (root !== undefined) await rm(root, { recursive: true, force: true })
+  if (root !== undefined) await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   root = undefined
   delete process.env.MIRROR_FAKE_GATEWAY
   delete process.env.MIRROR_FAKE_SKILLS
+  delete process.env.DSH_HOME
 })
 
 describe('mirror real Loader composition', () => {
   it('boots from cordis.yml and lands a pulled row and skill in its own home', async () => {
     root = await mkdtemp(join(tmpdir(), 'faberloom-mirror-loader-'))
+    // The composition's home is the spec's own temporary directory, so the
+    // mirror's state document lands there and never in the repository.
+    process.env.DSH_HOME = root
     const skillsRoot = join(root, 'skills')
     const received: unknown[] = []
     gateway = createServer((request, response) => {

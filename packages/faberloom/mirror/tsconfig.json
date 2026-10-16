@@ -16,6 +16,9 @@
     },
     {
       "path": "../../storage/storage-domain"
+    },
+    {
+      "path": "../../storage/storage-json"
     }
   ]
 }

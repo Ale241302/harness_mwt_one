@@ -141,6 +141,11 @@ export function checkMirrorDocument(value: unknown): MirrorDocumentCheck {
         problems.push({ path: `domains.${domainName}.tables`, detail: 'must be an object' })
         continue
       }
+      const domainVersion = domain['version']
+      if (domainVersion !== undefined
+        && (typeof domainVersion !== 'number' || !Number.isInteger(domainVersion) || domainVersion < 0)) {
+        problems.push({ path: `domains.${domainName}.version`, detail: 'must be a non-negative integer when present' })
+      }
       for (const [tableName, table] of Object.entries(domain['tables'])) {
         if (!isRecord(table)) {
           problems.push({ path: `domains.${domainName}.tables.${tableName}`, detail: 'must be an object' })
