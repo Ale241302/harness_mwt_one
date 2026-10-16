@@ -339,7 +339,10 @@ export class FaberLoomMirror extends Service {
     return this.harnessHome()
   }
 
-  /** Absolute path of the status document this side keeps. */
+  /**
+   * Absolute path of the status document this side keeps.
+   * @returns the absolute path.
+   */
   statusPath(): string {
     return join(this.home(), MIRROR_STATUS_FILE)
   }
@@ -363,7 +366,10 @@ export class FaberLoomMirror extends Service {
     return process.env['FABERLOOM_MIRROR_PLATFORM'] === 'web' ? 'web' : 'desktop'
   }
 
-  /** One status snapshot: what the mirror is wired to and what its last cycle did. */
+  /**
+   * One status snapshot: what the mirror is wired to and what its last cycle did.
+   * @returns the document written to {@link statusPath}.
+   */
   status(): Record<string, unknown> {
     const missing = this.missingWiring()
     const last = this.lastResult

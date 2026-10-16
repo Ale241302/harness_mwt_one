@@ -68,7 +68,10 @@ export class MirrorHomeStore implements MirrorDomainSource {
    */
   constructor(private readonly options: MirrorHomeStoreOptions = {}) {}
 
-  /** Absolute root this store reads and writes. */
+  /**
+   * Absolute root this store reads and writes.
+   * @returns the absolute storage root.
+   */
   root(): string {
     const configured = this.options.storagesRoot
     if (configured !== undefined && configured.length > 0) return configured
@@ -76,7 +79,11 @@ export class MirrorHomeStore implements MirrorDomainSource {
     return join(home === undefined || home.length === 0 ? process.cwd() : home, 'storages')
   }
 
-  /** Absolute path of one domain's document. */
+  /**
+   * Absolute path of one domain's document.
+   * @param name - declared domain name.
+   * @returns the absolute document path.
+   */
   documentPath(name: string): string {
     return join(this.root(), `${name}.json`)
   }

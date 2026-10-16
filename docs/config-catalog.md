@@ -2791,7 +2791,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/skill/skill-install/src/index.ts:89`](../packages/skill/skill-install/src/index.ts)
+Source: [`packages/skill/skill-install/src/index.ts:91`](../packages/skill/skill-install/src/index.ts)
 
 <a id="deepseek-aidsh-spill-local"></a>
 
