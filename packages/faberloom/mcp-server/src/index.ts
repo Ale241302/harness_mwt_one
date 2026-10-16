@@ -16,7 +16,7 @@
  * @module @deepseek-ai/dsh-faberloom-mcp-server
  */
 
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { existsSync, rmSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
@@ -56,6 +56,12 @@ export interface Config {
   port?: number
   /** Largest request body accepted, in bytes. */
   maxBodyBytes?: number
+  /**
+   * Internal credential the deployment's gateway presents when it acts for the
+   * owner through the mirror route. Empty disables that path, so no other caller
+   * can borrow it.
+   */
+  mirrorKey?: string
 }
 
 /** Schemastery configuration for the MCP server. */
@@ -65,7 +71,11 @@ export const Config: z<Config> = z.object({
   socketPath: z.string(),
   port: z.number(),
   maxBodyBytes: z.number(),
+  mirrorKey: z.string(),
 })
+
+/** Header carrying the deployment's internal credential on a mirror call. */
+export const MIRROR_KEY_HEADER = 'x-faberloom-mirror-key'
 
 /** Largest body the transport accepts by default. */
 export const DEFAULT_MAX_BODY_BYTES = 256 * 1024
@@ -240,6 +250,16 @@ export class FaberLoomMcpServer extends Service {
   private async authenticate(
     request: IncomingMessage,
   ): Promise<{ ownerId: string; scopes: readonly string[] | null; sessionId: string } | undefined> {
+    // The deployment's gateway calls on the owner's behalf with the internal
+    // credential, which is not a minted token: it never reaches the token store.
+    const mirrorKey = this.config.mirrorKey ?? ''
+    const presentedKey = request.headers[MIRROR_KEY_HEADER]
+    if (mirrorKey.length > 0 && typeof presentedKey === 'string' && presentedKey.length === mirrorKey.length
+      && timingSafeEqual(Buffer.from(presentedKey), Buffer.from(mirrorKey))) {
+      const mirrorOwner = this.config.ownerId ?? ''
+      if (mirrorOwner.length === 0) return undefined
+      return { ownerId: mirrorOwner, scopes: null, sessionId: 'fbl-mirror' }
+    }
     const header = request.headers.authorization
     if (typeof header !== 'string' || !header.toLowerCase().startsWith('bearer ')) return undefined
     const token = header.slice(7).trim()

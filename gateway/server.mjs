@@ -978,6 +978,9 @@ function renderPatch(home, user, memory) {
     `    ownerId: ${yamlScalar(user.email)}`,
     '    enabled: true',
     `    socketPath: ${yamlScalar(path.join(home, 'faberloom-mcp.sock'))}`,
+    // La credencial interna con la que el gateway actúa como el propietario en la
+    // ruta del espejo; sin ella esa ruta responde "unknown or revoked token".
+    "    mirrorKey: !!js process.env.FABERLOOM_MIRROR_KEY ?? ''",
   ]
 
   // Memoria: el modelo deja de ir directo a DeepSeek y pasa por el proxy de
