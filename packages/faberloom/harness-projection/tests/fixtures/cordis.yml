@@ -1,0 +1,25 @@
+# A test-only composition for the harness projection: the storage hub and the
+# domain form, the six product domains one projection reads, the empty session
+# seam the workspace registry bootstraps from, the real workspace registry, the
+# real skill registry, and the projection row. The Loader boots it exactly as a
+# shipped profile would.
+- name: '@deepseek-ai/dsh-storage'
+
+- name: './memory-storage.ts'
+
+- name: '@deepseek-ai/dsh-storage-domain'
+  config:
+    backend: memory
+
+- name: './product-domains.ts'
+
+- name: './session-persistence.ts'
+
+- name: '@deepseek-ai/dsh-workspace'
+
+- name: '@deepseek-ai/dsh-skill'
+
+- name: '@deepseek-ai/dsh-faberloom-harness-projection'
+  config:
+    enabled: true
+    maxListEntries: 3
