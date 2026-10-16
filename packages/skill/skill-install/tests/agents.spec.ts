@@ -99,11 +99,13 @@ describe('agent detection', () => {
     expect(outcomes.filter(outcome => outcome.status === 'refused')).toHaveLength(6)
     // The preset folder travels whole; the Markdown agent becomes a descriptor
     // and a composition whose persona is the file body.
+    const markdown = detection.agents.find(agent => agent.id === 'analista-fiscal')
+    if (markdown === undefined) throw new Error('el agente Markdown no se detecto')
     expect(readFileSync(join(presets, 'contable-jefe', 'preset.yml'), 'utf8')).toContain('Contable jefe')
     expect(readFileSync(join(presets, 'analista-fiscal', 'preset.yml'), 'utf8'))
-      .toBe(renderPresetYaml(detection.agents[0]))
+      .toBe(renderPresetYaml(markdown))
     const composition = readFileSync(join(presets, 'analista-fiscal', 'agent.cordis.yml'), 'utf8')
-    expect(composition).toBe(renderAgentComposition(detection.agents[0]))
+    expect(composition).toBe(renderAgentComposition(markdown))
     expect(composition).toContain("name: '@deepseek-ai/dsh-persona'")
     expect(composition).toContain('      Eres el analista fiscal del KB.')
     // A second install of the same agents reports them instead of rewriting them.

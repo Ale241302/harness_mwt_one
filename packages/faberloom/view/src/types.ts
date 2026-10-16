@@ -489,6 +489,35 @@ export interface FaberLoomWorkflowLink {
 }
 
 /** One space with its full editable configuration. */
+/**
+ * One harness projection run, as the browser reads it: where it wrote, what it
+ * wrote and pruned, how much of the scope's material it included, and which
+ * locations this process could not read. The host's own report carries
+ * `undefined` members a Remote boundary cannot encode, so the view restates it
+ * as JSON the panel renders.
+ */
+export interface FaberLoomHarnessProjection {
+  /** Absolute scope folder the run wrote into. */
+  readonly root: string
+  /** ISO-8601 instant the run started. */
+  readonly generatedAt: string
+  /** Paths written, relative to the scope folder, in write order. */
+  readonly written: readonly string[]
+  /** Paths the previous run declared and this one does not, removed. */
+  readonly pruned: readonly string[]
+  /** How many records of each kind the run included. */
+  readonly counts: {
+    readonly agents: number
+    readonly skills: number
+    readonly workflows: number
+    readonly routines: number
+    readonly memory: number
+    readonly context: number
+  }
+  /** Locations this process could not read, so a thin scope names its reason. */
+  readonly unreadableDomains: readonly string[]
+}
+
 export interface FaberLoomSpaceDetail {
   /** Space id. */
   readonly id: string
@@ -900,7 +929,7 @@ export type FaberLoomSkillInstallRefusal =
   | 'name-illegal'
 
 /** Why one candidate skill was refused or skipped. */
-export type FaberLoomSkillCandidateReason = 'name-missing' | 'name-illegal' | 'exists'
+export type FaberLoomSkillCandidateReason = 'name-missing' | 'name-illegal' | 'exists' | 'agent-invalid'
 
 /** The outcome of one candidate skill in an install call. */
 export interface FaberLoomSkillInstallOutcome {

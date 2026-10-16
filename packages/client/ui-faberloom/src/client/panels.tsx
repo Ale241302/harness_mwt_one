@@ -270,6 +270,11 @@ export interface FaberloomPanelInjected {
   linkPreview: (spaceId: string) => Promise<Result<FaberLoomLinkPreview>>
   /** Read one space's editable configuration. */
   spaceDetail: (id: string) => Promise<Result<FaberLoomSpaceDetail | undefined>>
+  /** Write one space's harness into its folder: its agents, skills, flows, routines, memory, and context. */
+  prepareHarness: (
+    id: string,
+    title: string,
+  ) => Promise<Result<{ root: string; written: readonly string[]; pruned: readonly string[] } | null>>
   /** Save one space's editable configuration. */
   saveSpace: (id: string, input: SpaceSaveInput) => Promise<Result<FaberLoomOverview>>
   /** Read a space's conversation area (its workspace, when registered). */
@@ -457,7 +462,7 @@ function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
     const {
       t, createSpace, deleteSpace, goToWorkspace, adoptSpaceWorkspace, exportContextToFolder,
-      spaceDetail, saveSpace, spaceWorkspace, startSpaceSession,
+      spaceDetail, saveSpace, spaceWorkspace, startSpaceSession, prepareHarness,
       sessionsShare, openSession, setSpacePermissions, workflows,
     } = props
     const { overview, status, error } = useOverview(props)
@@ -676,6 +681,15 @@ function spacesScreen() {
                                 setMessage(result.ok ? `${t('spaces.exportedTo')} ${result.value.path}` : result.error.message)
                               }).catch((error: unknown) => { setMessage(String(error)) })
                             }}>{t('spaces.export')}</button>
+                            <button className={styles.secondary} type="button" disabled={detailValue === undefined} onClick={() => {
+                              if (detailValue === undefined) return
+                              void prepareHarness(detailValue.id, detailValue.title).then((result) => {
+                                if (!result.ok) { setMessage(result.error.message); return }
+                                setMessage(result.value === null
+                                  ? t('spaces.harnessUnavailable')
+                                  : `${t('spaces.harnessReady')} ${result.value.root}`)
+                              }).catch((error: unknown) => { setMessage(String(error)) })
+                            }}>{t('spaces.harness')}</button>
                           </span>
                         </Field>
                         <Field label={t('spaces.sharedSessions')} hint={t('spaces.sharedSessionsHint')}>

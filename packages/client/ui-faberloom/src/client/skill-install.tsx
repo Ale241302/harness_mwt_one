@@ -35,6 +35,7 @@ const REASON_KEY: Record<FaberLoomSkillCandidateReason, FaberloomKey> = {
   'name-missing': 'skills.install.why.nameMissing',
   'name-illegal': 'skills.install.why.nameIllegal',
   exists: 'skills.install.why.exists',
+  'agent-invalid': 'skills.install.why.agentInvalid',
 }
 
 /** The localized wording for one candidate status. */

@@ -878,6 +878,61 @@ Step handler registry owned by the FaberLoom product layer.
 
 Source: [`packages/faberloom/handlers/src/index.ts`](../../packages/faberloom/handlers/src/index.ts)
 
+<a id="ctxfaberloomharnessprojection--faberloomharnessprojection"></a>
+
+### `ctx.faberloomHarnessProjection` — `FaberLoomHarnessProjection`
+
+The harness projection service: read one scope's product records, write its harness files, and retire the files the previous projection owned.
+
+```ts cordis-catalog
+/**
+ * Read the records one scope registers: its agents and their skills, its work
+ * flows, routines, memory, and context. A product domain this process does
+ * not hold open is named in `unreadableDomains`; a Space scope naming a Space
+ * the open spaces domain does not hold is refused.
+ * @param scope - the Workspace or Space to read.
+ * @returns the scope's records.
+ * @throws when a Space scope names a Space the open spaces domain does not hold.
+ */
+async readUsage(scope: HarnessScope): Promise<HarnessUsage>
+
+/**
+ * Write the complete projection of one scope into an explicit directory and
+ * return what it wrote and retired. The manifest is written last, so an
+ * interrupted run leaves the previous ownership record in place and the next
+ * run still prunes from it.
+ * @param scope - the scope being projected.
+ * @param root - absolute scope directory the files land in.
+ * @returns the written paths, the pruned paths, and the records included.
+ * @throws when a Space scope names a Space the open spaces domain does not hold.
+ */
+async project(scope: HarnessScope, root: string): Promise<HarnessProjectionReport>
+
+/**
+ * Resolve one scope's real directory and project it. It returns undefined
+ * instead of writing when the scope has no registered folder: the projection
+ * is disabled, the workspace registry is not mounted, the Workspace is not
+ * registered, the Space mirrors no Workspace, or the open spaces domain does
+ * not hold the named Space.
+ * @param scope - the scope to project.
+ * @returns the projection report, or undefined when the scope has no folder.
+ */
+async refresh(scope: HarnessScope): Promise<HarnessProjectionReport | undefined>
+
+/**
+ * Retire every file one projection declared. Only paths that projection's own
+ * manifest lists are removed, so a foreign file in the same folder survives;
+ * a directory the removal emptied is removed too, and the manifest itself
+ * stays as the record of what was owned.
+ * @param root - absolute scope directory.
+ * @returns the retired paths, relative to that directory.
+ * @throws when the manifest exists but is not a readable projection manifest.
+ */
+async clean(root: string): Promise<string[]>
+```
+
+Source: [`packages/faberloom/harness-projection/src/index.ts`](../../packages/faberloom/harness-projection/src/index.ts)
+
 <a id="ctxfaberloominbound--faberloominbound"></a>
 
 ### `ctx.faberloomInbound` — `FaberLoomInbound`
@@ -1139,10 +1194,41 @@ The desktop side of the product mirror. It owns the compare-and-apply rule, the 
 
 ```ts cordis-catalog
 /**
+ * Write the status document and say where it lives, so an operator reading a
+ * host log has the state in one line instead of guessing from the panels. A
+ * panel may call it too; the cycle calls it after every attempt.
+ * @returns resolution after the document is written.
+ */
+async refreshStatus(): Promise<void>
+
+/**
  * The owner skills root this side reads and writes.
  * @returns the absolute skills root.
  */
 skillsRoot(): string
+
+/**
+ * The home this side mirrors: the storage root's parent when a deployment named
+ * one, and the harness home otherwise. The status document belongs to the
+ * medium's home, which is why the two are separate.
+ * @returns the absolute home directory.
+ */
+home(): string
+
+/**
+ * Absolute path of the status document this side keeps.
+ * @returns the absolute path.
+ */
+statusPath(): string
+
+/**
+ * One status snapshot: what the mirror is wired to and what its last cycle did.
+ * @returns the document written to {@link statusPath}.
+ */
+status(): Record<string, unknown>
+
+/** Write the status document; a failure is logged, never fatal to a cycle. */
+async writeStatus(): Promise<void>
 
 /** Clear the running timers without ending the mirror, for a service this process keeps. */
 clearTimers(): void
@@ -1151,9 +1237,9 @@ clearTimers(): void
 stop(): void
 
 /**
- * One full cycle: pull and apply the remote document, then push every local
- * row the journal does not already match.
- * @returns what the cycle did, or undefined when the mirror is unwired.
+ * One full cycle: read this home, pull the remote document and apply it, then
+ * push every local row the journal does not already match.
+ * @returns what the cycle did, or undefined when the mirror is unwired or the peer refused.
  */
 async sync(): Promise<FaberLoomMirrorSyncResult | undefined>
 
@@ -2876,9 +2962,20 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('linkPreview') async linkPreview(spaceId: string): Promise<FaberLoomLinkPreview>
 
 /**
- * Read one space with its editable configuration.
- * @param id - space id.
- * @returns the space detail, or undefined when it is gone.
+ * Write the harness of one scope into its own folder: the agents, skills, work
+ * flows, routines, memory, and context that scope used, plus the entrypoints
+ * each CLI reads. The Space panel's "Preparar harness" button calls this.
+ * @param kind - whether the scope is a registered Workspace or a product Space.
+ * @param id - the Workspace id or the Space id.
+ * @param title - display title the generated instructions carry.
+ * @returns what the run wrote and pruned, or null when this deployment does not mount the projection row.
+ */
+@Remote('prepareHarness') async prepareHarness(kind: 'workspace' | 'space', id: string, title: string): Promise<FaberLoomHarnessProjection | null>
+
+/**
+ * Read one space's editable configuration.
+ * @param id - the Space id.
+ * @returns the editable fields, or undefined when this owner holds no such Space.
  */
 @Remote('spaceDetail') async spaceDetail(id: string): Promise<FaberLoomSpaceDetail | undefined>
 

@@ -88,6 +88,7 @@ async function bench(
     value: { uses: 0, approved: 0, corrected: 0, agentFailures: 0, correctionsByCause: {}, correctionRate: null },
   }))
   const spaceDetail = vi.fn(async () => spaceDetailResult)
+  const prepareHarness = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { root: '/work/marluvas', written: ['AGENTS.md'], pruned: [] } }))
   const spaceWorkspace = vi.fn(async () => ({ ok: true, value: { registered: true, workspaceId: 'ws-1', title: 'Marluvas', sessions: 0 } }))
   const routineDetail = vi.fn(async () => ({
     ok: true,
@@ -188,7 +189,7 @@ async function bench(
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
-    spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, setBoardRoutine,
+    spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, setBoardRoutine, prepareHarness,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
@@ -283,7 +284,7 @@ async function bench(
   const surface = await runtime.mount({ inject: [...inject], apply })
   const view = runtime.renderRoot()
   return {
-    runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace,
+    runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
     deleteBoardItem, emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,

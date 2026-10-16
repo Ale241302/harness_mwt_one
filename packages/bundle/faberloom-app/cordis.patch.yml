@@ -97,6 +97,16 @@
       config:
         enabled: !!js process.env.FABERLOOM_MIRROR_ENABLED === '1'
 
+    # Proyeccion del harness de un ambito: escribe en la carpeta del Workspace o
+    # del Espacio lo que ese ambito ha usado (agentes, skills, flujos, rutinas,
+    # memoria y contexto) con la disposicion que leen los CLI —AGENTS.md,
+    # CLAUDE.md, GEMINI.md y los directorios .agents/, .claude/, .gemini/ y
+    # .kimi-code/— y poda lo suyo. El panel del Espacio la dispara.
+    - id: faberloom-harness-projection
+      name: '@deepseek-ai/dsh-faberloom-harness-projection'
+      config:
+        enabled: true
+
     # Conexiones propias del usuario (IMAP y respaldo), ajenas al MCP.
     - id: faberloom-connections
       name: '@deepseek-ai/dsh-faberloom-connections'

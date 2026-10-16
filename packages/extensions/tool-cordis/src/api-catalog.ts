@@ -1480,6 +1480,40 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [],
   },
   {
+    key: 'faberloomHarnessProjection',
+    summary: 'The harness projection service: read one scope\'s product records, write its harness files, and retire the files the previous projection owned.',
+    description: 'The harness projection service: read one scope\'s product records, write its harness files, and retire the files the previous projection owned.',
+    methods: [
+      {
+        signature: 'async readUsage(scope: HarnessScope): Promise<HarnessUsage>',
+        description: 'Read the records one scope registers: its agents and their skills, its work flows, routines, memory, and context. A product domain this process does not hold open is named in `unreadableDomains`; a Space scope naming a Space the open spaces domain does not hold is refused.',
+        parameters: [{ name: 'scope', description: 'the Workspace or Space to read.' }],
+        returns: 'the scope\'s records.',
+        throws: ['when a Space scope names a Space the open spaces domain does not hold.'],
+      },
+      {
+        signature: 'async project(scope: HarnessScope, root: string): Promise<HarnessProjectionReport>',
+        description: 'Write the complete projection of one scope into an explicit directory and return what it wrote and retired. The manifest is written last, so an interrupted run leaves the previous ownership record in place and the next run still prunes from it.',
+        parameters: [{ name: 'scope', description: 'the scope being projected.' }, { name: 'root', description: 'absolute scope directory the files land in.' }],
+        returns: 'the written paths, the pruned paths, and the records included.',
+        throws: ['when a Space scope names a Space the open spaces domain does not hold.'],
+      },
+      {
+        signature: 'async refresh(scope: HarnessScope): Promise<HarnessProjectionReport | undefined>',
+        description: 'Resolve one scope\'s real directory and project it. It returns undefined instead of writing when the scope has no registered folder: the projection is disabled, the workspace registry is not mounted, the Workspace is not registered, the Space mirrors no Workspace, or the open spaces domain does not hold the named Space.',
+        parameters: [{ name: 'scope', description: 'the scope to project.' }],
+        returns: 'the projection report, or undefined when the scope has no folder.',
+      },
+      {
+        signature: 'async clean(root: string): Promise<string[]>',
+        description: 'Retire every file one projection declared. Only paths that projection\'s own manifest lists are removed, so a foreign file in the same folder survives; a directory the removal emptied is removed too, and the manifest itself stays as the record of what was owned.',
+        parameters: [{ name: 'root', description: 'absolute scope directory.' }],
+        returns: 'the retired paths, relative to that directory.',
+        throws: ['when the manifest exists but is not a readable projection manifest.'],
+      },
+    ],
+  },
+  {
     key: 'faberloomInbound',
     summary: 'The owner\'s mailbox as a source of routine events.',
     description: 'The owner\'s mailbox as a source of routine events.',
@@ -1664,10 +1698,39 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The desktop side of the product mirror. It owns the compare-and-apply rule, the row journal, and the push debounce; the gateway owns the transport and the owner\'s own home.',
     methods: [
       {
+        signature: 'async refreshStatus(): Promise<void>',
+        description: 'Write the status document and say where it lives, so an operator reading a host log has the state in one line instead of guessing from the panels. A panel may call it too; the cycle calls it after every attempt.',
+        parameters: [],
+        returns: 'resolution after the document is written.',
+      },
+      {
         signature: 'skillsRoot(): string',
         description: 'The owner skills root this side reads and writes.',
         parameters: [],
         returns: 'the absolute skills root.',
+      },
+      {
+        signature: 'home(): string',
+        description: 'The home this side mirrors: the storage root\'s parent when a deployment named one, and the harness home otherwise. The status document belongs to the medium\'s home, which is why the two are separate.',
+        parameters: [],
+        returns: 'the absolute home directory.',
+      },
+      {
+        signature: 'statusPath(): string',
+        description: 'Absolute path of the status document this side keeps.',
+        parameters: [],
+        returns: 'the absolute path.',
+      },
+      {
+        signature: 'status(): Record<string, unknown>',
+        description: 'One status snapshot: what the mirror is wired to and what its last cycle did.',
+        parameters: [],
+        returns: 'the document written to {@link statusPath}.',
+      },
+      {
+        signature: 'async writeStatus(): Promise<void>',
+        description: 'Write the status document; a failure is logged, never fatal to a cycle.',
+        parameters: [],
       },
       {
         signature: 'clearTimers(): void',
@@ -1681,9 +1744,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async sync(): Promise<FaberLoomMirrorSyncResult | undefined>',
-        description: 'One full cycle: pull and apply the remote document, then push every local row the journal does not already match.',
+        description: 'One full cycle: read this home, pull the remote document and apply it, then push every local row the journal does not already match.',
         parameters: [],
-        returns: 'what the cycle did, or undefined when the mirror is unwired.',
+        returns: 'what the cycle did, or undefined when the mirror is unwired or the peer refused.',
       },
       {
         signature: 'async importDocument(received: unknown): Promise<FaberLoomMirrorImportResult>',
@@ -2885,10 +2948,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the preview the panel shows.',
       },
       {
+        signature: '@Remote(\'prepareHarness\') async prepareHarness(kind: \'workspace\' | \'space\', id: string, title: string): Promise<FaberLoomHarnessProjection | null>',
+        description: 'Write the harness of one scope into its own folder: the agents, skills, work flows, routines, memory, and context that scope used, plus the entrypoints each CLI reads. The Space panel\'s "Preparar harness" button calls this.',
+        parameters: [{ name: 'kind', description: 'whether the scope is a registered Workspace or a product Space.' }, { name: 'id', description: 'the Workspace id or the Space id.' }, { name: 'title', description: 'display title the generated instructions carry.' }],
+        returns: 'what the run wrote and pruned, or null when this deployment does not mount the projection row.',
+      },
+      {
         signature: '@Remote(\'spaceDetail\') async spaceDetail(id: string): Promise<FaberLoomSpaceDetail | undefined>',
-        description: 'Read one space with its editable configuration.',
-        parameters: [{ name: 'id', description: 'space id.' }],
-        returns: 'the space detail, or undefined when it is gone.',
+        description: 'Read one space\'s editable configuration.',
+        parameters: [{ name: 'id', description: 'the Space id.' }],
+        returns: 'the editable fields, or undefined when this owner holds no such Space.',
       },
       {
         signature: '@Remote(\'spaceWorkspace\') async spaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace>',
@@ -6434,6 +6503,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentPresetRow {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}',
   },
   {
+    name: 'AgentRejection',
+    declaration: 'export type AgentRejection = \'missing-preset-yml\' | \'bad-preset\' | \'bad-frontmatter\' | \'missing-name\' | \'invalid-name\';',
+  },
+  {
     name: 'AgentResolver',
     declaration: 'export type AgentResolver = (sessionId: SessionId) => Promise<Agent>;',
   },
@@ -6958,6 +7031,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DelegateResult {\n    readonly status: ResolveStatus;\n    readonly modelId: FaberLoomModelId | undefined;\n    readonly reason: string;\n    readonly cost: number | undefined;\n    readonly remainingBudget: number | undefined;\n}',
   },
   {
+    name: 'DetectedAgent',
+    declaration: 'export interface DetectedAgent {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly source: string;\n    readonly prompt: string | null;\n}',
+  },
+  {
     name: 'DetectedSkill',
     declaration: 'export interface DetectedSkill {\n    readonly name: string;\n    readonly description: string;\n    readonly directory: string;\n}',
   },
@@ -7415,7 +7492,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomMirrorDomain',
-    declaration: 'export interface FaberLoomMirrorDomain {\n    readonly tables: Readonly<Record<string, Readonly<Record<string, FaberLoomMirrorRow>>>>;\n}',
+    declaration: 'export interface FaberLoomMirrorDomain {\n    readonly version?: number;\n    readonly tables: Readonly<Record<string, Readonly<Record<string, FaberLoomMirrorRow>>>>;\n}',
   },
   {
     name: 'FaberLoomMirrorExportResult',
@@ -7607,7 +7684,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSkillCandidateReason',
-    declaration: 'export type FaberLoomSkillCandidateReason = \'name-missing\' | \'name-illegal\' | \'exists\';',
+    declaration: 'export type FaberLoomSkillCandidateReason = \'name-missing\' | \'name-illegal\' | \'exists\' | \'agent-invalid\';',
   },
   {
     name: 'FaberLoomSkillInstallDestination',
@@ -7912,6 +7989,50 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GrantSaveInput',
     declaration: 'export interface GrantSaveInput {\n    readonly action: string;\n    readonly agentId?: string;\n    readonly context?: string;\n    readonly note?: string;\n    readonly expiresAt?: string;\n}',
+  },
+  {
+    name: 'HarnessAgentUsage',
+    declaration: 'export interface HarnessAgentUsage {\n    readonly id: string;\n    readonly name: string;\n    readonly responsibility: string;\n    readonly provider: string | undefined;\n    readonly model: string | undefined;\n    readonly skills: readonly string[];\n}',
+  },
+  {
+    name: 'HarnessContextUsage',
+    declaration: 'export interface HarnessContextUsage {\n    readonly id: string;\n    readonly title: string;\n}',
+  },
+  {
+    name: 'HarnessMemoryUsage',
+    declaration: 'export interface HarnessMemoryUsage {\n    readonly id: string;\n    readonly text: string;\n    readonly source: \'space\' | \'teaching\';\n}',
+  },
+  {
+    name: 'HarnessProjectionReport',
+    declaration: 'export interface HarnessProjectionReport {\n    readonly version: number;\n    readonly scope: HarnessScope;\n    readonly root: string;\n    readonly generatedAt: string;\n    readonly written: readonly string[];\n    readonly pruned: readonly string[];\n    readonly usage: HarnessUsage;\n}',
+  },
+  {
+    name: 'HarnessRoutineUsage',
+    declaration: 'export interface HarnessRoutineUsage {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n}',
+  },
+  {
+    name: 'HarnessScope',
+    declaration: 'export type HarnessScope = HarnessWorkspaceScope | HarnessSpaceScope;',
+  },
+  {
+    name: 'HarnessSkillUsage',
+    declaration: 'export interface HarnessSkillUsage {\n    readonly name: string;\n    readonly description: string;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'HarnessSpaceScope',
+    declaration: 'export interface HarnessSpaceScope {\n    readonly kind: \'space\';\n    readonly id: FaberLoomSpaceId;\n    readonly title: string;\n}',
+  },
+  {
+    name: 'HarnessUsage',
+    declaration: 'export interface HarnessUsage {\n    readonly spaceId: string | undefined;\n    readonly agents: readonly HarnessAgentUsage[];\n    readonly skills: readonly HarnessSkillUsage[];\n    readonly unresolvedSkills: readonly string[];\n    readonly workflows: readonly HarnessWorkflowUsage[];\n    readonly routines: readonly HarnessRoutineUsage[];\n    readonly memory: readonly HarnessMemoryUsage[];\n    readonly context: readonly HarnessContextUsage[];\n    readonly unreadableDomains: readonly string[];\n}',
+  },
+  {
+    name: 'HarnessWorkflowUsage',
+    declaration: 'export interface HarnessWorkflowUsage {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n}',
+  },
+  {
+    name: 'HarnessWorkspaceScope',
+    declaration: 'export interface HarnessWorkspaceScope {\n    readonly kind: \'workspace\';\n    readonly id: WorkspaceId;\n    readonly title: string;\n}',
   },
   {
     name: 'ImageAttachmentLimits',
@@ -8652,6 +8773,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'RefusedAgent',
+    declaration: 'export interface RefusedAgent {\n    readonly source: string;\n    readonly reason: AgentRejection;\n}',
   },
   {
     name: 'RefusedSkill',
@@ -9499,7 +9624,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SkillFolderDetection',
-    declaration: 'export type SkillFolderDetection = {\n    readonly kind: \'invalid\';\n    readonly source: string;\n    readonly reason: SkillFolderRejection;\n} | {\n    readonly kind: \'found\';\n    readonly source: string;\n    readonly skills: readonly DetectedSkill[];\n    readonly refused: readonly RefusedSkill[];\n};',
+    declaration: 'export type SkillFolderDetection = {\n    readonly kind: \'invalid\';\n    readonly source: string;\n    readonly reason: SkillFolderRejection;\n} | {\n    readonly kind: \'found\';\n    readonly source: string;\n    readonly skills: readonly DetectedSkill[];\n    readonly refused: readonly RefusedSkill[];\n    readonly agents?: readonly DetectedAgent[];\n    readonly refusedAgents?: readonly RefusedAgent[];\n};',
   },
   {
     name: 'SkillFolderRejection',
@@ -9507,7 +9632,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SkillInstallOutcome',
-    declaration: 'export interface SkillInstallOutcome {\n    readonly name: string;\n    readonly status: SkillInstallOutcomeStatus;\n    readonly reason?: SkillFolderRejection | \'exists\';\n}',
+    declaration: 'export interface SkillInstallOutcome {\n    readonly name: string;\n    readonly status: SkillInstallOutcomeStatus;\n    readonly reason?: SkillFolderRejection | AgentRejection | \'exists\';\n}',
   },
   {
     name: 'SkillInstallOutcomeStatus',
@@ -9519,7 +9644,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SkillInstallReport',
-    declaration: 'export interface SkillInstallReport {\n    readonly status: SkillInstallStatus;\n    readonly source: string;\n    readonly destination?: SkillScope;\n    readonly root?: string;\n    readonly outcomes: readonly SkillInstallOutcome[];\n    readonly reason?: SkillInstallRefusal;\n}',
+    declaration: 'export interface SkillInstallReport {\n    readonly status: SkillInstallStatus;\n    readonly source: string;\n    readonly destination?: SkillScope;\n    readonly root?: string;\n    readonly outcomes: readonly SkillInstallOutcome[];\n    readonly agents?: readonly SkillInstallOutcome[];\n    readonly agentsRoot?: string;\n    readonly reason?: SkillInstallRefusal;\n}',
   },
   {
     name: 'SkillInstallRequest',

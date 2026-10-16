@@ -244,6 +244,7 @@ export function apply(ctx: ClientContext): void {
       createRoutineFromWork: (text, name) => ctx.remote.faberloomView.createRoutineFromWork(text, name),
       linkPreview: spaceId => ctx.remote.faberloomView.linkPreview(spaceId),
       spaceDetail: id => ctx.remote.faberloomView.spaceDetail(id),
+      prepareHarness: (id, title) => ctx.remote.faberloomView.prepareHarness('space', id, title),
       saveSpace: (id, input) => ctx.remote.faberloomView.saveSpace(id, input),
       spaceWorkspace: id => ctx.remote.faberloomView.spaceWorkspace(id),
       startSpaceSession: (spaceId) => {

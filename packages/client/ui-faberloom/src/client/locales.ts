@@ -324,6 +324,9 @@ export const es = {
   'spaces.fromFolder': 'Usar una carpeta existente…',
   'spaces.export': 'Exportar a la carpeta',
   'spaces.exportedTo': 'Exportado a',
+  'spaces.harness': 'Preparar harness',
+  'spaces.harnessReady': 'Harness listo en',
+  'spaces.harnessUnavailable': 'Este despliegue no monta la proyección del harness.',
   'spaces.noAgent': 'Sin agente',
   'spaces.noParent': 'Sin padre (raíz)',
   'spaces.noSpace': 'Sin espacio',
@@ -850,6 +853,7 @@ export const es = {
   'skills.install.why.sourceMissing': 'la carpeta de origen no existe',
   'skills.install.why.outsideWorkspace': 'la carpeta de origen está fuera del espacio de trabajo',
   'skills.install.why.notASkill': 'la carpeta no contiene ninguna skill con SKILL.md',
+  'skills.install.why.agentInvalid': 'el descriptor del agente no es válido',
 } satisfies Record<string, string>
 
 /** The faberloom namespace key union. */
@@ -1176,6 +1180,9 @@ export const en: Record<FaberloomKey, string> = {
   'spaces.fromFolder': 'Use an existing folder…',
   'spaces.export': 'Export to folder',
   'spaces.exportedTo': 'Exported to',
+  'spaces.harness': 'Prepare harness',
+  'spaces.harnessReady': 'Harness ready in',
+  'spaces.harnessUnavailable': 'This deployment does not mount the harness projection.',
   'spaces.noAgent': 'No agent',
   'spaces.noParent': 'No parent (root)',
   'spaces.noSpace': 'No space',
@@ -1702,6 +1709,7 @@ export const en: Record<FaberloomKey, string> = {
   'skills.install.why.sourceMissing': 'the source folder does not exist',
   'skills.install.why.outsideWorkspace': 'the source folder is outside the workspace',
   'skills.install.why.notASkill': 'the folder holds no skill with SKILL.md',
+  'skills.install.why.agentInvalid': 'the agent descriptor is not usable',
 }
 
 /** Simplified Chinese dictionary; a real translation of the same key set. */
@@ -2021,6 +2029,9 @@ export const zh: Record<FaberloomKey, string> = {
   'spaces.fromFolder': '使用现有文件夹…',
   'spaces.export': '导出到文件夹',
   'spaces.exportedTo': '已导出到',
+  'spaces.harness': '准备 harness',
+  'spaces.harnessReady': 'harness 已就绪：',
+  'spaces.harnessUnavailable': '此部署未挂载 harness 投影。',
   'spaces.noAgent': '无智能体',
   'spaces.noParent': '无父空间（根）',
   'spaces.noSpace': '无空间',
@@ -2547,4 +2558,5 @@ export const zh: Record<FaberloomKey, string> = {
   'skills.install.why.sourceMissing': '源文件夹不存在',
   'skills.install.why.outsideWorkspace': '源文件夹在工作区之外',
   'skills.install.why.notASkill': '该文件夹不包含带 SKILL.md 的技能',
+  'skills.install.why.agentInvalid': '代理描述不可用',
 }

@@ -33,6 +33,8 @@ import type { SpaceActor, FaberLoomSpaceId, FaberLoomSpace, SpaceContext } from 
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the workspace registry, read through ctx.get like the product services.
 import type { Workspace, WorkspaceRegistry, WorkspaceId } from '@deepseek-ai/dsh-workspace'
+// Type-only: pulls the ctx merge for the harness projection the Space panel writes through.
+import type { HarnessScope } from '@deepseek-ai/dsh-faberloom-harness-projection'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
@@ -63,6 +65,7 @@ import type {
   FaberLoomSkillInstallDestination, FaberLoomSkillCandidateReason,
   FaberLoomSkillInstallOutcome, FaberLoomSkillInstallReport, FaberLoomSkillInstallTargets, FaberLoomSkillInstallRow,
   FaberLoomSkillInstallRefusal,
+  FaberLoomHarnessProjection,
   FaberLoomMcpServerRow, FaberLoomMcpServerInput, FaberLoomMcpSecretRow, FaberLoomMcpProbeResult,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
@@ -88,7 +91,7 @@ import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-a
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 // Type-only: the native skill installer the install Remote methods route through.
 import type {
-  SkillFolderRejection, SkillInstallOutcomeStatus, SkillInstallRefusal, SkillInstallService,
+  AgentRejection, SkillFolderRejection, SkillInstallOutcomeStatus, SkillInstallRefusal, SkillInstallService,
 } from '@deepseek-ai/dsh-skill-install'
 import type {} from '@deepseek-ai/dsh-skill-install'
 // Type-only: pulls the ctx.sessionQuery merge for cross-member Session capture.
@@ -208,12 +211,16 @@ const INSTALL_REFUSAL: Record<SkillInstallRefusal, FaberLoomSkillInstallRefusal>
 }
 
 /** The view's reason for each reason the native installer reports per candidate. */
-const OUTCOME_REASON: Record<SkillFolderRejection | 'exists', FaberLoomSkillCandidateReason | undefined> = {
+const OUTCOME_REASON: Record<SkillFolderRejection | AgentRejection | 'exists', FaberLoomSkillCandidateReason | undefined> = {
   exists: 'exists',
   'invalid-name': 'name-illegal',
   'missing-name': 'name-missing',
   // Unreadable front matter carries no name, so it reads as a missing one.
   'bad-frontmatter': 'name-missing',
+  // Un descriptor de plantilla ilegible o ausente no tiene campo que leer, asi
+  // que el agente llega al panel como un descriptor invalido.
+  'missing-preset-yml': 'agent-invalid',
+  'bad-preset': 'agent-invalid',
   // A candidate without `SKILL.md` is skipped by detection, so the remaining
   // source-level rejections never name one candidate.
   missing: undefined,
@@ -238,7 +245,7 @@ function refusalOfInstall(reason: SkillInstallRefusal): FaberLoomSkillInstallRef
  * @returns the view's reason, or undefined.
  */
 function outcomeReasonOf(
-  reason: SkillFolderRejection | 'exists' | undefined,
+  reason: SkillFolderRejection | AgentRejection | 'exists' | undefined,
 ): FaberLoomSkillCandidateReason | undefined {
   return reason === undefined ? undefined : OUTCOME_REASON[reason]
 }
@@ -4344,6 +4351,46 @@ export class FaberLoomViewService extends TypertRemoteService {
    * Read one space with its editable configuration.
    * @param id - space id.
    * @returns the space detail, or undefined when it is gone.
+   */
+  /**
+   * Write the harness of one scope into its own folder: the agents, skills, work
+   * flows, routines, memory, and context that scope used, plus the entrypoints
+   * each CLI reads. The Space panel's "Preparar harness" button calls this.
+   * @param kind - whether the scope is a registered Workspace or a product Space.
+   * @param id - the Workspace id or the Space id.
+   * @param title - display title the generated instructions carry.
+   * @returns what the run wrote and pruned, or null when this deployment does not mount the projection row.
+   */
+  @Remote('prepareHarness')
+  async prepareHarness(kind: 'workspace' | 'space', id: string, title: string): Promise<FaberLoomHarnessProjection | null> {
+    const projection = this.ctx.get('faberloomHarnessProjection')
+    if (projection === undefined) return null
+    const scope: HarnessScope = kind === 'workspace'
+      ? { kind: 'workspace', id: id as WorkspaceId, title }
+      : { kind: 'space', id: id as FaberLoomSpaceId, title }
+    const report = await projection.refresh(scope)
+    if (report === undefined) return null
+    return {
+      root: report.root,
+      generatedAt: report.generatedAt,
+      written: [...report.written],
+      pruned: [...report.pruned],
+      counts: {
+        agents: report.usage.agents.length,
+        skills: report.usage.skills.length,
+        workflows: report.usage.workflows.length,
+        routines: report.usage.routines.length,
+        memory: report.usage.memory.length,
+        context: report.usage.context.length,
+      },
+      unreadableDomains: [...report.usage.unreadableDomains],
+    }
+  }
+
+  /**
+   * Read one space's editable configuration.
+   * @param id - the Space id.
+   * @returns the editable fields, or undefined when this owner holds no such Space.
    */
   @Remote('spaceDetail')
   async spaceDetail(id: string): Promise<FaberLoomSpaceDetail | undefined> {
