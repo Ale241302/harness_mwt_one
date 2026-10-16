@@ -133,6 +133,42 @@ describe('FaberLoomViewService shared Sessions', () => {
     })
   })
 
+  it('sincroniza en las dos direcciones: al listar publica la sesión del área que el catálogo no lleva', async () => {
+    // El espejo es quien transporta el catálogo entre las máquinas del propio
+    // dueño, así que la sesión de la web llega al escritorio sin que el Space
+    // esté compartido con nadie.
+    const { view, catalog } = harness()
+    catalog.list.mockResolvedValue([])
+
+    await view.spaceSessions('sp-1')
+
+    expect(catalog.capture).toHaveBeenCalledWith(
+      { id: 'owner@muitowork.com' },
+      expect.objectContaining({ spaceId: 'sp-1', sessionId: 's1', workspaceId: 'ws-1', messageCount: 2, title: 'Título del log' }),
+    )
+  })
+
+  it('no republica una sesión importada de otro miembro ni una que ya publicó', async () => {
+    const imported = harness()
+    imported.catalog.list.mockResolvedValue([row({ ownerId: 'guest@x', sessionId: 's1' })])
+    await imported.view.spaceSessions('sp-1')
+    expect(imported.catalog.capture).not.toHaveBeenCalled()
+
+    const ours = harness()
+    await ours.view.spaceSessions('sp-1')
+    expect(ours.catalog.capture).not.toHaveBeenCalled()
+  })
+
+  it('no publica una sesión del área que no tiene ningún turno completado', async () => {
+    const { view, catalog, query } = harness()
+    catalog.list.mockResolvedValue([])
+    query.readSession.mockResolvedValue({ session: { id: 's1' }, events: [{ type: 'permission/preset' }] })
+
+    await view.spaceSessions('sp-1')
+
+    expect(catalog.capture).not.toHaveBeenCalled()
+  })
+
   it('retires a captured Session whose log is gone and drops its dangling area slot', async () => {
     const { view, catalog, registry } = harness()
     // The area lists two Sessions, but only s1 still has a log; s2 was deleted.
