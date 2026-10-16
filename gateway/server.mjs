@@ -1846,6 +1846,11 @@ installMirrorRoute(app, {
   userStateFile: cfg.userStateFile,
   mirrorKey: cfg.mirrorKey,
   consolaApi: cfg.consolaApi,
+  // Un primer ciclo entre dos casas ya pobladas empuja filas grandes (las
+  // ejecuciones de rutina de un usuario pasan de un megabyte), así que el
+  // limite y la espera se ponen por encima del valor por defecto del modulo.
+  maxBodyBytes: 16 * 1024 * 1024,
+  timeoutMs: 120_000,
   // El espejo puede ser la primera petición de una cuenta inactiva: sin esto el
   // socket no existe y la ruta responde 502. Es el mismo arranque que hace el login.
   ensureOwner: async (owner) => {

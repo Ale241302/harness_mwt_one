@@ -66,7 +66,7 @@ export const DEFAULT_MIRROR_INTERVAL_MS = 120_000
 export const DEFAULT_MIRROR_DEBOUNCE_MS = 3_000
 
 /** Longest one mirror request may take, in milliseconds. */
-export const DEFAULT_MIRROR_TIMEOUT_MS = 30_000
+export const DEFAULT_MIRROR_TIMEOUT_MS = 180_000
 
 /** Name of the status document the mirror keeps in its home. */
 export const MIRROR_STATUS_FILE = 'mirror-status.json'
@@ -536,14 +536,22 @@ export class FaberLoomMirror extends Service {
     return response.document
   }
 
+  /** Digest of the row one document carries at a location; `deleted` when it carries none or a tombstone. */
+  private remoteDigest(document: FaberLoomMirrorDocument, change: FaberLoomMirrorRowChange): string {
+    const row = document.domains[change.domain]?.tables[change.table]?.[change.key]
+    return row === undefined || row.deleted ? DELETED : hashRow(row.value)
+  }
+
   /** Apply one already-read remote document under the journal rule. */
   private async applyPulled(store: MirrorHomeStore, remote: FaberLoomMirrorDocument): Promise<PullResult> {
     const result = await applyMirrorDocument(store, remote, {
-      overwrite: (domain, table, key) => {
-        const row = remote.domains[domain]?.tables[table]?.[key]
-        const remoteHash = row === undefined || row.deleted ? DELETED : hashRow(row.value)
-        return this.shouldOverwrite(store, domain, table, key, remoteHash)
-      },
+      overwrite: (domain, table, key) => this.shouldOverwrite(
+        store,
+        domain,
+        table,
+        key,
+        this.remoteDigest(remote, { domain, table, key }),
+      ),
     })
     for (const change of result.applied) {
       const key = journalKey(change.domain, change.table, change.key)
@@ -555,6 +563,14 @@ export class FaberLoomMirror extends Service {
         this.recordSynced(key, change, hashRow(row.value), hashRow(row.value))
       }
     }
+    // Una fila que ambos lados ya tienen igual no se escribe (una publicacion
+    // del documento por fila y por ciclo es I/O puro) pero tampoco es un
+    // rechazo que un operador deba leer: `keptLocal` queda para las filas que
+    // de verdad difieren.
+    const kept = result.kept.filter(change => (
+      (this.currentRowHash(store, change.domain, change.table, change.key) ?? DELETED)
+      !== this.remoteDigest(remote, change)
+    ))
     const skillsApplied: string[] = []
     const skipped: FaberLoomMirrorSkip[] = [...result.skipped]
     const nonNull: Record<string, string> = {}
@@ -569,7 +585,7 @@ export class FaberLoomMirror extends Service {
       skillsApplied.push(name)
     }
     skipped.push(...skills.skipped)
-    return { rows: result.rows, applied: result.applied, kept: result.kept, skillsApplied, skipped }
+    return { rows: result.rows, applied: result.applied, kept, skillsApplied, skipped }
   }
 
   /** Push every locally changed row and skill, recording what landed. */
@@ -631,12 +647,15 @@ export class FaberLoomMirror extends Service {
    * The conflict rule for one incoming row: the remote value lands only when the
    * local side still holds what the last sync left there and the remote value
    * moved since then. A row changed on both sides keeps the local value, which
-   * is then pushed back.
+   * is then pushed back. A row this side never journaled lands when it is absent
+   * or when both sides already agree on it, so a first cycle over two homes that
+   * were filled independently records the agreement instead of sending every
+   * equal row back over the wire.
    */
   private shouldOverwrite(store: MirrorHomeStore, domain: string, table: string, key: string, remoteHash: string): boolean {
     const entry = this.journal.get(journalKey(domain, table, key))
     const localHash = this.currentRowHash(store, domain, table, key) ?? DELETED
-    if (entry === undefined) return localHash === DELETED
+    if (entry === undefined) return localHash === DELETED || localHash === remoteHash
     return entry.syncedLocalHash === localHash && entry.syncedRemoteHash !== remoteHash
   }
 

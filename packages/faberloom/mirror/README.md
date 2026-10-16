@@ -65,7 +65,7 @@ Skills travel as files: `$DSH_HOME/skills/<name>/SKILL.md` becomes one entry of 
 
 ### Conflict rule
 
-Each synced row has a journal entry holding two digests: the local value and the remote value as of the last sync that touched it. An incoming remote row is written only when the local side still holds what that sync left there and the remote value moved since then. A row both sides changed keeps the local value, is reported as `keptLocal`, and is pushed back. A row only the local side changed is pushed. A row the local side does not hold at all is written, which is how a first pull lands the other home's rows.
+Each synced row has a journal entry holding two digests: the local value and the remote value as of the last sync that touched it. An incoming remote row is written only when the local side still holds what that sync left there and the remote value moved since then. A row both sides changed keeps the local value, is reported as `keptLocal`, and is pushed back. A row only the local side changed is pushed. A row the local side does not hold at all is written, which is how a first pull lands the other home's rows. A row this side never journaled lands when it is absent **or** when both sides already hold the same value: two homes that were filled independently record their agreement on the first cycle instead of sending every equal row back over the wire.
 
 Local deletions are pushed as tombstones, and remote tombstones are applied, so a delete travels in both directions under the same rule.
 

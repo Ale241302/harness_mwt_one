@@ -560,6 +560,42 @@ describe('FaberLoomMirror', () => {
     expect(mirror.status()['lastError']).toBe('no soy un error')
   })
 
+  it('records a row both sides already agree on instead of sending it back', async () => {
+    const fake = await startGateway(remoteDocument('de acuerdo'))
+    closeGateway = fake.close
+    home = mkdtempSync(join(tmpdir(), 'faberloom-mirror-agree-'))
+    process.env.DSH_HOME = home
+    const ctx = await bootContext()
+    await ctx.plugin(FaberLoomAccess)
+    const seeded = await ctx.faberloomAccess.grant(OWNER, { action: 'mail.send' })
+    const table = ctx.storageDomain.get('faberloom_grants')?.table('grants') as unknown as {
+      delete(key: string): Promise<boolean>
+      put(key: string, value: unknown): Promise<void>
+    }
+    await table.delete(seeded.id)
+    // La casa local ya tiene la misma fila que la remota y el journal esta
+    // vacio: el ciclo anota el acuerdo en vez de devolver la fila al par.
+    await table.put('g1', { id: 'g1', action: 'mail.send', note: 'de acuerdo' })
+    const mirror = new FaberLoomMirror(ctx, {
+      enabled: true,
+      gatewayUrl: fake.url,
+      ownerId: OWNER,
+      consoleToken: TOKEN,
+      mirrorKey: KEY,
+      intervalMs: 10_000_000,
+    })
+    mirror.clearTimers()
+    // El arranque lanza su propio ciclo; con la regla vieja esa fila se quedaba
+    // como cambio local y volvia al par, con la nueva se anota el acuerdo.
+    const cycled = await waitFor(() => mirror.status()['lastCycle'] !== null)
+    expect(cycled).toBe(true)
+    expect(mirror.status()['lastCycle']).toMatchObject({ applied: 1, keptLocal: 0, pushed: 0 })
+    const idle = await mirror.sync()
+    expect(idle?.pushed).toEqual([])
+    expect(idle?.keptLocal).toEqual([])
+    mirror.stop()
+  })
+
   it('says it is off, and where its state lives, when it is not wired', async () => {
     home = mkdtempSync(join(tmpdir(), 'faberloom-mirror-off-'))
     process.env.DSH_HOME = home

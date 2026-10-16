@@ -246,4 +246,9 @@ it.skipIf(IS_WINDOWS)('answers a pull with the owner document and an apply with 
   const applied = await dispatch(app, request({ token: TOKEN, key: KEY, action: 'apply', body: document }))
   expect(applied.status).toBe(200)
   expect(applied.body.applied).toEqual([{ domain: 'faberloom_grants', table: 'grants', key: 'g1' }])
+  // El eco es el documento que el cliente envió: el cliente recompone con él lo
+  // que antes leía de una segunda exportación del propietario, y esa espera era
+  // la que el proxy cortaba.
+  expect(applied.body.domains).toEqual(document.domains)
+  expect(applied.body.skills).toEqual(document.skills)
 })

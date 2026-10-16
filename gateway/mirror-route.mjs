@@ -366,13 +366,16 @@ export function installMirrorRoute(app, options = {}) {
       }
       try {
         if (action === 'apply') {
+          // La respuesta es el documento que el cliente envió, con lo que el
+          // propietario dice haber escrito. Reexportar aquí costaba una segunda
+          // llamada al socket sobre un documento grande, y esa espera es la que
+          // el proxy cortaba con un 502: el cliente recompone lo mismo con el eco.
           const applied = await callMirrorTool(options, owner, key, 'faberloom_mirror_apply', { document: body })
-          const local = await callMirrorTool(options, owner, key, 'faberloom_mirror_export', {})
           response.status(200).json({
-            ...local.document,
+            ...body,
             applied: applied.applied ?? [],
             skillsApplied: applied.skillsApplied ?? [],
-            skipped: [...(applied.skipped ?? []), ...(local.skipped ?? [])],
+            skipped: applied.skipped ?? [],
           })
           return
         }
