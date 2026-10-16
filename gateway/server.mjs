@@ -981,6 +981,10 @@ function renderPatch(home, user, memory) {
     // La credencial interna con la que el gateway actúa como el propietario en la
     // ruta del espejo; sin ella esa ruta responde "unknown or revoked token".
     "    mirrorKey: !!js process.env.FABERLOOM_MIRROR_KEY ?? ''",
+    // El espejo le envia un documento entero en cada empuje: el limite por
+    // defecto del servidor MCP lo rechazaba ("request body too large") y la ruta
+    // lo convertia en 502.
+    `    maxBodyBytes: ${String(32 * 1024 * 1024)}`,
   ]
 
   // Memoria: el modelo deja de ir directo a DeepSeek y pasa por el proxy de
