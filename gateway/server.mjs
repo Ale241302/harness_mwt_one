@@ -1835,7 +1835,21 @@ app.get('/logout', (req, res) => {
 // de su propia casa en el despliegue, autenticada con el token de consola del
 // propietario y reenviada a su servidor MCP. Sin la credencial responde 503, así
 // que un despliegue que no lo configura lo dice en vez de fingir que sincroniza.
-installMirrorRoute(app, { dataDir: cfg.dataDir, userStateFile: cfg.userStateFile, mirrorKey: cfg.mirrorKey, consolaApi: cfg.consolaApi })
+installMirrorRoute(app, {
+  dataDir: cfg.dataDir,
+  userStateFile: cfg.userStateFile,
+  mirrorKey: cfg.mirrorKey,
+  consolaApi: cfg.consolaApi,
+  // El espejo puede ser la primera petición de una cuenta inactiva: sin esto el
+  // socket no existe y la ruta responde 502. Es el mismo arranque que hace el login.
+  ensureOwner: async (owner) => {
+    const live = [...instances.values()].find((inst) => inst.email === owner.email && inst.alive && inst.token)
+    if (live) return
+    const stored = readUserState(owner.email)
+    if (!stored) throw new Error('la cuenta no tiene sesión guardada; entra una vez por la web')
+    await ensureInstance({ ...stored, legalEntityIds: stored.legalEntityIds || [] })
+  },
+})
 
 // Catch-all: exige sesión y proxya al dsh del usuario. M3 · si la sesión firmada
 // sigue viva pero el proceso dsh se perdió (p. ej. tras un redeploy), se vuelve a

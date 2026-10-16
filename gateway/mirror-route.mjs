@@ -338,6 +338,17 @@ export function installMirrorRoute(app, options = {}) {
         refuse(401, 'la credencial del espejo no coincide')
         return
       }
+      // The owner's process only exists while that account is using the Web, so a
+      // mirror request is the first thing to arrive in a quiet deployment. Starting
+      // it here is the same step the Web login performs.
+      if (typeof options.ensureOwner === 'function') {
+        try {
+          await options.ensureOwner(owner)
+        } catch (error) {
+          refuse(502, `no se pudo iniciar el espacio de trabajo de ${owner.email}: ${error instanceof Error ? error.message : String(error)}`)
+          return
+        }
+      }
       const read = await readJsonBody(request, maxBodyBytes)
       if (!read.ok) {
         if (read.reason === 'too-large') {
