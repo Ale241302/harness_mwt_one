@@ -2232,7 +2232,12 @@ export class FaberLoomViewService extends TypertRemoteService {
     const ownIds = new Set(rows.filter(row => row.ownerId === actor.id).map(row => row.sessionId))
     const wanted = new Set<string>()
     for (const row of rows) {
-      if (row.ownerId === actor.id) continue
+      // Una fila del propio dueño puede llegar de otra de sus máquinas: el espejo
+      // lleva el catálogo entre ellas y las dos comparten identidad, así que lo
+      // que decide no es el autor de la fila sino si la sesión ya vive aquí. Una
+      // fila propia con la sesión presente es la copia del catálogo de esta
+      // máquina, y no hay nada que escribir.
+      if (row.ownerId === actor.id && await persistence.stat(row.sessionId as SessionId) !== undefined) continue
       wanted.add(row.sessionId)
       if (archived.has(row.sessionId)) continue
       try {

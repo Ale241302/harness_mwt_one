@@ -213,6 +213,33 @@ describe('FaberLoomViewService shared Sessions', () => {
     })
   })
 
+  it('materializa una sesión propia que llega de otra de mis máquinas', async () => {
+    // El dueño es el mismo en sus dos máquinas, así que la fila que el espejo
+    // trae lleva su identidad: sin esta materialización la conversación del web
+    // se queda en el catálogo y nunca aparece en la barra lateral del escritorio.
+    const { view, catalog, persistence } = harness()
+    const mine = row({ ownerId: 'owner@muitowork.com', sessionId: 'sess-otra-maquina' })
+    catalog.list.mockResolvedValue([mine])
+    catalog.content.mockResolvedValue({
+      ...mine,
+      content: JSON.stringify({
+        session: { version: 3, id: 'sess-otra-maquina', createdAt: 1, cwd: '/root/SICOP', isSeeded: false, delegationDepth: 0, agentPreset: 'standard' },
+        events: [
+          { type: 'turn/start', seq: 1, time: 1, data: {} },
+          { type: 'user/message', seq: 2, time: 2, data: {} },
+        ],
+      }),
+    })
+
+    await view.spaceSessions('sp-1')
+
+    await vi.waitFor(() => { expect(persistence.create).toHaveBeenCalled() })
+    expect(persistence.create).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'sess-otra-maquina',
+      cwd: '/data/owner/spaces/shared/3a4d6839',
+    }))
+  })
+
   it('materializes a shared Session as the member own Session under the area', async () => {
     const { view, catalog, persistence, emit } = harness()
     const shared = row({ ownerId: 'publisher@muitowork.com', sessionId: 'sess-remote' })
