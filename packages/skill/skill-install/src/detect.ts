@@ -16,10 +16,17 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { isSkillName } from '@deepseek-ai/dsh-skill'
 import { parseSkillFrontmatter } from '@deepseek-ai/dsh-skill-filesystem'
+import { detectAgents } from './agents.ts'
 import type { DetectedSkill, RefusedSkill, SkillFolderDetection, SkillFolderRejection } from './types.ts'
 
 /** Instruction file every skill directory must hold. */
 const SKILL_FILE = 'SKILL.md'
+
+/** Directory a knowledge base keeps its skill catalog in. */
+const SKILLS_DIR = 'skills'
+
+/** Directory a knowledge base keeps its agents in. */
+const AGENTS_DIR = 'agents'
 
 /**
  * Whether a path exists and is a directory.
@@ -101,8 +108,34 @@ export async function detectSkillFolder(source: string, cwd?: string): Promise<S
     if (typeof inspected === 'string') refused.push({ directory, reason: inspected })
     else skills.push(inspected)
   }
-  if (!sawSkillFile) return { kind: 'invalid', source: resolved, reason: 'missing-skill-md' }
+  if (!sawSkillFile) {
+    // Una carpeta KB trae el catalogo en `skills/` y los agentes en `agents/`:
+    // elegir la carpeta KB instala las dos cosas, que es lo que el dueño de un
+    // KB espera al elegir su carpeta entera.
+    const base = await detectKnowledgeBase(resolved)
+    if (base !== undefined) return base
+    return { kind: 'invalid', source: resolved, reason: 'missing-skill-md' }
+  }
   return { kind: 'found', source: resolved, skills, refused }
+}
+
+/**
+ * Inspect a folder as a knowledge base: `skills/` holds the skill catalog and
+ * `agents/` the agents, and either one alone is enough to be installable.
+ * @param directory - absolute candidate directory holding no `SKILL.md` itself.
+ * @returns the combined detection, or undefined when neither directory exists or both are empty.
+ */
+async function detectKnowledgeBase(directory: string): Promise<SkillFolderDetection | undefined> {
+  const skillsDir = join(directory, SKILLS_DIR)
+  const agentsDir = join(directory, AGENTS_DIR)
+  const [hasSkills, hasAgents] = await Promise.all([pathIsDirectory(skillsDir), pathIsDirectory(agentsDir)])
+  if (!hasSkills && !hasAgents) return undefined
+  const nested = hasSkills ? await detectSkillFolder(skillsDir) : undefined
+  const agents = hasAgents ? await detectAgents(agentsDir) : { agents: [], refused: [] }
+  const skills = nested?.kind === 'found' ? nested.skills : []
+  const refused = nested?.kind === 'found' ? nested.refused : []
+  if (skills.length === 0 && agents.agents.length === 0) return undefined
+  return { kind: 'found', source: directory, skills, refused, agents: agents.agents, refusedAgents: agents.refused }
 }
 
 /**

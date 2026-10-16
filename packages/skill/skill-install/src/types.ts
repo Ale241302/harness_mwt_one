@@ -47,10 +47,50 @@ export interface RefusedSkill {
   readonly reason: SkillFolderRejection
 }
 
+/** Why one `agents/` entry is not an installable agent. */
+export type AgentRejection =
+  | 'missing-preset-yml'
+  | 'bad-preset'
+  | 'bad-frontmatter'
+  | 'missing-name'
+  | 'invalid-name'
+
+/** One agent an install source carries: a preset folder, or a Markdown file's body. */
+export interface DetectedAgent {
+  /** Kebab-case id the preset directory is named by. */
+  readonly id: string
+  /** Display name from the preset descriptor or the Markdown front matter. */
+  readonly name: string
+  /** Routing description from the same source. */
+  readonly description: string
+  /** Absolute preset directory, or the Markdown file it came from. */
+  readonly source: string
+  /** Markdown file body, which becomes the persona; null for a preset folder. */
+  readonly prompt: string | null
+}
+
+/** One `agents/` entry the detector refused. */
+export interface RefusedAgent {
+  /** Absolute candidate path. */
+  readonly source: string
+  /** Why the entry is not an installable agent. */
+  readonly reason: AgentRejection
+}
+
+/** Verdict of inspecting one `agents/` directory. */
+export interface AgentDetection {
+  /** Agents an install can write into the home's preset directory. */
+  readonly agents: readonly DetectedAgent[]
+  /** Entries refused, with their reasons. */
+  readonly refused: readonly RefusedAgent[]
+}
+
 /**
  * Verdict of inspecting a folder the caller named as an install source. A
  * rejected source carries one reason; an accepted source carries at least one
- * skill and any additionally found candidates that failed validation.
+ * skill or agent, any additionally found candidates that failed validation,
+ * and — when the folder is a knowledge base holding `skills/` and `agents/` —
+ * the agents that install alongside the skills.
  */
 export type SkillFolderDetection =
   | { readonly kind: 'invalid'; readonly source: string; readonly reason: SkillFolderRejection }
@@ -59,6 +99,10 @@ export type SkillFolderDetection =
     readonly source: string
     readonly skills: readonly DetectedSkill[]
     readonly refused: readonly RefusedSkill[]
+    /** Agents the source carries; absent when it carries none. */
+    readonly agents?: readonly DetectedAgent[]
+    /** `agents/` entries refused, with their reasons. */
+    readonly refusedAgents?: readonly RefusedAgent[]
   }
 
 /** Per-skill result of one install. */
@@ -71,7 +115,7 @@ export interface SkillInstallOutcome {
   /** What the install did with this skill. */
   readonly status: SkillInstallOutcomeStatus
   /** Why a `skipped` or `refused` outcome happened. */
-  readonly reason?: SkillFolderRejection | 'exists'
+  readonly reason?: SkillFolderRejection | AgentRejection | 'exists'
 }
 
 /** Overall verdict of one install call, derived from its outcomes. */
@@ -98,6 +142,10 @@ export interface SkillInstallReport {
   readonly root?: string
   /** One result per candidate; empty when the source held no skill at all. */
   readonly outcomes: readonly SkillInstallOutcome[]
+  /** One result per agent the source carried; absent when it carried none. */
+  readonly agents?: readonly SkillInstallOutcome[]
+  /** Preset directory the agents were written into, when the source carried any. */
+  readonly agentsRoot?: string
   /** Set when nothing was installed. */
   readonly reason?: SkillInstallRefusal
 }

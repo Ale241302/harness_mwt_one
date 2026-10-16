@@ -19,6 +19,7 @@
  * @module @deepseek-ai/dsh-skill-install
  */
 
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
@@ -30,6 +31,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 // Side-effect type import: declaration-merges `ctx.userQuestions` onto Context.
 import type {} from '@deepseek-ai/dsh-user-questions'
 import { detectSkillFolder, refusedCandidateName } from './detect.ts'
+import { AGENT_PRESETS_DIRNAME, installAgents } from './agents.ts'
 import {
   installSkillFolder,
   readInstalls,
@@ -155,12 +157,21 @@ export function apply(ctx: Context, config: Config = {}): void {
         outcomes.push({ name: refusedCandidateName(refused.directory), status: 'refused', reason: refused.reason })
       }
       outcomes.sort((left, right) => left.name.localeCompare(right.name))
+      // Los agentes de un KB van a la casa del usuario, no al espacio: el
+      // descubrimiento de presets los lee de `<DSH_HOME>/.agent-presets`, que es
+      // lo que significa "global pero solo para su usuario".
+      const agentsRoot = join(dshHome, AGENT_PRESETS_DIRNAME)
+      const detectedAgents = { agents: detection.agents ?? [], refused: detection.refusedAgents ?? [] }
+      const agents = detectedAgents.agents.length === 0 && detectedAgents.refused.length === 0
+        ? []
+        : await installAgents(detectedAgents, agentsRoot, request.replace ?? false)
       return {
-        status: summarizeOutcomes(outcomes),
+        status: summarizeOutcomes([...outcomes, ...agents]),
         source: detection.source,
         destination: request.destination,
         root,
         outcomes,
+        ...agents.length === 0 ? {} : { agents, agentsRoot },
       }
     },
 
@@ -199,7 +210,8 @@ function fsOf(ctx: Context): FileSystem | undefined {
 function registerInstallTool(ctx: Context, service: SkillInstallService): void {
   ctx.tools.register(defineTool({
     name: 'install_skill',
-    description: 'Install a skill from a folder the user points at. The folder is either one skill directory holding SKILL.md or a directory of skill directories. '
+    description: 'Install a skill from a folder the user points at. The folder is either one skill directory holding SKILL.md, a directory of skill directories, or a knowledge base holding `skills/` and `agents/` — '
+      + 'the agents of a knowledge base are installed alongside its skills, as presets in the user\'s own harness home, and a Markdown agent becomes a preset whose body is its persona. '
       + 'By default the user is asked whether to install it into the current workspace or globally for their user. '
       + 'A folder already installed unchanged is reported, not copied again.',
     parameters: {
@@ -208,7 +220,19 @@ function registerInstallTool(ctx: Context, service: SkillInstallService): void {
       replace: { type: 'boolean', description: 'Replace an existing skill of the same name instead of skipping it.' },
     },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: INSTALL_OUTPUT_PROPERTIES },
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ...INSTALL_OUTPUT_PROPERTIES,
+          agents: {
+            type: 'array',
+            items: { type: 'object', additionalProperties: false, properties: OUTCOME_PROPERTIES },
+            description: 'One outcome per agent the source carried.',
+          },
+          agentsRoot: { type: 'string' },
+        },
+      },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
     async execute(args, exec) {
@@ -227,7 +251,12 @@ function registerInstallTool(ctx: Context, service: SkillInstallService): void {
         ...cwd === undefined ? {} : { cwd },
         ...args.replace === undefined ? {} : { replace: args.replace },
       })
-      return { ...report, outcomes: report.outcomes.map(outcome => ({ ...outcome })) }
+      const { agents, ...rest } = report
+      return {
+        ...rest,
+        outcomes: rest.outcomes.map(outcome => ({ ...outcome })),
+        ...agents === undefined ? {} : { agents: agents.map(agent => ({ ...agent })) },
+      }
     },
     presentCall(args) {
       return { card: 'generic', title: `Install skill ${args.source}`, kind: 'edit', rawInput: args.source }

@@ -35,6 +35,14 @@ Compose this plugin wherever a user should be able to install a skill by pointin
 { "kind": "found", "source": "/work/skills", "skills": [{ "name": "greet", "description": "Greets the team", "directory": "/work/skills/greet" }], "refused": [] }
 ```
 
+### Installing a knowledge base
+
+A folder that holds neither a `SKILL.md` of its own nor installable subdirectories is inspected once more as a knowledge base: `skills/` contributes its catalog and `agents/` contributes its agents, and either half alone is enough. A preset folder inside `agents/` (a directory holding `preset.yml`) is copied whole; a single Markdown agent with front matter becomes a preset whose `persona` prefix is the file body, because the product's agent registry holds `name` and `responsibility` and no prompt. The agents are always written under the user's own Harness home — `<dshHome>/.agent-presets/<id>/`, the layout the deployment seeds and the preset discovery reads — so installing a knowledge base is "global for that user" whatever skill scope was chosen.
+
+```json
+{ "status": "installed", "source": "/work/kb-contabilidad", "destination": "global", "root": "/home/u/.dsh/skills", "outcomes": [{ "name": "conciliacion", "status": "installed" }], "agents": [{ "name": "contable-jefe", "status": "installed" }], "agentsRoot": "/home/u/.dsh/.agent-presets" }
+```
+
 ### Choosing a scope
 
 The two destinations are the current workspace (`<projectRoot>/.dsh/skills`, source `project-dsh`) and the user account (`<dshHome>/skills`, source `user-dsh`). When the caller omits the destination, `install_skill` asks the human through `ctx.userQuestions` with exactly those two choices. A workspace destination needs a session working directory; a global destination never does.
@@ -134,7 +142,9 @@ These limits define when the installer is a poor fit. They are current package c
 - **The scope question is authored host-side in English** — the `ctx.userQuestions` seam carries no locale, so a localised question needs a presentation intent in `@deepseek-ai/dsh-user-questions` and a renderer in `@deepseek-ai/dsh-client-ui-user-questions`; the browser row for the install result carries the localised scope and outcome copy.
 - **A workspace install writes into the user's repository** — the workspace root is `<projectRoot>/.dsh/skills`, so the installed skill is version-controlled with the project unless the user ignores it.
 - **The installer writes through Node filesystem calls, not the sandboxed `ctx.fs`** — a global install outside the workspace is not confined by the sandbox policy; the caller's own permissions decide.
-- **Only the two built-in scopes exist** — a shared, per-role, or remote skills root is not an install destination.
+- **Only the two built-in scopes exist** - a shared, per-role, or remote skills root is not an install destination.
+- **Agents install into the user's home, never into the workspace** - a knowledge base's `agents/` reaches `<dshHome>/.agent-presets`, which is the only root the preset discovery reads; the skill scope the caller chose does not move them.
+- **A Markdown agent becomes a persona and nothing more** - the generated composition mounts the persona and the instructions row and names no toolset, so a knowledge base that needs particular tools ships a preset folder instead of a Markdown agent.
 
 <a id="dev-note"></a>
 ### Dev Note
