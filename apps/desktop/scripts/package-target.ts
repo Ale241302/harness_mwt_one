@@ -281,6 +281,9 @@ async function main(): Promise<void> {
     ...buildEnv,
     DSH_DESKTOP_TARGET_PLATFORM: target.platform,
     DSH_DESKTOP_TARGET_ARCH: target.arch,
+    // `prepare:dsh` firma el runtime de macOS; un build sin certificado no
+    // puede resolver identidad ni team id y debe omitir ese paso.
+    DSH_DESKTOP_UNSIGNED: invocation.unsigned ? '1' : '0',
   }
   const electronBuilderEnv = desktopElectronBuilderEnvironment(targetEnv, invocation.unsigned)
   for (const name of WINDOWS_SIGNING_ENV_NAMES) {
