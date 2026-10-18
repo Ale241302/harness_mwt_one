@@ -140,6 +140,9 @@ export class DesktopHostProcess {
         ELECTRON_RUN_AS_NODE: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe', 'pipe', 'pipe', 'ipc'],
+      // El hijo es una app de consola: sin esto Windows le abre una ventana de
+      // consola en cada arranque del host, que el usuario lee como un fallo.
+      windowsHide: true,
     })
     const requestPipe = child.stdio[DESKTOP_REQUEST_PIPE_FD]
     const responsePipe = child.stdio[DESKTOP_RESPONSE_PIPE_FD]

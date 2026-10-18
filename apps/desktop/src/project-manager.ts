@@ -475,6 +475,9 @@ export class DesktopProjectManager {
           XDG_STATE_HOME: this.paths.pnpm.state,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
+        // pnpm es una app de consola: sin esto Windows abre una ventana por
+        // pasada de preparación del perfil, y el usuario ve "consolas" solas.
+        windowsHide: process.platform === 'win32',
       })
       let failure: Error | undefined
       let diagnostics = ''
