@@ -8,9 +8,16 @@
  * - SICOP is public and carries no identity, so it mounts unless the operator
  *   blanks its URL.
  * - The MWT.ONE and FaberLoom servers live on the deployment network. A local
- *   installation mounts one exactly when a reachable URL and its shared key are
+ *   installation mounts one exactly when a reachable URL and a credential are
  *   both resolved, because a URL that only the container network can reach
  *   would leave a row that retries and never connects.
+ * - MWT.ONE accepts two credentials. A public installation carries a
+ *   `DeviceToken` in `MWT_MCP_AUTHORIZATION`: it identifies one user, binds to
+ *   the machine that first uses it, and needs no shared secret. An installation
+ *   inside the deployment network carries the shared gateway key instead, which
+ *   the console MCP honours only for the header identity when the key matches.
+ *   The device token wins when both resolve, so a copied deployment key never
+ *   overrides the credential the machine was onboarded with.
  *
  * Secret values are never written here. Each header that carries one holds the
  * environment name, which the Cordis loader resolves from the child's process
@@ -21,8 +28,9 @@
 export const SICOP_MCP_URL_ENV = 'SICOP_MCP_URL'
 export const DEFAULT_SICOP_MCP_URL = 'https://sicop.vlinte.work/mcp'
 
-/** Names resolving the MWT.ONE MCP server and the shared key its headers carry. */
+/** Names resolving the MWT.ONE MCP server: its URL, its device token, its gateway key. */
 export const MWT_MCP_URL_ENV = 'MWT_MCP_URL'
+export const MWT_MCP_AUTHORIZATION_ENV = 'MWT_MCP_AUTHORIZATION'
 export const MWT_MCP_GATEWAY_KEY_ENV = 'MWT_MCP_GATEWAY_KEY'
 
 /** Names resolving the FaberLoom MCP server and the shared key its headers carry. */
@@ -98,7 +106,15 @@ export function resolveProductMcpServers(
 ): ProductMcpServer[] {
   const servers: ProductMcpServer[] = []
   const mwtUrl = resolved(environment, MWT_MCP_URL_ENV)
-  if (mwtUrl !== undefined && resolved(environment, MWT_MCP_GATEWAY_KEY_ENV) !== undefined) {
+  const mwtAuthorization = resolved(environment, MWT_MCP_AUTHORIZATION_ENV)
+  if (mwtUrl !== undefined && mwtAuthorization !== undefined) {
+    servers.push({
+      id: 'mcp-mwt',
+      serverName: 'mwt',
+      url: mwtUrl,
+      headers: { Authorization: { environment: MWT_MCP_AUTHORIZATION_ENV } },
+    })
+  } else if (mwtUrl !== undefined && resolved(environment, MWT_MCP_GATEWAY_KEY_ENV) !== undefined) {
     servers.push({
       id: 'mcp-mwt',
       serverName: 'mwt',

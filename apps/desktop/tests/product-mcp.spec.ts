@@ -36,6 +36,40 @@ it('mounts the MWT.ONE server with the signed-in owner and the key reference', (
   expect(JSON.stringify(servers)).not.toContain('secret')
 })
 
+it('mounts the MWT.ONE server with a device token when one is configured', () => {
+  const servers = resolveProductMcpServers({
+    MWT_MCP_URL: 'https://mcp.mwt.one/device',
+    MWT_MCP_AUTHORIZATION: 'DeviceToken secret',
+  }, 'owner@example.test')
+  expect(servers[0]).toEqual({
+    id: 'mcp-mwt',
+    serverName: 'mwt',
+    url: 'https://mcp.mwt.one/device',
+    headers: { Authorization: { environment: 'MWT_MCP_AUTHORIZATION' } },
+  })
+  expect(JSON.stringify(servers)).not.toContain('secret')
+  const [entry] = renderProductMcpEntries({
+    MWT_MCP_URL: 'https://mcp.mwt.one/device',
+    MWT_MCP_AUTHORIZATION: 'DeviceToken secret',
+  }, 'owner@example.test')
+  expect(entry).toContain('!!js process.env.MWT_MCP_AUTHORIZATION')
+  expect(entry).not.toContain('secret')
+})
+
+it('prefers the device token over a shared gateway key', () => {
+  const servers = resolveProductMcpServers({
+    MWT_MCP_URL: 'https://mcp.mwt.one/device',
+    MWT_MCP_AUTHORIZATION: 'DeviceToken secret',
+    MWT_MCP_GATEWAY_KEY: 'gateway',
+  }, 'owner@example.test')
+  expect(Object.keys(servers[0]!.headers)).toEqual(['Authorization'])
+})
+
+it('requires the MWT URL alongside the device token', () => {
+  expect(resolveProductMcpServers({ MWT_MCP_AUTHORIZATION: 'DeviceToken secret' }, 'o@e.test')
+    .map(server => server.id)).toEqual(['mcp-sicop'])
+})
+
 it('omits a deployment server that lacks its URL or its key', () => {
   expect(resolveProductMcpServers({ MWT_MCP_URL: 'https://x.test/mcp' }, 'o@e.test').map(server => server.id))
     .toEqual(['mcp-sicop'])
