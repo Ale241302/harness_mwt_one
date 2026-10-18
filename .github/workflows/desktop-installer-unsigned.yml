@@ -62,11 +62,11 @@ jobs:
         include:
           - runner: macos-latest
             arch: arm64
-            script: package:desktop:mac:arm64
+            script: package:desktop:mac:arm64:unsigned
             artifacts: apps/desktop/.desktop-build/targets/mac-arm64/unsigned-artifacts/**
           - runner: macos-latest
             arch: x64
-            script: package:desktop:mac:x64
+            script: package:desktop:mac:x64:unsigned
             artifacts: apps/desktop/.desktop-build/targets/mac-x64/unsigned-artifacts/**
     runs-on: ${{ matrix.runner }}
     steps:
@@ -87,7 +87,7 @@ jobs:
         env:
           DSH_DESKTOP_APP_ID: one.mwt.harness
           DSH_DESKTOP_HOME_ENV_FILE: ${{ github.workspace }}/desktop-home-env.json
-        run: pnpm run ${{ matrix.script }} -- --unsigned
+        run: pnpm run ${{ matrix.script }}
       - uses: actions/upload-artifact@v4
         with:
           name: faberloom-mac-${{ matrix.arch }}-unsigned
