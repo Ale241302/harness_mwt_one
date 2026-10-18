@@ -41,9 +41,24 @@ import { readLocaleChoice, writeLocaleChoice } from './locale-choice.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { desktopErrorState } from './startup-error.ts'
+import { resolveDeviceId } from './device-id.ts'
 import { startupFailureDocument } from './startup-document.ts'
 
 const SCHEME = 'dsh-app'
+
+/**
+ * The environment the identity patch is rendered from: the Harness-home layer
+ * under the launching environment, with the id this installation presents as
+ * its MCP device. The device id is owned here, so it overrides both layers.
+ * @param dshHome - the resolved Harness home.
+ * @returns the environment passed to the patch renderer.
+ */
+const patchEnvironment = (dshHome: string): NodeJS.ProcessEnv => ({
+  ...readHomeEnv(dshHome),
+  ...process.env,
+  MWT_MCP_DEVICE_ID: resolveDeviceId(dshHome),
+})
+
 /** Persistent session partition holding the gateway's sign-in cookies in remote mode. */
 const GATEWAY_PARTITION = 'persist:gateway'
 /** Gateway origin allowed to navigate the window in remote mode; absent in the local harness. */
@@ -342,7 +357,7 @@ async function main(): Promise<void> {
       }
       // An installation that now ships product catalogs mounts them on this
       // launch, so a new release does not wait for the operator to sign in again.
-      refreshIdentityPatch(home, { ...readHomeEnv(home), ...process.env }, desktopCatalogs)
+      refreshIdentityPatch(home, patchEnvironment(home), desktopCatalogs)
       await backend.start(async () => {
         if (development === undefined) {
           await manager.applyRelease()
@@ -484,7 +499,7 @@ async function main(): Promise<void> {
       const { identity, credentials } = await signInToConsole(base, usuario.trim(), password)
       // The child boots from the Harness-home `.env` layer under the launching
       // environment, so which product MCP servers mount is decided from both.
-      writeIdentity(home, identity, credentials, { ...readHomeEnv(home), ...process.env }, desktopCatalogs)
+      writeIdentity(home, identity, credentials, patchEnvironment(home), desktopCatalogs)
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     }

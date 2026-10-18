@@ -56,6 +56,18 @@ it('mounts the MWT.ONE server with a device token when one is configured', () =>
   expect(entry).not.toContain('secret')
 })
 
+it('sends the device id the console binds the token to', () => {
+  const [server] = resolveProductMcpServers({
+    MWT_MCP_URL: 'https://mcp.mwt.one/device',
+    MWT_MCP_AUTHORIZATION: 'DeviceToken secret',
+    MWT_MCP_DEVICE_ID: '2a5f0d18-6f0c-4a55-9d38-2f5a6c1f7c11',
+  }, 'owner@example.test')
+  expect(server!.headers).toEqual({
+    Authorization: { environment: 'MWT_MCP_AUTHORIZATION' },
+    'X-MWT-Device-Id': { literal: '2a5f0d18-6f0c-4a55-9d38-2f5a6c1f7c11' },
+  })
+})
+
 it('prefers the device token over a shared gateway key', () => {
   const servers = resolveProductMcpServers({
     MWT_MCP_URL: 'https://mcp.mwt.one/device',

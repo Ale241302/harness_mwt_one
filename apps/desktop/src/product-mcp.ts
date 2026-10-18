@@ -33,6 +33,9 @@ export const MWT_MCP_URL_ENV = 'MWT_MCP_URL'
 export const MWT_MCP_AUTHORIZATION_ENV = 'MWT_MCP_AUTHORIZATION'
 export const MWT_MCP_GATEWAY_KEY_ENV = 'MWT_MCP_GATEWAY_KEY'
 
+/** Name resolving the stable id this installation presents as its device. */
+export const MWT_MCP_DEVICE_ID_ENV = 'MWT_MCP_DEVICE_ID'
+
 /** Names resolving the FaberLoom MCP server and the shared key its headers carry. */
 export const FABERLOOM_MCP_URL_ENV = 'FABERLOOM_MCP_URL'
 export const FABERLOOM_GATEWAY_KEY_ENV = 'FABERLOOM_GATEWAY_KEY'
@@ -107,12 +110,18 @@ export function resolveProductMcpServers(
   const servers: ProductMcpServer[] = []
   const mwtUrl = resolved(environment, MWT_MCP_URL_ENV)
   const mwtAuthorization = resolved(environment, MWT_MCP_AUTHORIZATION_ENV)
+  const mwtDeviceId = resolved(environment, MWT_MCP_DEVICE_ID_ENV)
   if (mwtUrl !== undefined && mwtAuthorization !== undefined) {
     servers.push({
       id: 'mcp-mwt',
       serverName: 'mwt',
       url: mwtUrl,
-      headers: { Authorization: { environment: MWT_MCP_AUTHORIZATION_ENV } },
+      headers: {
+        Authorization: { environment: MWT_MCP_AUTHORIZATION_ENV },
+        // The console binds the token to this id, not to the public address,
+        // so a network change keeps working and a copied token does not.
+        ...(mwtDeviceId === undefined ? {} : { 'X-MWT-Device-Id': { literal: mwtDeviceId } }),
+      },
     })
   } else if (mwtUrl !== undefined && resolved(environment, MWT_MCP_GATEWAY_KEY_ENV) !== undefined) {
     servers.push({
