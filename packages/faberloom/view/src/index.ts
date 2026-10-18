@@ -905,49 +905,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     // la publicación no depende de que el Space se haya compartido con otra
     // persona: antes sí dependía, y una sesión del web no llegaba nunca al
     // escritorio de quien la escribió.
-    const imported = new Set(
-      (await this.sessionSharesService().list({ id: actor.id }, space.id))
-        .filter(row => row.ownerId !== actor.id)
-        .map(row => row.sessionId),
-    )
-    // Nunca se vuelve a publicar una Sesión importada de otro miembro: el
-    // catálogo ya la lleva bajo su autor, y republicarla escribiría una segunda
-    // fila bajo esta identidad. La propia sí se republica, que es como el
-    // contenido crece con la conversación.
-    if (!imported.has(session.id)) {
-      await this.publishSessions(actor, space, [{ id: session.id, title: '' }], String(workspace.id))
-    }
-    await this.materializeSharedSessions(actor, space.id, workspace.id)
-  }
-
-  /**
-   * Publish the Sessions one Space's area holds into its shared catalog, so the
-   * mirror carries them to the owner's other machines and to every member. A
-   * Session with no completed turn is skipped: an empty conversation would only
-   * add an empty row to every reader's list.
-   * @param actor - the signed-in identity publishing.
-   * @param space - the Space the Sessions belong to.
-   * @param refs - the local Sessions to publish.
-   * @param workspaceId - the area Workspace on this host, as the row records it.
-   */
-  private async publishSessions(
-    actor: SpaceActor,
-    space: FaberLoomSpace,
-    refs: readonly FaberLoomSharedSessionRef[],
-    workspaceId: string | null,
-  ): Promise<void> {
-    for (const session of refs) {
-      const artifact = await this.readSessionArtifact(session.id)
-      if (!artifact.hasTurn) continue
-      await this.sessionSharesService().capture({ id: actor.id }, {
-        spaceId: space.id,
-        sessionId: session.id,
-        title: artifact.title ?? (session.title.length > 0 ? session.title : session.id),
-        workspaceId,
-        messageCount: artifact.messageCount,
-        content: artifact.content,
-      })
-    }
+    await this.publishSpaceSessions(actor, space)
+    await this.materializeSharedSessions(actor, space.id, String(workspace.id))
   }
 
   /**
@@ -2161,30 +2120,28 @@ export class FaberLoomViewService extends TypertRemoteService {
       const actor = this.actor()
       const catalog = this.ctx.get('faberloomSessionShares')
       if (catalog === undefined) return
-      const outgoing = await this.sharesService().list(actor.id)
-        .then(list => new Set(list.outgoing.filter(grant => grant.resource.kind === 'space').map(grant => grant.resource.id)))
-        .catch(() => new Set<string>())
       const spaces = await this.ctx.faberloomSpaces.list(actor)
-      // Mirror only shared areas: an imported Space, or one the actor shared.
-      const shared = spaces.filter(space => space.workspaceId !== undefined
-        && !(space.ownerId === actor.id && !outgoing.has(space.id)))
-      // Read the ids this host already mirrors before the sync drops a row the
-      // console no longer carries: the copy then prunes, and the publish below
-      // never re-publishes it under this identity.
+      // Todas las áreas del dueño viajan: el espejo lleva el catálogo entre sus
+      // máquinas, así que filtrar por Space compartido dejaba fuera justo el caso
+      // en que nadie más participa. Cada área se resuelve en esta máquina (y se
+      // registra si falta) para que el Space aparezca en la barra lateral sin
+      // abrir el módulo de Espacios.
       const mirroredBySpace = new Map<string, Set<string>>()
-      for (const space of shared) {
+      for (const space of spaces) {
         const rows = await catalog.list({ id: actor.id }, space.id).catch(() => [])
         mirroredBySpace.set(space.id, new Set(rows.filter(row => row.ownerId !== actor.id).map(row => row.sessionId)))
       }
       await catalog.sync(actor.id).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: no se pudieron sincronizar las sesiones compartidas: ${String(error)}`)
       })
-      for (const space of shared) {
+      for (const space of spaces) {
         const mirrored = mirroredBySpace.get(space.id) ?? new Set<string>()
+        const workspace = await this.spaceAreaOnThisHost(actor, space).catch(() => undefined)
         await this.publishSpaceSessions(actor, space, mirrored).catch((error: unknown) => {
           this.ctx.logger.warn(`faberloom: no se pudieron publicar las sesiones del espacio '${space.title}': ${String(error)}`)
         })
-        await this.materializeSharedSessions(actor, space.id, space.workspaceId, false, mirrored).catch((error: unknown) => {
+        const areaId = workspace === undefined ? undefined : String(workspace.id)
+        await this.materializeSharedSessions(actor, space.id, areaId, false, mirrored).catch((error: unknown) => {
           this.ctx.logger.warn(`faberloom: no se pudieron espejar las sesiones del espacio '${space.title}': ${String(error)}`)
         })
       }
@@ -2368,28 +2325,29 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Publish a Space's conversation Sessions to the shared catalog so the grantee
-   * reads them under the Space. A deployment without the shared-Session catalog,
-   * or a Space with no area, publishes none.
+   * Publish a Space's conversation Sessions to the shared catalog so the owner's
+   * other machines and every grantee read them under the Space. The area is
+   * resolved on this host, so a Space whose row came from the mirror publishes
+   * from the Workspace that actually holds its conversation here. A deployment
+   * without the shared-Session catalog, or a Space with no area, publishes none.
    * @param actor - the acting identity.
-   * @param space - the shared Space.
+   * @param space - the Space whose area is published.
    * @param mirrored - ids this host already mirrors for the Space, read before
    *   the sync, so an imported copy is never re-published under this identity.
    */
   private async publishSpaceSessions(
     actor: SpaceActor, space: FaberLoomSpace, mirrored: ReadonlySet<string> = new Set(),
   ): Promise<void> {
-    if (space.workspaceId === undefined) return
     const registry = this.workspaceRegistryOrUndefined()
-    const workspace = registry?.get(space.workspaceId as WorkspaceId)
-    if (workspace === undefined) return
+    const workspace = await this.spaceAreaOnThisHost(actor, space)
+    if (registry === undefined || workspace === undefined) return
     const catalog = this.ctx.get('faberloomSessionShares')
     const persistence = this.ctx.get('sessionPersistence')
     if (catalog === undefined || persistence === undefined) return
     // A Session is live when its id is in the area, was not archived, and its
     // log still exists. A deleted Session leaves a dangling `sessionIds` slot,
     // so the existence check is what actually retires it.
-    const archived = new Set<string>(registry?.archivedSessionIds ?? [])
+    const archived = new Set<string>(registry.archivedSessionIds)
     const live = new Set<string>()
     for (const sessionId of workspace.sessionIds) {
       const id = String(sessionId)
@@ -2405,13 +2363,14 @@ export class FaberLoomViewService extends TypertRemoteService {
       live.add(id)
     }
     const rows = await catalog.list({ id: actor.id }, space.id)
-    // Any Session the catalog already knows — this actor's own capture or an
-    // imported copy of another member's — is not captured again.
-    const known = new Set(rows.map(row => row.sessionId))
+    // A row this host imported from another member is never re-published under
+    // this identity. A row of our own is re-published, which is how the copy
+    // keeps up with a conversation that is still growing.
+    const imported = new Set(rows.filter(row => row.ownerId !== actor.id).map(row => row.sessionId))
     const ownIds = new Set(rows.filter(row => row.ownerId === actor.id).map(row => row.sessionId))
     for (const sessionId of workspace.sessionIds) {
       const id = String(sessionId)
-      if (!live.has(id) || known.has(id) || mirrored.has(id)) continue
+      if (!live.has(id) || imported.has(id) || mirrored.has(id)) continue
       const artifact = await this.readSessionArtifact(sessionId)
       // A seed-only Session has no conversation; publishing it would show an
       // empty `session-…` row to every member.
@@ -2420,7 +2379,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         spaceId: space.id,
         sessionId,
         title: artifact.title ?? sessionId,
-        workspaceId: space.workspaceId,
+        workspaceId: String(workspace.id),
         messageCount: artifact.messageCount,
         content: artifact.content,
       })
@@ -2862,7 +2821,21 @@ export class FaberLoomViewService extends TypertRemoteService {
   ): Promise<readonly FaberLoomSharedSessionRow[]> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
-    await this.publishSessions(actor, space, sessions, space.workspaceId ?? null)
+    const workspace = await this.spaceAreaOnThisHost(actor, space)
+    for (const session of sessions) {
+      const artifact = await this.readSessionArtifact(session.id)
+      // A seed-only Session has no conversation; sharing it would add an empty
+      // `session-…` row to every member's list.
+      if (!artifact.hasTurn) continue
+      await this.sessionSharesService().capture({ id: actor.id }, {
+        spaceId,
+        sessionId: session.id,
+        title: artifact.title ?? (session.title.length > 0 ? session.title : session.id),
+        workspaceId: workspace === undefined ? null : String(workspace.id),
+        messageCount: artifact.messageCount,
+        content: artifact.content,
+      })
+    }
     return await this.spaceSessions(spaceId)
   }
 
@@ -2883,15 +2856,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     await service.sync(actor.id)
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
     const workspace = await this.spaceAreaOnThisHost(actor, space)
-    const catalog = await service.list({ id: actor.id }, spaceId)
-    const published = new Set(catalog.map(row => row.sessionId))
-    const imported = new Set(catalog.filter(row => row.ownerId !== actor.id).map(row => row.sessionId))
-    const pending = (workspace?.sessionIds ?? [])
-      .filter(id => !published.has(id) && !imported.has(id))
-      .map(id => ({ id, title: '' }))
-    if (pending.length > 0) {
-      await this.publishSessions(actor, space, pending, workspace === undefined ? null : String(workspace.id))
-    }
+    await this.publishSpaceSessions(actor, space)
     await this.materializeSharedSessions(actor, spaceId, workspace === undefined ? undefined : String(workspace.id))
     return (await service.list({ id: actor.id }, spaceId)).map(row => this.sharedSessionRow(row))
   }

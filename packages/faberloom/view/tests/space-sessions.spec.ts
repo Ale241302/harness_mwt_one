@@ -12,7 +12,7 @@ function row(overrides: Record<string, unknown> = {}) {
 }
 
 /** Boot the view over fake spaces, shares, shared-Session catalog, and query. */
-function harness(options: { query?: boolean; workspaceId?: string | null; foreignWorkspace?: boolean } = {}) {
+function harness(options: { query?: boolean; workspaceId?: string | null; foreignWorkspace?: boolean; noRegistry?: boolean } = {}) {
   const catalog = {
     capture: vi.fn(async (_actor: { id: string }, _input: Record<string, unknown>) => row()),
     list: vi.fn(async (_actor: { id: string }, _spaceId: string) => [row()]),
@@ -72,7 +72,7 @@ function harness(options: { query?: boolean; workspaceId?: string | null; foreig
       if (name === 'sessionQuery') return options.query === false ? undefined : query
       if (name === 'faberloomShares') return shares
       if (name === 'faberloomWorkflows') return workflows
-      if (name === 'workspaceRegistry') return registry
+      if (name === 'workspaceRegistry') return options.noRegistry === true ? undefined : registry
       if (name === 'sessionPersistence') return persistence
       return undefined
     },
@@ -127,7 +127,9 @@ describe('FaberLoomViewService shared Sessions', () => {
     await rejected.view.captureSpaceSessions('sp-1', [{ id: 's1', title: 'Respaldo' }])
     expect(rejected.catalog.capture.mock.calls[0]?.[1]).toMatchObject({ title: 'Respaldo' })
 
-    const noWorkspace = harness({ workspaceId: null })
+    // Sin registro de Workspaces no hay área que resolver, y la fila se publica
+    // sin `workspaceId`: el despliegue sigue funcionando igual.
+    const noWorkspace = harness({ noRegistry: true })
     await noWorkspace.view.captureSpaceSessions('sp-1', [{ id: 's1', title: 'X' }])
     expect(noWorkspace.catalog.capture.mock.calls[0]?.[1]).toMatchObject({ workspaceId: null })
   })
@@ -160,15 +162,21 @@ describe('FaberLoomViewService shared Sessions', () => {
     )
   })
 
-  it('no republica una sesión importada de otro miembro ni una que ya publicó', async () => {
+  it('no republica una sesión importada de otro miembro, y refresca la propia', async () => {
     const imported = harness()
     imported.catalog.list.mockResolvedValue([row({ ownerId: 'guest@x', sessionId: 's1' })])
     await imported.view.spaceSessions('sp-1')
     expect(imported.catalog.capture).not.toHaveBeenCalled()
 
+    // Una fila propia se vuelve a publicar: es como la copia sigue el ritmo de
+    // una conversación que sigue creciendo.
     const ours = harness()
+    ours.catalog.list.mockResolvedValue([row({ ownerId: 'owner@muitowork.com', sessionId: 's1' })])
     await ours.view.spaceSessions('sp-1')
-    expect(ours.catalog.capture).not.toHaveBeenCalled()
+    expect(ours.catalog.capture).toHaveBeenCalledWith(
+      { id: 'owner@muitowork.com' },
+      expect.objectContaining({ spaceId: 'sp-1', sessionId: 's1' }),
+    )
   })
 
   it('no publica una sesión del área que no tiene ningún turno completado', async () => {
