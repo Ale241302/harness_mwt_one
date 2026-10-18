@@ -42,6 +42,7 @@ import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { desktopErrorState } from './startup-error.ts'
 import { resolveDeviceId } from './device-id.ts'
+import { provisionMcpCredentials } from './mcp-provision.ts'
 import { startupFailureDocument } from './startup-document.ts'
 
 const SCHEME = 'dsh-app'
@@ -349,7 +350,8 @@ async function main(): Promise<void> {
     startup ??= (async () => {
       pageError = undefined
       await navigateMain(startupUrl)
-      if (readIdentity(home) === undefined) {
+      const identity = readIdentity(home)
+      if (identity === undefined) {
         // Signed out: the shell renders the sign-in form instead of starting a
         // Host that would seed nothing without an owner.
         publishBackend(backendState())
@@ -357,6 +359,14 @@ async function main(): Promise<void> {
       }
       // An installation that now ships product catalogs mounts them on this
       // launch, so a new release does not wait for the operator to sign in again.
+      // The console issues this machine's MCP credential when the layer still
+      // lacks it, which is what upgrades an installation created before them.
+      await provisionMcpCredentials(
+        home,
+        identity.consolaBase,
+        readHomeEnv(home).CONSOLA_TOKEN ?? '',
+        resolveDeviceId(home),
+      )
       refreshIdentityPatch(home, patchEnvironment(home), desktopCatalogs)
       await backend.start(async () => {
         if (development === undefined) {
@@ -497,6 +507,9 @@ async function main(): Promise<void> {
     try {
       const base = readIdentity(home)?.consolaBase ?? consolaBase
       const { identity, credentials } = await signInToConsole(base, usuario.trim(), password)
+      // The console issues this machine's MCP credential with the new session,
+      // one per company the operator can reach.
+      await provisionMcpCredentials(home, base, credentials.token, resolveDeviceId(home))
       // The child boots from the Harness-home `.env` layer under the launching
       // environment, so which product MCP servers mount is decided from both.
       writeIdentity(home, identity, credentials, patchEnvironment(home), desktopCatalogs)

@@ -68,6 +68,36 @@ it('sends the device id the console binds the token to', () => {
   })
 })
 
+it('mounts one row per company from the provisioned credentials', () => {
+  const servers = resolveProductMcpServers({
+    MWT_MCP_URL: 'https://mcp.mwt.one/device',
+    MWT_MCP_COMPANIES: 'muito-work-limitada, sondel-s-a',
+    MWT_MCP_TOKEN_MUITO_WORK_LIMITADA: 'DeviceToken a',
+    MWT_MCP_TOKEN_SONDEL_S_A: 'DeviceToken b',
+    MWT_MCP_DEVICE_ID: 'dev-1',
+  }, 'owner@example.test')
+  expect(servers.map(server => server.id)).toEqual(['mcp-mwt', 'mcp-mwt-sondel-s-a', 'mcp-sicop'])
+  expect(servers[1]).toEqual({
+    id: 'mcp-mwt-sondel-s-a',
+    serverName: 'mwt-sondel-s-a',
+    url: 'https://mcp.mwt.one/device',
+    headers: {
+      Authorization: { environment: 'MWT_MCP_TOKEN_SONDEL_S_A' },
+      'X-MWT-Device-Id': { literal: 'dev-1' },
+    },
+  })
+})
+
+it('skips a company whose credential is missing and keeps the first position', () => {
+  const servers = resolveProductMcpServers({
+    MWT_MCP_URL: 'https://mcp.mwt.one/device',
+    MWT_MCP_COMPANIES: 'muito-work-limitada,sondel-s-a',
+    MWT_MCP_TOKEN_SONDEL_S_A: 'DeviceToken b',
+  }, 'owner@example.test')
+  expect(servers.map(server => server.id)).toEqual(['mcp-mwt', 'mcp-sicop'])
+  expect(servers[0]!.serverName).toBe('mwt')
+})
+
 it('prefers the device token over a shared gateway key', () => {
   const servers = resolveProductMcpServers({
     MWT_MCP_URL: 'https://mcp.mwt.one/device',

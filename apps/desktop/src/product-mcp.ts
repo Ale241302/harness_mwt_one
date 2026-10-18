@@ -36,6 +36,12 @@ export const MWT_MCP_GATEWAY_KEY_ENV = 'MWT_MCP_GATEWAY_KEY'
 /** Name resolving the stable id this installation presents as its device. */
 export const MWT_MCP_DEVICE_ID_ENV = 'MWT_MCP_DEVICE_ID'
 
+/** Comma-separated company keys this installation holds one credential per. */
+export const MWT_MCP_COMPANIES_ENV = 'MWT_MCP_COMPANIES'
+
+/** Prefix of the per-company credential variable: `MWT_MCP_TOKEN_<KEY>`. */
+export const MWT_MCP_TOKEN_ENV_PREFIX = 'MWT_MCP_TOKEN_'
+
 /** Names resolving the FaberLoom MCP server and the shared key its headers carry. */
 export const FABERLOOM_MCP_URL_ENV = 'FABERLOOM_MCP_URL'
 export const FABERLOOM_GATEWAY_KEY_ENV = 'FABERLOOM_GATEWAY_KEY'
@@ -99,6 +105,23 @@ function resolved(environment: NodeJS.ProcessEnv, name: string): string | undefi
 }
 
 /**
+ * Environment name holding one company's credential.
+ * @param key - the company key the console returned.
+ * @returns the variable name, e.g. `MWT_MCP_TOKEN_SONDEL_S_A`.
+ */
+export function companyTokenEnv(key: string): string {
+  return `${MWT_MCP_TOKEN_ENV_PREFIX}${key.toUpperCase().replaceAll('-', '_')}`
+}
+
+/** Company keys from a comma-separated value, keeping the variables safe. */
+function parseCompanies(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map(part => part.trim().toLowerCase())
+    .filter(part => /^[a-z0-9-]{1,24}$/u.test(part))
+}
+
+/**
  * Resolve the product MCP servers a local installation mounts.
  * @param environment - the environment the child boots with, with the Harness-home `.env` layer under the launching environment.
  * @returns the servers to mount, in patch order.
@@ -111,7 +134,26 @@ export function resolveProductMcpServers(
   const mwtUrl = resolved(environment, MWT_MCP_URL_ENV)
   const mwtAuthorization = resolved(environment, MWT_MCP_AUTHORIZATION_ENV)
   const mwtDeviceId = resolved(environment, MWT_MCP_DEVICE_ID_ENV)
-  if (mwtUrl !== undefined && mwtAuthorization !== undefined) {
+  // The console issues one credential per company this user can reach, each
+  // bound to this device. The first company keeps the unsuffixed row so an
+  // installation with one company reads the same as before.
+  const companies = mwtUrl === undefined
+    ? []
+    : parseCompanies(environment[MWT_MCP_COMPANIES_ENV])
+      .filter(key => resolved(environment, companyTokenEnv(key)) !== undefined)
+  if (mwtUrl !== undefined && companies.length > 0) {
+    for (const [position, key] of companies.entries()) {
+      servers.push({
+        id: position === 0 ? 'mcp-mwt' : `mcp-mwt-${key}`,
+        serverName: position === 0 ? 'mwt' : `mwt-${key}`,
+        url: mwtUrl,
+        headers: {
+          Authorization: { environment: companyTokenEnv(key) },
+          ...(mwtDeviceId === undefined ? {} : { 'X-MWT-Device-Id': { literal: mwtDeviceId } }),
+        },
+      })
+    }
+  } else if (mwtUrl !== undefined && mwtAuthorization !== undefined) {
     servers.push({
       id: 'mcp-mwt',
       serverName: 'mwt',
