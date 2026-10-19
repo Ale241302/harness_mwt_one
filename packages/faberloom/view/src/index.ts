@@ -6,11 +6,15 @@
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+// Value: the host's cross-platform opener, so the explorer opens a file with the
+// application the operating system associates with it.
+import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command'
 // Type-only: pulls the ctx.tools merge so `ctx.get('tools')` is typed.
 import type {} from '@deepseek-ai/dsh-tools'
 // Type-only: pulls the ctx.faberloomInbound merge for the Email panel's inbox.
@@ -35,7 +39,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 import type { Workspace, WorkspaceRegistry, WorkspaceId } from '@deepseek-ai/dsh-workspace'
 // Type-only: pulls the ctx merge for the harness projection the Space panel writes through.
 import type { HarnessScope } from '@deepseek-ai/dsh-faberloom-harness-projection'
-import { listSpaceDirectory } from './space-files.ts'
+import { listSpaceDirectory, resolveSpacePath } from './space-files.ts'
 import type { FaberLoomSpaceFileEntry } from './types.ts'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
@@ -4543,6 +4547,22 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * The folder the explorer reads and opens from: the Space's stored Workspace
+   * when it resolves here, this host's same-named Workspace when the row came
+   * from another machine, and the deterministic area otherwise. A read never
+   * creates the folder.
+   * @param actor - the acting identity.
+   * @param space - the Space to resolve.
+   * @returns the area's absolute path.
+   */
+  private async spaceExplorerDir(actor: SpaceActor, space: FaberLoomSpace): Promise<string> {
+    const registry = this.workspaceRegistryOrUndefined()
+    const stored = space.workspaceId === undefined ? undefined : registry?.get(space.workspaceId as WorkspaceId)
+    const named = stored ?? registry?.list().find(workspace => workspace.title === space.title)
+    return named === undefined ? await this.resolveSpaceDir(actor, space) : named.path
+  }
+
+  /**
    * List one directory of a Space's area for the sidebar explorer. The path is
    * workspace-relative and may not leave that area; hidden entries are listed,
    * because the harness projection and the operator's documents both matter.
@@ -4554,15 +4574,28 @@ export class FaberLoomViewService extends TypertRemoteService {
   async spaceFiles(id: string, path: string): Promise<readonly FaberLoomSpaceFileEntry[]> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
-    // The explorer lists the same folder the Space's Sessions live in: the
-    // stored Workspace when it resolves here, this host's same-named Workspace
-    // when the row came from another machine, and the deterministic area
-    // otherwise. Nothing is created by a read.
-    const registry = this.workspaceRegistryOrUndefined()
-    const stored = space.workspaceId === undefined ? undefined : registry?.get(space.workspaceId as WorkspaceId)
-    const named = stored ?? registry?.list().find(workspace => workspace.title === space.title)
-    const dir = named === undefined ? await this.resolveSpaceDir(actor, space) : named.path
-    return await listSpaceDirectory(dir, path)
+    return await listSpaceDirectory(await this.spaceExplorerDir(actor, space), path)
+  }
+
+  /**
+   * Open one file of a Space's area with the application the operating system
+   * associates with it, so Word, Excel, PDF, images, and video open the way the
+   * user's file manager opens them. The path is workspace-relative and may not
+   * leave the area; a deployment with no native opener (the Web) reports that
+   * instead of pretending it opened anything.
+   * @param id - space id.
+   * @param path - workspace-relative file path.
+   * @returns whether the operating system took the file.
+   */
+  @Remote('openSpaceFile')
+  async openSpaceFile(id: string, path: string): Promise<{ opened: boolean }> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const target = resolveSpacePath(await this.spaceExplorerDir(actor, space), path)
+    if (!(await stat(target)).isFile()) throw new Error('faberloom: la ruta no es un archivo')
+    if (!canOpenNativePath()) return { opened: false }
+    await openNativePath(target, AbortSignal.timeout(20_000))
+    return { opened: true }
   }
 
   /**

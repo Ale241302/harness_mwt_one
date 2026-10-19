@@ -1355,50 +1355,104 @@
   gap: 8px;
 }
 
-/* The files panel: one expandable tree per Space, drawn as flat rows. */
+/* The files panel: one expandable, icon-led tree per Space. */
 .tree {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-height: 0;
   overflow: auto;
-  padding: 4px 0 12px;
+  padding: 8px 6px 20px;
+  scrollbar-gutter: stable;
 }
 
 .treeSpace,
 .treeRow {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  padding: 3px 8px;
+  min-height: 32px;
+  padding: 4px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-ui-body);
+  font: var(--dsw-font-panel-label);
   text-align: left;
   cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.treeRow {
+  min-height: 30px;
+  font: var(--dsw-font-ui-body);
 }
 
 .treeSpace {
-  font-weight: 600;
+  margin-top: 6px;
 }
 
 .treeSpace:hover,
+.treeSpace[aria-expanded='true'],
 .treeRow:hover {
   background: var(--dsw-alias-bg-layer-1);
 }
 
-.treeGlyph {
+.treeRow:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.treeRow:focus-visible,
+.treeSpace:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-l2);
+  outline-offset: -2px;
+}
+
+.treeCaret {
+  display: flex;
   flex: none;
-  width: 12px;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
   color: var(--dsw-alias-label-secondary);
 }
 
+.caretOpen {
+  transform: rotate(90deg);
+}
+
+.treeIcon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
 .treeName {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.treeRow[data-kind='other'] {
+  opacity: 0.6;
+}
+
+.treeBusy {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+  opacity: 0.8;
+}
+
+.treeNotice {
+  margin: 10px 12px 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
 }

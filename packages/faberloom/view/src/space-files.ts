@@ -30,6 +30,22 @@ export interface SpaceFileEntry {
 }
 
 /**
+ * Resolve one workspace-relative path inside an area, refusing an escape.
+ * @param root - the area's absolute path.
+ * @param path - the workspace-relative path.
+ * @returns the absolute path inside the area.
+ * @throws when the path leaves the area.
+ */
+export function resolveSpacePath(root: string, path: string): string {
+  const base = resolve(root)
+  const target = resolve(base, path)
+  if (target !== base && !target.startsWith(base + sep)) {
+    throw new Error('faberloom: la ruta queda fuera de la carpeta del espacio')
+  }
+  return target
+}
+
+/**
  * List one directory inside a workspace area.
  * @param root - the area's absolute path.
  * @param path - the workspace-relative directory to list.
@@ -37,11 +53,7 @@ export interface SpaceFileEntry {
  * @throws when the path leaves the area or the directory cannot be read.
  */
 export async function listSpaceDirectory(root: string, path: string): Promise<readonly SpaceFileEntry[]> {
-  const base = resolve(root)
-  const target = resolve(base, path)
-  if (target !== base && !target.startsWith(base + sep)) {
-    throw new Error('faberloom: la ruta queda fuera de la carpeta del espacio')
-  }
+  const target = resolveSpacePath(root, path)
   const entries = await readdir(target, { withFileTypes: true }).catch((error: unknown) => {
     // A Space that mirrors no Workspace yet points at its deterministic area,
     // which the first conversation creates; an absent folder is an empty one.

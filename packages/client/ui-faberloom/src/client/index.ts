@@ -195,6 +195,7 @@ export function apply(ctx: ClientContext): void {
       unshareShare: id => ctx.remote.faberloomView.unshareShare(id),
       skills: () => ctx.remote.faberloomView.skills(),
       listSpaceFiles: (spaceId, path) => ctx.remote.faberloomView.spaceFiles(spaceId, path),
+      openSpaceFile: (spaceId, path) => ctx.remote.faberloomView.openSpaceFile(spaceId, path),
       saveSkill: (name, markdown) => ctx.remote.faberloomView.saveSkill(name, markdown),
       removeSkill: name => ctx.remote.faberloomView.removeSkill(name),
       skillInstalls: () => ctx.remote.faberloomView.skillInstalls(),

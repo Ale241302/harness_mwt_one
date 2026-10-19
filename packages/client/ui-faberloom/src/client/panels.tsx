@@ -24,6 +24,7 @@ import {
   FlIconWorkloom,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BrandWordmark, Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
+import { FileTypeIcon, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomConnection, FaberLoomExecutionRow,
   FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomModelCatalog, FaberLoomOverview,
@@ -168,6 +169,8 @@ export interface FaberloomPanelInjected {
   skills: () => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** List one directory of a space's area for the files panel. */
   listSpaceFiles: (spaceId: string, path: string) => Promise<Result<readonly FaberLoomSpaceFileEntry[]>>
+  /** Open one file of a space's area with the operating system's application. */
+  openSpaceFile: (spaceId: string, path: string) => Promise<Result<{ opened: boolean }>>
   /** Add or replace one uploaded skill. */
   saveSkill: (name: string, markdown: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** Remove one uploaded skill. */
@@ -4623,13 +4626,16 @@ function agentsAndSkillsScreen() {
  *  for the knowledge layers, KnowledgeIndex for incoming material, Workspace
  *  for a Space — and the standard set covers the rest. */
 /** One directory level of the files panel, drawn recursively as folders expand. */
-function SpaceFilesLevel({ spaceId, path, depth, levels, open, onToggle }: {
+function SpaceFilesLevel({ spaceId, path, depth, levels, open, busy, onToggle, onOpen, t }: {
   spaceId: string
   path: string
   depth: number
   levels: Readonly<Record<string, readonly FaberLoomSpaceFileEntry[]>>
   open: ReadonlySet<string>
+  busy: string | null
   onToggle: (spaceId: string, path: string) => void
+  onOpen: (spaceId: string, path: string) => void
+  t: ScreenProps['t']
 }) {
   const rows = levels[`${spaceId}\u0000${path}`]
   if (rows === undefined) return null
@@ -4639,22 +4645,42 @@ function SpaceFilesLevel({ spaceId, path, depth, levels, open, onToggle }: {
         const child = path === '' ? row.name : `${path}/${row.name}`
         const childKey = `${spaceId}\u0000${child}`
         const expanded = open.has(childKey)
+        const directory = row.kind === 'directory'
         return (
           <div key={childKey}>
             <button
               type="button"
               className={styles.treeRow}
-              style={{ paddingLeft: `${8 + depth * 14}px` }}
-              onClick={() => { if (row.kind === 'directory') onToggle(spaceId, child) }}
+              data-kind={row.kind}
+              style={{ paddingLeft: `${12 + depth * 16}px` }}
+              onClick={() => { if (directory) onToggle(spaceId, child); else onOpen(spaceId, child) }}
+              aria-expanded={directory ? expanded : undefined}
+              disabled={busy === childKey}
               title={child}
             >
-              <span className={styles.treeGlyph} aria-hidden="true">
-                {row.kind === 'directory' ? (expanded ? '▾' : '▸') : '·'}
+              <span className={styles.treeCaret}>
+                {directory ? <IconChevronRightOutline14 className={expanded ? styles.caretOpen : undefined} /> : null}
+              </span>
+              <span className={styles.treeIcon}>
+                {directory
+                  ? (expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />)
+                  : <FileTypeIcon path={row.name} size={16} />}
               </span>
               <span className={styles.treeName}>{row.name}</span>
+              {busy === childKey && <span className={styles.treeBusy}>{t('panel.files.opening')}</span>}
             </button>
-            {row.kind === 'directory' && expanded && (
-              <SpaceFilesLevel spaceId={spaceId} path={child} depth={depth + 1} levels={levels} open={open} onToggle={onToggle} />
+            {directory && expanded && (
+              <SpaceFilesLevel
+                spaceId={spaceId}
+                path={child}
+                depth={depth + 1}
+                levels={levels}
+                open={open}
+                busy={busy}
+                onToggle={onToggle}
+                onOpen={onOpen}
+                t={t}
+              />
             )}
           </div>
         )
@@ -4666,12 +4692,23 @@ function SpaceFilesLevel({ spaceId, path, depth, levels, open, onToggle }: {
 /** Files: every Space's area as an expandable tree of folders and documents. */
 function filesScreen() {
   return function FaberloomFiles(props: ScreenProps) {
-    const { t, listSpaceFiles } = props
+    const { t, listSpaceFiles, openSpaceFile } = props
     const { overview } = useOverview(props)
-    const spaces = overview?.spaces ?? []
     const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
     const [levels, setLevels] = useState<Record<string, readonly FaberLoomSpaceFileEntry[]>>({})
+    const [busy, setBusy] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
+    const [notice, setNotice] = useState<string | null>(null)
+    // Two Spaces can mirror the same folder (one row per machine); the explorer
+    // shows the folder once so the tree does not repeat itself.
+    const spaces = useMemo(() => {
+      const seen = new Set<string>()
+      return (overview?.spaces ?? []).filter((space) => {
+        if (seen.has(space.title)) return false
+        seen.add(space.title)
+        return true
+      })
+    }, [overview])
     const load = (spaceId: string, path: string): void => {
       const key = `${spaceId}\u0000${path}`
       void listSpaceFiles(spaceId, path).then((result) => {
@@ -4690,9 +4727,23 @@ function filesScreen() {
       setOpen(next)
       if (opening && levels[key] === undefined) load(spaceId, path)
     }
+    const openFile = (spaceId: string, path: string): void => {
+      const key = `${spaceId}\u0000${path}`
+      setBusy(key)
+      setError(null)
+      setNotice(null)
+      void openSpaceFile(spaceId, path)
+        .then((result) => {
+          if (!result.ok) setError(result.error.message)
+          else if (!result.value.opened) setNotice(t('panel.files.noOpener'))
+        })
+        .catch((cause: unknown) => { setError(String(cause)) })
+        .finally(() => { setBusy(null) })
+    }
     return (
       <Screen title={t('panel.files.title')} subtitle={t('panel.files.subtitle')}>
         {error !== null && <StateBlock kind="error" title={t('panel.files.loadError')} text={error} />}
+        {notice !== null && <p className={styles.treeNotice} role="status">{notice}</p>}
         {spaces.length === 0
           ? <StateBlock kind="empty" title={t('panel.files.empty')} />
           : (
@@ -4702,12 +4753,33 @@ function filesScreen() {
                 const expanded = open.has(key)
                 return (
                   <div key={space.id}>
-                    <button type="button" className={styles.treeSpace} onClick={() => toggle(space.id, '')} title={t('panel.files.toggle')}>
-                      <span className={styles.treeGlyph} aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                    <button
+                      type="button"
+                      className={styles.treeSpace}
+                      aria-expanded={expanded}
+                      onClick={() => toggle(space.id, '')}
+                      title={t('panel.files.toggle')}
+                    >
+                      <span className={styles.treeCaret}>
+                        <IconChevronRightOutline14 className={expanded ? styles.caretOpen : undefined} />
+                      </span>
+                      <span className={styles.treeIcon}>
+                        {expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />}
+                      </span>
                       <span className={styles.treeName}>{space.title}</span>
                     </button>
                     {expanded && (
-                      <SpaceFilesLevel spaceId={space.id} path="" depth={1} levels={levels} open={open} onToggle={toggle} />
+                      <SpaceFilesLevel
+                        spaceId={space.id}
+                        path=""
+                        depth={1}
+                        levels={levels}
+                        open={open}
+                        busy={busy}
+                        onToggle={toggle}
+                        onOpen={openFile}
+                        t={t}
+                      />
                     )}
                   </div>
                 )
