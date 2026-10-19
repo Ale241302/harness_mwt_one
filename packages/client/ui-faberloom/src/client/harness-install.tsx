@@ -1,17 +1,17 @@
 /**
- * The harness-install control: point the host's own dialog at a folder or at a
- * `.zip`, install it once, and read back what landed where. The destination is
- * not a choice — a harness is the user's own setup, so every part is written
- * into the Harness home that user alone reads — and the report names each
- * part's root, because that listing is the evidence of what the run wrote.
- * The folder choice and every Remote call arrive as already-bound callbacks, so
- * this component holds no service of its own.
+ * The harness-install wizard: one button before the Agents/Skills tabs, one
+ * chooser, a staged progress dialog, and a confirmation that names what landed.
+ *
+ * The chooser is a single button because the harness is either a folder or a
+ * `.zip`. The native file dialog cannot select both kinds on Windows, so the
+ * button opens the file dialog and the chosen path decides: a `.zip` installs
+ * as an archive, any other file stands for the folder that contains it. The
+ * hint says so instead of hiding a second button.
  */
-import { useEffect, useState, type ReactNode } from 'react'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import { useState, type ReactNode } from 'react'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  FaberLoomHarnessPartKind, FaberLoomHarnessRefusal, FaberLoomHarnessReport,
-  FaberLoomSkillCandidateReason, FaberLoomSkillInstallDestination, FaberLoomSkillInstallRow,
+  FaberLoomHarnessPartKind, FaberLoomHarnessRefusal, FaberLoomHarnessReport, FaberLoomSkillCandidateReason,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -47,145 +47,170 @@ const REFUSAL_KEY: Record<FaberLoomHarnessRefusal, FaberloomKey> = {
 }
 
 /** The localized wording for one refused candidate. */
-const REASON_KEY: Record<FaberLoomSkillCandidateReason, FaberloomKey> = {
+const REFUSED_KEY: Record<FaberLoomSkillCandidateReason, FaberloomKey> = {
   'name-missing': 'skills.install.why.nameMissing',
   'name-illegal': 'skills.install.why.nameIllegal',
   exists: 'skills.install.why.exists',
   'agent-invalid': 'skills.install.why.agentInvalid',
 }
 
-/** Most install rows the control lists before it names the remainder. */
-const LIST_CAP = 12
+/** The stages the progress dialog walks, in the order the reader asked for. */
+const STAGES = ['agents', 'skills', 'commands', 'scripts'] as const
 
-/** Everything the install control reads and calls, all bound outside the component. */
-export interface HarnessInstallProps extends PropsLocale<'faberloom'> {
-  /** Open the mounted directory picker; null when the user cancelled. */
-  readonly pickFolder: () => Promise<string | null>
-  /** Open the mounted file picker; null when the user cancelled. */
-  readonly pickArchive: () => Promise<string | null>
-  /** Install from one folder or archive into the user's own Harness home. */
+/** Everything the wizard reads and calls, all bound outside the component. */
+export interface HarnessInstallWizardProps {
+  /** Namespace-bound translate. */
+  readonly t: (key: FaberloomKey) => string
+  /** Open the native chooser and return the chosen file path. */
+  readonly pickSource: () => Promise<string | null>
+  /** Install one folder or archive into the signed-in user's Harness home. */
   readonly install: (source: string, replace: boolean) => Promise<Result<FaberLoomHarnessReport>>
-  /** Read this identity's recorded installs. */
-  readonly loadInstalls: () => Promise<Result<readonly FaberLoomSkillInstallRow[]>>
-  /** Remove one recorded install. */
-  readonly uninstall: (
-    name: string,
-    destination: FaberLoomSkillInstallDestination,
-  ) => Promise<Result<readonly FaberLoomSkillInstallRow[]>>
-  /** Refresh the skill list after an install or removal changed it. */
+  /** Refresh the catalog after a successful run. */
   readonly onChanged: () => void
 }
 
+/** One phase of the wizard. */
+type Phase = 'pick' | 'run' | 'done' | 'error'
+
 /**
- * The install control.
- * @param props - the localized seat plus the bound pickers and Remote calls.
- * @returns the control markup.
+ * Render the install button and its three dialogs.
+ * @param props - translate, chooser, install, and refresh callbacks.
+ * @returns the trigger button and the dialogs it owns.
  */
-export function HarnessInstallBlock(props: HarnessInstallProps): ReactNode {
-  const { t, pickFolder, pickArchive, install, loadInstalls, uninstall, onChanged } = props
-  const [installs, setInstalls] = useState<readonly FaberLoomSkillInstallRow[]>([])
-  const [source, setSource] = useState<string | null>(null)
+export function HarnessInstallWizard({ t, pickSource, install, onChanged }: HarnessInstallWizardProps): ReactNode {
+  const [open, setOpen] = useState(false)
+  const [phase, setPhase] = useState<Phase>('pick')
+  const [source, setSource] = useState<{ readonly path: string; readonly folder: boolean } | null>(null)
   const [replace, setReplace] = useState(false)
+  const [percent, setPercent] = useState(0)
   const [report, setReport] = useState<FaberLoomHarnessReport | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let live = true
-    void loadInstalls().then((result) => { if (live && result.ok) setInstalls(result.value) })
-    return () => { live = false }
-  }, [loadInstalls])
-
-  const pick = async (choose: () => Promise<string | null>): Promise<void> => {
-    const picked = await choose()
-    if (picked === null || picked.length === 0) return
-    setSource(picked)
+  const begin = (): void => {
+    setPhase('pick')
+    setSource(null)
+    setPercent(0)
     setReport(null)
-    setMessage(null)
+    setError(null)
+    setOpen(true)
   }
 
-  const run = async (): Promise<void> => {
-    if (source === null) return
-    setBusy(true)
-    setMessage(null)
-    const result = await install(source, replace)
-    setBusy(false)
-    if (!result.ok) { setReport(null); setMessage(result.error.message); return }
-    setReport(result.value)
-    if (result.value.refused !== undefined) setMessage(t(REFUSAL_KEY[result.value.refused]))
-    const refreshed = await loadInstalls()
-    if (refreshed.ok) setInstalls(refreshed.value)
-    onChanged()
+  const close = (): void => {
+    setOpen(false)
+    setPhase('pick')
+    setSource(null)
+    setPercent(0)
+    setReport(null)
+    setError(null)
   }
 
-  const remove = async (row: FaberLoomSkillInstallRow): Promise<void> => {
-    const result = await uninstall(row.name, row.destination)
-    if (!result.ok) { setMessage(result.error.message); return }
-    setInstalls(result.value)
-    onChanged()
+  const start = (chosen: string): void => {
+    const archive = /\.zip$/iu.test(chosen)
+    const path = archive ? chosen : chosen.replace(/[\\/][^\\/]+$/u, '')
+    setSource({ path, folder: !archive })
+    setPhase('run')
+    setPercent(2)
+    setError(null)
+    const started = Date.now()
+    const timer = setInterval(() => {
+      setPercent(current => Math.min(96, current + Math.max(1, Math.round((96 - current) / 10))))
+    }, 110)
+    void install(path, replace)
+      .then((result) => {
+        clearInterval(timer)
+        // The run is short; the wait only lets the reader see each stage.
+        const wait = Math.max(0, 1500 - (Date.now() - started))
+        setTimeout(() => {
+          if (!result.ok) {
+            setError(result.error.message)
+            setPhase('error')
+            return
+          }
+          if (result.value.refused !== undefined) {
+            setError(t(REFUSAL_KEY[result.value.refused]))
+            setPhase('error')
+            return
+          }
+          setReport(result.value)
+          setPercent(100)
+          setPhase('done')
+          onChanged()
+        }, wait)
+      })
+      .catch((cause: unknown) => {
+        clearInterval(timer)
+        setError(String(cause))
+        setPhase('error')
+      })
   }
 
+  const pick = async (): Promise<void> => {
+    const chosen = await pickSource()
+    if (chosen === null || chosen.length === 0) return
+    start(chosen)
+  }
+
+  const stage = Math.min(STAGES.length - 1, Math.floor(percent / (100 / STAGES.length)))
   const refused = report === null ? [] : report.outcomes.filter(outcome => outcome.status === 'refused')
-  const reason = (value: FaberLoomSkillCandidateReason | undefined): string =>
-    value === undefined ? '' : ` (${t(REASON_KEY[value])})`
 
   return (
-    <div className={styles.install}>
-      <div className={styles.installRow}>
-        <span className={styles.installLabel}>{t('harness.title')}</span>
-        <button className={styles.secondary} type="button" disabled={busy} onClick={() => { void pick(pickFolder) }}>
-          {t('harness.pickFolder')}
+    <>
+      <button className={styles.secondary} type="button" onClick={begin}>{t('harness.installButton')}</button>
+      <Modal open={open && phase === 'pick'} onClose={close} title={t('harness.wizard.title')} closeLabel={t('action.close')}
+        footer={<button className={styles.ghost} type="button" onClick={close}>{t('action.cancel')}</button>}>
+        <p className={styles.installHint}>{t('harness.wizard.hint')}</p>
+        <button className={styles.installPick} type="button" onClick={() => { void pick() }}>
+          {t('harness.wizard.pick')}
         </button>
-        <button className={styles.secondary} type="button" disabled={busy} onClick={() => { void pick(pickArchive) }}>
-          {t('harness.pickArchive')}
-        </button>
-        <span className={styles.installPath}>{source ?? t('harness.pickHint')}</span>
-      </div>
-      <div className={styles.installRow}>
         <label className={styles.installFlag}>
           <input type="checkbox" checked={replace} onChange={(event) => { setReplace(event.target.checked) }} />
           <span>{t('harness.replace')}</span>
         </label>
-        <button className={styles.primary} type="button" disabled={busy || source === null} onClick={() => { void run() }}>
-          {t('harness.run')}
-        </button>
-        {message === null ? null : <span className={styles.installNote}>{message}</span>}
-      </div>
-      {report === null || report.parts.length === 0 ? null : (
+      </Modal>
+      <Modal open={open && phase === 'run'} onClose={() => {}} title={t('harness.progress.title')} closeLabel={t('action.close')}>
+        <div className={styles.installStages}>
+          {STAGES.map((name, index) => (
+            <div
+              key={name}
+              className={styles.installStage}
+              data-state={index < stage ? 'done' : index === stage ? 'active' : 'pending'}
+            >
+              <span className={styles.installStageDot} aria-hidden="true" />
+              <span className={styles.installStageName}>{t(`harness.part.${name}` as FaberloomKey)}</span>
+              <span className={styles.installStageState}>
+                {index < stage ? '✓' : index === stage ? `${String(percent)}%` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className={styles.installBar} role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+          <div className={styles.installBarFill} style={{ width: `${String(percent)}%` }} />
+        </div>
+        {source === null ? null : <code className={styles.installPath}>{source.path}</code>}
+      </Modal>
+      <Modal open={open && phase === 'done'} onClose={close} title={t('harness.done.title')} closeLabel={t('action.close')}
+        footer={<button className={styles.primary} type="button" onClick={close}>{t('action.close')}</button>}>
+        <p className={styles.installHint}>{t('harness.done.summary')}</p>
         <ul className={styles.installList}>
-          {report.parts.map(part => (
+          {report?.parts.map(part => (
             <li key={part.kind}>
               <span className={styles.installLabel}>{t(PART_KEY[part.kind])}</span>
               <span>{`${String(part.count)} · ${t(PART_STATUS_KEY[part.status])}`}</span>
               <code className={styles.installPath}>{part.target}</code>
             </li>
           ))}
+          {refused.map((outcome, index) => (
+            <li key={`${outcome.name}-${String(index)}`}>
+              <span className={styles.installLabel}>{outcome.name}</span>
+              <span>{t('skills.installRefused')}{outcome.reason === undefined ? '' : ` · ${t(REFUSED_KEY[outcome.reason])}`}</span>
+            </li>
+          ))}
         </ul>
-      )}
-      {refused.length === 0 ? null : (
-        <span className={styles.installNote}>
-          {`${t('harness.refused')}: ${refused.map(outcome => `${outcome.name}${reason(outcome.reason)}`).join(', ')}`}
-        </span>
-      )}
-      {installs.length === 0 ? null : (
-        <>
-          <span className={styles.installLabel}>{t('skills.installList')}</span>
-          <ul className={styles.installList}>
-            {installs.slice(0, LIST_CAP).map(row => (
-              <li key={`${row.destination}:${row.name}`}>
-                <span>{row.name}</span>
-                <code className={styles.installPath}>{row.destinationRoot}</code>
-                <button className={styles.ghost} type="button" onClick={() => { void remove(row) }}>
-                  {t('skills.installRemove')}
-                </button>
-              </li>
-            ))}
-            {installs.length <= LIST_CAP ? null : (
-              <li className={styles.installNote}>{`${t('harness.andMore')}: ${String(installs.length - LIST_CAP)}`}</li>
-            )}
-          </ul>
-        </>
-      )}
-    </div>
+      </Modal>
+      <Modal open={open && phase === 'error'} onClose={close} title={t('harness.error.title')} closeLabel={t('action.close')}
+        footer={<button className={styles.primary} type="button" onClick={close}>{t('action.close')}</button>}>
+        <p className={styles.installNote} role="alert">{error}</p>
+      </Modal>
+    </>
   )
 }

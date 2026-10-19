@@ -48,7 +48,7 @@ import type {
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { isDesktopApplication } from './desktop-app.ts'
-import { HarnessInstallBlock } from './harness-install.tsx'
+import { HarnessInstallWizard } from './harness-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
@@ -1674,7 +1674,7 @@ function emailScreen() {
 function skillsScreen() {
   return function FaberloomSkills(props: ScreenProps & { tabs?: ReactNode }) {
     const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare,
-      skillInstalls, installHarness, uninstallSkill, pickFolder, pickArchive } = props
+      installHarness, pickArchive } = props
     const [list, setList] = useState<readonly FaberLoomSkillRow[] | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -1739,6 +1739,16 @@ function skillsScreen() {
       <Screen title={t('panel.skills.title')} subtitle={t('panel.skills.intro')}
         trailing={(
           <>
+            {isDesktopApplication()
+              ? (
+                <HarnessInstallWizard
+                  t={t}
+                  pickSource={pickArchive}
+                  install={installHarness}
+                  onChanged={() => { void skills().then(apply) }}
+                />
+              )
+              : null}
             {props.tabs}
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <select className={styles.paneSearch} style={{ width: 170, padding: '8px 10px' }} value={moduleFilter} onChange={(event) => { setModuleFilter(event.target.value) }}>
@@ -1755,19 +1765,6 @@ function skillsScreen() {
         {/* Installing a whole harness — its skills, agents, rules, commands,
             and scripts — is only meaningful where the folder is the
             operator's own, which is the Desktop running the Host locally. */}
-        {isDesktopApplication()
-          ? (
-            <HarnessInstallBlock
-              t={t}
-              pickFolder={pickFolder}
-              pickArchive={pickArchive}
-              install={installHarness}
-              loadInstalls={skillInstalls}
-              uninstall={uninstallSkill}
-              onChanged={() => { void skills().then(apply) }}
-            />
-          )
-          : null}
         {list === null
           ? <StateBlock kind="loading" title={t('state.loading')} />
           : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}

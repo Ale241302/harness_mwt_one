@@ -1567,3 +1567,78 @@
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-panel-label);
 }
+
+/* The harness-install wizard: one chooser, staged progress, confirmation. */
+.installHint {
+  margin: 0 0 12px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+.installPick {
+  width: 100%;
+  padding: 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  cursor: pointer;
+}
+
+.installPick:hover {
+  border-color: var(--dsw-alias-label-secondary);
+}
+
+.installStages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.installStage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+.installStage[data-state='active'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.installStageDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-border-l2);
+}
+
+.installStage[data-state='active'] .installStageDot,
+.installStage[data-state='done'] .installStageDot {
+  background: var(--dsw-alias-label-primary);
+}
+
+.installStageName {
+  flex: 1;
+}
+
+.installStageState {
+  font-variant-numeric: tabular-nums;
+}
+
+.installBar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+
+.installBarFill {
+  height: 100%;
+  background: var(--dsw-alias-label-primary);
+  transition: width 120ms linear;
+}
