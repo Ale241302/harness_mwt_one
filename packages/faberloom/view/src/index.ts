@@ -2428,6 +2428,11 @@ export class FaberLoomViewService extends TypertRemoteService {
         })
         continue
       }
+      // A row captured on another of this identity's machines names a Workspace
+      // this host does not hold; its Session is materialized here, so pruning it
+      // first would delete the only copy before the import can run.
+      const foreignArea = row.workspaceId !== null && row.workspaceId !== String(workspace.id)
+      if (foreignArea) continue
       // A Session this actor captured but no longer offers — removed from the
       // area, archived, its log deleted, or never holding a turn — leaves the
       // catalog so a member's copy stops showing.
