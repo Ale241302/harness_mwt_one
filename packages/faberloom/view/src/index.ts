@@ -2224,12 +2224,12 @@ export class FaberLoomViewService extends TypertRemoteService {
     const ownIds = new Set(rows.filter(row => row.ownerId === actor.id).map(row => row.sessionId))
     const wanted = new Set<string>()
     for (const row of rows) {
-      // Una fila del propio dueño puede llegar de otra de sus máquinas: el espejo
-      // lleva el catálogo entre ellas y las dos comparten identidad, así que lo
-      // que decide no es el autor de la fila sino si la sesión ya vive aquí. Una
-      // fila propia con la sesión presente es la copia del catálogo de esta
-      // máquina, y no hay nada que escribir.
-      if (row.ownerId === actor.id && await persistence.stat(row.sessionId as SessionId) !== undefined) continue
+      // La fila `owner` es la captura local de esta máquina: es la fuente y no
+      // se reescribe. Una fila `console` del mismo dueño viene de otra de sus
+      // máquinas y puede traer más eventos que la copia local; el refresco de
+      // abajo compara los conteos y decide. El mismo autor, por tanto, no basta
+      // para saltar la fila.
+      if (row.ownerId === actor.id && row.origin !== 'console' && await persistence.stat(row.sessionId as SessionId) !== undefined) continue
       wanted.add(row.sessionId)
       if (archived.has(row.sessionId)) continue
       try {
@@ -2247,6 +2247,13 @@ export class FaberLoomViewService extends TypertRemoteService {
           // Re-attach in case the copy was detached while its log was briefly
           // absent (a publish prune); otherwise it lingers under Ungrouped.
           await workspace.attachSession(row.sessionId as SessionId).catch(() => undefined)
+          continue
+        }
+        // A local copy whose events could not be read (an older host that does
+        // not know a newer event type, or a transient read failure) must stay:
+        // deleting it here would trade a stale transcript for a missing one.
+        if (existing !== undefined && local === undefined) {
+          this.ctx.logger.warn(`faberloom: no se pudo leer la copia local de la sesión '${row.title}'; se conserva`)
           continue
         }
         if (existing !== undefined) await persistence.delete(row.sessionId as SessionId)
