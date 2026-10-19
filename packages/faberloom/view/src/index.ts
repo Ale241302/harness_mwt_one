@@ -4554,7 +4554,14 @@ export class FaberLoomViewService extends TypertRemoteService {
   async spaceFiles(id: string, path: string): Promise<readonly FaberLoomSpaceFileEntry[]> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
-    const dir = await this.resolveSpaceDir(actor, space)
+    // The explorer lists the same folder the Space's Sessions live in: the
+    // stored Workspace when it resolves here, this host's same-named Workspace
+    // when the row came from another machine, and the deterministic area
+    // otherwise. Nothing is created by a read.
+    const registry = this.workspaceRegistryOrUndefined()
+    const stored = space.workspaceId === undefined ? undefined : registry?.get(space.workspaceId as WorkspaceId)
+    const named = stored ?? registry?.list().find(workspace => workspace.title === space.title)
+    const dir = named === undefined ? await this.resolveSpaceDir(actor, space) : named.path
     return await listSpaceDirectory(dir, path)
   }
 
