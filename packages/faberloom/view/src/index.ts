@@ -35,6 +35,8 @@ import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 import type { Workspace, WorkspaceRegistry, WorkspaceId } from '@deepseek-ai/dsh-workspace'
 // Type-only: pulls the ctx merge for the harness projection the Space panel writes through.
 import type { HarnessScope } from '@deepseek-ai/dsh-faberloom-harness-projection'
+import { listSpaceDirectory } from './space-files.ts'
+import type { FaberLoomSpaceFileEntry } from './types.ts'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
@@ -834,6 +836,9 @@ export class FaberLoomViewService extends TypertRemoteService {
           await this.refreshSharedContent(this.actor())
         })().catch((error: unknown) => {
           ctx.logger.warn(`faberloom: no se pudo refrescar el contenido compartido: ${String(error)}`)
+          // The packaged host has no console sink for the logger, so a failed
+          // pass would otherwise leave no trace an operator can read.
+          console.error(`faberloom: no se pudo refrescar el contenido compartido: ${error instanceof Error ? error.message : String(error)}`)
         })
       }
       const timer = setInterval(run, 10_000)
@@ -842,8 +847,18 @@ export class FaberLoomViewService extends TypertRemoteService {
     }, 'faberloom.view.session-mirror-timer')
   }
 
-  /** Debounce a shared-Session reconcile so a burst of disposals runs it once. */
-  private scheduleSessionReconcile(): void {
+  /**
+   * Record one mirror-pass fact in the process diagnostics when
+   * `FABERLOOM_MIRROR_DEBUG=1`. A deployment where a Web Session never reaches
+   * another computer turns this on and reads the host log.
+   * @param message - the fact to record.
+   */
+  private trace(message: string): void {
+    if (process.env['FABERLOOM_MIRROR_DEBUG'] !== '1') return
+    console.error(`faberloom: mirror ${message}`)
+  }
+
+  /** Debounce a shared-Session reconcile so a burst of disposals runs it once. */  private scheduleSessionReconcile(): void {
     if (this.sessionReconcileTimer !== undefined) return
     this.sessionReconcileTimer = setTimeout(() => {
       this.sessionReconcileTimer = undefined
@@ -2121,6 +2136,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       const catalog = this.ctx.get('faberloomSessionShares')
       if (catalog === undefined) return
       const spaces = await this.ctx.faberloomSpaces.list(actor)
+      this.trace(`pass spaces=${spaces.length}`)
       // Todas las áreas del dueño viajan: el espejo lleva el catálogo entre sus
       // máquinas, así que filtrar por Space compartido dejaba fuera justo el caso
       // en que nadie más participa. Cada área se resuelve en esta máquina (y se
@@ -2141,6 +2157,7 @@ export class FaberLoomViewService extends TypertRemoteService {
           this.ctx.logger.warn(`faberloom: no se pudieron publicar las sesiones del espacio '${space.title}': ${String(error)}`)
         })
         const areaId = workspace === undefined ? undefined : String(workspace.id)
+        this.trace(`space=${space.title} area=${areaId ?? 'none'}`)
         await this.materializeSharedSessions(actor, space.id, areaId, false, mirrored).catch((error: unknown) => {
           this.ctx.logger.warn(`faberloom: no se pudieron espejar las sesiones del espacio '${space.title}': ${String(error)}`)
         })
@@ -2171,6 +2188,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const catalog = this.ctx.get('faberloomSessionShares')
     const registry = this.workspaceRegistryOrUndefined()
     const workspace = registry?.get(workspaceId as WorkspaceId)
+    this.trace(`call space=${spaceId} area=${workspaceId} persistence=${persistence !== undefined} catalog=${catalog !== undefined} workspace=${workspace !== undefined}`)
     if (persistence === undefined || catalog === undefined) return
     if (workspace === undefined) {
       this.ctx.logger.warn(`faberloom: el área espejo ${workspaceId} no está registrada; no se espejan sus sesiones`)
@@ -2186,6 +2204,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     // resurrect a conversation the member removed from the sidebar.
     const archived = new Set<string>(registry?.archivedSessionIds ?? [])
     const rows = await catalog.list({ id: actor.id }, spaceId)
+    this.trace(`materialize space=${spaceId} area=${workspaceId} rows=${rows.length}`)
     const ownIds = new Set(rows.filter(row => row.ownerId === actor.id).map(row => row.sessionId))
     const wanted = new Set<string>()
     for (const row of rows) {
@@ -2253,6 +2272,9 @@ export class FaberLoomViewService extends TypertRemoteService {
         })
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: no se pudo materializar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
+        // A copy that never lands is the difference between the Web's Space and
+        // this computer's sidebar; the reason must be readable on disk.
+        console.error(`faberloom: no se pudo materializar la sesión compartida '${row.title}' (${row.sessionId}): ${error instanceof Error ? error.message : String(error)}`)
       }
     }
     // Reconcile removals: a Session that the actor neither owns (its own
@@ -4513,6 +4535,22 @@ export class FaberLoomViewService extends TypertRemoteService {
       title: existing?.title ?? null,
       sessions: existing === undefined ? 0 : existing.sessionIds.length,
     }
+  }
+
+  /**
+   * List one directory of a Space's area for the sidebar explorer. The path is
+   * workspace-relative and may not leave that area; hidden entries are listed,
+   * because the harness projection and the operator's documents both matter.
+   * @param id - space id.
+   * @param path - workspace-relative directory, empty for the area's root.
+   * @returns the directory's entries, directories first.
+   */
+  @Remote('spaceFiles')
+  async spaceFiles(id: string, path: string): Promise<readonly FaberLoomSpaceFileEntry[]> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const dir = await this.resolveSpaceDir(actor, space)
+    return await listSpaceDirectory(dir, path)
   }
 
   /**

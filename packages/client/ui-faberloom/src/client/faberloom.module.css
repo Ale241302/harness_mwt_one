@@ -1354,3 +1354,51 @@
   align-items: center;
   gap: 8px;
 }
+
+/* The files panel: one expandable tree per Space, drawn as flat rows. */
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0 12px;
+}
+
+.treeSpace,
+.treeRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.treeSpace {
+  font-weight: 600;
+}
+
+.treeSpace:hover,
+.treeRow:hover {
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.treeGlyph {
+  flex: none;
+  width: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.treeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -5,6 +5,7 @@ import { once } from 'node:events'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
+import { pathToFileURL } from 'node:url'
 import {
   DESKTOP_HOST_PROTOCOL_VERSION,
   DESKTOP_PIPE_CHUNK_BYTES,
@@ -20,8 +21,19 @@ import {
   type DesktopHostResponseFrame,
 } from './host-protocol.ts'
 
-interface PendingResponse {
-  readonly resolve: (response: Response) => void
+/**
+ * The console-token files a child host reads to keep its credential current.
+ * The shell renews the token; the preload copies it into the environment the
+ * product services read, so a host that outlives the boot token keeps working.
+ */
+export interface DesktopConsoleToken {
+  /** Token file the shell renews. */
+  readonly file: string
+  /** Preload that re-reads the token file into `CONSOLA_TOKEN`. */
+  readonly watcher: string
+}
+
+interface PendingResponse {  readonly resolve: (response: Response) => void
   readonly reject: (error: Error) => void
   responseStarted: boolean
   uploadOpen: boolean
@@ -93,6 +105,7 @@ export class DesktopHostProcess {
    * @param inspectPort - optional loopback inspector port for workspace development.
    * @param environment - Child environment; runtime and package-manager overrides are removed.
    * @param onFailure - Receives the first fatal child or transport failure, including after readiness.
+   * @param consoleToken - token files that keep the child's console credential current.
    */
   constructor(
     private readonly executable: string,
@@ -102,6 +115,7 @@ export class DesktopHostProcess {
     private readonly environment: NodeJS.ProcessEnv = process.env,
     private readonly onFailure?: (error: Error) => void,
     private readonly logPath?: string,
+    private readonly consoleToken?: DesktopConsoleToken,
   ) {}
 
   /**
@@ -137,6 +151,10 @@ export class DesktopHostProcess {
         ...Object.fromEntries(Object.entries(this.environment).filter(([name]) => (
           name !== 'NODE_OPTIONS' && name !== 'NODE_PATH' && !/^DSH_DESKTOP_/u.test(name) && !/^(?:npm|pnpm|corepack)_/iu.test(name)
         ))),
+        ...(this.consoleToken === undefined ? {} : {
+          CONSOLA_TOKEN_FILE: this.consoleToken.file,
+          NODE_OPTIONS: `--import ${pathToFileURL(this.consoleToken.watcher).href}`,
+        }),
         ELECTRON_RUN_AS_NODE: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe', 'pipe', 'pipe', 'ipc'],
@@ -158,7 +176,12 @@ export class DesktopHostProcess {
       this.stderr += chunk
       this.log(chunk)
     })
-    child.stdout?.pipe(process.stdout)
+    // The host's product services report through the logger, which writes to
+    // stdout. A packaged application has no console, so without this a failed
+    // mirror or a refused row leaves no trace on disk.
+    child.stdout?.setEncoding('utf8')
+    child.stdout?.on('data', (chunk: string) => { this.log(chunk) })
+    child.stdout?.on('data', (chunk: string) => { process.stdout.write(chunk) })
     responsePipe.on('data', (chunk: Buffer) => { this.acceptResponseBytes(chunk) })
     responsePipe.once('end', () => {
       try {

@@ -42,6 +42,7 @@ import type {
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow,
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
   FaberLoomSkillInstallDestination, FaberLoomSkillInstallRow, FaberLoomHarnessReport,
+  FaberLoomSpaceFileEntry,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { isDesktopApplication } from './desktop-app.ts'
@@ -165,6 +166,8 @@ export interface FaberloomPanelInjected {
   unshareShare: (id: string) => Promise<Result<FaberLoomShares>>
   /** List the skills available to this owner. */
   skills: () => Promise<Result<readonly FaberLoomSkillRow[]>>
+  /** List one directory of a space's area for the files panel. */
+  listSpaceFiles: (spaceId: string, path: string) => Promise<Result<readonly FaberLoomSpaceFileEntry[]>>
   /** Add or replace one uploaded skill. */
   saveSkill: (name: string, markdown: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** Remove one uploaded skill. */
@@ -4619,12 +4622,113 @@ function agentsAndSkillsScreen() {
  *  bench, Curation for the pipeline, Criterio for a human approval, StackLoom
  *  for the knowledge layers, KnowledgeIndex for incoming material, Workspace
  *  for a Space — and the standard set covers the rest. */
+/** One directory level of the files panel, drawn recursively as folders expand. */
+function SpaceFilesLevel({ spaceId, path, depth, levels, open, onToggle }: {
+  spaceId: string
+  path: string
+  depth: number
+  levels: Readonly<Record<string, readonly FaberLoomSpaceFileEntry[]>>
+  open: ReadonlySet<string>
+  onToggle: (spaceId: string, path: string) => void
+}) {
+  const rows = levels[`${spaceId}\u0000${path}`]
+  if (rows === undefined) return null
+  return (
+    <>
+      {rows.map((row) => {
+        const child = path === '' ? row.name : `${path}/${row.name}`
+        const childKey = `${spaceId}\u0000${child}`
+        const expanded = open.has(childKey)
+        return (
+          <div key={childKey}>
+            <button
+              type="button"
+              className={styles.treeRow}
+              style={{ paddingLeft: `${8 + depth * 14}px` }}
+              onClick={() => { if (row.kind === 'directory') onToggle(spaceId, child) }}
+              title={child}
+            >
+              <span className={styles.treeGlyph} aria-hidden="true">
+                {row.kind === 'directory' ? (expanded ? '▾' : '▸') : '·'}
+              </span>
+              <span className={styles.treeName}>{row.name}</span>
+            </button>
+            {row.kind === 'directory' && expanded && (
+              <SpaceFilesLevel spaceId={spaceId} path={child} depth={depth + 1} levels={levels} open={open} onToggle={onToggle} />
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+/** Files: every Space's area as an expandable tree of folders and documents. */
+function filesScreen() {
+  return function FaberloomFiles(props: ScreenProps) {
+    const { t, listSpaceFiles } = props
+    const { overview } = useOverview(props)
+    const spaces = overview?.spaces ?? []
+    const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
+    const [levels, setLevels] = useState<Record<string, readonly FaberLoomSpaceFileEntry[]>>({})
+    const [error, setError] = useState<string | null>(null)
+    const load = (spaceId: string, path: string): void => {
+      const key = `${spaceId}\u0000${path}`
+      void listSpaceFiles(spaceId, path).then((result) => {
+        if (result.ok) {
+          setError(null)
+          setLevels(current => ({ ...current, [key]: result.value }))
+        } else setError(result.error.message)
+      }).catch(() => { setError(t('panel.files.loadError')) })
+    }
+    const toggle = (spaceId: string, path: string): void => {
+      const key = `${spaceId}\u0000${path}`
+      const opening = !open.has(key)
+      const next = new Set(open)
+      if (opening) next.add(key)
+      else next.delete(key)
+      setOpen(next)
+      if (opening && levels[key] === undefined) load(spaceId, path)
+    }
+    return (
+      <Screen title={t('panel.files.title')} subtitle={t('panel.files.subtitle')}>
+        {error !== null && <StateBlock kind="error" title={t('panel.files.loadError')} text={error} />}
+        {spaces.length === 0
+          ? <StateBlock kind="empty" title={t('panel.files.empty')} />
+          : (
+            <div className={styles.tree}>
+              {spaces.map((space) => {
+                const key = `${space.id}\u0000`
+                const expanded = open.has(key)
+                return (
+                  <div key={space.id}>
+                    <button type="button" className={styles.treeSpace} onClick={() => toggle(space.id, '')} title={t('panel.files.toggle')}>
+                      <span className={styles.treeGlyph} aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                      <span className={styles.treeName}>{space.title}</span>
+                    </button>
+                    {expanded && (
+                      <SpaceFilesLevel spaceId={space.id} path="" depth={1} levels={levels} open={open} onToggle={toggle} />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+      </Screen>
+    )
+  }
+}
+
 export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   // The Chat landing keeps its route but no sidebar row (the New Session button
   // and the conversation cover it).
   { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', Icon: panelIcon(FlIconSpaceloom), Page: conversarPanel(), sidebar: false },
   { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.board.length, Icon: panelIcon(FlIconWorkloom), Page: boardScreen() },
   { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.spaces.length, Icon: panelIcon(FlIconWorkspace), Page: spacesScreen() },
+  // The files panel reads the same Spaces the platform sidebar groups, so the
+  // harness projection and the operator's documents are visible without opening
+  // the conversation's right pane.
+  { id: 'faberloom-files' as MainPanelId, order: 35, labelKey: 'nav.files', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', Icon: panelIcon(FlIconKnowledgeIndex), Page: filesScreen() },
   // Agents and Skills share one sidebar row; the panel's own tab switches them.
   { id: 'faberloom-agents' as MainPanelId, order: 40, labelKey: 'nav.agentsAndSkills', modeKey: 'nav.mode.admin', groupKey: 'nav.group.setup', badge: overview => overview.agents.length, Icon: panelIcon(FlIconUsers), Page: agentsAndSkillsScreen() },
   { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.routines.length, Icon: panelIcon(FlIconRefresh), Page: routinesScreen() },

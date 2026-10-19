@@ -20,6 +20,12 @@ import { resolveBackend, type DesktopBackend } from './launch-backend.ts'
 import { DEFAULT_GATEWAY_URL } from './gateway.ts'
 import { resolveDesktopPaths } from './paths.ts'
 import { ensureHomeEnvFile, readHomeEnv, resolveHomeEnvDefaults } from './home-env.ts'
+import {
+  CONSOLE_TOKEN_FILENAME,
+  refreshConsoleToken,
+  startConsoleTokenRefresh,
+  writeConsoleTokenWatcher,
+} from './console-token.ts'
 import { readAppearance, writeAppearance } from './appearance.ts'
 import {
   DEFAULT_CONSOLA_API_BASE,
@@ -208,6 +214,16 @@ async function main(): Promise<void> {
   // the deployment defaults injected at packaging time, so a fresh installation
   // already reaches the official DeepSeek route.
   ensureHomeEnvFile(home, resolveHomeEnvDefaults(process.env, process.resourcesPath))
+  // A desktop session outlives the console access token (thirty minutes), and the
+  // mirror and every product console call read the token from the environment.
+  // Renew it before the host boots, then keep it current while the application
+  // runs, so nothing silently starts answering 401.
+  await refreshConsoleToken(home).catch(() => ({ refreshed: false }))
+  const consoleToken = {
+    file: join(home, CONSOLE_TOKEN_FILENAME),
+    watcher: writeConsoleTokenWatcher(home),
+  }
+  startConsoleTokenRefresh(home)
   const identityPatchPath = join(home, IDENTITY_PATCH_FILENAME)
   const consolaBase = process.env.DSH_DESKTOP_CONSOLA_API_BASE ?? DEFAULT_CONSOLA_API_BASE
   // The catalogs this installation ships, mounted read-only by the local harness
@@ -295,7 +311,7 @@ async function main(): Promise<void> {
     // (the product MCP keys, the mirror credential) then resolve on a desktop too.
     const host = new DesktopHostProcess(resources.node, development ?? resources.dsh, activeProject,
       hostInspectPort, { ...readHomeEnv(home), ...process.env, DSH_HOME: home, DSH_IDENTITY_PATCH: identityPatchPath }, onFailure,
-      join(home, 'desktop-host.log'))
+      join(home, 'desktop-host.log'), consoleToken)
     return {
       start: () => host.start(),
       stop: () => host.stop(),

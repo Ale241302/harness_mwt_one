@@ -115,6 +115,23 @@ export function readHomeEnv(dshHome: string): Record<string, string> {
 }
 
 /**
+ * Set or create one `NAME=value` line while preserving every other line.
+ * @param content - the dotenv document to update.
+ * @param name - the variable to set.
+ * @param value - the value to write.
+ * @returns the updated document, ending with one newline when it holds a line.
+ */
+export function setHomeEnvLine(content: string, name: string, value: string): string {
+  const pattern = new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`, 'u')
+  const lines = content.split(/\r?\n/u)
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+  const index = lines.findIndex(line => pattern.test(line))
+  if (index === -1) lines.push(`${name}=${value}`)
+  else lines[index] = `${name}=${value}`
+  return lines.length === 0 ? '' : `${lines.join('\n')}\n`
+}
+
+/**
  * Ensure `$DSH_HOME/.env` assigns each default name, appending only the missing
  * ones so a value an operator or the Models page already wrote is never
  * replaced. Existing comments and formatting survive untouched. The credential

@@ -15,7 +15,8 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { HOME_ENV_FILENAME } from './home-env.ts'
+import { removeConsoleTokenFile, writeConsoleTokenFile } from './console-token.ts'
+import { HOME_ENV_FILENAME, setHomeEnvLine } from './home-env.ts'
 import { renderProductMcpEntries } from './product-mcp.ts'
 
 /** Persisted non-secret identity file. */
@@ -287,17 +288,6 @@ export function renderIdentityPatch(
   ].join('\n') + '\n'
 }
 
-/** Set or create one `NAME=value` line while preserving every other line. */
-function setEnvLine(content: string, name: string, value: string): string {
-  const pattern = new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`, 'u')
-  const lines = content.split(/\r?\n/u)
-  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-  const index = lines.findIndex(line => pattern.test(line))
-  if (index === -1) lines.push(`${name}=${value}`)
-  else lines[index] = `${name}=${value}`
-  return lines.length === 0 ? '' : `${lines.join('\n')}\n`
-}
-
 /**
  * Persist one signed-in identity: the credential env layer, the identity patch,
  * and the non-secret identity record.
@@ -318,9 +308,15 @@ export function writeIdentity(
   for (const root of ['skills', 'skills-shared', 'agents-shared']) mkdirSync(join(dshHome, root), { recursive: true })
   const envPath = join(dshHome, HOME_ENV_FILENAME)
   let env = existsSync(envPath) ? readFileSync(envPath, 'utf8') : ''
-  env = setEnvLine(env, 'CONSOLA_API_BASE', identity.consolaBase)
-  if (credentials.token.length > 0) env = setEnvLine(env, 'CONSOLA_TOKEN', credentials.token)
+  env = setHomeEnvLine(env, 'CONSOLA_API_BASE', identity.consolaBase)
+  if (credentials.token.length > 0) env = setHomeEnvLine(env, 'CONSOLA_TOKEN', credentials.token)
+  // The refresh token is what lets a desktop session outlive the thirty-minute
+  // access token without asking the operator to sign in again.
+  if (credentials.refresh !== undefined && credentials.refresh.length > 0) {
+    env = setHomeEnvLine(env, 'CONSOLA_REFRESH', credentials.refresh)
+  }
   writeFileSync(envPath, env)
+  if (credentials.token.length > 0) writeConsoleTokenFile(dshHome, credentials.token)
   writeFileSync(
     join(dshHome, IDENTITY_PATCH_FILENAME),
     renderIdentityPatch(identity, dshHome, environment, catalogs),
@@ -361,9 +357,10 @@ export function refreshIdentityPatch(
 export function signOut(dshHome: string): string[] {
   rmSync(join(dshHome, IDENTITY_PATCH_FILENAME), { force: true })
   rmSync(join(dshHome, IDENTITY_FILENAME), { force: true })
+  removeConsoleTokenFile(dshHome)
   const envPath = join(dshHome, HOME_ENV_FILENAME)
   if (!existsSync(envPath)) return []
-  const names = ['CONSOLA_TOKEN']
+  const names = ['CONSOLA_TOKEN', 'CONSOLA_REFRESH']
   const content = readFileSync(envPath, 'utf8')
   const kept = content.split(/\r?\n/u).filter((line) => {
     const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/u.exec(line)
