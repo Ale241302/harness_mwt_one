@@ -1672,9 +1672,8 @@ function emailScreen() {
 
 /** Skills: the role catalog plus the owner's uploads. */
 function skillsScreen() {
-  return function FaberloomSkills(props: ScreenProps & { tabs?: ReactNode }) {
-    const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare,
-      installHarness, pickArchive } = props
+  return function FaberloomSkills(props: ScreenProps & { tabs?: ReactNode; refresh?: number }) {
+    const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare, refresh } = props
     const [list, setList] = useState<readonly FaberLoomSkillRow[] | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [query, setQuery] = useState('')
@@ -1695,7 +1694,7 @@ function skillsScreen() {
       let live = true
       void skills().then((result) => { if (live) apply(result) }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
       return () => { live = false }
-    }, [])
+    }, [refresh])
 
     // What the owner already shares, so the panel can list and retract it.
     useEffect(() => {
@@ -1739,16 +1738,6 @@ function skillsScreen() {
       <Screen title={t('panel.skills.title')} subtitle={t('panel.skills.intro')}
         trailing={(
           <>
-            {isDesktopApplication()
-              ? (
-                <HarnessInstallWizard
-                  t={t}
-                  pickSource={pickArchive}
-                  install={installHarness}
-                  onChanged={() => { void skills().then(apply) }}
-                />
-              )
-              : null}
             {props.tabs}
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
             <select className={styles.paneSearch} style={{ width: 170, padding: '8px 10px' }} value={moduleFilter} onChange={(event) => { setModuleFilter(event.target.value) }}>
@@ -4616,8 +4605,25 @@ function agentsAndSkillsScreen() {
   const SkillsPage = skillsScreen()
   return function FaberloomAgentsAndSkills(props: ScreenProps) {
     const [tab, setTab] = useState<'agents' | 'skills'>('agents')
-    const tabs = <AgentsSkillsTabs t={props.t} active={tab} onSelect={setTab} />
-    return tab === 'agents' ? <AgentsPage {...props} tabs={tabs} /> : <SkillsPage {...props} tabs={tabs} />
+    const [refresh, setRefresh] = useState(0)
+    const tabs = (
+      <>
+        {isDesktopApplication()
+          ? (
+            <HarnessInstallWizard
+              t={props.t}
+              pickSource={props.pickArchive}
+              install={props.installHarness}
+              onChanged={() => { setRefresh(value => value + 1) }}
+            />
+          )
+          : null}
+        <AgentsSkillsTabs t={props.t} active={tab} onSelect={setTab} />
+      </>
+    )
+    return tab === 'agents'
+      ? <AgentsPage {...props} tabs={tabs} />
+      : <SkillsPage {...props} tabs={tabs} refresh={refresh} />
   }
 }
 
