@@ -1456,3 +1456,114 @@
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-ui-body);
 }
+
+/* The files panel's own toolbar, selection bar, and metadata. */
+.fileTools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 10px;
+}
+
+.fileSearch {
+  flex: 1;
+  min-width: 0;
+}
+
+.fileSearch input {
+  width: 100%;
+}
+
+.segments {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.segment,
+.segmentActive {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+  cursor: pointer;
+}
+
+.segmentActive {
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.fileSelection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 6px 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+.fileSelection span {
+  margin-right: auto;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fileRow .treeRow {
+  flex: 1;
+  min-width: 0;
+}
+
+.fileCheck {
+  flex: none;
+  margin: 0 2px;
+  accent-color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.fileMeta {
+  flex: none;
+  margin-left: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.fileGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 10px 4px 22px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-panel-label);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileGroup:hover {
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.fileGroupHint {
+  margin: 10px 10px 4px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-panel-label);
+}

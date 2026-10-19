@@ -229,6 +229,21 @@ export function renderAgentsIndex(input: HarnessPlanInput): string {
 }
 
 /**
+ * Render the index of the scope's Work Flows.
+ * @param usage - the records the projection carries.
+ * @returns the complete `.agents/workflows/README.md` text.
+ */
+export function renderWorkflowIndex(usage: HarnessUsage): string {
+  const entries = usage.workflows.map(entry => `- \`${oneLine(entry.name)}\` (${oneLine(entry.status)})`)
+  return [
+    '# Workflows del ámbito',
+    '',
+    ...(entries.length === 0 ? ['Este ámbito no tiene Work Flows registrados.'] : entries),
+    '',
+  ].join('\n')
+}
+
+/**
  * Render one agent's definition: the frontmatter clients read, followed by the
  * agent's own responsibility, which is the persona the product installs. A
  * `model` line appears only when the agent declares both a provider and a
@@ -309,8 +324,11 @@ export function planProjection(input: HarnessPlanInput): HarnessProjectionPlan {
     { path: 'CLAUDE.md', content: instructions },
     { path: 'GEMINI.md', content: instructions },
     { path: '.gemini/AGENTS.md', content: instructions },
+    { path: '.gemini/GEMINI.md', content: instructions },
     { path: '.kimi/AGENTS.md', content: instructions },
+    { path: '.kimi-code/AGENTS.md', content: instructions },
     { path: '.agents/README.md', content: renderAgentsIndex(input) },
+    { path: '.agents/workflows/README.md', content: renderWorkflowIndex(usage) },
     { path: '.claude/settings.json', content: renderSettings() },
   ]
   const agents: HarnessManifestAgent[] = []
@@ -318,8 +336,10 @@ export function planProjection(input: HarnessPlanInput): HarnessProjectionPlan {
     const slug = String(slugs.get(agent.id))
     const content = renderAgentDocument(agent, slug)
     files.push({ path: `.agents/${slug}.md`, content })
+    files.push({ path: `.agents/subagents/${slug}.md`, content })
     files.push({ path: `.claude/agents/${slug}.md`, content })
     files.push({ path: `.kimi/agents/${slug}.md`, content })
+    files.push({ path: `.kimi-code/agents/${slug}.md`, content })
     agents.push({ id: agent.id, name: agent.name, file: `${slug}.md` })
   }
   const skills: HarnessManifestSkill[] = []
@@ -327,7 +347,9 @@ export function planProjection(input: HarnessPlanInput): HarnessProjectionPlan {
     const content = renderSkillDocument(skill)
     const claude = `.claude/skills/${skill.name}/SKILL.md`
     files.push({ path: claude, content })
+    files.push({ path: `.agents/skills/${skill.name}/SKILL.md`, content })
     files.push({ path: `.kimi/skills/${skill.name}/SKILL.md`, content })
+    files.push({ path: `.kimi-code/skills/${skill.name}/SKILL.md`, content })
     skills.push({ name: skill.name, file: claude })
   }
   return {

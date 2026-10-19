@@ -24,7 +24,8 @@ import {
   FlIconWorkloom,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BrandWordmark, Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
-import { FileTypeIcon, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { FileTypeIcon, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomConnection, FaberLoomExecutionRow,
   FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomModelCatalog, FaberLoomOverview,
@@ -43,7 +44,7 @@ import type {
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow,
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
   FaberLoomSkillInstallDestination, FaberLoomSkillInstallRow, FaberLoomHarnessReport,
-  FaberLoomSpaceFileEntry,
+  FaberLoomSpaceTreeEntry,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { isDesktopApplication } from './desktop-app.ts'
@@ -167,8 +168,12 @@ export interface FaberloomPanelInjected {
   unshareShare: (id: string) => Promise<Result<FaberLoomShares>>
   /** List the skills available to this owner. */
   skills: () => Promise<Result<readonly FaberLoomSkillRow[]>>
-  /** List one directory of a space's area for the files panel. */
-  listSpaceFiles: (spaceId: string, path: string) => Promise<Result<readonly FaberLoomSpaceFileEntry[]>>
+  /** Read a space's whole folder once, for search and session grouping. */
+  spaceTree: (spaceId: string) => Promise<Result<{ root: string; entries: readonly FaberLoomSpaceTreeEntry[] }>>
+  /** Rename one entry of a space's folder. */
+  renameSpaceEntry: (spaceId: string, path: string, name: string) => Promise<Result<void>>
+  /** Delete one or more entries of a space's folder. */
+  deleteSpaceEntries: (spaceId: string, paths: readonly string[]) => Promise<Result<{ deleted: number }>>
   /** Open one file of a space's area with the operating system's application. */
   openSpaceFile: (spaceId: string, path: string) => Promise<Result<{ opened: boolean }>>
   /** Add or replace one uploaded skill. */
@@ -4625,82 +4630,81 @@ function agentsAndSkillsScreen() {
  *  bench, Curation for the pipeline, Criterio for a human approval, StackLoom
  *  for the knowledge layers, KnowledgeIndex for incoming material, Workspace
  *  for a Space — and the standard set covers the rest. */
-/** One directory level of the files panel, drawn recursively as folders expand. */
-function SpaceFilesLevel({ spaceId, path, depth, levels, open, busy, onToggle, onOpen, t }: {
-  spaceId: string
-  path: string
-  depth: number
-  levels: Readonly<Record<string, readonly FaberLoomSpaceFileEntry[]>>
-  open: ReadonlySet<string>
-  busy: string | null
-  onToggle: (spaceId: string, path: string) => void
-  onOpen: (spaceId: string, path: string) => void
-  t: ScreenProps['t']
-}) {
-  const rows = levels[`${spaceId}\u0000${path}`]
-  if (rows === undefined) return null
-  return (
-    <>
-      {rows.map((row) => {
-        const child = path === '' ? row.name : `${path}/${row.name}`
-        const childKey = `${spaceId}\u0000${child}`
-        const expanded = open.has(childKey)
-        const directory = row.kind === 'directory'
-        return (
-          <div key={childKey}>
-            <button
-              type="button"
-              className={styles.treeRow}
-              data-kind={row.kind}
-              style={{ paddingLeft: `${12 + depth * 16}px` }}
-              onClick={() => { if (directory) onToggle(spaceId, child); else onOpen(spaceId, child) }}
-              aria-expanded={directory ? expanded : undefined}
-              disabled={busy === childKey}
-              title={child}
-            >
-              <span className={styles.treeCaret}>
-                {directory ? <IconChevronRightOutline14 className={expanded ? styles.caretOpen : undefined} /> : null}
-              </span>
-              <span className={styles.treeIcon}>
-                {directory
-                  ? (expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />)
-                  : <FileTypeIcon path={row.name} size={16} />}
-              </span>
-              <span className={styles.treeName}>{row.name}</span>
-              {busy === childKey && <span className={styles.treeBusy}>{t('panel.files.opening')}</span>}
-            </button>
-            {directory && expanded && (
-              <SpaceFilesLevel
-                spaceId={spaceId}
-                path={child}
-                depth={depth + 1}
-                levels={levels}
-                open={open}
-                busy={busy}
-                onToggle={onToggle}
-                onOpen={onOpen}
-                t={t}
-              />
-            )}
-          </div>
-        )
-      })}
-    </>
-  )
+/** Case-insensitive path equality between the host's root and a session's cwd. */
+function sameDirectory(left: string | undefined, right: string | undefined): boolean {
+  if (left === undefined || right === undefined) return false
+  const normalize = (value: string): string => value.replace(/\\/gu, '/').replace(/\/+$/u, '').toLowerCase()
+  return normalize(left) === normalize(right)
 }
 
-/** Files: every Space's area as an expandable tree of folders and documents. */
+/** Substring first, then in-order subsequence, so a partial name still matches. */
+function matchesQuery(text: string, query: string): boolean {
+  const haystack = text.toLowerCase()
+  const needle = query.toLowerCase()
+  if (haystack.includes(needle)) return true
+  let index = 0
+  for (const character of haystack) {
+    if (character === needle[index]) index += 1
+    if (index === needle.length) return true
+  }
+  return needle.length === 0
+}
+
+/** Bytes in the reader's own unit notation. */
+function sizeLabel(bytes: number): string {
+  const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const
+  let value = bytes
+  let index = 0
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024
+    index += 1
+  }
+  return new Intl.NumberFormat(undefined, {
+    style: 'unit', unit: units[index], unitDisplay: 'short', maximumFractionDigits: 1,
+  }).format(value)
+}
+
+/** Parent path, empty at the area root. */
+function parentOfPath(path: string): string {
+  return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+}
+
+/** Pre-order path order: a folder directly precedes its children. */
+function byPath(left: FaberLoomSpaceTreeEntry, right: FaberLoomSpaceTreeEntry): number {
+  return left.path.localeCompare(right.path, 'es', { numeric: true })
+}
+
+/** Whether every folder above one path is expanded. */
+function ancestorsExpanded(spaceId: string, path: string, open: ReadonlySet<string>): boolean {
+  let parent = parentOfPath(path)
+  while (parent !== '') {
+    if (!open.has(`${spaceId}\u0000${parent}`)) return false
+    parent = parentOfPath(parent)
+  }
+  return true
+}
+
+/** CSV files are spreadsheets to the reader; every other type keeps its own mark. */
+function fileIconKind(name: string): ReturnType<typeof classifyFileType> {
+  return /\.csv$/iu.test(name) ? 'excel' : classifyFileType(name)
+}
+
+/** One session (or the no-session bucket) and the entries it wrote. */
+interface FileGroup {
+  readonly key: string
+  readonly title: string
+  readonly at: number
+  readonly entries: readonly FaberLoomSpaceTreeEntry[]
+}
+
+/** Files: a Space's folder grouped by the Session that wrote each file, or as a plain tree. */
 function filesScreen() {
   return function FaberloomFiles(props: ScreenProps) {
-    const { t, listSpaceFiles, openSpaceFile } = props
+    const { t, spaceTree, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, useSessions } = props
     const { overview } = useOverview(props)
-    const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
-    const [levels, setLevels] = useState<Record<string, readonly FaberLoomSpaceFileEntry[]>>({})
-    const [busy, setBusy] = useState<string | null>(null)
-    const [error, setError] = useState<string | null>(null)
-    const [notice, setNotice] = useState<string | null>(null)
-    // Two Spaces can mirror the same folder (one row per machine); the explorer
-    // shows the folder once so the tree does not repeat itself.
+    const sessionsById = useSessions(state => state.byId)
+    const sessions = useMemo(() => Object.values(sessionsById ?? {}), [sessionsById])
+    // Two Spaces can mirror the same folder (one row per machine).
     const spaces = useMemo(() => {
       const seen = new Set<string>()
       return (overview?.spaces ?? []).filter((space) => {
@@ -4709,24 +4713,108 @@ function filesScreen() {
         return true
       })
     }, [overview])
-    const load = (spaceId: string, path: string): void => {
-      const key = `${spaceId}\u0000${path}`
-      void listSpaceFiles(spaceId, path).then((result) => {
-        if (result.ok) {
-          setError(null)
-          setLevels(current => ({ ...current, [key]: result.value }))
-        } else setError(result.error.message)
+    const [query, setQuery] = useState('')
+    const [search, setSearch] = useState('')
+    const [mode, setMode] = useState<'session' | 'folder'>('session')
+    const [trees, setTrees] = useState<Record<string, { readonly root: string; readonly entries: readonly FaberLoomSpaceTreeEntry[] }>>({})
+    const [openSpaces, setOpenSpaces] = useState<ReadonlySet<string>>(new Set())
+    const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(new Set())
+    const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set())
+    const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+    const [busy, setBusy] = useState<string | null>(null)
+    const [error, setError] = useState<string | null>(null)
+    const [notice, setNotice] = useState<string | null>(null)
+    const [renaming, setRenaming] = useState<{ readonly spaceId: string; readonly path: string; readonly name: string } | null>(null)
+    const [removing, setRemoving] = useState<ReadonlyArray<{ readonly spaceId: string; readonly paths: readonly string[] }> | null>(null)
+
+    const reloadSpace = (spaceId: string): void => {
+      void spaceTree(spaceId).then((result) => {
+        if (result.ok) setTrees(current => ({ ...current, [spaceId]: result.value }))
+        else setError(result.error.message)
       }).catch(() => { setError(t('panel.files.loadError')) })
     }
-    const toggle = (spaceId: string, path: string): void => {
-      const key = `${spaceId}\u0000${path}`
-      const opening = !open.has(key)
-      const next = new Set(open)
-      if (opening) next.add(key)
-      else next.delete(key)
-      setOpen(next)
-      if (opening && levels[key] === undefined) load(spaceId, path)
+
+    const loadSpace = (spaceId: string): void => {
+      if (trees[spaceId] !== undefined) return
+      reloadSpace(spaceId)
     }
+
+    const toggleSpace = (spaceId: string): void => {
+      const next = new Set(openSpaces)
+      if (next.has(spaceId)) next.delete(spaceId)
+      else {
+        next.add(spaceId)
+        loadSpace(spaceId)
+      }
+      setOpenSpaces(next)
+    }
+
+    const toggle = (setter: typeof setOpenFolders, key: string): void => {
+      setter((current) => {
+        const next = new Set(current)
+        if (next.has(key)) next.delete(key)
+        else next.add(key)
+        return next
+      })
+    }
+
+    const toggleSelected = (key: string): void => {
+      setSelected((current) => {
+        const next = new Set(current)
+        if (next.has(key)) next.delete(key)
+        else next.add(key)
+        return next
+      })
+    }
+
+    const sessionOf = (root: string, at: string): SessionSummary | undefined => {
+      const stamp = Date.parse(at)
+      let best: SessionSummary | undefined
+      for (const session of sessions) {
+        if (!sameDirectory(session.cwd, root)) continue
+        if (session.updatedAt < stamp) continue
+        if (best === undefined || session.updatedAt < best.updatedAt) best = session
+      }
+      return best
+    }
+
+    const withFolders = (
+      all: readonly FaberLoomSpaceTreeEntry[],
+      files: readonly FaberLoomSpaceTreeEntry[],
+    ): readonly FaberLoomSpaceTreeEntry[] => {
+      const keep = new Set(files.map(file => file.path))
+      for (const file of files) {
+        let parent = parentOfPath(file.path)
+        while (parent !== '') {
+          keep.add(parent)
+          parent = parentOfPath(parent)
+        }
+      }
+      return all.filter(entry => keep.has(entry.path)).sort(byPath)
+    }
+
+    const groupsOf = (spaceId: string): ReadonlyArray<FileGroup> => {
+      const tree = trees[spaceId]
+      if (tree === undefined) return []
+      const groups = new Map<string, { key: string; title: string; at: number; files: FaberLoomSpaceTreeEntry[] }>()
+      for (const entry of tree.entries) {
+        if (entry.kind === 'directory') continue
+        const session = sessionOf(tree.root, entry.modifiedAt)
+        const id = session === undefined ? 'none' : String(session.id)
+        const group = groups.get(id) ?? {
+          key: `${spaceId}\u0000${id}`,
+          title: session?.displayTitle ?? t('panel.files.noSession'),
+          at: session?.updatedAt ?? 0,
+          files: [],
+        }
+        group.files.push(entry)
+        groups.set(id, group)
+      }
+      return [...groups.values()]
+        .sort((left, right) => right.at - left.at)
+        .map(group => ({ key: group.key, title: group.title, at: group.at, entries: withFolders(tree.entries, group.files) }))
+    }
+
     const openFile = (spaceId: string, path: string): void => {
       const key = `${spaceId}\u0000${path}`
       setBusy(key)
@@ -4740,52 +4828,273 @@ function filesScreen() {
         .catch((cause: unknown) => { setError(String(cause)) })
         .finally(() => { setBusy(null) })
     }
-    return (
-      <Screen title={t('panel.files.title')} subtitle={t('panel.files.subtitle')}>
-        {error !== null && <StateBlock kind="error" title={t('panel.files.loadError')} text={error} />}
-        {notice !== null && <p className={styles.treeNotice} role="status">{notice}</p>}
-        {spaces.length === 0
-          ? <StateBlock kind="empty" title={t('panel.files.empty')} />
-          : (
-            <div className={styles.tree}>
-              {spaces.map((space) => {
-                const key = `${space.id}\u0000`
-                const expanded = open.has(key)
+
+    const beginRename = (): void => {
+      const [key] = [...selected]
+      if (key === undefined) return
+      const [spaceId, path] = key.split('\u0000')
+      setRenaming({ spaceId: spaceId ?? '', path: path ?? '', name: (path ?? '').split('/').pop() ?? '' })
+    }
+
+    const submitRename = (): void => {
+      if (renaming === null) return
+      const target = renaming
+      setBusy(`${target.spaceId}\u0000${target.path}`)
+      void renameSpaceEntry(target.spaceId, target.path, target.name.trim())
+        .then((result) => {
+          if (!result.ok) {
+            setError(result.error.message)
+            return
+          }
+          setRenaming(null)
+          setSelected(new Set())
+          reloadSpace(target.spaceId)
+        })
+        .catch((cause: unknown) => { setError(String(cause)) })
+        .finally(() => { setBusy(null) })
+    }
+
+    const beginDelete = (): void => {
+      const bySpace = new Map<string, string[]>()
+      for (const key of selected) {
+        const [spaceId, path] = key.split('\u0000')
+        if (spaceId === undefined || path === undefined) continue
+        const paths = bySpace.get(spaceId) ?? []
+        paths.push(path)
+        bySpace.set(spaceId, paths)
+      }
+      setRemoving([...bySpace.entries()].map(([spaceId, paths]) => ({ spaceId, paths })))
+    }
+
+    const submitDelete = (): void => {
+      if (removing === null) return
+      const groups = removing
+      void Promise.all(groups.map(group => deleteSpaceEntries(group.spaceId, group.paths)))
+        .then((results) => {
+          const failed = results.find(result => !result.ok)
+          if (failed !== undefined && !failed.ok) {
+            setError(failed.error.message)
+            return
+          }
+          setRemoving(null)
+          setSelected(new Set())
+          for (const group of groups) reloadSpace(group.spaceId)
+        })
+        .catch((cause: unknown) => { setError(String(cause)) })
+    }
+
+    const runSearch = (): void => {
+      setSearch(query.trim())
+      for (const space of spaces) loadSpace(space.id)
+    }
+
+    const tip = (spaceId: string, entry: FaberLoomSpaceTreeEntry): string => {
+      const tree = trees[spaceId]
+      const session = tree === undefined ? undefined : sessionOf(tree.root, entry.modifiedAt)
+      const modified = new Date(entry.modifiedAt).toLocaleString()
+      const created = new Date(entry.createdAt).toLocaleString()
+      return [
+        entry.path,
+        `${sizeLabel(entry.bytes)} · ${t('panel.files.tip.modified')} ${modified} · ${t('panel.files.tip.created')} ${created}`,
+        `${t('panel.files.tip.session')}: ${session?.displayTitle ?? t('panel.files.noSession')}${session === undefined ? '' : ` · ${new Date(session.updatedAt).toLocaleDateString()}`}`,
+      ].join('\n')
+    }
+
+    const rows = (spaceId: string, list: readonly FaberLoomSpaceTreeEntry[]): ReactNode => (
+      <>
+        {list.filter(entry => ancestorsExpanded(spaceId, entry.path, openFolders)).map((entry) => {
+          const key = `${spaceId}\u0000${entry.path}`
+          const depth = entry.path.split('/').length - 1
+          const directory = entry.kind === 'directory'
+          const expanded = openFolders.has(key)
+          const busyNow = busy === key
+          return (
+            <div className={styles.fileRow} key={key}>
+              <input
+                type="checkbox"
+                className={styles.fileCheck}
+                checked={selected.has(key)}
+                onChange={() => { toggleSelected(key) }}
+                aria-label={`${t('panel.files.select')} ${entry.name}`}
+              />
+              <button
+                type="button"
+                className={styles.treeRow}
+                data-kind={entry.kind}
+                style={{ paddingLeft: `${6 + depth * 16}px` }}
+                onClick={() => { if (directory) toggle(setOpenFolders, key); else openFile(spaceId, entry.path) }}
+                aria-expanded={directory ? expanded : undefined}
+                disabled={busyNow}
+                title={tip(spaceId, entry)}
+              >
+                <span className={styles.treeCaret}>
+                  {directory ? <IconChevronRightOutline14 className={expanded ? styles.caretOpen : undefined} /> : null}
+                </span>
+                <span className={styles.treeIcon}>
+                  {directory
+                    ? (expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />)
+                    : <FileTypeIcon kind={fileIconKind(entry.name)} size={16} />}
+                </span>
+                <span className={styles.treeName}>{entry.name}</span>
+                <span className={styles.fileMeta}>
+                  {new Date(entry.modifiedAt).toLocaleDateString()}
+                  {directory ? '' : ` · ${sizeLabel(entry.bytes)}`}
+                </span>
+                {busyNow && <span className={styles.treeBusy}>{t('panel.files.opening')}</span>}
+              </button>
+            </div>
+          )
+        })}
+      </>
+    )
+
+    const searchRows = (): ReactNode => (
+      <>
+        {spaces.map((space) => {
+          const tree = trees[space.id]
+          if (tree === undefined) return null
+          const found = tree.entries.filter(entry => entry.kind !== 'directory' && matchesQuery(entry.path, search))
+          if (found.length === 0) return null
+          return (
+            <div key={`search-${space.id}`}>
+              <p className={styles.fileGroupHint}>{space.title}</p>
+              {found.slice(0, 100).map((entry) => {
+                const key = `${space.id}\u0000${entry.path}`
                 return (
-                  <div key={space.id}>
+                  <div className={styles.fileRow} key={key}>
+                    <input
+                      type="checkbox"
+                      className={styles.fileCheck}
+                      checked={selected.has(key)}
+                      onChange={() => { toggleSelected(key) }}
+                      aria-label={`${t('panel.files.select')} ${entry.name}`}
+                    />
                     <button
                       type="button"
-                      className={styles.treeSpace}
-                      aria-expanded={expanded}
-                      onClick={() => toggle(space.id, '')}
-                      title={t('panel.files.toggle')}
+                      className={styles.treeRow}
+                      data-kind={entry.kind}
+                      onClick={() => { openFile(space.id, entry.path) }}
+                      title={tip(space.id, entry)}
                     >
-                      <span className={styles.treeCaret}>
-                        <IconChevronRightOutline14 className={expanded ? styles.caretOpen : undefined} />
-                      </span>
-                      <span className={styles.treeIcon}>
-                        {expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />}
-                      </span>
-                      <span className={styles.treeName}>{space.title}</span>
+                      <span className={styles.treeCaret} />
+                      <span className={styles.treeIcon}><FileTypeIcon kind={fileIconKind(entry.name)} size={16} /></span>
+                      <span className={styles.treeName}>{entry.path}</span>
+                      <span className={styles.fileMeta}>{new Date(entry.modifiedAt).toLocaleDateString()}</span>
                     </button>
-                    {expanded && (
-                      <SpaceFilesLevel
-                        spaceId={space.id}
-                        path=""
-                        depth={1}
-                        levels={levels}
-                        open={open}
-                        busy={busy}
-                        onToggle={toggle}
-                        onOpen={openFile}
-                        t={t}
-                      />
-                    )}
                   </div>
                 )
               })}
             </div>
+          )
+        })}
+      </>
+    )
+
+    return (
+      <Screen title={t('panel.files.title')} subtitle={t('panel.files.subtitle')}>
+        <div className={styles.fileTools}>
+          <div className={styles.fileSearch} onKeyDown={(event) => { if (event.key === 'Enter') runSearch() }}>
+            <SearchBox
+              value={query}
+              onChange={(next) => {
+                setQuery(next)
+                if (next.trim() === '') setSearch('')
+              }}
+              placeholder={t('panel.files.search')}
+              label={t('panel.files.search')}
+            />
+          </div>
+          <div className={styles.segments}>
+            <button type="button" className={mode === 'session' ? styles.segmentActive : styles.segment} onClick={() => { setMode('session') }}>{t('panel.files.bySession')}</button>
+            <button type="button" className={mode === 'folder' ? styles.segmentActive : styles.segment} onClick={() => { setMode('folder') }}>{t('panel.files.byFolder')}</button>
+          </div>
+        </div>
+        {selected.size > 0 && (
+          <div className={styles.fileSelection}>
+            <span>{selected.size} · {t('panel.files.selected')}</span>
+            <button type="button" className={styles.ghost} disabled={selected.size !== 1} onClick={beginRename}>{t('panel.files.rename')}</button>
+            <button type="button" className={styles.ghost} onClick={beginDelete}>{t('panel.files.delete')}</button>
+            <button type="button" className={styles.ghost} onClick={() => { setSelected(new Set()) }}>{t('panel.files.clearSelection')}</button>
+          </div>
+        )}
+        {error !== null && <StateBlock kind="error" title={t('panel.files.loadError')} text={error} />}
+        {notice !== null && <p className={styles.treeNotice} role="status">{notice}</p>}
+        {spaces.length === 0 && <StateBlock kind="empty" title={t('panel.files.empty')} />}
+        <div className={styles.tree}>
+          {search !== '' && searchRows()}
+          {search !== '' && spaces.every((space) => {
+            const tree = trees[space.id]
+            return tree === undefined || !tree.entries.some(entry => entry.kind !== 'directory' && matchesQuery(entry.path, search))
+          }) && <StateBlock kind="empty" title={t('panel.files.searchEmpty')} />}
+          {search === '' && spaces.map((space) => {
+            const expanded = openSpaces.has(space.id)
+            const tree = trees[space.id]
+            return (
+              <div key={space.id}>
+                <button type="button" className={styles.treeSpace} aria-expanded={expanded} onClick={() => { toggleSpace(space.id) }} title={t('panel.files.toggle')}>
+                  <span className={styles.treeCaret}>
+                    <IconChevronRightOutline14 className={expanded ? styles.caretOpen : undefined} />
+                  </span>
+                  <span className={styles.treeIcon}>{expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />}</span>
+                  <span className={styles.treeName}>{space.title}</span>
+                </button>
+                {expanded && tree !== undefined && mode === 'folder' && rows(space.id, tree.entries)}
+                {expanded && tree !== undefined && mode === 'session' && groupsOf(space.id).map((group) => {
+                  const open = openGroups.has(group.key)
+                  return (
+                    <div key={group.key}>
+                      <button type="button" className={styles.fileGroup} aria-expanded={open} onClick={() => { toggle(setOpenGroups, group.key) }}>
+                        <span className={styles.treeCaret}>
+                          <IconChevronRightOutline14 className={open ? styles.caretOpen : undefined} />
+                        </span>
+                        <span className={styles.treeName}>{group.title}</span>
+                        <span className={styles.fileMeta}>
+                          {group.at === 0 ? '' : `${new Date(group.at).toLocaleDateString()} · `}
+                          {group.entries.filter(entry => entry.kind !== 'directory').length}
+                        </span>
+                      </button>
+                      {open && rows(space.id, group.entries)}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+        <Modal
+          open={renaming !== null}
+          onClose={() => { setRenaming(null) }}
+          title={t('panel.files.renameTitle')}
+          closeLabel={t('action.close')}
+          footer={(
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setRenaming(null) }}>{t('action.cancel')}</button>
+              <button className={styles.primary} type="button" onClick={submitRename}>{t('action.save')}</button>
+            </>
           )}
+        >
+          <Field label={t('field.name')}>
+            <input
+              type="text"
+              value={renaming?.name ?? ''}
+              onChange={(event) => { setRenaming(current => current === null ? null : { ...current, name: event.target.value }) }}
+            />
+          </Field>
+        </Modal>
+        <Modal
+          open={removing !== null}
+          onClose={() => { setRemoving(null) }}
+          title={t('panel.files.deleteTitle')}
+          closeLabel={t('action.close')}
+          footer={(
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setRemoving(null) }}>{t('action.cancel')}</button>
+              <button className={styles.primary} type="button" onClick={submitDelete}>{t('panel.files.delete')}</button>
+            </>
+          )}
+        >
+          <p>{removing?.reduce((total, group) => total + group.paths.length, 0) ?? 0} · {t('panel.files.deleteQuestion')}</p>
+        </Modal>
       </Screen>
     )
   }

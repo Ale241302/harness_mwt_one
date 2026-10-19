@@ -390,20 +390,31 @@ describe('generated files', () => {
       'CLAUDE.md',
       'GEMINI.md',
       '.gemini/AGENTS.md',
+      '.gemini/GEMINI.md',
       '.kimi/AGENTS.md',
+      '.kimi-code/AGENTS.md',
       '.agents/README.md',
+      '.agents/workflows/README.md',
       '.claude/settings.json',
       '.agents/compras.md',
+      '.agents/subagents/compras.md',
       '.claude/agents/compras.md',
       '.kimi/agents/compras.md',
+      '.kimi-code/agents/compras.md',
       '.agents/ventas.md',
+      '.agents/subagents/ventas.md',
       '.claude/agents/ventas.md',
       '.kimi/agents/ventas.md',
+      '.kimi-code/agents/ventas.md',
       '.agents/compras-2.md',
+      '.agents/subagents/compras-2.md',
       '.claude/agents/compras-2.md',
       '.kimi/agents/compras-2.md',
+      '.kimi-code/agents/compras-2.md',
       '.claude/skills/informe-diario/SKILL.md',
+      '.agents/skills/informe-diario/SKILL.md',
       '.kimi/skills/informe-diario/SKILL.md',
+      '.kimi-code/skills/informe-diario/SKILL.md',
     ])
     expect(plan.manifest).toMatchObject({
       version: 1,
@@ -471,7 +482,7 @@ describe('FaberLoomHarnessProjection', () => {
 
     const second = await harness({ rows: scopeRows() })
     const report = await second.faberloomHarnessProjection.project(SPACE_SCOPE, root)
-    expect(report.pruned).toEqual(['.claude/agents/compras.md', '.kimi/agents/compras.md'])
+    expect(report.pruned).toEqual(['.agents/subagents/compras.md', '.claude/agents/compras.md', '.kimi/agents/compras.md', '.kimi-code/agents/compras.md'])
     await expect(readFile(join(root, '.claude/agents/compras.md'), 'utf8')).rejects.toThrow()
     expect(await readFile(join(root, '.agents/README.md'), 'utf8')).toContain('no tiene agentes registrados')
   })
@@ -484,7 +495,7 @@ describe('FaberLoomHarnessProjection', () => {
 
     const second = await harness({ rows: scopeRows() })
     const report = await second.faberloomHarnessProjection.project(SPACE_SCOPE, root)
-    expect(report.pruned).toEqual(['.agents/compras.md', '.claude/agents/compras.md', '.kimi/agents/compras.md'])
+    expect(report.pruned).toEqual(['.agents/compras.md', '.agents/subagents/compras.md', '.claude/agents/compras.md', '.kimi/agents/compras.md', '.kimi-code/agents/compras.md'])
     expect(await readFile(join(root, '.agents/propio.md'), 'utf8')).toBe('archivo del usuario')
   })
 

@@ -4,8 +4,13 @@
  * branded id, or Date crosses the boundary.
  */
 
-// The explorer's directory rows: plain JSON, one level per read.
-export type { SpaceFileEntry as FaberLoomSpaceFileEntry, SpaceFileKind as FaberLoomSpaceFileKind } from './space-files.ts'
+// The explorer's directory rows: plain JSON, one level per read, plus the
+// whole-tree read search and session grouping use.
+export type {
+  SpaceFileEntry as FaberLoomSpaceFileEntry,
+  SpaceFileKind as FaberLoomSpaceFileKind,
+  SpaceTreeEntry as FaberLoomSpaceTreeEntry,
+} from './space-files.ts'
 
 /** One workspace space as the sidebar and Espacios panel render it. */
 export interface FaberLoomSpaceRow {

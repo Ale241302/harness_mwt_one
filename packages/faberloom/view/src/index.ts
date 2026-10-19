@@ -6,7 +6,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { stat, rename, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -39,8 +39,8 @@ import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 import type { Workspace, WorkspaceRegistry, WorkspaceId } from '@deepseek-ai/dsh-workspace'
 // Type-only: pulls the ctx merge for the harness projection the Space panel writes through.
 import type { HarnessScope } from '@deepseek-ai/dsh-faberloom-harness-projection'
-import { listSpaceDirectory, resolveSpacePath } from './space-files.ts'
-import type { FaberLoomSpaceFileEntry } from './types.ts'
+import { readSpaceTree, resolveSpacePath } from './space-files.ts'
+import type { FaberLoomSpaceTreeEntry } from './types.ts'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
@@ -769,6 +769,9 @@ export class FaberLoomViewService extends TypertRemoteService {
 
   /** When the in-flight mirror pass started, so a stalled pass cannot block forever. */
   private mirrorStartedAt = 0
+
+  /** Whether this process already wrote every Space's harness into its folder. */
+  private projectedHarness = false
 
   /** Last time this process refreshed shared Context/Workflows/Routines (throttle). */
   private contentRefreshedAt = 0
@@ -2141,6 +2144,15 @@ export class FaberLoomViewService extends TypertRemoteService {
       if (catalog === undefined) return
       const spaces = await this.ctx.faberloomSpaces.list(actor)
       this.trace(`pass spaces=${spaces.length}`)
+      // The folder harness is part of the product, not a button: once per
+      // process, write every Space's AGENTS.md and client folders so a Session
+      // started in that folder reads the agents, skills, and Work Flows it
+      // registered. The projection owns only its own manifest, so re-running it
+      // never touches the operator's files.
+      if (!this.projectedHarness) {
+        this.projectedHarness = true
+        for (const space of spaces) await this.projectSpaceHarness(space)
+      }
       // Todas las áreas del dueño viajan: el espejo lleva el catálogo entre sus
       // máquinas, así que filtrar por Space compartido dejaba fuera justo el caso
       // en que nadie más participa. Cada área se resuelve en esta máquina (y se
@@ -4563,18 +4575,64 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * List one directory of a Space's area for the sidebar explorer. The path is
-   * workspace-relative and may not leave that area; hidden entries are listed,
-   * because the harness projection and the operator's documents both matter.
+   * Read a Space's whole area once, for the panel's search and its grouping by
+   * Session. Hidden entries are included; the read is bounded by the area
+   * reader's entry and depth limits.
    * @param id - space id.
-   * @param path - workspace-relative directory, empty for the area's root.
-   * @returns the directory's entries, directories first.
+   * @returns the area's root and every entry under it.
    */
-  @Remote('spaceFiles')
-  async spaceFiles(id: string, path: string): Promise<readonly FaberLoomSpaceFileEntry[]> {
+  @Remote('spaceTree')
+  async spaceTree(id: string): Promise<{ root: string; entries: readonly FaberLoomSpaceTreeEntry[] }> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
-    return await listSpaceDirectory(await this.spaceExplorerDir(actor, space), path)
+    const root = await this.spaceExplorerDir(actor, space)
+    return { root, entries: await readSpaceTree(root) }
+  }
+
+  /**
+   * Rename one entry of a Space's area, keeping it in the same folder. The new
+   * name is a single path segment: separators and the two directory aliases are
+   * refused, so a rename cannot move the entry out of the area.
+   * @param id - space id.
+   * @param path - workspace-relative entry path.
+   * @param name - the new entry name.
+   */
+  @Remote('renameSpaceEntry')
+  async renameSpaceEntry(id: string, path: string, name: string): Promise<void> {
+    if (path === '') throw new Error('faberloom: no se puede renombrar la raíz del espacio')
+    if (name === '' || name === '.' || name === '..' || /[\\/]/u.test(name)) {
+      throw new Error('faberloom: nombre de archivo no válido')
+    }
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const root = await this.spaceExplorerDir(actor, space)
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    const target = resolveSpacePath(root, parent === '' ? name : `${parent}/${name}`)
+    const source = resolveSpacePath(root, path)
+    if (source === target) return
+    await rename(source, target)
+  }
+
+  /**
+   * Delete one or more entries of a Space's area. A directory is removed with
+   * its contents; the area's own root is refused.
+   * @param id - space id.
+   * @param paths - workspace-relative entry paths.
+   * @returns how many entries were removed.
+   */
+  @Remote('deleteSpaceEntries')
+  async deleteSpaceEntries(id: string, paths: readonly string[]): Promise<{ deleted: number }> {
+    if (paths.length === 0) return { deleted: 0 }
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const root = await this.spaceExplorerDir(actor, space)
+    let deleted = 0
+    for (const path of paths) {
+      if (path === '') throw new Error('faberloom: no se puede borrar la raíz del espacio')
+      await rm(resolveSpacePath(root, path), { recursive: true, force: false })
+      deleted += 1
+    }
+    return { deleted }
   }
 
   /**
@@ -4611,6 +4669,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
     const workspace = await this.ensureSpaceWorkspace(actor, space)
     if (workspace === undefined) throw new Error('faberloom: the workspace registry is not mounted')
+    await this.projectSpaceHarness(space)
     return { registered: true, workspaceId: String(workspace.id), title: workspace.title, sessions: workspace.sessionIds.length }
   }
 
@@ -4632,7 +4691,25 @@ export class FaberLoomViewService extends TypertRemoteService {
     const existing = registry.list().find(candidate => candidate.path === path)
     const workspace = existing ?? await registry.create(path, space.title)
     await this.ctx.faberloomSpaces.update(actor, space.id, { workspaceId: String(workspace.id) })
+    await this.projectSpaceHarness(space)
     return { registered: true, workspaceId: String(workspace.id), title: workspace.title, sessions: workspace.sessionIds.length }
+  }
+
+  /**
+   * Write the Space's harness into its folder without asking the operator. The
+   * projection owns only the files its manifest recorded, so this is safe on
+   * every open and keeps `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and the client
+   * folders in step with the agents, skills, and Work Flows the Space registered.
+   * @param space - the Space whose folder is the conversation area.
+   */
+  private async projectSpaceHarness(space: FaberLoomSpace): Promise<void> {
+    const projection = this.ctx.get('faberloomHarnessProjection')
+    if (projection === undefined) return
+    try {
+      await projection.refresh({ kind: 'space', id: space.id, title: space.title })
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: no se pudo preparar el harness del espacio '${space.title}': ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /**

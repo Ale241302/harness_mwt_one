@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { listSpaceDirectory } from '../src/space-files.ts'
+import { readSpaceTree, resolveSpacePath } from '../src/space-files.ts'
 
 const roots: string[] = []
 
@@ -16,43 +16,41 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-it('lists directories first and includes hidden entries', async () => {
+it('reads the whole area with paths, kinds, sizes, and hidden entries', async () => {
   const root = fixture()
   mkdirSync(join(root, 'skills'))
   mkdirSync(join(root, '.agents'))
+  writeFileSync(join(root, 'skills', 'uno.md'), 'uno')
   writeFileSync(join(root, 'AGENTS.md'), '# reglas\n')
   writeFileSync(join(root, '.env'), 'A=1\n')
 
-  const rows = await listSpaceDirectory(root, '')
+  const rows = await readSpaceTree(root)
+  const byPath = new Map(rows.map(row => [row.path, row]))
 
-  expect(rows.slice(0, 2).map(row => [row.name, row.kind])).toEqual([
-    ['.agents', 'directory'],
-    ['skills', 'directory'],
-  ])
-  expect(rows.map(row => row.name)).toContain('.env')
-  expect(rows.find(row => row.name === 'AGENTS.md')?.bytes).toBe('# reglas\n'.length)
-  expect(rows.find(row => row.name === 'skills')?.bytes).toBe(0)
+  expect(byPath.get('skills')?.kind).toBe('directory')
+  expect(byPath.get('skills/uno.md')?.bytes).toBe(3)
+  expect(byPath.get('.agents')?.kind).toBe('directory')
+  expect(byPath.get('.env')?.name).toBe('.env')
+  expect(byPath.get('AGENTS.md')?.bytes).toBe('# reglas\n'.length)
+  expect(Date.parse(byPath.get('AGENTS.md')?.modifiedAt ?? '')).toBeGreaterThan(0)
+  expect(Date.parse(byPath.get('AGENTS.md')?.createdAt ?? '')).toBeGreaterThan(0)
 })
 
-it('lists one subdirectory and refuses a path that leaves the area', async () => {
+it('lists a folder before the files it contains', async () => {
   const root = fixture()
-  mkdirSync(join(root, 'docs'))
-  writeFileSync(join(root, 'docs', 'contrato.pdf'), 'pdf')
+  mkdirSync(join(root, 'carpeta'))
+  writeFileSync(join(root, 'carpeta', 'dentro.pdf'), 'pdf')
+  writeFileSync(join(root, 'suelto.txt'), 'txt')
 
-  const inner = await listSpaceDirectory(root, 'docs')
-  expect(inner.map(row => row.name)).toEqual(['contrato.pdf'])
+  const paths = (await readSpaceTree(root)).map(row => row.path)
 
-  await expect(listSpaceDirectory(root, '../')).rejects.toThrow('fuera de la carpeta')
-  await expect(listSpaceDirectory(root, 'docs/../..')).rejects.toThrow('fuera de la carpeta')
-  await expect(listSpaceDirectory(root, 'todavia-no-existe')).resolves.toEqual([])
+  expect(paths.indexOf('carpeta')).toBeLessThan(paths.indexOf('carpeta/dentro.pdf'))
 })
 
-it('reports a file modification time', async () => {
+it('refuses a path that leaves the area and reads an absent folder as empty', async () => {
   const root = fixture()
-  writeFileSync(join(root, 'uno.md'), 'x')
 
-  const [row] = await listSpaceDirectory(root, '')
-
-  expect(row?.kind).toBe('file')
-  expect(Date.parse(row?.modifiedAt ?? '')).toBeGreaterThan(0)
+  expect(() => resolveSpacePath(root, '../')).toThrow('fuera de la carpeta')
+  expect(() => resolveSpacePath(root, 'docs/../..')).toThrow('fuera de la carpeta')
+  await expect(readSpaceTree(join(root, 'todavia-no-existe'))).resolves.toEqual([])
 })
