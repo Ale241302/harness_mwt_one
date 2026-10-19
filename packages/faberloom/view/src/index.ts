@@ -2288,6 +2288,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const rows = await catalog.list({ id: actor.id }, spaceId)
     this.trace(`materialize space=${spaceId} area=${workspaceId} rows=${rows.length}`)
     const ownIds = new Set(rows.filter(row => row.ownerId === actor.id).map(row => row.sessionId))
+    const liveSessions = this.ctx.get('sessions')
     const wanted = new Set<string>()
     for (const row of rows) {
       // La fila `owner` es la captura local de esta máquina: es la fuente y no
@@ -2377,6 +2378,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     for (const id of preSync) candidates.add(id)
     for (const id of candidates) {
       if (ownIds.has(id) || wanted.has(id)) continue
+      // A live Session is this host's own conversation: a blank draft, or one
+      // whose turn is still being written and therefore is not in the catalog
+      // yet. Only cold materialized copies retire here; deleting the live one
+      // would erase the chat the user just opened.
+      if (liveSessions?.get(id as SessionId) !== undefined) continue
       if (await persistence.stat(id as SessionId) === undefined) continue
       try {
         await persistence.delete(id as SessionId)
@@ -2458,12 +2464,20 @@ export class FaberLoomViewService extends TypertRemoteService {
     // A Session is live when its id is in the area, was not archived, and its
     // log still exists. A deleted Session leaves a dangling `sessionIds` slot,
     // so the existence check is what actually retires it.
+    //
+    // A just-created draft has no log yet: the Session exists in memory and
+    // appends its artifact on the first turn. Detaching it for the missing
+    // artifact would move the chat the user just opened out of its Space
+    // (and show "Sin workspace") on the next mirror pass, so only an absent,
+    // non-live Session retires.
     const archived = new Set<string>(registry.archivedSessionIds)
+    const liveSessions = this.ctx.get('sessions')
     const live = new Set<string>()
     for (const sessionId of workspace.sessionIds) {
       const id = String(sessionId)
       if (archived.has(id)) continue
-      if (await persistence.stat(id as SessionId) === undefined) {
+      const draft = liveSessions?.get(id as SessionId) !== undefined
+      if (!draft && await persistence.stat(id as SessionId) === undefined) {
         try {
           await workspace.detachSession(id as SessionId)
         } catch (error: unknown) {

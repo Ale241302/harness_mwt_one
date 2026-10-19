@@ -12,7 +12,14 @@ function row(overrides: Record<string, unknown> = {}) {
 }
 
 /** Boot the view over fake spaces, shares, shared-Session catalog, and query. */
-function harness(options: { query?: boolean; workspaceId?: string | null; foreignWorkspace?: boolean; noRegistry?: boolean } = {}) {
+function harness(options: {
+  query?: boolean
+  workspaceId?: string | null
+  foreignWorkspace?: boolean
+  noRegistry?: boolean
+  liveSessionIds?: readonly string[]
+  storedSessionIds?: readonly string[]
+} = {}) {
   const catalog = {
     capture: vi.fn(async (_actor: { id: string }, _input: Record<string, unknown>) => row()),
     list: vi.fn(async (_actor: { id: string }, _spaceId: string) => [row()]),
@@ -41,7 +48,8 @@ function harness(options: { query?: boolean; workspaceId?: string | null; foreig
   }
   const persistence = {
     // The area's own Session exists; a not-yet-materialized shared one does not.
-    stat: vi.fn(async (id: string) => id === 's1' ? { id } : undefined as unknown),
+    stat: vi.fn(async (id: string) => (options.storedSessionIds ?? ['s1']).includes(id) ? { id } : undefined as unknown),
+    delete: vi.fn(async (_id: string) => true),
     create: vi.fn(async (_header: Record<string, unknown>) => ({
       append: vi.fn(async (_events: unknown) => {}),
       close: vi.fn(async () => {}),
@@ -74,11 +82,15 @@ function harness(options: { query?: boolean; workspaceId?: string | null; foreig
       if (name === 'faberloomWorkflows') return workflows
       if (name === 'workspaceRegistry') return options.noRegistry === true ? undefined : registry
       if (name === 'sessionPersistence') return persistence
+      if (name === 'sessions') {
+        const live = new Set(options.liveSessionIds ?? [])
+        return { get: (id: string) => live.has(id) ? { id } : undefined }
+      }
       return undefined
     },
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
-  return { view, catalog, query, shares, registry, persistence, emit }
+  return { view, catalog, query, shares, registry, persistence, emit, detachSession: workspaceEntity.detachSession }
 }
 
 describe('FaberLoomViewService shared Sessions', () => {
@@ -219,6 +231,36 @@ describe('FaberLoomViewService shared Sessions', () => {
         { id: 'owner@muitowork.com' }, 'sp-1', 'owner@muitowork.com', 's2',
       )
     })
+  })
+
+  it('keeps a just-created draft in its Space while its log has not been written yet', async () => {
+    const { view, catalog, registry, detachSession } = harness({ liveSessionIds: ['s2'] })
+    const entity = registry.get('ws-1') as unknown as { sessionIds: string[] }
+    // s1 is stored, s2 is the blank chat just opened (live, no log yet), and s3
+    // is a dangling slot whose Session is gone.
+    entity.sessionIds = ['s1', 's2', 's3']
+    catalog.list.mockResolvedValue([row({ ownerId: 'owner@muitowork.com', sessionId: 's1' })])
+
+    await view.spaceSessions('sp-1')
+
+    expect(detachSession).not.toHaveBeenCalledWith('s2')
+    expect(detachSession).toHaveBeenCalledWith('s3')
+  })
+
+  it('does not delete a live draft the catalog has not captured yet', async () => {
+    const { view, catalog, registry, persistence, detachSession } = harness({
+      liveSessionIds: ['s2'], storedSessionIds: ['s1', 's2'],
+    })
+    const entity = registry.get('ws-1') as unknown as { sessionIds: string[] }
+    // s2 is the chat just created: its header is already stored, but it has no
+    // turn, so publishSpaceSessions has not captured it in the catalog.
+    entity.sessionIds = ['s1', 's2']
+    catalog.list.mockResolvedValue([row({ ownerId: 'owner@muitowork.com', sessionId: 's1' })])
+
+    await view.spaceSessions('sp-1')
+
+    expect(persistence.delete).not.toHaveBeenCalledWith('s2')
+    expect(detachSession).not.toHaveBeenCalledWith('s2')
   })
 
   it('materializa una sesión propia que llega de otra de mis máquinas', async () => {
