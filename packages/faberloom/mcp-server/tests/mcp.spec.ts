@@ -128,6 +128,19 @@ describe('FaberLoomMcpServer', () => {
     expect(tools).toContain('faberloom_grant')
     expect(tools).toContain('faberloom_backup_create')
     expect(tools).toContain('faberloom_migrations_run')
+    // The full product surface: skills, memory, context, workflows, email,
+    // MCP connections, workspaces and chat sessions, routine CRUD, purge.
+    expect(tools).toContain('faberloom_skills')
+    expect(tools).toContain('faberloom_skill_save')
+    expect(tools).toContain('faberloom_memory_update')
+    expect(tools).toContain('faberloom_context_create')
+    expect(tools).toContain('faberloom_workflow_node_add')
+    expect(tools).toContain('faberloom_email_read')
+    expect(tools).toContain('faberloom_mcp_server_save')
+    expect(tools).toContain('faberloom_workspace_create')
+    expect(tools).toContain('faberloom_session_send')
+    expect(tools).toContain('faberloom_routine_create')
+    expect(tools).toContain('faberloom_agent_purge')
 
     // A notification is accepted without a body.
     const notification = await post(endpoint.port, { jsonrpc: '2.0', method: 'notifications/initialized' }, token)
@@ -286,6 +299,26 @@ describe('FaberLoomMcpServer', () => {
     expect(frame.text).toContain('event: message\ndata: ')
     const payload = frame.text.split('event: message\ndata: ')[1]?.split('\n\n')[0] ?? ''
     expect(JSON.parse(payload)).toMatchObject({ result: { serverInfo: { name: 'faberloom' } } })
+  })
+
+  it('F04 — answers a bridged request through the same token and protocol', async () => {
+    const { server } = await harness()
+    const token = (await server.mintToken('Puente')).token
+    const answer = await server.request(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), token)
+    expect(answer.status).toBe(200)
+    expect(answer.contentType).toBe('application/json; charset=utf-8')
+    const tools = (JSON.parse(answer.body) as { result: { tools: { name: string }[] } }).result.tools.map(tool => tool.name)
+    expect(tools).toContain('faberloom_session_send')
+
+    const refused = await server.request(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), 'fbl_nope')
+    expect(refused.status).toBe(401)
+
+    const malformed = await server.request('{nope', token)
+    expect(malformed.status).toBe(400)
+
+    const streamed = await server.request(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping' }), token, 'text/event-stream')
+    expect(streamed.contentType).toContain('text/event-stream')
+    expect(streamed.body).toContain('event: message\ndata: ')
   })
 
   it('F04 — protocol errors are answered, not hidden', async () => {

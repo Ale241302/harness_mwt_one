@@ -284,6 +284,9 @@ export function renderIdentityPatch(
     `    ownerId: ${owner}`,
     '    enabled: true',
     `    socketPath: ${socket}`,
+    '    bridge: true',
+    "    gatewayUrl: !!js process.env.FABERLOOM_GATEWAY_URL ?? ''",
+    "    consoleBase: !!js process.env.CONSOLA_API_BASE ?? ''",
     '',
   ].join('\n') + '\n'
 }

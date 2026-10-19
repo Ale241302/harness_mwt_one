@@ -3035,6 +3035,9 @@ function MwtBlock(props: {
 /** The MCP endpoint path the panel shows for token setup; a wire path, not product copy. */
 const MCP_ENDPOINT_PATH = '/mcp'
 
+/** Public gateway origin a desktop renderer cannot derive from its `dsh-app:` origin. */
+const MCP_PUBLIC_ORIGIN = 'https://harness.mwt.one'
+
 /** The tools a token may be scoped to, in catalogue order. */
 const MCP_TOOL_NAMES = [
   'faberloom_overview',
@@ -3052,6 +3055,7 @@ const MCP_TOOL_NAMES = [
   'faberloom_agent_policy',
   'faberloom_agent_duplicate',
   'faberloom_agent_deactivate',
+  'faberloom_agent_purge',
   'faberloom_models',
   'faberloom_model_register',
   'faberloom_agent_resolve_model',
@@ -3086,6 +3090,45 @@ const MCP_TOOL_NAMES = [
   'faberloom_teaching_record',
   'faberloom_teaching_edit',
   'faberloom_teaching_revoke',
+  'faberloom_skills',
+  'faberloom_skill_save',
+  'faberloom_skill_remove',
+  'faberloom_memory',
+  'faberloom_memory_remember',
+  'faberloom_memory_update',
+  'faberloom_memory_forget',
+  'faberloom_context',
+  'faberloom_context_create',
+  'faberloom_context_update',
+  'faberloom_context_remove',
+  'faberloom_workflows',
+  'faberloom_workflow_get',
+  'faberloom_workflow_create',
+  'faberloom_workflow_update',
+  'faberloom_workflow_delete',
+  'faberloom_workflow_node_add',
+  'faberloom_workflow_node_update',
+  'faberloom_workflow_node_remove',
+  'faberloom_workflow_connect',
+  'faberloom_workflow_disconnect',
+  'faberloom_email_inbox',
+  'faberloom_email_read',
+  'faberloom_space_from_email',
+  'faberloom_mcp_servers',
+  'faberloom_mcp_server_save',
+  'faberloom_mcp_server_remove',
+  'faberloom_mcp_server_probe',
+  'faberloom_workspaces',
+  'faberloom_workspace_create',
+  'faberloom_sessions',
+  'faberloom_session_create',
+  'faberloom_session_send',
+  'faberloom_routine_get',
+  'faberloom_routine_create',
+  'faberloom_routine_update',
+  'faberloom_routine_remove',
+  'faberloom_routine_active',
+  'faberloom_routine_visibility',
 ] as const
 
 /** The MCP client tokens: who may drive this workspace from another AI. */
@@ -3149,7 +3192,7 @@ function McpBlock(props: {
         <DataTable columns={columns} rows={tableRows} selectedId={null} onSelect={() => {}}
           emptyTitle={t('mcp.empty')} emptyText={t('mcp.emptyText')} labels={tableLabels(t)} />
         <Inspector title={t('mcp.detail')}>
-          <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{`${typeof window === 'undefined' ? '' : window.location.origin}${MCP_ENDPOINT_PATH}`}</span></Field>
+          <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{`${typeof window === 'undefined' || !window.location.origin.startsWith('http') ? MCP_PUBLIC_ORIGIN : window.location.origin}${MCP_ENDPOINT_PATH}`}</span></Field>
           <Field label={t('mcp.how')} hint={t('mcp.howHint')}><span className={styles.cellMuted}>{t('mcp.howText')}</span></Field>
           <div className={styles.steps}>
             {rows.filter(row => row.revokedAt === null).map(row => (

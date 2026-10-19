@@ -530,6 +530,36 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
+   * Edit one memory entry the actor owns, keeping its identity, placement, and
+   * capture origin. A member cannot rewrite the owner's entry, exactly as with
+   * visibility: memory that one identity captured stays that identity's fact.
+   * @param actor - the acting identity.
+   * @param id - memory entry id.
+   * @param patch - the text and/or visibility to replace.
+   * @returns the updated entry.
+   * @throws when the entry is absent, owned by another identity, or the text is empty.
+   */
+  async updateMemory(
+    actor: SpaceActor,
+    id: string,
+    patch: { readonly text?: string; readonly visibility?: FaberLoomMemoryVisibility },
+  ): Promise<FaberLoomSpaceMemory> {
+    const table = await this.memory()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: memory ${id} not found`)
+    if (record.ownerId !== actor.id) throw new Error('faberloom: memory access denied')
+    const text = patch.text ?? record.text
+    if (text.trim().length === 0) throw new Error('faberloom: memory text is required')
+    const next: SpaceMemoryRecord = {
+      ...record,
+      text,
+      ...patch.visibility === undefined ? {} : { visibility: patch.visibility },
+    }
+    await table.update(id, () => next)
+    return toMemory(id, next)
+  }
+
+  /**
    * Set who may see one memory entry. Only its owner may change it: a `private`
    * entry stops being published to its Spaces, so no other member, or their
    * agent, reads or edits it even while holding every module permission.

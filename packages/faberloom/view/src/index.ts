@@ -5895,6 +5895,29 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Edit one space-memory entry the owner controls and return the refreshed
+   * list. The entry keeps its id, placement, and capture origin; only the text
+   * and visibility change.
+   * @param id - memory entry id.
+   * @param text - replacement text.
+   * @param visibility - optional `shared` or `private`.
+   * @returns the refreshed memory rows, oldest first.
+   */
+  @Remote('editSpaceMemory')
+  async editSpaceMemory(id: string, text: string, visibility?: string): Promise<readonly FaberLoomSpaceMemoryRow[]> {
+    const shared = (await this.sharedLocalIds()).has(id)
+    if (shared && !(await this.deletableSharedIds()).has(id)) {
+      throw new Error('faberloom: esa memoria la compartió otro miembro; solo su autor o quien tenga el permiso puede editarla')
+    }
+    await this.ctx.faberloomSpaces.updateMemory(this.actor(), id, {
+      text,
+      ...visibility === undefined ? {} : { visibility: visibility === 'private' ? 'private' : 'shared' },
+    })
+    if (shared) await this.republishSharedNow()
+    return await this.spaceMemory()
+  }
+
+  /**
    * Delete one space-memory entry the owner controls and return the refreshed
    * list. Deleting a space never deletes its memory; this is the only path that
    * removes an entry, and it is explicit.

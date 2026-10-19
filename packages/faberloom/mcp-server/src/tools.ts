@@ -8,6 +8,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { randomUUID } from 'node:crypto'
 import type { FaberLoomRoutineId } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type { FaberLoomSpaceId, SpaceActor, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
@@ -107,6 +108,136 @@ function requireMirror(context: Context): FaberLoomMirror {
   const mirror = context.get('faberloomMirror')
   if (mirror === undefined) throw new Error('the mirror is not mounted in this process; mount the faberloom-mirror row')
   return mirror
+}
+
+/** The workspace view surface the product panels use, read structurally. */
+interface ViewFacade {
+  skills(): Promise<readonly unknown[]>
+  saveSkill(name: string, markdown: string): Promise<readonly unknown[]>
+  removeSkill(name: string): Promise<readonly unknown[]>
+  spaceMemory(spaceId?: string): Promise<readonly unknown[]>
+  remember(text: string, spaceId?: string): Promise<unknown>
+  editSpaceMemory(id: string, text: string, visibility?: string): Promise<readonly unknown[]>
+  deleteSpaceMemory(id: string): Promise<readonly unknown[]>
+  setMemoryVisibility(id: string, visibility: string): Promise<readonly unknown[]>
+  contextEntries(): Promise<readonly unknown[]>
+  createContext(title: string, body: string, spaceId?: string): Promise<readonly unknown[]>
+  updateContext(id: string, title: string, body: string): Promise<readonly unknown[]>
+  removeContext(id: string): Promise<readonly unknown[]>
+  workflowOverview(): Promise<readonly unknown[]>
+  workflowDetail(id: string): Promise<unknown>
+  createWorkflow(name: string, spaceId?: string): Promise<readonly unknown[]>
+  saveWorkflow(id: string, name: string): Promise<readonly unknown[]>
+  setWorkflowVisibility(id: string, visibility: string): Promise<readonly unknown[]>
+  setWorkflowStatus(id: string, status: string): Promise<unknown>
+  setWorkflowConcurrency(id: string, maxConcurrency: number | null): Promise<unknown>
+  deleteWorkflow(id: string): Promise<readonly unknown[]>
+  addNode(id: string, kind: string, title: string, configJson: string, nodeId?: string): Promise<unknown>
+  updateNode(id: string, nodeId: string, title: string, kind: string, configJson: string): Promise<unknown>
+  removeNode(id: string, nodeId: string): Promise<unknown>
+  connect(id: string, from: string, to: string, condition?: string): Promise<unknown>
+  disconnect(id: string, edgeId: string): Promise<unknown>
+  emailInbox(): Promise<readonly unknown[]>
+  emailRead(uid: string): Promise<unknown>
+  spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<unknown>
+  mcpServers(): Promise<readonly unknown[]>
+  saveMcpServer(input: Record<string, unknown>): Promise<readonly unknown[]>
+  removeMcpServer(name: string): Promise<readonly unknown[]>
+  probeMcpServer(input: Record<string, unknown>): Promise<unknown>
+  routineDetail(id: string): Promise<unknown>
+  createRoutine(name: string, intent: string, spaceId?: string): Promise<unknown>
+  saveRoutine(id: string, input: Record<string, unknown>): Promise<unknown>
+  removeRoutine(id: string): Promise<unknown>
+  setRoutineActive(id: string, active: boolean): Promise<unknown>
+  setRoutineVisibility(id: string, visibility: string): Promise<unknown>
+  purgeAgent(id: string): Promise<unknown>
+}
+
+/** Resolve the workspace view service. */
+function view(context: Context): ViewFacade {
+  const service = (context as unknown as { get(name: string): unknown }).get('faberloomView')
+  if (service === undefined) throw new Error('the workspace view is not mounted in this process')
+  return service as ViewFacade
+}
+
+/** One workspace as the core registry projects it. */
+interface WorkspaceRow {
+  readonly id: string
+  readonly path: string
+  readonly title: string
+  readonly sessionIds: readonly string[]
+}
+
+/** One chat session as the core controller lists it. */
+interface SessionRow {
+  readonly sessionId: string
+  readonly cwd?: string
+  readonly updatedAt: number
+  readonly running: boolean
+  readonly blank: boolean
+}
+
+/** The core workspace registry surface, read structurally. */
+interface WorkspaceFacade {
+  list(): readonly WorkspaceRow[]
+  create(path: string, title?: string): Promise<WorkspaceRow>
+}
+
+/** The core session controller surface, read structurally. */
+interface SessionFacade {
+  create(request: { workspaceId?: string; cwd?: string; agentPreset?: string }): Promise<{ sessionId: string }>
+  list(request: { cursor?: string }, signal: AbortSignal): Promise<{ items: readonly SessionRow[] }>
+  prompt(request: {
+    requestId: string
+    sessionId: string
+    mode: 'queue' | 'steer'
+    content: readonly { type: 'text'; text: string }[]
+  }, signal: AbortSignal): Promise<{ accepted: true }>
+}
+
+/** Resolve the core workspace registry. */
+function workspaces(context: Context): WorkspaceFacade {
+  const service = (context as unknown as { get(name: string): unknown }).get('workspaceRegistry')
+  if (service === undefined) throw new Error('the workspace registry is not mounted in this process')
+  return service as WorkspaceFacade
+}
+
+/** Resolve the core session controller. */
+function sessions(context: Context): SessionFacade {
+  const service = (context as unknown as { get(name: string): unknown }).get('sessionController')
+  if (service === undefined) throw new Error('the session controller is not mounted in this process')
+  return service as SessionFacade
+}
+
+/** Read one optional JSON object argument, passed through to the product. */
+function jsonObject(args: Record<string, unknown>, name: string): Record<string, unknown> {
+  const raw = args[name]
+  if (raw === undefined) return {}
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error(`${name} must be an object`)
+  return raw as Record<string, unknown>
+}
+
+/** Build the product's MCP-server input from the tool arguments. */
+function mcpServerInput(args: Record<string, unknown>): Record<string, unknown> {
+  const input: Record<string, unknown> = {
+    name: required(args, 'name'),
+    transport: required(args, 'transport'),
+  }
+  const command = optional(args, 'command')
+  const cwd = optional(args, 'cwd')
+  const url = optional(args, 'url')
+  const list = strings(args, 'args')
+  const env = record(args, 'env')
+  const headers = record(args, 'headers')
+  const enabled = boolean(args, 'enabled')
+  if (command !== undefined) input['command'] = command
+  if (cwd !== undefined) input['cwd'] = cwd
+  if (url !== undefined) input['url'] = url
+  if (list !== undefined) input['args'] = list
+  if (env !== undefined) input['env'] = env
+  if (headers !== undefined) input['headers'] = headers
+  if (enabled !== undefined) input['enabled'] = enabled
+  return input
 }
 
 /** The catalogue, in the order a client lists it. */
@@ -1341,6 +1472,692 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       const teaching = await context.faberloomMemory.revokeTeaching(ownerId, required(args, 'id') as FaberLoomTeachingId)
       return { id: String(teaching.id), status: teaching.status }
     },
+  },
+  // ── Skills ─────────────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_skills',
+      description: 'Lista las skills instaladas del propietario, con su nombre y origen.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async context => view(context).skills(),
+  },
+  {
+    definition: {
+      name: 'faberloom_skill_save',
+      description: 'Crea o edita una skill escribiendo su SKILL.md; el nombre identifica el bundle.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'markdown'],
+        properties: {
+          name: { type: 'string', description: 'Nombre del bundle (letras, números, guiones).' },
+          markdown: { type: 'string', description: 'Contenido completo de SKILL.md.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).saveSkill(required(args, 'name'), required(args, 'markdown')),
+  },
+  {
+    definition: {
+      name: 'faberloom_skill_remove',
+      description: 'Elimina una skill instalada por nombre.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name'],
+        properties: { name: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).removeSkill(required(args, 'name')),
+  },
+  // ── Memory (space-scoped facts) ────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_memory',
+      description: 'Lista la memoria del módulo, opcionalmente resuelta para un espacio (propias más heredadas).',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { spaceId: { type: 'string', description: 'Espacio a resolver.' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).spaceMemory(optional(args, 'spaceId')),
+  },
+  {
+    definition: {
+      name: 'faberloom_memory_remember',
+      description: 'Guarda un hecho en la memoria del módulo, opcionalmente ligado a un espacio.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['text'],
+        properties: {
+          text: { type: 'string', description: 'El hecho a recordar.' },
+          spaceId: { type: 'string', description: 'Espacio al que pertenece.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).remember(required(args, 'text'), optional(args, 'spaceId')),
+  },
+  {
+    definition: {
+      name: 'faberloom_memory_update',
+      description: 'Edita el texto o la visibilidad de una entrada de memoria existente.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: 'Identificador de la entrada.' },
+          text: { type: 'string', description: 'Texto de reemplazo.' },
+          visibility: { type: 'string', enum: ['shared', 'private'], description: 'Quién puede verla.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const id = required(args, 'id')
+      const text = optional(args, 'text')
+      const visibility = optional(args, 'visibility')
+      if (text === undefined && visibility === undefined) throw new Error('text or visibility is required')
+      const service = view(context)
+      if (text !== undefined) return await service.editSpaceMemory(id, text, visibility)
+      return await service.setMemoryVisibility(id, visibility as string)
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_memory_forget',
+      description: 'Elimina una entrada de memoria del módulo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).deleteSpaceMemory(required(args, 'id')),
+  },
+  // ── Context ────────────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_context',
+      description: 'Lista las entradas de contexto del propietario con su espacio y versión.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async context => view(context).contextEntries(),
+  },
+  {
+    definition: {
+      name: 'faberloom_context_create',
+      description: 'Crea una entrada de contexto, opcionalmente dentro de un espacio.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title', 'body'],
+        properties: {
+          title: { type: 'string' },
+          body: { type: 'string' },
+          spaceId: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).createContext(
+      required(args, 'title'), required(args, 'body'), optional(args, 'spaceId'),
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_context_update',
+      description: 'Edita una entrada de contexto produciendo una nueva versión.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'title', 'body'],
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          body: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).updateContext(
+      required(args, 'id'), required(args, 'title'), required(args, 'body'),
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_context_remove',
+      description: 'Elimina una entrada de contexto.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).removeContext(required(args, 'id')),
+  },
+  // ── Workflows ──────────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_workflows',
+      description: 'Lista los flujos de trabajo con su espacio, estado y nodos.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async context => view(context).workflowOverview(),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_get',
+      description: 'Lee un flujo con sus nodos, conexiones y versiones.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).workflowDetail(required(args, 'id')),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_create',
+      description: 'Crea un flujo de trabajo vacío, opcionalmente en un espacio.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name'],
+        properties: {
+          name: { type: 'string' },
+          spaceId: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).createWorkflow(required(args, 'name'), optional(args, 'spaceId')),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_update',
+      description: 'Cambia nombre, visibilidad, estado o concurrencia de un flujo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          visibility: { type: 'string', description: 'personal, space o shared.' },
+          status: { type: 'string', description: 'draft, active, paused o archived.' },
+          maxConcurrency: { type: ['number', 'null'], description: 'Tope de ejecuciones simultáneas, o null.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const id = required(args, 'id')
+      const name = optional(args, 'name')
+      const visibility = optional(args, 'visibility')
+      const status = optional(args, 'status')
+      const maxConcurrency = args['maxConcurrency']
+      if (name === undefined && visibility === undefined && status === undefined && maxConcurrency === undefined) {
+        throw new Error('name, visibility, status or maxConcurrency is required')
+      }
+      const service = view(context)
+      if (name !== undefined) await service.saveWorkflow(id, name)
+      if (visibility !== undefined) await service.setWorkflowVisibility(id, visibility)
+      if (status !== undefined) await service.setWorkflowStatus(id, status)
+      if (maxConcurrency !== undefined) {
+        if (maxConcurrency !== null && (typeof maxConcurrency !== 'number' || !Number.isSafeInteger(maxConcurrency) || maxConcurrency < 1)) {
+          throw new Error('maxConcurrency must be a positive integer or null')
+        }
+        await service.setWorkflowConcurrency(id, maxConcurrency as number | null)
+      }
+      return await service.workflowDetail(id)
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_delete',
+      description: 'Elimina un flujo de trabajo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).deleteWorkflow(required(args, 'id')),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_node_add',
+      description: 'Añade un nodo a un flujo; configJson lleva la configuración del nodo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'kind', 'title'],
+        properties: {
+          id: { type: 'string' },
+          kind: { type: 'string', description: 'Tipo de nodo (agent, tool, condition, etc.).' },
+          title: { type: 'string' },
+          configJson: { type: 'string', description: 'Configuración JSON del nodo.' },
+          nodeId: { type: 'string', description: 'Identificador del nodo, si se quiere fijar.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).addNode(
+      required(args, 'id'), required(args, 'kind'), required(args, 'title'), optional(args, 'configJson') ?? '{}', optional(args, 'nodeId'),
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_node_update',
+      description: 'Edita un nodo existente de un flujo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'nodeId', 'title', 'kind'],
+        properties: {
+          id: { type: 'string' },
+          nodeId: { type: 'string' },
+          title: { type: 'string' },
+          kind: { type: 'string' },
+          configJson: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).updateNode(
+      required(args, 'id'), required(args, 'nodeId'), required(args, 'title'), required(args, 'kind'), optional(args, 'configJson') ?? '{}',
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_node_remove',
+      description: 'Elimina un nodo de un flujo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'nodeId'],
+        properties: { id: { type: 'string' }, nodeId: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).removeNode(required(args, 'id'), required(args, 'nodeId')),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_connect',
+      description: 'Conecta dos nodos de un flujo, con condición opcional.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'from', 'to'],
+        properties: {
+          id: { type: 'string' },
+          from: { type: 'string' },
+          to: { type: 'string' },
+          condition: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).connect(
+      required(args, 'id'), required(args, 'from'), required(args, 'to'), optional(args, 'condition'),
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_disconnect',
+      description: 'Elimina una conexión de un flujo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'edgeId'],
+        properties: { id: { type: 'string' }, edgeId: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).disconnect(required(args, 'id'), required(args, 'edgeId')),
+  },
+  // ── Email ──────────────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_email_inbox',
+      description: 'Lista el buzón IMAP configurado, con remitente, asunto y fecha.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { limit: { type: 'integer', description: 'Máximo de filas (por defecto 20).' } },
+      },
+    },
+    run: async (context, _ownerId, args) => (await view(context).emailInbox()).slice(0, limit(args)),
+  },
+  {
+    definition: {
+      name: 'faberloom_email_read',
+      description: 'Lee un correo por su UID IMAP: cuerpo, remitente, destinatarios y adjuntos.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['uid'],
+        properties: { uid: { type: 'string', description: 'UID del mensaje en el buzón.' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).emailRead(required(args, 'uid')),
+  },
+  {
+    definition: {
+      name: 'faberloom_space_from_email',
+      description: 'Crea un espacio a partir de un correo, con su contenido y adjuntos.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['uid', 'name'],
+        properties: {
+          uid: { type: 'string', description: 'UID del mensaje.' },
+          name: { type: 'string', description: 'Título del espacio.' },
+          agentId: { type: 'string', description: 'Agente que atenderá el espacio.' },
+          from: { type: 'string', description: 'Remitente esperado, para verificar el mensaje.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).spaceFromEmail(
+      required(args, 'uid'), required(args, 'name'), optional(args, 'agentId'), optional(args, 'from'),
+    ),
+  },
+  // ── MCP connections ────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_mcp_servers',
+      description: 'Lista las conexiones MCP guardadas y si están montadas.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async context => view(context).mcpServers(),
+  },
+  {
+    definition: {
+      name: 'faberloom_mcp_server_save',
+      description: 'Crea o edita una conexión MCP (stdio o streamable-http) y la monta si enabled es true.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'transport'],
+        properties: {
+          name: { type: 'string', description: 'Namespace local de la conexión.' },
+          transport: { type: 'string', enum: ['stdio', 'streamable-http'] },
+          command: { type: 'string', description: 'Ejecutable para stdio.' },
+          args: { type: 'array', items: { type: 'string' } },
+          cwd: { type: 'string' },
+          url: { type: 'string', description: 'Endpoint HTTPS para streamable-http.' },
+          env: { type: 'object', additionalProperties: { type: 'string' }, description: 'Variables secretas para stdio.' },
+          headers: { type: 'object', additionalProperties: { type: 'string' }, description: 'Cabeceras secretas para streamable-http.' },
+          enabled: { type: 'boolean' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).saveMcpServer(mcpServerInput(args)),
+  },
+  {
+    definition: {
+      name: 'faberloom_mcp_server_remove',
+      description: 'Elimina una conexión MCP por nombre.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name'],
+        properties: { name: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).removeMcpServer(required(args, 'name')),
+  },
+  {
+    definition: {
+      name: 'faberloom_mcp_server_probe',
+      description: 'Prueba una conexión MCP candidata y devuelve sus tools o el fallo real.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'transport'],
+        properties: {
+          name: { type: 'string' },
+          transport: { type: 'string', enum: ['stdio', 'streamable-http'] },
+          command: { type: 'string' },
+          args: { type: 'array', items: { type: 'string' } },
+          cwd: { type: 'string' },
+          url: { type: 'string' },
+          env: { type: 'object', additionalProperties: { type: 'string' } },
+          headers: { type: 'object', additionalProperties: { type: 'string' } },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).probeMcpServer(mcpServerInput(args)),
+  },
+  // ── Workspaces and chat sessions ───────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_workspaces',
+      description: 'Lista los workspaces registrados con su ruta, título y número de sesiones.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async context => workspaces(context).list().map(workspace => ({
+      id: workspace.id,
+      path: workspace.path,
+      title: workspace.title,
+      sessions: workspace.sessionIds.length,
+    })),
+  },
+  {
+    definition: {
+      name: 'faberloom_workspace_create',
+      description: 'Registra una carpeta existente como workspace.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['path'],
+        properties: {
+          path: { type: 'string', description: 'Ruta absoluta de una carpeta existente.' },
+          title: { type: 'string', description: 'Título visible; por defecto el nombre de la carpeta.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const workspace = await workspaces(context).create(required(args, 'path'), optional(args, 'title'))
+      return { id: workspace.id, path: workspace.path, title: workspace.title }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_sessions',
+      description: 'Lista las sesiones de chat, opcionalmente las de un workspace.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          workspaceId: { type: 'string', description: 'Filtra por workspace.' },
+          limit: { type: 'integer', description: 'Máximo de filas (por defecto 20).' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const workspaceId = optional(args, 'workspaceId')
+      const workspace = workspaceId === undefined
+        ? undefined
+        : workspaces(context).list().find(entry => entry.id === workspaceId)
+      if (workspaceId !== undefined && workspace === undefined) throw new Error(`workspace ${workspaceId} not found`)
+      const listed = await sessions(context).list({}, new AbortController().signal)
+      return listed.items
+        .filter(item => workspace === undefined || item.cwd === workspace.path)
+        .slice(0, limit(args))
+        .map(item => ({
+          id: item.sessionId,
+          cwd: item.cwd ?? null,
+          running: item.running,
+          blank: item.blank,
+          updatedAt: item.updatedAt,
+        }))
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_session_create',
+      description: 'Crea una sesión de chat en un workspace o en una carpeta, con un preset de agente opcional.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          workspaceId: { type: 'string', description: 'Workspace donde abrir la sesión.' },
+          cwd: { type: 'string', description: 'Carpeta de trabajo, cuando no se usa un workspace.' },
+          agentPreset: { type: 'string', description: 'Preset de agente para la sesión.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const workspaceId = optional(args, 'workspaceId')
+      const cwd = optional(args, 'cwd')
+      const agentPreset = optional(args, 'agentPreset')
+      if (workspaceId !== undefined && workspaces(context).list().every(entry => entry.id !== workspaceId)) {
+        throw new Error(`workspace ${workspaceId} not found`)
+      }
+      const created = await sessions(context).create({
+        ...workspaceId === undefined ? {} : { workspaceId },
+        ...cwd === undefined ? {} : { cwd },
+        ...agentPreset === undefined ? {} : { agentPreset },
+      })
+      return { sessionId: created.sessionId, workspaceId: workspaceId ?? null, cwd: cwd ?? null }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_session_send',
+      description: 'Envía un mensaje a una sesión de chat y confirma que el agente lo aceptó.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['sessionId', 'text'],
+        properties: {
+          sessionId: { type: 'string' },
+          text: { type: 'string' },
+          mode: { type: 'string', enum: ['queue', 'steer'], description: 'Encolar o corregir el turno en curso.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const mode = optional(args, 'mode') === 'steer' ? 'steer' : 'queue'
+      const accepted = await sessions(context).prompt({
+        requestId: randomUUID(),
+        sessionId: required(args, 'sessionId'),
+        mode,
+        content: [{ type: 'text', text: required(args, 'text') }],
+      }, new AbortController().signal)
+      return { accepted: accepted.accepted, sessionId: required(args, 'sessionId'), mode }
+    },
+  },
+  // ── Routines (full CRUD) ───────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_routine_get',
+      description: 'Lee una rutina con su definición, pasos, disparadores y ejecuciones recientes.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).routineDetail(required(args, 'id')),
+  },
+  {
+    definition: {
+      name: 'faberloom_routine_create',
+      description: 'Crea una rutina con nombre e intención, opcionalmente en un espacio.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'intent'],
+        properties: {
+          name: { type: 'string' },
+          intent: { type: 'string', description: 'Qué debe lograr la rutina.' },
+          spaceId: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).createRoutine(
+      required(args, 'name'), required(args, 'intent'), optional(args, 'spaceId'),
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_routine_update',
+      description: 'Edita una rutina con los campos de RoutineSaveInput (name, intent, triggers, steps, permisos, etc.).',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'input'],
+        properties: {
+          id: { type: 'string' },
+          input: { type: 'object', description: 'Campos editables de la rutina.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const input = jsonObject(args, 'input')
+      if (Object.keys(input).length === 0) throw new Error('input must name at least one editable field')
+      return await view(context).saveRoutine(required(args, 'id'), input)
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_routine_remove',
+      description: 'Elimina una rutina; sus ejecuciones quedan como historial.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).removeRoutine(required(args, 'id')),
+  },
+  {
+    definition: {
+      name: 'faberloom_routine_active',
+      description: 'Activa o pausa una rutina.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'active'],
+        properties: { id: { type: 'string' }, active: { type: 'boolean' } },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const active = boolean(args, 'active')
+      if (active === undefined) throw new Error('active is required')
+      return await view(context).setRoutineActive(required(args, 'id'), active)
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_routine_visibility',
+      description: 'Cambia la visibilidad de una rutina (personal, space o shared).',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'visibility'],
+        properties: { id: { type: 'string' }, visibility: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).setRoutineVisibility(required(args, 'id'), required(args, 'visibility')),
+  },
+  // ── Agents (definitive removal) ────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_agent_purge',
+      description: 'Elimina definitivamente un agente y sus referencias; no se puede deshacer.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).purgeAgent(required(args, 'id')),
   },
 ]
 

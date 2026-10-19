@@ -113,6 +113,15 @@ describe('FaberLoomSpaces', () => {
     await expect(spaces.setMemoryVisibility(ADMIN, secret.id, 'shared')).rejects.toThrow('memory access denied')
     await expect(spaces.setMemoryVisibility(SONDEL, 'missing', 'private')).rejects.toThrow('not found')
     expect((await spaces.setMemoryVisibility(SONDEL, secret.id, 'shared')).visibility).toBe('shared')
+
+    // Editing keeps the entry's identity and capture origin while replacing
+    // its text and visibility; another identity cannot rewrite it.
+    const edited = await spaces.updateMemory(SONDEL, secret.id, { text: 'dato privado corregido', visibility: 'private' })
+    expect(edited).toMatchObject({ id: secret.id, text: 'dato privado corregido', visibility: 'private', spaceIds: [space.id] })
+    await expect(spaces.updateMemory(ADMIN, secret.id, { text: 'ajeno' })).rejects.toThrow('memory access denied')
+    await expect(spaces.updateMemory(SONDEL, 'missing', { text: 'x' })).rejects.toThrow('not found')
+    await expect(spaces.updateMemory(SONDEL, secret.id, { text: '   ' })).rejects.toThrow('text is required')
+    expect((await spaces.listMemory(SONDEL, space.id)).map(entry => entry.text)).toEqual(['dato compartido', 'dato privado corregido'])
   })
 
   it('links memory to the Session that captured it and drops it when that Session is deleted', async () => {

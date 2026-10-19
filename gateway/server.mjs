@@ -17,6 +17,7 @@ import express from 'express'
 import httpProxy from 'http-proxy'
 
 import { installMirrorRoute } from './mirror-route.mjs'
+import { installDesktopMcpBridge } from './desktop-mcp-route.mjs'
 import { repairWorkspaceOrder } from './workspace-registry.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -1788,6 +1789,20 @@ app.post('/entity', express.urlencoded({ extended: false }), async (req, res) =>
   res.redirect(303, '/')
 })
 
+// Puente inverso del escritorio: el equipo del usuario no acepta conexiones
+// entrantes, así que registra sus tokens y sondea esta ruta; cuando llega una
+// llamada pública /mcp con uno de esos tokens, el gateway la encola y el
+// escritorio la ejecuta contra su propio MCP local. Sin registro o con el
+// escritorio cerrado, /mcp responde 503 en vez de fingir que llegó.
+const desktopBridge = installDesktopMcpBridge(app, {
+  consolaApi: cfg.consolaApi,
+  dataDir: cfg.dataDir,
+  userStateFile: cfg.userStateFile,
+  pollTimeoutMs: 25_000,
+  requestTimeoutMs: 120_000,
+  offlineAfterMs: 45_000,
+})
+
 // Servidor MCP de FaberLoom: el cliente se autentica con el token que el
 // propietario le dio, y el gateway enruta al dsh de ese propietario por el
 // socket de su home. El gateway no guarda tokens: los localiza en el almacén
@@ -1810,7 +1825,25 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
   }
   if (!token) return refuse(401, 'falta el token Bearer')
   const owner = findOwnerByMcpToken(token)
-  if (!owner) return refuse(401, 'token desconocido o revocado')
+  if (!owner) {
+    const body = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : JSON.stringify(req.body ?? {})
+    const routed = await desktopBridge.route({
+      token,
+      body,
+      accept: req.get('accept') || 'application/json',
+    })
+    if (routed === undefined) return refuse(401, 'token desconocido o revocado')
+    if ('offline' in routed) {
+      return refuse(503, 'FaberLoom está cerrado en ese equipo; abrelo para que la petición llegue')
+    }
+    metrics.mcpRequests.ok += 1
+    logEvent({ ev: 'mcp', result: 'desktop', status: routed.status, ip: req.ip, ms: Date.now() - started })
+    res.status(routed.status)
+    res.setHeader('content-type', routed.contentType)
+    res.setHeader('content-length', Buffer.byteLength(routed.body))
+    if (typeof routed.sessionId === 'string' && routed.sessionId.length > 0) res.setHeader('mcp-session-id', routed.sessionId)
+    return res.end(routed.body)
+  }
   const stored = readUserState(owner.email)
   if (!stored) return refuse(503, 'el propietario debe entrar una vez en FaberLoom')
   try {
