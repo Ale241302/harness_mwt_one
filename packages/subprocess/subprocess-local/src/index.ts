@@ -263,12 +263,15 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     }
     spec.signal?.throwIfAborted()
     const env = targetEnvironment(spec)
-    const options: IPtyForkOptions = {
+    const options: IPtyForkOptions & { readonly useConpty?: boolean } = {
       name: spec.terminalType,
       rows: spec.rows,
       cols: spec.cols,
       cwd: spec.cwd,
       env: { ...env, TERM: spec.terminalType },
+      // ConPTY hosts the console window inside the pseudo terminal; winpty
+      // otherwise allocates a real console that flashes on every desktop command.
+      useConpty: true,
     }
     const inspector = this.terminalInspector ?? createProcessInspector()
     const containmentMode = this.selectContainmentMode('terminal')

@@ -5,7 +5,7 @@
  * argument, so a panel cannot ask for another owner's rows.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { stat, rename, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
@@ -283,6 +283,72 @@ function outcomeReasonOf(
  */
 function outcomeStatusOf(status: SkillInstallOutcomeStatus): FaberLoomSkillInstallOutcome['status'] {
   return status === 'already-installed' ? 'skipped' : status
+}
+
+/** One agent a harness folder declares, in the product agent's terms. */
+interface HarnessAgentDefinition {
+  /** Stable agent name used by the Agents panel and the `@Name` route. */
+  readonly name: string
+  /** Persona and working rules the agent runs under. */
+  readonly responsibility: string
+  /** Skills the source declares; filtered to the installed set before use. */
+  readonly skills: readonly string[]
+  /** Product tools the source declares. */
+  readonly tools: readonly string[]
+}
+
+/**
+ * Parse one harness agent Markdown file: its frontmatter (name, description,
+ * responsibility, skill and tool lists) plus the persona body. The harness
+ * format is deliberately simple; this reads the keys the product agent needs
+ * without pulling a YAML dependency into the view.
+ * @param raw - the agent file contents.
+ * @param fallbackName - the file stem, used when the frontmatter names none.
+ * @returns the definition, or undefined when the file is not an agent.
+ */
+function parseHarnessAgent(raw: string, fallbackName: string): HarnessAgentDefinition | undefined {
+  const text = raw.replace(/^\uFEFF/u, '').replace(/\r\n/gu, '\n')
+  if (!text.startsWith('---\n')) return undefined
+  const close = text.indexOf('\n---', 4)
+  if (close < 0) return undefined
+  const frontmatter = text.slice(4, close)
+  const bodyStart = text.indexOf('\n', close + 4)
+  const body = bodyStart < 0 ? '' : text.slice(bodyStart + 1).trim()
+  const scalar = (key: string): string | undefined => {
+    const match = new RegExp(`^${key}:\\s*(.*)$`, 'mu').exec(frontmatter)
+    const value = match?.[1]
+    return value === undefined ? undefined : unquoteHarnessScalar(value.trim())
+  }
+  const list = (key: string): string[] => {
+    const lines = frontmatter.split('\n')
+    const start = lines.findIndex(line => new RegExp(`^${key}:\\s*$`, 'u').test(line))
+    if (start < 0) return []
+    const items: string[] = []
+    for (let index = start + 1; index < lines.length; index += 1) {
+      const line = lines[index]
+      if (line === undefined) break
+      const item = /^\s*-\s+(.+)$/u.exec(line)
+      if (item === null) break
+      items.push(unquoteHarnessScalar(item[1] ?? ''))
+    }
+    return items
+  }
+  const name = scalar('name') ?? fallbackName
+  const responsibility = body.length > 0
+    ? body
+    : scalar('responsibility') ?? scalar('description') ?? ''
+  if (name.length === 0 || responsibility.length === 0) return undefined
+  return { name, responsibility, skills: list('skills'), tools: list('tools') }
+}
+
+/** Strip the surrounding quotes of one simple YAML scalar. */
+function unquoteHarnessScalar(value: string): string {
+  if (value.length < 2) return value
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1).replace(/\\"/gu, '"').replace(/\\\\/gu, '\\').replace(/\\n/gu, '\n')
+  }
+  if (value.startsWith("'") && value.endsWith("'")) return value.slice(1, -1).replace(/''/gu, "'")
+  return value
 }
 
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
@@ -3360,10 +3426,20 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (this.actor().readOnly) {
       return { status: 'refused', source, root: '', refused: 'read-only', parts: [], outcomes: [] }
     }
+    const resolvedSource = resolve(source)
+    // The harness installer writes the preset files; the Agents panel reads the
+    // product agents table, so each agent the source carries is also registered
+    // there as a usable agent with its responsibility, skills and tools.
+    const definitions = this.harnessAgentDefinitions(resolvedSource)
     const report = await this.skillInstallService().installHarness({
-      source: resolve(source),
+      source: resolvedSource,
       ...replace === undefined ? {} : { replace },
     })
+    try {
+      await this.registerHarnessAgents(definitions, report, replace === true)
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: no se pudieron registrar los agentes del harness: ${String(error)}`)
+    }
     return {
       status: report.status,
       source: report.source,
@@ -3379,6 +3455,104 @@ export class FaberLoomViewService extends TypertRemoteService {
         }
       }),
     }
+  }
+
+  /**
+   * Read the agent definitions a harness folder carries, so the same install can
+   * register them as product agents. A `.zip` source is not a directory; its
+   * agents are read back from the presets the installer wrote.
+   * @param source - absolute harness folder or archive.
+   * @returns the parsed agent definitions, or an empty list.
+   */
+  private harnessAgentDefinitions(source: string): readonly HarnessAgentDefinition[] {
+    try {
+      if (!statSync(source).isDirectory()) return []
+      const directory = join(source, 'agents')
+      if (!existsSync(directory)) return []
+      const definitions: HarnessAgentDefinition[] = []
+      for (const name of readdirSync(directory)) {
+        if (!name.toLowerCase().endsWith('.md')) continue
+        try {
+          const parsed = parseHarnessAgent(readFileSync(join(directory, name), 'utf8'), name.replace(/\.md$/iu, ''))
+          if (parsed !== undefined) definitions.push(parsed)
+        } catch { /* one unreadable agent must not hide the others */ }
+      }
+      return definitions
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * Create or update one product agent per harness agent. A harness installed
+   * from an archive has no source folder left, so its agents come from the
+   * installed `.agent-presets` names and carry the preset description and the
+   * harness skills as their usable set.
+   */
+  private async registerHarnessAgents(
+    definitions: readonly HarnessAgentDefinition[],
+    report: { readonly status: string; readonly outcomes: readonly { readonly name: string; readonly status: string }[] },
+    replace: boolean,
+  ): Promise<void> {
+    if (report.status === 'refused') return
+    const agents = this.ctx.get('faberloomAgents')
+    if (agents === undefined) return
+    const home = this.dshHome()
+    const candidates = definitions.length > 0 ? definitions : this.installedHarnessAgentDefinitions(home, report)
+    if (candidates.length === 0) return
+    const skillRoot = join(home, 'skills')
+    const existing = await agents.listAgents()
+    for (const definition of candidates) {
+      const skills = definition.skills.filter(name => existsSync(join(skillRoot, name, 'SKILL.md')))
+      const matches = existing.filter(agent => agent.name === definition.name)
+      if (matches.length > 0) {
+        if (!replace) continue
+        for (const match of matches) {
+          await agents.updateAgent(match.id, {
+            responsibility: definition.responsibility,
+            skills,
+            tools: [...definition.tools],
+          })
+        }
+        continue
+      }
+      await agents.createAgent({
+        name: definition.name,
+        responsibility: definition.responsibility,
+        skills,
+        tools: [...definition.tools],
+        ownerId: this.actor().id,
+        origin: 'scratch',
+      })
+    }
+  }
+
+  /** Agents a harness archive installed, read back from the preset directories. */
+  private installedHarnessAgentDefinitions(
+    home: string,
+    report: { readonly outcomes: readonly { readonly name: string; readonly status: string }[] },
+  ): readonly HarnessAgentDefinition[] {
+    const presets = join(home, '.agent-presets')
+    if (!existsSync(presets)) return []
+    const installed = new Set(readdirSync(presets))
+    const names = new Set(report.outcomes.map(outcome => outcome.name).filter(name => installed.has(name)))
+    if (names.size === 0) return []
+    const skills = report.outcomes
+      .map(outcome => outcome.name)
+      .filter(name => existsSync(join(home, 'skills', name, 'SKILL.md')))
+    const definitions: HarnessAgentDefinition[] = []
+    for (const name of names) {
+      const preset = join(presets, name, 'preset.yml')
+      let responsibility = name
+      try {
+        const raw = existsSync(preset) ? readFileSync(preset, 'utf8') : ''
+        const match = /^description:\s*(.*)$/mu.exec(raw)
+        const value = match?.[1]
+        if (value !== undefined) responsibility = unquoteHarnessScalar(value.trim()) || name
+      } catch { /* the preset description is optional */ }
+      definitions.push({ name, responsibility, skills, tools: [] })
+    }
+    return definitions
   }
 
   /**
