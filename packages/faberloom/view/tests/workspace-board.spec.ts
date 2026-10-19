@@ -807,11 +807,15 @@ describe('FaberLoomViewService board actions', () => {
 
     await view.overview()
 
-    expect(spaces.remember).toHaveBeenCalledWith(expect.anything(), 'cliente Sondel', ['sp-remote'])
-    expect(shares.noteContentLocal).toHaveBeenCalledWith('owner@muitowork.com', 'c1', 'm-copy')
-    expect(spaces.forgetMemory).toHaveBeenCalledWith(expect.anything(), 'm-old')
-    const published = shares.publishContent.mock.calls.at(-1)?.[2] as readonly { itemKey: string }[]
-    expect(published.map(item => item.itemKey)).toEqual(['propia'])
+    // The overview serves local rows immediately; the console exchange runs in
+    // the background so a slow console never delays the Agents/Skills panels.
+    await vi.waitFor(() => {
+      expect(spaces.remember).toHaveBeenCalledWith(expect.anything(), 'cliente Sondel', ['sp-remote'])
+      expect(shares.noteContentLocal).toHaveBeenCalledWith('owner@muitowork.com', 'c1', 'm-copy')
+      expect(spaces.forgetMemory).toHaveBeenCalledWith(expect.anything(), 'm-old')
+      const published = shares.publishContent.mock.calls.at(-1)?.[2] as readonly { itemKey: string }[]
+      expect(published.map(item => item.itemKey)).toEqual(['propia'])
+    })
   })
 
   it('imports a Work Flow snapshot and skips a pending grant, an empty snapshot, or a missing graph', async () => {

@@ -1137,15 +1137,17 @@ export class FaberLoomViewService extends TypertRemoteService {
     // once per process, so an accepted Space/Work Flow is readable here.
     if (!this.grantsSynced) {
       this.grantsSynced = true
-      await this.syncSharedGrants(actor.id).catch((error: unknown) => {
+      // Console-bound: a slow grant import must not delay the local panels.
+      void this.syncSharedGrants(actor.id).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: shared grant import failed: ${error instanceof Error ? error.message : String(error)}`)
       })
     }
     // Refresh the owner's published content and re-read every shared Space's
     // Context/Workflows/Routines, so a reload shows the author's current set.
+    // The console may be slow or unreachable; keep it off the overview path.
     if (Date.now() - this.contentRefreshedAt > 10_000) {
       this.contentRefreshedAt = Date.now()
-      await this.refreshSharedContent(actor).catch((error: unknown) => {
+      void this.refreshSharedContent(actor).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: shared content refresh failed: ${error instanceof Error ? error.message : String(error)}`)
       })
     }
@@ -1160,8 +1162,12 @@ export class FaberLoomViewService extends TypertRemoteService {
     ])
     const registry = this.workspaceRegistryOrUndefined()
     // Mirror each shared Space's Sessions into this host, so a member sees the
-    // owner's transcripts and the owner sees the member's.
-    await this.mirrorSharedSpaces()
+    // owner's transcripts and the owner sees the member's. The console round-trip
+    // is background work: the sidebar updates from the mirror events, while the
+    // Agents/Skills panels render the local rows immediately.
+    void this.mirrorSharedSpaces().catch((error: unknown) => {
+      this.ctx.logger.warn(`faberloom: shared session mirror failed: ${error instanceof Error ? error.message : String(error)}`)
+    })
     // The responsible agent lives on the space, so the same agent may lead
     // several spaces (a parent and its sub-spaces). The space's Workspace is
     // keyed by its opaque workdir.
