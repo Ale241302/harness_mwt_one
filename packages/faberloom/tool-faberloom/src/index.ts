@@ -5,8 +5,8 @@
  * @module @deepseek-ai/dsh-tool-faberloom
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -509,6 +509,42 @@ function skillInstallText(report: SkillInstallToolOutput): string {
     ...report.outcomes.map(outcome =>
       `- ${outcome.name}: ${outcome.status}${outcome.reason === undefined ? '' : ` (${outcome.reason})`}`),
   ].join('\n')
+}
+
+/** One complete-harness report as the tool's output schema carries it. */
+interface HarnessInstallToolOutput {
+  readonly source: string
+  readonly root: string
+  readonly status: string
+  readonly refused?: string
+  readonly parts: readonly {
+    readonly kind: string
+    readonly status: string
+    readonly count: number
+    readonly target: string
+  }[]
+  readonly outcomes: readonly { readonly name: string; readonly status: string; readonly reason?: string }[]
+}
+
+/**
+ * Render one complete-harness report as model-facing text: each part and where
+ * it landed, then every skill or agent candidate the source carried.
+ * @param report - the harness install report.
+ * @returns the text block.
+ */
+function harnessInstallText(report: HarnessInstallToolOutput): string {
+  if (report.refused !== undefined) return `Nothing was installed from ${report.source}: ${report.refused}.`
+  return [
+    `Harness ${report.status} from ${report.source} (root: ${report.root}):`,
+    ...report.parts.map(part => `- ${part.kind}: ${part.count} ${part.status} -> ${part.target}`),
+    ...report.outcomes.map(outcome =>
+      `- ${outcome.name}: ${outcome.status}${outcome.reason === undefined ? '' : ` (${outcome.reason})`}`),
+  ].join('\n')
+}
+
+/** Whether a folder carries the complete-harness parts the installer recognizes. */
+function isHarnessFolder(path: string): boolean {
+  return existsSync(join(path, 'skills')) || existsSync(join(path, 'agents')) || existsSync(join(path, 'AGENTS.md'))
 }
 
 /**
@@ -3066,7 +3102,7 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_skill_install',
-    description: 'Install one or more skills from a folder the user named: a skill directory holding SKILL.md, or a directory of skill directories. Choose this workspace (a project root under the session workspace) or the global skills root. An existing skill of the same name is left alone unless replace is true.',
+    description: 'Install one or more skills from a folder the user named: a skill directory holding SKILL.md, or a directory of skill directories. Choose this workspace (a project root under the session workspace) or the global skills root. An existing skill of the same name is left alone unless replace is true. For a complete harness (skills, agent presets, always-on rules, commands), use faberloom_harness_install instead; a harness root passed here is forwarded to it.',
     parameters: {
       source: { type: 'string', required: true, description: 'Folder to install from, inside the workspace when the session has one.' },
       destination: { type: 'string', required: true, enum: ['workspace', 'global'], description: 'Install for the current workspace or globally.' },
@@ -3100,6 +3136,25 @@ export function apply(ctx: Context, config: Config): void {
       const workspaceRoot = session === undefined
         ? undefined
         : policy?.resolve({ session }).workspaceRoot ?? session.header.cwd
+      const resolved = isAbsolute(args.source)
+        ? args.source
+        : resolve(workspaceRoot ?? process.cwd(), args.source)
+      // A harness root carries agents and rules beside its skills; install the
+      // whole set instead of only the skill directories, so a chat request to
+      // install the folder also registers its agent.
+      if (isHarnessFolder(resolved)) {
+        const report = await view(ctx).installHarness(resolved, args.replace)
+        return {
+          destination: 'global',
+          root: report.root,
+          ...report.refused === undefined ? {} : { refused: report.refused },
+          outcomes: report.outcomes.map(outcome => ({
+            name: outcome.name,
+            status: outcome.status,
+            ...outcome.reason === undefined ? {} : { reason: outcome.reason },
+          })),
+        }
+      }
       const report = await view(ctx).installSkill(
         args.source,
         args.destination,
@@ -3118,6 +3173,79 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Install skill', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_harness_install',
+    description: 'Install a complete FaberLoom harness from a folder or .zip the user named: its skills, agent presets, always-on AGENTS.md rules, and commands, scripts, and hooks. Pass the harness root (the folder holding skills/, agents/, and AGENTS.md) or a .zip that wraps that one folder; pass "." for the workspace root. Use faberloom_skill_install only for a single skill folder. The harness installs into the user\'s global Harness home; an existing part is left alone unless replace is true.',
+    parameters: {
+      source: { type: 'string', required: true, description: 'Harness folder or .zip path, inside the workspace when the session has one. Use "." for the workspace root.' },
+      replace: { type: 'boolean', description: 'Replace existing skills and agent presets with the same name; false skips them.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          source: { type: 'string', required: true },
+          root: { type: 'string', required: true },
+          status: { type: 'string', required: true },
+          refused: { type: 'string' },
+          parts: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                kind: { type: 'string', required: true },
+                status: { type: 'string', required: true },
+                count: { type: 'integer', required: true },
+                target: { type: 'string', required: true },
+              },
+            },
+          },
+          outcomes: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true },
+                status: { type: 'string', required: true },
+                reason: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: harnessInstallText(value) }],
+    },
+    execute: async (args, exec) => {
+      const session = exec.agent?.session
+      const policy = ctx.get('sandboxPolicy')
+      const workspaceRoot = session === undefined
+        ? undefined
+        : policy?.resolve({ session }).workspaceRoot ?? session.header.cwd
+      const resolved = isAbsolute(args.source)
+        ? args.source
+        : resolve(workspaceRoot ?? process.cwd(), args.source)
+      const report = await view(ctx).installHarness(resolved, args.replace)
+      return {
+        source: report.source,
+        root: report.root,
+        status: report.status,
+        ...report.refused === undefined ? {} : { refused: report.refused },
+        parts: report.parts.map(part => ({
+          kind: part.kind,
+          status: part.status,
+          count: part.count,
+          target: part.target,
+        })),
+        outcomes: report.outcomes.map(outcome => ({
+          name: outcome.name,
+          status: outcome.status,
+          ...outcome.reason === undefined ? {} : { reason: outcome.reason },
+        })),
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Install harness', kind: 'other', rawInput: args }),
   }))
 
   registerMcpTools(ctx, () => actor(config).id)
