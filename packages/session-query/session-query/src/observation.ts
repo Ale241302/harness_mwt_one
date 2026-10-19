@@ -325,7 +325,9 @@ function throwIfObservationAborted(signal: AbortSignal | undefined): void {
 }
 
 function mapPersistenceFailure(sessionId: SessionId, error: unknown): SessionQueryError {
-  if (hasErrorName(error, 'SessionPersistenceNotFoundError')) return notFound(sessionId, error)
+  if (hasErrorName(error, 'SessionPersistenceNotFoundError') || isMissingArtifact(error)) {
+    return notFound(sessionId, error)
+  }
   if (hasErrorName(error, 'SessionPersistenceCorruptionError')) {
     return new SessionQueryError(
       `stored session "${sessionId}" is corrupt: ${error.message}`,
@@ -354,4 +356,9 @@ function errorMessage(error: unknown): string {
 
 function hasErrorName(error: unknown, name: string): error is Error {
   return error instanceof Error && error.name === name
+}
+
+/** Whether a filesystem failure means the stored session artifact is absent. */
+function isMissingArtifact(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null | undefined)?.code === 'ENOENT'
 }

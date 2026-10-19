@@ -43,6 +43,29 @@ export class ApiSessionCwdConflict extends Error {
   }
 }
 
+/** Whether an error proves the Session has no stored log on this host. */
+function isENOENT(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null | undefined)?.code === 'ENOENT'
+}
+
+/**
+ * Whether a failed cold lookup means the Session has no stored log yet: a
+ * projection-cache draft registered before its first turn, or an artifact
+ * removed outside the harness. Resuming such an identity can never succeed, so
+ * callers create it instead.
+ * @param error - the observation or resume failure.
+ * @returns true when the stored artifact is absent.
+ */
+function isAbsentStoredSession(error: unknown): boolean {
+  if (error instanceof SessionQueryError) {
+    if (error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') return true
+    if (error.code !== 'SESSION_QUERY_PERSISTENCE_FAILED') return false
+    return isENOENT(error.cause)
+  }
+  if (error instanceof Error && error.name === 'SessionPersistenceNotFoundError') return true
+  return isENOENT(error)
+}
+
 /** Explicit-id creation attempted to adopt a Session under another preset. */
 export class ApiSessionPresetConflict extends Error {
   constructor(
@@ -492,8 +515,7 @@ export class ApiSessionAgentController {
       using observation = await this.ctx.sessionQuery.observeSession(sessionId)
       return await this.resumeObserved(sessionId, observation)
     } catch (error: unknown) {
-      if (error instanceof SessionQueryError
-        && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') {
+      if (isAbsentStoredSession(error)) {
         throw new ApiSessionNotFound(`session "${sessionId}" not found`)
       }
       throw error
@@ -504,7 +526,8 @@ export class ApiSessionAgentController {
     sessionId: SessionId,
     observation: SessionObservation,
   ): Promise<Agent> {
-    if (observation.header.id !== sessionId || observation.header.cwd === undefined) {
+    const cwd = observation.header.cwd
+    if (observation.header.id !== sessionId || cwd === undefined) {
       throw new ApiSessionNotFound(`session "${sessionId}" not found`)
     }
     if (hasApiSessionSubagentOwner(this.ctx, { header: observation.header }, undefined)) {
@@ -516,11 +539,29 @@ export class ApiSessionAgentController {
     if (published !== undefined && hasApiSessionSubagentOwner(this.ctx, published, live)) {
       throw new ApiSessionSubagentOwnership(sessionId)
     }
-    const handle = await this.ctx.agents.resume({
-      resumeSessionId: sessionId,
-      agentOptions: this.agentOptions(),
-      setup: composition.setup,
-    })
+    let handle: AgentHandle
+    try {
+      handle = await this.ctx.agents.resume({
+        resumeSessionId: sessionId,
+        agentOptions: this.agentOptions(),
+        setup: composition.setup,
+      })
+    } catch (error: unknown) {
+      if (!isAbsentStoredSession(error)) throw error
+      // The projection cache can describe a draft whose log never
+      // materialized (created, then the host restarted before the first
+      // append). Create the same identity at its recorded cwd so the turn
+      // continues instead of failing with a missing-artifact error.
+      handle = await this.ctx.agents.create({
+        sessionId,
+        agentOptions: this.agentOptions(),
+        meta: {
+          cwd,
+          ...(composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset }),
+        },
+        setup: composition.setup,
+      })
+    }
     return this.retainHandle(handle)
   }
 
@@ -556,8 +597,9 @@ export class ApiSessionAgentController {
         })
         return this.retainHandle(handle)
       } catch (error: unknown) {
-        if (!(error instanceof SessionQueryError)
-          || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
+        // A draft registered in the projection cache has no log yet; fall
+        // through to creation instead of failing the explicit-id request.
+        if (!isAbsentStoredSession(error)) throw error
       }
     }
 

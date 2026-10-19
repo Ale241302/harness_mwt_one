@@ -7,7 +7,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-presets'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionLogOffset, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
-import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
+import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -174,6 +174,38 @@ describe('ApiSession Agent lookup and recovery', () => {
     await expect(agents.resolveObservedAgent(invalid)).resolves.toMatchObject({
       error: { code: 'session/not-found' },
     })
+  })
+
+  it('recreates an observed Session whose stored log disappeared', async () => {
+    const { ctx, agents } = await harness()
+    const meta = header('observed-missing-log')
+    const recreated = unpublishedAgent(ctx, meta)
+    const resume = vi.spyOn(ctx.agents, 'resume').mockRejectedValue(
+      Object.assign(
+        new Error(`ENOENT: no such file or directory, open '/sessions/${meta.id}/session.v3.jsonl.zstd'`),
+        { code: 'ENOENT' },
+      ),
+    )
+    const create = vi.spyOn(ctx.agents, 'create').mockResolvedValue({
+      agent: recreated,
+      dispose: () => Promise.resolve(),
+    })
+    const observed = {
+      source: 'prepared',
+      header: meta,
+      events: [],
+      cursor: -1,
+      projections: { asOfSeq: -1, values: {} },
+      retain: vi.fn(),
+      [Symbol.dispose]: vi.fn(),
+    } as unknown as SessionObservation
+
+    await expect(agents.resolveObservedAgent(observed)).resolves.toEqual({ agent: recreated })
+    expect(resume).toHaveBeenCalledOnce()
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: meta.id,
+      meta: expect.objectContaining({ cwd: '/workspace' }),
+    }))
   })
 
   it('projects live Agent contexts and maps missing cold identities through Typert lookup failures', async () => {
@@ -418,6 +450,30 @@ describe('ApiSession create or adoption', () => {
 
     await expect(agents.ensureSession(meta.id, '/workspace', true, 'minimal')).resolves.toBe(resumed)
     expect(resume).toHaveBeenCalledWith(expect.objectContaining({ resumeSessionId: meta.id }))
+  })
+
+  it('creates an explicit identity whose projection-only draft has no stored log', async () => {
+    const { ctx, agents } = await harness()
+    const meta = header('draft-without-log')
+    const cause = Object.assign(
+      new Error(`ENOENT: no such file or directory, open '/sessions/${meta.id}/session.v3.jsonl.zstd'`),
+      { code: 'ENOENT' },
+    )
+    vi.spyOn(ctx.sessionQuery, 'observeSession').mockRejectedValue(
+      new SessionQueryError(
+        `failed to observe session "${meta.id}": ENOENT`,
+        'SESSION_QUERY_PERSISTENCE_FAILED',
+        { cause },
+      ),
+    )
+    const created = unpublishedAgent(ctx, meta)
+    const create = vi.spyOn(ctx.agents, 'create').mockResolvedValue({
+      agent: created,
+      dispose: () => Promise.resolve(),
+    })
+
+    await expect(agents.ensureSession(meta.id, '/workspace', true)).resolves.toBe(created)
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ sessionId: meta.id }))
   })
 
   it('rejects an ownership race before resume and a persisted cwd conflict', async () => {
