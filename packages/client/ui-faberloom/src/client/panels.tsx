@@ -4669,9 +4669,25 @@ function parentOfPath(path: string): string {
   return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
 }
 
-/** Pre-order path order: a folder directly precedes its children. */
-function byPath(left: FaberLoomSpaceTreeEntry, right: FaberLoomSpaceTreeEntry): number {
-  return left.path.localeCompare(right.path, 'es', { numeric: true })
+/** Pre-order tree order: folders before files at every level, then by name. */
+function treeOrder(entries: readonly FaberLoomSpaceTreeEntry[]): readonly FaberLoomSpaceTreeEntry[] {
+  const kinds = new Map(entries.map(entry => [entry.path, entry.kind]))
+  return [...entries].sort((left, right) => {
+    const a = left.path.split('/')
+    const b = right.path.split('/')
+    const shared = Math.min(a.length, b.length)
+    for (let index = 0; index < shared; index += 1) {
+      const leftSegment = a[index]
+      const rightSegment = b[index]
+      if (leftSegment === undefined || rightSegment === undefined || leftSegment === rightSegment) continue
+      const prefixA = a.slice(0, index + 1).join('/')
+      const prefixB = b.slice(0, index + 1).join('/')
+      const rankA = kinds.get(prefixA) === 'directory' ? 0 : 1
+      const rankB = kinds.get(prefixB) === 'directory' ? 0 : 1
+      return rankA - rankB || leftSegment.localeCompare(rightSegment, 'es', { numeric: true })
+    }
+    return a.length - b.length
+  })
 }
 
 /** Whether every folder above one path is expanded. */
@@ -4771,6 +4787,9 @@ function filesScreen() {
       const stamp = Date.parse(at)
       let best: SessionSummary | undefined
       for (const session of sessions) {
+        // A blank session is the workspace's empty slot, not a conversation:
+        // attributing files to it would label them with the folder's name.
+        if (session.blank) continue
         if (!sameDirectory(session.cwd, root)) continue
         if (session.updatedAt < stamp) continue
         if (best === undefined || session.updatedAt < best.updatedAt) best = session
@@ -4790,7 +4809,7 @@ function filesScreen() {
           parent = parentOfPath(parent)
         }
       }
-      return all.filter(entry => keep.has(entry.path)).sort(byPath)
+      return all.filter(entry => keep.has(entry.path))
     }
 
     const groupsOf = (spaceId: string): ReadonlyArray<FileGroup> => {
@@ -4902,7 +4921,7 @@ function filesScreen() {
 
     const rows = (spaceId: string, list: readonly FaberLoomSpaceTreeEntry[]): ReactNode => (
       <>
-        {list.filter(entry => ancestorsExpanded(spaceId, entry.path, openFolders)).map((entry) => {
+        {treeOrder(list).filter(entry => ancestorsExpanded(spaceId, entry.path, openFolders)).map((entry) => {
           const key = `${spaceId}\u0000${entry.path}`
           const depth = entry.path.split('/').length - 1
           const directory = entry.kind === 'directory'
@@ -5012,7 +5031,9 @@ function filesScreen() {
         {selected.size > 0 && (
           <div className={styles.fileSelection}>
             <span>{selected.size} · {t('panel.files.selected')}</span>
-            <button type="button" className={styles.ghost} disabled={selected.size !== 1} onClick={beginRename}>{t('panel.files.rename')}</button>
+            {selected.size === 1 && (
+              <button type="button" className={styles.ghost} onClick={beginRename}>{t('panel.files.rename')}</button>
+            )}
             <button type="button" className={styles.ghost} onClick={beginDelete}>{t('panel.files.delete')}</button>
             <button type="button" className={styles.ghost} onClick={() => { setSelected(new Set()) }}>{t('panel.files.clearSelection')}</button>
           </div>
