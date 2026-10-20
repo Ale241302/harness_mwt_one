@@ -1817,7 +1817,12 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     return res.status(429).json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'demasiadas peticiones' } })
   }
   const header = req.get('authorization') || ''
-  const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : ''
+  const headerToken = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : ''
+  // A connector UI that cannot set an Authorization header (Claude's custom
+  // connector on some builds) can present the same token as `?token=`; the
+  // gateway accepts either and never logs the query string.
+  const queryToken = typeof req.query?.token === 'string' ? req.query.token.trim() : ''
+  const token = headerToken.length > 0 ? headerToken : queryToken
   const refuse = (status, message) => {
     metrics.mcpRequests.denied += 1
     logEvent({ ev: 'mcp', result: 'denied', status, ip: req.ip })
@@ -1860,7 +1865,7 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     socketPath: path.join(owner.home, 'faberloom-mcp.sock'),
     path: '/mcp',
     method: 'POST',
-    headers: { authorization: header, 'content-type': 'application/json', 'content-length': payload.length, accept: req.get('accept') || 'application/json' },
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'content-length': payload.length, accept: req.get('accept') || 'application/json' },
   }, (reply) => {
     metrics.mcpRequests.ok += 1
     logEvent({ ev: 'mcp', result: 'ok', status: reply.statusCode || 502, owner: owner.email, ms: Date.now() - started })

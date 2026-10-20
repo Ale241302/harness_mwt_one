@@ -3156,11 +3156,32 @@ function McpBlock(props: {
   }, [])
 
   const tableRows = rows.map(row => ({ ...row, id: row.token }))
+  const allSelected = scopes.length === MCP_TOOL_NAMES.length
   const columns: readonly Column<FaberLoomMcpTokenRow & { readonly id: string }>[] = [
     { key: 'label', header: t('mcp.label'), cell: row => <span className={styles.cellName}>{row.label}</span> },
-    { key: 'token', header: t('mcp.token'), cell: row => <input type="text" readOnly value={row.token} onFocus={(event) => { event.currentTarget.select() }} /> },
+    {
+      key: 'token',
+      header: t('mcp.token'),
+      cell: row => (
+        <input className={styles.tokenValue} type="text" readOnly value={row.token}
+          aria-label={`${t('mcp.token')} ${row.label}`}
+          onFocus={(event) => { event.currentTarget.select() }} />
+      ),
+    },
     { key: 'state', header: t('col.status'), cell: row => <Chip>{row.revokedAt === null ? t('grants.active') : t('grants.revoked')}</Chip> },
     { key: 'scopes', header: t('mcp.scopes'), cell: row => <span className={styles.cellMuted}>{row.scopes === null ? t('mcp.allTools') : row.scopes.join(', ')}</span> },
+    {
+      key: 'actions',
+      header: t('mcp.actions'),
+      cell: row => row.revokedAt === null
+        ? (
+          <button className={styles.danger} type="button" onClick={() => {
+            setMessage(null)
+            void revokeMcpToken(row.token).then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
+          }}>{t('mcp.revoke')}</button>
+        )
+        : <span className={styles.cellMuted}>{t('grants.revoked')}</span>,
+    },
   ]
 
   return (
@@ -3175,7 +3196,17 @@ function McpBlock(props: {
         }}>{t('mcp.mint')}</button>
       </div>
       <Field label={t('mcp.scopes')} hint={t('mcp.scopesHint')}>
-        <span className={styles.hint}>{scopes.length === 0 ? t('mcp.allTools') : `${String(scopes.length)} ${t('mcp.selected')}`}</span>
+        <div className={styles.mcpScopeHead}>
+          <span className={styles.hint}>{allSelected ? t('mcp.allTools') : scopes.length === 0 ? t('mcp.allTools') : `${String(scopes.length)} ${t('mcp.selected')}`}</span>
+          <label className={styles.stepFlag}>
+            <input type="checkbox" checked={allSelected}
+              onChange={(event) => { setScopes(event.target.checked ? [...MCP_TOOL_NAMES] : []) }} />
+            {t('mcp.selectAll')}
+          </label>
+          {scopes.length > 0 && (
+            <button className={styles.linkButton} type="button" onClick={() => { setScopes([]) }}>{t('mcp.clearSelection')}</button>
+          )}
+        </div>
         <div className={styles.toolList}>
           {MCP_TOOL_NAMES.map(name => (
             <label className={styles.stepFlag} key={name}>
@@ -3188,21 +3219,12 @@ function McpBlock(props: {
           ))}
         </div>
       </Field>
-      <div className={styles.split}>
-        <DataTable columns={columns} rows={tableRows} selectedId={null} onSelect={() => {}}
-          emptyTitle={t('mcp.empty')} emptyText={t('mcp.emptyText')} labels={tableLabels(t)} />
+      <DataTable columns={columns} rows={tableRows} selectedId={null} onSelect={() => {}}
+        emptyTitle={t('mcp.empty')} emptyText={t('mcp.emptyText')} labels={tableLabels(t)} />
+      <div className={styles.mcpConnect}>
         <Inspector title={t('mcp.detail')}>
           <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{`${typeof window === 'undefined' || !window.location.origin.startsWith('http') ? MCP_PUBLIC_ORIGIN : window.location.origin}${MCP_ENDPOINT_PATH}`}</span></Field>
           <Field label={t('mcp.how')} hint={t('mcp.howHint')}><span className={styles.cellMuted}>{t('mcp.howText')}</span></Field>
-          <div className={styles.steps}>
-            {rows.filter(row => row.revokedAt === null).map(row => (
-              <button className={styles.danger} type="button" key={row.token}
-                onClick={() => {
-                  setMessage(null)
-                  void revokeMcpToken(row.token).then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
-                }}>{`${t('teachings.revoke')} ${row.label}`}</button>
-            ))}
-          </div>
         </Inspector>
       </div>
     </Block>

@@ -214,6 +214,45 @@
   background: var(--dsw-alias-bg-base);
 }
 
+/* The scope header keeps the count, select-all, and clear controls together
+   above the wall instead of burying the bulk action at its bottom. */
+.mcpScopeHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+/* The connection instructions are a full-width block under the token table:
+   the table needs the whole panel width for a readable bearer token. */
+.mcpConnect {
+  margin-top: 16px;
+}
+
+/* A bearer token is read whole and copied; it never wraps or truncates. */
+.tokenValue {
+  min-width: 300px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-data);
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  font: var(--dsw-font-control);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .tableCard {
   border: 0.5px solid var(--dsw-alias-border-l1, var(--dsw-alias-border-l2));
   border-radius: 12px;
