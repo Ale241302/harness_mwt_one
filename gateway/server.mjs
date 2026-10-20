@@ -1469,14 +1469,34 @@ app.get('/metrics', (_req, res) => {
 })
 
 // Marca del producto: el favicon de la app y del login es el icono FaberLoom,
-// el mismo cuadrado naranja que usa la aplicación de escritorio. El SVG de 512
-// escala sin pérdida en la pestaña, el login y el conector MCP.
-app.get([
-  '/favicon.ico', '/favicon.svg', '/faberloom_favicon32.svg',
-  '/faberloom_appicon.svg', '/faberloom_appicon512.svg',
-], (_req, res) => {
+// el mismo cuadrado naranja que usa la aplicación de escritorio. Se sirve PNG
+// en las rutas que un cliente de conectores espera como imagen raster y SVG en
+// la ruta de 512; `no-cache` evita que un favicon anterior quede pegado.
+const iconAssets = {
+  png32: path.join(import.meta.dirname, 'assets', 'faberloom_favicon32.png'),
+  png512: path.join(import.meta.dirname, 'assets', 'faberloom_appicon512.png'),
+  png180: path.join(import.meta.dirname, 'assets', 'faberloom_appicon180.png'),
+  svg512: path.join(import.meta.dirname, 'assets', 'faberloom_appicon512.svg'),
+}
+app.get(['/favicon.ico', '/favicon.png', '/faberloom_favicon32.png'], (_req, res) => {
+  res.type('image/png')
+  res.set('cache-control', 'no-cache, max-age=0, must-revalidate')
+  res.sendFile(iconAssets.png32)
+})
+app.get(['/faberloom_appicon512.png', '/apple-touch-icon.png'], (_req, res) => {
+  res.type('image/png')
+  res.set('cache-control', 'no-cache, max-age=0, must-revalidate')
+  res.sendFile(iconAssets.png512)
+})
+app.get('/faberloom_appicon180.png', (_req, res) => {
+  res.type('image/png')
+  res.set('cache-control', 'no-cache, max-age=0, must-revalidate')
+  res.sendFile(iconAssets.png180)
+})
+app.get(['/favicon.svg', '/faberloom_favicon32.svg', '/faberloom_appicon.svg', '/faberloom_appicon512.svg'], (_req, res) => {
   res.type('image/svg+xml')
-  res.sendFile(path.join(import.meta.dirname, 'assets', 'faberloom_appicon512.svg'))
+  res.set('cache-control', 'no-cache, max-age=0, must-revalidate')
+  res.sendFile(iconAssets.svg512)
 })
 
 // Tipografía de marca para las páginas sin sesión: solo se sirven los tres

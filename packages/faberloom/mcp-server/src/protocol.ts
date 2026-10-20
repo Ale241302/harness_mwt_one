@@ -115,9 +115,16 @@ export async function dispatch(host: ToolHost, message: unknown): Promise<RpcOut
         serverInfo: {
           name: 'faberloom',
           version: '0.1.6-alpha.1',
-          // The connector UI reads this when it supports MCP icons; the gateway
-          // also serves the same asset as its favicon for clients that use that.
+          // Connector UIs that support MCP icons read this list; the PNG is
+          // first because some clients reject SVG for a connector avatar. The
+          // gateway serves both at stable URLs.
+          websiteUrl: 'https://harness.mwt.one/',
           icons: [
+            {
+              src: 'https://harness.mwt.one/faberloom_appicon512.png',
+              mimeType: 'image/png',
+              sizes: ['512x512'],
+            },
             {
               src: 'https://harness.mwt.one/faberloom_appicon512.svg',
               mimeType: 'image/svg+xml',
