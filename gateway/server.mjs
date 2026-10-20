@@ -1468,9 +1468,15 @@ app.get('/metrics', (_req, res) => {
   res.type('text/plain; version=0.0.4').send(prometheus({ instances: instances.size, faberloom: faberloomMetrics() }))
 })
 
-// Marca del producto: el favicon de la app y del login es el isotipo FaberLoom.
-app.get(['/favicon.ico', '/faberloom_favicon32.svg'], (_req, res) => {
-  res.sendFile(path.join(import.meta.dirname, 'assets', 'faberloom_favicon32.svg'))
+// Marca del producto: el favicon de la app y del login es el icono FaberLoom,
+// el mismo cuadrado naranja que usa la aplicación de escritorio. El SVG de 512
+// escala sin pérdida en la pestaña, el login y el conector MCP.
+app.get([
+  '/favicon.ico', '/favicon.svg', '/faberloom_favicon32.svg',
+  '/faberloom_appicon.svg', '/faberloom_appicon512.svg',
+], (_req, res) => {
+  res.type('image/svg+xml')
+  res.sendFile(path.join(import.meta.dirname, 'assets', 'faberloom_appicon512.svg'))
 })
 
 // Tipografía de marca para las páginas sin sesión: solo se sirven los tres

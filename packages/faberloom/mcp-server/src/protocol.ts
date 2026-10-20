@@ -112,7 +112,19 @@ export async function dispatch(host: ToolHost, message: unknown): Promise<RpcOut
       return result(id, {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'faberloom', version: '0.1.6-alpha.1' },
+        serverInfo: {
+          name: 'faberloom',
+          version: '0.1.6-alpha.1',
+          // The connector UI reads this when it supports MCP icons; the gateway
+          // also serves the same asset as its favicon for clients that use that.
+          icons: [
+            {
+              src: 'https://harness.mwt.one/faberloom_appicon512.svg',
+              mimeType: 'image/svg+xml',
+              sizes: ['512x512'],
+            },
+          ],
+        },
       })
     case 'ping':
       return result(id, {})
