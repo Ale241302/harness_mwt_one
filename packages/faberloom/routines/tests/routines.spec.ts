@@ -42,6 +42,30 @@ describe('FaberLoomRoutines', () => {
     await expect(routines.getRoutineVersion(routine.id, 9)).rejects.toThrow('not found')
   })
 
+  it('accepts the permission shapes a model sends: omitted, one string, or a repeated list', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('receive', () => 'ok')
+    const steps = [{ id: 's1', instruction: 'recibir', handler: 'receive' }]
+
+    const omitted = await routines.createRoutine(OWNER, {
+      name: 'sin permisos',
+      definition: { intent: 'x', triggers: [], steps, expectedResult: 'x', failurePolicy: 'stop' } as unknown as RoutineDefinitionInput,
+    })
+    expect(omitted.definition.permissions).toEqual([])
+
+    const single = await routines.createRoutine(OWNER, {
+      name: 'un permiso',
+      definition: { ...definition(steps), permissions: 'mwt' } as unknown as RoutineDefinitionInput,
+    })
+    expect(single.definition.permissions).toEqual(['mwt'])
+
+    const repeated = await routines.createRoutine(OWNER, {
+      name: 'permisos repetidos',
+      definition: { ...definition(steps), permissions: ['mwt', ' mwt ', '', 'sicop'] } as unknown as RoutineDefinitionInput,
+    })
+    expect(repeated.definition.permissions).toEqual(['mwt', 'sicop'])
+  })
+
   it('sets a routine private and keeps it to its owner', async () => {
     const { routines } = await harness()
     const routine = await routines.createRoutine(OWNER, { name: 'privada', definition: definition([]) })

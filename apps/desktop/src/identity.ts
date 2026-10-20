@@ -213,6 +213,9 @@ export function renderIdentityPatch(
   const catalogSkillDirs = [
     ...(existsSync(join(mounted.skillsCatalogRoot, roleName)) ? [join(mounted.skillsCatalogRoot, roleName)] : []),
     ...(existsSync(mounted.skillsSharedRoot) ? [mounted.skillsSharedRoot] : []),
+    // The owner's own skills live under the home, not under the packaged
+    // catalogs; mount them explicitly because this provider disables defaults.
+    ...(existsSync(join(dshHome, 'skills')) ? [join(dshHome, 'skills')] : []),
   ]
   const mcpEntries = renderProductMcpEntries(environment, identity.email)
   return [
@@ -234,6 +237,7 @@ export function renderIdentityPatch(
     `    ownerId: ${owner}`,
     `    role: ${role}`,
     `    readOnly: ${readOnly}`,
+    '    memoryTools: true',
     '',
     '- id: faberloom-view',
     '  config:',

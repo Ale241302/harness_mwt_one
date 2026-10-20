@@ -74,6 +74,32 @@ export const DEFAULT_WAIT_TIMEOUT_MS = 24 * 60 * 60 * 1000
 /** Shortest wait policy a deployment may declare. */
 export const MIN_WAIT_TIMEOUT_MS = 60_000
 
+/**
+ * Coerce an authoring permissions value into the string list the engine stores.
+ *
+ * Models frequently omit `permissions`, send one string, or repeat entries.
+ * The old direct spread threw `input.permissions is not iterable` and left the
+ * routine as a draft; accepting the common shapes keeps the authoring path
+ * usable while still refusing non-text permissions.
+ * @param value - the permissions an author sent (array, string, or absent).
+ * @returns the de-duplicated, trimmed permission names.
+ */
+export function normalizePermissions(value: unknown): string[] {
+  if (value === undefined || value === null) return []
+  if (typeof value === 'string') {
+    const name = value.trim()
+    return name.length === 0 ? [] : [name]
+  }
+  if (Array.isArray(value)) {
+    const names = value
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map(entry => entry.trim())
+      .filter(entry => entry.length > 0)
+    return [...new Set(names)]
+  }
+  return []
+}
+
 /** Normalize an authoring definition into its stored shape. */
 function normalizeDefinition(input: RoutineDefinitionInput): RoutineDefinition {
   return {
@@ -102,7 +128,7 @@ function normalizeDefinition(input: RoutineDefinitionInput): RoutineDefinition {
       maxAttempts: step.maxAttempts ?? 1,
     })),
     expectedResult: input.expectedResult,
-    permissions: [...input.permissions],
+    permissions: normalizePermissions(input.permissions),
     failurePolicy: input.failurePolicy,
     maxConcurrency: input.maxConcurrency ?? null,
   }
@@ -136,7 +162,7 @@ function toStoredDefinition(definition: RoutineDefinition): RoutineRecord['defin
       maxAttempts: step.maxAttempts,
     })),
     expectedResult: definition.expectedResult,
-    permissions: [...definition.permissions],
+    permissions: normalizePermissions(definition.permissions),
     failurePolicy: definition.failurePolicy,
     maxConcurrency: definition.maxConcurrency,
   }

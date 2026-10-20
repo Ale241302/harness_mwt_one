@@ -145,7 +145,7 @@ interface ViewFacade {
   removeMcpServer(name: string): Promise<readonly unknown[]>
   probeMcpServer(input: Record<string, unknown>): Promise<unknown>
   routineDetail(id: string): Promise<unknown>
-  createRoutine(name: string, intent: string, spaceId?: string): Promise<unknown>
+  createRoutine(name: string, intent: string, spaceId?: string, activate?: boolean): Promise<unknown>
   saveRoutine(id: string, input: Record<string, unknown>): Promise<unknown>
   removeRoutine(id: string): Promise<unknown>
   setRoutineActive(id: string, active: boolean): Promise<unknown>
@@ -2066,7 +2066,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_routine_create',
-      description: 'Crea una rutina con nombre e intención, opcionalmente en un espacio.',
+      description: 'Crea una rutina con nombre e intención, opcionalmente en un espacio, y la deja activa.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -2079,7 +2079,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       },
     },
     run: async (context, _ownerId, args) => view(context).createRoutine(
-      required(args, 'name'), required(args, 'intent'), optional(args, 'spaceId'),
+      required(args, 'name'), required(args, 'intent'), optional(args, 'spaceId'), true,
     ),
   },
   {

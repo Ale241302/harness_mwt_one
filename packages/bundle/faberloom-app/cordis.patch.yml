@@ -123,9 +123,13 @@
     - id: faberloom-view
       name: '@deepseek-ai/dsh-faberloom-view'
 
-    # The model-facing product tools over the mounted services.
+    # The model-facing product tools over the mounted services. The explicit
+    # Space-memory tools are on so the prompt's `faberloom_spaces_remember`
+    # instruction resolves instead of failing as an unknown tool.
     - id: tool-faberloom
       name: '@deepseek-ai/dsh-tool-faberloom'
+      config:
+        memoryTools: true
 
     # The FaberLoom browser surface: identity tokens plus the global panels.
     - id: ui-faberloom

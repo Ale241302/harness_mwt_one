@@ -2092,19 +2092,44 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_routines_create',
-    description: 'Create a product routine (version 1, draft) from a definition.',
+    description: 'Create a product routine (version 1) and activate it when its definition is valid; pass draft=true to keep it as a draft.',
     parameters: {
       name: { type: 'string', required: true, description: 'Routine name.' },
       definition: { type: 'json', required: true, description: 'RoutineDefinition: intent, triggers, steps, expectedResult, permissions, failurePolicy.' },
       spaceId: { type: 'string', description: 'Space (Workspace) the routine belongs to; omit for the personal scope.' },
+      draft: { type: 'boolean', description: 'Keep the new routine as a draft instead of activating it.' },
     },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Routine ${value.id} v${String(value.version)}.` }],
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          version: { type: 'integer', required: true },
+          status: { type: 'string', required: true },
+          problem: { type: 'string' },
+        },
+      },
+      render: (_args, value) => [{
+        type: 'text',
+        text: `Routine ${value.id} v${String(value.version)} is ${value.status}${value.problem === undefined ? '' : ` (${value.problem})`}.`,
+      }],
     },
     execute: async (args) => {
-      const routine = await routines(ctx).createRoutine(actor(config).id, routineInputFromArgs(args))
-      return { id: routine.id, version: routine.version }
+      const service = routines(ctx)
+      const routine = await service.createRoutine(actor(config).id, routineInputFromArgs(args))
+      if (args.draft === true) return { id: routine.id, version: routine.version, status: routine.status }
+      try {
+        const active = await service.activateRoutine(actor(config).id, routine.id)
+        return { id: routine.id, version: routine.version, status: active.status }
+      } catch (error) {
+        return {
+          id: routine.id,
+          version: routine.version,
+          status: routine.status,
+          problem: error instanceof Error ? error.message : String(error),
+        }
+      }
     },
     presentCall: args => ({ card: 'generic', title: 'Create routine', kind: 'other', rawInput: args }),
   }))
@@ -2140,7 +2165,8 @@ export function apply(ctx: Context, config: Config): void {
     },
     /* jscpd:ignore-end */
     execute: async (args) => {
-      await authorize(ctx, config, 'faberloom.routine.activate', args.id)
+      // Activation is authoring, not an external effect: the owner asked for a
+      // routine and the engine still checks a grant before every effect step.
       const routine = await routines(ctx).activateRoutine(actor(config).id, args.id as FaberLoomRoutineId)
       return { id: routine.id, status: routine.status }
     },
@@ -2231,7 +2257,8 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Execution ${value.id} ${value.status}${value.deduped ? ' (deduped)' : ''}.` }],
     },
     execute: async (args) => {
-      await authorize(ctx, config, 'faberloom.routine.start', args.routineId)
+      // Starting is a trigger, not the effect itself: each effectful step still
+      // checks its own grant before it is allowed to touch the outside world.
       const started = await routines(ctx).startExecution({
         routineId: args.routineId as FaberLoomRoutineId,
         idempotencyKey: args.idempotencyKey,

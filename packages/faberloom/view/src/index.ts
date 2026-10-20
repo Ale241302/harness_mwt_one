@@ -26,7 +26,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, normalizePermissions } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
@@ -5455,7 +5455,7 @@ export class FaberLoomViewService extends TypertRemoteService {
           : [triggerFromSave(input, current.triggers[0])],
         steps: input.steps === undefined ? current.steps.map(mapStep) : input.steps.map(mapStep),
         expectedResult: input.expectedResult ?? current.expectedResult,
-        permissions: input.permissions === undefined ? [...current.permissions] : [...input.permissions],
+        permissions: input.permissions === undefined ? normalizePermissions(current.permissions) : normalizePermissions(input.permissions),
         failurePolicy: (input.failurePolicy ?? current.failurePolicy) as 'stop' | 'continue' | 'review',
         ...(input.maxConcurrency === undefined
           ? current.maxConcurrency === null ? {} : { maxConcurrency: current.maxConcurrency }
@@ -5801,15 +5801,17 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Create one draft routine the owner can then activate.
+   * Create one routine the owner can then activate, or activate immediately
+   * when the caller asked for a working routine (the MCP create tool does).
    * @param name - display name.
    * @param intent - the procedure the routine performs.
    * @param spaceId - Space the routine belongs to; empty or absent for the personal scope.
+   * @param activate - activate the new routine before returning.
    * @returns the refreshed overview.
    */
   @Remote('createRoutine')
-  async createRoutine(name: string, intent: string, spaceId?: string): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
+  async createRoutine(name: string, intent: string, spaceId?: string, activate?: boolean): Promise<FaberLoomOverview> {
+    const routine = await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
       name,
       ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
       definition: {
@@ -5821,6 +5823,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         failurePolicy: 'review',
       },
     })
+    if (activate === true) await this.ctx.faberloomRoutines.activateRoutine(this.actor().id, routine.id)
     return await this.overview()
   }
 
