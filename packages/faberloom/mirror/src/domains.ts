@@ -15,6 +15,11 @@
  * carried row would name a folder that does not exist on the other side in a
  * registry that ignores it. The Space is the product's travelling work area and
  * it is carried whole, memory and context included.
+ *
+ * The MCP token table is deliberately absent too. A token names the installation
+ * that minted it: copying it to the other home would make the deployment's
+ * token index claim the desktop's token, and a public call would act on the
+ * web home instead of the PC. Tokens are minted and revoked where they are used.
  * @module @deepseek-ai/dsh-faberloom-mirror/src/domains
  */
 
@@ -27,7 +32,6 @@ export const FABERLOOM_MIRROR_DOMAINS: Readonly<Record<string, readonly string[]
   faberloom_memory: ['teachings', 'teaching_versions', 'performance', 'late_errors'],
   faberloom_grants: ['grants'],
   faberloom_connections: ['connections'],
-  faberloom_mcp: ['tokens'],
   faberloom_inbound: ['cursors'],
   faberloom_workflows: ['workflows', 'versions', 'pending'],
   faberloom_context: ['entries', 'versions'],

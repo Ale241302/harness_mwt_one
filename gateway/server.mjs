@@ -1824,15 +1824,16 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     return res.status(status).json({ jsonrpc: '2.0', id: null, error: { code: -32000, message } })
   }
   if (!token) return refuse(401, 'falta el token Bearer')
-  const owner = findOwnerByMcpToken(token)
-  if (!owner) {
-    const body = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : JSON.stringify(req.body ?? {})
-    const routed = await desktopBridge.route({
-      token,
-      body,
-      accept: req.get('accept') || 'application/json',
-    })
-    if (routed === undefined) return refuse(401, 'token desconocido o revocado')
+  const body = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : JSON.stringify(req.body ?? {})
+  // A desktop token is answered by the installation that minted it, even when
+  // the mirror once copied the same row to the web home: routing by the live
+  // desktop registration first is what keeps local files and sessions local.
+  const routed = await desktopBridge.route({
+    token,
+    body,
+    accept: req.get('accept') || 'application/json',
+  })
+  if (routed !== undefined) {
     if ('offline' in routed) {
       return refuse(503, 'FaberLoom está cerrado en ese equipo; abrelo para que la petición llegue')
     }
@@ -1844,6 +1845,8 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     if (typeof routed.sessionId === 'string' && routed.sessionId.length > 0) res.setHeader('mcp-session-id', routed.sessionId)
     return res.end(routed.body)
   }
+  const owner = findOwnerByMcpToken(token)
+  if (!owner) return refuse(401, 'token desconocido o revocado')
   const stored = readUserState(owner.email)
   if (!stored) return refuse(503, 'el propietario debe entrar una vez en FaberLoom')
   try {
@@ -1852,12 +1855,12 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     console.error('[gateway] no se pudo arrancar dsh para MCP:', error.message)
     return refuse(503, 'no se pudo arrancar el harness del propietario')
   }
-  const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {}))
+  const payload = Buffer.from(body, 'utf8')
   const upstream = http.request({
     socketPath: path.join(owner.home, 'faberloom-mcp.sock'),
     path: '/mcp',
     method: 'POST',
-    headers: { authorization: header, 'content-type': 'application/json', 'content-length': body.length, accept: req.get('accept') || 'application/json' },
+    headers: { authorization: header, 'content-type': 'application/json', 'content-length': payload.length, accept: req.get('accept') || 'application/json' },
   }, (reply) => {
     metrics.mcpRequests.ok += 1
     logEvent({ ev: 'mcp', result: 'ok', status: reply.statusCode || 502, owner: owner.email, ms: Date.now() - started })
@@ -1869,7 +1872,7 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     reply.pipe(res)
   })
   upstream.on('error', () => refuse(502, 'el servidor MCP del propietario no responde'))
-  upstream.end(body)
+  upstream.end(payload)
 })
 
 app.get('/logout', (req, res) => {
