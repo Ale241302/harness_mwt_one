@@ -3224,7 +3224,7 @@ function McpBlock(props: {
       <div className={styles.mcpConnect}>
         <Inspector title={t('mcp.detail')}>
           <Field label={t('mcp.endpoint')}><span className={styles.cellMuted}>{`${typeof window === 'undefined' || !window.location.origin.startsWith('http') ? MCP_PUBLIC_ORIGIN : window.location.origin}${MCP_ENDPOINT_PATH}`}</span></Field>
-          <Field label={t('mcp.how')} hint={t('mcp.howHint')}><span className={styles.cellMuted}>{t('mcp.howText')}</span></Field>
+          <Field label={t('mcp.how')} hint={t('mcp.howHint')}><span className={styles.mcpHowText}>{t('mcp.howText')}</span></Field>
         </Inspector>
       </div>
     </Block>

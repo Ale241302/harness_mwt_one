@@ -15,7 +15,7 @@ en el PC de Álvaro.
 ## 1. Crear el token en FaberLoom de escritorio
 
 1. Abrir **FaberLoom de escritorio** e iniciar sesión.
-2. Ir a **Ajustes → Servidor MCP de FaberLoom (avanzado)**.
+2. Ir a **Configuración → Conexiones → Servidor MCP de FaberLoom (avanzado)**.
 3. Escribir un nombre en **Cliente** (por ejemplo `Claude`).
 4. En **Alcance del token**, dejar **Seleccionar todas** si Claude debe poder
    hacer todo, o marcar solo los tools que se quieran permitir. Sin ninguna

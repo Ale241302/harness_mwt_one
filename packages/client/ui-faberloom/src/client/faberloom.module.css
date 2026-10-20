@@ -231,6 +231,17 @@
   margin-top: 16px;
 }
 
+/* Prose in the connect card wraps; the table's ellipsis rule is for cells only. */
+.mcpHowText {
+  display: block;
+  max-width: none;
+  overflow: visible;
+  color: var(--dsw-alias-label-secondary);
+  white-space: normal;
+  text-overflow: clip;
+  line-height: 1.5;
+}
+
 /* A bearer token is read whole and copied; it never wraps or truncates. */
 .tokenValue {
   min-width: 300px;

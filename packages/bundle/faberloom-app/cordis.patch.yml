@@ -138,15 +138,13 @@
 - id: skill-install
   disabled: false
 
-# The Settings modal is the product's only home for the theme and the language,
-# each with its own section, so this composition does not mount the Models page
-# nor the archived-sessions page. Both packages stay in the repository for other
-# deployments; this overlay only takes their nav rows out of the product. The
-# consequence accepted here: a deployment-level provider key is no longer
-# entered from a page — those keys come from the environment (.env, with the
-# <NAME>_FILE form) and from each agent's own key field.
+# The Settings modal is the product's home for theme, language and provider
+# credentials. This composition mounts the Models page so a desktop installation
+# can enter OpenAI, Anthropic, Google, Moonshot or DeepSeek keys without editing
+# `.env`; the environment defaults still win only when no credential is stored.
+# The archived-sessions page stays out of the product.
 - id: ui-settings-models
-  disabled: true
+  disabled: false
 - id: ui-settings-unarchive-sessions
   disabled: true
 
