@@ -4436,7 +4436,11 @@ export class FaberLoomViewService extends TypertRemoteService {
         failurePolicy: parsed.failurePolicy,
       },
     })
-    return { id: String(routine.id), name: routine.name }
+    // The owner asked for a working routine from this email, not a draft.
+    // Activation validates the generated steps; a bad definition reports the
+    // exact problem instead of silently leaving the routine inactive.
+    const active = await this.ctx.faberloomRoutines.activateRoutine(actor.id, routine.id)
+    return { id: String(active.id), name: active.name }
   }
 
   /**
@@ -4636,7 +4640,8 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Create a routine draft from a proposal; it starts inactive until activated.
+   * Create a routine from a confirmed proposal and activate it; the owner
+   * clicked the create action, so the routine should be usable immediately.
    * @param text - the procedure the conversation described.
    * @param name - display name for the routine.
    * @param spaceId - Space the routine belongs to; absent for the personal scope.
@@ -4645,7 +4650,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('createRoutineFromWork')
   async createRoutineFromWork(text: string, name: string, spaceId?: string): Promise<FaberLoomOverview> {
     const intent = text.trim()
-    await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
+    const routine = await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
       name: name.trim(),
       ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
       definition: {
@@ -4657,6 +4662,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         failurePolicy: 'review',
       },
     })
+    await this.ctx.faberloomRoutines.activateRoutine(this.actor().id, routine.id)
     return await this.overview()
   }
 
