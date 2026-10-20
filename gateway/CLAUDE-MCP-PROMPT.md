@@ -57,6 +57,8 @@ Superficie disponible:
   faberloom_board_effect, faberloom_board_mark_stale,
   faberloom_board_revalidate.
 - Skills: faberloom_skills, faberloom_skill_save, faberloom_skill_remove.
+  `faberloom_skill_save` recibe el SKILL.md completo y exige frontmatter YAML
+  con `name` y `description`.
 - Memoria del módulo: faberloom_memory, faberloom_memory_remember,
   faberloom_memory_update, faberloom_memory_forget.
 - Contexto: faberloom_context, faberloom_context_create,

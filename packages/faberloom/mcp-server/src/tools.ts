@@ -1485,14 +1485,14 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_skill_save',
-      description: 'Crea o edita una skill escribiendo su SKILL.md; el nombre identifica el bundle.',
+      description: 'Crea o edita una skill escribiendo su SKILL.md completo, con frontmatter YAML que incluya name y description.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
         required: ['name', 'markdown'],
         properties: {
           name: { type: 'string', description: 'Nombre del bundle (letras, números, guiones).' },
-          markdown: { type: 'string', description: 'Contenido completo de SKILL.md.' },
+          markdown: { type: 'string', description: 'Contenido completo de SKILL.md, empezando por frontmatter YAML con name y description.' },
         },
       },
     },
