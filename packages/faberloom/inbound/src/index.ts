@@ -193,10 +193,10 @@ export class FaberLoomInbound extends Service {
    * @param limit - most envelopes to return.
    * @returns the envelopes, or an empty list when no mailbox is configured.
    */
-  async listInbox(ownerId: string, limit?: number): Promise<ImapMessage[]> {
+  async listInbox(ownerId: string, limit?: number, connectionId?: string): Promise<ImapMessage[]> {
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) return []
-    const credentials = await connections.imap(ownerId)
+    const credentials = await connections.imap(ownerId, connectionId)
     if (credentials === undefined) return []
     const max = limit ?? 25
     return await searchMessages({
@@ -220,11 +220,11 @@ export class FaberLoomInbound extends Service {
    * @param uid - the message UID.
    * @returns the decoded body, or null when no mailbox is configured or the message has no body.
    */
-  async readEmail(ownerId: string, uid: number): Promise<ImapMessageContent> {
+  async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent> {
     const empty: ImapMessageContent = { text: '', html: null, attachments: [] }
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) return empty
-    const credentials = await connections.imap(ownerId)
+    const credentials = await connections.imap(ownerId, connectionId)
     if (credentials === undefined) return empty
     return await fetchContent({
       host: credentials.host,
@@ -246,10 +246,10 @@ export class FaberLoomInbound extends Service {
    * @param uid - the message UID.
    * @returns true when the mailbox accepted the flag update, false without a mailbox.
    */
-  async markSeen(ownerId: string, uid: number): Promise<boolean> {
+  async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean> {
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) return false
-    const credentials = await connections.imap(ownerId)
+    const credentials = await connections.imap(ownerId, connectionId)
     if (credentials === undefined) return false
     return await markMessageSeen(this.bodyOptions(credentials, uid))
   }
@@ -262,10 +262,10 @@ export class FaberLoomInbound extends Service {
    * @returns the mailbox the message moved to.
    * @throws when every candidate mailbox rejects the move.
    */
-  async moveToTrash(ownerId: string, uid: number): Promise<string> {
+  async moveToTrash(ownerId: string, uid: number, connectionId?: string): Promise<string> {
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
-    const credentials = await connections.imap(ownerId)
+    const credentials = await connections.imap(ownerId, connectionId)
     if (credentials === undefined) throw new Error('faberloom: no hay un buzón IMAP configurado; añádelo en Conexiones')
     const configured = (this.config.trashMailbox ?? '').trim()
     const targets = [...new Set(configured.length > 0 ? [configured, ...TRASH_CANDIDATES] : [...TRASH_CANDIDATES])]

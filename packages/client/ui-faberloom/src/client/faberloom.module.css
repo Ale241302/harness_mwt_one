@@ -351,8 +351,8 @@
 .emailModal {
   display: flex;
   flex-direction: column;
-  width: min(880px, 92vw);
-  max-height: 88vh;
+  width: min(1160px, 95vw);
+  max-height: 92vh;
 }
 
 .emailModalContent {
@@ -376,6 +376,95 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-base);
+}
+
+.mailAttachmentCarousel {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.mailCarouselArrow {
+  flex: 0 0 26px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mailCarouselArrow:hover {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mailAttachmentTrack {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.mailAttachmentCard {
+  flex: 0 0 216px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-1);
+  scroll-snap-align: start;
+}
+
+.mailAttachmentPreview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 104px;
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: pointer;
+}
+
+.mailAttachmentPreview img,
+.mailAttachmentPreview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mailAttachmentPreview embed {
+  width: 100%;
+  height: 100%;
+}
+
+.mailAttachmentIcon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+}
+
+.mailAttachmentName {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailAttachmentMeta {
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
 }
 
 .cellLink {
@@ -455,6 +544,61 @@
   color: var(--dsw-alias-label-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Correo: the subject owns the free width; the account is a small second line. */
+.mailFrom {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.mailAccount {
+  overflow: hidden;
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailSubject {
+  display: block;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.mailAction,
+.mailActionDanger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.mailAction:hover {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.mailActionDanger:hover {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .chips {

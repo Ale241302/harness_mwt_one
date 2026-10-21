@@ -103,7 +103,7 @@ async function bench(
   const setBoardRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
   const emailInbox = vi.fn(async () => ({ ok: true, value: email.inbox ?? [] }))
-  const emailRead = vi.fn(async () => ({ ok: true, value: { text: 'cuerpo', html: null, attachments: [] } }))
+  const emailRead = vi.fn(async () => ({ ok: true, value: { account: 'alejandro@muitowork.com', text: 'cuerpo', html: null, attachments: [] } }))
   const emailMarkSeen = vi.fn(async () => ({ ok: true, value: true }))
   const emailTrash = vi.fn(async () => ({ ok: true, value: { movedTo: 'Trash' } }))
   const emailVoice = vi.fn(async () => ({ ok: true, value: [] }))

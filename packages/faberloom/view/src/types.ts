@@ -208,8 +208,12 @@ export interface FaberLoomSpaceMemoryRow {
 
 /** One mailbox envelope the Email panel lists. */
 export interface FaberLoomInboxRow {
-  /** Mailbox UID. */
+  /** Mailbox address encoded as `<connection-id>:<uid>`, or the plain UID for the primary mailbox. */
   readonly id: string
+  /** IMAP connection this envelope belongs to, or null for the legacy primary mailbox. */
+  readonly connectionId: string | null
+  /** Account that received the message, or null when the connection exposes none. */
+  readonly account: string | null
   /** `Message-ID` header, or null. */
   readonly messageId: string | null
   /** `From` header, or null. */
@@ -276,6 +280,8 @@ export interface FaberLoomEmailAttachment {
   readonly mediaType: string
   /** Byte length. */
   readonly size: number
+  /** Inline `Content-ID`, when the part is embedded in the HTML body. */
+  readonly contentId?: string
 }
 
 /** One message in the routine-designer chat. */
@@ -326,6 +332,8 @@ export interface FaberLoomSpaceFromEmail {
 
 /** One decoded message as the Email panel reads it. */
 export interface FaberLoomEmailContent {
+  /** Account that received the message, or null when unknown. */
+  readonly account: string | null
   /** Plain-text body, empty when the message carried none. */
   readonly text: string
   /** HTML body, or null when the message carried none. */

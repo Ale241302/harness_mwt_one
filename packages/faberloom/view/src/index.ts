@@ -3970,14 +3970,31 @@ export class FaberLoomViewService extends TypertRemoteService {
   async emailInbox(): Promise<readonly FaberLoomInboxRow[]> {
     const inbound = this.ctx.get('faberloomInbound')
     if (inbound === undefined) return []
-    const messages = await inbound.listInbox(this.actor().id)
-    return messages.map(message => ({
-      id: String(message.uid),
-      messageId: message.messageId,
-      from: message.from,
-      subject: message.subject,
-      date: message.date,
+    const actor = this.actor()
+    const connections = this.ctx.get('faberloomConnections')
+    const imapRows = connections === undefined
+      ? []
+      : (await connections.list(actor.id)).filter(connection => connection.kind === 'imap')
+    const accounts = imapRows.length === 0
+      ? [{ id: undefined, account: null as string | null }]
+      : imapRows.map(connection => ({ id: connection.id, account: connection.username ?? connection.label }))
+    const pages = await Promise.all(accounts.map(async (account) => {
+      const messages = await inbound.listInbox(actor.id, 25, account.id)
+      return messages.map(message => ({
+        id: account.id === undefined ? String(message.uid) : `${account.id}:${String(message.uid)}`,
+        connectionId: account.id ?? null,
+        account: account.account,
+        messageId: message.messageId,
+        from: message.from,
+        subject: message.subject,
+        date: message.date,
+      }))
     }))
+    return pages.flat().sort((left, right) => {
+      const leftAt = left.date === null ? 0 : Date.parse(left.date)
+      const rightAt = right.date === null ? 0 : Date.parse(right.date)
+      return (Number.isNaN(rightAt) ? 0 : rightAt) - (Number.isNaN(leftAt) ? 0 : leftAt)
+    })
   }
 
   /**
@@ -3987,19 +4004,18 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailRead')
   async emailRead(uid: string): Promise<FaberLoomEmailContent> {
-    const empty: FaberLoomEmailContent = { text: '', html: null, attachments: [] }
-    const inbound = this.ctx.get('faberloomInbound')
-    if (inbound === undefined) return empty
-    const id = Number(uid)
-    if (!Number.isSafeInteger(id) || id <= 0) return empty
-    const content = await inbound.readEmail(this.actor().id, id)
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
+    const connection = (await this.ctx.get('faberloomConnections')?.imap(actor.id, connectionId)) ?? undefined
     return {
+      account: connection?.username ?? null,
       text: content.text,
       html: content.html,
       attachments: content.attachments.map(attachment => ({
         name: attachment.name,
         mediaType: attachment.mediaType,
         size: attachment.size,
+        ...attachment.contentId === undefined ? {} : { contentId: attachment.contentId },
       })),
     }
   }
@@ -4011,10 +4027,15 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailMarkSeen')
   async emailMarkSeen(uid: string): Promise<boolean> {
+    const actor = this.actor()
     const inbound = this.ctx.get('faberloomInbound')
-    const id = Number(uid)
+    const split = uid.lastIndexOf(':')
+    const connectionId = split > 0 ? uid.slice(0, split) : undefined
+    const id = Number(split > 0 ? uid.slice(split + 1) : uid)
     if (inbound === undefined || !Number.isSafeInteger(id) || id <= 0) return false
-    return await inbound.markSeen(this.actor().id, id)
+    return connectionId === undefined
+      ? await inbound.markSeen(actor.id, id)
+      : await inbound.markSeen(actor.id, id, connectionId)
   }
 
   /**
@@ -4028,12 +4049,19 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailTrash')
   async emailTrash(uid: string, sender?: string, subject?: string): Promise<{ movedTo: string }> {
-    const { actor, inbound, id } = this.requireInbound(uid)
-    const movedTo = await inbound.moveToTrash(actor.id, id)
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const movedTo = connectionId === undefined
+      ? await inbound.moveToTrash(actor.id, id)
+      : await inbound.moveToTrash(actor.id, id, connectionId)
     try {
       await this.ctx.faberloomMemory.createTeaching(actor.id, {
         scope: 'global',
-        text: [`De: ${sender ?? 'desconocido'}`, `Asunto: ${subject ?? ''}`].join('\n'),
+        text: [
+          'Regla de descarte aprendida:',
+          `De: ${sender ?? 'desconocido'}`,
+          `Asunto: ${subject ?? ''}`,
+          'Decisión: mover a la papelera sin preguntar cuando el correo coincida con este remitente y patrón.',
+        ].join('\n'),
         source: 'email-trash',
         author: actor.id,
         task: 'email-trash',
@@ -4052,11 +4080,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailAttachment')
   async emailAttachment(uid: string, index: number): Promise<FaberLoomEmailAttachmentContent | undefined> {
-    const inbound = this.ctx.get('faberloomInbound')
-    if (inbound === undefined) return undefined
-    const id = Number(uid)
-    if (!Number.isSafeInteger(id) || id <= 0) return undefined
-    const content = await inbound.readEmail(this.actor().id, id)
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
     const attachment = content.attachments[index]
     return attachment === undefined
       ? undefined
@@ -4081,10 +4106,12 @@ export class FaberLoomViewService extends TypertRemoteService {
   ): Promise<{ files: readonly { name: string; path: string; bytes: number }[] }> {
     const actor = this.actor()
     const inbound = this.ctx.get('faberloomInbound')
-    const id = Number(uid)
+    const split = uid.lastIndexOf(':')
+    const connectionId = split > 0 ? uid.slice(0, split) : undefined
+    const id = Number(split > 0 ? uid.slice(split + 1) : uid)
     if (inbound === undefined || !Number.isSafeInteger(id) || id <= 0) return { files: [] }
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
-    const content = await inbound.readEmail(actor.id, id)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
     const wanted = name === undefined || name.length === 0
       ? content.attachments
       : content.attachments.filter(attachment => attachment.name === name)
@@ -4151,18 +4178,23 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param name - the space title (usually the subject).
    * @param agentId - the agent put in charge, when chosen and the space is new.
    * @param from - the sender line the browser already holds, for the seeded context.
+   * @param spaceId - an existing space to attach the email to, when chosen.
    * @returns the space, its Workspace id, and the email as a first-message seed.
    */
   @Remote('spaceFromEmail')
-  async spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<FaberLoomSpaceFromEmail> {
-    const { actor, inbound, id } = this.requireInbound(uid)
-    const title = name.trim().length === 0 ? 'Correo' : name.trim()
-    const content = await inbound.readEmail(actor.id, id)
+  async spaceFromEmail(
+    uid: string, name: string, agentId?: string, from?: string, spaceId?: string,
+  ): Promise<FaberLoomSpaceFromEmail> {
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
     // Same title means the same space: the email's files and body join the
     // existing record and the browser opens one more session there, instead of
-    // duplicating the space.
-    const existing = (await this.ctx.faberloomSpaces.list(actor))
-      .find(candidate => candidate.title.trim().toLowerCase() === title.toLowerCase())
+    // duplicating the space. An explicit target wins over the title lookup.
+    const existing = spaceId === undefined || spaceId.length === 0
+      ? (await this.ctx.faberloomSpaces.list(actor))
+        .find(candidate => candidate.title.trim().toLowerCase() === name.trim().toLowerCase())
+      : await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    const title = existing?.title ?? (name.trim().length === 0 ? 'Correo' : name.trim())
     const space = existing ?? await this.ctx.faberloomSpaces.create(actor, {
       title,
       ...agentId === undefined || agentId.length === 0 ? {} : { agentId },
@@ -4405,9 +4437,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (from !== undefined && from.length > 0) lines.push(`De: ${from}`)
     if (subject !== undefined && subject.length > 0) lines.push(`Asunto: ${subject}`)
     const inbound = this.ctx.get('faberloomInbound')
-    const id = Number(uid)
+    const split = uid.lastIndexOf(':')
+    const connectionId = split > 0 ? uid.slice(0, split) : undefined
+    const id = Number(split > 0 ? uid.slice(split + 1) : uid)
     if (inbound !== undefined && Number.isSafeInteger(id) && id > 0) {
-      const content = await inbound.readEmail(actor.id, id)
+      const content = await inbound.readEmail(actor.id, id, connectionId)
       const body = content.text.length > 0 ? content.text : content.html ?? ''
       if (body.trim().length > 0) lines.push('', 'Correo:', body.slice(0, 4000))
       if (content.attachments.length > 0) {
@@ -4511,8 +4545,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('learnFromEmail')
   async learnFromEmail(uid: string): Promise<FaberLoomEmailFacts> {
-    const { actor, inbound, id } = this.requireInbound(uid)
-    const content = await inbound.readEmail(actor.id, id)
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
     const body = content.text.length > 0 ? content.text : content.html ?? ''
     const documents = await this.emailDocuments(actor, content.attachments, [])
     const system = [
@@ -6201,13 +6235,20 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param uid - the message UID.
    * @returns the owner actor, the inbound receiver, and the numeric UID.
    */
-  private requireInbound(uid: string): { actor: SpaceActor; inbound: FaberLoomInbound; id: number } {
+  private requireInbound(uid: string): {
+    actor: SpaceActor
+    inbound: FaberLoomInbound
+    id: number
+    connectionId?: string
+  } {
     const actor = this.actor()
     const inbound = this.ctx.get('faberloomInbound')
     if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
-    const id = Number(uid)
+    const split = uid.lastIndexOf(':')
+    const connectionId = split > 0 ? uid.slice(0, split) : undefined
+    const id = Number(split > 0 ? uid.slice(split + 1) : uid)
     if (!Number.isSafeInteger(id) || id <= 0) throw new Error('faberloom: invalid message id')
-    return { actor, inbound, id }
+    return { actor, inbound, id, ...connectionId === undefined ? {} : { connectionId } }
   }
 
   /** The memory core base URL when the deployment configured the stack. */

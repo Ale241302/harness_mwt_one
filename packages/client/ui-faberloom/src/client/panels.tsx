@@ -24,7 +24,7 @@ import {
   FlIconWorkloom,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BrandWordmark, Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
-import { FileTypeIcon, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
+import { FileTypeIcon, IconCheckOutline16, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, IconTrashOutline16, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomConnection, FaberLoomExecutionRow,
@@ -231,7 +231,7 @@ export interface FaberloomPanelInjected {
     text: string,
   ) => Promise<Result<{ messageId: string; accepted: readonly string[] }>>
   /** Turn one email into a Space with its Workspace, memory, and files. */
-  spaceFromEmail: (uid: string, name: string, agentId: string | null, from: string | null) => void
+  spaceFromEmail: (uid: string, name: string, agentId: string | null, from: string | null, spaceId?: string) => void
   /** Answer one message in the routine-designer chat. */
   routineChat: (
     uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject: string | null, from: string | null,
@@ -1298,6 +1298,22 @@ function agentsScreen() {
   }
 }
 
+/** Compact mailbox date: `21/10/2026 1:19 pm`. */
+function emailDate(value: string | null): string {
+  if (value === null || value.length === 0) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const datePart = date.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const timePart = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+    .replace('AM', 'am')
+    .replace('PM', 'pm')
+  return `${datePart} ${timePart}`
+}
+
+/** Last inbox page kept across panel mounts, so re-entering Correo is instant. */
+let emailInboxCache: { readonly rows: readonly FaberLoomInboxRow[]; readonly at: number } = { rows: [], at: 0 }
+const EMAIL_INBOX_CACHE_MS = 60_000
+
 /** Correo: the mailbox envelopes and the drafts awaiting approval. */
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
@@ -1308,7 +1324,6 @@ function emailScreen() {
       openRoutines, learnFromEmail, startConversation,
     } = props
     const { overview } = useOverview(props)
-    const agentOptions = (overview?.agents ?? []).filter(agent => agent.active)
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
@@ -1329,13 +1344,44 @@ function emailScreen() {
     const [sendFilePath, setSendFilePath] = useState('')
     const [spaceOpen, setSpaceOpen] = useState(false)
     const [spaceName, setSpaceName] = useState('')
-    const [spaceAgent, setSpaceAgent] = useState('')
+    const [spaceTarget, setSpaceTarget] = useState('__new__')
     const [routineOpen, setRoutineOpen] = useState(false)
     const [routineMessages, setRoutineMessages] = useState<readonly FaberLoomRoutineChatMessage[]>([])
     const [routineInput, setRoutineInput] = useState('')
     const [routineBusy, setRoutineBusy] = useState(false)
     const [routineCreated, setRoutineCreated] = useState<FaberLoomRoutineCreated | null>(null)
-    const inbox = useLazy<readonly FaberLoomInboxRow[]>(() => emailInbox(), [reload])
+    const [inboxRows, setInboxRows] = useState<readonly FaberLoomInboxRow[]>(() => emailInboxCache.rows)
+    const [inboxState, setInboxState] = useState<'loading' | 'ready' | 'error'>(() => emailInboxCache.rows.length > 0 ? 'ready' : 'loading')
+    const [inboxError, setInboxError] = useState<string | null>(null)
+    const inboxRead = useRef(emailInbox)
+    inboxRead.current = emailInbox
+    useEffect(() => {
+      const cached = emailInboxCache.rows.length > 0 && Date.now() - emailInboxCache.at < EMAIL_INBOX_CACHE_MS
+      if (reload === 0 && cached) {
+        setInboxRows(emailInboxCache.rows)
+        setInboxState('ready')
+        return
+      }
+      let live = true
+      if (inboxRows.length === 0) setInboxState('loading')
+      setInboxError(null)
+      void inboxRead.current().then((result) => {
+        if (!live) return
+        if (!result.ok) {
+          setInboxState(inboxRows.length === 0 ? 'error' : 'ready')
+          setInboxError(result.error.message)
+          return
+        }
+        emailInboxCache = { rows: result.value, at: Date.now() }
+        setInboxRows(result.value)
+        setInboxState('ready')
+      }).catch((cause: unknown) => {
+        if (!live) return
+        setInboxState(inboxRows.length === 0 ? 'error' : 'ready')
+        setInboxError(String(cause))
+      })
+      return () => { live = false }
+    }, [reload])
     const drafts = useLazy<readonly FaberLoomEmailDraftRow[]>(() => emailDrafts(), [reload])
     const voice = useLazy<readonly FaberLoomTeachingRow[]>(() => emailVoice(), [reload])
     const policy = useLazy<FaberLoomEmailPolicy>(() => emailPolicy(), [reload])
@@ -1348,10 +1394,67 @@ function emailScreen() {
     }, [policy])
     const mailBody = useLazy<FaberLoomEmailContent>(
       () => selected === null || mode !== 'inbox'
-        ? Promise.resolve({ ok: true as const, value: { text: '', html: null, attachments: [] } })
+        ? Promise.resolve({ ok: true as const, value: { account: null, text: '', html: null, attachments: [] } })
         : emailRead(selected),
       [selected, mode],
     )
+    const [inlineHtml, setInlineHtml] = useState<string | null>(null)
+    const attachmentRead = useRef(emailAttachment)
+    attachmentRead.current = emailAttachment
+    useEffect(() => {
+      if (mailBody.kind !== 'ready' || mailBody.value.html === null || selected === null) {
+        setInlineHtml(null)
+        return
+      }
+      let live = true
+      const html = mailBody.value.html
+      const inline = mailBody.value.attachments
+        .map((attachment, index) => ({ attachment, index }))
+        .filter(entry => entry.attachment.contentId !== undefined)
+      if (inline.length === 0) {
+        setInlineHtml(html)
+        return
+      }
+      void Promise.all(inline.map(async ({ attachment, index }) => {
+        const result = await attachmentRead.current(selected, index)
+        return result.ok && result.value !== undefined && attachment.contentId !== undefined
+          ? { id: attachment.contentId, url: `data:${result.value.mediaType};base64,${result.value.contentBase64}` }
+          : undefined
+      })).then((images) => {
+        if (!live) return
+        let next = html
+        for (const image of images) {
+          if (image === undefined) continue
+          next = next.replaceAll(`cid:${image.id}`, image.url).replaceAll(`CID:${image.id}`, image.url)
+        }
+        setInlineHtml(/<meta[^>]+charset=/iu.test(next) ? next : `<meta charset="utf-8">${next}`)
+      }).catch(() => { if (live) setInlineHtml(html) })
+      return () => { live = false }
+    }, [mailBody, selected])
+    const [attachmentUrls, setAttachmentUrls] = useState<Readonly<Record<number, string>>>({})
+    const attachmentTrack = useRef<HTMLDivElement | null>(null)
+    useEffect(() => {
+      if (mailBody.kind !== 'ready' || selected === null) { setAttachmentUrls({}); return }
+      let live = true
+      const candidates = mailBody.value.attachments
+        .map((attachment, index) => ({ attachment, index }))
+        .filter(({ attachment }) => attachment.size <= 8_000_000 && /^(image|video)\/|application\/pdf/iu.test(attachment.mediaType))
+      void Promise.all(candidates.map(async ({ index }) => {
+        const result = await attachmentRead.current(selected, index)
+        if (!result.ok || result.value === undefined) return undefined
+        const url = `data:${result.value.mediaType};base64,${result.value.contentBase64}`
+        return [index, url] as const
+      })).then((entries) => {
+        if (!live) return
+        setAttachmentUrls(Object.fromEntries(entries.filter((entry): entry is readonly [number, string] => entry !== undefined)))
+      }).catch(() => { if (live) setAttachmentUrls({}) })
+      return () => { live = false }
+    }, [mailBody, selected])
+
+    /** Move the attachment strip one card at a time. */
+    const scrollAttachments = (direction: -1 | 1): void => {
+      attachmentTrack.current?.scrollBy({ left: direction * 236, behavior: 'smooth' })
+    }
 
     /** Fetch one attachment's bytes and save it through a temporary link. */
     const downloadAttachment = (uid: string, index: number, name: string): void => {
@@ -1387,7 +1490,6 @@ function emailScreen() {
         setMessage(`${t('email.sentFile')} ${result.value.messageId}`)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
-    const inboxRows = inbox.kind === 'ready' ? inbox.value : []
     const draftRows = drafts.kind === 'ready' ? drafts.value : []
     const rows: readonly { id: string }[] = mode === 'inbox' ? inboxRows : draftRows
     const chosenMail = mode === 'inbox' ? inboxRows.find(row => row.id === selected) ?? null : null
@@ -1482,12 +1584,19 @@ function emailScreen() {
       })()
     }
 
-    /** Open the "turn this email into a Space" dialog, presetting the subject. */
+    /** Open the Space picker for one email, presetting a new Space title. */
+    const openSpaceFor = (mail: FaberLoomInboxRow): void => {
+      setSelected(mail.id)
+      setComposing(false)
+      setSpaceName(mail.subject ?? '')
+      setSpaceTarget('__new__')
+      setSpaceOpen(true)
+    }
+
+    /** Open the "turn this email into a Space" dialog for the selected email. */
     const openSpace = (): void => {
       if (chosenMail === null) return
-      setSpaceName(chosenMail.subject ?? '')
-      setSpaceAgent('')
-      setSpaceOpen(true)
+      openSpaceFor(chosenMail)
     }
 
     /** Open the routine-designer chat for the chosen email. */
@@ -1559,19 +1668,87 @@ function emailScreen() {
         .catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
+    const markRead = (mail: FaberLoomInboxRow): void => {
+      setMessage(null)
+      void emailMarkSeen(mail.id).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setMessage(t('email.markedRead'))
+        setReload(value => value + 1)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    const trashMail = (mail: FaberLoomInboxRow): void => {
+      setMessage(null)
+      void emailTrash(mail.id, mail.from ?? undefined, mail.subject ?? undefined).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        const next = inboxRows.filter(row => row.id !== mail.id)
+        setInboxRows(next)
+        emailInboxCache = { rows: next, at: Date.now() }
+        if (selected === mail.id) setSelected(null)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
     const columns: readonly Column<{ id: string }>[] = mode === 'inbox'
       ? [
-        { key: 'from', header: t('col.from'), cell: row => <span className={styles.cellName}>{(row as FaberLoomInboxRow).from ?? t('cell.none')}</span> },
-        { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.cellMuted}>{(row as FaberLoomInboxRow).subject ?? t('cell.none')}</span> },
-        { key: 'date', header: t('col.date'), cell: row => <span className={styles.cellData}>{(row as FaberLoomInboxRow).date ?? ''}</span> },
+        {
+          key: 'from',
+          header: t('col.from'),
+          width: 245,
+          cell: row => (
+            <span className={styles.mailFrom}>
+              <span className={styles.cellName}>{(row as FaberLoomInboxRow).from ?? t('cell.none')}</span>
+              {(row as FaberLoomInboxRow).account === null
+                ? null
+                : <span className={styles.mailAccount}>{(row as FaberLoomInboxRow).account}</span>}
+            </span>
+          ),
+        },
+        { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.mailSubject}>{(row as FaberLoomInboxRow).subject ?? t('cell.none')}</span> },
+        { key: 'date', header: t('col.date'), width: 148, cell: row => <span className={styles.cellData}>{emailDate((row as FaberLoomInboxRow).date)}</span> },
+        {
+          key: 'actions',
+          header: t('col.actions'),
+          width: 112,
+          cell: (row) => {
+            const mail = row as FaberLoomInboxRow
+            return (
+              <span className={styles.mailActions} onClick={(event) => { event.stopPropagation() }}>
+                <button type="button" className={styles.mailAction} title={t('email.markRead')} aria-label={`${t('email.markRead')} ${mail.from ?? ''}`} onClick={() => { markRead(mail) }}>
+                  <IconCheckOutline16 size={15} />
+                </button>
+                <button type="button" className={styles.mailAction} title={t('email.toSpace')} aria-label={`${t('email.toSpace')} ${mail.from ?? ''}`} onClick={() => { openSpaceFor(mail) }}>
+                  <FlIconSpaceloom size={15} />
+                </button>
+                <button type="button" className={styles.mailActionDanger} title={t('email.trash')} aria-label={`${t('email.trash')} ${mail.from ?? ''}`} onClick={() => { trashMail(mail) }}>
+                  <IconTrashOutline16 size={15} />
+                </button>
+              </span>
+            )
+          },
+        },
       ]
       : [
         { key: 'to', header: t('col.to'), cell: row => <span className={styles.cellName}>{(row as FaberLoomEmailDraftRow).to.join(', ')}</span> },
-        { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.cellMuted}>{(row as FaberLoomEmailDraftRow).subject}</span> },
+        { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.mailSubject}>{(row as FaberLoomEmailDraftRow).subject}</span> },
         { key: 'status', header: t('col.status'), cell: row => <Chip>{(row as FaberLoomEmailDraftRow).status}</Chip> },
       ]
 
-    const tableState = mode === 'inbox' ? inbox : drafts
+    const spaceLabel = (space: FaberLoomOverview['spaces'][number]): string => {
+      const byId = new Map((overview?.spaces ?? []).map(candidate => [candidate.id, candidate]))
+      let depth = 0
+      let parent = space.parentId
+      while (parent !== null) {
+        const parentSpace = byId.get(parent)
+        if (parentSpace === undefined) break
+        depth += 1
+        parent = parentSpace.parentId
+      }
+      return `${'— '.repeat(depth)}${space.title}`
+    }
+
+    const tableState = mode === 'inbox'
+      ? { kind: inboxState, message: inboxError ?? '' }
+      : drafts
 
     return (
       <Screen title={t('panel.email.title')} subtitle={t('panel.email.intro')}
@@ -1625,46 +1802,70 @@ function emailScreen() {
               }}>{t('email.trash')}</button>
               <button className={styles.secondary} type="button" onClick={openSpace}>{t('email.toSpace')}</button>
               <button className={styles.secondary} type="button" onClick={openRoutine}>{t('routine.title')}</button>
-              <button className={styles.secondary} type="button" onClick={learn}>{t('learn.button')}</button>
+              <button className={styles.secondary} type="button" title={t('learn.hint')} onClick={learn}>{t('learn.button')}</button>
               <button className={styles.primary} type="button" onClick={() => { if (chosenMail !== null) openCompose(chosenMail) }}>{t('email.reply')}</button>
             </>
           )}>
           <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail?.from ?? t('cell.none')}</span></Field>
-          <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenMail?.date ?? ''}</span></Field>
+          <Field label={t('field.to')}><span className={styles.cellMuted}>{chosenMail?.account ?? (mailBody.kind === 'ready' ? mailBody.value.account : null) ?? t('cell.none')}</span></Field>
+          <Field label={t('col.date')}><span className={styles.cellMuted}>{emailDate(chosenMail?.date ?? null)}</span></Field>
+          {mailBody.kind === 'ready' && mailBody.value.attachments.length > 0
+            ? (
+              <Field label={t('field.attachments')} hint={t('email.saveHint')}>
+                <div className={styles.mailAttachmentCarousel}>
+                  <button className={styles.mailCarouselArrow} type="button" aria-label={t('email.previousAttachment')} onClick={() => { scrollAttachments(-1) }}>‹</button>
+                  <div className={styles.mailAttachmentTrack} ref={attachmentTrack}>
+                    {mailBody.value.attachments.map((attachment, index) => {
+                      const url = attachmentUrls[index]
+                      const image = attachment.mediaType.startsWith('image/')
+                      const video = attachment.mediaType.startsWith('video/')
+                      const pdf = attachment.mediaType === 'application/pdf'
+                      return (
+                        <div className={styles.mailAttachmentCard} key={`${attachment.name}-${String(index)}`}>
+                          <button className={styles.mailAttachmentPreview} type="button" title={attachment.name}
+                            onClick={() => { downloadAttachment(selected ?? '', index, attachment.name) }}>
+                            {url !== undefined && image
+                              ? <img src={url} alt={attachment.name} />
+                              : url !== undefined && video
+                                ? <video src={url} muted preload="metadata" />
+                                : url !== undefined && pdf
+                                  ? <embed src={url} type="application/pdf" />
+                                  : (
+                                    <span className={styles.mailAttachmentIcon}>
+                                      <FileTypeIcon kind={fileIconKind(attachment.name)} size={30} />
+                                      <span>{attachment.name.split('.').pop()?.toUpperCase() ?? ''}</span>
+                                    </span>
+                                  )}
+                          </button>
+                          <span className={styles.mailAttachmentName} title={attachment.name}>{attachment.name}</span>
+                          <span className={styles.mailAttachmentMeta}>{sizeLabel(attachment.size)}</span>
+                          <button className={styles.ghost} type="button" disabled={saveSpaceId.length === 0}
+                            onClick={() => { saveToFolder(attachment.name) }}>
+                            {t('email.saveToFolder')}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <button className={styles.mailCarouselArrow} type="button" aria-label={t('email.nextAttachment')} onClick={() => { scrollAttachments(1) }}>›</button>
+                </div>
+                <label className={styles.cellMuted} htmlFor="email-save-space">{t('email.saveTarget')}</label>
+                <select id="email-save-space" value={saveSpaceId} onChange={(event) => { setSaveSpaceId(event.target.value) }}>
+                  <option value="">{t('email.saveTargetNone')}</option>
+                  {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{spaceLabel(space)}</option>)}
+                </select>
+              </Field>
+            )
+            : null}
           <Field label={t('field.body')}>
             {mailBody.kind === 'loading'
               ? <span className={styles.cellMuted}>{t('state.loading')}</span>
               : mailBody.kind === 'error'
                 ? <span className={styles.cellMuted}>{mailBody.message}</span>
                 : mailBody.value.html !== null
-                  ? <iframe className={styles.emailHtml} sandbox="" srcDoc={mailBody.value.html} title={t('field.body')} />
+                  ? <iframe className={styles.emailHtml} sandbox="" referrerPolicy="no-referrer" srcDoc={inlineHtml ?? mailBody.value.html} title={t('field.body')} />
                   : <textarea className={styles.emailBody} readOnly value={mailBody.value.text.length === 0 ? t('email.noBody') : mailBody.value.text} />}
           </Field>
-          {mailBody.kind === 'ready' && mailBody.value.attachments.length > 0
-            ? (
-              <Field label={t('field.attachments')} hint={t('email.saveHint')}>
-                <div className={styles.steps}>
-                  {mailBody.value.attachments.map((attachment, index) => (
-                    <span className={styles.tools} key={`${attachment.name}-${String(index)}`}>
-                      <button className={styles.rowAction} type="button"
-                        onClick={() => { downloadAttachment(selected ?? '', index, attachment.name) }}>
-                        {`${attachment.name} · ${String(attachment.size)}`}{' B'}
-                      </button>
-                      <button className={styles.ghost} type="button" disabled={saveSpaceId.length === 0}
-                        onClick={() => { saveToFolder(attachment.name) }}>
-                        {t('email.saveToFolder')}
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <label className={styles.cellMuted} htmlFor="email-save-space">{t('email.saveTarget')}</label>
-                <select id="email-save-space" value={saveSpaceId} onChange={(event) => { setSaveSpaceId(event.target.value) }}>
-                  <option value="">{t('email.saveTargetNone')}</option>
-                  {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
-                </select>
-              </Field>
-            )
-            : null}
         </Modal>
         <Modal open={spaceOpen} onClose={() => { setSpaceOpen(false) }} title={t('email.toSpace')} closeLabel={t('action.close')}
           className={String(styles.emailModal)} contentClassName={String(styles.emailModalContent)}
@@ -1673,19 +1874,29 @@ function emailScreen() {
               <button className={styles.ghost} type="button" onClick={() => { setSpaceOpen(false) }}>{t('action.cancel')}</button>
               <button className={styles.primary} type="button" onClick={() => {
                 setMessage(null)
-                spaceFromEmail(selected ?? '', spaceName.trim(), spaceAgent.length === 0 ? null : spaceAgent, chosenMail?.from ?? null)
+                spaceFromEmail(
+                  selected ?? '',
+                  spaceTarget === '__new__' ? spaceName.trim() : '',
+                  null,
+                  chosenMail?.from ?? null,
+                  spaceTarget === '__new__' ? undefined : spaceTarget,
+                )
                 setSpaceOpen(false)
                 setSelected(null)
-              }}>{t('action.create')}</button>
+              }}>{spaceTarget === '__new__' ? t('action.create') : t('action.add')}</button>
             </>
           )}>
-          <Field label={t('email.spaceName')}><input type="text" autoComplete="off" value={spaceName} onChange={(event) => { setSpaceName(event.target.value) }} /></Field>
-          <Field label={t('col.agent')}>
-            <select value={spaceAgent} onChange={(event) => { setSpaceAgent(event.target.value) }}>
-              <option value="">{t('spaces.noAgent')}</option>
-              {agentOptions.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+          <Field label={t('email.spaceTarget')} hint={t('email.spaceTargetHint')}>
+            <select value={spaceTarget} onChange={(event) => { setSpaceTarget(event.target.value) }}>
+              <option value="__new__">{t('email.newSpace')}</option>
+              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{spaceLabel(space)}</option>)}
             </select>
           </Field>
+          {spaceTarget === '__new__' && (
+            <Field label={t('email.spaceName')}>
+              <input type="text" autoComplete="off" value={spaceName} onChange={(event) => { setSpaceName(event.target.value) }} />
+            </Field>
+          )}
         </Modal>
         <Modal open={routineOpen} onClose={() => { setRoutineOpen(false) }} title={t('routine.title')} closeLabel={t('action.close')}
           className={String(styles.emailModal)} contentClassName={String(styles.emailModalContent)}
