@@ -85,6 +85,19 @@ describe('deriveGroups', () => {
     expect(groups[0]!.sessions.map(session => session.id)).toEqual([sid('older'), sid('newer')])
   })
 
+  it('marks a Workspace nested in another Workspace with its depth and parent', () => {
+    const sessions = list()
+    const parent = { ...workspace('parent', []), path: '/projects/parent' }
+    const child = { ...workspace('child', []), path: '/projects/parent/child' }
+    const grandchild = { ...workspace('grand', []), path: '/projects/parent/child/grand' }
+    const groups = deriveGroups(sessions, [parent, child, grandchild], noArchive, noAttention, view([]))
+    expect(groups.map(group => [group.key, group.depth, group.parentKey])).toEqual([
+      ['parent', 0, undefined],
+      ['child', 1, 'parent'],
+      ['grand', 2, 'child'],
+    ])
+  })
+
   it('projects pending-interaction state into grouped and flat rows', () => {
     const awaiting = { ...summary('awaiting', 10), running: true }
     const sessions = list(awaiting)

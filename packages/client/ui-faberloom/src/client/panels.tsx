@@ -69,6 +69,8 @@ export interface FaberloomPanelInjected {
   startConversation: () => void
   /** Create a space (root or sub-space) in charge of an optional agent, and refresh. */
   createSpace: (title: string, agentId: string | null, parentId: string | null, inheritContext: boolean) => void
+  /** Adopt an existing folder as a new space (or sub-space) and refresh. */
+  createSpaceFromFolder: (title: string, path: string, parentId: string | null) => Promise<Result<FaberLoomOverview>>
   /** Remove one space, its Workspace, and its conversation area. */
   deleteSpace: (id: string) => void
   /** Open the space's Workspace in the sidebar conversation area. */
@@ -423,11 +425,19 @@ function useLazy<T>(run: () => Promise<Result<T>>, deps: readonly unknown[]) {
 
 /** Reads the shared overview and triggers the first load when a screen mounts. */
 function useOverview(props: ScreenProps) {
-  const { useStore, load } = props
+  const { useStore, load, usePanelInfo } = props
   const overview = useStore(state => state.overview)
   const status = useStore(state => state.status)
   const error = useStore(state => state.lastError)
+  const active = usePanelInfo === undefined ? true : usePanelInfo(info => info.activePanelId !== null)
   useEffect(() => { if (overview === null) load() }, [overview, load])
+  // A Workspace added from the sidebar is adopted by the host when the overview
+  // is read. Keep the active panel's copy fresh without a full restart.
+  useEffect(() => {
+    if (!active) return
+    const timer = setInterval(() => { load() }, 5_000)
+    return () => { clearInterval(timer) }
+  }, [active, load])
   return { overview, status, error }
 }
 
@@ -467,6 +477,27 @@ function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null 
   return <StateBlock kind="error" title={t('state.writeError')} text={message} />
 }
 
+/** One Espacios row with its computed tree position. */
+type SpaceTableRow = FaberLoomOverview['spaces'][number] & {
+  readonly depth: number
+  readonly childCount: number
+  readonly parentTitle: string | null
+}
+
+/** Every descendant id under one space, using the already-built child index. */
+function descendantSpaceIds(children: ReadonlyMap<string, readonly string[]>, id: string): Set<string> {
+  const out = new Set<string>()
+  const walk = (parent: string): void => {
+    for (const child of children.get(parent) ?? []) {
+      if (out.has(child)) continue
+      out.add(child)
+      walk(child)
+    }
+  }
+  walk(id)
+  return out
+}
+
 /** Espacios: list, create, and rename. */
 function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
@@ -487,18 +518,70 @@ function spacesScreen() {
     const [spaceAgentId, setSpaceAgentId] = useState('')
     const [spacePrompt, setSpacePrompt] = useState('')
     const [parentId, setParentId] = useState('')
+    const [parentDraft, setParentDraft] = useState('')
     const [newInherit, setNewInherit] = useState(true)
     const [creating, setCreating] = useState(false)
+    const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
     const [shared, setShared] = useState<readonly FaberLoomSharedSessionRow[]>([])
     const [grants, setGrants] = useState<readonly FaberLoomShareGrantRow[]>([])
     const [grantOpen, setGrantOpen] = useState(false)
     const [grantEmail, setGrantEmail] = useState('')
     const [grantPermissions, setGrantPermissions] = useState<readonly string[]>([])
     const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
-    const rows = useMemo(
-      () => (overview?.spaces ?? []).filter(space => space.title.toLowerCase().includes(query.trim().toLowerCase())),
-      [overview, query],
-    )
+    const spaceList = overview?.spaces ?? []
+    const byId = useMemo(() => new Map(spaceList.map(space => [space.id, space])), [spaceList])
+    const children = useMemo(() => {
+      const map = new Map<string, string[]>()
+      for (const space of spaceList) {
+        if (space.parentId === null || !byId.has(space.parentId)) continue
+        const list = map.get(space.parentId) ?? []
+        list.push(space.id)
+        map.set(space.parentId, list)
+      }
+      return map
+    }, [spaceList, byId])
+    const rows = useMemo(() => {
+      const needle = query.trim().toLowerCase()
+      const keep = new Set<string>()
+      if (needle.length > 0) {
+        const mark = (id: string): void => {
+          if (keep.has(id)) return
+          keep.add(id)
+          const space = byId.get(id)
+          if (space?.parentId !== null && space?.parentId !== undefined) mark(space.parentId)
+        }
+        for (const space of spaceList) {
+          if (!space.title.toLowerCase().includes(needle)) continue
+          mark(space.id)
+          for (const child of descendantSpaceIds(children, space.id)) keep.add(child)
+        }
+      }
+      const out: SpaceTableRow[] = []
+      const visit = (id: string, depth: number): void => {
+        const space = byId.get(id)
+        if (space === undefined) return
+        const childIds = children.get(id) ?? []
+        if (needle.length === 0 && !expanded.has(id)) {
+          // Roots are always visible; a child appears only after its parent opens.
+          if (depth > 0) return
+        }
+        if (needle.length > 0 && !keep.has(id)) return
+        const parent = space.parentId === null ? undefined : byId.get(space.parentId)
+        out.push({
+          ...space,
+          depth,
+          childCount: childIds.length,
+          parentTitle: parent?.title ?? null,
+        })
+        if (needle.length > 0 || expanded.has(id)) {
+          for (const child of childIds) visit(child, depth + 1)
+        }
+      }
+      for (const space of spaceList) {
+        if (space.parentId === null || !byId.has(space.parentId)) visit(space.id, 0)
+      }
+      return out
+    }, [query, spaceList, byId, children, expanded])
     const detail = useLazy<FaberLoomSpaceDetail | undefined>(
       () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : spaceDetail(selected),
       [selected],
@@ -512,6 +595,7 @@ function spacesScreen() {
     useEffect(() => {
       if (detail.kind !== 'ready' || detail.value === undefined) return
       setTitle(detail.value.title)
+      setParentDraft(detail.value.parentId ?? '')
       setInherit(detail.value.inheritContext)
       setMembers(detail.value.members.join(', '))
       setSpaceAgentId(detail.value.agentId ?? '')
@@ -574,16 +658,40 @@ function spacesScreen() {
       })
     }
 
-    const columns: readonly Column<FaberLoomOverview['spaces'][number]>[] = [
+    const columns: readonly Column<SpaceTableRow>[] = [
       {
         key: 'title',
         header: t('col.name'),
         cell: space => (
-          <button className={styles.cellLink} type="button" title={t('spaces.openWorkspace')}
-            onClick={(event) => { event.stopPropagation(); goToWorkspace(space.id) }}>{space.title}</button>
+          <span className={styles.spaceTitle} style={{ paddingLeft: `${space.depth * 20}px` }}>
+            {space.childCount === 0
+              ? <span className={styles.spaceToggleSpacer} aria-hidden="true" />
+              : (
+                <button
+                  className={styles.spaceToggle}
+                  type="button"
+                  aria-label={t('spaces.toggleChildren')}
+                  aria-expanded={expanded.has(space.id)}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setExpanded((current) => {
+                      const next = new Set(current)
+                      if (next.has(space.id)) next.delete(space.id)
+                      else next.add(space.id)
+                      return next
+                    })
+                  }}
+                >
+                  <IconChevronRightOutline14 className={expanded.has(space.id) ? styles.caretOpen : undefined} />
+                </button>
+              )}
+            {space.depth > 0 && <span className={styles.spaceBranch} aria-hidden="true">↳</span>}
+            <button className={styles.cellLink} type="button" title={space.folderPath}
+              onClick={(event) => { event.stopPropagation(); goToWorkspace(space.id) }}>{space.title}</button>
+          </span>
         ),
       },
-      { key: 'parent', header: t('col.parent'), cell: space => <span className={styles.cellMuted}>{space.parentId ?? t('spaces.root')}</span> },
+      { key: 'parent', header: t('col.parent'), cell: space => <span className={styles.cellMuted}>{space.parentTitle ?? t('spaces.root')}</span> },
       { key: 'agent', header: t('col.agent'), cell: space => <span className={styles.cellMuted}>{space.agentName ?? t('spaces.noAgent')}</span> },
     ]
 
@@ -638,6 +746,7 @@ function spacesScreen() {
                     setMessage(null)
                     void saveSpace(selected, {
                       title,
+                      parentId: parentDraft.length === 0 ? null : parentDraft,
                       inheritContext: inherit,
                       members: members.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
                       agentId: spaceAgentId.length === 0 ? null : spaceAgentId,
@@ -660,7 +769,17 @@ function spacesScreen() {
                     : (
                       <>
                         <Field label={t('field.name')}><input type="text" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
-                        <Field label={t('field.parent')}><span className={styles.cellMuted}>{detail.value.parentId ?? t('spaces.root')}</span></Field>
+                        <Field label={t('field.parent')} hint={t('spaces.moveHint')}>
+                          <select value={parentDraft} onChange={(event) => { setParentDraft(event.target.value) }}>
+                            <option value="">{t('spaces.noParent')}</option>
+                            {spaceList
+                              .filter(space => space.id !== selected && !descendantSpaceIds(children, selected ?? '').has(space.id))
+                              .map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+                          </select>
+                        </Field>
+                        <Field label={t('spaces.folder')}>
+                          <span className={styles.cellMuted}>{spaceList.find(space => space.id === selected)?.folderPath ?? ''}</span>
+                        </Field>
                         <Field label={t('col.agent')}>
                           <select value={spaceAgentId} onChange={(event) => { setSpaceAgentId(event.target.value) }}>
                             <option value="">{t('spaces.noAgent')}</option>
@@ -4784,16 +4903,18 @@ interface FileGroup {
 /** Files: a Space's folder grouped by the Session that wrote each file, or as a plain tree. */
 function filesScreen() {
   return function FaberloomFiles(props: ScreenProps) {
-    const { t, spaceTree, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, useSessions } = props
+    const { t, spaceTree, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, createSpaceFromFolder, useSessions } = props
     const { overview } = useOverview(props)
     const sessionsById = useSessions(state => state.byId)
     const sessions = useMemo(() => Object.values(sessionsById ?? {}), [sessionsById])
-    // Two Spaces can mirror the same folder (one row per machine).
+    // Two Spaces can mirror the same folder (one row per machine); the folder,
+    // not the title, is the identity: sibling sub-spaces may share a title.
     const spaces = useMemo(() => {
       const seen = new Set<string>()
       return (overview?.spaces ?? []).filter((space) => {
-        if (seen.has(space.title)) return false
-        seen.add(space.title)
+        const key = space.folderPath.length === 0 ? space.id : space.folderPath
+        if (seen.has(key)) return false
+        seen.add(key)
         return true
       })
     }, [overview])
@@ -4849,6 +4970,40 @@ function filesScreen() {
         else next.add(key)
         return next
       })
+    }
+
+    // A selected folder can become a sub-space of the folder's current Space.
+    const selectedFolder = useMemo(() => {
+      if (selected.size !== 1) return undefined
+      const [key] = [...selected]
+      if (key === undefined) return undefined
+      const [spaceId, path] = key.split('\u0000')
+      if (spaceId === undefined || path === undefined) return undefined
+      const tree = trees[spaceId]
+      const entry = tree?.entries.find(candidate => candidate.path === path)
+      if (tree === undefined || entry === undefined || entry.kind !== 'directory') return undefined
+      const separator = tree.root.includes('\\') ? '\\' : '/'
+      const absolute = `${tree.root.replace(/[\\/]+$/u, '')}${separator}${path.split('/').join(separator)}`
+      return { spaceId, path, name: entry.name, absolute }
+    }, [selected, trees])
+
+    const selectedFolderIsSpace = selectedFolder !== undefined
+      && (overview?.spaces ?? []).some(space => space.folderPath === selectedFolder.absolute)
+
+    const convertFolder = (): void => {
+      if (selectedFolder === undefined) return
+      setBusy(`${selectedFolder.spaceId}\u0000${selectedFolder.path}`)
+      setError(null)
+      setNotice(null)
+      void createSpaceFromFolder(selectedFolder.name, selectedFolder.absolute, selectedFolder.spaceId)
+        .then((result) => {
+          if (!result.ok) { setError(result.error.message); return }
+          setNotice(t('spaces.converted'))
+          setSelected(new Set())
+          reloadSpace(selectedFolder.spaceId)
+        })
+        .catch((cause: unknown) => { setError(String(cause)) })
+        .finally(() => { setBusy(null) })
     }
 
     const sessionOf = (root: string, at: string): SessionSummary | undefined => {
@@ -5101,6 +5256,11 @@ function filesScreen() {
             <span>{selected.size} · {t('panel.files.selected')}</span>
             {selected.size === 1 && (
               <button type="button" className={styles.ghost} onClick={beginRename}>{t('panel.files.rename')}</button>
+            )}
+            {selectedFolder !== undefined && !selectedFolderIsSpace && (
+              <button type="button" className={styles.secondary} onClick={convertFolder} disabled={busy !== null}>
+                {t('spaces.convertFolder')}
+              </button>
             )}
             <button type="button" className={styles.ghost} onClick={beginDelete}>{t('panel.files.delete')}</button>
             <button type="button" className={styles.ghost} onClick={() => { setSelected(new Set()) }}>{t('panel.files.clearSelection')}</button>

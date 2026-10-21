@@ -17,6 +17,8 @@ import { registerMcpTools } from './mcp.ts'
 import { planeStartFields, resolveCallerAgentId, toolSourcesOf } from './plane.ts'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
 import type { FaberLoomSpaceId, FaberLoomSpaces, SpaceActor, SpaceContext, SpaceReference, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
+// Type-only: resolves ctx.faberloomView so a created space materializes its folder.
+import type {} from '@deepseek-ai/dsh-faberloom-view'
 // Type-only: the agents service, read through ctx.get like the spaces service.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomAgents, FaberLoomModelId, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 // Type-only: resolves the ctx.faberloomAgentPlane declaration used through ctx.get.
@@ -634,6 +636,13 @@ export function apply(ctx: Context, config: Config): void {
         title: args.title,
         ...args.parentId === undefined ? {} : { parentId: args.parentId as FaberLoomSpaceId },
       })
+      // Materialize the Space's folder (nested under its parent) through the
+      // view service; a deployment without it still returns the record.
+      try {
+        await ctx.get('faberloomView')?.openSpaceWorkspace(String(space.id))
+      } catch (error: unknown) {
+        ctx.logger.warn(`faberloom: no se pudo crear la carpeta del espacio ${String(space.id)}: ${String(error)}`)
+      }
       return { id: space.id, title: space.title }
     },
     presentCall: args => ({ card: 'generic', title: 'Create product space', kind: 'other', rawInput: args }),

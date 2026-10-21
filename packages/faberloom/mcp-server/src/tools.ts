@@ -339,6 +339,14 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         title: required(args, 'title'),
         ...parentId === undefined ? {} : { parentId: parentId as FaberLoomSpaceId },
       })
+      try {
+        const view = (context as unknown as {
+          get(name: string): { openSpaceWorkspace(id: string): Promise<unknown> } | undefined
+        }).get('faberloomView')
+        await view?.openSpaceWorkspace(String(space.id))
+      } catch (error: unknown) {
+        context.logger.warn(`faberloom: no se pudo crear la carpeta del espacio ${String(space.id)}: ${String(error)}`)
+      }
       return { id: String(space.id), title: space.title, version: space.version }
     },
   },

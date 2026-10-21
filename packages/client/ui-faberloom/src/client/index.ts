@@ -123,6 +123,11 @@ export function apply(ctx: ClientContext): void {
       createSpace: (title, agentId, parentId, inheritContext) => {
         write(() => ctx.remote.faberloomView.createSpace(title, agentId ?? undefined, parentId ?? undefined, inheritContext))
       },
+      createSpaceFromFolder: (title, path, parentId) => {
+        const run = ctx.remote.faberloomView.createSpaceFromFolder(title, path, parentId ?? undefined)
+        write(() => run)
+        return run
+      },
       deleteSpace: (id) => { write(() => ctx.remote.faberloomView.deleteSpace(id)) },
       goToWorkspace: (spaceId) => {
         void ctx.remote.faberloomView.openSpaceWorkspace(spaceId).then(async (result) => {

@@ -254,6 +254,26 @@ function SessionTree({
     [list, workspaces, archivedSessionIds, pendingInteractions, expandedGroups, ungroupedSessionIds],
   )
   useEffect(() => {
+    if (currentGroup === undefined) return
+    const byKey = new Map(groups.map(group => [group.key, group]))
+    let group = byKey.get(currentGroup)
+    while (group?.parentKey !== undefined) {
+      const parentKey = group.parentKey
+      if (groupExpansion[parentKey] !== true) setGroupExpanded(parentKey, true)
+      group = byKey.get(parentKey)
+    }
+  }, [currentGroup, groupExpansion, groups, setGroupExpanded])
+  // A sub-space's Workspace only appears after its enclosing folder is open.
+  const visibleGroups = useMemo(() => {
+    const byKey = new Map(groups.map(group => [group.key, group]))
+    const canShow = (group: (typeof groups)[number]): boolean => {
+      if (group.parentKey === undefined) return true
+      const parent = byKey.get(group.parentKey)
+      return parent !== undefined && parent.expanded && canShow(parent)
+    }
+    return groups.filter(canShow)
+  }, [groups])
+  useEffect(() => {
     if (revealGroup === undefined || groupExpansion[revealGroup] === true) return
     setGroupExpanded(revealGroup, true)
   }, [groupExpansion, revealGroup, setGroupExpanded])
@@ -346,10 +366,10 @@ function SessionTree({
         role="tree"
         aria-label={t('section.sessions')}
       >
-        {groups.length === 0 && (
+        {visibleGroups.length === 0 && (
           <div className={css.empty}>{t('empty.none')}</div>
         )}
-        {groups.map((group) => {
+        {visibleGroups.map((group) => {
           const workspaceId = group.workspaceId
           const collapsed = collapsedSessionRows(group.sessions)
           const sessionsExpanded = expandedSessionGroups.includes(group.key)

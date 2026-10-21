@@ -450,9 +450,22 @@ export class FaberLoomSpaces extends Service {
   async update(actor: SpaceActor, id: FaberLoomSpaceId, patch: UpdateSpaceInput): Promise<FaberLoomSpace> {
     const { table, record } = await this.requireRecord(id)
     if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    if (patch.parentId !== undefined && patch.parentId !== null) {
+      if (patch.parentId === id) throw new Error('faberloom: a space cannot be its own parent')
+      const parent = table.get(patch.parentId)
+      if (parent === undefined) throw new Error(`faberloom: parent space ${patch.parentId} not found`)
+      if (!await this.mayManage(patch.parentId, parent, actor)) throw new Error('faberloom: identity cannot manage this space')
+      let cursorId: FaberLoomSpaceId | undefined = patch.parentId
+      while (cursorId !== undefined) {
+        if (cursorId === id) throw new Error('faberloom: a space cannot be nested under one of its descendants')
+        const cursor = table.get(cursorId)
+        cursorId = cursor?.parentId ?? undefined
+      }
+    }
     const next: SpaceRecord = {
       ...record,
       title: patch.title ?? record.title,
+      parentId: patch.parentId === undefined ? record.parentId : patch.parentId,
       inheritContext: patch.inheritContext ?? record.inheritContext,
       excluded: patch.excluded !== undefined ? [...patch.excluded] : record.excluded,
       members: patch.members !== undefined ? [...patch.members] : record.members,

@@ -119,6 +119,8 @@ export interface ImportSharedSpaceInput {
 export interface UpdateSpaceInput {
   /** New display title. */
   readonly title?: string
+  /** New parent space, or `null` to promote the space to a root. */
+  readonly parentId?: FaberLoomSpaceId | null
   /** New inheritance switch. */
   readonly inheritContext?: boolean
   /** New exclusion list. */

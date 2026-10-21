@@ -5,10 +5,10 @@
  * argument, so a panel cannot ask for another owner's rows.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { stat, rename, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -1189,6 +1189,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         agentId: space.agentId ?? null,
         agentName: space.agentId === undefined ? null : agentById.get(space.agentId) ?? null,
         workspaceId: workspace === undefined ? null : String(workspace.id),
+        folderPath: dir,
       }
     }))
     const sharedRoutineIds = await this.sharedLocalIds()
@@ -3049,6 +3050,61 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Turn an existing folder into a Space. The folder is adopted in place as a
+   * root; with a parent, a folder outside that parent is moved inside it first,
+   * so the Workspaces sidebar can render the same nesting.
+   * @param title - display title; defaults to the folder name.
+   * @param path - absolute existing folder.
+   * @param parentId - parent Space when this is a sub-space.
+   * @returns the refreshed overview.
+   */
+  @Remote('createSpaceFromFolder')
+  async createSpaceFromFolder(title: string, path: string, parentId?: string): Promise<FaberLoomOverview> {
+    const actor = this.actor()
+    const registry = this.workspaceRegistryOrUndefined()
+    let folder = resolve(path)
+    if (!existsSync(folder) || !statSync(folder).isDirectory()) {
+      throw new Error('faberloom: la carpeta elegida no existe o no es una carpeta')
+    }
+    const parent = parentId === undefined || parentId.length === 0
+      ? undefined
+      : await this.ctx.faberloomSpaces.get(actor, parentId as FaberLoomSpaceId)
+    if (parent !== undefined) {
+      const parentWorkspace = await this.ensureSpaceWorkspace(actor, parent)
+      if (parentWorkspace !== undefined) {
+        if (folder === parentWorkspace.path || isInsidePath(folder, parentWorkspace.path)) {
+          throw new Error('faberloom: la carpeta no puede contener al espacio padre')
+        }
+        if (!isInsidePath(parentWorkspace.path, folder)) {
+          const target = this.uniqueDirectory(parentWorkspace.path, basename(folder))
+          try {
+            await rename(folder, target)
+          } catch (error) {
+            try {
+              cpSync(folder, target, { recursive: true })
+            } catch (copyError) {
+              throw new Error(`faberloom: no se pudo mover la carpeta al espacio padre: ${String(copyError)}`, { cause: copyError })
+            }
+            await rm(folder, { recursive: true, force: true })
+            this.ctx.logger.warn(`faberloom: carpeta movida por copia (rename falló: ${String(error)})`)
+          }
+          folder = target
+        }
+      }
+    }
+    const display = title.trim().length === 0 ? basename(folder) : title.trim()
+    const workspace = registry === undefined
+      ? undefined
+      : registry.list().find(candidate => candidate.path === folder) ?? await registry.create(folder, display)
+    await this.ctx.faberloomSpaces.create(actor, {
+      title: display,
+      ...parent === undefined ? {} : { parentId: parent.id },
+      ...workspace === undefined ? {} : { workspaceId: String(workspace.id) },
+    })
+    return await this.overview()
+  }
+
+  /**
    * Remove a space permanently: drop its Workspace registration, delete its
    * conversation directory, and delete the space record with its attached
    * files.
@@ -3059,6 +3115,9 @@ export class FaberLoomViewService extends TypertRemoteService {
   async deleteSpace(id: string): Promise<FaberLoomOverview> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    if ((await this.ctx.faberloomSpaces.list(actor)).some(candidate => candidate.parentId === space.id)) {
+      throw new Error('faberloom: eliminá o mové primero los sub-espacios de este espacio')
+    }
     const dir = await this.resolveSpaceDir(actor, space)
     const registry = this.workspaceRegistryOrUndefined()
     const existing = space.workspaceId === undefined
@@ -4936,14 +4995,106 @@ export class FaberLoomViewService extends TypertRemoteService {
       const existing = registry.get(space.workspaceId as WorkspaceId)
       if (existing !== undefined) return existing
     }
-    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
-    const dir = join(this.dshHome(), 'spaces', ref.ref)
+    // A sub-space is a real folder inside its parent's folder: that physical
+    // nesting is what lets the Workspaces sidebar show the same hierarchy.
+    let base = join(this.dshHome(), 'spaces')
+    if (space.parentId !== undefined) {
+      const parent = await this.ctx.faberloomSpaces.get(actor, space.parentId)
+      const parentWorkspace = await this.ensureSpaceWorkspace(actor, parent)
+      if (parentWorkspace !== undefined) base = parentWorkspace.path
+    }
+    const dir = this.uniqueDirectory(base, this.spaceFolderName(space.title))
     mkdirSync(dir, { recursive: true })
     const workspace = await registry.create(dir, space.title)
     if (space.workspaceId !== String(workspace.id)) {
       await this.ctx.faberloomSpaces.update(actor, space.id, { workspaceId: String(workspace.id) })
     }
     return workspace
+  }
+
+  /**
+   * Move a space's folder under a new parent, carrying its files and every
+   * descendant folder. Existing conversations stay in the archived session set;
+   * the moved folders get fresh Workspace registrations at their new paths.
+   * @param actor - acting identity.
+   * @param space - the space before the parent change.
+   * @param parentId - the destination parent, or null for the spaces root.
+   */
+  private async relocateSpace(actor: SpaceActor, space: FaberLoomSpace, parentId: FaberLoomSpaceId | null): Promise<void> {
+    const registry = this.workspaceRegistryOrUndefined()
+    if (parentId !== null) {
+      let cursor = await this.ctx.faberloomSpaces.get(actor, parentId)
+      while (true) {
+        if (cursor.id === space.id) throw new Error('faberloom: un espacio no puede moverse dentro de sí mismo')
+        if (cursor.parentId === undefined) break
+        cursor = await this.ctx.faberloomSpaces.get(actor, cursor.parentId)
+      }
+    }
+    const oldDir = await this.resolveSpaceDir(actor, space)
+    if (!existsSync(oldDir)) return
+    let base = join(this.dshHome(), 'spaces')
+    if (parentId !== null) {
+      const parent = await this.ctx.faberloomSpaces.get(actor, parentId)
+      const parentWorkspace = await this.ensureSpaceWorkspace(actor, parent)
+      if (parentWorkspace !== undefined) base = parentWorkspace.path
+    }
+    if (oldDir === base || dirname(oldDir) === base) return
+    const target = this.uniqueDirectory(base, basename(oldDir))
+    try {
+      await rename(oldDir, target)
+    } catch (error) {
+      // A different volume cannot rename across mount points; copy and then
+      // remove the source only after the copy completed.
+      try {
+        cpSync(oldDir, target, { recursive: true })
+      } catch (copyError) {
+        throw new Error(`faberloom: no se pudo mover la carpeta del espacio: ${String(copyError)}`, { cause: copyError })
+      }
+      await rm(oldDir, { recursive: true, force: true })
+      this.ctx.logger.warn(`faberloom: carpeta movida por copia (rename falló: ${String(error)})`)
+    }
+    if (registry === undefined) return
+    const affected: { space: FaberLoomSpace; oldDir: string; newDir: string; oldWorkspaceId?: string }[] = []
+    for (const candidate of await this.ctx.faberloomSpaces.list(actor)) {
+      if (candidate.ownerId !== actor.id) continue
+      const dir = await this.resolveSpaceDir(actor, candidate)
+      if (dir !== oldDir && !dir.startsWith(`${oldDir}${sep}`)) continue
+      affected.push({
+        space: candidate,
+        oldDir: dir,
+        newDir: `${target}${dir.slice(oldDir.length)}`,
+        ...candidate.workspaceId === undefined ? {} : { oldWorkspaceId: candidate.workspaceId },
+      })
+    }
+    for (const entry of affected) {
+      const workspace = await registry.create(entry.newDir, entry.space.title)
+      await this.ctx.faberloomSpaces.update(actor, entry.space.id, { workspaceId: String(workspace.id) })
+    }
+    for (const entry of affected) {
+      if (entry.oldWorkspaceId === undefined) continue
+      await registry.archiveSessionsUnder(entry.oldDir)
+      await registry.delete(entry.oldWorkspaceId as WorkspaceId)
+    }
+  }
+
+  /** A filesystem-safe folder name for a newly created Space. */
+  private spaceFolderName(title: string): string {
+    const clean = title
+      .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, '-')
+      .replace(/^[. ]+|[. ]+$/gu, '')
+      .trim()
+    return clean.length === 0 ? 'espacio' : clean.slice(0, 80)
+  }
+
+  /** First free `<base>/<name>` (then `<name>-2`, `<name>-3`, …). */
+  private uniqueDirectory(base: string, name: string): string {
+    const first = join(base, name)
+    if (!existsSync(first)) return first
+    for (let suffix = 2; suffix < 10_000; suffix += 1) {
+      const candidate = join(base, `${name}-${String(suffix)}`)
+      if (!existsSync(candidate)) return candidate
+    }
+    throw new Error('faberloom: no hay un nombre de carpeta libre para el espacio')
   }
 
   /**
@@ -5025,8 +5176,17 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('saveSpace')
   async saveSpace(id: string, input: SpaceSaveInput): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomSpaces.update(this.actor(), id as FaberLoomSpaceId, {
+    const actor = this.actor()
+    const current = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const nextParent = input.parentId === undefined
+      ? current.parentId ?? null
+      : input.parentId === null || input.parentId.length === 0 ? null : input.parentId as FaberLoomSpaceId
+    if (nextParent !== (current.parentId ?? null)) {
+      await this.relocateSpace(actor, current, nextParent)
+    }
+    await this.ctx.faberloomSpaces.update(actor, id as FaberLoomSpaceId, {
       ...input.title === undefined ? {} : { title: input.title },
+      ...input.parentId === undefined ? {} : { parentId: nextParent },
       ...input.inheritContext === undefined ? {} : { inheritContext: input.inheritContext },
       ...input.members === undefined ? {} : { members: [...input.members] },
       ...input.agentId === undefined ? {} : { agentId: input.agentId },

@@ -393,6 +393,53 @@
   text-decoration: underline;
 }
 
+/* Espacios tree: the disclosure control sits left of the name and the branch
+   glyph makes a child readable as a child even before the parent is expanded. */
+.spaceTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.spaceToggle,
+.spaceToggleSpacer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+.spaceToggle {
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.spaceToggle:hover {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.spaceToggle > svg {
+  transition: transform 120ms ease;
+}
+
+.spaceToggle > svg:not(.caretOpen) {
+  transform: rotate(0deg);
+}
+
+.spaceBranch {
+  color: var(--dsw-alias-label-caption);
+  font-size: 13px;
+  line-height: 1;
+}
+
 .summary {
   display: block;
   color: var(--dsw-alias-label-secondary);

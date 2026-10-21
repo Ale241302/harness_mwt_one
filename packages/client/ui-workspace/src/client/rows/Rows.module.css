@@ -96,6 +96,17 @@
   box-sizing: border-box;
 }
 
+/* A nested sub-space points at its enclosing folder before the folder icon. */
+.nestArrow {
+  flex: none;
+  width: 14px;
+  margin-right: 1px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 1;
+  text-align: center;
+}
+
 .projectRow .rowActions {
   height: 20px;
 }

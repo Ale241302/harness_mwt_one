@@ -26,6 +26,8 @@ export interface FaberLoomSpaceRow {
   readonly agentName: string | null
   /** The registered Workspace for the space's conversation area, or null when none is registered. */
   readonly workspaceId: string | null
+  /** Absolute folder backing the space on this host. */
+  readonly folderPath: string
 }
 
 /** One Space in the connectivity map: its responsible agent and mirrored workspace. */
@@ -554,6 +556,8 @@ export interface FaberLoomSpaceDetail {
 export interface SpaceSaveInput {
   /** New display title. */
   readonly title?: string
+  /** New parent space, or null to promote the space to a root. */
+  readonly parentId?: string | null
   /** New inheritance switch. */
   readonly inheritContext?: boolean
   /** New member list, replaced wholesale. */

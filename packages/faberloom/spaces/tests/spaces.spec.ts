@@ -51,6 +51,20 @@ describe('FaberLoomSpaces', () => {
       .rejects.toThrow('identity cannot manage this space')
   })
 
+  it('moves a space under another and refuses cycles', async () => {
+    const { spaces } = await harness()
+    const parent = await spaces.create(SONDEL, { title: 'Padre' })
+    const child = await spaces.create(SONDEL, { title: 'Hijo', parentId: parent.id })
+    const other = await spaces.create(SONDEL, { title: 'Otro' })
+
+    await expect(spaces.update(SONDEL, parent.id, { parentId: child.id }))
+      .rejects.toThrow('cannot be nested under one of its descendants')
+    await expect(spaces.update(SONDEL, parent.id, { parentId: parent.id }))
+      .rejects.toThrow('cannot be its own parent')
+    expect((await spaces.update(SONDEL, child.id, { parentId: other.id })).parentId).toBe(other.id)
+    expect((await spaces.update(SONDEL, child.id, { parentId: null })).parentId).toBeUndefined()
+  })
+
   it('stores the responsible agent on the space and shares it across a parent and its sub-space', async () => {
     const { spaces } = await harness()
     const parent = await spaces.create(SONDEL, { title: 'Padre', agentId: 'agent-1' })
