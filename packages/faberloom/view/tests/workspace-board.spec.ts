@@ -337,7 +337,7 @@ describe('FaberLoomViewService space lifecycle', () => {
       { title: 'Marluvas', agentId: 'a1' },
     )
     expect(entities).toHaveLength(1)
-    expect(existsSync(join(home, 'spaces', 'fw_abc123'))).toBe(true)
+    expect(existsSync(join(home, 'spaces', 'Marluvas'))).toBe(true)
   })
 
   it('creates a sub-space under a parent, sharing or changing the agent', async () => {
