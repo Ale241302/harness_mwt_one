@@ -26,6 +26,7 @@ async function harness() {
   await ctx.plugin(FaberLoomAccess)
   await ctx.plugin(FaberLoomRoutines)
   ctx.faberloomRoutines.registerHandler('receive', () => 'ok')
+  ctx.faberloomRoutines.registerHandler('agent', () => 'ok')
   const registered = new Map<string, CapturedTool>()
   const stub = {
     tools: { register: (definition: CapturedTool) => { registered.set(definition.name, definition); return () => {} } },
@@ -53,6 +54,25 @@ describe('routine chat tools', () => {
     expect(created.status).toBe('active')
     expect((await ctx.faberloomRoutines.getRoutine(created.id as never)).status).toBe('active')
     expect((await ctx.faberloomRoutines.getRoutine(created.id as never)).definition.permissions).toEqual([])
+  })
+
+  it('accepts the model-shaped definition that used to stay in draft', async () => {
+    const { ctx, tools } = await harness()
+    const created = await tools.get('faberloom_routines_create')!.execute({
+      name: 'Forma del modelo',
+      definition: {
+        intent: 'Saludar',
+        triggers: [{ type: 'manual' }],
+        steps: [{ id: 'paso-1', title: 'hola', type: 'manual' }],
+        expectedResult: 'saludo',
+        failurePolicy: { onStepFailure: 'stop' },
+      },
+    } as never) as { id: string; status: string }
+
+    expect(created.status).toBe('active')
+    const routine = await ctx.faberloomRoutines.getRoutine(created.id as never)
+    expect(routine.definition.steps[0]).toMatchObject({ instruction: 'hola', handler: 'agent' })
+    expect(routine.definition.failurePolicy).toBe('stop')
   })
 
   it('keeps the draft escape hatch and does not require a grant to activate', async () => {

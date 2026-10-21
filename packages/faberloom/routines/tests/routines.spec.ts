@@ -66,6 +66,25 @@ describe('FaberLoomRoutines', () => {
     expect(repeated.definition.permissions).toEqual(['mwt', 'sicop'])
   })
 
+  it('normalizes the definition shape a model invents and still activates it', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('agent', () => 'ok')
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'forma del modelo',
+      definition: {
+        intent: 'saludar',
+        triggers: [{ type: 'manual' }],
+        steps: [{ id: 's1', title: 'hola', type: 'manual' }],
+        expectedResult: 'saludo',
+        failurePolicy: { onStepFailure: 'stop' },
+      } as unknown as RoutineDefinitionInput,
+    })
+    expect(routine.definition.triggers[0]?.kind).toBe('manual')
+    expect(routine.definition.steps[0]).toMatchObject({ id: 's1', instruction: 'hola', handler: 'agent' })
+    expect(routine.definition.failurePolicy).toBe('stop')
+    expect((await routines.activateRoutine(OWNER, routine.id)).status).toBe('active')
+  })
+
   it('sets a routine private and keeps it to its owner', async () => {
     const { routines } = await harness()
     const routine = await routines.createRoutine(OWNER, { name: 'privada', definition: definition([]) })

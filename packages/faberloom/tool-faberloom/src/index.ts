@@ -2095,7 +2095,11 @@ export function apply(ctx: Context, config: Config): void {
     description: 'Create a product routine (version 1) and activate it when its definition is valid; pass draft=true to keep it as a draft.',
     parameters: {
       name: { type: 'string', required: true, description: 'Routine name.' },
-      definition: { type: 'json', required: true, description: 'RoutineDefinition: intent, triggers, steps, expectedResult, permissions, failurePolicy.' },
+      definition: {
+        type: 'json',
+        required: true,
+        description: 'RoutineDefinition: {intent, triggers:[{kind:"manual"|"email"|"recurrence"|"event"|"date", match?}], steps:[{id, instruction, handler:"agent"|"mcp"|"wait"|"email.send"|"email.followup"|"email.extract-spreadsheet-link"|"backup", dependsOn?:string[], effect?:boolean}], expectedResult, permissions?:string[], failurePolicy:"stop"|"continue"|"review"}. Use handler "agent" for a manual instruction; external writes need effect:true.',
+      },
       spaceId: { type: 'string', description: 'Space (Workspace) the routine belongs to; omit for the personal scope.' },
       draft: { type: 'boolean', description: 'Keep the new routine as a draft instead of activating it.' },
     },
