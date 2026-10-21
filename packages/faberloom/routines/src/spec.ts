@@ -49,7 +49,7 @@ function storedHandler(value: unknown): string {
 const stepRecord = z.object({
   id: z.string().default('step'),
   instruction: z.string().default(''),
-  handler: z.preprocess(storedHandler, z.string()),
+  handler: z.string().optional(),
   dependsOn: z.array(z.string()).default([]),
   // Kind-specific configuration; defaulted so routine versions written before
   // the field existed keep loading under the same domain version.
@@ -67,16 +67,18 @@ const stepRecord = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   type: z.string().optional(),
-}).transform(({ title, description, type: _type, ...step }) => ({
+}).transform(({ title, description, type, ...step }) => ({
   ...step,
+  handler: storedHandler(step.handler ?? type),
   instruction: step.instruction.trim().length > 0 ? step.instruction : (title ?? description ?? '').trim(),
 }))
 
 /** Durable trigger. */
 const triggerRecord = z.object({
-  kind: z.preprocess(storedTriggerKind, z.union([
+  kind: z.union([
     z.literal('manual'), z.literal('event'), z.literal('email'), z.literal('date'), z.literal('recurrence'),
-  ])),
+  ]).optional(),
+  type: z.string().optional(),
   match: z.string().nullable().default(null),
   // Schedule fields default so routine versions written before them keep loading.
   timezone: z.string().nullable().default(null),
@@ -84,7 +86,10 @@ const triggerRecord = z.object({
   windowFrom: z.number().nullable().default(null),
   windowTo: z.number().nullable().default(null),
   businessDays: z.boolean().default(false),
-})
+}).transform(({ type, ...trigger }) => ({
+  ...trigger,
+  kind: storedTriggerKind(trigger.kind ?? type),
+}))
 
 /** Durable routine definition. */
 const definitionRecord = z.object({
