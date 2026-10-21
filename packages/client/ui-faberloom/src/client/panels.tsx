@@ -1318,7 +1318,7 @@ const EMAIL_INBOX_CACHE_MS = 60_000
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
-      t, emailInbox, emailRead, emailAttachment, saveAttachmentToSpace, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailDrafts,
+      t, emailInbox, emailRead, emailAttachment, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailDrafts,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, emailPolicy, saveEmailPolicy, spaceFromEmail, routineChat, routineFromEmail,
       openRoutines, learnFromEmail, startConversation,
@@ -1339,7 +1339,6 @@ function emailScreen() {
     const [aiText, setAiText] = useState<string | null>(null)
     const [replyBody, setReplyBody] = useState<string | null>(null)
     const [attachments, setAttachments] = useState<readonly string[]>([])
-    const [saveSpaceId, setSaveSpaceId] = useState('')
     const [sendSpaceId, setSendSpaceId] = useState('')
     const [sendFilePath, setSendFilePath] = useState('')
     const [spaceOpen, setSpaceOpen] = useState(false)
@@ -1468,16 +1467,6 @@ function emailScreen() {
         link.download = name
         link.click()
         URL.revokeObjectURL(url)
-      }).catch((cause: unknown) => { setMessage(String(cause)) })
-    }
-    /** Save one attachment into the chosen space's folder as a real file. */
-    const saveToFolder = (name: string): void => {
-      if (saveSpaceId.length === 0 || chosenMail === null) return
-      void saveAttachmentToSpace(saveSpaceId, chosenMail.id, name).then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
-        setMessage(result.value.files.length === 0
-          ? t('state.error')
-          : `${t('email.savedToFolder')} ${result.value.files.map(file => file.path).join(', ')}`)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
     /** Mail one file that lives in the chosen space's folder. */
@@ -1733,6 +1722,16 @@ function emailScreen() {
         { key: 'status', header: t('col.status'), cell: row => <Chip>{(row as FaberLoomEmailDraftRow).status}</Chip> },
       ]
 
+    const spaceOptions = useMemo(() => {
+      const seen = new Set<string>()
+      return (overview?.spaces ?? []).filter((space) => {
+        const key = `${space.parentId ?? ''}\u0000${space.title}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+    }, [overview])
+
     const spaceLabel = (space: FaberLoomOverview['spaces'][number]): string => {
       const byId = new Map((overview?.spaces ?? []).map(candidate => [candidate.id, candidate]))
       let depth = 0
@@ -1839,21 +1838,12 @@ function emailScreen() {
                           </button>
                           <span className={styles.mailAttachmentName} title={attachment.name}>{attachment.name}</span>
                           <span className={styles.mailAttachmentMeta}>{sizeLabel(attachment.size)}</span>
-                          <button className={styles.ghost} type="button" disabled={saveSpaceId.length === 0}
-                            onClick={() => { saveToFolder(attachment.name) }}>
-                            {t('email.saveToFolder')}
-                          </button>
                         </div>
                       )
                     })}
                   </div>
                   <button className={styles.mailCarouselArrow} type="button" aria-label={t('email.nextAttachment')} onClick={() => { scrollAttachments(1) }}>›</button>
                 </div>
-                <label className={styles.cellMuted} htmlFor="email-save-space">{t('email.saveTarget')}</label>
-                <select id="email-save-space" value={saveSpaceId} onChange={(event) => { setSaveSpaceId(event.target.value) }}>
-                  <option value="">{t('email.saveTargetNone')}</option>
-                  {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{spaceLabel(space)}</option>)}
-                </select>
               </Field>
             )
             : null}
@@ -1889,7 +1879,7 @@ function emailScreen() {
           <Field label={t('email.spaceTarget')} hint={t('email.spaceTargetHint')}>
             <select value={spaceTarget} onChange={(event) => { setSpaceTarget(event.target.value) }}>
               <option value="__new__">{t('email.newSpace')}</option>
-              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{spaceLabel(space)}</option>)}
+              {spaceOptions.map(space => <option key={space.id} value={space.id}>{spaceLabel(space)}</option>)}
             </select>
           </Field>
           {spaceTarget === '__new__' && (
@@ -5130,7 +5120,9 @@ function filesScreen() {
     const spaces = useMemo(() => {
       const seen = new Set<string>()
       return (overview?.spaces ?? []).filter((space) => {
-        const key = space.folderPath.length === 0 ? space.id : space.folderPath
+        // Old duplicate Spaces mirror the same title under the same parent.
+        // Sibling sub-spaces may share a title, so parent + title is the key.
+        const key = `${space.parentId ?? ''}\u0000${space.title}`
         if (seen.has(key)) return false
         seen.add(key)
         return true

@@ -351,7 +351,7 @@
 .emailModal {
   display: flex;
   flex-direction: column;
-  width: min(1160px, 95vw);
+  width: min(1480px, 96vw);
   max-height: 92vh;
 }
 
@@ -401,7 +401,8 @@
 
 .mailAttachmentTrack {
   display: flex;
-  gap: 8px;
+  flex: 1;
+  gap: 10px;
   min-width: 0;
   overflow-x: auto;
   scroll-snap-type: x proximity;
@@ -409,13 +410,13 @@
 }
 
 .mailAttachmentCard {
-  flex: 0 0 216px;
+  flex: 0 0 276px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 7px;
+  gap: 5px;
+  padding: 8px;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
   scroll-snap-align: start;
 }
@@ -424,7 +425,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 104px;
+  height: 132px;
   overflow: hidden;
   padding: 0;
   border: none;

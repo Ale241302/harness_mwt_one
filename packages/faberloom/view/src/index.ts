@@ -1162,7 +1162,9 @@ export class FaberLoomViewService extends TypertRemoteService {
       this.ctx.faberloomRoutines.listRoutines(actor.id),
       this.readMemory(),
     ])
-    const activeSpaces = spaces.filter(space => !space.archived)
+    // Keep archived Spaces available to the sidebar and the move dialog: an
+    // archived Space still mirrors a visible Workspace, and hiding it made the
+    // move dialog claim the Workspace had no Space.
     const registry = this.workspaceRegistryOrUndefined()
     // Mirror each shared Space's Sessions into this host, so a member sees the
     // owner's transcripts and the owner sees the member's. The console round-trip
@@ -1182,7 +1184,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       led.push(space.id)
       spacesByAgent.set(space.agentId, led)
     }
-    const rows = await Promise.all(activeSpaces.map(async (space): Promise<FaberLoomSpaceRow> => {
+    const rows = await Promise.all(spaces.map(async (space): Promise<FaberLoomSpaceRow> => {
       const dir = await this.resolveSpaceDir(actor, space)
       const workspace = registry?.list().find(candidate => candidate.path === dir)
       return {

@@ -4,7 +4,7 @@
  * sub-space, a sub-space changes parent, or a sub-space returns to the root.
  * The host moves the folder with its files and sub-spaces.
  */
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
@@ -173,9 +173,19 @@ export function WorkspaceMoveDialog({ useStore, actions, load, move, t }: MoveDi
     return () => { live = false }
   }, [actions, request])
 
+  const uniqueSpaces = useMemo(() => {
+    const seen = new Set<string>()
+    return spaces.filter((space) => {
+      const key = `${space.parentId ?? ''}\u0000${space.title}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [spaces])
   if (request === null) return null
-  const current = spaces.find(space => space.workspaceId === request.workspaceId)
-  const blocked = current === undefined ? new Set<string>() : descendantsOf(spaces, current.id)
+  const current = uniqueSpaces.find(space => space.workspaceId === request.workspaceId)
+    ?? spaces.find(space => space.workspaceId === request.workspaceId)
+  const blocked = current === undefined ? new Set<string>() : descendantsOf(uniqueSpaces, current.id)
   if (current !== undefined) blocked.add(current.id)
   const submit = (): void => {
     if (current === undefined) return
@@ -210,9 +220,9 @@ export function WorkspaceMoveDialog({ useStore, actions, load, move, t }: MoveDi
               <Field label={t('workspaces.moveParent')} hint={t('workspaces.moveHint')}>
                 <select value={parentId} onChange={(event) => { actions.setParent(event.target.value) }}>
                   <option value="">{t('workspaces.moveRoot')}</option>
-                  {spaces
+                  {uniqueSpaces
                     .filter(space => !blocked.has(space.id))
-                    .map(space => <option key={space.id} value={space.id}>{targetLabel(spaces, space)}</option>)}
+                    .map(space => <option key={space.id} value={space.id}>{targetLabel(uniqueSpaces, space)}</option>)}
                 </select>
               </Field>
               {message === null ? null : <span className={styles.cellMuted}>{message}</span>}
