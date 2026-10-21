@@ -1151,8 +1151,10 @@ export class FaberLoomViewService extends TypertRemoteService {
         this.ctx.logger.warn(`faberloom: shared content refresh failed: ${error instanceof Error ? error.message : String(error)}`)
       })
     }
-    // Make the Spaces panel mirror the sidebar before reading the rows.
+    // Make the Spaces panel mirror the sidebar before reading the rows, then
+    // repair folder-backed spaces whose physical nesting predates parentId.
     await this.adoptOrphanWorkspaces(actor)
+    await this.repairSpaceParents(actor)
     const [spaces, agents, board, routines, memory] = await Promise.all([
       this.ctx.faberloomSpaces.list(actor),
       this.ctx.faberloomAgents.listAgents(),
@@ -5214,6 +5216,40 @@ export class FaberLoomViewService extends TypertRemoteService {
         anchored.add(id)
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: could not adopt the workspace '${workspace.path}' as a space: ${String(error)}`)
+      }
+    }
+  }
+
+  /**
+   * Repair the hierarchy of spaces created before physical nesting was
+   * recorded: a root space whose folder lives inside another space's folder
+   * becomes that space's child. Existing explicit parents are never changed.
+   * @param actor - the acting identity.
+   */
+  private async repairSpaceParents(actor: SpaceActor): Promise<void> {
+    if (actor.readOnly) return
+    const spaces = (await this.ctx.faberloomSpaces.list(actor)).filter(space => space.ownerId === actor.id)
+    const dirs = new Map<string, string>()
+    const ids = new Set(spaces.map(space => String(space.id)))
+    for (const space of spaces) dirs.set(String(space.id), await this.resolveSpaceDir(actor, space))
+    for (const space of spaces) {
+      if (space.parentId !== undefined && ids.has(String(space.parentId))) continue
+      const dir = dirs.get(String(space.id)) ?? ''
+      if (dir.length === 0) continue
+      let parent: FaberLoomSpace | undefined
+      let parentLength = -1
+      for (const candidate of spaces) {
+        if (candidate.id === space.id) continue
+        const candidateDir = dirs.get(String(candidate.id)) ?? ''
+        if (candidateDir.length <= parentLength || !isInsidePath(candidateDir, dir) || candidateDir === dir) continue
+        parent = candidate
+        parentLength = candidateDir.length
+      }
+      if (parent === undefined) continue
+      try {
+        await this.ctx.faberloomSpaces.update(actor, space.id, { parentId: parent.id })
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: no se pudo reparar el padre de ${space.title}: ${String(error)}`)
       }
     }
   }

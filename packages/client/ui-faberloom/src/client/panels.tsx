@@ -5260,9 +5260,10 @@ function filesScreen() {
     const sessionOf = (spaceId: string, root: string, at: string): SessionSummary | undefined => {
       const stamp = Date.parse(at)
       const space = spaceById.get(spaceId)
-      const workspace = space?.workspaceId === null || space?.workspaceId === undefined
+      const workspace = (space?.workspaceId === null || space?.workspaceId === undefined
         ? undefined
-        : workspaceItems.find(candidate => String(candidate.workspaceId) === space.workspaceId)
+        : workspaceItems.find(candidate => String(candidate.workspaceId) === space.workspaceId))
+        ?? workspaceItems.find(candidate => sameDirectory(candidate.path, root))
       const memberIds = new Set(workspace?.sessionIds.map(String) ?? [])
       let best: SessionSummary | undefined
       for (const session of sessions) {
