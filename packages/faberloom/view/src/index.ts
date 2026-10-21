@@ -3979,16 +3979,22 @@ export class FaberLoomViewService extends TypertRemoteService {
       ? [{ id: undefined, account: null as string | null }]
       : imapRows.map(connection => ({ id: connection.id, account: connection.username ?? connection.label }))
     const pages = await Promise.all(accounts.map(async (account) => {
-      const messages = await inbound.listInbox(actor.id, 25, account.id)
-      return messages.map(message => ({
-        id: account.id === undefined ? String(message.uid) : `${account.id}:${String(message.uid)}`,
-        connectionId: account.id ?? null,
-        account: account.account,
-        messageId: message.messageId,
-        from: message.from,
-        subject: message.subject,
-        date: message.date,
-      }))
+      try {
+        const messages = await inbound.listInbox(actor.id, 25, account.id)
+        return messages.map(message => ({
+          id: account.id === undefined ? String(message.uid) : `${account.id}:${String(message.uid)}`,
+          connectionId: account.id ?? null,
+          account: account.account,
+          messageId: message.messageId,
+          from: message.from,
+          subject: message.subject,
+          date: message.date,
+        }))
+      } catch (error: unknown) {
+        // One broken mailbox must not hide the other connected accounts.
+        this.ctx.logger.warn(`faberloom: no se pudo leer la cuenta ${account.account ?? 'primaria'}: ${error instanceof Error ? error.message : String(error)}`)
+        return []
+      }
     }))
     return pages.flat().sort((left, right) => {
       const leftAt = left.date === null ? 0 : Date.parse(left.date)
