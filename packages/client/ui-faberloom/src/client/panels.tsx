@@ -481,7 +481,6 @@ function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null 
 type SpaceTableRow = FaberLoomOverview['spaces'][number] & {
   readonly depth: number
   readonly childCount: number
-  readonly parentTitle: string | null
 }
 
 /** Every descendant id under one space, using the already-built child index. */
@@ -561,17 +560,13 @@ function spacesScreen() {
         const space = byId.get(id)
         if (space === undefined) return
         const childIds = children.get(id) ?? []
-        if (needle.length === 0 && !expanded.has(id)) {
-          // Roots are always visible; a child appears only after its parent opens.
-          if (depth > 0) return
-        }
+        // The caller only visits a child after its parent is expanded; this
+        // node's own expansion controls its children, not its own visibility.
         if (needle.length > 0 && !keep.has(id)) return
-        const parent = space.parentId === null ? undefined : byId.get(space.parentId)
         out.push({
           ...space,
           depth,
           childCount: childIds.length,
-          parentTitle: parent?.title ?? null,
         })
         if (needle.length > 0 || expanded.has(id)) {
           for (const child of childIds) visit(child, depth + 1)
@@ -691,7 +686,6 @@ function spacesScreen() {
           </span>
         ),
       },
-      { key: 'parent', header: t('col.parent'), cell: space => <span className={styles.cellMuted}>{space.parentTitle ?? t('spaces.root')}</span> },
       { key: 'agent', header: t('col.agent'), cell: space => <span className={styles.cellMuted}>{space.agentName ?? t('spaces.noAgent')}</span> },
     ]
 

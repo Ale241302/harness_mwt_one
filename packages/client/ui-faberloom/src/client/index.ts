@@ -31,6 +31,7 @@ import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { FaberloomBrandName, FaberloomBrandMark, FABERLOOM_SECTIONS, sectionBadge, type FaberloomPanelInjected } from './panels.tsx'
 import { McpServersSection, type McpServersSectionInjected } from './mcp-servers-section.tsx'
 import { WorkspaceShareDialog, WorkspaceShareMenuItem, createWorkspaceShareStore, type WorkspaceShareInjected } from './workspace-share.tsx'
+import { WorkspaceMoveDialog, WorkspaceMoveMenuItem, createWorkspaceMoveStore, type WorkspaceMoveInjected } from './workspace-move.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
 import { runTaskChat } from './task-chat.ts'
@@ -450,6 +451,40 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({}),
   }, WorkspaceShareMenuItem))
+
+  // Move / promote a Space from the same row menu. The overlay host owns the
+  // dialog so selecting a parent survives the menu closing.
+  const workspaceMove = createWorkspaceMoveStore()
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'faberloom-workspace-move',
+    store: workspaceMove,
+    locale: NS,
+    inject: (): WorkspaceMoveInjected => ({
+      load: async () => {
+        const result = await ctx.remote.faberloomView.overview()
+        if (!result.ok) throw new Error(result.error.message)
+        return result.value
+      },
+      move: async (spaceId, parentId) => {
+        const result = await ctx.remote.faberloomView.saveSpace(spaceId, { parentId })
+        if (!result.ok) return { ok: false, message: result.error.message }
+        if (actions !== undefined) {
+          latestOverview = result.value
+          actions.setOverview(result.value)
+        }
+        return { ok: true, message: '' }
+      },
+    }),
+  }, WorkspaceMoveDialog))
+  ctx.slots.inject('sidebar.workspaces.rowMenu', () => ctx.slots.register({
+    name: 'sidebar.workspaces.rowMenu',
+    id: 'faberloom-move',
+    order: -90,
+    store: workspaceMove,
+    locale: NS,
+    inject: () => ({}),
+  }, WorkspaceMoveMenuItem))
 
   // Event-driven refresh: the harness forwards session activity, so a space or
   // agent created during a conversation appears without a reload. Throttled so a
