@@ -5,6 +5,7 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomAccess from '../../access/src/index.ts'
 import FaberLoomRoutines from '../src/index.ts'
+import { routineVersionRecord } from '../src/spec.ts'
 import type { ExecutionReview, RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput } from '../src/index.ts'
 
 /** Boot the storage/domain composition plus the routines service over one pool. */
@@ -83,6 +84,25 @@ describe('FaberLoomRoutines', () => {
     expect(routine.definition.steps[0]).toMatchObject({ id: 's1', instruction: 'hola', handler: 'agent' })
     expect(routine.definition.failurePolicy).toBe('stop')
     expect((await routines.activateRoutine(OWNER, routine.id)).status).toBe('active')
+  })
+
+  it('loads a legacy version row whose model-shaped definition used undefined fields', () => {
+    const parsed = routineVersionRecord.parse({
+      routineId: 'legacy',
+      version: 1,
+      createdAt: '2026-10-20T00:00:00.000Z',
+      definition: {
+        intent: 'saludar',
+        triggers: [{ type: 'manual' }],
+        steps: [{ id: 's1', title: 'hola', type: 'manual' }],
+        expectedResult: 'saludo',
+        failurePolicy: { onStepFailure: 'stop' },
+      },
+    })
+    expect(parsed.definition.triggers[0]?.kind).toBe('manual')
+    expect(parsed.definition.steps[0]).toMatchObject({ instruction: 'hola', handler: 'agent' })
+    expect(parsed.definition.failurePolicy).toBe('stop')
+    expect(parsed.definition.permissions).toEqual([])
   })
 
   it('sets a routine private and keeps it to its owner', async () => {
