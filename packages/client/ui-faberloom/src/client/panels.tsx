@@ -502,9 +502,9 @@ function descendantSpaceIds(children: ReadonlyMap<string, readonly string[]>, id
 function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
     const {
-      t, createSpace, deleteSpace, goToWorkspace, adoptSpaceWorkspace, exportContextToFolder,
+      t, createSpace, createSpaceFromFolder, deleteSpace, goToWorkspace, adoptSpaceWorkspace, exportContextToFolder,
       spaceDetail, saveSpace, spaceWorkspace, startSpaceSession, prepareHarness,
-      sessionsShare, openSession, setSpacePermissions, workflows,
+      sessionsShare, openSession, setSpacePermissions, workflows, pickFolder,
     } = props
     const { overview, status, error } = useOverview(props)
     const [draft, setDraft] = useState('')
@@ -706,6 +706,17 @@ function spacesScreen() {
       setCreating(false)
     }
 
+    /** Adopt an existing local folder as a new root space, without creating a folder. */
+    const createFromFolder = (): void => {
+      setMessage(null)
+      void pickFolder().then(async (path) => {
+        if (path === null) return
+        const name = path.split(/[\\/]/u).filter(part => part.length > 0).pop() ?? t('spaces.untitled')
+        const result = await createSpaceFromFolder(name, path, null)
+        if (!result.ok) setMessage(result.error.message)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
     /** Open the create dialog, optionally preset for a sub-space of `parent`. */
     const openCreate = (parent: string, agent: string, inheritChild: boolean): void => {
       setMessage(null)
@@ -721,6 +732,7 @@ function spacesScreen() {
         trailing={(
           <>
             <SearchBox value={query} onChange={setQuery} placeholder={t('action.search')} label={t('action.search')} />
+            <button className={styles.secondary} type="button" onClick={createFromFolder}>{t('spaces.fromFolderNew')}</button>
             <button className={styles.primary} type="button" onClick={() => { openCreate('', '', true) }}>{t('spaces.createTitle')}</button>
           </>
         )}>
