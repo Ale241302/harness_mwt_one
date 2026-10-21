@@ -5240,18 +5240,23 @@ function filesScreen() {
         : workspaceItems.find(candidate => String(candidate.workspaceId) === space.workspaceId))
         ?? workspaceItems.find(candidate => sameDirectory(candidate.path, root))
       const memberIds = new Set(workspace?.sessionIds.map(String) ?? [])
-      let best: SessionSummary | undefined
-      for (const session of sessions) {
+      const candidates = sessions.filter((session) => {
         // A blank session is the workspace's empty slot, not a conversation:
         // attributing files to it would label them with the folder's name.
-        if (session.blank) continue
+        if (session.blank) return false
         // Workspace membership is authoritative after a move; cwd is the
         // fallback for a workspace whose session summaries are still loading.
-        if (memberIds.size > 0 ? !memberIds.has(String(session.id)) : !sameDirectory(session.cwd, root)) continue
+        return memberIds.size > 0 ? memberIds.has(String(session.id)) : sameDirectory(session.cwd, root)
+      })
+      let best: SessionSummary | undefined
+      for (const session of candidates) {
         if (session.updatedAt < stamp) continue
         if (best === undefined || session.updatedAt < best.updatedAt) best = session
       }
-      return best
+      // A file can be written after its turn ended (attachments, extracted
+      // text, a user edit). The newest session in the same Workspace still
+      // owns it; do not fall back to "Sin sesión" while that session exists.
+      return best ?? candidates.sort((left, right) => right.updatedAt - left.updatedAt)[0]
     }
 
     const withFolders = (
