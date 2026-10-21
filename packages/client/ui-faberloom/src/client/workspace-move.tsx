@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Field } from './components.tsx'
+import { uniqueSpaces } from './space-options.ts'
 import styles from './faberloom.module.css'
 
 /** One Workspace row asked to change its parent Space. */
@@ -173,19 +174,11 @@ export function WorkspaceMoveDialog({ useStore, actions, load, move, t }: MoveDi
     return () => { live = false }
   }, [actions, request])
 
-  const uniqueSpaces = useMemo(() => {
-    const seen = new Set<string>()
-    return spaces.filter((space) => {
-      const key = `${space.parentId ?? ''}\u0000${space.title}`
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-  }, [spaces])
+  const unique = useMemo(() => uniqueSpaces(spaces), [spaces])
   if (request === null) return null
-  const current = uniqueSpaces.find(space => space.workspaceId === request.workspaceId)
+  const current = unique.find(space => space.workspaceId === request.workspaceId)
     ?? spaces.find(space => space.workspaceId === request.workspaceId)
-  const blocked = current === undefined ? new Set<string>() : descendantsOf(uniqueSpaces, current.id)
+  const blocked = current === undefined ? new Set<string>() : descendantsOf(unique, current.id)
   if (current !== undefined) blocked.add(current.id)
   const submit = (): void => {
     if (current === undefined) return
@@ -220,9 +213,9 @@ export function WorkspaceMoveDialog({ useStore, actions, load, move, t }: MoveDi
               <Field label={t('workspaces.moveParent')} hint={t('workspaces.moveHint')}>
                 <select value={parentId} onChange={(event) => { actions.setParent(event.target.value) }}>
                   <option value="">{t('workspaces.moveRoot')}</option>
-                  {uniqueSpaces
+                  {unique
                     .filter(space => !blocked.has(space.id))
-                    .map(space => <option key={space.id} value={space.id}>{targetLabel(uniqueSpaces, space)}</option>)}
+                    .map(space => <option key={space.id} value={space.id}>{targetLabel(unique, space)}</option>)}
                 </select>
               </Field>
               {message === null ? null : <span className={styles.cellMuted}>{message}</span>}

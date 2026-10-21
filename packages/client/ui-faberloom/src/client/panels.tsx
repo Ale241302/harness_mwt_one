@@ -50,6 +50,7 @@ import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, Sta
 import { isDesktopApplication } from './desktop-app.ts'
 import { HarnessInstallWizard } from './harness-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
+import { uniqueSpaces } from './space-options.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -527,7 +528,7 @@ function spacesScreen() {
     const [grantEmail, setGrantEmail] = useState('')
     const [grantPermissions, setGrantPermissions] = useState<readonly string[]>([])
     const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
-    const spaceList = overview?.spaces ?? []
+    const spaceList = useMemo(() => uniqueSpaces(overview?.spaces ?? []), [overview])
     const byId = useMemo(() => new Map(spaceList.map(space => [space.id, space])), [spaceList])
     const children = useMemo(() => {
       const map = new Map<string, string[]>()
@@ -1722,15 +1723,7 @@ function emailScreen() {
         { key: 'status', header: t('col.status'), cell: row => <Chip>{(row as FaberLoomEmailDraftRow).status}</Chip> },
       ]
 
-    const spaceOptions = useMemo(() => {
-      const seen = new Set<string>()
-      return (overview?.spaces ?? []).filter((space) => {
-        const key = `${space.parentId ?? ''}\u0000${space.title}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-    }, [overview])
+    const spaceOptions = useMemo(() => uniqueSpaces(overview?.spaces ?? []), [overview])
 
     const spaceLabel = (space: FaberLoomOverview['spaces'][number]): string => {
       const byId = new Map((overview?.spaces ?? []).map(candidate => [candidate.id, candidate]))
@@ -5117,17 +5110,7 @@ function filesScreen() {
     const workspaceItems = useWorkspaces === undefined ? [] : useWorkspaces(state => state.items)
     // Two Spaces can mirror the same folder (one row per machine); the folder,
     // not the title, is the identity: sibling sub-spaces may share a title.
-    const spaces = useMemo(() => {
-      const seen = new Set<string>()
-      return (overview?.spaces ?? []).filter((space) => {
-        // Old duplicate Spaces mirror the same title under the same parent.
-        // Sibling sub-spaces may share a title, so parent + title is the key.
-        const key = `${space.parentId ?? ''}\u0000${space.title}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-    }, [overview])
+    const spaces = useMemo(() => uniqueSpaces(overview?.spaces ?? []), [overview])
     const spaceById = useMemo(() => new Map(spaces.map(space => [space.id, space])), [spaces])
     const childSpaces = useMemo(() => {
       const map = new Map<string, FaberLoomOverview['spaces'][number][]>()
