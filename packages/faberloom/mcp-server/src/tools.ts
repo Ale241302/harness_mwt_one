@@ -361,6 +361,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: {
           id: { type: 'string', description: 'Identificador del espacio.' },
           title: { type: 'string' },
+          parentId: { type: 'string', description: 'Espacio padre; vacío para convertirlo en raíz.' },
           inheritContext: { type: 'boolean' },
           excluded: { type: 'array', items: { type: 'string' } },
           members: { type: 'array', items: { type: 'string' } },
@@ -372,6 +373,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
     run: async (context, ownerId, args) => {
       const patch: {
         title?: string
+        parentId?: FaberLoomSpaceId
         inheritContext?: boolean
         excluded?: readonly FaberLoomSpaceId[]
         members?: readonly string[]
@@ -380,6 +382,19 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       } = {}
       const title = optional(args, 'title')
       if (title !== undefined) patch.title = title
+      const rawParent = args['parentId']
+      if (rawParent !== undefined) {
+        if (typeof rawParent !== 'string') throw new Error('parentId must be a string')
+        const parentId = rawParent.trim()
+        const view = (context as unknown as {
+          get(name: string): { saveSpace(id: string, input: { parentId: string | null }): Promise<unknown> } | undefined
+        }).get('faberloomView')
+        if (view === undefined) {
+          if (parentId.length > 0) patch.parentId = parentId as FaberLoomSpaceId
+        } else {
+          await view.saveSpace(required(args, 'id'), { parentId: parentId.length === 0 ? null : parentId })
+        }
+      }
       const inheritContext = boolean(args, 'inheritContext')
       if (inheritContext !== undefined) patch.inheritContext = inheritContext
       const excluded = strings(args, 'excluded')

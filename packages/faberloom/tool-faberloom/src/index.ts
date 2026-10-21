@@ -716,6 +716,7 @@ export function apply(ctx: Context, config: Config): void {
     parameters: {
       id: ID_PARAM,
       title: { type: 'string', description: 'New display title.' },
+      parentId: { type: 'string', description: 'Parent space id; an empty string promotes the space to the root.' },
       agentId: { type: 'string', description: 'Responsible catalog agent id; an empty string clears the assignment.' },
       inheritContext: { type: 'boolean', description: 'Whether the space inherits ancestors context.' },
       excluded: { type: 'array', description: 'Ancestor space ids whose context must not be inherited.', items: { type: 'string' } },
@@ -748,6 +749,7 @@ export function apply(ctx: Context, config: Config): void {
     execute: async (args) => {
       const patch: {
         title?: string
+        parentId?: FaberLoomSpaceId | null
         agentId?: string | null
         inheritContext?: boolean
         excluded?: FaberLoomSpaceId[]
@@ -756,6 +758,15 @@ export function apply(ctx: Context, config: Config): void {
         sources?: SpaceSource[]
       } = {}
       if (args.title !== undefined) patch.title = args.title
+      if (args.parentId !== undefined) {
+        const parentId = args.parentId.trim()
+        const view = ctx.get('faberloomView')
+        if (view === undefined) {
+          if (parentId.length > 0) patch.parentId = parentId as FaberLoomSpaceId
+        } else {
+          await view.saveSpace(args.id, { parentId: parentId.length === 0 ? null : parentId })
+        }
+      }
       if (args.agentId !== undefined) patch.agentId = args.agentId.length > 0 ? args.agentId : null
       if (args.inheritContext !== undefined) patch.inheritContext = args.inheritContext
       if (args.excluded !== undefined) patch.excluded = args.excluded as FaberLoomSpaceId[]

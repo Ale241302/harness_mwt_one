@@ -6,7 +6,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { stat, rename, rm } from 'node:fs/promises'
+import { stat, rename, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -1041,7 +1041,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const actor = this.actor()
     for (const space of await this.ctx.faberloomSpaces.list(actor)) {
       const anchored = space.workspaceId === String(workspaceId)
-      const deterministic = anchored
+      const deterministic = anchored || space.workspaceId !== undefined
         ? false
         : join(this.dshHome(), 'spaces', (await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)).ref) === workspacePath
       if (!anchored && !deterministic) continue
@@ -5040,6 +5040,28 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     if (oldDir === base || dirname(oldDir) === base) return
     const target = this.uniqueDirectory(base, basename(oldDir))
+    const affected: {
+      space: FaberLoomSpace
+      oldDir: string
+      newDir: string
+      oldWorkspaceId?: string
+      sessionIds: readonly string[]
+    }[] = []
+    for (const candidate of registry === undefined ? [] : await this.ctx.faberloomSpaces.list(actor)) {
+      if (candidate.ownerId !== actor.id) continue
+      const dir = await this.resolveSpaceDir(actor, candidate)
+      if (dir !== oldDir && !dir.startsWith(`${oldDir}${sep}`)) continue
+      const oldWorkspace = candidate.workspaceId === undefined || registry === undefined
+        ? undefined
+        : registry.get(candidate.workspaceId as WorkspaceId)
+      affected.push({
+        space: candidate,
+        oldDir: dir,
+        newDir: `${target}${dir.slice(oldDir.length)}`,
+        ...candidate.workspaceId === undefined ? {} : { oldWorkspaceId: candidate.workspaceId },
+        sessionIds: oldWorkspace === undefined ? [] : oldWorkspace.sessionIds.map(String),
+      })
+    }
     try {
       await rename(oldDir, target)
     } catch (error) {
@@ -5053,26 +5075,31 @@ export class FaberLoomViewService extends TypertRemoteService {
       await rm(oldDir, { recursive: true, force: true })
       this.ctx.logger.warn(`faberloom: carpeta movida por copia (rename falló: ${String(error)})`)
     }
-    if (registry === undefined) return
-    const affected: { space: FaberLoomSpace; oldDir: string; newDir: string; oldWorkspaceId?: string }[] = []
-    for (const candidate of await this.ctx.faberloomSpaces.list(actor)) {
-      if (candidate.ownerId !== actor.id) continue
-      const dir = await this.resolveSpaceDir(actor, candidate)
-      if (dir !== oldDir && !dir.startsWith(`${oldDir}${sep}`)) continue
-      affected.push({
-        space: candidate,
-        oldDir: dir,
-        newDir: `${target}${dir.slice(oldDir.length)}`,
-        ...candidate.workspaceId === undefined ? {} : { oldWorkspaceId: candidate.workspaceId },
-      })
+    if (registry === undefined || affected.length === 0) return
+    // Session headers keep their original cwd. A directory link at the old path
+    // makes that cwd resolve to the new folder, so the existing conversations
+    // attach to the new Workspace instead of being archived and orphaned.
+    const withSessions = affected.some(entry => entry.sessionIds.length > 0)
+    if (withSessions) {
+      try {
+        await symlink(target, oldDir, process.platform === 'win32' ? 'junction' : 'dir')
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: no se pudo enlazar la ruta anterior del espacio '${oldDir}': ${String(error)}`)
+      }
     }
     for (const entry of affected) {
       const workspace = await registry.create(entry.newDir, entry.space.title)
       await this.ctx.faberloomSpaces.update(actor, entry.space.id, { workspaceId: String(workspace.id) })
+      for (const sessionId of entry.sessionIds) {
+        try {
+          await workspace.attachSession(sessionId as never)
+        } catch (error: unknown) {
+          this.ctx.logger.warn(`faberloom: la sesión ${sessionId} no se pudo mover al espacio ${String(entry.space.id)}: ${String(error)}`)
+        }
+      }
     }
     for (const entry of affected) {
       if (entry.oldWorkspaceId === undefined) continue
-      await registry.archiveSessionsUnder(entry.oldDir)
       await registry.delete(entry.oldWorkspaceId as WorkspaceId)
     }
   }

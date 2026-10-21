@@ -4909,10 +4909,11 @@ interface FileGroup {
 /** Files: a Space's folder grouped by the Session that wrote each file, or as a plain tree. */
 function filesScreen() {
   return function FaberloomFiles(props: ScreenProps) {
-    const { t, spaceTree, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, createSpaceFromFolder, useSessions } = props
+    const { t, spaceTree, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, createSpaceFromFolder, useSessions, useWorkspaces } = props
     const { overview } = useOverview(props)
     const sessionsById = useSessions(state => state.byId)
     const sessions = useMemo(() => Object.values(sessionsById ?? {}), [sessionsById])
+    const workspaceItems = useWorkspaces === undefined ? [] : useWorkspaces(state => state.items)
     // Two Spaces can mirror the same folder (one row per machine); the folder,
     // not the title, is the identity: sibling sub-spaces may share a title.
     const spaces = useMemo(() => {
@@ -4924,6 +4925,39 @@ function filesScreen() {
         return true
       })
     }, [overview])
+    const spaceById = useMemo(() => new Map(spaces.map(space => [space.id, space])), [spaces])
+    const childSpaces = useMemo(() => {
+      const map = new Map<string, FaberLoomOverview['spaces'][number][]>()
+      for (const space of spaces) {
+        if (space.parentId === null || !spaceById.has(space.parentId)) continue
+        const list = map.get(space.parentId) ?? []
+        list.push(space)
+        map.set(space.parentId, list)
+      }
+      return map
+    }, [spaces, spaceById])
+    const rootSpaces = useMemo(
+      () => spaces.filter(space => space.parentId === null || !spaceById.has(space.parentId)),
+      [spaces, spaceById],
+    )
+    // The parent's folder contains the child's folder. Hide that raw folder from
+    // the parent tree: the child Space row below it is the same entry, expanded
+    // with its own files and sessions.
+    const hiddenChildFolders = useMemo(() => {
+      const hidden = new Map<string, ReadonlySet<string>>()
+      for (const [parentId, children] of childSpaces) {
+        const parent = spaceById.get(parentId)
+        if (parent === undefined) continue
+        const separator = parent.folderPath.includes('\\') ? '\\' : '/'
+        const paths = new Set<string>()
+        for (const child of children) {
+          if (!child.folderPath.startsWith(`${parent.folderPath}${separator}`)) continue
+          paths.add(child.folderPath.slice(parent.folderPath.length + 1).split(separator).join('/'))
+        }
+        hidden.set(parentId, paths)
+      }
+      return hidden
+    }, [childSpaces, spaceById])
     const [query, setQuery] = useState('')
     const [search, setSearch] = useState('')
     const [mode, setMode] = useState<'session' | 'folder'>('session')
@@ -5012,14 +5046,21 @@ function filesScreen() {
         .finally(() => { setBusy(null) })
     }
 
-    const sessionOf = (root: string, at: string): SessionSummary | undefined => {
+    const sessionOf = (spaceId: string, root: string, at: string): SessionSummary | undefined => {
       const stamp = Date.parse(at)
+      const space = spaceById.get(spaceId)
+      const workspace = space?.workspaceId === null || space?.workspaceId === undefined
+        ? undefined
+        : workspaceItems.find(candidate => String(candidate.workspaceId) === space.workspaceId)
+      const memberIds = new Set(workspace?.sessionIds.map(String) ?? [])
       let best: SessionSummary | undefined
       for (const session of sessions) {
         // A blank session is the workspace's empty slot, not a conversation:
         // attributing files to it would label them with the folder's name.
         if (session.blank) continue
-        if (!sameDirectory(session.cwd, root)) continue
+        // Workspace membership is authoritative after a move; cwd is the
+        // fallback for a workspace whose session summaries are still loading.
+        if (memberIds.size > 0 ? !memberIds.has(String(session.id)) : !sameDirectory(session.cwd, root)) continue
         if (session.updatedAt < stamp) continue
         if (best === undefined || session.updatedAt < best.updatedAt) best = session
       }
@@ -5047,7 +5088,7 @@ function filesScreen() {
       const groups = new Map<string, { key: string; title: string; at: number; files: FaberLoomSpaceTreeEntry[] }>()
       for (const entry of tree.entries) {
         if (entry.kind === 'directory') continue
-        const session = sessionOf(tree.root, entry.modifiedAt)
+        const session = sessionOf(spaceId, tree.root, entry.modifiedAt)
         const id = session === undefined ? 'none' : String(session.id)
         const group = groups.get(id) ?? {
           key: `${spaceId}\u0000${id}`,
@@ -5138,7 +5179,7 @@ function filesScreen() {
 
     const tip = (spaceId: string, entry: FaberLoomSpaceTreeEntry): string => {
       const tree = trees[spaceId]
-      const session = tree === undefined ? undefined : sessionOf(tree.root, entry.modifiedAt)
+      const session = tree === undefined ? undefined : sessionOf(spaceId, tree.root, entry.modifiedAt)
       const modified = new Date(entry.modifiedAt).toLocaleString()
       const created = new Date(entry.createdAt).toLocaleString()
       return [
@@ -5148,51 +5189,54 @@ function filesScreen() {
       ].join('\n')
     }
 
-    const rows = (spaceId: string, list: readonly FaberLoomSpaceTreeEntry[]): ReactNode => (
+    const rows = (spaceId: string, list: readonly FaberLoomSpaceTreeEntry[], indent = 0): ReactNode => (
       <>
-        {treeOrder(list).filter(entry => ancestorsExpanded(spaceId, entry.path, openFolders)).map((entry) => {
-          const key = `${spaceId}\u0000${entry.path}`
-          const depth = entry.path.split('/').length - 1
-          const directory = entry.kind === 'directory'
-          const expanded = openFolders.has(key)
-          const busyNow = busy === key
-          return (
-            <div className={styles.fileRow} key={key}>
-              <input
-                type="checkbox"
-                className={styles.fileCheck}
-                checked={selected.has(key)}
-                onChange={() => { toggleSelected(key) }}
-                aria-label={`${t('panel.files.select')} ${entry.name}`}
-              />
-              <button
-                type="button"
-                className={styles.treeRow}
-                data-kind={entry.kind}
-                style={{ paddingLeft: `${6 + depth * 16}px` }}
-                onClick={() => { if (directory) toggle(setOpenFolders, key); else openFile(spaceId, entry.path) }}
-                aria-expanded={directory ? expanded : undefined}
-                disabled={busyNow}
-                title={tip(spaceId, entry)}
-              >
-                <span className={styles.treeCaret}>
-                  {directory ? <IconChevronRightOutline14 className={expanded ? styles.caretOpen : undefined} /> : null}
-                </span>
-                <span className={styles.treeIcon}>
-                  {directory
-                    ? (expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />)
-                    : <FileTypeIcon kind={fileIconKind(entry.name)} size={16} />}
-                </span>
-                <span className={styles.treeName}>{entry.name}</span>
-                <span className={styles.fileMeta}>
-                  {new Date(entry.modifiedAt).toLocaleDateString()}
-                  {directory ? '' : ` · ${sizeLabel(entry.bytes)}`}
-                </span>
-                {busyNow && <span className={styles.treeBusy}>{t('panel.files.opening')}</span>}
-              </button>
-            </div>
-          )
-        })}
+        {treeOrder(list)
+          .filter(entry => ancestorsExpanded(spaceId, entry.path, openFolders))
+          .filter(entry => entry.kind !== 'directory' || !(hiddenChildFolders.get(spaceId)?.has(entry.path) ?? false))
+          .map((entry) => {
+            const key = `${spaceId}\u0000${entry.path}`
+            const depth = entry.path.split('/').length - 1
+            const directory = entry.kind === 'directory'
+            const expanded = openFolders.has(key)
+            const busyNow = busy === key
+            return (
+              <div className={styles.fileRow} key={key}>
+                <input
+                  type="checkbox"
+                  className={styles.fileCheck}
+                  checked={selected.has(key)}
+                  onChange={() => { toggleSelected(key) }}
+                  aria-label={`${t('panel.files.select')} ${entry.name}`}
+                />
+                <button
+                  type="button"
+                  className={styles.treeRow}
+                  data-kind={entry.kind}
+                  style={{ paddingLeft: `${6 + (depth + indent) * 16}px` }}
+                  onClick={() => { if (directory) toggle(setOpenFolders, key); else openFile(spaceId, entry.path) }}
+                  aria-expanded={directory ? expanded : undefined}
+                  disabled={busyNow}
+                  title={tip(spaceId, entry)}
+                >
+                  <span className={styles.treeCaret}>
+                    {directory ? <IconChevronRightOutline14 className={expanded ? styles.caretOpen : undefined} /> : null}
+                  </span>
+                  <span className={styles.treeIcon}>
+                    {directory
+                      ? (expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />)
+                      : <FileTypeIcon kind={fileIconKind(entry.name)} size={16} />}
+                  </span>
+                  <span className={styles.treeName}>{entry.name}</span>
+                  <span className={styles.fileMeta}>
+                    {new Date(entry.modifiedAt).toLocaleDateString()}
+                    {directory ? '' : ` · ${sizeLabel(entry.bytes)}`}
+                  </span>
+                  {busyNow && <span className={styles.treeBusy}>{t('panel.files.opening')}</span>}
+                </button>
+              </div>
+            )
+          })}
       </>
     )
 
@@ -5238,6 +5282,51 @@ function filesScreen() {
       </>
     )
 
+    const renderSpace = (space: FaberLoomOverview['spaces'][number], depth: number): ReactNode => {
+      const expanded = openSpaces.has(space.id)
+      const tree = trees[space.id]
+      const children = childSpaces.get(space.id) ?? []
+      return (
+        <div key={space.id}>
+          <button
+            type="button"
+            className={styles.treeSpace}
+            style={{ paddingLeft: `${6 + depth * 16}px` }}
+            aria-expanded={expanded}
+            onClick={() => { toggleSpace(space.id) }}
+            title={space.folderPath}
+          >
+            <span className={styles.treeCaret}>
+              <IconChevronRightOutline14 className={expanded ? styles.caretOpen : undefined} />
+            </span>
+            <span className={styles.treeIcon}>{expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />}</span>
+            {depth > 0 && <span className={styles.spaceBranch} aria-hidden="true">↳</span>}
+            <span className={styles.treeName}>{space.title}</span>
+          </button>
+          {expanded && tree !== undefined && mode === 'folder' && rows(space.id, tree.entries, depth)}
+          {expanded && tree !== undefined && mode === 'session' && groupsOf(space.id).map((group) => {
+            const open = openGroups.has(group.key)
+            return (
+              <div key={group.key}>
+                <button type="button" className={styles.fileGroup} aria-expanded={open} onClick={() => { toggle(setOpenGroups, group.key) }}>
+                  <span className={styles.treeCaret}>
+                    <IconChevronRightOutline14 className={open ? styles.caretOpen : undefined} />
+                  </span>
+                  <span className={styles.treeName}>{group.title}</span>
+                  <span className={styles.fileMeta}>
+                    {group.at === 0 ? '' : `${new Date(group.at).toLocaleDateString()} · `}
+                    {group.entries.filter(entry => entry.kind !== 'directory').length}
+                  </span>
+                </button>
+                {open && rows(space.id, group.entries, depth)}
+              </div>
+            )
+          })}
+          {expanded && children.map(child => renderSpace(child, depth + 1))}
+        </div>
+      )
+    }
+
     return (
       <Screen title={t('panel.files.title')} subtitle={t('panel.files.subtitle')}>
         <div className={styles.fileTools}>
@@ -5281,40 +5370,7 @@ function filesScreen() {
             const tree = trees[space.id]
             return tree === undefined || !tree.entries.some(entry => entry.kind !== 'directory' && matchesQuery(entry.path, search))
           }) && <StateBlock kind="empty" title={t('panel.files.searchEmpty')} />}
-          {search === '' && spaces.map((space) => {
-            const expanded = openSpaces.has(space.id)
-            const tree = trees[space.id]
-            return (
-              <div key={space.id}>
-                <button type="button" className={styles.treeSpace} aria-expanded={expanded} onClick={() => { toggleSpace(space.id) }} title={t('panel.files.toggle')}>
-                  <span className={styles.treeCaret}>
-                    <IconChevronRightOutline14 className={expanded ? styles.caretOpen : undefined} />
-                  </span>
-                  <span className={styles.treeIcon}>{expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />}</span>
-                  <span className={styles.treeName}>{space.title}</span>
-                </button>
-                {expanded && tree !== undefined && mode === 'folder' && rows(space.id, tree.entries)}
-                {expanded && tree !== undefined && mode === 'session' && groupsOf(space.id).map((group) => {
-                  const open = openGroups.has(group.key)
-                  return (
-                    <div key={group.key}>
-                      <button type="button" className={styles.fileGroup} aria-expanded={open} onClick={() => { toggle(setOpenGroups, group.key) }}>
-                        <span className={styles.treeCaret}>
-                          <IconChevronRightOutline14 className={open ? styles.caretOpen : undefined} />
-                        </span>
-                        <span className={styles.treeName}>{group.title}</span>
-                        <span className={styles.fileMeta}>
-                          {group.at === 0 ? '' : `${new Date(group.at).toLocaleDateString()} · `}
-                          {group.entries.filter(entry => entry.kind !== 'directory').length}
-                        </span>
-                      </button>
-                      {open && rows(space.id, group.entries)}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
+          {search === '' && rootSpaces.map(space => renderSpace(space, 0))}
         </div>
         <Modal
           open={renaming !== null}
