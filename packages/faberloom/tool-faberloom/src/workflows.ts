@@ -17,6 +17,7 @@ import type {
   WorkFlowNodeId,
   WorkFlowNodeKind,
 } from '@deepseek-ai/dsh-faberloom-workflows'
+import { classifyWorkflow } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { FaberLoomShares } from '@deepseek-ai/dsh-faberloom-shares'
 
 /** One argument value accepted by a workflow tool executor. */
@@ -33,7 +34,8 @@ function renderWorkflow(value: Record<string, unknown>): string {
     return `Started ${value['executionId']}${value['deduped'] === true ? ' (deduped)' : ''}.`
   }
   if (Array.isArray(value['runs'])) return `${String((value['runs'] as readonly unknown[]).length)} run(s).`
-  return `Flow ${String(value['id'])} "${String(value['name'])}" ${String(value['status'])} v${String(value['version'])} (${String(value['nodes'])} nodes, ${String(value['edges'])} edges).`
+  const cloud = value['cloud'] as { readonly note?: unknown } | undefined
+  return `Flow ${String(value['id'])} "${String(value['name'])}" ${String(value['status'])} v${String(value['version'])} (${String(value['nodes'])} nodes, ${String(value['edges'])} edges).${typeof cloud?.note === 'string' ? ` ${cloud.note}` : ''}`
 }
 
 /** The summary schema every workflow tool output shares. */
@@ -52,6 +54,18 @@ const WORKFLOW_SUMMARY_SCHEMA = {
     executionId: { type: 'string' },
     deduped: { type: 'boolean' },
     runs: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    cloud: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        scope: { type: 'string', required: true },
+        cloudReady: { type: 'boolean', required: true },
+        requiresPc: { type: 'boolean', required: true },
+        localSteps: { type: 'array', required: true, items: { type: 'string' } },
+        reasons: { type: 'array', required: true, items: { type: 'string' } },
+        note: { type: 'string', required: true },
+      },
+    },
   },
 } as const
 
@@ -63,7 +77,7 @@ const PROPOSE_OUTPUT = {
     return [{
       type: 'text' as const,
       text: value['valid'] === true
-        ? `Draft flow "${String(value['name'])}" (${String(value['id'])}) has ${String(value['nodes'])} node(s) and is valid. Show it to the user and wait for confirmation before activating.`
+        ? `Draft flow "${String(value['name'])}" (${String(value['id'])}) has ${String(value['nodes'])} node(s) and is valid. ${String((value['cloud'] as { note?: unknown } | undefined)?.note ?? '')} Show it to the user and wait for confirmation before activating.`
         : `Draft flow "${String(value['name'])}" (${String(value['id'])}) is saved but needs work: ${problems.join('; ')}. Tell the user and refine it.`,
     }]
   },
@@ -120,6 +134,7 @@ function summarize(flow: WorkFlow): Record<string, unknown> {
     version: flow.version,
     nodes: flow.definition.nodes.length,
     edges: flow.definition.edges.length,
+    cloud: classifyWorkflow(flow.definition),
   }
 }
 
@@ -206,6 +221,7 @@ const WORKFLOW_TOOLS: readonly WorkflowTool[] = [
         edges: flow.definition.edges.length,
         valid: verdict.ok,
         problems: [...verdict.problems],
+        cloud: classifyWorkflow(flow.definition),
       }
     },
   },

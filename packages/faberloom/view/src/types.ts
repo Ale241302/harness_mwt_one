@@ -165,6 +165,22 @@ export interface FaberLoomBoardRow {
   readonly routineId: string | null
 }
 
+/** Where a routine or Work Flow can run, as the panel and the chat report it. */
+export interface FaberLoomCloudProfile {
+  /** `cloud` when every step runs on the VPS, `local` when every step needs the PC, `mixed` otherwise. */
+  readonly scope: 'cloud' | 'local' | 'mixed'
+  /** True when the whole definition can run on the VPS with the PC off. */
+  readonly cloudReady: boolean
+  /** True when at least one step needs the owner's computer powered on. */
+  readonly requiresPc: boolean
+  /** Steps that need the PC, by label. */
+  readonly localSteps: readonly string[]
+  /** Why those steps need the PC. */
+  readonly reasons: readonly string[]
+  /** One sentence the chat can repeat to the user. */
+  readonly note: string
+}
+
 /** One routine as the Rutinas panel renders it. */
 export interface FaberLoomRoutineRow {
   /** Routine id. */
@@ -181,6 +197,8 @@ export interface FaberLoomRoutineRow {
   readonly shared?: boolean
   /** True when the actor holds the module permission to remove this shared item. */
   readonly canDelete?: boolean
+  /** Cloud or local execution, computed from the definition and its steps. */
+  readonly cloud?: FaberLoomCloudProfile
 }
 
 /** One space-scoped memory entry the Memoria panel renders. */
@@ -458,6 +476,8 @@ export interface FaberLoomRoutineDetail {
   readonly permissions: readonly string[]
   /** What happens on failure. */
   readonly failurePolicy: string
+  /** Whether it can run on the VPS or needs the PC. */
+  readonly cloud: FaberLoomCloudProfile
 }
 
 /** Editable routine fields. */
@@ -1308,6 +1328,8 @@ export interface FaberLoomWorkflowRow {
   readonly canDelete?: boolean
   /** True when the actor holds the module permission to edit this shared item. */
   readonly canEdit?: boolean
+  /** Cloud or local execution, computed from the graph. */
+  readonly cloud?: FaberLoomCloudProfile
 }
 
 /** A JSON value a Remote boundary may carry. */

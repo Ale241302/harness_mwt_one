@@ -159,6 +159,9 @@ const cfg = {
   anydocApiKey: process.env.FIRECRAWL_API_KEY || '',
   // Plazo de una espera de rutina antes de pasar a revision (24 h por defecto).
   waitTimeoutMs: Number(process.env.WAIT_TIMEOUT_MS || 86400000),
+  // Cadencia del espejo del lado servido: recibe del escritorio y deja que el
+  // despachador local ejecute lo que llegue. El escritorio empuja al cambiar.
+  mirrorIntervalMs: Number(process.env.MIRROR_INTERVAL_MS || 120000),
   // M1 · rate limit de /mcp (peticiones por minuto por IP cliente).
   mcpRateLimitPerMin: Number(process.env.MCP_RATE_LIMIT_PER_MIN || 120),
   // M6 · rate limit de login por cuenta (además del de nginx por IP).
@@ -987,6 +990,19 @@ function renderPatch(home, user, memory) {
     // defecto del servidor MCP lo rechazaba ("request body too large") y la ruta
     // lo convertia en 502.
     `    maxBodyBytes: ${String(32 * 1024 * 1024)}`,
+    '',
+    // El espejo del lado servido: la fila debe estar MONTADA para que
+    // `faberloom_mirror_apply` escriba lo que publica el escritorio, pero sus
+    // ciclos quedan apagados. Si el lado web tambien empujara, devolveria sus
+    // filas viejas al escritorio y reabriria los duplicados que este cambio
+    // viene a cerrar. El escritorio es la fuente; la ruta aplica en el VPS.
+    '- id: faberloom-mirror',
+    '  config:',
+    '    enabled: false',
+    `    ownerId: ${yamlScalar(user.email)}`,
+    `    gatewayUrl: ${yamlScalar(`https://${cfg.publicHost}`)}`,
+    '    platform: web',
+    `    intervalMs: ${String(cfg.mirrorIntervalMs)}`,
   ]
 
   // Memoria: el modelo deja de ir directo a DeepSeek y pasa por el proxy de
@@ -1322,6 +1338,12 @@ function startInstance(user, memory) {
         ...(cfg.mcpGatewayKey ? { MWT_MCP_GATEWAY_KEY: cfg.mcpGatewayKey } : {}),
         ...(cfg.faberloomGatewayKey ? { FABERLOOM_GATEWAY_KEY: cfg.faberloomGatewayKey } : {}),
         ...(cfg.mirrorKey ? { FABERLOOM_MIRROR_KEY: cfg.mirrorKey } : {}),
+        // El espejo del lado servido necesita su identidad para arrancar: sin
+        // `ownerId` el servicio se declaraba apagado y el VPS nunca aplicaba lo
+        // que el escritorio publicaba.
+        FABERLOOM_MIRROR_ENABLED: '1',
+        FABERLOOM_MIRROR_OWNER: user.email,
+        FABERLOOM_MIRROR_URL: `https://${cfg.publicHost}`,
         // Este proceso ES el lado servido: el espejo lo reporta en su documento
         // y en su documento de estado.
         FABERLOOM_MIRROR_PLATFORM: 'web',

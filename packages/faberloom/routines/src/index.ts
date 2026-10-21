@@ -12,6 +12,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
+import { classifyRoutine } from './cloud.ts'
 import {
   routinesDomainSpec,
   type EffectLedgerRecord,
@@ -46,6 +47,8 @@ import type {
 
 export type * from './types.ts'
 export * from './builtins.ts'
+export { classifyCloudSteps, classifyRoutine } from './cloud.ts'
+export type { CloudExecutionProfile, CloudExecutionScope, CloudStepInput } from './cloud.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -788,6 +791,16 @@ export class FaberLoomRoutines extends Service {
     const routine = (await this.routines()).get(request.routineId)
     if (routine === undefined) throw new Error(`faberloom: routine ${request.routineId} not found`)
     if (routine.status !== 'active') throw new Error('faberloom: routine is not active')
+    // The VPS cannot reach the owner's files. Refuse a local routine there,
+    // even a manual start, instead of running half of it and failing at the
+    // first file step. The desktop process has platform `desktop`, so the same
+    // routine keeps running where the files live.
+    if (process.env['FABERLOOM_MIRROR_PLATFORM'] === 'web') {
+      const cloud = classifyRoutine(routine.definition)
+      if (cloud.requiresPc) {
+        throw new Error(`faberloom: la rutina "${routine.name}" necesita la PC encendida (${cloud.localSteps.join(', ')}); el VPS no tiene acceso a esos archivos`)
+      }
+    }
 
     const dedupeKey = `${routine.ownerId}:${request.idempotencyKey}`
     const keys = await this.eventKeys()

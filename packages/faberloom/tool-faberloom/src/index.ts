@@ -49,9 +49,11 @@ import type {
   FaberLoomRoutineId,
   FaberLoomRoutines,
   IngestEvent,
+  RoutineDefinition,
   RoutineDefinitionInput,
   RoutineInput,
 } from '@deepseek-ai/dsh-faberloom-routines'
+import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
 // Type-only: the workspace view that owns the skill-install operation, read through ctx.get.
 import type { FaberLoomViewService } from '@deepseek-ai/dsh-faberloom-view'
 
@@ -135,6 +137,27 @@ function routineInputFromArgs(args: {
     name: args.name,
     definition: args.definition as RoutineDefinitionInput,
     ...args.spaceId === undefined || args.spaceId.length === 0 ? {} : { spaceId: args.spaceId },
+  }
+}
+
+/** Resolve the mounted agents service at call time, or fail loud. */
+/** Classify a routine and turn its readonly lists into tool-output arrays. */
+function routineCloud(definition: RoutineDefinition): {
+  scope: string
+  cloudReady: boolean
+  requiresPc: boolean
+  localSteps: string[]
+  reasons: string[]
+  note: string
+} {
+  const profile = classifyRoutine(definition)
+  return {
+    scope: profile.scope,
+    cloudReady: profile.cloudReady,
+    requiresPc: profile.requiresPc,
+    localSteps: [...profile.localSteps],
+    reasons: [...profile.reasons],
+    note: profile.note,
   }
 }
 
@@ -549,6 +572,21 @@ function isHarnessFolder(path: string): boolean {
   return existsSync(join(path, 'skills')) || existsSync(join(path, 'agents')) || existsSync(join(path, 'AGENTS.md'))
 }
 
+/** Output shape of the cloud/local verdict every routine and flow tool returns. */
+const CLOUD_PROFILE_SCHEMA = {
+  type: 'object',
+  required: true,
+  additionalProperties: false,
+  properties: {
+    scope: { type: 'string', required: true, description: 'cloud, local, or mixed.' },
+    cloudReady: { type: 'boolean', required: true, description: 'Runs on the VPS with the PC off.' },
+    requiresPc: { type: 'boolean', required: true, description: 'At least one step needs the PC.' },
+    localSteps: { type: 'array', required: true, items: { type: 'string' }, description: 'Steps that need the PC.' },
+    reasons: { type: 'array', required: true, items: { type: 'string' }, description: 'Why those steps need the PC.' },
+    note: { type: 'string', required: true, description: 'One sentence to repeat to the user.' },
+  },
+} as const
+
 /**
  * Register the product tools on the calling agent's tool registry.
  * @param ctx - Cordis context carrying `tools` and the product services.
@@ -578,6 +616,16 @@ export function apply(ctx: Context, config: Config): void {
       order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 3,
       text: 'Cuando aprendas un hecho durable de este Space —un dato, una preferencia, una regla, una decisión o un resultado que deba recordarse en próximas sesiones— guárdalo con faberloom_spaces_remember, con el id del Space de esta área de trabajo (resuélvelo con faberloom_spaces_list o faberloom_spaces_find si no lo conoces). Guarda solo lo que aporte valor futuro, en texto breve y autosuficiente; no vuelques la conversación completa ni datos efímeros. Una corrección o lección se registra con faberloom_teaching_record.',
     }), 'tool-faberloom: memory prompt')
+
+    // The execution-environment rule: a routine or flow that only reads mail,
+    // sends mail, or calls a cloud MCP runs on the VPS with the PC off; one
+    // that edits a local file needs the PC. The tools return the classifier's
+    // verdict, and the assistant must repeat it instead of promising either.
+    ctx.effect(() => prompt.section({
+      name: 'faberloom:execution',
+      order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 5,
+      text: 'Toda rutina y todo Work Flow trae un campo `cloud` con `cloudReady`, `requiresPc`, `localSteps`, `reasons` y `note`. Al crearlo, editarlo o explicarlo, dile siempre al usuario en una frase si se ejecuta en el VPS aunque la PC esté apagada y la aplicación cerrada, o qué pasos necesitan la PC encendida. Los pasos que leen correo, mueven correo, envían correo o llaman a un MCP en la nube son de VPS; los que actualizan un archivo del computador, una ruta de Windows o un comando local necesitan la PC. Nunca prometas que una rutina local corre con el equipo apagado, y nunca digas que una rutina de solo correo necesita la PC.',
+    }), 'tool-faberloom: execution prompt')
   }
 
   ctx.tools.register(defineTool({
@@ -2132,26 +2180,29 @@ export function apply(ctx: Context, config: Config): void {
           version: { type: 'integer', required: true },
           status: { type: 'string', required: true },
           problem: { type: 'string' },
+          cloud: CLOUD_PROFILE_SCHEMA,
         },
       },
       render: (_args, value) => [{
         type: 'text',
-        text: `Routine ${value.id} v${String(value.version)} is ${value.status}${value.problem === undefined ? '' : ` (${value.problem})`}.`,
+        text: `Routine ${value.id} v${String(value.version)} is ${value.status}${value.problem === undefined ? '' : ` (${value.problem})`}. ${value.cloud?.note ?? ''}`,
       }],
     },
     execute: async (args) => {
       const service = routines(ctx)
       const routine = await service.createRoutine(actor(config).id, routineInputFromArgs(args))
-      if (args.draft === true) return { id: routine.id, version: routine.version, status: routine.status }
+      const cloud = routineCloud(routine.definition)
+      if (args.draft === true) return { id: routine.id, version: routine.version, status: routine.status, cloud }
       try {
         const active = await service.activateRoutine(actor(config).id, routine.id)
-        return { id: routine.id, version: routine.version, status: active.status }
+        return { id: routine.id, version: routine.version, status: active.status, cloud }
       } catch (error) {
         return {
           id: routine.id,
           version: routine.version,
           status: routine.status,
           problem: error instanceof Error ? error.message : String(error),
+          cloud,
         }
       }
     },
@@ -2168,12 +2219,12 @@ export function apply(ctx: Context, config: Config): void {
       spaceId: { type: 'string', description: 'Space (Workspace) the routine belongs to; omit to keep the current one.' },
     },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Routine ${value.id} now v${String(value.version)}.` }],
+      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, version: { type: 'integer', required: true }, cloud: CLOUD_PROFILE_SCHEMA } },
+      render: (_args, value) => [{ type: 'text', text: `Routine ${value.id} now v${String(value.version)}. ${value.cloud.note}` }],
     },
     execute: async (args) => {
       const routine = await routines(ctx).updateRoutine(actor(config).id, args.id as FaberLoomRoutineId, routineInputFromArgs(args))
-      return { id: routine.id, version: routine.version }
+      return { id: routine.id, version: routine.version, cloud: routineCloud(routine.definition) }
     },
     presentCall: args => ({ card: 'generic', title: 'Update routine', kind: 'other', rawInput: args }),
   }))
@@ -2229,6 +2280,7 @@ export function apply(ctx: Context, config: Config): void {
                 name: { type: 'string', required: true },
                 status: { type: 'string', required: true },
                 version: { type: 'integer', required: true },
+                cloud: CLOUD_PROFILE_SCHEMA,
               },
             },
           },
@@ -2238,7 +2290,12 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute: async () => {
       const list = await routines(ctx).listRoutines(actor(config).id)
-      return { routines: list.map(routine => ({ id: routine.id, name: routine.name, status: routine.status, version: routine.version })) }
+      return {
+        routines: list.map(routine => ({
+          id: routine.id, name: routine.name, status: routine.status, version: routine.version,
+          cloud: routineCloud(routine.definition),
+        })),
+      }
     },
     presentCall: () => ({ card: 'generic', title: 'List routines', kind: 'other', rawInput: {} }),
   }))

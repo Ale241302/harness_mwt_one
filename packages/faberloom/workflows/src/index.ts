@@ -40,6 +40,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export { classifyWorkflow } from './cloud.ts'
 export * from './templates.ts'
 
 declare module '@deepseek-ai/cordis' {

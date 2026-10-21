@@ -18,7 +18,7 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
+import type { DomainChanged, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import z from '@deepseek-ai/schemastery'
 import {
   FABERLOOM_MIRROR_DOMAINS,
@@ -68,6 +68,16 @@ export const DEFAULT_MIRROR_DEBOUNCE_MS = 3_000
 /** Longest one mirror request may take, in milliseconds. */
 export const DEFAULT_MIRROR_TIMEOUT_MS = 180_000
 
+/**
+ * Largest apply body the desktop sends in one request. A home can hold tens of
+ * megabytes of Session shares, routine history, and skills; the gateway's
+ * route and the owner's MCP server both cap a request body, so a first sync
+ * that sent the whole home answered 413 and never moved a routine. Splitting
+ * the same document into bounded apply calls keeps every request small while
+ * preserving the row-journal rule, because each chunk records its own rows.
+ */
+export const DEFAULT_MIRROR_CHUNK_BYTES = 3 * 1024 * 1024
+
 /** Name of the status document the mirror keeps in its home. */
 export const MIRROR_STATUS_FILE = 'mirror-status.json'
 
@@ -102,6 +112,8 @@ export interface Config {
   debounceMs?: number
   /** Milliseconds one request may take. */
   timeoutMs?: number
+  /** Largest apply body sent in one request, in bytes. */
+  chunkBytes?: number
 }
 
 /** Schemastery configuration for the mirror. */
@@ -118,6 +130,7 @@ export const Config: z<Config> = z.object({
   intervalMs: z.number(),
   debounceMs: z.number(),
   timeoutMs: z.number(),
+  chunkBytes: z.number(),
 })
 
 /** One journal entry: the digest of the row as of the last sync that touched it. */interface JournalEntry {
@@ -172,6 +185,26 @@ interface PushResult {
   readonly skillsApplied: readonly string[]
   /** Locations that could not be reached. */
   readonly skipped: readonly FaberLoomMirrorSkip[]
+}
+
+/** One bounded apply body: rows grouped by domain and table, plus skills. */
+interface MirrorPushChunk {
+  /** Domain name to its version stamp and pending table rows. */
+  readonly domains: Record<string, {
+    readonly version?: number
+    readonly tables: Record<string, Record<string, { readonly deleted: boolean; readonly value?: unknown }>>
+  }>
+  /** Skill bundle name to `SKILL.md` text. */
+  readonly skills: Record<string, string>
+}
+
+/** The same shape while a chunk is being filled. */
+interface MutableMirrorPushChunk {
+  domains: Record<string, {
+    version?: number
+    tables: Record<string, Record<string, { deleted: boolean; value?: unknown }>>
+  }>
+  skills: Record<string, string>
 }
 
 /** What one local pull-apply produced. */
@@ -441,11 +474,16 @@ export class FaberLoomMirror extends Service {
     // knows the version its owner stamped; this is where that version arrives.
     store.materialize(remote)
     const pulled = await this.applyPulled(store, remote)
+    // Two homes that provisioned the same built-in routine independently give
+    // it two ids. The rows are not equal, so the conflict rule keeps both and
+    // the panels show duplicates. Reconcile same-name routines once, keeping
+    // the most evolved row and tombstoning the other side's id.
+    const tombstones = await this.reconcileRoutineNames(store, remote)
     // Read the local side AFTER the apply: what the apply wrote is now the
     // local value, and reading it before would read the overwritten rows as
     // local changes and push them back over the pull.
     const local = await this.localDocument(store)
-    const pushed = await this.pushLocal(local, remote)
+    const pushed = await this.pushLocal(local, remote, tombstones)
     return {
       rows: [...pulled.rows, ...pushed.rows],
       applied: pulled.applied,
@@ -594,9 +632,79 @@ export class FaberLoomMirror extends Service {
     return { rows: result.rows, applied: result.applied, kept, skillsApplied, skipped }
   }
 
+  /**
+   * Collapse routines that share a name after the pull. The surviving row is
+   * the one with the highest version (then the latest update), and it is
+   * written under a local key when one exists so the desktop keeps the id its
+   * Sessions and grants already reference. Every removed remote key becomes a
+   * tombstone in this cycle, so the VPS deletes its duplicate instead of
+   * receiving it back on the next pull.
+   * @param store - this home's rows, after the remote document landed.
+   * @param remote - the document just applied, used to tell remote keys from local ones.
+   * @returns tombstones for the duplicate remote keys that were removed.
+   */
+  private async reconcileRoutineNames(
+    store: MirrorHomeStore,
+    remote: FaberLoomMirrorDocument,
+  ): Promise<FaberLoomMirrorRowChange[]> {
+    const table = store.get('faberloom_routines')?.table('routines') as KvTable<string, unknown> | undefined
+    if (table === undefined) return []
+    const remoteRows = remote.domains['faberloom_routines']?.tables['routines'] ?? {}
+    const remoteKeys = new Set(Object.keys(remoteRows))
+    const groups = new Map<string, { key: string; value: Record<string, unknown> }[]>()
+    for (const [key, raw] of table.entries()) {
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
+      const value = raw as Record<string, unknown>
+      const name = typeof value['name'] === 'string' ? value['name'].trim() : ''
+      if (name.length === 0) continue
+      const group = groups.get(name) ?? []
+      group.push({ key, value })
+      groups.set(name, group)
+    }
+    const tombstones: FaberLoomMirrorRowChange[] = []
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      const rank = (entry: { value: Record<string, unknown> }): [number, string] => [
+        typeof entry.value['version'] === 'number' ? entry.value['version'] : 0,
+        typeof entry.value['updatedAt'] === 'string' ? entry.value['updatedAt'] : '',
+      ]
+      const ordered = [...group].sort((left, right) => {
+        const [leftVersion, leftAt] = rank(left)
+        const [rightVersion, rightAt] = rank(right)
+        return rightVersion - leftVersion || rightAt.localeCompare(leftAt)
+      })
+      const winner = ordered[0] as { key: string; value: Record<string, unknown> }
+      // A desktop key wins the id when the group has one: the PC's Sessions,
+      // grants and board rows already point at it. With no local key, the
+      // remote winner keeps its own id.
+      const local = ordered.find(entry => !remoteKeys.has(entry.key))
+      const canonical = local ?? winner
+      if (canonical.key !== winner.key) await table.put(canonical.key, winner.value)
+      for (const entry of ordered) {
+        if (entry.key === canonical.key) continue
+        await table.delete(entry.key)
+        if (remoteKeys.has(entry.key)) {
+          tombstones.push({ domain: 'faberloom_routines', table: 'routines', key: entry.key })
+        }
+      }
+    }
+    return tombstones
+  }
+
   /** Push every locally changed row and skill, recording what landed. */
-  private async pushLocal(local: FaberLoomMirrorExportResult, remote: FaberLoomMirrorDocument): Promise<PushResult> {
+  private async pushLocal(
+    local: FaberLoomMirrorExportResult,
+    remote: FaberLoomMirrorDocument,
+    tombstones: readonly FaberLoomMirrorRowChange[] = [],
+  ): Promise<PushResult> {
     const pending = this.pendingRows(local.document, remote)
+    const seen = new Set(pending.map(change => journalKey(change.domain, change.table, change.key)))
+    for (const change of tombstones) {
+      const key = journalKey(change.domain, change.table, change.key)
+      if (seen.has(key)) continue
+      seen.add(key)
+      pending.push(change)
+    }
     const skills: Record<string, string | null> = {}
     for (const [name, content] of Object.entries(local.document.skills)) {
       /* v8 ignore next -- readSkills returns only strings; null is the wire form of a deletion. */
@@ -607,40 +715,113 @@ export class FaberLoomMirror extends Service {
     if (pending.length === 0 && Object.keys(skills).length === 0) {
       return { rows: [], applied: [], skillsApplied: [], skipped: [] }
     }
-    const document: FaberLoomMirrorDocument = {
-      version: FABERLOOM_MIRROR_FORMAT_VERSION,
-      platform: this.platform(),
-      domains: buildPendingDomains(pending, local.document),
-      skills,
-    }
-    const response = await this.request({ action: 'apply', document })
-    if (response === undefined) return { rows: pending, applied: [], skillsApplied: [], skipped: local.skipped }
-    for (const change of response.applied) {
-      const key = journalKey(change.domain, change.table, change.key)
-      const localRow = local.document.domains[change.domain]?.tables[change.table]?.[change.key]
-      const remoteRow = response.document.domains[change.domain]?.tables[change.table]?.[change.key]
-      if (localRow === undefined || localRow.deleted) {
-        this.journal.delete(key)
-        this.synced.delete(key)
-        continue
+    // The home can exceed the route's body cap by an order of magnitude (Session
+    // shares alone are tens of megabytes). Each chunk is a complete apply
+    // document, so a row that landed is journaled before the next request and a
+    // failed chunk never makes the previous ones look unsent.
+    const chunks = this.pushChunks(pending, local.document, skills)
+    const applied: FaberLoomMirrorRowChange[] = []
+    const skillsApplied: string[] = []
+    const skipped: FaberLoomMirrorSkip[] = [...local.skipped]
+    for (const chunk of chunks) {
+      const document: FaberLoomMirrorDocument = {
+        version: FABERLOOM_MIRROR_FORMAT_VERSION,
+        platform: this.platform(),
+        domains: chunk.domains,
+        skills: chunk.skills,
       }
-      // The pushed value is what the local side holds; the remote value is what
-      // the remote echoes back, which may differ when the remote refused or
-      // merged the write. Recording both keeps the next pull from reading the
-      // push as a remote change.
-      const localHash = hashRow(localRow.value)
-      const remoteHash = remoteRow === undefined || remoteRow.deleted ? DELETED : hashRow(remoteRow.value)
-      this.recordSynced(key, change, localHash, remoteHash)
-    }
-    for (const name of response.skillsApplied) {
-      const content = skills[name]
-      /* v8 ignore next -- the remote confirms only bundles this push sent, and those are strings. */
-      if (typeof content === 'string') {
-        const hash = hashSkill(content)
-        this.journal.set(skillJournalKey(name), { syncedLocalHash: hash, syncedRemoteHash: hash })
+      const response = await this.request({ action: 'apply', document })
+      if (response === undefined) break
+      applied.push(...response.applied)
+      skillsApplied.push(...response.skillsApplied)
+      skipped.push(...response.skipped)
+      for (const change of response.applied) {
+        const key = journalKey(change.domain, change.table, change.key)
+        const localRow = local.document.domains[change.domain]?.tables[change.table]?.[change.key]
+        const remoteRow = response.document.domains[change.domain]?.tables[change.table]?.[change.key]
+        if (localRow === undefined || localRow.deleted) {
+          this.journal.delete(key)
+          this.synced.delete(key)
+          continue
+        }
+        // The pushed value is what the local side holds; the remote value is what
+        // the remote echoes back, which may differ when the remote refused or
+        // merged the write. Recording both keeps the next pull from reading the
+        // push as a remote change.
+        const localHash = hashRow(localRow.value)
+        const remoteHash = remoteRow === undefined || remoteRow.deleted ? DELETED : hashRow(remoteRow.value)
+        this.recordSynced(key, change, localHash, remoteHash)
+      }
+      for (const name of response.skillsApplied) {
+        const content = skills[name]
+        /* v8 ignore next -- the remote confirms only bundles this push sent, and those are strings. */
+        if (typeof content === 'string') {
+          const hash = hashSkill(content)
+          this.journal.set(skillJournalKey(name), { syncedLocalHash: hash, syncedRemoteHash: hash })
+        }
       }
     }
-    return { rows: pending, applied: response.applied, skillsApplied: response.skillsApplied, skipped: response.skipped }
+    return { rows: pending, applied, skillsApplied, skipped }
+  }
+
+  /** Largest apply body this side sends, in bytes. */
+  private chunkBytes(): number {
+    const configured = this.config.chunkBytes
+    if (configured !== undefined && Number.isSafeInteger(configured) && configured >= 64 * 1024) return configured
+    return DEFAULT_MIRROR_CHUNK_BYTES
+  }
+
+  /**
+   * Split the pending rows and skills into apply documents no larger than
+   * {@link chunkBytes}. One oversized row still gets its own chunk: it is the
+   * smallest unit that can be written, and refusing it here would leave the
+   * journal stuck on every cycle.
+   * @param pending - row locations to send.
+   * @param local - the local document the row values come from.
+   * @param skills - changed skill bundles, sent in their own chunks.
+   * @returns ready-to-send chunks, in local document order.
+   */
+  private pushChunks(
+    pending: readonly FaberLoomMirrorRowChange[],
+    local: FaberLoomMirrorDocument,
+    skills: Readonly<Record<string, string | null>>,
+  ): MirrorPushChunk[] {
+    const max = this.chunkBytes()
+    const chunks: MirrorPushChunk[] = []
+    let current: MutableMirrorPushChunk = { domains: {}, skills: {} }
+    let size = 0
+    const flush = (): void => {
+      if (Object.keys(current.domains).length > 0 || Object.keys(current.skills).length > 0) chunks.push(current)
+      current = { domains: {}, skills: {} }
+      size = 0
+    }
+    for (const change of pending) {
+      const row = local.domains[change.domain]?.tables[change.table]?.[change.key] ?? { deleted: true }
+      const bytes = byteLength(JSON.stringify(row)) + byteLength(change.domain) + byteLength(change.table) + byteLength(change.key) + 64
+      if (size > 0 && size + bytes > max) flush()
+      const source = local.domains[change.domain]
+      const domain = current.domains[change.domain] ?? {
+        ...source?.version === undefined ? {} : { version: source.version },
+        tables: {},
+      }
+      const table = domain.tables[change.table] ?? {}
+      table[change.key] = row
+      domain.tables[change.table] = table
+      current.domains[change.domain] = domain
+      size += bytes
+      // A row larger than the chunk budget is still a legal one-row document.
+      if (bytes > max) flush()
+    }
+    for (const [name, content] of Object.entries(skills)) {
+      if (content === null) continue
+      const bytes = byteLength(name) + byteLength(content) + 32
+      if (size > 0 && size + bytes > max) flush()
+      current.skills[name] = content
+      size += bytes
+      if (bytes > max) flush()
+    }
+    flush()
+    return chunks
   }
 
   /** Record one row as synced: both sides now hold the same digest. */
@@ -883,22 +1064,9 @@ function describeProblems(problems: readonly { readonly path: string; readonly d
   return problems.map(problem => `${problem.path} ${problem.detail}`).join('; ')
 }
 
-/** Build the pending subset of a document for one push. */
-function buildPendingDomains(
-  pending: readonly FaberLoomMirrorRowChange[],
-  local: FaberLoomMirrorDocument,
-): Record<string, { tables: Record<string, Record<string, { deleted: boolean; value?: unknown }>> }> {
-  const domains: Record<string, { tables: Record<string, Record<string, { deleted: boolean; value?: unknown }>> }> = {}
-  for (const change of pending) {
-    const row = local.domains[change.domain]?.tables[change.table]?.[change.key]
-    const domain = domains[change.domain] ?? { tables: {} }
-    const rows = domain.tables[change.table] ?? {}
-    if (row === undefined || row.deleted) rows[change.key] = { deleted: true }
-    else rows[change.key] = { deleted: false, value: row.value }
-    domain.tables[change.table] = rows
-    domains[change.domain] = domain
-  }
-  return domains
+/** UTF-8 byte length of one string, the unit the request cap uses. */
+function byteLength(value: string): number {
+  return Buffer.byteLength(value, 'utf8')
 }
 
 /** Read one row-change list from a response body, ignoring malformed entries. */

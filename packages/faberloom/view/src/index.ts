@@ -44,6 +44,8 @@ import type { FaberLoomSpaceTreeEntry } from './types.ts'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
+import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
+import { classifyWorkflow } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { FaberLoomConnections, FaberLoomEmailDraft } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
@@ -1216,6 +1218,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       board: board.map(item => ({ id: item.id, title: item.title, status: item.status, routineId: item.routineId })),
       routines: routines.map(routine => ({
         id: routine.id, name: routine.name, status: routine.status, visibility: routine.visibility, spaceId: routine.spaceId,
+        cloud: classifyRoutine(routine.definition),
         ...sharedRoutineIds.has(String(routine.id)) ? { shared: true, canDelete: deletableRoutineIds.has(String(routine.id)) } : {},
       })),
       memory,
@@ -1394,6 +1397,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       routineId: flow.routineId ?? null,
       spaceId: flow.scope.kind === 'space' ? flow.scope.spaceId : null,
       visibility: flow.visibility,
+      cloud: classifyWorkflow(flow.definition),
     }
   }
 
@@ -5693,6 +5697,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       expectedResult: routine.definition.expectedResult,
       permissions: [...routine.definition.permissions],
       failurePolicy: routine.definition.failurePolicy,
+      cloud: classifyRoutine(routine.definition),
     }
   }
 

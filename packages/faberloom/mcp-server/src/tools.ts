@@ -10,6 +10,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from 'node:crypto'
 import type { FaberLoomRoutineId } from '@deepseek-ai/dsh-faberloom-routines'
+import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type { FaberLoomSpaceId, SpaceActor, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
 import type { FaberLoomAgentId, FaberLoomModelId } from '@deepseek-ai/dsh-faberloom-agents'
@@ -1309,7 +1310,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_routines',
-      description: 'Lista las rutinas del propietario con su estado, versión y disparadores.',
+      description: 'Lista las rutinas con su estado y su perfil cloud (cloudReady, requiresPc, note). Repite esa conclusi\u00f3n al usuario.',
       inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     },
     run: async (context, ownerId) => (await context.faberloomRoutines.listRoutines(ownerId)).map(routine => ({
@@ -1320,6 +1321,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       triggers: routine.definition.triggers.map(trigger => ({ kind: trigger.kind, match: trigger.match })),
       steps: routine.definition.steps.length,
       expectedResult: routine.definition.expectedResult,
+      cloud: classifyRoutine(routine.definition),
     })),
   },
   {
@@ -1665,7 +1667,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_workflows',
-      description: 'Lista los flujos de trabajo con su espacio, estado y nodos.',
+      description: 'Lista los flujos de trabajo con su espacio, estado, nodos y `cloud`: si corren en el VPS con la PC apagada (`cloudReady`) o qué pasos necesitan la PC (`requiresPc`, `localSteps`, `note`). Repite esa conclusión al usuario.',
       inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     },
     run: async context => view(context).workflowOverview(),
@@ -2089,7 +2091,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_routine_create',
-      description: 'Crea una rutina con nombre e intención, opcionalmente en un espacio, y la deja activa.',
+      description: 'Crea una rutina y la deja activa. Despu?s consulta faberloom_routine_get o faberloom_routines para leer su `cloud` y decir al usuario si corre en el VPS o necesita la PC.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,

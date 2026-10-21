@@ -2501,6 +2501,7 @@ function routinesScreen() {
       () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : routineDetail(selected),
       [selected],
     )
+    const cloud = detail.kind === 'ready' ? detail.value?.cloud : undefined
     const [runs, setRuns] = useState<readonly FaberLoomExecutionRow[]>([])
     const [runStep, setRunStep] = useState<Record<string, string>>({})
     const loadedRuns = useLazy<readonly FaberLoomExecutionRow[]>(
@@ -2536,6 +2537,13 @@ function routinesScreen() {
     const columns: readonly Column<FaberLoomOverview['routines'][number]>[] = [
       { key: 'name', header: t('col.name'), cell: routine => <span className={styles.cellName}>{routine.name}</span> },
       { key: 'status', header: t('col.status'), cell: routine => <Chip>{routine.status}</Chip> },
+      {
+        key: 'cloud',
+        header: t('routines.cloud'),
+        cell: routine => routine.cloud === undefined
+          ? null
+          : <Chip>{routine.cloud.cloudReady ? t('routines.cloudCloud') : t('routines.cloudPc')}</Chip>,
+      },
     ]
 
     const editStep = (index: number, patch: Partial<FaberLoomRoutineStepRow>): void => {
@@ -2643,6 +2651,14 @@ function routinesScreen() {
                             {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
                           </select>
                         </Field>
+                        {cloud === undefined ? null : (
+                          <Field label={t('routines.cloud')} hint={t('routines.cloudHint')}>
+                            <div className={styles.steps}>
+                              <Chip>{cloud.cloudReady ? t('routines.cloudCloud') : t('routines.cloudPc')}</Chip>
+                              <span className={styles.cellMuted}>{cloud.note}</span>
+                            </div>
+                          </Field>
+                        )}
                         <Field label={t('field.name')}><input type="text" value={name} onChange={(event) => { setName(event.target.value) }} /></Field>
                         <Field label={t('field.intent')} hint={t('routines.intentHint')}><textarea value={intent} onChange={(event) => { setIntent(event.target.value) }} /></Field>
                         <Field label={t('field.trigger')}>
@@ -4297,7 +4313,7 @@ function workflowsScreen() {
           {flows.length === 0 ? <span className={styles.workflowEmpty}>{t('wf.empty')}</span> : null}
           {flows.map(flow => (
             <button key={flow.id} type="button" className={`${styles.workflowFlowButton} ${selected === flow.id ? styles.workflowFlowButtonActive : ''}`} onClick={() => { setSelected(flow.id) }}>
-              {flow.name} · {flow.status} · {flow.nodes}/{flow.edges}
+              {flow.name} · {flow.status} · {flow.nodes}/{flow.edges}{flow.cloud === undefined ? '' : ` · ${flow.cloud.cloudReady ? t('routines.cloudCloud') : t('routines.cloudPc')}`}
             </button>
           ))}
         </aside>
@@ -4307,6 +4323,11 @@ function workflowsScreen() {
             <>
               <div className={styles.workflowToolbar}>
                 {selectedFlowReadOnly ? <span className={styles.cellMuted}>{t('wf.readOnly')}</span> : null}
+                {selectedFlow?.cloud === undefined ? null : (
+                  <span className={styles.workflowSpaceLabel} title={selectedFlow.cloud.note}>
+                    {selectedFlow.cloud.cloudReady ? t('routines.cloudCloud') : t('routines.cloudPc')}
+                  </span>
+                )}
                 <button type="button" className={styles.primary} disabled={selectedFlowReadOnly} onClick={() => { act(() => workflows.setStatus(selected, 'active')) }}>{t('wf.activate')}</button>
                 <button type="button" disabled={selectedFlowReadOnly} onClick={() => { act(() => workflows.setStatus(selected, 'paused')) }}>{t('wf.pause')}</button>
                 {selectedFlowShared ? null : (
