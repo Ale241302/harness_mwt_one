@@ -7696,7 +7696,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSharePermission',
-    declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'create-context\' | \'index-context\' | \'share\' | \'manage-members\' | \'view-memory\' | \'create-memory\' | \'edit-memory\' | \'delete-memory\' | \'view-context\' | \'edit-context\' | \'delete-context\' | \'view-workflows\' | \'create-workflows\' | \'edit-workflows\' | \'delete-workflows\' | \'view-routines\' | \'create-routines\' | \'edit-routines\' | \'delete-routines\';',
+    declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'create-context\' | \'index-context\' | \'share\' | \'manage-members\' | \'view-memory\' | \'create-memory\' | \'edit-memory\' | \'delete-memory\' | \'view-context\' | \'edit-context\' | \'delete-context\' | \'view-workflows\' | \'create-workflows\' | \'edit-workflows\' | \'delete-workflows\' | \'view-routines\' | \'create-routines\' | \'edit-routines\' | \'delete-routines\' | \'create-subspace\' | \'move-space\';',
   },
   {
     name: 'FaberLoomShareRepublishInput',

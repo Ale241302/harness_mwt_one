@@ -5291,6 +5291,17 @@ export class FaberLoomViewService extends TypertRemoteService {
     const nextParent = input.parentId === undefined
       ? current.parentId ?? null
       : input.parentId === null || input.parentId.length === 0 ? null : input.parentId as FaberLoomSpaceId
+    const shares = this.ctx.get('faberloomShares')
+    const canManage = current.ownerId === actor.id || actor.role === 'admin'
+      || (shares !== undefined
+        && await shares.can(actor.id, current.ownerId, { kind: 'space', id: current.id }, 'manage-members'))
+    if (!canManage) {
+      // A grantee moves the shared Space in the product tree, but the owner's
+      // folder and Workspace registration stay under the owner's control.
+      if (nextParent === (current.parentId ?? null)) return await this.overview()
+      await this.ctx.faberloomSpaces.update(actor, id as FaberLoomSpaceId, { parentId: nextParent })
+      return await this.overview()
+    }
     if (nextParent !== (current.parentId ?? null)) {
       await this.relocateSpace(actor, current, nextParent)
     }

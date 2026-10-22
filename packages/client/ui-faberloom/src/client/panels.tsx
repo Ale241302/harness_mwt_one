@@ -904,7 +904,7 @@ function spacesScreen() {
           <Field label={t('wf.share.email')}><span className={styles.cellMuted}>{grantEmail}</span></Field>
           <Field label={t('wf.share.permissions')}>
             <div className={styles.workflowPermissions}>
-              {SHARE_PERMISSION_OPTIONS.map(permission => (
+              {SPACE_SHARE_PERMISSION_OPTIONS.map(permission => (
                 <label key={permission} className={`${styles.workflowPermission} ${grantPermissions.includes(permission) ? styles.workflowPermissionOn : ''}`}>
                   <input type="checkbox" checked={grantPermissions.includes(permission)}
                     onChange={() => { toggleGrantPermission(permission) }} />
@@ -3844,13 +3844,19 @@ const WORKFLOW_KINDS = [
   'board.create', 'space.reference', 'routine.invoke', 'condition', 'transform', 'wait', 'notify', 'deadletter',
 ] as const
 
-/** Permission checkboxes the Compartir form offers (Work Flow share modal and the Workspace row share dialog). */
+/** Permission checkboxes a Work Flow share offers. */
 export const SHARE_PERMISSION_OPTIONS = [
   'view', 'run', 'edit-graph', 'add-nodes', 'remove-nodes', 'edit-agents', 'manage-triggers', 'share',
   'view-memory', 'create-memory', 'edit-memory', 'delete-memory',
   'view-context', 'create-context', 'edit-context', 'delete-context',
   'view-workflows', 'create-workflows', 'edit-workflows', 'delete-workflows',
   'view-routines', 'create-routines', 'edit-routines', 'delete-routines',
+] as const
+
+/** Permission checkboxes a Space share offers, including moving its hierarchy. */
+export const SPACE_SHARE_PERMISSION_OPTIONS = [
+  ...SHARE_PERMISSION_OPTIONS,
+  'create-subspace', 'move-space',
 ] as const
 
 /**
@@ -3861,7 +3867,7 @@ export const SHARE_PERMISSION_OPTIONS = [
  * @param permission - the permission token.
  * @returns the label to show.
  */
-function sharePermissionLabel(t: PropsLocale<'faberloom'>['t'], permission: string): string {
+export function sharePermissionLabel(t: PropsLocale<'faberloom'>['t'], permission: string): string {
   const base: Readonly<Record<string, FaberloomKey>> = {
     view: 'perm.view',
     run: 'perm.run',
@@ -3871,6 +3877,8 @@ function sharePermissionLabel(t: PropsLocale<'faberloom'>['t'], permission: stri
     'remove-nodes': 'perm.removeNodes',
     'edit-agents': 'perm.editAgents',
     'manage-triggers': 'perm.manageTriggers',
+    'create-subspace': 'perm.createSubspace',
+    'move-space': 'perm.moveSpace',
   }
   const mapped = base[permission]
   if (mapped !== undefined) return t(mapped)

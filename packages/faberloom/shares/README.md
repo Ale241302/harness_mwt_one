@@ -60,6 +60,6 @@ No invariant companion is published because the service's unit specs already ass
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The permission set is closed (`SHARE_PERMISSIONS`). `can` allows the owner unconditionally and a grantee only through an `active` grant; a `pending` grant authorizes nothing, which is what the acceptance step exists for. The portable snapshot travels inside the grant row so an imported grant materializes without a second read.
+The permission set is closed (`SHARE_PERMISSIONS`). `can` allows the owner unconditionally and a grantee only through an `active` grant; a `pending` grant authorizes nothing, which is what the acceptance step exists for. `create-subspace` and `move-space` are Space-only grants: `create` and `updatePermissions` reject them on a Work Flow, `spaces.create` requires the former on the parent, and `spaces.update` requires the former on the destination plus `move-space` on the Space being moved. The portable snapshot travels inside the grant row so an imported grant materializes without a second read.
 
 </details>

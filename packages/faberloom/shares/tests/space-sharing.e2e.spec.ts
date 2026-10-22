@@ -60,4 +60,65 @@ describe('F7 — share a Space with a guest end to end', () => {
     await expect(spaces.get(guest, space.id)).rejects.toThrow('space access denied')
     expect((await spaces.get(owner, space.id)).title).toBe('Marluvas')
   })
+
+  it('lets the grantee create and move sub-spaces only with the explicit hierarchy permissions', async () => {
+    const { spaces, shares } = await harness()
+    const parent = await spaces.create(owner, { title: 'Padre' })
+    const source = await spaces.create(owner, { title: 'Origen', parentId: parent.id })
+    const target = await spaces.create(owner, { title: 'Destino' })
+
+    const parentGrant = await shares.create(OWNER, {
+      resource: { kind: 'space', id: parent.id },
+      resourceName: parent.title,
+      granteeEmail: GUEST,
+      permissions: ['view', 'create-subspace'],
+    })
+    const sourceGrant = await shares.create(OWNER, {
+      resource: { kind: 'space', id: source.id },
+      resourceName: source.title,
+      granteeEmail: GUEST,
+      permissions: ['view', 'move-space'],
+    })
+    const targetGrant = await shares.create(OWNER, {
+      resource: { kind: 'space', id: target.id },
+      resourceName: target.title,
+      granteeEmail: GUEST,
+      permissions: ['view', 'create-subspace'],
+    })
+    for (const grant of [parentGrant, sourceGrant, targetGrant]) await shares.accept(GUEST, grant.id)
+
+    const child = await spaces.create(guest, { title: 'Sub-espacio del invitado', parentId: parent.id })
+    expect(child).toMatchObject({ ownerId: GUEST, parentId: parent.id })
+
+    const moved = await spaces.update(guest, source.id, { parentId: target.id })
+    expect(moved.parentId).toBe(target.id)
+
+    // Downgrading to view-only removes each capability independently.
+    await shares.create(OWNER, {
+      resource: { kind: 'space', id: source.id },
+      resourceName: source.title,
+      granteeEmail: GUEST,
+      permissions: ['view'],
+    })
+    await expect(spaces.update(guest, source.id, { parentId: parent.id }))
+      .rejects.toThrow('cannot move this space')
+    await shares.create(OWNER, {
+      resource: { kind: 'space', id: target.id },
+      resourceName: target.title,
+      granteeEmail: GUEST,
+      permissions: ['view'],
+    })
+    await expect(spaces.create(guest, { title: 'Sin permiso', parentId: target.id }))
+      .rejects.toThrow('cannot create a sub-space here')
+  })
+
+  it('rejects Space-only hierarchy permissions on a Work Flow grant', async () => {
+    const { shares } = await harness()
+    await expect(shares.create(OWNER, {
+      resource: { kind: 'workflow', id: 'wf-1' },
+      resourceName: 'Work Flow',
+      granteeEmail: GUEST,
+      permissions: ['view', 'move-space'],
+    })).rejects.toThrow('move-space only applies to a Space')
+  })
 })

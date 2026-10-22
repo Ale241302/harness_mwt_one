@@ -49,6 +49,8 @@ export type FaberLoomSharePermission =
   | 'create-routines'
   | 'edit-routines'
   | 'delete-routines'
+  | 'create-subspace'
+  | 'move-space'
 
 /** Every permission, in display order. */
 export const SHARE_PERMISSIONS: readonly FaberLoomSharePermission[] = [
@@ -58,6 +60,7 @@ export const SHARE_PERMISSIONS: readonly FaberLoomSharePermission[] = [
   'view-context', 'edit-context', 'delete-context',
   'view-workflows', 'create-workflows', 'edit-workflows', 'delete-workflows',
   'view-routines', 'create-routines', 'edit-routines', 'delete-routines',
+  'create-subspace', 'move-space',
 ]
 
 /** Grant lifecycle: the grantee has not accepted yet, accepted, or revoked. */

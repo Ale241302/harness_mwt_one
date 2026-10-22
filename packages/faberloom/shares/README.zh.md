@@ -60,6 +60,6 @@ kind: "package-reference"
 <details>
 <summary>维护者工作上下文 — 点击展开</summary>
 
-权限集合是封闭的（`SHARE_PERMISSIONS`）。`can` 无条件放行所有者，受邀者仅通过 active 授权放行；pending 授权不放行任何动作，这正是接受步骤存在的意义。可移植快照随授权行一起传输，使导入的授权无需二次读取即可实体化。
+权限集合是封闭的（`SHARE_PERMISSIONS`）。`can` 无条件放行所有者，受邀者仅通过 active 授权放行；pending 授权不放行任何动作，这正是接受步骤存在的意义。`create-subspace` 和 `move-space` 是仅适用于 Space 的授权：`create` 和 `updatePermissions` 在 Work Flow 上拒绝它们，`spaces.create` 要求父级持有前者，`spaces.update` 要求目标持有前者，并且被移动的 Space 持有 `move-space`。可移植快照随授权行一起传输，使导入的授权无需二次读取即可实体化。
 
 </details>

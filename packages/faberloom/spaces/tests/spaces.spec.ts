@@ -48,7 +48,7 @@ describe('FaberLoomSpaces', () => {
       .rejects.toThrow('parent space nope not found')
     const foreign = await spaces.create(ADMIN, { title: 'Global' })
     await expect(spaces.create(SONDEL, { title: 'y', parentId: foreign.id }))
-      .rejects.toThrow('identity cannot manage this space')
+      .rejects.toThrow('identity cannot create a sub-space here')
   })
 
   it('moves a space under another and refuses cycles', async () => {

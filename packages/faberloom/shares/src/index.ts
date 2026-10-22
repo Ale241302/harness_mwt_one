@@ -45,6 +45,14 @@ export const Config: z<Config> = z.object({
 /** The known permissions, as a set for input filtering. */
 const KNOWN_PERMISSIONS = new Set<string>(SHARE_PERMISSIONS)
 
+/** Permissions that only make sense on a Space, not on a Work Flow. */
+const SPACE_ONLY_PERMISSIONS = new Set<string>(['create-subspace', 'move-space'])
+
+/** Reject a Space-only permission on a Work Flow instead of silently dropping it. */
+function invalidForResource(resource: FaberLoomShareResource, permissions: readonly string[]): string[] {
+  return resource.kind === 'space' ? [] : permissions.filter(permission => SPACE_ONLY_PERMISSIONS.has(permission))
+}
+
 /** The closed set of shared-content families. */
 const CONTENT_KINDS = new Set<string>(['memory', 'context', 'workflow', 'routine'])
 
@@ -261,6 +269,8 @@ export class FaberLoomShares extends Service {
     const granteeEmail = input.granteeEmail.trim().toLowerCase()
     if (granteeEmail.length === 0) throw new Error('faberloom: share needs a grantee email')
     const permissions = input.permissions.filter(permission => KNOWN_PERMISSIONS.has(permission))
+    const wrongKind = invalidForResource(input.resource, permissions)
+    if (wrongKind.length > 0) throw new Error(`faberloom: ${wrongKind.join(', ')} only applies to a Space`)
     if (permissions.length === 0) throw new Error('faberloom: share needs at least one permission')
     const table = await this.grants()
     // Reuse an existing record for this (owner, resource, grantee) tuple — a
@@ -456,6 +466,8 @@ export class FaberLoomShares extends Service {
   ): Promise<void> {
     const email = granteeEmail.trim().toLowerCase()
     const next = permissions.filter(permission => KNOWN_PERMISSIONS.has(permission))
+    const wrongKind = invalidForResource(resource, next)
+    if (wrongKind.length > 0) throw new Error(`faberloom: ${wrongKind.join(', ')} only applies to a Space`)
     const table = await this.grants()
     // Every local copy for the tuple moves together, so a legacy duplicate never
     // keeps stale permissions after one is edited.

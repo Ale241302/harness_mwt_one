@@ -322,10 +322,21 @@ export class FaberLoomSpaces extends Service {
     return shares !== undefined && await shares.can(actor.id, record.ownerId, { kind: 'space', id }, 'manage-members')
   }
 
+  /** Whether the actor holds one explicit Space grant on this record. */
+  private async hasGrant(
+    id: FaberLoomSpaceId,
+    record: SpaceRecord,
+    actor: SpaceActor,
+    permission: 'create-subspace' | 'move-space',
+  ): Promise<boolean> {
+    const shares = this.ctx.get('faberloomShares')
+    return shares !== undefined && await shares.can(actor.id, record.ownerId, { kind: 'space', id }, permission)
+  }
+
   /**
    * Create one space owned by the actor, scoped to its company, under an
-   * optional parent the actor controls. Every identity may create its own
-   * space, including a console read-only role.
+   * optional parent the actor manages or holds `create-subspace` on. Every
+   * identity may create its own root space, including a console read-only role.
    * @param actor - the acting identity.
    * @param input - title and optional parent.
    * @returns the created space.
@@ -335,7 +346,9 @@ export class FaberLoomSpaces extends Service {
     if (input.parentId !== undefined) {
       const parent = table.get(input.parentId)
       if (parent === undefined) throw new Error(`faberloom: parent space ${input.parentId} not found`)
-      if (!await this.mayManage(input.parentId, parent, actor)) throw new Error('faberloom: identity cannot manage this space')
+      const allowed = await this.mayManage(input.parentId, parent, actor)
+        || await this.hasGrant(input.parentId, parent, actor, 'create-subspace')
+      if (!allowed) throw new Error('faberloom: identity cannot create a sub-space here')
     }
     const now = new Date().toISOString()
     const id = brandString<FaberLoomSpaceId>(randomUUID())
@@ -441,7 +454,9 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
-   * Apply a mutable patch to one space the actor may manage.
+   * Apply a mutable patch to one space the actor may manage. A grantee without
+   * `manage-members` may change only `parentId`, and only with `move-space` on
+   * this Space plus `create-subspace` on the destination.
    * @param actor - the acting identity.
    * @param id - space id.
    * @param patch - fields to change.
@@ -449,12 +464,25 @@ export class FaberLoomSpaces extends Service {
    */
   async update(actor: SpaceActor, id: FaberLoomSpaceId, patch: UpdateSpaceInput): Promise<FaberLoomSpace> {
     const { table, record } = await this.requireRecord(id)
-    if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    const managing = await this.mayManage(id, record, actor)
+    const moving = patch.parentId !== undefined && patch.parentId !== record.parentId
+    if (!managing) {
+      const requested = Object.entries(patch).filter(([, value]) => value !== undefined).map(([key]) => key)
+      if (requested.length === 0) return toSpace(id, record)
+      if (!moving || requested.some(key => key !== 'parentId')) {
+        throw new Error('faberloom: identity cannot manage this space')
+      }
+      if (!await this.hasGrant(id, record, actor, 'move-space')) {
+        throw new Error('faberloom: identity cannot move this space')
+      }
+    }
     if (patch.parentId !== undefined && patch.parentId !== null) {
       if (patch.parentId === id) throw new Error('faberloom: a space cannot be its own parent')
       const parent = table.get(patch.parentId)
       if (parent === undefined) throw new Error(`faberloom: parent space ${patch.parentId} not found`)
-      if (!await this.mayManage(patch.parentId, parent, actor)) throw new Error('faberloom: identity cannot manage this space')
+      const targetAllowed = await this.mayManage(patch.parentId, parent, actor)
+        || await this.hasGrant(patch.parentId, parent, actor, 'create-subspace')
+      if (!targetAllowed) throw new Error('faberloom: identity cannot create a sub-space here')
       let cursorId: FaberLoomSpaceId | undefined = patch.parentId
       while (cursorId !== undefined) {
         if (cursorId === id) throw new Error('faberloom: a space cannot be nested under one of its descendants')
