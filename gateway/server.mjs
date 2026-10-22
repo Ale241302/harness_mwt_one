@@ -562,6 +562,31 @@ function readUserState(email) {
   return undefined
 }
 
+/** Every stored account, in the order the gateway state file holds them. */
+function storedUsers() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cfg.userStateFile, 'utf8'))
+    return Object.values(parsed?.users ?? {}).filter(user => (
+      user !== null && typeof user === 'object'
+      && typeof user.id === 'string' && user.id.length > 0
+      && typeof user.email === 'string' && user.email.length > 0
+    ))
+  } catch {
+    return []
+  }
+}
+
+/** Whether one user's stored product state has a routine the dispatcher can start. */
+function hasActiveRoutine(userId) {
+  try {
+    const file = path.join(cfg.dataDir, userId, 'storages', 'faberloom_routines.json')
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+    return Object.values(parsed?.tables?.routines ?? {}).some(routine => routine?.status === 'active')
+  } catch {
+    return false
+  }
+}
+
 /** True when a JWT is missing, unreadable, or expires within ten minutes. */
 function consolaTokenStale(token) {
   if (typeof token !== 'string' || token.length === 0) return true
@@ -2016,6 +2041,36 @@ setInterval(() => {
     console.error('[gateway] refresco de tokens de consola falló:', err.message)
   })
 }, 5 * 60 * 1000).unref()
+
+// Un dsh solo existe mientras alguien lo usa o el espejo lo despierta. Una
+// rutina de correo debe correr con la PC apagada, asi que el gateway mantiene
+// despierta a toda cuenta que tenga al menos una rutina activa. Sin esto, un
+// reinicio del contenedor dejaba las rutinas del VPS paradas hasta el proximo
+// login, aunque el escritorio estuviera apagado.
+let routineKeepAliveRunning = false
+async function ensureRoutineInstances() {
+  if (routineKeepAliveRunning) return
+  routineKeepAliveRunning = true
+  try {
+    for (const user of storedUsers()) {
+      const live = instances.get(user.id)
+      if (live?.alive && live.token) continue
+      if (!hasActiveRoutine(user.id)) continue
+      try {
+        const stored = readUserState(user.email)
+        if (!stored) continue
+        await ensureInstance({ ...stored, legalEntityIds: stored.legalEntityIds || [] })
+        logEvent({ ev: 'routine_instance_start', account: user.email })
+      } catch (error) {
+        console.error(`[gateway] no se pudo despertar la cuenta de ${user.email} para sus rutinas: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  } finally {
+    routineKeepAliveRunning = false
+  }
+}
+setTimeout(() => { void ensureRoutineInstances() }, 5_000).unref()
+setInterval(() => { void ensureRoutineInstances() }, 60_000).unref()
 
 // ── Apagado ordenado ──────────────────────────────────────────────────
 function shutdown() {
