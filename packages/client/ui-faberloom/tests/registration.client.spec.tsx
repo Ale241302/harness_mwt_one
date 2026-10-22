@@ -340,12 +340,10 @@ describe('faberloom surface', () => {
     await surface.dispose()
   })
 
-  it('leaves the sidebar foot to the Settings control', async () => {
+  it('adds the web sign-out action beside the Settings control', async () => {
     const { runtime, registrations, surface } = await bench()
-    // The product's palettes and interface language live in the Settings modal,
-    // so the surface fills no sidebar-foot action entry.
-    expect(registrations.filter(options => options.name === 'sidebar.footer.action')).toEqual([])
-    expect(runtime.slots.entries('sidebar.footer.action')).toEqual([])
+    expect(registrations.filter(options => options.name === 'sidebar.footer.action')).toHaveLength(1)
+    expect(runtime.slots.entries('sidebar.footer.action')).toHaveLength(1)
     await surface.dispose()
   })
 

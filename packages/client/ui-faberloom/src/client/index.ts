@@ -32,6 +32,7 @@ import { FaberloomBrandName, FaberloomBrandMark, FABERLOOM_SECTIONS, sectionBadg
 import { McpServersSection, type McpServersSectionInjected } from './mcp-servers-section.tsx'
 import { WorkspaceShareDialog, WorkspaceShareMenuItem, createWorkspaceShareStore, type WorkspaceShareInjected } from './workspace-share.tsx'
 import { WorkspaceMoveDialog, WorkspaceMoveMenuItem, createWorkspaceMoveStore, type WorkspaceMoveInjected } from './workspace-move.tsx'
+import { FaberloomSignOut } from './sign-out.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
 import { runTaskChat } from './task-chat.ts'
@@ -375,6 +376,15 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({}),
   }, FaberloomBrandMark))
+
+  // The web shell has no native account menu; keep sign-out beside Settings.
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action',
+    id: 'faberloom-sign-out',
+    order: 100,
+    locale: NS,
+    inject: () => ({}),
+  }, FaberloomSignOut))
 
   for (const section of FABERLOOM_SECTIONS) {
     ctx.slots.inject('main', () => ctx.slots.register({
