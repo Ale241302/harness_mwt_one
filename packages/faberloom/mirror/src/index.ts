@@ -738,6 +738,7 @@ export class FaberLoomMirror extends Service {
       /* v8 ignore next -- readSkills returns only strings; null is the wire form of a deletion. */
       if (content === null) continue
       if (this.journal.get(skillJournalKey(name))?.syncedLocalHash === hashSkill(content)) continue
+      if (remote.skills[name] === content) continue
       skills[name] = content
     }
     if (pending.length === 0 && Object.keys(skills).length === 0) {
@@ -890,6 +891,12 @@ export class FaberLoomMirror extends Service {
           if (this.journal.get(journal)?.syncedLocalHash === hashRow(row.value)) continue
           /* v8 ignore next -- a local document holds each coordinate once, so `seen` cannot repeat here. */
           if (seen.has(journal)) continue
+          // A first sync between two homes that already hold the same row does
+          // not need to send it: the peer's document carries the same hash.
+          // Without this, the first push sent the whole 45 MB Session-share
+          // domain and the owner's per-row apply spent an hour rewriting it.
+          const remoteRow = remote.domains[domain]?.tables[table]?.[key]
+          if (remoteRow !== undefined && !remoteRow.deleted && hashRow(remoteRow.value) === hashRow(row.value)) continue
           seen.add(journal)
           pending.push({ domain, table, key })
         }
