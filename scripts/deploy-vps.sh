@@ -58,9 +58,17 @@ step "3/6  Build del fork (incremental sobre el árbol persistente)"
 # (ui-layout's AppFrame reads process.env.DSH_CLIENT_TITLE, falling back to the
 # "DSH Local Build" locale string). Without it the deployed tab reads the
 # fallback even though apps/web/index.html carries the product title.
+# Corepack's cache survives between deploys on the host: the registry has
+# answered 503 for the pinned pnpm version while an older cache was absent, and
+# that made an otherwise healthy deployment fail before compiling. The cache
+# directory is seeded once; mounting it makes the build independent of corepack
+# reaching the registry on every deploy.
+mkdir -p "$BUILD_DIR/corepack"
 docker run --rm \
   -v "$TREE:/src" \
   -v "$BUILD_DIR/pnpm-store:/pnpm-store" \
+  -v "$BUILD_DIR/corepack:/corepack" \
+  -e COREPACK_HOME=/corepack \
   -e CI=1 -e PNPM_STORE_DIR=/pnpm-store -e DSH_FORK_SHA="$FORK_SHA" \
   -e DSH_CLIENT_TITLE="Faberloom" \
   -w /src \

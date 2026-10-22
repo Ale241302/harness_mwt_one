@@ -62,8 +62,13 @@ declare module '@deepseek-ai/cordis' {
 /** Repeating interval between two mirror cycles, in milliseconds. */
 export const DEFAULT_MIRROR_INTERVAL_MS = 120_000
 
-/** Quiet window a local change waits before it is pushed, in milliseconds. */
-export const DEFAULT_MIRROR_DEBOUNCE_MS = 3_000
+/**
+ * Quiet window a local change waits before it is pushed, in milliseconds.
+ * A panel that polls every five seconds can republish an unchanged Space row
+ * and wake the mirror constantly; one minute coalesces those no-op writes while
+ * still carrying a routine or Work Flow to the VPS promptly.
+ */
+export const DEFAULT_MIRROR_DEBOUNCE_MS = 60_000
 
 /** Longest one mirror request may take, in milliseconds. */
 export const DEFAULT_MIRROR_TIMEOUT_MS = 180_000
