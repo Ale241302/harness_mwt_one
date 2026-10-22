@@ -478,7 +478,10 @@ export class FaberLoomMirror extends Service {
     // it two ids. The rows are not equal, so the conflict rule keeps both and
     // the panels show duplicates. Reconcile same-name routines once, keeping
     // the most evolved row and tombstoning the other side's id.
-    const tombstones = await this.reconcileRoutineNames(store, remote)
+    const tombstones = [
+      ...await this.reconcileRoutineNames(store, remote),
+      ...await this.reconcileWorkflowNames(store, remote),
+    ]
     // Read the local side AFTER the apply: what the apply wrote is now the
     // local value, and reading it before would read the overwritten rows as
     // local changes and push them back over the pull.
@@ -647,9 +650,34 @@ export class FaberLoomMirror extends Service {
     store: MirrorHomeStore,
     remote: FaberLoomMirrorDocument,
   ): Promise<FaberLoomMirrorRowChange[]> {
-    const table = store.get('faberloom_routines')?.table('routines') as KvTable<string, unknown> | undefined
+    return await this.reconcileNames(store, remote, 'faberloom_routines', 'routines')
+  }
+
+  /** Collapse same-name Work Flows after the pull, keeping the most evolved one. */
+  private async reconcileWorkflowNames(
+    store: MirrorHomeStore,
+    remote: FaberLoomMirrorDocument,
+  ): Promise<FaberLoomMirrorRowChange[]> {
+    return await this.reconcileNames(store, remote, 'faberloom_workflows', 'workflows')
+  }
+
+  /**
+   * Collapse same-name rows of one mirrored table after the pull.
+   * @param store - this home's rows, after the remote document landed.
+   * @param remote - the document just applied.
+   * @param domain - mirrored domain holding the table.
+   * @param tableName - table to reconcile.
+   * @returns tombstones for the duplicate remote keys that were removed.
+   */
+  private async reconcileNames(
+    store: MirrorHomeStore,
+    remote: FaberLoomMirrorDocument,
+    domain: string,
+    tableName: string,
+  ): Promise<FaberLoomMirrorRowChange[]> {
+    const table = store.get(domain)?.table(tableName) as KvTable<string, unknown> | undefined
     if (table === undefined) return []
-    const remoteRows = remote.domains['faberloom_routines']?.tables['routines'] ?? {}
+    const remoteRows = remote.domains[domain]?.tables[tableName] ?? {}
     const remoteKeys = new Set(Object.keys(remoteRows))
     const groups = new Map<string, { key: string; value: Record<string, unknown> }[]>()
     for (const [key, raw] of table.entries()) {
@@ -684,7 +712,7 @@ export class FaberLoomMirror extends Service {
         if (entry.key === canonical.key) continue
         await table.delete(entry.key)
         if (remoteKeys.has(entry.key)) {
-          tombstones.push({ domain: 'faberloom_routines', table: 'routines', key: entry.key })
+          tombstones.push({ domain, table: tableName, key: entry.key })
         }
       }
     }
