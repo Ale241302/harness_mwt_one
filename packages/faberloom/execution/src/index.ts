@@ -392,7 +392,8 @@ export class FaberLoomExecutions extends Service {
       // local file. The VPS must not start it: the step would fail against a
       // path that only exists on the owner's PC. The desktop dispatcher still
       // runs it while the app is open.
-      if (process.env['FABERLOOM_MIRROR_PLATFORM'] === 'web' && classifyRoutine(routine.definition).requiresPc) {
+      const cloud = classifyRoutine(routine.definition)
+      if (process.env['FABERLOOM_MIRROR_PLATFORM'] === 'web' && cloud.requiresPc) {
         const subject = `${String(routine.id)}:requires-pc`
         if (!this.reported.has(subject)) {
           this.reported.add(subject)
@@ -400,6 +401,15 @@ export class FaberLoomExecutions extends Service {
         }
         continue
       }
+      // When the desktop is mirroring to a live VPS, the VPS owns the timed and
+      // mail-triggered runs of cloud-ready routines. The desktop still runs a
+      // manual start and every routine that needs local files; otherwise both
+      // dispatchers would send the same mail.
+      if (
+        process.env['FABERLOOM_MIRROR_PLATFORM'] === 'desktop'
+        && process.env['FABERLOOM_MIRROR_ENABLED'] === '1'
+        && cloud.cloudReady
+      ) continue
       const max = routine.definition.maxConcurrency
       let active = max === null ? 0 : executions.filter(execution => execution.routineId === routine.id
         && execution.status !== 'completed' && execution.status !== 'failed').length

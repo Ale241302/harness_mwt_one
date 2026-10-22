@@ -28,7 +28,11 @@ export const FABERLOOM_MIRROR_DOMAINS: Readonly<Record<string, readonly string[]
   faberloom_spaces: ['spaces', 'files', 'memory'],
   faberloom_agents: ['models', 'agents', 'selections', 'outcomes'],
   faberloom_board: ['items'],
-  faberloom_routines: ['routines', 'routine_versions', 'executions', 'effects', 'sources', 'event_keys'],
+  // Definitions travel; executions do not. An execution is a run of one host:
+  // mirroring the `executions` row made the desktop and the VPS resume the same
+  // wait and both send the same mail. Each host starts its own runs, keyed by
+  // its own triggers, and only `routines`/`routine_versions` are shared.
+  faberloom_routines: ['routines', 'routine_versions'],
   faberloom_memory: ['teachings', 'teaching_versions', 'performance', 'late_errors'],
   faberloom_grants: ['grants'],
   faberloom_connections: ['connections'],
