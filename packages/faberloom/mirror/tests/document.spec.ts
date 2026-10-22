@@ -34,12 +34,10 @@ describe('mirror document', () => {
       'faberloom_memory',
       'faberloom_grants',
       'faberloom_connections',
-      'faberloom_mcp',
       'faberloom_inbound',
       'faberloom_workflows',
       'faberloom_context',
       'faberloom_shares',
-      'faberloom_session_shares',
     ])
     // El registro de Workspaces no viaja: sus filas nombran una carpeta y unas
     // sesiones de una sola maquina, y su servicio no adopta una fila escrita al
@@ -49,7 +47,7 @@ describe('mirror document', () => {
     expect(FABERLOOM_MIRROR_DOMAINS['faberloom_workflows']).toEqual(['workflows', 'versions', 'pending'])
     expect(FABERLOOM_MIRROR_DOMAINS['faberloom_context']).toEqual(['entries', 'versions'])
     expect(FABERLOOM_MIRROR_DOMAINS['faberloom_shares']).toEqual(['grants', 'content'])
-    expect(FABERLOOM_MIRROR_DOMAINS['faberloom_session_shares']).toEqual(['sessions'])
+    expect(FABERLOOM_MIRROR_DOMAINS['faberloom_session_shares']).toBeUndefined()
     expect(FABERLOOM_MIRROR_DOMAINS['workspace']).toBeUndefined()
   })
 

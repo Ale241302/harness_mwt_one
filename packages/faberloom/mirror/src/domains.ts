@@ -36,5 +36,10 @@ export const FABERLOOM_MIRROR_DOMAINS: Readonly<Record<string, readonly string[]
   faberloom_workflows: ['workflows', 'versions', 'pending'],
   faberloom_context: ['entries', 'versions'],
   faberloom_shares: ['grants', 'content'],
-  faberloom_session_shares: ['sessions'],
+  // Session shares are deliberately absent. A tenant's `sessions` rows are
+  // around a megabyte each (the transcripts), and carrying them made every
+  // two-minute cycle fetch and rewrite tens of megabytes even when only a
+  // routine had changed. Sessions already travel through the console's own
+  // sharing path; the mirror's job is the product rows that decide what runs
+  // where: routines, Work Flows, grants, connections, contexts, and Spaces.
 }
