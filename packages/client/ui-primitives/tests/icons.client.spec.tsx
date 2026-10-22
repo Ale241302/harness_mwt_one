@@ -86,8 +86,8 @@ const flIcons = Object.fromEntries(
 const flIconNames = Object.keys(flIcons)
 
 describe('FaberLoom icon set', () => {
-  it('exports the ten brand glyphs and the thirty-five standard glyphs', () => {
-    expect(flIconNames).toHaveLength(45)
+  it('exports the ten brand glyphs and the thirty-six standard glyphs', () => {
+    expect(flIconNames).toHaveLength(46)
     expect(flIconNames).toEqual(expect.arrayContaining([
       'FlIconBrandLoom', 'FlIconCriterio', 'FlIconWorkloom', 'FlIconSpaceloom', 'FlIconStackloom',
       'FlIconVoice', 'FlIconLearningClock', 'FlIconKnowledgeIndex', 'FlIconCuration', 'FlIconWorkspace',
@@ -95,7 +95,7 @@ describe('FaberLoom icon set', () => {
       'FlIconPanelLeft', 'FlIconPanelRight', 'FlIconHourglass', 'FlIconClock', 'FlIconRefresh',
       'FlIconLayers', 'FlIconLibrary', 'FlIconBookmark', 'FlIconFileText', 'FlIconMail', 'FlIconMessage',
       'FlIconInbox', 'FlIconPaperclip', 'FlIconCheck', 'FlIconAlert', 'FlIconWarning', 'FlIconSparkles',
-      'FlIconPin', 'FlIconCircle', 'FlIconCircleFill', 'FlIconUser', 'FlIconUsers', 'FlIconUserCircle',
+      'FlIconPin', 'FlIconCircle', 'FlIconCircleFill', 'FlIconUser', 'FlIconUsers', 'FlIconUserCircle', 'FlIconAdmin',
       'FlIconSettings', 'FlIconSliders', 'FlIconEdit', 'FlIconLogOut', 'FlIconExternal', 'FlIconTrash',
     ]))
   })

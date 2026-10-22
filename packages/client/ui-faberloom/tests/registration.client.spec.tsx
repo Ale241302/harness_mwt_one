@@ -311,14 +311,14 @@ describe('faberloom surface', () => {
       'faberloom-board',
       'faberloom-spaces',
       'faberloom-files',
-      'faberloom-agents',
       'faberloom-routines',
       'faberloom-workflows',
       'faberloom-memory',
       'faberloom-context',
       'faberloom-approvals',
-      'faberloom-connections',
+      'faberloom-agents',
       'faberloom-email',
+      'faberloom-connections',
     ])
     expect(runtime.slots.entries('main').map(entry => entry.options.key)).toEqual([
       'faberloom-conversar',
