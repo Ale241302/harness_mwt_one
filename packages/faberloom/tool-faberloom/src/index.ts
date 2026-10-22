@@ -593,6 +593,11 @@ const CLOUD_PROFILE_SCHEMA = {
  * @param config - deployment config; `ownerId` is the acting identity.
  */
 export function apply(ctx: Context, config: Config): void {
+  // These three families are product surfaces, not optional extras. Leaving
+  // them behind a profile flag produced sessions where Routines existed but
+  // Flows, Context, or Memory silently did not. Every mounted product gets the
+  // complete surface, regardless of what an older deployment patch says.
+  config = { ...config, memoryTools: true, workflowTools: true, contextTools: true }
   // The mention rules the assistant follows when a message opens with @agent
   // or /skill; additive section, never a persona replacement.
   const prompt = ctx.get('systemPrompt')
@@ -1647,7 +1652,9 @@ export function apply(ctx: Context, config: Config): void {
         text: 'Cuando pidan automatizar algo, constrúyelo como un grafo de Work Flow con las tools faberloom_workflows_*: crea el flujo, define el disparador con faberloom_workflows_set_trigger, añade nodos con faberloom_workflows_add_node, conéctalos con faberloom_workflows_connect, y valida con faberloom_workflows_validate antes de faberloom_workflows_activate. Usa faberloom_workflows_run_now para probarlo y faberloom_workflows_runs para leer sus ejecuciones. Además, sin que el usuario lo pida: cuando la conversación revele un flujo repetible que se pueda automatizar, propón un borrador con faberloom_workflows_propose (nombre, intent y una lista ordenada de pasos) y pídele al usuario que lo confirme; nunca actives un flujo por tu cuenta.',
       }), 'tool-faberloom: workflows prompt')
     }
-    registerWorkflowTools(ctx, actor(config))
+    // Register the complete surface even in a bare composition; a call without
+    // an injected owner still fails at execution, but the schema is visible.
+    registerWorkflowTools(ctx, typeof config.ownerId === 'string' && config.ownerId.length > 0 ? actor(config) : { id: '' } as SpaceActor)
   }
 
   if (config.contextTools === true) {
@@ -1658,7 +1665,7 @@ export function apply(ctx: Context, config: Config): void {
         text: 'El contexto de un Workspace/Space es la memoria curada de hechos y reglas, aparte de la memoria episódica. Cuando una conversación fije un hecho, una regla o un documento que el Space deba recordar, guárdalo con faberloom_context_create (título, cuerpo y spaceId si aplica) sin que el usuario lo pida; consulta faberloom_context_list antes de duplicar, edita con faberloom_context_update, y revisa o restaura versiones con faberloom_context_versions y faberloom_context_restore. Como dueño del Space, indexa o deja privada una entrada pendiente con faberloom_context_approve o faberloom_context_reject.',
       }), 'tool-faberloom: context prompt')
     }
-    registerContextTools(ctx, actor(config))
+    registerContextTools(ctx, typeof config.ownerId === 'string' && config.ownerId.length > 0 ? actor(config) : { id: '' } as SpaceActor)
   }
 
   // The workspace file tools are not opt-in: the workspace tree is core to the

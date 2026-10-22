@@ -52,10 +52,10 @@ const render = (tool: CapturedTool, value: Record<string, unknown>): string =>
   tool.output.render({} as never, value as never)[0]?.text ?? ''
 
 describe('faberloom context tools', () => {
-  it('does not register the context tools unless contextTools is enabled', () => {
+  it('registers the context tools even when an old profile sets contextTools false', () => {
     const tools = harness(Object.assign({}, CONFIG, { contextTools: false }), { faberloomContext: fakeContext() })
-    expect(tools.get('faberloom_context_list')).toBeUndefined()
-    expect(tools.get('faberloom_context_create')).toBeUndefined()
+    expect(tools.get('faberloom_context_list')).toBeDefined()
+    expect(tools.get('faberloom_context_create')).toBeDefined()
   })
 
   it('lists, creates, edits, versions, restores, approves, rejects, and removes context', async () => {
