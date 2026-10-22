@@ -52,7 +52,7 @@ const workFlowEdge = z.object({
 })
 
 /** The stored content of one version. */
-const workFlowDefinition = z.object({
+export const workFlowDefinition = z.object({
   intent: z.string(),
   nodes: z.array(workFlowNode),
   edges: z.array(workFlowEdge),

@@ -294,7 +294,7 @@ describe('FaberLoomWorkflows', () => {
     const retitled = await workflows.updateNode(OWNER, flow.id, 'a' as WorkFlowNodeId, { title: 'actúa v2' })
     expect(retitled.definition.nodes.find(node => node.id === 'a')?.title).toBe('actúa v2')
     const rekinded = await workflows.updateNode(OWNER, flow.id, 'a' as WorkFlowNodeId, { kind: 'notify', config: { kind: 'email' } })
-    expect(rekinded.definition.nodes.find(node => node.id === 'a')).toMatchObject({ kind: 'notify', config: { kind: 'email', instruction: 'i' } })
+    expect(rekinded.definition.nodes.find(node => node.id === 'a')).toMatchObject({ kind: 'notify', config: { kind: 'email' } })
     await expect(workflows.updateNode(OWNER, flow.id, 'ghost' as WorkFlowNodeId, { title: 'x' })).rejects.toThrow('has no node')
 
     await workflows.disconnect(OWNER, flow.id, toDisconnect)
@@ -450,7 +450,7 @@ describe('FaberLoomWorkflows pending approval', () => {
   it('F11 · a member graph edit stages and the owner rejects it', async () => {
     const { workflows } = await harness(undefined, true)
     const flow = await workflows.create(OWNER, { name: 'flujo', definition: simple })
-    await workflows.addNode(OTHER, flow.id, { kind: 'agent', title: 'nuevo', config: {} })
+    await workflows.addNode(OTHER, flow.id, { kind: 'agent', title: 'nuevo', config: { agentId: 'ag', instruction: 'i' } })
     expect((await workflows.pendingChanges(OWNER))[0]?.proposed.nodes).toHaveLength(3)
     // A later proposal replaces the earlier one (one stage per flow).
     await workflows.restore(OTHER, flow.id, 1)

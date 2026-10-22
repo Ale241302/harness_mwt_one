@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { workflowsDomainSpec } from './spec.ts'
+import { workFlowDefinition, workflowsDomainSpec } from './spec.ts'
 import { getTemplate, WORKFLOW_TEMPLATES, type WorkFlowTemplate } from './templates.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput, FaberLoomRoutineId, Execution } from '@deepseek-ai/dsh-faberloom-routines'
@@ -66,6 +66,27 @@ function toWorkFlow(id: WorkFlowId, record: WorkFlowRecord): WorkFlow {
   }
 }
 
+/**
+ * Validate one graph at the write boundary. The storage domain would reject an
+ * invalid row only when it reopens the whole table, leaving every tool broken
+ * until an operator edits JSON by hand. Refuse the write here with the exact
+ * field path instead.
+ * @param definition - graph about to be stored.
+ * @returns the parsed graph, with unknown fields stripped.
+ * @throws when a node or edge does not match the domain schema.
+ */
+function validatedDefinition(definition: WorkFlowDefinition): WorkFlowDefinition {
+  const parsed = workFlowDefinition.safeParse(definition)
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .slice(0, 4)
+      .map(issue => `${issue.path.join('.') || 'definition'}: ${issue.message}`)
+      .join('; ')
+    throw new Error(`faberloom: invalid work flow definition: ${detail}`)
+  }
+  return parsed.data as WorkFlowDefinition
+}
+
 /** Build one new draft work flow record owned by `ownerId`. */
 function newWorkFlowRecord(
   ownerId: string, name: string, scope: WorkFlowScope | undefined, definition: WorkFlowDefinition, now: string,
@@ -76,7 +97,7 @@ function newWorkFlowRecord(
     name,
     status: 'draft',
     version: 1,
-    definition,
+    definition: validatedDefinition(definition),
     routineId: null,
     visibility: 'shared',
     createdAt: now,
@@ -619,7 +640,7 @@ export class FaberLoomWorkflows extends Service {
       ...record,
       name: patch.name ?? record.name,
       scope: patch.scope ?? record.scope,
-      definition: patch.definition ?? record.definition,
+      definition: patch.definition === undefined ? record.definition : validatedDefinition(patch.definition),
       updatedAt: new Date().toISOString(),
       version: record.version + 1,
     }
@@ -787,6 +808,7 @@ export class FaberLoomWorkflows extends Service {
     record: WorkFlowRecord,
     definition: WorkFlowDefinition,
   ): Promise<WorkFlow> {
+    definition = validatedDefinition(definition)
     if (record.ownerId !== actor.id) {
       await this.stage(actor, id, record, { name: record.name, scope: record.scope, definition })
       return toWorkFlow(id, record)
