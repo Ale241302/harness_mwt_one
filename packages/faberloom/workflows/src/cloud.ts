@@ -30,14 +30,19 @@ function handlerFor(node: WorkFlowNode): string {
  */
 export function classifyWorkflow(definition: WorkFlowDefinition): CloudExecutionProfile {
   const steps: CloudStepInput[] = []
-  for (const node of definition.nodes) {
-    if (node.kind.startsWith('trigger.')) continue
-    const handler = handlerFor(node)
+  // Stored graphs can be legacy or partially written; one malformed node must
+  // not break every list/get call that reports the cloud verdict. Skip rows
+  // without a usable kind instead of throwing.
+  for (const node of (definition.nodes ?? []) as readonly Partial<WorkFlowNode>[]) {
+    const kind = typeof node.kind === 'string' ? node.kind : ''
+    if (kind.length === 0 || kind.startsWith('trigger.')) continue
+    const title = typeof node.title === 'string' ? node.title : ''
+    const handler = handlerFor({ ...node, kind } as WorkFlowNode)
     steps.push({
-      id: node.id,
-      label: node.title.trim().length === 0 ? node.kind : node.title,
+      id: typeof node.id === 'string' ? node.id : kind,
+      label: title.trim().length === 0 ? kind : title,
       handler,
-      text: `${node.title}\n${JSON.stringify(node.config)}`,
+      text: `${title}\n${JSON.stringify(node.config ?? {})}`,
     })
   }
   return classifyCloudSteps(steps)

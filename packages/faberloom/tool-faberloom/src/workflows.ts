@@ -33,9 +33,32 @@ function renderWorkflow(value: Record<string, unknown>): string {
   if (typeof value['executionId'] === 'string') {
     return `Started ${value['executionId']}${value['deduped'] === true ? ' (deduped)' : ''}.`
   }
+  if (Array.isArray(value['workflows'])) {
+    const rows = value['workflows'] as readonly Record<string, unknown>[]
+    return rows.length === 0
+      ? 'No work flows.'
+      : rows.map(row => `${String(row['name'])} | ${String(row['status'])} | ${String(row['nodes'])} nodes / ${String(row['edges'])} edges | id ${String(row['id'])}`).join('\n')
+  }
+  if (Array.isArray(value['templates'])) {
+    const rows = value['templates'] as readonly Record<string, unknown>[]
+    return rows.map(row => `${String(row['id'])} | ${String(row['name'])} | ${String(row['nodes'])} nodes / ${String(row['edges'])} edges`).join('\n')
+  }
   if (Array.isArray(value['runs'])) return `${String((value['runs'] as readonly unknown[]).length)} run(s).`
+  if (typeof value['format'] === 'string' && typeof value['json'] === 'string') return value['json']
   const cloud = value['cloud'] as { readonly note?: unknown } | undefined
-  return `Flow ${String(value['id'])} "${String(value['name'])}" ${String(value['status'])} v${String(value['version'])} (${String(value['nodes'])} nodes, ${String(value['edges'])} edges).${typeof cloud?.note === 'string' ? ` ${cloud.note}` : ''}`
+  const header = `Flow ${String(value['id'])} "${String(value['name'])}" ${String(value['status'])} v${String(value['version'])} (${String(value['nodes'])} nodes, ${String(value['edges'])} edges).${typeof cloud?.note === 'string' ? ` ${cloud.note}` : ''}`
+  if (Array.isArray(value['nodesList'])) {
+    const nodes = value['nodesList'] as readonly Record<string, unknown>[]
+    const edges = Array.isArray(value['edgesList']) ? value['edgesList'] as readonly Record<string, unknown>[] : []
+    return [
+      header,
+      'Nodes:',
+      ...nodes.map(node => `- ${String(node['id'])} | ${String(node['kind'])} | ${String(node['title'])}`),
+      'Edges:',
+      ...edges.map(edge => `- ${String(edge['from'])} -> ${String(edge['to'])}`),
+    ].join('\n')
+  }
+  return header
 }
 
 /** The summary schema every workflow tool output shares. */
@@ -54,6 +77,12 @@ const WORKFLOW_SUMMARY_SCHEMA = {
     executionId: { type: 'string' },
     deduped: { type: 'boolean' },
     runs: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    workflows: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    templates: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    nodesList: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    edgesList: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    format: { type: 'string' },
+    json: { type: 'string' },
     cloud: {
       type: 'object',
       additionalProperties: false,
@@ -138,19 +167,37 @@ function summarize(flow: WorkFlow): Record<string, unknown> {
   }
 }
 
+/** Summary plus the graph rows a model needs to edit or explain a flow. */
+function detail(flow: WorkFlow): Record<string, unknown> {
+  return {
+    ...summarize(flow),
+    nodesList: flow.definition.nodes.map(node => ({
+      id: node.id,
+      kind: node.kind,
+      title: node.title,
+      config: node.config,
+    })),
+    edgesList: flow.definition.edges.map(edge => ({
+      id: edge.id,
+      from: edge.from,
+      to: edge.to,
+    })),
+  }
+}
+
 /** The workflow tools this package registers. */
 const WORKFLOW_TOOLS: readonly WorkflowTool[] = [
   {
     name: 'faberloom_workflows_list',
     description: 'List the owner work flows: id, name, status, and graph size.',
     parameters: {},
-    run: async (service, actor) => ({ runs: (await service.list(actor)).map(summarize) }),
+    run: async (service, actor) => ({ workflows: (await service.list(actor)).map(summarize) }),
   },
   {
     name: 'faberloom_workflows_get',
     description: 'Read one work flow graph: its nodes, edges, and lifecycle.',
     parameters: { workflowId: WORKFLOW_ID },
-    run: async (service, actor, args) => summarize(await service.get(actor, args.workflowId as WorkFlowId)),
+    run: async (service, actor, args) => detail(await service.get(actor, args.workflowId as WorkFlowId)),
   },
   {
     name: 'faberloom_workflows_create',

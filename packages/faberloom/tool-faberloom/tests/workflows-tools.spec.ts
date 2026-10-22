@@ -81,8 +81,8 @@ describe('faberloom workflow tools', () => {
     const service = fakeWorkflows()
     const tools = harness(CONFIG, { faberloomWorkflows: service })
     const listed = await tools.get('faberloom_workflows_list')!.execute({} as never)
-    expect(listed).toMatchObject({ runs: [{ id: 'wf1', name: 'flujo', nodes: 2, edges: 1 }] })
-    expect(render(tools.get('faberloom_workflows_list')!, listed as Record<string, unknown>)).toContain('1 run(s)')
+    expect(listed).toMatchObject({ workflows: [{ id: 'wf1', name: 'flujo', nodes: 2, edges: 1 }] })
+    expect(render(tools.get('faberloom_workflows_list')!, listed as Record<string, unknown>)).toContain('flujo | draft')
 
     const got = await tools.get('faberloom_workflows_get')!.execute({ workflowId: 'wf1' } as never)
     expect(service.get).toHaveBeenCalledWith(expect.objectContaining({ id: 'compras2@sondelsa.com' }), 'wf1')
