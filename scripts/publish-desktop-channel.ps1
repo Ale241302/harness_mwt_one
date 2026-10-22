@@ -51,6 +51,12 @@ function Invoke-Pnpm {
 }
 
 $keyPrefix = "_/harness/desktop/stable/$Target"
+# Root package scripts separate the platform and architecture with a colon.
+$channelScript = switch ($Target) {
+  'win-x64' { 'channel:win:x64' }
+  'mac-arm64' { 'channel:mac:arm64' }
+  'mac-x64' { 'channel:mac:x64' }
+}
 $stage = Join-Path $env:TEMP 'mwt-desktop-channel'
 $payload = Join-Path $env:TEMP 'mwt-desktop-channel.tgz'
 
@@ -61,7 +67,9 @@ if (-not $SkipStaging) {
   # El staging valida el paquete (registro de release, version, sha512 y
   # metadata del canal) antes de que nada viaje por la red.
   $env:DSH_DESKTOP_CHANNEL_DIR = $stage
-  Invoke-Pnpm -Arguments @('run', "channel:$Target") -What "channel:$Target"
+  # Invoke the package script directly: the root proxy shells out to `pnpm`,
+  # which is absent when the caller only has Corepack.
+  Invoke-Pnpm -Arguments @('--filter', '@deepseek-ai/dsh-desktop', 'run', $channelScript) -What $channelScript
 }
 
 $releaseDir = Join-Path $stage ($keyPrefix -replace '/', [IO.Path]::DirectorySeparatorChar)
