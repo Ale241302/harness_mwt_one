@@ -326,17 +326,10 @@ export const FlIconUsers = ({ size = 24, className }: IconProps) => (
   </svg>
 )
 
-/** slug: admin */
+/** slug: tools */
 export const FlIconAdmin = ({ size = 24, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
-    <g opacity="0.45" strokeWidth="1.5">
-      <circle cx="12" cy="12" r="2.6" />
-      <path d="M19.1 14.7a7 7 0 0 0 0-4.4l1.5-1.1-1.5-2.6-1.9.8a7 7 0 0 0-3.8-2.2L13.1 3h-2.2l-.3 2.2a7 7 0 0 0-3.8 2.2l-1.9-.8-1.5 2.6 1.5 1.1a7 7 0 0 0 0 4.4l-1.5 1.1 1.5 2.6 1.9-.8a7 7 0 0 0 3.8 2.2l.3 2.2h2.2l.3-2.2a7 7 0 0 0 3.8-2.2l1.9.8 1.5-2.6z" />
-    </g>
-    <circle cx="8.4" cy="7.8" r="2.3" />
-    <path d="M4.6 14.6a4.2 4.2 0 0 1 7.6 0" />
-    <circle cx="15.6" cy="7.8" r="2.3" />
-    <path d="M11.8 14.6a4.2 4.2 0 0 1 7.6 0" />
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
   </svg>
 )
 
