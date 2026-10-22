@@ -130,6 +130,8 @@
       name: '@deepseek-ai/dsh-tool-faberloom'
       config:
         memoryTools: true
+        workflowTools: true
+        contextTools: true
 
     # The FaberLoom browser surface: identity tokens plus the global panels.
     - id: ui-faberloom

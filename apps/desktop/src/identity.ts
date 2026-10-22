@@ -239,6 +239,7 @@ export function renderIdentityPatch(
     `    readOnly: ${readOnly}`,
     '    memoryTools: true',
     '    workflowTools: true',
+    '    contextTools: true',
     '',
     '- id: faberloom-view',
     '  config:',

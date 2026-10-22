@@ -914,6 +914,9 @@ function renderPatch(home, user, memory) {
     ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
     ...companyIdsYaml,
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
+    '    memoryTools: true',
+    '    workflowTools: true',
+    '    contextTools: true',
     `    mcpUrl: ${yamlScalar(cfg.mcpUrl)}`,
     '    mcpGatewayKey: !!js process.env.MWT_MCP_GATEWAY_KEY ?? \'\'',
     // El conversor de adjuntos que usa `faberloom_mail_read` para leer pdf/xlsx.

@@ -626,6 +626,15 @@ export function apply(ctx: Context, config: Config): void {
       order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 5,
       text: 'Toda rutina y todo Work Flow trae un campo `cloud` con `cloudReady`, `requiresPc`, `localSteps`, `reasons` y `note`. Al crearlo, editarlo o explicarlo, dile siempre al usuario en una frase si se ejecuta en el VPS aunque la PC esté apagada y la aplicación cerrada, o qué pasos necesitan la PC encendida. Los pasos que leen correo, mueven correo, envían correo o llaman a un MCP en la nube son de VPS; los que actualizan un archivo del computador, una ruta de Windows o un comando local necesitan la PC. Nunca prometas que una rutina local corre con el equipo apagado, y nunca digas que una rutina de solo correo necesita la PC.',
     }), 'tool-faberloom: execution prompt')
+
+    // Catalogue autonomy: the user should not have to name the skill or the
+    // agent that fits the task, and pwsh is never the first way to inspect the
+    // product's own storage. This section is additive to the base skill rule.
+    ctx.effect(() => prompt.section({
+      name: 'faberloom:autonomy',
+      order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 6,
+      text: 'Antes de resolver una tarea no trivial, revisá el catálogo de skills ya inyectado y llamá faberloom_agents_list. Si una skill o un agente coincide con la tarea, cargá la skill con la tool `skill` o actuá con ese agente sin pedir permiso; no esperes que el usuario nombre la skill ni el agente. Si hay varias, elegí la más específica y decí en una frase cuál usaste. No uses `pwsh` para leer JSON, storage, logs, archivos internos del producto ni para descubrir tools: usá las tools de producto; `pwsh` es el último recurso y debe correr oculto, nunca abrir una consola visible.',
+    }), 'tool-faberloom: autonomy prompt')
   }
 
   ctx.tools.register(defineTool({
