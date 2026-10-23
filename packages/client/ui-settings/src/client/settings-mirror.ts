@@ -6,7 +6,9 @@
  * freshness are properties of this class, not of how many features own a
  * preference. The Host stays the fact source: the mirror re-reads on the
  * invalidations its owning plugin subscribes to and folds write answers in
- * through {@link SettingsDescribeMirror.acceptView}.
+ * through {@link SettingsDescribeMirror.acceptView}. Every authenticated page
+ * reads the Host document, loopback or not; a Host without a settings provider
+ * answers with a typed failure the surfaces report.
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -26,11 +28,11 @@ export interface SettingsDescribeView {
 /** Mirror state every derived settings surface renders from. */
 export interface SettingsMirrorSnapshot {
   /**
-   * `unavailable` is the terminal non-loopback state; `ready` persists across
-   * later failed refreshes (the held view keeps serving); `idle` means no
-   * answer is held and no read is running, so `ensure` will start one.
+   * `idle` means no answer is held and no read is running, so `ensure` will
+   * start one; `loading` is the first read in flight; `ready` persists across
+   * later failed refreshes (the held view keeps serving).
    */
-  status: 'idle' | 'loading' | 'ready' | 'unavailable'
+  status: 'idle' | 'loading' | 'ready'
   /** The last good answer; undefined until the first success. */
   view: SettingsDescribeView | undefined
   /** The latest refresh failure message, cleared by the next success. */
@@ -79,14 +81,10 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
   /**
    * @param ctx - the providing plugin's context, whose `remote.settings`
    * namespace answers the describe read.
-   * @param persistence - client-selected Host persistence; non-loopback pages may remain process-local.
    */
-  constructor(
-    private readonly ctx: ClientContext,
-    private readonly persistence: 'host' | 'memory' = 'host',
-  ) {
+  constructor(private readonly ctx: ClientContext) {
     this.store = createSnapshotStore<SettingsMirrorSnapshot>({
-      status: persistence === 'host' ? 'idle' : 'unavailable',
+      status: 'idle',
       view: undefined,
       error: null,
     })
@@ -112,7 +110,6 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
    * @returns settlement after this call's freshness is reflected.
    */
   load(): Promise<void> {
-    if (this.persistence === 'memory') return Promise.resolve()
     if (this.inFlight !== undefined) {
       this.rerun = true
       return this.inFlight
@@ -130,7 +127,6 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
    * @returns settlement of the current or newly started read, if any.
    */
   ensure(): Promise<void> {
-    if (this.persistence === 'memory') return Promise.resolve()
     if (this.inFlight !== undefined) return this.inFlight
     if (this.getSnapshot().status === 'idle') return this.load()
     return Promise.resolve()

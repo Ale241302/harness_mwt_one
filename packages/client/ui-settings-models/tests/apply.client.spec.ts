@@ -17,7 +17,11 @@ import { apply as hostApply } from '../src/index.ts'
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
 // FALLBACK_LOCALE (en); bench stages zh explicitly on the locale instead.
 
-async function bench(isLoopback = true, mock = RemoteMock.create().load(remoteDefaultResponses), services: object = {}) {
+async function bench(
+  mock = RemoteMock.create().load(remoteDefaultResponses),
+  services: object = {},
+  isLoopback = true,
+) {
   onTestFinished(() => { mock.assertNoUnmatched() })
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -38,7 +42,8 @@ async function bench(isLoopback = true, mock = RemoteMock.create().load(remoteDe
     },
     settings: mock.remote.settings,
   })
-  // The fixed Host facts the settings provider reads its persistence from.
+  // The fixed Host facts the connection reports; settings reads no longer
+  // depend on them, and the remote-page case pins that.
   remote.$host = { home: undefined, isLoopback }
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, remote }
@@ -232,6 +237,43 @@ describe('pushed invalidations', () => {
     expect(load).toHaveBeenCalledTimes(1)
   })
 
+  it('loads the provider directory on a page served from a remote origin', async () => {
+    const mock = RemoteMock.create().load(remoteDefaultResponses)
+    mock.remote.settings.describe.mockResolvedValue(ok({
+      writable: true,
+      hasDocument: true,
+      namespaces: [{
+        ns: 'llm-pi-ai',
+        schema: {},
+        applies: 'live' as const,
+        secrets: [],
+        revision: 0,
+        value: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } },
+      }],
+    }))
+    const listConfigurableProviders = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: [{
+        provider: 'openai',
+        displayName: 'openai',
+        settingsNs: 'llm-pi-ai',
+        settingsPath: ['providers', 'openai'],
+      }],
+    }))
+    const b = await bench(mock, {
+      listProviders: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
+      listConfigurableProviders,
+    }, false)
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const injected = (b.slots.entries('settings.section')
+      .find(candidate => candidate.options.id === 'models')!
+      .inject as unknown as () => import('../src/client/ModelsSection.tsx').ModelsSectionInjected)()
+    await injected.controller.load()
+    expect(injected.hooks.snapshot.getSnapshot()).toMatchObject({ status: 'ready', error: null, writable: true })
+    expect(injected.hooks.snapshot.getSnapshot().rows.map(row => row.entry.provider)).toContain('openai')
+  })
+
   it('joins the refreshed mirror view on a settings invalidation', async () => {
     const mock = RemoteMock.create().load(remoteDefaultResponses)
     const namespace = { ns: 'llm-test', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 1 }
@@ -239,7 +281,7 @@ describe('pushed invalidations', () => {
     const describe = mock.remote.settings.describe
     describe.mockResolvedValue(ok(document))
     const listProviders = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))
-    const b = await bench(true, mock, { listProviders })
+    const b = await bench(mock, { listProviders })
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const entry = b.slots.entries('settings.section')

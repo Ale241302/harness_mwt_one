@@ -29,7 +29,7 @@ Users pick a palette from the Appearance list in Settings (General section) and 
 
 ### Appearance and font size
 
-The plugin registers the Appearance palette list and a font-size stepper in the General section. The list shows every registered palette grouped by color-scheme family, dark first, each row previewing the palette's own ground and accent and marking the palette in effect. There is no follow-the-system entry: `system` stays the persisted default for a fresh install, resolves through `prefers-color-scheme`, and the list simply marks the palette it resolves to. Picking a row pins that palette. The stepper accepts integer values from 12 through 17 px and defaults to 14 px. It changes conversation headings and base text by the same increment, including the user bubble and composer draft; flow-row titles, summaries, and tables follow one step under the body size, while small text and code keep fixed sizes. Each accepted change writes through the Host settings API. Rapid changes serialize in gesture order with namespace revisions, and a rejected latest write reloads the durable values. Non-loopback pages keep both choices process-local.
+The plugin registers the Appearance palette list and a font-size stepper in the General section. The list shows every registered palette grouped by color-scheme family, dark first, each row previewing the palette's own ground and accent and marking the palette in effect. There is no follow-the-system entry: `system` stays the persisted default for a fresh install, resolves through `prefers-color-scheme`, and the list simply marks the palette it resolves to. Picking a row pins that palette. The stepper accepts integer values from 12 through 17 px and defaults to 14 px. It changes conversation headings and base text by the same increment, including the user bubble and composer draft; flow-row titles, summaries, and tables follow one step under the body size, while small text and code keep fixed sizes. Each accepted change writes through the Host settings API. Rapid changes serialize in gesture order with namespace revisions, and a rejected latest write reloads the durable values. Both choices stay Host-backed on every authenticated page, loopback or remote.
 
 ### Interface language
 
@@ -69,7 +69,7 @@ The service owns theme and font-size state and publishes snapshots. The ui-layou
 
 ### Preference persistence
 
-The service provides itself immediately with the schema defaults on a loopback browser, then loads the `ui-theme` namespace and writes each accepted theme or font-size change through the Host settings API. Pushed settings changes and reconnects refetch the namespace. Non-loopback pages do not create that Host-backed scope. The persistence boundary is owned by the [Host-backed preferences note](../../../.agents/notes/implemented/bug-fix/2026-08-06-host-backed-web-preferences.md).
+The service provides itself immediately with the schema defaults, then loads the `ui-theme` namespace and writes each accepted theme or font-size change through the Host settings API. Pushed settings changes and reconnects refetch the namespace. Every authenticated page creates that Host-backed scope, loopback or remote. The persistence boundary is owned by the [Host-backed preferences note](../../../.agents/notes/implemented/bug-fix/2026-08-06-host-backed-web-preferences.md) and the [remote-page settings note](../../../.agents/notes/implemented/architecture/2026-10-23-host-settings-on-remote-pages.md).
 
 </details>
 

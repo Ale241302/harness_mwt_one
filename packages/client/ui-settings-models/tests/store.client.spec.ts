@@ -272,17 +272,18 @@ describe('edge joins', () => {
     expect(store.store.getSnapshot()).toMatchObject({ status: 'error', error: 'settings down' })
   })
 
-  it('reports a terminally unavailable settings mirror precisely', async () => {
+  it('reports a missing settings document when the mirror holds no answer', async () => {
     const { ctx } = api()
-    const store = new ModelsSettingsStore(
-      ctx,
-      settingsSchema,
-      new SettingsDescribeMirror(ctx, 'memory'),
-    )
+    const store = new ModelsSettingsStore(ctx, settingsSchema, {
+      getSnapshot: () => ({ status: 'idle', view: undefined, error: null }),
+      subscribe: () => () => {},
+      ensure: () => Promise.resolve(),
+      acceptView: () => {},
+    })
     await store.load()
     expect(store.store.getSnapshot()).toMatchObject({
       status: 'error',
-      error: 'settings are unavailable in this browser',
+      error: 'the Host returned no settings document',
     })
   })
 

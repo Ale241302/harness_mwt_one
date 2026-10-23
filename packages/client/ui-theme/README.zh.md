@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 外观与字号
 
-插件在「通用」分区注册「外观」调色板列表与字号步进器。列表按配色方案族展示每一套已注册调色板，深色在前；每行预览该调色板自身的底色与强调色，并标记当前生效的一套。这里没有「跟随系统」条目：`system` 仍是全新安装的持久默认值，通过 `prefers-color-scheme` 解析，列表只标记它解析到的那套调色板；点击任意一行即固定该调色板。步进器接受 12 至 17 px 的整数，默认值为 14 px。它以相同增量调整会话标题与基础文本，包括用户气泡与 composer 草稿；流内行的标题、摘要与表格跟随比正文低一档的字号，小号文本和代码保持固定字号。每次通过的变更都经 Host settings API 写入。连续快速变更按操作顺序携带命名空间 revision 串行写入，最新写入被拒时重新加载持久值。非 loopback 页面把两个选择都保留在进程内。
+插件在「通用」分区注册「外观」调色板列表与字号步进器。列表按配色方案族展示每一套已注册调色板，深色在前；每行预览该调色板自身的底色与强调色，并标记当前生效的一套。这里没有「跟随系统」条目：`system` 仍是全新安装的持久默认值，通过 `prefers-color-scheme` 解析，列表只标记它解析到的那套调色板；点击任意一行即固定该调色板。步进器接受 12 至 17 px 的整数，默认值为 14 px。它以相同增量调整会话标题与基础文本，包括用户气泡与 composer 草稿；流内行的标题、摘要与表格跟随比正文低一档的字号，小号文本和代码保持固定字号。每次通过的变更都经 Host settings API 写入。连续快速变更按操作顺序携带命名空间 revision 串行写入，最新写入被拒时重新加载持久值。无论 loopback 还是远程，每个已认证页面都让两个选择由 Host 支撑。
 
 ### 界面语言
 
@@ -69,7 +69,7 @@ kind: "package-reference"
 
 ### 偏好持久化
 
-在 loopback 浏览器上，服务先以 schema 默认值立即提供自身，随后加载 `ui-theme` 命名空间，并把每次通过的主题或字号变更经 Host settings API 写入。收到推送的设置变更时或重连后都会重新拉取该命名空间。非 loopback 页面不会创建该 Host-backed scope。该持久化边界由 [Host 支撑的偏好笔记](../../../.agents/notes/implemented/bug-fix/2026-08-06-host-backed-web-preferences.zh.md) 拥有。
+在 loopback 浏览器上，服务先以 schema 默认值立即提供自身，随后加载 `ui-theme` 命名空间，并把每次通过的主题或字号变更经 Host settings API 写入。收到推送的设置变更时或重连后都会重新拉取该命名空间。无论 loopback 还是远程，每个已认证页面都会创建该 Host 支撑的 scope。该持久化边界由 [Host 支撑的偏好笔记](../../../.agents/notes/implemented/bug-fix/2026-08-06-host-backed-web-preferences.zh.md) 与[远程页面设置笔记](../../../.agents/notes/implemented/architecture/2026-10-23-host-settings-on-remote-pages.zh.md) 拥有。
 
 </details>
 
