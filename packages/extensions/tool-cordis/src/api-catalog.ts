@@ -2038,7 +2038,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'denyForeignRead(agent: Agent, toolName: string, args: unknown): string | undefined',
-        description: 'Refuse a file or shell read that targets a Space outside this session\'s scope. The check covers the file tools\' path arguments and an absolute foreign folder spelled inside a shell command; a path outside every Space (an attachment, a temp file, a skill installation) stays readable exactly as before. A granted Space is no longer foreign, so the grant reopens it.',
+        description: 'Refuse file or shell access that targets a Space outside this session\'s scope, and refuse writes to a granted Space. The check covers the file tools\' path arguments and a folder spelling inside a shell command; a path outside every Space (an attachment, a temp file, a skill installation) stays readable exactly as before. A granted Space is no longer foreign, so reads reopen it, while `write`, `edit`, and shell commands remain refused because the grant is read-only.',
         parameters: [{ name: 'agent', description: 'the session\'s agent.' }, { name: 'toolName', description: 'the tool the model called.' }, { name: 'args', description: 'the call\'s raw arguments.' }],
         returns: 'the refusal text, or undefined to allow the call.',
       },

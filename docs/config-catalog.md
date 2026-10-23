@@ -3397,7 +3397,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts:71`](../packages/faberloom/tool-faberloom/src/index.ts)
+Source: [`packages/faberloom/tool-faberloom/src/index.ts:73`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
