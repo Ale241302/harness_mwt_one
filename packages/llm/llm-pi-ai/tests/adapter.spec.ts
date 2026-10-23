@@ -13,7 +13,7 @@ import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, 
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
-import { googleThinkingFallback } from '../src/adapter.ts'
+import { googleThinkingFallback, rejectedGoogleThinkingLevel } from '../src/adapter.ts'
 import type { Api, Model } from '@earendil-works/pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
@@ -588,6 +588,79 @@ describe('provider profile lifecycle', () => {
     ])
   })
 
+  it('retries a retired Google thinking level at the next one before any output', async () => {
+    const server = await mockServer([
+      {
+        status: 400,
+        body: JSON.stringify({
+          error: {
+            code: 400,
+            message: 'Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.',
+            status: 'INVALID_ARGUMENT',
+          },
+        }),
+      },
+      {
+        events: [
+          '{"candidates":[{"content":{"parts":[{"text":"hello"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":1,"totalTokenCount":4}}',
+        ],
+      },
+    ])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        google: {
+          apiKeyEnv: 'PI_TEST_KEY',
+          baseURL: server.url,
+          modelOverrides: {
+            'gemini-3.8-flash': {
+              reasoningEfforts: { minimal: 'minimal', low: 'low' },
+            },
+          },
+        },
+      },
+    })
+
+    const result = await assemble(ctx, {
+      provider: 'google',
+      model: 'gemini-3.8-flash',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'hi' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+
+    expect(result.finish).toEqual({ kind: 'stop' })
+    expect(result.message.content).toEqual([{ type: 'text', text: 'hello' }])
+    expect(server.requests).toHaveLength(2)
+    // The first attempt sent the catalog's lowest level; the retry moved up.
+    expect(server.requests[0]).toMatchObject({
+      generationConfig: { thinkingConfig: { thinkingLevel: 'MINIMAL' } },
+    })
+    expect(server.requests[1]).toMatchObject({
+      generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
+    })
+    // The rejection is remembered, so the next request starts at LOW.
+    await assemble(ctx, {
+      provider: 'google',
+      model: 'gemini-3.8-flash',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'again' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+    expect(server.requests).toHaveLength(3)
+    expect(server.requests[2]).toMatchObject({
+      generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
+    })
+    // The picker no longer offers the level Google rejected.
+    const info = await ctx.llm.resolveModelInfo('google', 'gemini-3.8-flash')
+    expect(info.reasoning?.efforts.map(effort => effort.id)).toEqual([
+      ReasoningEffortId('low'),
+    ])
+  })
+
   it('serves declared reasoning efforts to selectors and honours the profile default', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -1137,5 +1210,13 @@ describe('googleThinkingFallback', () => {
     expect(googleThinkingFallback(googleModel('openai-completions', {
       off: null, minimal: null, low: 'low',
     }))).toBeUndefined()
+  })
+
+  it('reads the rejected level from Google failure text only', () => {
+    expect(rejectedGoogleThinkingLevel(
+      'Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.',
+    )).toBe('minimal')
+    expect(rejectedGoogleThinkingLevel('Thinking level HIGH is not supported for this model')).toBe('high')
+    expect(rejectedGoogleThinkingLevel('quota exceeded for this account')).toBeUndefined()
   })
 })

@@ -18,20 +18,22 @@ Status: implemented
 
 **产品声明 Gemini 3.7 与 3.8 Flash 接受什么。** `faberloom-app` 为 `gemini-3.7-flash` 与 `gemini-3.8-flash` 覆盖 `reasoningEfforts: { low, medium, high }`。未声明的档位被固定为不支持，因此选择器里不再出现 `Minimal`，默认请求经适配器回退解析为 `low`，而显式保存的 `minimal` 会在发起网络请求前以 `UNSUPPORTED_REASONING_EFFORT` 被拒。
 
+**提供方的拒绝会让适配器学习。** 当 Google 的 finish 分块在输出任何内容前指出某个 thinking 档位不受支持时，适配器识别该信息，丢弃已暂存的前缀，在本进程中按路由/模型记住该档位，并用下一个受支持的档位重试同一请求。后续请求从被拒档位之上开始，`resolveModelInfo` 也不再提供它。因此，在此版本之后发布的模型即使已安装目录仍宣称厂商已取消的档位，也能在首轮工作；代价是每个进程与模型多一次往返。
+
 ## 考虑过的替代方案
 
 **在整个 Google 路由上强制 `reasoning: low`。** 否决：这会改变 Gemini Pro 以及该路由上其他所有模型的默认值，包括那些 pi-ai 自身禁用路径本来就正确的模型。
 
 **修改已安装的 pi-ai 目录。** 否决：`node_modules` 不属于我们，条目会随依赖重新生成，而正确档位正是 profile 已经表达的部署/模型决策。
 
-**捕获 400 后提高档位重试。** 否决：它把配置事实藏在第二次请求之后，每个新模型都会增加双倍延迟，而且无法知道提供方真正接受哪个档位。
+**只依赖错误重试，而不声明静态下限。** 否决其作为唯一机制：每个进程与模型都要先浪费一次失败请求，选择器仍会提供 Google 拒绝的档位，显式选择也会先把提供方错误暴露出来再重试。静态修正为两个已知边界的模型省去这笔成本；重试覆盖之后发布的模型。
 
 **让用户手动选择 Low。** 否决：默认选择就是失败路径，新会话会在用户得知规则前失败；选择器也仍会提供提供方拒绝的档位。
 
 ## 后果
 
-对 Gemini 3.7 或 3.8 Flash 的默认请求会发送 `LOW` 并成功。这两个模型的选择器提供 Low、Medium、High；Gemini 3.0 至 3.6 保留提供方仍接受的 `Minimal`。若厂商以后再次取消某个档位，同样需要修正目录或覆盖；适配器无法从 400 消息里自动发现。
+对 Gemini 3.7 或 3.8 Flash 的默认请求会发送 `LOW` 并成功。这两个模型的选择器提供 Low、Medium、High；Gemini 3.0 至 3.6 保留提供方仍接受的 `Minimal`。在此版本之后发布、且目录仍宣称已取消档位的模型，会在一次被拒尝试后成功；该学习只保留在本进程，重启后同样只多一次往返。若厂商更改档位名称且错误文本不再匹配，仍会以提供方消息失败。
 
 ## 测试
 
-`packages/llm/llm-pi-ai/tests/adapter.spec.ts` 覆盖两种 Google 协议下的回退、支持 `off` 或非 Google 协议时不回退，以及 `modelOverrides` 暴露的档位。对 `generativelanguage.googleapis.com` 的实时检查固定了上述提供方矩阵。
+`packages/llm/llm-pi-ai/tests/adapter.spec.ts` 覆盖两种 Google 协议下的回退、支持 `off` 或非 Google 协议时不回退、`modelOverrides` 暴露的档位，以及一次 400 后成功的端到端重试，后者还证明拒绝对下一次请求被记住。对 `generativelanguage.googleapis.com` 的实时检查固定了上述提供方矩阵。
