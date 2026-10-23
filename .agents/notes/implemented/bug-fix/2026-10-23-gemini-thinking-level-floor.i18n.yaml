@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-23-gemini-thinking-level-floor.md
+2026-10-23-gemini-thinking-level-floor.md: 4a3f6bcf0fb542616f6c18ce330eb8fa03e9c54b
+2026-10-23-gemini-thinking-level-floor.zh.md: 9e0b4d4188784623f3f1de5e1f99d7b2145b8eb5

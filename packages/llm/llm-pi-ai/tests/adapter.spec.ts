@@ -13,6 +13,8 @@ import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, 
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
+import { googleThinkingFallback } from '../src/adapter.ts'
+import type { Api, Model } from '@earendil-works/pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { DEFAULT_MAX_REQUEST_IMAGE_BYTES, resolveProfiles } from '../src/config.ts'
@@ -562,6 +564,30 @@ describe('provider profile lifecycle', () => {
       .resolves.toMatchObject({ reasoning: { defaultEffort: ReasoningEffortId('off') } })
   })
 
+  it('keeps a model override\'s reasoning levels and takes the lowest one when none is named', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        google: {
+          apiKeyEnv: 'PI_TEST_KEY',
+          modelOverrides: {
+            'gemini-3.8-flash': { reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+          },
+        },
+      },
+    })
+
+    const info = await ctx.llm.resolveModelInfo('google', 'gemini-3.8-flash')
+    // Minimal is pinned out: Gemini 3.7+ Flash answers it with 400
+    // INVALID_ARGUMENT. The adapter then sends LOW for an unnamed effort.
+    expect(info.reasoning?.efforts.map(effort => effort.id)).toEqual([
+      ReasoningEffortId('low'),
+      ReasoningEffortId('medium'),
+      ReasoningEffortId('high'),
+    ])
+  })
+
   it('serves declared reasoning efforts to selectors and honours the profile default', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -1077,5 +1103,39 @@ describe('abort wiring', () => {
     }
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(server.requests).toHaveLength(1)
+  })
+})
+
+describe('googleThinkingFallback', () => {
+  const googleModel = (
+    api: Api,
+    thinkingLevelMap: Record<string, string | null>,
+    reasoning = true,
+  ): Model<Api> => ({
+    id: 'gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash',
+    provider: 'google',
+    api,
+    reasoning,
+    thinkingLevelMap,
+  }) as unknown as Model<Api>
+
+  it('names the lowest accepted level when the model cannot turn thinking off', () => {
+    expect(googleThinkingFallback(googleModel('google-generative-ai', {
+      off: null, minimal: null, low: 'low', medium: 'medium', high: 'high',
+    }))).toBe('low')
+    expect(googleThinkingFallback(googleModel('google-vertex', {
+      off: null, minimal: null, low: 'LOW',
+    }))).toBe('low')
+  })
+
+  it('keeps pi-ai disabled dispatch when off is supported or the protocol is not Google', () => {
+    expect(googleThinkingFallback(googleModel('google-generative-ai', {}))).toBeUndefined()
+    expect(googleThinkingFallback(googleModel('google-generative-ai', {
+      off: null, minimal: 'minimal', low: 'low',
+    }))).toBe('minimal')
+    expect(googleThinkingFallback(googleModel('openai-completions', {
+      off: null, minimal: null, low: 'low',
+    }))).toBeUndefined()
   })
 })

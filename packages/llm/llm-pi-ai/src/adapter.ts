@@ -176,6 +176,26 @@ function resolveReasoningLevel(
 }
 
 /**
+ * The level to send for a Google model that cannot turn thinking off.
+ *
+ * Gemini 3 models reject `off`, and pi-ai answers that by asking Google to
+ * disable thinking through a per-model fallback — `MINIMAL` for Flash,
+ * `LOW` for Pro. That fallback goes stale as Google retires a level for a
+ * model (Gemini 3.7 and 3.8 Flash reject `MINIMAL` outright), while the
+ * catalog — or a deployment's `reasoningEfforts` override — already names
+ * what the model accepts. Naming the lowest supported level keeps the request
+ * inside that set. Models whose map still offers `off` keep pi-ai's disabled
+ * dispatch unchanged.
+ * @param model - the resolved model descriptor.
+ * @returns the lowest supported level, or undefined when `off` is supported.
+ */
+export function googleThinkingFallback(model: Model<Api>): ModelThinkingLevel | undefined {
+  if (model.api !== 'google-generative-ai' && model.api !== 'google-vertex') return undefined
+  const levels = getSupportedThinkingLevels(model)
+  return levels[0] === 'off' ? undefined : levels[0]
+}
+
+/**
  * Selectable reasoning efforts for one model, or nothing at all.
  *
  * A model that carries no reasoning metadata — every hand-declared one, and
@@ -348,9 +368,10 @@ export class PiAiAdapter extends LlmAdapter {
     // the one it started with and the next call picks up the new one.
     const profile = this.profileOf(snapshot, options.provider)
     const model = this.modelOf(snapshot, options.provider, options.model)
+    const requested = options.reasoningEffort ?? profile.reasoning
     const reasoning = resolveReasoningLevel(
       model,
-      options.reasoningEffort ?? profile.reasoning,
+      requested ?? googleThinkingFallback(model),
     )
     const apiKey = await this.config.resolveApiKey(options.provider, profile, options.credentialRef)
 

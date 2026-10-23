@@ -5632,6 +5632,22 @@ function filesScreen() {
   }
 }
 
+/**
+ * Predicción: the MiroFish sidecar embedded whole. The gateway authenticates
+ * `/prediccion/` and forwards it to the sidecar, so the panel is a same-origin
+ * frame that keeps MiroFish's own router, uploads, and live simulation views.
+ */
+function prediccionScreen() {
+  return function FaberloomPrediccion(props: ScreenProps) {
+    const { t } = props
+    return (
+      <Screen title={t('panel.prediccion.title')} subtitle={t('panel.prediccion.intro')}>
+        <iframe className={styles.embed} src="/prediccion/" title={t('panel.prediccion.title')} />
+      </Screen>
+    )
+  }
+}
+
 export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   // The Chat landing keeps its route but no sidebar row (the New Session button
   // and the conversation cover it).
@@ -5650,5 +5666,8 @@ export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', modeKey: 'nav.mode.learn', groupKey: 'nav.group.knowledge', Icon: panelIcon(FlIconKnowledgeIndex), Page: contextScreen() },
   { id: 'faberloom-approvals' as MainPanelId, order: 64, labelKey: 'nav.approvals', modeKey: 'nav.mode.learn', groupKey: 'nav.group.inbox', Icon: panelIcon(FlIconCriterio), Page: approvalsScreen() },
   { id: 'faberloom-connections' as MainPanelId, order: 80, labelKey: 'nav.connections', modeKey: 'nav.mode.admin', groupKey: 'nav.group.setup', Icon: panelIcon(FlIconExternal), Page: connectionsScreen() },
+  // The sidecar keeps its own UI; the gateway gates `/prediccion` and forwards
+  // it, so the row is a door and not a second implementation of the screens.
+  { id: 'faberloom-prediccion' as MainPanelId, order: 85, labelKey: 'nav.prediccion', modeKey: 'nav.mode.admin', groupKey: 'nav.group.setup', Icon: panelIcon(FlIconCuration), Page: prediccionScreen() },
   { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', modeKey: 'nav.mode.operate', groupKey: 'nav.group.inbox', Icon: panelIcon(FlIconMail), Page: emailScreen() },
 ]

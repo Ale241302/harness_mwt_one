@@ -188,6 +188,21 @@
         apiKeyEnv: ANTHROPIC_API_KEY
       google:
         apiKeyEnv: GOOGLE_API_KEY
+        # Gemini 3.7+ Flash retired `MINIMAL`: Google answers it with 400
+        # INVALID_ARGUMENT. Declaring only the levels those models accept makes
+        # the adapter send LOW when neither the agent nor the profile names an
+        # effort, and keeps `Minimal` out of the picker.
+        modelOverrides:
+          gemini-3.7-flash:
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          gemini-3.8-flash:
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
       kimi:
         apiKeyEnv: KIMI_API_KEY
       moonshotai:
