@@ -748,9 +748,13 @@ export class Session implements SessionFace {
   private observeSubmissionQueue(items: readonly SessionQueuedItem[]): void {
     if (this.submissionSettlements.size === 0) return
     for (const item of items) {
-      if (item.rpcId !== undefined) {
-        this.scheduleObservedRetirement(item.rpcId, attachmentRefsIn(item.message.content))
-      }
+      if (item.rpcId === undefined) continue
+      // A transcript echo has no other visual home: the host may mirror an
+      // idle prompt into the inbox before the turn logs its user/message, and
+      // retiring here would leave the conversation blank until first token.
+      const echo = this.pendingSubmissions.find(submission => submission.requestId === item.rpcId)
+      if (echo?.placement === 'transcript') continue
+      this.scheduleObservedRetirement(item.rpcId, attachmentRefsIn(item.message.content))
     }
   }
 

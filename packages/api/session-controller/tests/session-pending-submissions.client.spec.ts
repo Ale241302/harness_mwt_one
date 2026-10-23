@@ -191,6 +191,29 @@ describe('observed retirement', () => {
     expect(session.getSnapshot().queue).toMatchObject([{ rpcId: handle.requestId }])
   })
 
+  it('keeps an idle transcript echo while the inbox already mirrors its prompt', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    await session.open()
+    const retirements: PendingSubmissionRetirement[] = []
+    const handle = session.beginSubmission({
+      mode: 'queue',
+      text: '发送',
+      attachments: [],
+      onRetire: retirement => retirements.push(retirement),
+    })
+    // The Host mirrors the prompt into the inbox before the turn logs its
+    // user/message; a transcript echo has no other visual home, so it stays.
+    session.handleControlFrame(queuedFrame(handle.requestId))
+    await settleFrames()
+    expect(session.getSnapshot().pendingSubmissions).toHaveLength(1)
+    expect(retirements).toEqual([])
+
+    await pushEvent(mock, promptEvent(SessionSeq(0), handle.requestId))
+    await settleFrames()
+    expect(session.getSnapshot().pendingSubmissions).toEqual([])
+    expect(retirements).toEqual([{ reason: 'observed', attachments: [] }])
+  })
+
   it('retires a mixed echo with durable references in original selection order', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)
     await session.open()
