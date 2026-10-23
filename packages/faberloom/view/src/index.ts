@@ -3114,9 +3114,10 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Remove a space permanently: drop its Workspace registration, delete its
-   * conversation directory, and delete the space record with its attached
-   * files.
+   * Remove a space from the product: drop its Workspace registration, archive
+   * its Sessions, and delete the space record. The physical folder and every
+   * file in it stay where they are; deleting product metadata never deletes
+   * operator files.
    * @param id - space id.
    * @returns the refreshed overview.
    */
@@ -3134,9 +3135,8 @@ export class FaberLoomViewService extends TypertRemoteService {
       : registry?.get(space.workspaceId as WorkspaceId)
     if (registry !== undefined) await registry.archiveSessionsUnder(dir)
     if (registry !== undefined && existing !== undefined) await registry.delete(existing.id)
-    // An adopted workspace may live anywhere the picker browsed; only remove a
-    // directory this deployment owns under the harness home.
-    if (this.isUnderDshHome(dir)) rmSync(dir, { recursive: true, force: true })
+    // The folder and its files belong to the operator even when this deployment
+    // created the folder. Removing the Space only drops product metadata.
     await this.ctx.faberloomSpaces.remove(actor, space.id)
     if (space.agentId !== undefined) await this.detachAgentIfOrphan(space.agentId)
     return await this.overview()
@@ -5258,12 +5258,6 @@ export class FaberLoomViewService extends TypertRemoteService {
         this.ctx.logger.warn(`faberloom: no se pudo reparar el padre de ${space.title}: ${String(error)}`)
       }
     }
-  }
-
-  /** Whether one directory is the harness home or lives under it. */
-  private isUnderDshHome(dir: string): boolean {
-    const home = this.dshHome()
-    return dir === home || dir.startsWith(`${home}${sep}`)
   }
 
   /** The workspace registry, resolved lazily like the connections service. */

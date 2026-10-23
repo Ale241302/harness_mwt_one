@@ -386,7 +386,7 @@ describe('FaberLoomViewService space lifecycle', () => {
 
     await view.deleteSpace('sp1')
     expect(registry.delete).toHaveBeenCalledWith('ws-1')
-    expect(existsSync(dir)).toBe(false)
+    expect(existsSync(dir)).toBe(true)
     expect(spaces.remove).toHaveBeenCalled()
   })
 
@@ -395,9 +395,11 @@ describe('FaberLoomViewService space lifecycle', () => {
     homes.push(home)
     vi.stubEnv('DSH_HOME', home)
     const { view } = harness({ registry: false })
+    const dir = join(home, 'spaces', 'fw_abc123')
+    mkdirSync(dir, { recursive: true })
 
     await view.deleteSpace('sp1')
-    expect(existsSync(join(home, 'spaces', 'fw_abc123'))).toBe(false)
+    expect(existsSync(dir)).toBe(true)
   })
 
   it('adopts a workspace with no space so both views name the same area', async () => {
@@ -437,7 +439,7 @@ describe('FaberLoomViewService space lifecycle', () => {
 
     await view.deleteSpace('sp1')
     expect(registry.delete).toHaveBeenCalledWith('ws-sicop')
-    expect(existsSync(dir)).toBe(false)
+    expect(existsSync(dir)).toBe(true)
   })
 
   it('projects the responsible agent and workspace into the overview rows', async () => {
