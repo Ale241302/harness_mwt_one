@@ -538,13 +538,25 @@
   overflow-wrap: anywhere;
 }
 
+/* Detail values wrap: a modal has the width to show the whole address, path,
+   description, or id, and cutting it with an ellipsis hides information the
+   operator opened the modal to read. */
 .cellMuted {
   display: block;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* Table rows stay one compact line per cell; the full value lives in the
+   detail modal the row opens. */
+.table .cellMuted {
   max-width: 280px;
   overflow: hidden;
-  color: var(--dsw-alias-label-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
+  overflow-wrap: normal;
 }
 
 /* Correo: the subject owns the free width; the account is a small second line. */
@@ -1585,12 +1597,12 @@
 }
 
 .installPath {
-  max-width: 420px;
-  overflow: hidden;
+  display: block;
+  min-width: 0;
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-caption);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .installNote {
