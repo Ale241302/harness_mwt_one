@@ -10,8 +10,20 @@ export type DirectoryPickerRunner = NativeCommandRunner
 export interface DirectoryPickerInternals {
   platform?: NodeJS.Platform
   run?: DirectoryPickerRunner
+  /** Directory the chooser opens in; absent keeps the platform's default. */
+  initialPath?: string
   /** Replaces the in-process Win32 dialog (`pickWin32Directory`) for deterministic tests. */
-  pickWin32Dialog?: (signal: AbortSignal) => Promise<string | null>
+  pickWin32Dialog?: (signal: AbortSignal, internals?: DirectoryPickerInternals) => Promise<string | null>
+}
+
+/** Escape one string for an AppleScript double-quoted literal. */
+function appleScriptText(value: string): string {
+  return value.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"')
+}
+
+/** One directory with exactly one trailing POSIX separator for zenity. */
+function posixDirectory(value: string): string {
+  return `${value.replace(/\/+$/u, '')}/`
 }
 
 function outputPath(stdout: string): string | null {
@@ -54,8 +66,11 @@ export async function pickNativeDirectory(
 
   if (platform === 'darwin') {
     try {
+      const defaultLocation = internals.initialPath === undefined
+        ? ''
+        : ` default location (POSIX file "${appleScriptText(internals.initialPath)}")`
       const result = await run('osascript', [
-        '-e', 'set selectedFolder to choose folder with prompt "Select Workspace Directory"',
+        '-e', `set selectedFolder to choose folder with prompt "Select Workspace Directory"${defaultLocation}`,
         '-e', 'POSIX path of selectedFolder',
       ], signal)
       return outputPath(result.stdout)
@@ -73,13 +88,14 @@ export async function pickNativeDirectory(
     // tier: any failure surfaces as-is (no PowerShell fallback tier; see
     // .agents/notes/archived/simplification/2026-08-04-drop-windows-powershell-picker-fallback.md).
     const pickDialog = internals.pickWin32Dialog ?? pickWin32Directory
-    return await pickDialog(signal)
+    return await pickDialog(signal, internals)
   }
 
   if (platform === 'linux') {
     try {
       const result = await run('zenity', [
         '--file-selection', '--directory', '--title=Select Workspace Directory',
+        ...(internals.initialPath === undefined ? [] : [`--filename=${posixDirectory(internals.initialPath)}`]),
       ], signal)
       return outputPath(result.stdout)
     } catch (error: unknown) {
@@ -90,7 +106,7 @@ export async function pickNativeDirectory(
 
     try {
       const result = await run('kdialog', [
-        '--getexistingdirectory', '.', '--title', 'Select Workspace Directory',
+        '--getexistingdirectory', internals.initialPath ?? '.', '--title', 'Select Workspace Directory',
       ], signal)
       return outputPath(result.stdout)
     } catch (error: unknown) {

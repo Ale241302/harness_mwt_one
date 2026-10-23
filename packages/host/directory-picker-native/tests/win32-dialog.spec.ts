@@ -79,6 +79,19 @@ describe('pickWin32Directory', () => {
     await expect(cancelled).resolves.toBeNull()
   })
 
+  it('passes the requested start directory to the dialog worker', async () => {
+    const worker = new FakeWorker()
+    const spawnWorker = vi.fn(() => worker)
+    const picked = pickWin32Directory(live(), { spawnWorker, initialPath: 'C:\\work\\parent' })
+    expect(spawnWorker).toHaveBeenCalledWith({
+      title: 'Select Workspace Directory',
+      kind: 'folders',
+      initialPath: 'C:\\work\\parent',
+    })
+    worker.post({ kind: 'done', path: 'C:\\work\\parent\\child' })
+    await expect(picked).resolves.toBe('C:\\work\\parent\\child')
+  })
+
   it('rejects on a reported dialog failure, a worker crash, and a silent exit', async () => {
     const reported = harness()
     const failing = pickWin32Directory(live(), reported.internals)

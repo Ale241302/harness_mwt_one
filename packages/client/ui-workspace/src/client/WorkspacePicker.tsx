@@ -171,9 +171,15 @@ export function WorkspacePickFlow({
     if (open && addIsTheOnlyEntry && !flowBusy) openDirectoryFlow()
   }, [open, addIsTheOnlyEntry, flowBusy, openDirectoryFlow])
 
+  // Start where the selected Workspace lives: the operator is adding a sibling
+  // or child next to what they are looking at, not wherever the OS remembered.
+  const selectedPath = selectedId === undefined
+    ? undefined
+    : workspaces.find(workspace => workspace.workspaceId === selectedId)?.path
   /** Owner side of the flow conversation: adopt keeps the flow open (busy) until the Host answers. */
   const flowOwner: DirectoryFlowOwnerProps = {
     open: flowOpen,
+    ...(selectedPath === undefined ? {} : { startPath: selectedPath }),
     busy: pickingFolder,
     onPicked: (path) => {
       setPickingFolder(true)

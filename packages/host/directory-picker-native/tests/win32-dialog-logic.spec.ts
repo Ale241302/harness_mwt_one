@@ -21,6 +21,7 @@ interface FakeWorld {
   dialog: {
     setOptions: ReturnType<typeof vi.fn>
     setTitle: ReturnType<typeof vi.fn>
+    setFolder: ReturnType<typeof vi.fn>
     show: ReturnType<typeof vi.fn>
     resultPath: ReturnType<typeof vi.fn>
     release: ReturnType<typeof vi.fn>
@@ -31,6 +32,7 @@ function world(overrides: Partial<Win32FolderDialog> = {}, coInit = 0): FakeWorl
   const dialog = {
     setOptions: vi.fn(() => 0),
     setTitle: vi.fn(() => 0),
+    setFolder: vi.fn(() => 0),
     show: vi.fn(() => 0),
     resultPath: vi.fn(() => ({ hr: 0, path: 'C:\\picked\\目录' })),
     release: vi.fn(),
@@ -68,6 +70,13 @@ describe('runFolderDialog', () => {
     expect(showing.mock.invocationCallOrder[0]).toBeLessThan(pressAlt.mock.invocationCallOrder[0] as number)
     expect(pressAlt.mock.invocationCallOrder[0]).toBeLessThan(dialog.show.mock.invocationCallOrder[0] as number)
     expect(dialog.release).toHaveBeenCalledOnce()
+  })
+
+  it('opens in the requested directory before showing the chooser', () => {
+    const { bindings, dialog } = world()
+    expect(runFolderDialog(bindings, 'Pick', vi.fn(), 'C:\\work\\parent')).toBe('C:\\picked\\目录')
+    expect(dialog.setFolder).toHaveBeenCalledWith('C:\\work\\parent')
+    expect(dialog.setFolder.mock.invocationCallOrder[0]).toBeLessThan(dialog.show.mock.invocationCallOrder[0] as number)
   })
 
   it('maps the cancelled HRESULT to null and still releases the dialog and apartment', () => {

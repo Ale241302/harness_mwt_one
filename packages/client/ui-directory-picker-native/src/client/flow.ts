@@ -10,8 +10,11 @@ import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspa
 
 /** Injected face: the wire call the flow drives (bound in apply's closure). */
 export interface NativeFlowInjected {
-  /** Ask the local Host to open its native single-directory chooser. */
-  pick: () => Promise<string | null>
+  /**
+   * Ask the local Host to open its native single-directory chooser.
+   * @param startPath - directory the chooser should open in, when the owner knows one.
+   */
+  pick: (startPath?: string) => Promise<string | null>
 }
 
 /**
@@ -23,7 +26,7 @@ export interface NativeFlowInjected {
  * @returns nothing — the native chooser renders on the host display.
  */
 export function NativeDirectoryFlow(props: DirectoryFlowOwnerProps & NativeFlowInjected): ReactElement | null {
-  const { open, pick } = props
+  const { open, startPath, pick } = props
   const armed = useRef(false)
   // Callbacks ride a ref so the settled pick reports through the owner's
   // latest handlers, not the ones captured when the chooser opened.
@@ -50,7 +53,7 @@ export function NativeDirectoryFlow(props: DirectoryFlowOwnerProps & NativeFlowI
     }
     if (armed.current) return
     armed.current = true
-    pick().then(
+    pick(startPath).then(
       (path) => {
         if (!alive.current) return
         if (path === null) outcome.current.onCancel(); else outcome.current.onPicked(path)
@@ -60,6 +63,6 @@ export function NativeDirectoryFlow(props: DirectoryFlowOwnerProps & NativeFlowI
         outcome.current.onError(reason instanceof Error ? reason.message : String(reason))
       },
     )
-  }, [open, pick])
+  }, [open, pick, startPath])
   return null
 }

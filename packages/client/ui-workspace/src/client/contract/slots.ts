@@ -41,6 +41,8 @@ import type { createWorkspaceViewStore } from '../stores.ts'
 export interface DirectoryFlowOwnerProps {
   /** True while a picking interaction is requested; flipping back to false withdraws the request. */
   open: boolean
+  /** Directory the interaction should start in, when the owner has a selected Workspace. */
+  startPath?: string
   /** True while the owner adopts a picked path (`createWorkspace` in flight); occupants disable their commit affordances. */
   busy: boolean
   /** The operator picked a directory (absolute host path); the owner adopts it. */

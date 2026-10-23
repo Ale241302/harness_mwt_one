@@ -183,7 +183,7 @@ class FakeDirectoryPicker {
     () => Promise.resolve({ ok: true, value: '/home/u/new' })
 
   readonly remote: ClientRemote['directoryPicker'] = {
-    pick: () => this.record('pick', {}, this.onPick()),
+    pick: (startPath?: string) => this.record('pick', startPath === undefined ? {} : { startPath }, this.onPick()),
     pickFile: () => this.record('pickFile', {}, this.onPickFile()),
     list: (path?: string) => this.record('list', { path }, this.onList()),
     createDirectory: (path: string, name: string) =>
@@ -636,7 +636,9 @@ describe('UiWorkspaceService', () => {
     await expect(b.uiWorkspace.pickDirectory()).resolves.toBe('/w/alpha')
     b.directoryPicker.onPick = () => Promise.resolve({ ok: true, value: null })
     await expect(b.uiWorkspace.pickDirectory()).resolves.toBeNull()
-    expect(b.directoryPicker.callsOf('pick')).toEqual([{}, {}])
+    b.directoryPicker.onPick = () => Promise.resolve({ ok: true, value: '/w/parent' })
+    await expect(b.uiWorkspace.pickDirectory('/w/parent')).resolves.toBe('/w/parent')
+    expect(b.directoryPicker.callsOf('pick')).toEqual([{}, {}, { startPath: '/w/parent' }])
 
     await expect(b.uiWorkspace.listDirectory()).resolves.toEqual(listing)
     await expect(b.uiWorkspace.listDirectory('/home/u')).resolves.toEqual(listing)

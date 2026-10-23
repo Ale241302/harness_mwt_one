@@ -855,9 +855,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host service backing the generated `ctx.remote.directoryPicker` namespace. The seam it exports is abstract and therefore never a Loader entry of its own, so this controller carries the wire verbs: one composed backend serves either the native chooser or the browse primitives, and a verb the composition cannot serve is refused rather than approximated.',
     methods: [
       {
-        signature: '@Remote(\'pick\') async pick(signal: AbortSignal): Promise<string | null>',
+        signature: '@Remote(\'pick\') async pick(startPath: string | undefined, signal: AbortSignal): Promise<string | null>',
         description: 'Open the host\'s OS chooser for a Remote caller.',
-        parameters: [{ name: 'signal', description: 'caller lifetime; abort terminates the chooser.' }],
+        parameters: [
+          { name: 'startPath', description: 'directory the chooser opens in, when the caller has one.' },
+          { name: 'signal', description: 'caller lifetime; abort terminates the chooser.' },
+        ],
         returns: 'the chosen absolute path, or null when the operator cancels.',
       },
       {
@@ -7080,7 +7083,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DirectoryPickerNativeCapability',
-    declaration: 'export interface DirectoryPickerNativeCapability {\n    kind: \'native\';\n    pick(signal: AbortSignal): Promise<string | null>;\n    pickFile(signal: AbortSignal): Promise<string | null>;\n}',
+    declaration: 'export interface DirectoryPickerNativeCapability {\n    kind: \'native\';\n    pick(signal: AbortSignal, startPath?: string): Promise<string | null>;\n    pickFile(signal: AbortSignal): Promise<string | null>;\n}',
   },
   {
     name: 'DirectoryRegistrationHandle',

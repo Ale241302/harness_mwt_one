@@ -45,6 +45,22 @@ describe('native directory picker', () => {
     await expect(pickNativeDirectory(signal(), { platform: 'darwin', run })).rejects.toThrow('command failed')
   })
 
+  it('starts each native tier at the requested directory', async () => {
+    const macRun = vi.fn<DirectoryPickerRunner>(async () => ({ stdout: '/Users/test/parent/\n', stderr: '' }))
+    await pickNativeDirectory(signal(), { platform: 'darwin', run: macRun, initialPath: '/Users/test/parent' })
+    expect(macRun.mock.calls[0]![1]).toEqual(expect.arrayContaining([
+      expect.stringContaining('default location (POSIX file "/Users/test/parent")'),
+    ]))
+
+    const linuxRun = vi.fn<DirectoryPickerRunner>(async () => ({ stdout: '/home/test/parent\n', stderr: '' }))
+    await pickNativeDirectory(signal(), { platform: 'linux', run: linuxRun, initialPath: '/home/test/parent' })
+    expect(linuxRun.mock.calls[0]![1]).toEqual(expect.arrayContaining(['--filename=/home/test/parent/']))
+
+    const win = vi.fn(async (_signal: AbortSignal, _internals?: unknown): Promise<string | null> => null)
+    await pickNativeDirectory(signal(), { platform: 'win32', pickWin32Dialog: win, initialPath: 'C:\\work\\parent' })
+    expect(win).toHaveBeenCalledWith(expect.any(AbortSignal), expect.objectContaining({ initialPath: 'C:\\work\\parent' }))
+  })
+
   it.each([
     ['a primitive error', 'failed'],
     ['an invalid code type', { code: true }],

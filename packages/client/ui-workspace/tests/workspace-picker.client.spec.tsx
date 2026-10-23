@@ -89,6 +89,7 @@ function mount(
   createWorkspace = vi.fn(),
   occupancy = occupancySource(),
   openUnassignedSession?: () => void,
+  selectedId?: WorkspaceId,
 ) {
   const onPick = vi.fn()
   const onClose = vi.fn()
@@ -102,6 +103,7 @@ function mount(
       useSessionPendingInteraction={hook(noPendingInteraction)}
       usePanelInfo={usePanelInfo} useResource={useResource}
       useWorkspaces={hook(workspaceState(nextItems))}
+      {...(selectedId === undefined ? {} : { selectedId })}
       onPick={onPick}
       {...openUnassignedSession === undefined ? {} : { onOpenUnassignedSession: openUnassignedSession }}
       onClose={onClose}
@@ -146,6 +148,18 @@ describe('WorkspacePicker', () => {
     await waitFor(() => { expect(b.onPick).toHaveBeenCalledWith(created.workspaceId) })
     // Successful adoption withdraws the flow request.
     expect(screen.queryByTestId('directory-flow')).toBeNull()
+  })
+
+  it('starts the composed directory flow at the selected Workspace', () => {
+    const b = mount(
+      [workspace('alpha', 'Alpha'), workspace('beta', 'Beta')],
+      vi.fn(),
+      occupancySource(),
+      undefined,
+      wid('beta'),
+    )
+    chooseAdd()
+    expect(b.probe.owner!.startPath).toBe('/projects/beta')
   })
 
   it('raises the flow straight from the anchor gesture when adding is the only entry', () => {

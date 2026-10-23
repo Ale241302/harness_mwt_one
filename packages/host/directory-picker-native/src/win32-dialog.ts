@@ -34,6 +34,8 @@ export interface Win32DialogWorkerLike {
 
 /** Injectable process surface for deterministic driver tests. */
 export interface Win32DialogInternals {
+  /** Directory the dialog opens in; absent keeps the shell's default. */
+  initialPath?: string
   /** Replaces the real child spawn (`win32-dialog-host.ts`). */
   spawnWorker?: (data: Win32DialogWorkerData) => Win32DialogWorkerLike
   /** Replaces the real `WM_CLOSE` poster (`win32-dialog-host.ts`). */
@@ -107,6 +109,7 @@ async function pickWin32Dialog(
   const worker: Win32DialogWorkerLike = spawnWorker({
     title: pickFiles ? DIALOG_FILE_TITLE : DIALOG_TITLE,
     kind: pickFiles ? 'files' : 'folders',
+    ...(internals.initialPath === undefined ? {} : { initialPath: internals.initialPath }),
   })
   let dialogThreadId: number | undefined
   let closeTimer: NodeJS.Timeout | undefined

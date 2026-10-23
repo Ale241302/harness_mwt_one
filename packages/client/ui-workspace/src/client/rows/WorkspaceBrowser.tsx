@@ -768,6 +768,13 @@ export function WorkspaceBrowser({
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const workspaceReady = workspacePhase === 'ready' && workspaceStreamState !== 'loading'
+  // The add-workspace flow starts where the operator is looking: the Workspace
+  // that owns the current session, not the OS chooser's last location.
+  const currentWorkspaceId = useMemo(() => {
+    const current = list.current
+    if (current === undefined) return undefined
+    return workspaces.find(workspace => workspace.sessionIds.includes(current))?.workspaceId
+  }, [list.current, workspaces])
   const currentBlank = list.current !== undefined && list.byId[list.current]?.blank === true
     ? list.current
     : undefined
@@ -1245,11 +1252,15 @@ export function WorkspaceBrowser({
           createWorkspace={createWorkspace}
           useDirectoryFlow={useDirectoryFlow}
           renderDirectoryFlow={owner => renderSlot('sidebar.workspaces.directoryFlow', owner)}
+          selectedId={currentWorkspaceId}
           addOnly
           side="right"
           onPick={(workspaceId) => {
             setWsPickerOpen(false)
-            startSession(workspaceId)
+            // Keep the operator on the Space they were adding under. Opening
+            // the new child would make the next picker start inside it; the
+            // child row is already visible under its parent.
+            if (currentWorkspaceId === undefined) startSession(workspaceId)
           }}
           onClose={() => { setWsPickerOpen(false) }}
         />

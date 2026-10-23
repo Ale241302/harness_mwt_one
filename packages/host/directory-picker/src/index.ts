@@ -23,9 +23,11 @@ export interface DirectoryPickerNativeCapability {
   /**
    * Open the chooser and wait for the operator.
    * @param signal - caller/connection lifetime; abort terminates the chooser.
+   * @param startPath - directory the chooser should open in, when the caller
+   *   has a current target; absent keeps the backend's own starting location.
    * @returns the chosen absolute path, or null when the operator cancels.
    */
-  pick(signal: AbortSignal): Promise<string | null>
+  pick(signal: AbortSignal, startPath?: string): Promise<string | null>
   /**
    * Open the same chooser for one existing file. It exists beside {@link pick}
    * because both are one conversation with the operator on the host display,

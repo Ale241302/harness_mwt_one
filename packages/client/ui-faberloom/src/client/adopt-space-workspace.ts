@@ -21,7 +21,7 @@ export async function runAdoptSpaceWorkspace(
   refresh: () => Promise<void> | void,
   spaceId: string,
 ): Promise<void> {
-  const picked = await directoryPicker.pick()
+  const picked = await directoryPicker.pick(undefined)
   if (!picked.ok || picked.value === null || picked.value.length === 0) return
   const adopted = await view.adoptSpaceWorkspace(spaceId, picked.value)
   if (adopted.ok) await refresh()

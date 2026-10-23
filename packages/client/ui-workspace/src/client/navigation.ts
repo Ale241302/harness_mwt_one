@@ -63,9 +63,10 @@ export interface UiWorkspace {
   unarchiveSession(sessionId: SessionId): Promise<void>
   /**
    * Open the Host-native directory picker.
+   * @param startPath - directory the chooser should open in, when known.
    * @returns the selected directory, or null when cancelled.
    */
-  pickDirectory(): Promise<string | null>
+  pickDirectory(startPath?: string): Promise<string | null>
   /**
    * List one Host directory level.
    * @param path - directory path; absent selects the Host home.
@@ -202,8 +203,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     await this.workspaces.unarchiveSession(sessionId)
   }
 
-  async pickDirectory(): Promise<string | null> {
-    const result = await this.directoryPicker.pick()
+  async pickDirectory(startPath?: string): Promise<string | null> {
+    const result = await this.directoryPicker.pick(startPath)
     if (!result.ok) throw new Error(`directory picker failed: ${result.error.message}`)
     return result.value
   }
