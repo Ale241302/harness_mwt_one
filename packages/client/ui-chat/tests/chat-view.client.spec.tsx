@@ -1087,6 +1087,50 @@ describe('ChatView', () => {
     expect(view.getAllByText('即发即显')).toHaveLength(1)
   })
 
+  it('keeps a transcript echo visible while only a queued occurrence has claimed it', () => {
+    const h = makeHarness(
+      { nodes: [assistant(1, 'working')] },
+      {
+        running: true,
+        pendingSubmissions: [{
+          requestId: 'req-gap' as never,
+          placement: 'transcript',
+          time: 5_200,
+          text: 'enviado',
+          attachments: [],
+        }],
+        queue: [{
+          id: 'gap-occurrence' as never,
+          messageId: 'gap-message' as never,
+          placement: 'queued' as const,
+          rpcId: 'req-gap' as never,
+          content: [{ type: 'text' as const, text: 'turno pendiente' }],
+          preview: 'turno pendiente',
+          text: 'turno pendiente',
+        }],
+      },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    // The queued occurrence alone must not retire the Chat bubble: the
+    // durable user/message arrives only when the turn starts.
+    expect(view.container.querySelector('[data-submission-echo]')?.textContent).toContain('enviado')
+
+    act(() => {
+      h.setChat({
+        nodes: [
+          assistant(1, 'working'),
+          {
+            kind: 'user', seq: 2, time: 2_100,
+            content: [{ type: 'text', text: 'enviado' }] as never,
+            source: { kind: 'user', rpcId: 'req-gap' },
+          },
+        ],
+      })
+    })
+    expect(view.getAllByText('enviado')).toHaveLength(1)
+    expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
+  })
+
   it('renders a local steer echo as pending steering before Host image admission completes', () => {
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },
