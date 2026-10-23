@@ -18,7 +18,7 @@ Status: implemented
 
 **子树之外只列名，不可读。** 该段落在“其他 Space”下按标题与 id 列出其他可读 Space，但不给出文件夹。`faberloom_spaces_open_read` 通过 `ctx.approval` 询问用户一次，记录一个 `faberloom/space-read-grant` 仅日志事件，并把被授予的子树加入作用域。已经在 `danger-full-access` 下运行的会话会直接记录授予而不弹出提示：该常驻模式本就授权用户自己的文件操作，而授予更窄（仅读取）。受限预设会询问，并在拒绝或通道不可用时失败关闭。授予通过重放跨越恢复，且限定在该会话内。spaces 服务会在显示任何批准之前拒绝行为身份不可读的 Space，因此授予绝不会扩大产品访问。
 
-**守卫与作用域一致。** `read`、`read_image`、`write`、`edit`、`glob`、`grep`、`bash` 与 `pwsh` 在执行前检查：位于作用域之外 Space 文件夹下的路径会被拒绝，并提示使用 `faberloom_spaces_open_read`；shell 命令按 token 扫描绝对或相对的外来文件夹拼写。位于任何 Space 之外的路径仍像以前一样可读。会话沙箱根之外的写入仍由沙箱决定；授予不改变该根。
+**守卫与作用域一致。** `read`、`read_image`、`write`、`edit`、`glob`、`grep`、`bash` 与 `pwsh` 在执行前检查：位于作用域之外 Space 文件夹下的路径会被拒绝，并提示使用 `faberloom_spaces_open_read`；shell 命令按 token 扫描绝对或相对的外来文件夹拼写。位于任何 Space 之外的路径仍像以前一样可读。授予之后，读取会重新打开该子树，而针对它的 `write`、`edit` 与 shell 命令仍被拒绝，因此即使会话拥有完全访问权限，授予仍仅限读取；会话自身子树仍可写。其他位置的会话沙箱根之外写入仍由沙箱决定。
 
 **父→子方向由层级授权，而不是由共享授权。** 后代可读，是因为它是行为身份在 spaces 域中可读的后代。它没有被共享、发布或复制；无法读取某个子 Space 的成员不会通过其父级获得它。
 

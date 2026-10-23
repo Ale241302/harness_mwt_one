@@ -50,7 +50,7 @@ kind: "package-reference"
 
 - **租户路由器把副作用交给控制台裁决。** `faberloom_mwt_call` 与 `faberloom_mwt_find` 只约束租户（绝不超出用户的公司）；一个工具是读还是写由 MWT.ONE 控制台的 RBAC 决定，而不是 FaberLoom 侧的允许名单。
 - **公司名即 id。** 控制台返回的 `legal_entity_ids` 是不透明 id；显示名映射推迟到控制台提供为止。
-- **Space 作用域以子树为先。** `faberloom_spaces_scope` 读取会话自身的 Space、其下每个子 Space，以及该会话中已授予的子树；`faberloom_spaces_open_read` 在把子树之外的 Space 加入前通过 `ctx.approval` 询问用户，记录一个持久读取授予事件，并返回同样的详细作用域文本。该身份不可读的 Space 会在请求任何批准之前被 spaces 服务拒绝。已经在 `danger-full-access` 下运行的会话会直接记录授予而不弹出提示，因为该常驻模式本就授权用户自己的文件操作，而授予更窄（仅读取）；受限预设会询问，并在拒绝或通道不可用时失败关闭。授予在契约上仅限读取：会话沙箱根之外的写入仍被拒绝，且在授予存在之前，文件工具会拒绝外来 Space 文件夹下的路径。
+- **Space 作用域以子树为先。** `faberloom_spaces_scope` 读取会话自身的 Space、其下每个子 Space，以及该会话中已授予的子树；`faberloom_spaces_open_read` 在把子树之外的 Space 加入前通过 `ctx.approval` 询问用户，记录一个持久读取授予事件，并返回同样的详细作用域文本。该身份不可读的 Space 会在请求任何批准之前被 spaces 服务拒绝。已经在 `danger-full-access` 下运行的会话会直接记录授予而不弹出提示，因为该常驻模式本就授权用户自己的文件操作，而授予更窄（仅读取）；受限预设会询问，并在拒绝或通道不可用时失败关闭。授予在契约上仅限读取：授予存在后，即使会话拥有完全访问权限，针对该授予文件夹的 `write`、`edit` 与 shell 命令也会被拒绝；授予之前，文件工具会拒绝外来 Space 文件夹下的路径。会话自身子树仍可写。
 - **空间查找。** `faberloom_spaces_find` 按折叠词项对空间标题、上下文、记忆与该空间的精选上下文条目排序；当挂载 `ctx.spaceIndex` 排序器时，它也会对该空间附件的可读文本排序。空查询列出最近创建的可读空间。`faberloom_spaces_reference` 只返回文件元数据，不含字节。
 - **委托咨询。** `faberloom_spaces_ask` 通过 `askProvider`（默认 `spawn`）运行一次委托并返回其答复；`continuable: true` 会启动一个持久子会话，由 `faberloom_spaces_followup` 继续。委托深度适用，子代理继承负责代理的工具面，并在该代理保存了 key 时继承其凭证引用，因此咨询运行在被咨询代理自己的 provider 账户上。子代理在父级工作区中运行，因为 `resolveWorkdir` 返回的是不透明引用而非路径；在空间真实工作目录中运行推迟到后续。
 - **记忆工具为可选启用。** `memoryTools`（默认关闭）注册空间记忆（`faberloom_spaces_remember`/`_memory_list`/`_forget`）与 teaching（`faberloom_memory_teach`/`_teachings`/`_revoke`/`_retrieve`）工具；默认关闭是因为它们会增加常驻请求 schema。这一显式且带版本的层归 FaberLoom 所有；自动情景记忆由外部记忆服务器蒸馏（见 `MANIFEST.md`），不是这些工具。

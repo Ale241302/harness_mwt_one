@@ -456,11 +456,13 @@ export class FaberLoomSessionAgent extends Service {
   }
 
   /**
-   * Refuse a file or shell read that targets a Space outside this session's
-   * scope. The check covers the file tools' path arguments and an absolute
-   * foreign folder spelled inside a shell command; a path outside every Space
-   * (an attachment, a temp file, a skill installation) stays readable exactly
-   * as before. A granted Space is no longer foreign, so the grant reopens it.
+   * Refuse file or shell access that targets a Space outside this session's
+   * scope, and refuse writes to a granted Space. The check covers the file
+   * tools' path arguments and a folder spelling inside a shell command; a path
+   * outside every Space (an attachment, a temp file, a skill installation)
+   * stays readable exactly as before. A granted Space is no longer foreign, so
+   * reads reopen it, while `write`, `edit`, and shell commands remain refused
+   * because the grant is read-only.
    * @param agent - the session's agent.
    * @param toolName - the tool the model called.
    * @param args - the call's raw arguments.
@@ -471,7 +473,7 @@ export class FaberLoomSessionAgent extends Service {
     const cwd = agent.session.header.cwd
     if (scope === undefined || scope.foreign.length === 0 || cwd === undefined) return undefined
     const input = typeof args === 'object' && args !== null ? args as Record<string, unknown> : {}
-    const readable = [scope.space, ...scope.granted].flatMap(node => nodeFolders(node))
+    const own = nodeFolders(scope.space)
     if (SHELL_TOOLS.has(toolName)) {
       const command = input['command']
       if (typeof command === 'string') {
@@ -485,9 +487,11 @@ export class FaberLoomSessionAgent extends Service {
           const clean = token.replace(/^-[^=]*=/, '')
           if (clean.length === 0 || clean.startsWith('-')) continue
           const target = resolve(cwd, clean)
-          if (readable.some(folder => isUnderFolder(target, resolve(folder)))) continue
+          if (own.some(folder => isUnderFolder(target, resolve(folder)))) continue
           const foreign = scope.foreign.find(entry => isUnderFolder(target, resolve(entry.path)))
           if (foreign !== undefined) return foreignReadDenial(foreign.title)
+          const granted = grantedNodeAt(scope, target)
+          if (granted !== undefined) return grantedWriteDenial(granted.title)
         }
       }
     }
@@ -497,9 +501,13 @@ export class FaberLoomSessionAgent extends Service {
       const target = resolve(cwd, value)
       // The current subtree wins over the foreign list: a parent folder above
       // it never turns a read of the current Space into a foreign read.
-      if (readable.some(folder => isUnderFolder(target, resolve(folder)))) continue
+      if (own.some(folder => isUnderFolder(target, resolve(folder)))) continue
       const foreign = scope.foreign.find(entry => isUnderFolder(target, resolve(entry.path)))
       if (foreign !== undefined) return foreignReadDenial(foreign.title)
+      if (WRITE_TOOLS.has(toolName)) {
+        const granted = grantedNodeAt(scope, target)
+        if (granted !== undefined) return grantedWriteDenial(granted.title)
+      }
     }
     return undefined
   }
@@ -651,6 +659,27 @@ const PATH_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
 /** Shell tools whose command text can name an absolute foreign folder. */
 const SHELL_TOOLS: ReadonlySet<string> = new Set(['bash', 'pwsh'])
 
+/** File tools that mutate their target rather than read it. */
+const WRITE_TOOLS: ReadonlySet<string> = new Set(['write', 'edit'])
+
+/**
+ * The granted subtree containing one path, if any.
+ * @param scope - the session scope.
+ * @param target - absolute path to test.
+ * @returns the matching granted node, or undefined.
+ */
+function grantedNodeAt(scope: SpaceScope, target: string): SpaceScopeNode | undefined {
+  const walk = (nodes: readonly SpaceScopeNode[]): SpaceScopeNode | undefined => {
+    for (const node of nodes) {
+      if (isUnderFolder(target, resolve(node.path))) return node
+      const child = walk(node.children)
+      if (child !== undefined) return child
+    }
+    return undefined
+  }
+  return walk(scope.granted)
+}
+
 /**
  * Every folder in one readable scope node and its descendants.
  * @param node - subtree root.
@@ -683,6 +712,15 @@ function containsPath(command: string, root: string): boolean {
  */
 function foreignReadDenial(title: string): string {
   return `faberloom: «${title}» está fuera del ámbito de esta sesión. Pedí permiso de solo lectura con faberloom_spaces_open_read antes de leer su carpeta o sus archivos.`
+}
+
+/**
+ * The refusal for a write or a shell command against a granted Space.
+ * @param title - the Space title.
+ * @returns the refusal text explaining the read-only grant.
+ */
+function grantedWriteDenial(title: string): string {
+  return `faberloom: el permiso sobre «${title}» es de solo lectura en esta sesión; no se puede escribir ni ejecutar comandos sobre esa carpeta. Usá read, glob o grep para consultarla.`
 }
 
 /**

@@ -72,7 +72,7 @@ Space 会话的请求把负责代理的 persona 作为 `deployment:persona-prefi
 - **在工作区注册之前启动的 Space 会话不会被组合。** 会话创建时工作区必须已存在；Spaces 面板在打开 Space 时注册它。
 - **作用域跟随 Space 树，而不是文件系统。** 子 Space 之所以在作用域内，是因为其记录把当前 Space 命名为 `parentId`；仅仅嵌套在另一个 Space 文件夹里的文件夹不是子 Space。对于 `parentId` 出现之前创建的文件夹，Spaces 面板在加载时修复层级。
 - **读取授予是会话状态，不是新的产品权限。** 它记录该会话可以读取行为身份本已可读的 Space；spaces 服务仍会拒绝该身份不可读的 Space。授予是一个仅日志事件，因此在恢复后仍然存在，并在首个请求前重放；它不改变 Space 的成员或共享。
-- **外来 Space 的读取在文件工具处被拒绝。** `read`、`read_image`、`write`、`edit`、`glob`、`grep`、`bash` 与 `pwsh` 都会对照可读文件夹检查；位于作用域之外 Space 下的路径会被拒绝，并提示使用 `faberloom_spaces_open_read`；shell 命令会按 token 扫描绝对或相对文件夹拼写。不解释 shell 语法，因此混淆后的命令仍可能到达同一个用户自有文件；作用域是授权与发现，不是操作系统隔离边界。
+- **外来 Space 的访问在文件工具处被拒绝。** `read`、`read_image`、`write`、`edit`、`glob`、`grep`、`bash` 与 `pwsh` 都会对照可读文件夹检查；位于作用域之外 Space 下的路径会被拒绝，并提示使用 `faberloom_spaces_open_read`；shell 命令会按 token 扫描绝对或相对文件夹拼写。授予之后，读取会重新打开该子树，而针对它的 `write`、`edit` 与 shell 命令仍被拒绝，因此即使会话拥有完全访问权限，授予仍仅限读取。不解释 shell 语法，因此混淆后的命令仍可能到达同一个用户自有文件；作用域是授权与发现，不是操作系统隔离边界。
 - **作用域每个轮次读取一次。** 轮次中创建或重命名的 Space 会在下一个轮次出现，而不是同一轮次。
 
 不发布 invariant 伴随包，因为该服务的单元测试已断言组合矩阵与释放。

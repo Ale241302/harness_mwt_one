@@ -355,6 +355,10 @@ describe('FaberLoomSessionAgent Space scope', () => {
     expect(service.denyForeignRead(agent, 'read', { file_path: '/tmp/attachment.txt' })).toBeUndefined()
     await service.grantRead(agent, 'sp-colombia')
     expect(service.denyForeignRead(agent, 'read', { file_path: '/home/CO/nota.txt' })).toBeUndefined()
+    expect(service.denyForeignRead(agent, 'write', { file_path: '/home/CO/nota.txt' })).toContain('solo lectura')
+    expect(service.denyForeignRead(agent, 'edit', { file_path: '/home/CO/nota.txt' })).toContain('solo lectura')
+    expect(service.denyForeignRead(agent, 'bash', { command: 'cat /home/CO/nota.txt' })).toContain('solo lectura')
+    expect(service.denyForeignRead(agent, 'write', { file_path: '/home/SD/nota.txt' })).toBeUndefined()
   })
 
   it('does not treat the folder above the session Space as foreign', async () => {
