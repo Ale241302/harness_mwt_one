@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包在原生产品服务之上注册面向模型的 `faberloom_*` 工具：空间、agent、模型、例程、执行、工作台、来源、邮件、MWT.ONE 租户路由器、跨空间解析（`faberloom_spaces_find`、`_reference`、`_ask`）、技能安装（`faberloom_skill_install`：把一个文件夹安装到工作区或全局根目录，并报告每个候选）、MCP 服务器安装（`faberloom_mcp_install` 读取用户交来的文档页面，`faberloom_mcp_add` 直接接收已知的连接事实，`_list`/`_remove` 管理其余部分：用户交来的服务器先用一次连接验证，通过后才保存；凭证值进入凭证接缝）、工作区文件改动（`faberloom_files_create`/`_rename`/`_delete`，经 `workspaceFiles` 能力），以及可选启用的空间记忆、teaching 与 Work Flow 图工具。路由器把同一条读查询扇出到每个 `legal_entity_ids` 租户；控制台对每次调用仍强制执行角色与权限。
+此包在原生产品服务之上注册面向模型的 `faberloom_*` 工具：空间、agent、模型、例程、执行、工作台、来源、邮件、MWT.ONE 租户路由器、跨空间解析（`faberloom_spaces_find`、`_reference`、`_ask`）、会话 Space 作用域（`faberloom_spaces_scope`、`_open_read`：当前子树加上对外部 Space 的已批准只读授予）、技能安装（`faberloom_skill_install`：把一个文件夹安装到工作区或全局根目录，并报告每个候选）、MCP 服务器安装（`faberloom_mcp_install` 读取用户交来的文档页面，`faberloom_mcp_add` 直接接收已知的连接事实，`_list`/`_remove` 管理其余部分：用户交来的服务器先用一次连接验证，通过后才保存；凭证值进入凭证接缝）、工作区文件改动（`faberloom_files_create`/`_rename`/`_delete`，经 `workspaceFiles` 能力），以及可选启用的空间记忆、teaching 与 Work Flow 图工具。路由器把同一条读查询扇出到每个 `legal_entity_ids` 租户；控制台对每次调用仍强制执行角色与权限。
 
 ## 目录
 
@@ -50,6 +50,7 @@ kind: "package-reference"
 
 - **租户路由器把副作用交给控制台裁决。** `faberloom_mwt_call` 与 `faberloom_mwt_find` 只约束租户（绝不超出用户的公司）；一个工具是读还是写由 MWT.ONE 控制台的 RBAC 决定，而不是 FaberLoom 侧的允许名单。
 - **公司名即 id。** 控制台返回的 `legal_entity_ids` 是不透明 id；显示名映射推迟到控制台提供为止。
+- **Space 作用域以子树为先。** `faberloom_spaces_scope` 读取会话自身的 Space、其下每个子 Space，以及该会话中已授予的子树；`faberloom_spaces_open_read` 在把子树之外的 Space 加入前通过 `ctx.approval` 询问用户，记录一个持久读取授予事件，并返回同样的详细作用域文本。该身份不可读的 Space 会在请求任何批准之前被 spaces 服务拒绝。授予在契约上仅限读取：会话沙箱根之外的写入仍被拒绝，且在授予存在之前，文件工具会拒绝外来 Space 文件夹下的路径。
 - **空间查找。** `faberloom_spaces_find` 按折叠词项对空间标题、上下文、记忆与该空间的精选上下文条目排序；当挂载 `ctx.spaceIndex` 排序器时，它也会对该空间附件的可读文本排序。空查询列出最近创建的可读空间。`faberloom_spaces_reference` 只返回文件元数据，不含字节。
 - **委托咨询。** `faberloom_spaces_ask` 通过 `askProvider`（默认 `spawn`）运行一次委托并返回其答复；`continuable: true` 会启动一个持久子会话，由 `faberloom_spaces_followup` 继续。委托深度适用，子代理继承负责代理的工具面，并在该代理保存了 key 时继承其凭证引用，因此咨询运行在被咨询代理自己的 provider 账户上。子代理在父级工作区中运行，因为 `resolveWorkdir` 返回的是不透明引用而非路径；在空间真实工作目录中运行推迟到后续。
 - **记忆工具为可选启用。** `memoryTools`（默认关闭）注册空间记忆（`faberloom_spaces_remember`/`_memory_list`/`_forget`）与 teaching（`faberloom_memory_teach`/`_teachings`/`_revoke`/`_retrieve`）工具；默认关闭是因为它们会增加常驻请求 schema。这一显式且带版本的层归 FaberLoom 所有；自动情景记忆由外部记忆服务器蒸馏（见 `MANIFEST.md`），不是这些工具。

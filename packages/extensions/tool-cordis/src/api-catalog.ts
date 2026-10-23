@@ -857,10 +857,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: '@Remote(\'pick\') async pick(startPath: string | undefined, signal: AbortSignal): Promise<string | null>',
         description: 'Open the host\'s OS chooser for a Remote caller.',
-        parameters: [
-          { name: 'startPath', description: 'directory the chooser opens in, when the caller has one.' },
-          { name: 'signal', description: 'caller lifetime; abort terminates the chooser.' },
-        ],
+        parameters: [{ name: 'startPath', description: 'directory the chooser opens in, or undefined for the platform\'s own starting location.' }, { name: 'signal', description: 'caller lifetime; abort terminates the chooser.' }],
         returns: 'the chosen absolute path, or null when the operator cancels.',
       },
       {
@@ -1534,27 +1531,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'what the pass read and started.',
       },
       {
-        signature: 'async listInbox(ownerId: string, limit?: number): Promise<ImapMessage[]>',
+        signature: 'async listInbox(ownerId: string, limit?: number, connectionId?: string): Promise<ImapMessage[]>',
         description: 'List the owner\'s mailbox envelopes, newest first, without mutating the mailbox. Read-only: never marks, moves, or deletes mail.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'limit', description: 'most envelopes to return.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'limit', description: 'most envelopes to return.' }, { name: 'connectionId', description: 'the mail connection to read, or undefined for the default one.' }],
         returns: 'the envelopes, or an empty list when no mailbox is configured.',
       },
       {
-        signature: 'async readEmail(ownerId: string, uid: number): Promise<ImapMessageContent>',
+        signature: 'async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent>',
         description: 'Read one mailbox message\'s body, read-only.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to read, or undefined for the default one.' }],
         returns: 'the decoded body, or null when no mailbox is configured or the message has no body.',
       },
       {
-        signature: 'async markSeen(ownerId: string, uid: number): Promise<boolean>',
+        signature: 'async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean>',
         description: 'Mark one message as read (`\\Seen`). Unlike the poller this writes to the mailbox, so it runs only for an explicit user gesture.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to update, or undefined for the default one.' }],
         returns: 'true when the mailbox accepted the flag update, false without a mailbox.',
       },
       {
-        signature: 'async moveToTrash(ownerId: string, uid: number): Promise<string>',
+        signature: 'async moveToTrash(ownerId: string, uid: number, connectionId?: string): Promise<string>',
         description: 'Move one message to the Trash mailbox, trying the configured name and then the built-in candidates. Writes to the mailbox on an explicit gesture only.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to update, or undefined for the default one.' }],
         returns: 'the mailbox the message moved to.',
         throws: ['when every candidate mailbox rejects the move.'],
       },
@@ -1602,6 +1599,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'FaberLoom\'s server face for other agents.',
     description: 'FaberLoom\'s server face for other agents.',
     methods: [
+      {
+        signature: 'async request(body: string, token: string, accept: string = \'application/json\'): Promise<FaberLoomMcpAnswer>',
+        description: 'Answer one request on behalf of a token holder without an HTTP request.\n\nThis is the same validation and the same tools the socket serves; the caller is the bridge, which has already authenticated the public client with the token the gateway forwarded. A revoked or foreign token is refused here too, so a stale registration cannot outlive its token.',
+        parameters: [{ name: 'body', description: 'the JSON-RPC request body.' }, { name: 'token', description: 'the bearer token the public client presented.' }, { name: 'accept', description: 'the Accept header the public client sent.' }],
+        returns: 'the complete answer for the gateway to relay.',
+      },
       {
         signature: 'async mintToken(label: string, scopes: readonly string[] | null = null): Promise<FaberLoomMcpToken>',
         description: 'Mint one bearer token for a client the owner names.',
@@ -2015,6 +2018,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'agent', description: 'the session\'s agent.' }],
         returns: 'the agent\'s route, or `undefined`.',
       },
+      {
+        signature: 'async scopeFor(agent: Agent): Promise<SpaceScope | undefined>',
+        description: 'The scope one live Space session reads: its own Space, every sub-Space below it, and the granted subtrees. A session outside a Space returns `undefined`; a Space session whose scope is not cached reads it first, so a tool call never observes an empty scope for a resolved session.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }],
+        returns: 'the current scope, or `undefined`.',
+      },
+      {
+        signature: 'async describeSpace(agent: Agent, spaceId: string): Promise<SpaceScopeNode | undefined>',
+        description: 'Read one Space subtree for a tool result. The caller authorizes the read first: a Space in the session\'s own subtree needs no grant, and one outside it is recorded through grantRead.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }, { name: 'spaceId', description: 'the Space to describe.' }],
+        returns: 'the Space subtree, or `undefined` when the actor cannot read it.',
+      },
+      {
+        signature: 'coversSpace(agent: Agent, spaceId: string): boolean',
+        description: 'Whether the session already covers one Space: its own subtree or a granted subtree. A covered Space needs no approval before a tool reads it.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }, { name: 'spaceId', description: 'the Space to check.' }],
+        returns: '`true` when the Space is in the readable scope.',
+      },
+      {
+        signature: 'denyForeignRead(agent: Agent, toolName: string, args: unknown): string | undefined',
+        description: 'Refuse a file or shell read that targets a Space outside this session\'s scope. The check covers the file tools\' path arguments and an absolute foreign folder spelled inside a shell command; a path outside every Space (an attachment, a temp file, a skill installation) stays readable exactly as before. A granted Space is no longer foreign, so the grant reopens it.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }, { name: 'toolName', description: 'the tool the model called.' }, { name: 'args', description: 'the call\'s raw arguments.' }],
+        returns: 'the refusal text, or undefined to allow the call.',
+      },
+      {
+        signature: 'async grantRead(agent: Agent, spaceId: string): Promise<void>',
+        description: 'Record a durable read grant for one Space and refresh the session\'s scope. The spaces service refuses a Space the actor may not read, so a grant can never widen product access; it only records that this session may use it. The grant is one log-only session event, so a resume replays it.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }, { name: 'spaceId', description: 'the Space to grant.' }],
+        throws: ['when the session is not a Space session or the actor cannot read the Space.'],
+      },
     ],
   },
   {
@@ -2177,7 +2210,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async create(actor: SpaceActor, input: CreateSpaceInput): Promise<FaberLoomSpace>',
-        description: 'Create one space owned by the actor, scoped to its company, under an optional parent the actor controls. Every identity may create its own space, including a console read-only role.',
+        description: 'Create one space owned by the actor, scoped to its company, under an optional parent the actor manages or holds `create-subspace` on. Every identity may create its own root space, including a console read-only role.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'input', description: 'title and optional parent.' }],
         returns: 'the created space.',
       },
@@ -2202,7 +2235,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async update(actor: SpaceActor, id: FaberLoomSpaceId, patch: UpdateSpaceInput): Promise<FaberLoomSpace>',
-        description: 'Apply a mutable patch to one space the actor may manage.',
+        description: 'Apply a mutable patch to one space the actor may manage. A grantee without `manage-members` may change only `parentId`, and only with `move-space` on this Space plus `create-subspace` on the destination.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }, { name: 'patch', description: 'fields to change.' }],
         returns: 'the updated space.',
       },
@@ -2224,6 +2257,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Attach one memory entry to one or more spaces the actor may read. A sub-space with inheritance on later reads its ancestors\' entries too.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'text', description: 'the remembered text.' }, { name: 'spaceIds', description: 'the spaces the entry is attached to.' }, { name: 'sessionId', description: 'the Session that captured the entry, when it came from one.' }],
         returns: 'the created entry.',
+      },
+      {
+        signature: 'async updateMemory( actor: SpaceActor, id: string, patch: { readonly text?: string; readonly visibility?: FaberLoomMemoryVisibility }, ): Promise<FaberLoomSpaceMemory>',
+        description: 'Edit one memory entry the actor owns, keeping its identity, placement, and capture origin. A member cannot rewrite the owner\'s entry, exactly as with visibility: memory that one identity captured stays that identity\'s fact.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'memory entry id.' }, { name: 'patch', description: 'the text and/or visibility to replace.' }],
+        returns: 'the updated entry.',
+        throws: ['when the entry is absent, owned by another identity, or the text is empty.'],
       },
       {
         signature: 'async setMemoryVisibility( actor: SpaceActor, id: string, visibility: FaberLoomMemoryVisibility, ): Promise<FaberLoomSpaceMemory>',
@@ -2615,8 +2655,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'spaceSessions\') async spaceSessions(spaceId: string): Promise<readonly FaberLoomSharedSessionRow[]>',
-        description: 'Sync the console\'s shared Sessions and list one Space\'s catalog.',
-        parameters: [{ name: 'spaceId', description: 'the Space to list.' }],
+        description: 'Sync one Space\'s Sessions in both directions and list its catalog: the Sessions this host\'s area holds and the catalog does not carry yet are published first, so the button also sends a conversation that already existed, and then the other side\'s rows are mirrored into the area. The mirror is what carries the catalog between one owner\'s machines, so neither direction depends on the Space having been granted to another person.',
+        parameters: [{ name: 'spaceId', description: 'the Space to sync and list.' }],
         returns: 'the Space\'s shared Session rows.',
       },
       {
@@ -2638,8 +2678,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed overview.',
       },
       {
+        signature: '@Remote(\'createSpaceFromFolder\') async createSpaceFromFolder(title: string, path: string, parentId?: string): Promise<FaberLoomOverview>',
+        description: 'Turn an existing folder into a Space. The folder is adopted in place as a root; with a parent, a folder outside that parent is moved inside it first, so the Workspaces sidebar can render the same nesting.',
+        parameters: [{ name: 'title', description: 'display title; defaults to the folder name.' }, { name: 'path', description: 'absolute existing folder.' }, { name: 'parentId', description: 'parent Space when this is a sub-space.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
         signature: '@Remote(\'deleteSpace\') async deleteSpace(id: string): Promise<FaberLoomOverview>',
-        description: 'Remove a space permanently: drop its Workspace registration, delete its conversation directory, and delete the space record with its attached files.',
+        description: 'Remove a space from the product: drop its Workspace registration, archive its Sessions, and delete the space record. The physical folder and every file in it stay where they are; deleting product metadata never deletes operator files.',
         parameters: [{ name: 'id', description: 'space id.' }],
         returns: 'the refreshed overview.',
       },
@@ -2825,9 +2871,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the generated `Message-ID` and the accepted recipients.',
       },
       {
-        signature: '@Remote(\'spaceFromEmail\') async spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<FaberLoomSpaceFromEmail>',
+        signature: '@Remote(\'spaceFromEmail\') async spaceFromEmail( uid: string, name: string, agentId?: string, from?: string, spaceId?: string, ): Promise<FaberLoomSpaceFromEmail>',
         description: 'Turn one email into a Space: reuse the space with the same title when it already exists, otherwise create it with its agent and Workspace, store the email as the space\'s memory, and attach every file it carried.',
-        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'name', description: 'the space title (usually the subject).' }, { name: 'agentId', description: 'the agent put in charge, when chosen and the space is new.' }, { name: 'from', description: 'the sender line the browser already holds, for the seeded context.' }],
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'name', description: 'the space title (usually the subject).' }, { name: 'agentId', description: 'the agent put in charge, when chosen and the space is new.' }, { name: 'from', description: 'the sender line the browser already holds, for the seeded context.' }, { name: 'spaceId', description: 'an existing space to attach the email to, when chosen.' }],
         returns: 'the space, its Workspace id, and the email as a first-message seed.',
       },
       {
@@ -2946,7 +2992,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'createRoutineFromWork\') async createRoutineFromWork(text: string, name: string, spaceId?: string): Promise<FaberLoomOverview>',
-        description: 'Create a routine draft from a proposal; it starts inactive until activated.',
+        description: 'Create a routine from a confirmed proposal and activate it; the owner clicked the create action, so the routine should be usable immediately.',
         parameters: [{ name: 'text', description: 'the procedure the conversation described.' }, { name: 'name', description: 'display name for the routine.' }, { name: 'spaceId', description: 'Space the routine belongs to; absent for the personal scope.' }],
         returns: 'the refreshed overview.',
       },
@@ -2973,6 +3019,29 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read a space\'s conversation area: the workspace registered for its workdir, if any, with its live session count. Read-only: it never creates the directory nor registers the workspace.',
         parameters: [{ name: 'id', description: 'space id.' }],
         returns: 'the workspace projection.',
+      },
+      {
+        signature: '@Remote(\'spaceTree\') async spaceTree(id: string): Promise<{ root: string; entries: readonly FaberLoomSpaceTreeEntry[] }>',
+        description: 'Read a Space\'s whole area once, for the panel\'s search and its grouping by Session. Hidden entries are included; the read is bounded by the area reader\'s entry and depth limits.',
+        parameters: [{ name: 'id', description: 'space id.' }],
+        returns: 'the area\'s root and every entry under it.',
+      },
+      {
+        signature: '@Remote(\'renameSpaceEntry\') async renameSpaceEntry(id: string, path: string, name: string): Promise<void>',
+        description: 'Rename one entry of a Space\'s area, keeping it in the same folder. The new name is a single path segment: separators and the two directory aliases are refused, so a rename cannot move the entry out of the area.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'path', description: 'workspace-relative entry path.' }, { name: 'name', description: 'the new entry name.' }],
+      },
+      {
+        signature: '@Remote(\'deleteSpaceEntries\') async deleteSpaceEntries(id: string, paths: readonly string[]): Promise<{ deleted: number }>',
+        description: 'Delete one or more entries of a Space\'s area. A directory is removed with its contents; the area\'s own root is refused.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'paths', description: 'workspace-relative entry paths.' }],
+        returns: 'how many entries were removed.',
+      },
+      {
+        signature: '@Remote(\'openSpaceFile\') async openSpaceFile(id: string, path: string): Promise<{ opened: boolean }>',
+        description: 'Open one file of a Space\'s area with the application the operating system associates with it, so Word, Excel, PDF, images, and video open the way the user\'s file manager opens them. The path is workspace-relative and may not leave the area; a deployment with no native opener (the Web) reports that instead of pretending it opened anything.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'path', description: 'workspace-relative file path.' }],
+        returns: 'whether the operating system took the file.',
       },
       {
         signature: '@Remote(\'openSpaceWorkspace\') async openSpaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace>',
@@ -3223,9 +3292,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed overview.',
       },
       {
-        signature: '@Remote(\'createRoutine\') async createRoutine(name: string, intent: string, spaceId?: string): Promise<FaberLoomOverview>',
-        description: 'Create one draft routine the owner can then activate.',
-        parameters: [{ name: 'name', description: 'display name.' }, { name: 'intent', description: 'the procedure the routine performs.' }, { name: 'spaceId', description: 'Space the routine belongs to; empty or absent for the personal scope.' }],
+        signature: '@Remote(\'createRoutine\') async createRoutine(name: string, intent: string, spaceId?: string, activate?: boolean): Promise<FaberLoomOverview>',
+        description: 'Create one routine the owner can then activate, or activate immediately when the caller asked for a working routine (the MCP create tool does).',
+        parameters: [{ name: 'name', description: 'display name.' }, { name: 'intent', description: 'the procedure the routine performs.' }, { name: 'spaceId', description: 'Space the routine belongs to; empty or absent for the personal scope.' }, { name: 'activate', description: 'activate the new routine before returning.' }],
         returns: 'the refreshed overview.',
       },
       {
@@ -3251,6 +3320,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read the space-scoped memory, optionally resolved for one space (own plus inherited ancestors\' entries).',
         parameters: [{ name: 'spaceId', description: 'the space to resolve for; absent lists every entry.' }],
         returns: 'memory rows oldest first.',
+      },
+      {
+        signature: '@Remote(\'editSpaceMemory\') async editSpaceMemory(id: string, text: string, visibility?: string): Promise<readonly FaberLoomSpaceMemoryRow[]>',
+        description: 'Edit one space-memory entry the owner controls and return the refreshed list. The entry keeps its id, placement, and capture origin; only the text and visibility change.',
+        parameters: [{ name: 'id', description: 'memory entry id.' }, { name: 'text', description: 'replacement text.' }, { name: 'visibility', description: 'optional `shared` or `private`.' }],
+        returns: 'the refreshed memory rows, oldest first.',
       },
       {
         signature: '@Remote(\'deleteSpaceMemory\') async deleteSpaceMemory(id: string): Promise<readonly FaberLoomSpaceMemoryRow[]>',
@@ -7318,6 +7393,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomBoardRow {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly routineId: string | null;\n}',
   },
   {
+    name: 'FaberLoomCloudProfile',
+    declaration: 'export interface FaberLoomCloudProfile {\n    readonly scope: \'cloud\' | \'local\' | \'mixed\';\n    readonly cloudReady: boolean;\n    readonly requiresPc: boolean;\n    readonly localSteps: readonly string[];\n    readonly reasons: readonly string[];\n    readonly note: string;\n}',
+  },
+  {
     name: 'FaberLoomConnection',
     declaration: 'export interface FaberLoomConnection {\n    readonly id: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host: string | null;\n    readonly port: number | null;\n    readonly secure: boolean | null;\n    readonly starttls: boolean;\n    readonly primary: boolean;\n    readonly username: string | null;\n    readonly hasSecret: boolean;\n    readonly destination: string | null;\n    readonly retentionDays: number | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
@@ -7391,7 +7470,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomEmailAttachment',
-    declaration: 'export interface FaberLoomEmailAttachment {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly size: number;\n}',
+    declaration: 'export interface FaberLoomEmailAttachment {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly size: number;\n    readonly contentId?: string;\n}',
   },
   {
     name: 'FaberLoomEmailAttachmentContent',
@@ -7399,7 +7478,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomEmailContent',
-    declaration: 'export interface FaberLoomEmailContent {\n    readonly text: string;\n    readonly html: string | null;\n    readonly attachments: readonly FaberLoomEmailAttachment[];\n}',
+    declaration: 'export interface FaberLoomEmailContent {\n    readonly account: string | null;\n    readonly text: string;\n    readonly html: string | null;\n    readonly attachments: readonly FaberLoomEmailAttachment[];\n}',
   },
   {
     name: 'FaberLoomEmailDraft',
@@ -7459,7 +7538,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomInboxRow',
-    declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
+    declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly connectionId: string | null;\n    readonly account: string | null;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
   },
   {
     name: 'FaberLoomJsonValue',
@@ -7468,6 +7547,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomLinkPreview',
     declaration: 'export interface FaberLoomLinkPreview {\n    readonly newlyVisibleTo: readonly string[];\n    readonly sharedContextKeys: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomMcpAnswer',
+    declaration: 'export interface FaberLoomMcpAnswer {\n    readonly status: number;\n    readonly contentType: string;\n    readonly body: string;\n    readonly sessionId?: string;\n}',
   },
   {
     name: 'FaberLoomMcpClientStatus',
@@ -7623,7 +7706,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutineDetail',
-    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly spaceId: string | null;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly triggerTimezone: string | null;\n    readonly triggerDays: readonly number[];\n    readonly triggerWindowFrom: number | null;\n    readonly triggerWindowTo: number | null;\n    readonly triggerBusinessDays: boolean;\n    readonly maxConcurrency: number | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n}',
+    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly spaceId: string | null;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly triggerTimezone: string | null;\n    readonly triggerDays: readonly number[];\n    readonly triggerWindowFrom: number | null;\n    readonly triggerWindowTo: number | null;\n    readonly triggerBusinessDays: boolean;\n    readonly maxConcurrency: number | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n    readonly cloud: FaberLoomCloudProfile;\n}',
   },
   {
     name: 'FaberLoomRoutineId',
@@ -7631,7 +7714,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutineRow',
-    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly visibility?: string;\n    readonly spaceId?: string | null;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
+    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly visibility?: string;\n    readonly spaceId?: string | null;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n    readonly cloud?: FaberLoomCloudProfile;\n}',
   },
   {
     name: 'FaberLoomRoutineStepRow',
@@ -7791,7 +7874,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSpaceRow',
-    declaration: 'export interface FaberLoomSpaceRow {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly agentId: string | null;\n    readonly agentName: string | null;\n    readonly workspaceId: string | null;\n}',
+    declaration: 'export interface FaberLoomSpaceRow {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly agentId: string | null;\n    readonly agentName: string | null;\n    readonly workspaceId: string | null;\n    readonly folderPath: string;\n}',
   },
   {
     name: 'FaberLoomSpaceWorkspace',
@@ -7847,7 +7930,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomWorkflowRow',
-    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly visibility?: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n    readonly canEdit?: boolean;\n}',
+    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly visibility?: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n    readonly canEdit?: boolean;\n    readonly cloud?: FaberLoomCloudProfile;\n}',
   },
   {
     name: 'FaberLoomWorkflowRunRow',
@@ -9823,7 +9906,23 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpaceSaveInput',
-    declaration: 'export interface SpaceSaveInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly members?: readonly string[];\n    readonly agentId?: string | null;\n    readonly prompt?: string;\n}',
+    declaration: 'export interface SpaceSaveInput {\n    readonly title?: string;\n    readonly parentId?: string | null;\n    readonly inheritContext?: boolean;\n    readonly members?: readonly string[];\n    readonly agentId?: string | null;\n    readonly prompt?: string;\n}',
+  },
+  {
+    name: 'SpaceScope',
+    declaration: 'export interface SpaceScope {\n    readonly space: SpaceScopeNode;\n    readonly granted: readonly SpaceScopeNode[];\n    readonly others: readonly {\n        readonly id: string;\n        readonly title: string;\n    }[];\n    readonly foreign: readonly {\n        readonly id: string;\n        readonly title: string;\n        readonly path: string;\n    }[];\n    readonly text: string;\n}',
+  },
+  {
+    name: 'SpaceScopeAgent',
+    declaration: 'export interface SpaceScopeAgent {\n    readonly name: string;\n    readonly responsibility: string;\n    readonly skills: readonly string[];\n}',
+  },
+  {
+    name: 'SpaceScopeEntry',
+    declaration: 'export interface SpaceScopeEntry {\n    readonly title: string;\n    readonly body: string;\n}',
+  },
+  {
+    name: 'SpaceScopeNode',
+    declaration: 'export interface SpaceScopeNode {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly path: string;\n    readonly current: boolean;\n    readonly directive: string;\n    readonly memory: readonly string[];\n    readonly context: readonly {\n        readonly key: string;\n        readonly value: string;\n    }[];\n    readonly entries: readonly SpaceScopeEntry[];\n    readonly agents: readonly SpaceScopeAgent[];\n    readonly skills: readonly string[];\n    readonly harness: readonly string[];\n    readonly files: readonly string[];\n    readonly instructions: string;\n    readonly children: readonly SpaceScopeNode[];\n}',
   },
   {
     name: 'SpaceSource',
@@ -10491,7 +10590,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'UpdateSpaceInput',
-    declaration: 'export interface UpdateSpaceInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly excluded?: readonly FaberLoomSpaceId[];\n    readonly members?: readonly string[];\n    readonly context?: SpaceContext;\n    readonly sources?: readonly SpaceSource[];\n    readonly agentId?: string | null;\n    readonly workspaceId?: string | null;\n    readonly prompt?: string | null;\n}',
+    declaration: 'export interface UpdateSpaceInput {\n    readonly title?: string;\n    readonly parentId?: FaberLoomSpaceId | null;\n    readonly inheritContext?: boolean;\n    readonly excluded?: readonly FaberLoomSpaceId[];\n    readonly members?: readonly string[];\n    readonly context?: SpaceContext;\n    readonly sources?: readonly SpaceSource[];\n    readonly agentId?: string | null;\n    readonly workspaceId?: string | null;\n    readonly prompt?: string | null;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',

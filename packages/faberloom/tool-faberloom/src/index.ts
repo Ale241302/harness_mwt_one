@@ -56,6 +56,10 @@ import type {
 import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
 // Type-only: the workspace view that owns the skill-install operation, read through ctx.get.
 import type { FaberLoomViewService } from '@deepseek-ai/dsh-faberloom-view'
+// The session composition that resolves this session's readable Space subtree.
+import { renderSpaceNode, type FaberLoomSessionAgent, type SpaceScopeNode } from '@deepseek-ai/dsh-faberloom-session-agent'
+// Type-only: resolves the ctx.approval declaration used by the read grant.
+import type {} from '@deepseek-ai/dsh-user-approval'
 
 export const name = 'tool-faberloom'
 // `faberloomSpaces` is read through `ctx.get` when a call runs, not injected:
@@ -303,6 +307,45 @@ function view(ctx: Context): FaberLoomViewService {
   const service = ctx.get('faberloomView')
   if (service === undefined) throw new Error('faberloom: the workspace view service is not mounted')
   return service
+}
+
+/** Resolve the mounted session composition at call time, or fail loud. */
+function sessionAgent(ctx: Context): FaberLoomSessionAgent {
+  const service = ctx.get('faberloomSessionAgent')
+  if (service === undefined) throw new Error('faberloom: the session agent service is not mounted')
+  return service
+}
+
+/** Flatten one Space subtree into the rows a read-scope tool returns. */
+function flattenScope(nodes: readonly SpaceScopeNode[], granted: boolean): {
+  id: string
+  title: string
+  parentId: string
+  path: string
+  current: boolean
+  granted: boolean
+}[] {
+  const rows: {
+    id: string
+    title: string
+    parentId: string
+    path: string
+    current: boolean
+    granted: boolean
+  }[] = []
+  const walk = (node: SpaceScopeNode): void => {
+    rows.push({
+      id: node.id,
+      title: node.title,
+      parentId: node.parentId ?? '',
+      path: node.path,
+      current: node.current,
+      granted,
+    })
+    for (const child of node.children) walk(child)
+  }
+  for (const node of nodes) walk(node)
+  return rows
 }
 
 /** Build the acting identity from the injected config, or fail loud. */
@@ -608,11 +651,12 @@ export function apply(ctx: Context, config: Config): void {
       text: 'Un mensaje que empieza con @Nombre se dirige al agente de ese nombre del catálogo: actúa como ese especialista (su responsabilidad, contexto y política de modelo) usando las tools faberloom_agents_*, en vez de responder como generalista. Un mensaje que empieza con /nombre invoca la skill de ese nombre. Si el nombre no existe, dilo y ofrece los disponibles con faberloom_agents_list.',
     }), 'tool-faberloom: mention prompt')
 
-    // The cross-space rule: resolve another Space's context by tool, never invent it.
+    // The cross-space rule: the session reads its own subtree by default, and an
+    // outside Space only after the user turns on a read-only grant.
     ctx.effect(() => prompt.section({
       name: 'faberloom:spaces',
       order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 2,
-      text: 'Si una tarea necesita el contexto de otro Space y no conoces su id, usa faberloom_spaces_find para localizarlo por texto y faberloom_spaces_reference para extraer su contexto, memoria y archivos; no inventes contexto. Por ejemplo, para redactar el reporte de Sondel con los formatos de documentos, busca el Space "formatos de documentos", resuélvelo y usa su plantilla. Una búsqueda vacía lista los Spaces más recientes. Enlaza siempre el Space por el id que devuelve faberloom_spaces_find.',
+      text: 'La sección «Ámbito de Spaces de esta sesión» lista el Space actual, todos sus sub Spaces y las carpetas de cada uno: podés usar su memoria, contexto, agentes, skills, `AGENTS.md`, `.agents/`, `.claude/` y archivos sin pedir permiso, y leer el archivo concreto con las tools de archivos. Un Space que no esté en ese árbol (por ejemplo un hermano) no se lee por defecto: llamá a faberloom_spaces_open_read con su id para que el usuario active el permiso de solo lectura de esta sesión; nunca escribas en una carpeta concedida así. Si no sabés el id, usá faberloom_spaces_find; para el detalle de contexto, memoria y archivos adjuntos de un Space, faberloom_spaces_reference. No inventes contexto que no hayas leído. Una búsqueda vacía lista los Spaces más recientes.',
     }), 'tool-faberloom: spaces prompt')
 
     // The memory rule: durable facts belong to the Space, not to the chat log.
@@ -744,6 +788,103 @@ export function apply(ctx: Context, config: Config): void {
       return { spaces: records.map(space => ({ id: space.id, title: space.title, archived: space.archived })) }
     },
     presentCall: () => ({ card: 'generic', title: 'List product spaces', kind: 'other', rawInput: {} }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_spaces_scope',
+    description: 'Read the Spaces this session may use: its own Space, every sub Space below it, and every Space granted read access in this session, with each folder path, memory, context, agents, skills, and harness files. Use it when a task spans several Spaces before asking the user for any access.',
+    parameters: {},
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          text: { type: 'string', required: true, description: 'Model-facing scope: current Space, sub Spaces, and granted Spaces.' },
+          spaces: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                id: { type: 'string', required: true },
+                title: { type: 'string', required: true },
+                parentId: { type: 'string', required: true },
+                path: { type: 'string', required: true },
+                current: { type: 'boolean', required: true },
+                granted: { type: 'boolean', required: true },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    execute: async (_args, exec) => {
+      const agent = exec.agent
+      if (agent === undefined) throw new Error('faberloom: faberloom_spaces_scope requires a calling agent')
+      const scope = await sessionAgent(ctx).scopeFor(agent)
+      if (scope === undefined) {
+        return { text: 'Esta sesión no pertenece a ningún Space; no hay ámbito de Spaces que leer.', spaces: [] }
+      }
+      return {
+        text: scope.text,
+        spaces: [...flattenScope([scope.space], false), ...flattenScope(scope.granted, true)],
+      }
+    },
+    presentCall: () => ({ card: 'generic', title: 'Read Space scope', kind: 'other', rawInput: {} }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_spaces_open_read',
+    description: 'Open one Space outside this session\'s own subtree for READ-ONLY access. The user approves the read once in this session; the grant is durable for the session, covers memory, context, agents, skills, AGENTS.md, .agents, .claude, and files, and never permits writing. A Space already in the session scope opens without asking.',
+    parameters: { id: ID_PARAM },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          title: { type: 'string', required: true },
+          path: { type: 'string', required: true },
+          granted: { type: 'boolean', required: true },
+          text: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    execute: async (args, exec) => {
+      const agent = exec.agent
+      if (agent === undefined) throw new Error('faberloom: faberloom_spaces_open_read requires a calling agent')
+      const service = sessionAgent(ctx)
+      const target = await spaces(ctx).get(actor(config), args.id as FaberLoomSpaceId)
+      // Resolve the scope before deciding, so a descendant is recognized even
+      // when this is the session's first tool call.
+      const scope = await service.scopeFor(agent)
+      if (scope === undefined) {
+        throw new Error('faberloom: esta sesión no pertenece a un Space; abrí una sesión dentro de un Space para activar el permiso de solo lectura')
+      }
+      const already = service.coversSpace(agent, String(target.id))
+      if (!already) {
+        const approval = ctx.get('approval')
+        if (approval === undefined) {
+          throw new Error('faberloom: no approval channel is mounted; no se puede activar el permiso de solo lectura')
+        }
+        const outcome = await approval.request({
+          agent,
+          toolName: 'faberloom_spaces_open_read',
+          callId: exec.callId,
+          reason: `Leer en solo lectura el Space «${target.title}» (${String(target.id)}) y sus sub Spaces: memoria, contexto, agentes, skills, AGENTS.md, .agents, .claude y archivos. No se modificará nada.`,
+          signal: exec.signal,
+        })
+        if (outcome !== 'allowed-once') throw new Error('faberloom: el usuario no autorizó la lectura de ese Space')
+        await service.grantRead(agent, String(target.id))
+      }
+      const node = await service.describeSpace(agent, String(target.id))
+      if (node === undefined) throw new Error(`faberloom: no se pudo leer el Space ${args.id}`)
+      return { id: node.id, title: node.title, path: node.path, granted: !already, text: renderSpaceNode(node) }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Read Space (read-only)', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({

@@ -952,36 +952,40 @@ async runOnce(now: Date = new Date()): Promise<InboundReport>
  * mailbox. Read-only: never marks, moves, or deletes mail.
  * @param ownerId - the owning identity.
  * @param limit - most envelopes to return.
+ * @param connectionId - the mail connection to read, or undefined for the default one.
  * @returns the envelopes, or an empty list when no mailbox is configured.
  */
-async listInbox(ownerId: string, limit?: number): Promise<ImapMessage[]>
+async listInbox(ownerId: string, limit?: number, connectionId?: string): Promise<ImapMessage[]>
 
 /**
  * Read one mailbox message's body, read-only.
  * @param ownerId - the owning identity.
  * @param uid - the message UID.
+ * @param connectionId - the mail connection to read, or undefined for the default one.
  * @returns the decoded body, or null when no mailbox is configured or the message has no body.
  */
-async readEmail(ownerId: string, uid: number): Promise<ImapMessageContent>
+async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent>
 
 /**
  * Mark one message as read (`\Seen`). Unlike the poller this writes to the
  * mailbox, so it runs only for an explicit user gesture.
  * @param ownerId - the owning identity.
  * @param uid - the message UID.
+ * @param connectionId - the mail connection to update, or undefined for the default one.
  * @returns true when the mailbox accepted the flag update, false without a mailbox.
  */
-async markSeen(ownerId: string, uid: number): Promise<boolean>
+async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean>
 
 /**
  * Move one message to the Trash mailbox, trying the configured name and then
  * the built-in candidates. Writes to the mailbox on an explicit gesture only.
  * @param ownerId - the owning identity.
  * @param uid - the message UID.
+ * @param connectionId - the mail connection to update, or undefined for the default one.
  * @returns the mailbox the message moved to.
  * @throws when every candidate mailbox rejects the move.
  */
-async moveToTrash(ownerId: string, uid: number): Promise<string>
+async moveToTrash(ownerId: string, uid: number, connectionId?: string): Promise<string>
 
 /**
  * Search the owner's mailbox envelopes from the chat, newest first.
@@ -1052,6 +1056,20 @@ Source: [`packages/faberloom/mcp-registry/src/types.ts`](../../packages/faberloo
 FaberLoom's server face for other agents.
 
 ```ts cordis-catalog
+/**
+ * Answer one request on behalf of a token holder without an HTTP request.
+ *
+ * This is the same validation and the same tools the socket serves; the caller
+ * is the bridge, which has already authenticated the public client with the
+ * token the gateway forwarded. A revoked or foreign token is refused here too,
+ * so a stale registration cannot outlive its token.
+ * @param body - the JSON-RPC request body.
+ * @param token - the bearer token the public client presented.
+ * @param accept - the Accept header the public client sent.
+ * @returns the complete answer for the gateway to relay.
+ */
+async request(body: string, token: string, accept: string = 'application/json'): Promise<FaberLoomMcpAnswer>
+
 /**
  * Mint one bearer token for a client the owner names.
  * @param label - who the token is for.
@@ -1591,6 +1609,59 @@ The Space session composition service: resolves one session's Space agent, insta
  * @returns the agent's route, or `undefined`.
  */
 routeFor(agent: Agent): SessionAgentRoute | undefined
+
+/**
+ * The scope one live Space session reads: its own Space, every sub-Space
+ * below it, and the granted subtrees. A session outside a Space returns
+ * `undefined`; a Space session whose scope is not cached reads it first, so a
+ * tool call never observes an empty scope for a resolved session.
+ * @param agent - the session's agent.
+ * @returns the current scope, or `undefined`.
+ */
+async scopeFor(agent: Agent): Promise<SpaceScope | undefined>
+
+/**
+ * Read one Space subtree for a tool result. The caller authorizes the read
+ * first: a Space in the session's own subtree needs no grant, and one outside
+ * it is recorded through {@link grantRead}.
+ * @param agent - the session's agent.
+ * @param spaceId - the Space to describe.
+ * @returns the Space subtree, or `undefined` when the actor cannot read it.
+ */
+async describeSpace(agent: Agent, spaceId: string): Promise<SpaceScopeNode | undefined>
+
+/**
+ * Whether the session already covers one Space: its own subtree or a granted
+ * subtree. A covered Space needs no approval before a tool reads it.
+ * @param agent - the session's agent.
+ * @param spaceId - the Space to check.
+ * @returns `true` when the Space is in the readable scope.
+ */
+coversSpace(agent: Agent, spaceId: string): boolean
+
+/**
+ * Refuse a file or shell read that targets a Space outside this session's
+ * scope. The check covers the file tools' path arguments and an absolute
+ * foreign folder spelled inside a shell command; a path outside every Space
+ * (an attachment, a temp file, a skill installation) stays readable exactly
+ * as before. A granted Space is no longer foreign, so the grant reopens it.
+ * @param agent - the session's agent.
+ * @param toolName - the tool the model called.
+ * @param args - the call's raw arguments.
+ * @returns the refusal text, or undefined to allow the call.
+ */
+denyForeignRead(agent: Agent, toolName: string, args: unknown): string | undefined
+
+/**
+ * Record a durable read grant for one Space and refresh the session's scope.
+ * The spaces service refuses a Space the actor may not read, so a grant can
+ * never widen product access; it only records that this session may use it.
+ * The grant is one log-only session event, so a resume replays it.
+ * @param agent - the session's agent.
+ * @param spaceId - the Space to grant.
+ * @throws when the session is not a Space session or the actor cannot read the Space.
+ */
+async grantRead(agent: Agent, spaceId: string): Promise<void>
 ```
 
 Types: [Agent](core.md)
@@ -1861,8 +1932,8 @@ The product spaces service. It owns the durable space records, the effective con
 ```ts cordis-catalog
 /**
  * Create one space owned by the actor, scoped to its company, under an
- * optional parent the actor controls. Every identity may create its own
- * space, including a console read-only role.
+ * optional parent the actor manages or holds `create-subspace` on. Every
+ * identity may create its own root space, including a console read-only role.
  * @param actor - the acting identity.
  * @param input - title and optional parent.
  * @returns the created space.
@@ -1897,7 +1968,9 @@ async list(actor: SpaceActor): Promise<FaberLoomSpace[]>
 async get(actor: SpaceActor, id: FaberLoomSpaceId): Promise<FaberLoomSpace>
 
 /**
- * Apply a mutable patch to one space the actor may manage.
+ * Apply a mutable patch to one space the actor may manage. A grantee without
+ * `manage-members` may change only `parentId`, and only with `move-space` on
+ * this Space plus `create-subspace` on the destination.
  * @param actor - the acting identity.
  * @param id - space id.
  * @param patch - fields to change.
@@ -1933,6 +2006,18 @@ async remove(actor: SpaceActor, id: FaberLoomSpaceId): Promise<boolean>
  * @returns the created entry.
  */
 async remember( actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[], sessionId?: string, ): Promise<FaberLoomSpaceMemory>
+
+/**
+ * Edit one memory entry the actor owns, keeping its identity, placement, and
+ * capture origin. A member cannot rewrite the owner's entry, exactly as with
+ * visibility: memory that one identity captured stays that identity's fact.
+ * @param actor - the acting identity.
+ * @param id - memory entry id.
+ * @param patch - the text and/or visibility to replace.
+ * @returns the updated entry.
+ * @throws when the entry is absent, owned by another identity, or the text is empty.
+ */
+async updateMemory( actor: SpaceActor, id: string, patch: { readonly text?: string; readonly visibility?: FaberLoomMemoryVisibility }, ): Promise<FaberLoomSpaceMemory>
 
 /**
  * Set who may see one memory entry. Only its owner may change it: a `private`
@@ -2478,8 +2563,13 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('captureSpaceSessions') async captureSpaceSessions( spaceId: string, sessions: readonly FaberLoomSharedSessionRef[], ): Promise<readonly FaberLoomSharedSessionRow[]>
 
 /**
- * Sync the console's shared Sessions and list one Space's catalog.
- * @param spaceId - the Space to list.
+ * Sync one Space's Sessions in both directions and list its catalog: the
+ * Sessions this host's area holds and the catalog does not carry yet are
+ * published first, so the button also sends a conversation that already
+ * existed, and then the other side's rows are mirrored into the area. The
+ * mirror is what carries the catalog between one owner's machines, so neither
+ * direction depends on the Space having been granted to another person.
+ * @param spaceId - the Space to sync and list.
  * @returns the Space's shared Session rows.
  */
 @Remote('spaceSessions') async spaceSessions(spaceId: string): Promise<readonly FaberLoomSharedSessionRow[]>
@@ -2516,9 +2606,21 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('createSpace') async createSpace(title: string, agentId?: string, parentId?: string, inheritContext?: boolean): Promise<FaberLoomOverview>
 
 /**
- * Remove a space permanently: drop its Workspace registration, delete its
- * conversation directory, and delete the space record with its attached
- * files.
+ * Turn an existing folder into a Space. The folder is adopted in place as a
+ * root; with a parent, a folder outside that parent is moved inside it first,
+ * so the Workspaces sidebar can render the same nesting.
+ * @param title - display title; defaults to the folder name.
+ * @param path - absolute existing folder.
+ * @param parentId - parent Space when this is a sub-space.
+ * @returns the refreshed overview.
+ */
+@Remote('createSpaceFromFolder') async createSpaceFromFolder(title: string, path: string, parentId?: string): Promise<FaberLoomOverview>
+
+/**
+ * Remove a space from the product: drop its Workspace registration, archive
+ * its Sessions, and delete the space record. The physical folder and every
+ * file in it stay where they are; deleting product metadata never deletes
+ * operator files.
  * @param id - space id.
  * @returns the refreshed overview.
  */
@@ -2796,9 +2898,10 @@ async mirrorSharedSpaces(): Promise<void>
  * @param name - the space title (usually the subject).
  * @param agentId - the agent put in charge, when chosen and the space is new.
  * @param from - the sender line the browser already holds, for the seeded context.
+ * @param spaceId - an existing space to attach the email to, when chosen.
  * @returns the space, its Workspace id, and the email as a first-message seed.
  */
-@Remote('spaceFromEmail') async spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<FaberLoomSpaceFromEmail>
+@Remote('spaceFromEmail') async spaceFromEmail( uid: string, name: string, agentId?: string, from?: string, spaceId?: string, ): Promise<FaberLoomSpaceFromEmail>
 
 /**
  * List the owner's email drafts, newest first.
@@ -2953,7 +3056,8 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('createAgentFromWork') async createAgentFromWork(text: string, name: string, spaceId: string | null): Promise<FaberLoomOverview>
 
 /**
- * Create a routine draft from a proposal; it starts inactive until activated.
+ * Create a routine from a confirmed proposal and activate it; the owner
+ * clicked the create action, so the routine should be usable immediately.
  * @param text - the procedure the conversation described.
  * @param name - display name for the routine.
  * @param spaceId - Space the routine belongs to; absent for the personal scope.
@@ -2995,6 +3099,46 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the workspace projection.
  */
 @Remote('spaceWorkspace') async spaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace>
+
+/**
+ * Read a Space's whole area once, for the panel's search and its grouping by
+ * Session. Hidden entries are included; the read is bounded by the area
+ * reader's entry and depth limits.
+ * @param id - space id.
+ * @returns the area's root and every entry under it.
+ */
+@Remote('spaceTree') async spaceTree(id: string): Promise<{ root: string; entries: readonly FaberLoomSpaceTreeEntry[] }>
+
+/**
+ * Rename one entry of a Space's area, keeping it in the same folder. The new
+ * name is a single path segment: separators and the two directory aliases are
+ * refused, so a rename cannot move the entry out of the area.
+ * @param id - space id.
+ * @param path - workspace-relative entry path.
+ * @param name - the new entry name.
+ */
+@Remote('renameSpaceEntry') async renameSpaceEntry(id: string, path: string, name: string): Promise<void>
+
+/**
+ * Delete one or more entries of a Space's area. A directory is removed with
+ * its contents; the area's own root is refused.
+ * @param id - space id.
+ * @param paths - workspace-relative entry paths.
+ * @returns how many entries were removed.
+ */
+@Remote('deleteSpaceEntries') async deleteSpaceEntries(id: string, paths: readonly string[]): Promise<{ deleted: number }>
+
+/**
+ * Open one file of a Space's area with the application the operating system
+ * associates with it, so Word, Excel, PDF, images, and video open the way the
+ * user's file manager opens them. The path is workspace-relative and may not
+ * leave the area; a deployment with no native opener (the Web) reports that
+ * instead of pretending it opened anything.
+ * @param id - space id.
+ * @param path - workspace-relative file path.
+ * @returns whether the operating system took the file.
+ */
+@Remote('openSpaceFile') async openSpaceFile(id: string, path: string): Promise<{ opened: boolean }>
 
 /**
  * Open a space's conversation area: create the workdir when needed, register
@@ -3315,13 +3459,15 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('deleteBoardItem') async deleteBoardItem(id: string): Promise<FaberLoomOverview>
 
 /**
- * Create one draft routine the owner can then activate.
+ * Create one routine the owner can then activate, or activate immediately
+ * when the caller asked for a working routine (the MCP create tool does).
  * @param name - display name.
  * @param intent - the procedure the routine performs.
  * @param spaceId - Space the routine belongs to; empty or absent for the personal scope.
+ * @param activate - activate the new routine before returning.
  * @returns the refreshed overview.
  */
-@Remote('createRoutine') async createRoutine(name: string, intent: string, spaceId?: string): Promise<FaberLoomOverview>
+@Remote('createRoutine') async createRoutine(name: string, intent: string, spaceId?: string, activate?: boolean): Promise<FaberLoomOverview>
 
 /**
  * Activate or pause one routine.
@@ -3356,6 +3502,17 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns memory rows oldest first.
  */
 @Remote('spaceMemory') async spaceMemory(spaceId?: string): Promise<readonly FaberLoomSpaceMemoryRow[]>
+
+/**
+ * Edit one space-memory entry the owner controls and return the refreshed
+ * list. The entry keeps its id, placement, and capture origin; only the text
+ * and visibility change.
+ * @param id - memory entry id.
+ * @param text - replacement text.
+ * @param visibility - optional `shared` or `private`.
+ * @returns the refreshed memory rows, oldest first.
+ */
+@Remote('editSpaceMemory') async editSpaceMemory(id: string, text: string, visibility?: string): Promise<readonly FaberLoomSpaceMemoryRow[]>
 
 /**
  * Delete one space-memory entry the owner controls and return the refreshed

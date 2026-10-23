@@ -300,7 +300,7 @@ export class FaberLoomMcpServer extends Service {
    * @param accept - the Accept header the public client sent.
    * @returns the complete answer for the gateway to relay.
    */
-  async request(body: string, token: string, accept = 'application/json'): Promise<FaberLoomMcpAnswer> {
+  async request(body: string, token: string, accept: string = 'application/json'): Promise<FaberLoomMcpAnswer> {
     const max = this.config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES
     if (Buffer.byteLength(body) > max) {
       return this.answer(413, { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'request body too large' } }, 'fbl-bridge')

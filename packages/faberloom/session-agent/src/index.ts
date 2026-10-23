@@ -17,31 +17,98 @@
  * session's own route on the next turn without a mention. An unknown name, a
  * missing catalog or plane, or an agent without a complete keyed route leaves
  * the request untouched, so nothing here fails a turn.
+ *
+ * Every Space session also carries its readable Space subtree: the Space its
+ * folder belongs to and every sub-Space below it, with memory, curated context,
+ * agents, skills, harness artifacts, and file paths, so a session in a parent
+ * Space reads its children and a session in a child reads its own children.
+ * Sibling and unrelated Spaces stay out until the session records a read grant
+ * through {@link FaberLoomSessionAgent.grantRead}; the grant is one durable
+ * session event and never widens the writable sandbox root.
  * @module @deepseek-ai/dsh-faberloom-session-agent
  */
 
+import { resolve, sep } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { z as zod } from 'zod'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
 import { toolSourcesOf, type AgentToolSources } from '@deepseek-ai/dsh-faberloom-agent-plane'
-import type { SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
+import type { FaberLoomSpace, FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
-import type { UserMessage } from '@deepseek-ai/dsh-session'
+import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
+import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves the ctx.systemPrompt and ctx.tools declarations used in the
 // inject window, and the optional ctx.faberloom* services read through ctx.get.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import { latestUserText, matchMentionedAgent } from './mention.ts'
+import {
+  isUnderFolder,
+  readSpaceNode,
+  readSpaceScope,
+  type SpaceScope,
+  type SpaceScopeAgents,
+  type SpaceScopeContextEntries,
+  type SpaceScopeNode,
+  type SpaceScopeSpaces,
+} from './scope.ts'
 import type { SessionComposition, SessionAgentRoute } from './types.ts'
 
 export type * from './types.ts'
+export { renderSpaceNode, renderSpaceScope } from './scope.ts'
+export type { SpaceScope, SpaceScopeNode } from './scope.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
     faberloomSessionAgent: FaberLoomSessionAgent
   }
 }
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /**
+     * One Space was granted read access for this session — log-only (like
+     * `sandbox/mode`; NOT a surface event, carries no `surfaceOp`). The event is
+     * appended once per Space after the user approves the read through
+     * `faberloom_spaces_open_read`, so the grant survives restart by replay and
+     * never widens the session's writable sandbox root.
+     */
+    'faberloom/space-read-grant': { spaceId: string }
+  }
+}
+
+/** Read-grant state folded from the session log. */
+interface SpaceReadGrantsState {
+  /** Space ids granted read access, in grant order. */
+  readonly spaces: readonly string[]
+}
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** Spaces this session may read outside its own subtree. */
+    faberloomSpaceReads: SpaceReadGrantsState
+  }
+}
+
+const spaceReadGrantsStateSchema = zod.object({
+  spaces: zod.array(zod.string()),
+}) as unknown as zod.ZodType<SpaceReadGrantsState>
+
+/** The durable read-grant fold: one unit shared by every session. */
+const spaceReadGrantsProjection = {
+  key: 'faberloomSpaceReads',
+  stateVersion: 1,
+  stateSchema: spaceReadGrantsStateSchema,
+  init: (): SpaceReadGrantsState => ({ spaces: [] }),
+  apply: (state: SpaceReadGrantsState, event): SpaceReadGrantsState => {
+    if (event.type !== 'faberloom/space-read-grant') return state
+    const spaceId = event.data.spaceId
+    return state.spaces.includes(spaceId) ? state : { spaces: [...state.spaces, spaceId] }
+  },
+} satisfies ProjectionDefinition<'faberloomSpaceReads', SpaceReadGrantsState>
 
 /** The acting identity the session composition resolves spaces with. */
 export interface Config {
@@ -53,6 +120,10 @@ export interface Config {
   companyId?: string
   /** Whether the role is read-only. */
   readOnly?: boolean
+  /** Ceiling on the rendered Space-scope text, in characters. */
+  maxScopeChars?: number
+  /** Ceiling on the Spaces one session scope lists, including sub-Spaces. */
+  maxScopeSpaces?: number
 }
 
 /** Schemastery configuration for the session composition. */
@@ -61,6 +132,8 @@ export const Config: z<Config> = z.object({
   role: z.string().default('client_b2b'),
   companyId: z.string(),
   readOnly: z.boolean().default(false),
+  maxScopeChars: z.number(),
+  maxScopeSpaces: z.number(),
 })
 
 /** One registered workspace as the session chain reads it. */
@@ -133,8 +206,16 @@ export class FaberLoomSessionAgent extends Service {
   private readonly pending = new Set<Agent>()
   /** The resolved model route of each composed session, keyed by its agent. */
   private readonly routes = new Map<Agent, SessionAgentRoute | undefined>()
+  /** The Space and working directory each live Space session resolved to. */
+  private readonly resolved = new Map<Agent, { readonly space: FaberLoomSpace; readonly cwd: string }>()
+  /** The last rendered scope of each live Space session. */
+  private readonly scopes = new Map<Agent, SpaceScope>()
+  /** Serializes scope refreshes per agent, so a burst of steps reads once. */
+  private readonly scopeTails = new WeakMap<Agent, Promise<void>>()
   /** The disposers of the per-turn mention listeners each live agent registered. */
   private readonly mentionListeners = new Map<Agent, () => void>()
+  /** The disposers of the per-step scope refresh listeners. */
+  private readonly scopeListeners = new Map<Agent, () => void>()
 
   /**
    * @param ctx - Cordis context owning the service fiber.
@@ -142,14 +223,31 @@ export class FaberLoomSessionAgent extends Service {
    */
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomSessionAgent')
+    ctx.inject(['sessionProjections'], (scope: Context) => {
+      scope.sessionProjections.register(spaceReadGrantsProjection)
+    })
     const install = async (agent: Agent): Promise<void> => {
       if (this.fibers.has(agent) || this.pending.has(agent)) return
       this.pending.add(agent)
       try {
-        const composition = await this.compose(agent)
-        if (composition === undefined) return
-        this.routes.set(agent, composition.route)
+        const resolved = await this.resolveSpace(agent)
+        if (resolved === undefined) return
+        const composition = await this.compose(agent, resolved.space)
+        this.routes.set(agent, composition?.route)
+        this.resolved.set(agent, resolved)
+        await this.refreshScope(agent)
         const fiber = agent.ctx.inject(['systemPrompt', 'tools'], (scope) => {
+          const registerScope = (): void => {
+            scope.systemPrompt.section({
+              name: 'faberloom:space-scope',
+              order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 4,
+              text: () => this.scopes.get(agent)?.text ?? '',
+            })
+          }
+          if (composition === undefined) {
+            registerScope()
+            return
+          }
           scope.systemPrompt.section({
             name: 'deployment:persona-prefix',
             order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
@@ -170,16 +268,30 @@ export class FaberLoomSessionAgent extends Service {
               text: `Skills asignadas: ${composition.skills.join(', ')}. Cárgalas con la tool skill cuando la tarea lo requiera.`,
             })
           }
+          registerScope()
         })
         this.fibers.set(agent, fiber)
         await fiber
+        const offRefresh = agent.ctx.on('agent/pre-step', async ({ step }, next) => {
+          // One refresh per turn: the assembly for step 1 already ran, so this
+          // snapshot is what step 2 and the rest of the turn carry.
+          if (step === 1) await this.refreshScope(agent)
+          return next()
+        })
+        const offGuard = agent.ctx.on('tools/pre-execute', async (exec, next) => {
+          const reason = this.denyForeignRead(agent, exec.name, exec.arguments)
+          return reason === undefined ? next() : { kind: 'deny', reason }
+        })
+        this.scopeListeners.set(agent, () => { offRefresh(); offGuard() })
       } finally {
         this.pending.delete(agent)
       }
     }
     const attach = (agent: Agent): void => {
       this.attachMentionRoute(agent)
-      void install(agent)
+      void install(agent).catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: no se pudo instalar la composición de la sesión: ${String(error)}`)
+      })
     }
     for (const agent of ctx.agents.list()) attach(agent)
     ctx.on('agent/created', async ({ agent }) => {
@@ -190,17 +302,24 @@ export class FaberLoomSessionAgent extends Service {
       const fiber = this.fibers.get(agent)
       this.fibers.delete(agent)
       this.routes.delete(agent)
+      this.resolved.delete(agent)
+      this.scopes.delete(agent)
       this.mentionListeners.get(agent)?.()
       this.mentionListeners.delete(agent)
+      this.scopeListeners.get(agent)?.()
+      this.scopeListeners.delete(agent)
       void fiber?.dispose()
     })
     ctx.effect(() => async () => {
       const fibers = [...this.fibers.values()]
       this.fibers.clear()
       this.routes.clear()
-      const mentions = [...this.mentionListeners.values()]
+      this.resolved.clear()
+      this.scopes.clear()
+      const listeners = [...this.mentionListeners.values(), ...this.scopeListeners.values()]
       this.mentionListeners.clear()
-      for (const off of mentions) off()
+      this.scopeListeners.clear()
+      for (const off of listeners) off()
       await Promise.all(fibers.map(fiber => fiber.dispose()))
     }, 'faberloom-session-agent: compositions')
   }
@@ -297,37 +416,211 @@ export class FaberLoomSessionAgent extends Service {
   }
 
   /**
-   * Resolve the composition one session runs under: its working directory is a
-   * registered workspace mirrored by a Space whose responsible agent declares a
-   * persona, tool plane, skills, and (when routed and keyed) a model route.
-   * Returns `undefined` when any link is missing, so a session outside a Space
-   * keeps the deployment composition.
+   * The scope one live Space session reads: its own Space, every sub-Space
+   * below it, and the granted subtrees. A session outside a Space returns
+   * `undefined`; a Space session whose scope is not cached reads it first, so a
+   * tool call never observes an empty scope for a resolved session.
    * @param agent - the session's agent.
-   * @returns the agent's composition, or `undefined`.
+   * @returns the current scope, or `undefined`.
    */
-  private async compose(agent: Agent): Promise<SessionComposition | undefined> {
-    const ownerId = this.config.ownerId
-    if (ownerId === undefined || ownerId.length === 0) return undefined
-    // A delegated child inherits its parent's composed agent; re-composing it would
-    // re-register the `deployment:persona-prefix` section and fail its creation.
-    if (agent.session.header.parentSession !== undefined) return undefined
+  async scopeFor(agent: Agent): Promise<SpaceScope | undefined> {
+    if (!this.scopes.has(agent)) await this.refreshScope(agent)
+    return this.scopes.get(agent)
+  }
+
+  /**
+   * Read one Space subtree for a tool result. The caller authorizes the read
+   * first: a Space in the session's own subtree needs no grant, and one outside
+   * it is recorded through {@link grantRead}.
+   * @param agent - the session's agent.
+   * @param spaceId - the Space to describe.
+   * @returns the Space subtree, or `undefined` when the actor cannot read it.
+   */
+  async describeSpace(agent: Agent, spaceId: string): Promise<SpaceScopeNode | undefined> {
+    const resolved = this.resolved.get(agent)
+    if (resolved === undefined) return undefined
+    return await readSpaceNode(this.scopeInput(resolved, agent.session), spaceId)
+  }
+
+  /**
+   * Whether the session already covers one Space: its own subtree or a granted
+   * subtree. A covered Space needs no approval before a tool reads it.
+   * @param agent - the session's agent.
+   * @param spaceId - the Space to check.
+   * @returns `true` when the Space is in the readable scope.
+   */
+  coversSpace(agent: Agent, spaceId: string): boolean {
+    const scope = this.scopes.get(agent)
+    if (scope === undefined) return false
+    return containsSpace([scope.space, ...scope.granted], spaceId)
+  }
+
+  /**
+   * Refuse a file or shell read that targets a Space outside this session's
+   * scope. The check covers the file tools' path arguments and an absolute
+   * foreign folder spelled inside a shell command; a path outside every Space
+   * (an attachment, a temp file, a skill installation) stays readable exactly
+   * as before. A granted Space is no longer foreign, so the grant reopens it.
+   * @param agent - the session's agent.
+   * @param toolName - the tool the model called.
+   * @param args - the call's raw arguments.
+   * @returns the refusal text, or undefined to allow the call.
+   */
+  denyForeignRead(agent: Agent, toolName: string, args: unknown): string | undefined {
+    const scope = this.scopes.get(agent)
     const cwd = agent.session.header.cwd
-    if (cwd === undefined) return undefined
-    const registry = this.ctx.get('workspaceRegistry') as WorkspaceRegistryView | undefined
+    if (scope === undefined || scope.foreign.length === 0 || cwd === undefined) return undefined
+    const input = typeof args === 'object' && args !== null ? args as Record<string, unknown> : {}
+    const readable = [scope.space, ...scope.granted].flatMap(node => nodeFolders(node))
+    if (SHELL_TOOLS.has(toolName)) {
+      const command = input['command']
+      if (typeof command === 'string') {
+        for (const entry of scope.foreign) {
+          if (containsPath(command, entry.path)) return foreignReadDenial(entry.title)
+        }
+        // Resolve every token that looks like a path, so `cat ../CO/nota.txt`
+        // is refused as well as the absolute spelling. Shell syntax is not
+        // interpreted; a token that resolves under a foreign folder is enough.
+        for (const token of command.split(/[\s"'`;|&<>()={}]+/)) {
+          const clean = token.replace(/^-[^=]*=/, '')
+          if (clean.length === 0 || clean.startsWith('-')) continue
+          const target = resolve(cwd, clean)
+          if (readable.some(folder => isUnderFolder(target, resolve(folder)))) continue
+          const foreign = scope.foreign.find(entry => isUnderFolder(target, resolve(entry.path)))
+          if (foreign !== undefined) return foreignReadDenial(foreign.title)
+        }
+      }
+    }
+    for (const key of PATH_ARGUMENTS[toolName] ?? []) {
+      const value = input[key]
+      if (typeof value !== 'string' || value.length === 0) continue
+      const target = resolve(cwd, value)
+      // The current subtree wins over the foreign list: a parent folder above
+      // it never turns a read of the current Space into a foreign read.
+      if (readable.some(folder => isUnderFolder(target, resolve(folder)))) continue
+      const foreign = scope.foreign.find(entry => isUnderFolder(target, resolve(entry.path)))
+      if (foreign !== undefined) return foreignReadDenial(foreign.title)
+    }
+    return undefined
+  }
+
+  /**
+   * Record a durable read grant for one Space and refresh the session's scope.
+   * The spaces service refuses a Space the actor may not read, so a grant can
+   * never widen product access; it only records that this session may use it.
+   * The grant is one log-only session event, so a resume replays it.
+   * @param agent - the session's agent.
+   * @param spaceId - the Space to grant.
+   * @throws when the session is not a Space session or the actor cannot read the Space.
+   */
+  async grantRead(agent: Agent, spaceId: string): Promise<void> {
+    const resolved = this.resolved.get(agent)
+    if (resolved === undefined) throw new Error('faberloom: la sesión no pertenece a un Space')
     const spaces = this.ctx.get('faberloomSpaces')
-    const fleet = this.ctx.get('faberloomAgents')
-    const plane = this.ctx.get('faberloomAgentPlane')
-    if (registry === undefined || spaces === undefined || fleet === undefined || plane === undefined) return undefined
-    const workspace = registry.list().find(entry => entry.path === cwd)
-    if (workspace === undefined) return undefined
-    const actor: SpaceActor = {
-      id: ownerId,
+    if (spaces === undefined) throw new Error('faberloom: the spaces service is not mounted')
+    const space = await spaces.get(this.actor(), spaceId as FaberLoomSpaceId)
+    if (this.grantedSpaceIds(agent.session).includes(String(space.id))) return
+    agent.session.append('faberloom/space-read-grant', { spaceId: String(space.id) })
+    await this.refreshScope(agent)
+  }
+
+  /** The Space ids this session was granted read access to, in grant order. */
+  private grantedSpaceIds(session: Session): readonly string[] {
+    const projections = this.ctx.get('sessionProjections')
+    return projections?.stateOf(session, 'faberloomSpaceReads')?.spaces ?? []
+  }
+
+  /** The acting identity, as every product service expects it. */
+  private actor(): SpaceActor {
+    return {
+      id: this.config.ownerId ?? '',
       role: this.config.role ?? 'client_b2b',
       companyId: this.config.companyId ?? undefined,
       readOnly: this.config.readOnly === true,
     }
-    const space = (await spaces.list(actor)).find(candidate => candidate.workspaceId === workspace.id)
-    if (space === undefined || space.agentId === undefined) return undefined
+  }
+
+  /** The services and roots one scope read consumes for a resolved session. */
+  private scopeInput(resolved: { readonly space: FaberLoomSpace; readonly cwd: string }, session: Session) {
+    const agents = this.ctx.get('faberloomAgents') as SpaceScopeAgents | undefined
+    const contextEntries = this.ctx.get('faberloomContext') as SpaceScopeContextEntries | undefined
+    const registry = this.ctx.get('workspaceRegistry') as { list(): readonly { id: string; path: string }[] } | undefined
+    return {
+      actor: this.actor(),
+      cwd: resolved.cwd,
+      spaces: this.ctx.get('faberloomSpaces') as SpaceScopeSpaces,
+      ...agents === undefined ? {} : { agents },
+      ...contextEntries === undefined ? {} : { contextEntries },
+      ...registry === undefined ? {} : { registry },
+      dshHome: resolveDshHome(),
+      grantedSpaceIds: this.grantedSpaceIds(session),
+      ...this.config.maxScopeChars === undefined ? {} : { maxChars: this.config.maxScopeChars },
+      ...this.config.maxScopeSpaces === undefined ? {} : { maxSpaces: this.config.maxScopeSpaces },
+    }
+  }
+
+  /**
+   * Re-read one session's scope and replace the text the prompt section
+   * returns. Refreshes are serialized per agent; an unchanged product state
+   * renders the same text, so the cached prompt prefix stays stable.
+   * @param agent - the session's agent.
+   */
+  private async refreshScope(agent: Agent): Promise<void> {
+    const resolved = this.resolved.get(agent)
+    if (resolved === undefined) return
+    const previous = this.scopeTails.get(agent) ?? Promise.resolve()
+    const run = previous.then(async () => {
+      if (this.resolved.get(agent) === undefined) return
+      const scope = await readSpaceScope(this.scopeInput(resolved, agent.session))
+      if (scope !== undefined) this.scopes.set(agent, scope)
+    }).catch((error: unknown) => {
+      this.ctx.logger.warn(`faberloom: no se pudo leer el ámbito del Space de la sesión: ${String(error)}`)
+    })
+    this.scopeTails.set(agent, run)
+    await run
+  }
+
+  /**
+   * Resolve the Space one session runs in: its working directory is a
+   * registered workspace mirrored by a Space. A delegated child inherits its
+   * parent's composition and resolves nothing here.
+   * @param agent - the session's agent.
+   * @returns the Space and working directory, or `undefined`.
+   */
+  private async resolveSpace(agent: Agent): Promise<{ readonly space: FaberLoomSpace; readonly cwd: string } | undefined> {
+    const ownerId = this.config.ownerId
+    if (ownerId === undefined || ownerId.length === 0) return undefined
+    const cwd = agent.session.header.cwd
+    if (cwd === undefined) return undefined
+    const registry = this.ctx.get('workspaceRegistry') as WorkspaceRegistryView | undefined
+    const spaces = this.ctx.get('faberloomSpaces')
+    if (registry === undefined || spaces === undefined) return undefined
+    const workspace = registry.list().find(entry => entry.path === cwd)
+    if (workspace === undefined) return undefined
+    const space = (await spaces.list(this.actor())).find(candidate => candidate.workspaceId === workspace.id)
+    if (space === undefined) return undefined
+    return { space, cwd }
+  }
+
+  /**
+   * Resolve the composition one session runs under: its responsible agent
+   * declares a persona, tool plane, skills, and (when routed and keyed) a model
+   * route. Returns `undefined` when the Space has no responsible agent, so the
+   * session keeps the deployment composition while still reading its subtree.
+   * @param agent - the session's agent.
+   * @param space - the Space the session resolved to.
+   * @returns the agent's composition, or `undefined`.
+   */
+  private async compose(agent: Agent, space: FaberLoomSpace): Promise<SessionComposition | undefined> {
+    // A delegated child inherits its parent's composed agent; re-composing it
+    // would re-register the `deployment:persona-prefix` section and fail its
+    // creation. The child still installs its Space scope, which has its own
+    // section name.
+    if (agent.session.header.parentSession !== undefined) return undefined
+    if (space.agentId === undefined) return undefined
+    const fleet = this.ctx.get('faberloomAgents')
+    const plane = this.ctx.get('faberloomAgentPlane')
+    if (fleet === undefined || plane === undefined || space.agentId === undefined) return undefined
     const catalogAgent = await fleet.getAgent(space.agentId as FaberLoomAgentId)
     const resolved = plane.resolve(catalogAgent, this.toolSources())
     const route: SessionAgentRoute | undefined = resolved.provider !== undefined
@@ -343,6 +636,67 @@ export class FaberLoomSessionAgent extends Service {
       route,
     }
   }
+}
+
+/** The file-tool argument that names the path each tool reads or writes. */
+const PATH_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
+  read: ['file_path'],
+  read_image: ['file_path'],
+  write: ['file_path'],
+  edit: ['file_path'],
+  glob: ['path'],
+  grep: ['path'],
+}
+
+/** Shell tools whose command text can name an absolute foreign folder. */
+const SHELL_TOOLS: ReadonlySet<string> = new Set(['bash', 'pwsh'])
+
+/**
+ * Every folder in one readable scope node and its descendants.
+ * @param node - subtree root.
+ * @returns the folders, parents before children.
+ */
+function nodeFolders(node: SpaceScopeNode): string[] {
+  const folders = [node.path]
+  for (const child of node.children) folders.push(...nodeFolders(child))
+  return folders
+}
+
+/**
+ * Whether a shell command names one absolute folder.
+ * @param command - the command text.
+ * @param root - the absolute folder.
+ * @returns `true` when the command carries the folder spelling.
+ */
+function containsPath(command: string, root: string): boolean {
+  const normalize = (value: string): string => {
+    const unified = value.replace(/[\\/]+/g, sep)
+    return process.platform === 'win32' ? unified.toLowerCase() : unified
+  }
+  return normalize(command).includes(normalize(root))
+}
+
+/**
+ * The model-facing refusal for a Space outside the session scope.
+ * @param title - the Space title.
+ * @returns the refusal text naming the read-grant tool.
+ */
+function foreignReadDenial(title: string): string {
+  return `faberloom: «${title}» está fuera del ámbito de esta sesión. Pedí permiso de solo lectura con faberloom_spaces_open_read antes de leer su carpeta o sus archivos.`
+}
+
+/**
+ * Whether one Space id appears anywhere in the readable trees.
+ * @param nodes - root nodes to walk.
+ * @param spaceId - the Space to find.
+ * @returns `true` when the id is covered.
+ */
+function containsSpace(nodes: readonly SpaceScopeNode[], spaceId: string): boolean {
+  for (const node of nodes) {
+    if (node.id === spaceId) return true
+    if (containsSpace(node.children, spaceId)) return true
+  }
+  return false
 }
 
 export default FaberLoomSessionAgent

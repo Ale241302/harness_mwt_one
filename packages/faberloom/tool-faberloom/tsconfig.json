@@ -39,6 +39,9 @@
       "path": "../agent-runtime"
     },
     {
+      "path": "../session-agent"
+    },
+    {
       "path": "../../core/session"
     },
     {
@@ -76,6 +79,9 @@
     },
     {
       "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../interaction/user-approval"
     },
     {
       "path": "../../interaction/user-questions"

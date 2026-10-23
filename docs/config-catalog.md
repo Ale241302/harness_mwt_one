@@ -908,7 +908,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/execution/src/index.ts:33`](../packages/faberloom/execution/src/index.ts)
+Source: [`packages/faberloom/execution/src/index.ts:34`](../packages/faberloom/execution/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-harness-projection"></a>
 
@@ -1035,6 +1035,21 @@ export interface Config {
    * can borrow it.
    */
   mirrorKey?: string
+  /**
+   * Whether this process keeps an outbound bridge to the deployment gateway, so
+   * an AI client of the public `/mcp` endpoint reaches this installation's own
+   * tools. The desktop turns it on; a web harness leaves it off because the
+   * gateway already reaches its socket.
+   */
+  bridge?: boolean
+  /** Gateway origin the bridge calls; defaults to the harness origin derived from the console base. */
+  gatewayUrl?: string
+  /** Console API base the installation signed in with; used to derive the gateway origin. */
+  consoleBase?: string
+  /** Milliseconds between two bridge registrations. */
+  bridgeRegisterMs?: number
+  /** Longest a bridge poll waits for a request, in milliseconds. */
+  bridgePollMs?: number
 }
 ```
 
@@ -1078,10 +1093,12 @@ export interface Config {
   debounceMs?: number
   /** Milliseconds one request may take. */
   timeoutMs?: number
+  /** Largest apply body sent in one request, in bytes. */
+  chunkBytes?: number
 }
 ```
 
-Source: [`packages/faberloom/mirror/src/index.ts:75`](../packages/faberloom/mirror/src/index.ts)
+Source: [`packages/faberloom/mirror/src/index.ts:90`](../packages/faberloom/mirror/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-model-catalog"></a>
 
@@ -1127,7 +1144,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/routines/src/index.ts:57`](../packages/faberloom/routines/src/index.ts)
+Source: [`packages/faberloom/routines/src/index.ts:60`](../packages/faberloom/routines/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-agent"></a>
 
@@ -1146,10 +1163,14 @@ export interface Config {
   companyId?: string
   /** Whether the role is read-only. */
   readOnly?: boolean
+  /** Ceiling on the rendered Space-scope text, in characters. */
+  maxScopeChars?: number
+  /** Ceiling on the Spaces one session scope lists, including sub-Spaces. */
+  maxScopeSpaces?: number
 }
 ```
 
-Source: [`packages/faberloom/session-agent/src/index.ts:47`](../packages/faberloom/session-agent/src/index.ts)
+Source: [`packages/faberloom/session-agent/src/index.ts:114`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 
@@ -1233,7 +1254,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:257`](../packages/faberloom/view/src/index.ts)
+Source: [`packages/faberloom/view/src/index.ts:357`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -2791,7 +2812,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/skill/skill-install/src/index.ts:91`](../packages/skill/skill-install/src/index.ts)
+Source: [`packages/skill/skill-install/src/index.ts:94`](../packages/skill/skill-install/src/index.ts)
 
 <a id="deepseek-aidsh-spill-local"></a>
 
@@ -3376,7 +3397,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts:63`](../packages/faberloom/tool-faberloom/src/index.ts)
+Source: [`packages/faberloom/tool-faberloom/src/index.ts:71`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 

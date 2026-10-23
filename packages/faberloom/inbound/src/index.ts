@@ -191,6 +191,7 @@ export class FaberLoomInbound extends Service {
    * mailbox. Read-only: never marks, moves, or deletes mail.
    * @param ownerId - the owning identity.
    * @param limit - most envelopes to return.
+   * @param connectionId - the mail connection to read, or undefined for the default one.
    * @returns the envelopes, or an empty list when no mailbox is configured.
    */
   async listInbox(ownerId: string, limit?: number, connectionId?: string): Promise<ImapMessage[]> {
@@ -218,6 +219,7 @@ export class FaberLoomInbound extends Service {
    * Read one mailbox message's body, read-only.
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
+   * @param connectionId - the mail connection to read, or undefined for the default one.
    * @returns the decoded body, or null when no mailbox is configured or the message has no body.
    */
   async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent> {
@@ -244,6 +246,7 @@ export class FaberLoomInbound extends Service {
    * mailbox, so it runs only for an explicit user gesture.
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
+   * @param connectionId - the mail connection to update, or undefined for the default one.
    * @returns true when the mailbox accepted the flag update, false without a mailbox.
    */
   async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean> {
@@ -259,6 +262,7 @@ export class FaberLoomInbound extends Service {
    * the built-in candidates. Writes to the mailbox on an explicit gesture only.
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
+   * @param connectionId - the mail connection to update, or undefined for the default one.
    * @returns the mailbox the message moved to.
    * @throws when every candidate mailbox rejects the move.
    */

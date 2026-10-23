@@ -158,10 +158,12 @@ Host service backing the generated `ctx.remote.directoryPicker` namespace. The s
 ```ts cordis-catalog
 /**
  * Open the host's OS chooser for a Remote caller.
+ * @param startPath - directory the chooser opens in, or undefined for the
+ *   platform's own starting location.
  * @param signal - caller lifetime; abort terminates the chooser.
  * @returns the chosen absolute path, or null when the operator cancels.
  */
-@Remote('pick') async pick(signal: AbortSignal): Promise<string | null>
+@Remote('pick') async pick(startPath: string | undefined, signal: AbortSignal): Promise<string | null>
 
 /**
  * Open the host's OS chooser for one file, for a caller that needs a path to
