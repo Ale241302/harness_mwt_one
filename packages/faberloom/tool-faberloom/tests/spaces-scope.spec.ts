@@ -143,7 +143,7 @@ describe('faberloom_spaces_open_read', () => {
 
   it('asks the user once and records a read-only grant for a Space outside the subtree', async () => {
     const service = sessionAgent()
-    const approval = { request: vi.fn(async () => 'allowed-once') }
+    const approval = { request: vi.fn(async (_request: unknown) => 'allowed-once') }
     const tools = harness({
       faberloomSessionAgent: service,
       faberloomSpaces: SPACES,
