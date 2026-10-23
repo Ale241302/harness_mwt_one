@@ -773,8 +773,13 @@ export function WorkspaceBrowser({
   const currentWorkspaceId = useMemo(() => {
     const current = list.current
     if (current === undefined) return undefined
-    return workspaces.find(workspace => workspace.sessionIds.includes(current))?.workspaceId
-  }, [list.current, workspaces])
+    const member = workspaces.find(workspace => workspace.sessionIds.includes(current))
+    if (member !== undefined) return member.workspaceId
+    // A just-created blank Session can become current before the Workspace
+    // stream carries its membership; its cwd already names the same folder.
+    const cwd = list.byId[current]?.cwd
+    return cwd === undefined ? undefined : workspaces.find(workspace => workspace.path === cwd)?.workspaceId
+  }, [list.byId, list.current, workspaces])
   const currentBlank = list.current !== undefined && list.byId[list.current]?.blank === true
     ? list.current
     : undefined
