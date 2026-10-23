@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-23-space-subtree-scope-and-read-grants.md
-2026-10-23-space-subtree-scope-and-read-grants.md: 91e4983fcb7dbd850469d708cbe2c0995acbebf5
-2026-10-23-space-subtree-scope-and-read-grants.zh.md: fbbeba0b8db9faf0b2e186562d154ef8d73ad311
+2026-10-23-space-subtree-scope-and-read-grants.md: 04c64ab713c1e1d3d3559fcb5067835bf64d3aa4
+2026-10-23-space-subtree-scope-and-read-grants.zh.md: 056ab36c62737b807d5666fe4b6bac8ca0f4ebb0

@@ -60,6 +60,8 @@ import type { FaberLoomViewService } from '@deepseek-ai/dsh-faberloom-view'
 import { renderSpaceNode, type FaberLoomSessionAgent, type SpaceScopeNode } from '@deepseek-ai/dsh-faberloom-session-agent'
 // Type-only: resolves the ctx.approval declaration used by the read grant.
 import type {} from '@deepseek-ai/dsh-user-approval'
+// Type-only: resolves the standing sandbox mode a fully trusted session runs under.
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 
 export const name = 'tool-faberloom'
 // `faberloomSpaces` is read through `ctx.get` when a call runs, not injected:
@@ -866,18 +868,28 @@ export function apply(ctx: Context, config: Config): void {
       }
       const already = service.coversSpace(agent, String(target.id))
       if (!already) {
-        const approval = ctx.get('approval')
-        if (approval === undefined) {
-          throw new Error('faberloom: no approval channel is mounted; no se puede activar el permiso de solo lectura')
+        // A session already running with full access has the user's standing
+        // authorization for its own file operations, and this grant is narrower
+        // (read-only). Under a confined preset the user decides through the
+        // approval channel; an auto-rejected or missing channel fails closed.
+        const trusted = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode === 'danger-full-access'
+        if (!trusted) {
+          const approval = ctx.get('approval')
+          if (approval === undefined) {
+            throw new Error('faberloom: no approval channel is mounted; no se puede activar el permiso de solo lectura')
+          }
+          const outcome = await approval.request({
+            agent,
+            toolName: 'faberloom_spaces_open_read',
+            callId: exec.callId,
+            reason: `Leer en solo lectura el Space «${target.title}» (${String(target.id)}) y sus sub Spaces: memoria, contexto, agentes, skills, AGENTS.md, .agents, .claude y archivos. No se modificará nada.`,
+            signal: exec.signal,
+          })
+          if (outcome === 'unavailable') {
+            throw new Error('faberloom: no hay un canal de aprobación disponible en esta sesión; cambiá el modo de acceso a Manual o Estándar y volvé a pedirlo')
+          }
+          if (outcome !== 'allowed-once') throw new Error('faberloom: el usuario no autorizó la lectura de ese Space')
         }
-        const outcome = await approval.request({
-          agent,
-          toolName: 'faberloom_spaces_open_read',
-          callId: exec.callId,
-          reason: `Leer en solo lectura el Space «${target.title}» (${String(target.id)}) y sus sub Spaces: memoria, contexto, agentes, skills, AGENTS.md, .agents, .claude y archivos. No se modificará nada.`,
-          signal: exec.signal,
-        })
-        if (outcome !== 'allowed-once') throw new Error('faberloom: el usuario no autorizó la lectura de ese Space')
         await service.grantRead(agent, String(target.id))
       }
       const node = await service.describeSpace(agent, String(target.id))

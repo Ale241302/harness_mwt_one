@@ -167,6 +167,23 @@ describe('faberloom_spaces_open_read', () => {
     expect(result.granted).toBe(true)
   })
 
+  it('grants a read in a session that already runs with full access', async () => {
+    const service = sessionAgent()
+    const approval = { request: vi.fn(async () => 'rejected') }
+    const tools = harness({
+      faberloomSessionAgent: service,
+      faberloomSpaces: SPACES,
+      approval,
+      sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access' }) },
+    })
+    const result = await tools.get('faberloom_spaces_open_read')!.execute({ id: 'sp-sondel' } as never, EXEC as never) as {
+      granted: boolean
+    }
+    expect(approval.request).not.toHaveBeenCalled()
+    expect(service.grantRead).toHaveBeenCalledWith(AGENT, 'sp-sondel')
+    expect(result.granted).toBe(true)
+  })
+
   it('refuses the read when the user rejects the grant', async () => {
     const service = sessionAgent()
     const tools = harness({
