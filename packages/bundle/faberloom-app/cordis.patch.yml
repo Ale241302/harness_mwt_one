@@ -4,6 +4,12 @@
 # harness carries the product modules as first-class rows.
 
 - insert:
+    # Bóveda de claves de proveedor compartida entre el harness local (escritorio)
+    # y el del VPS (web). Sin CONSOLA_API_BASE/CONSOLA_TOKEN, o sin sesión, queda
+    # inerte y el harness sigue usando solo su almacén local.
+    - id: credentials-console
+      name: '@deepseek-ai/dsh-credentials-console'
+
     - id: faberloom-spaces
       name: '@deepseek-ai/dsh-faberloom-spaces'
 

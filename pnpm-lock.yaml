@@ -1764,6 +1764,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-faberloom':
         specifier: workspace:^
         version: link:../../client/ui-faberloom
+      '@deepseek-ai/dsh-credentials-console':
+        specifier: workspace:^
+        version: link:../../credentials/credentials-console
       '@deepseek-ai/dsh-faberloom-access':
         specifier: workspace:^
         version: link:../../faberloom/access
@@ -5762,6 +5765,19 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+
+  packages/credentials/credentials-console:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-credentials':
+        specifier: workspace:^
+        version: link:../credentials
 
   packages/credentials/credentials-local:
     dependencies:
