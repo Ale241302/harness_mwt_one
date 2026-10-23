@@ -253,8 +253,16 @@ function SessionTree({
     }),
     [list, workspaces, archivedSessionIds, pendingInteractions, expandedGroups, ungroupedSessionIds],
   )
+  // Reveal the current Session's ancestors once per selected Session, not on
+  // every expansion change: a user who collapses a parent while the selected
+  // Session lives in a child must keep it collapsed. `current` plus its group
+  // is the reveal identity, so selecting another Session still opens its branch.
+  const ancestorRevealKey = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (currentGroup === undefined) return
+    if (current === undefined || currentGroup === undefined) return
+    const revealKey = `${current}\u0000${currentGroup}`
+    if (ancestorRevealKey.current === revealKey) return
+    ancestorRevealKey.current = revealKey
     const byKey = new Map(groups.map(group => [group.key, group]))
     let group = byKey.get(currentGroup)
     while (group?.parentKey !== undefined) {
@@ -262,7 +270,7 @@ function SessionTree({
       if (groupExpansion[parentKey] !== true) setGroupExpanded(parentKey, true)
       group = byKey.get(parentKey)
     }
-  }, [currentGroup, groupExpansion, groups, setGroupExpanded])
+  }, [current, currentGroup, groupExpansion, groups, setGroupExpanded])
   // A sub-space's Workspace only appears after its enclosing folder is open.
   const visibleGroups = useMemo(() => {
     const byKey = new Map(groups.map(group => [group.key, group]))
