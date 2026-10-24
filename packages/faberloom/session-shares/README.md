@@ -64,4 +64,6 @@ No invariant companion is published because the service's unit specs already ass
 
 Local captures are keyed `owner:<spaceId>\u0000<ownerId>\u0000<sessionId>`; imported rows are keyed `console:<readerId>\u0000<consoleId>` so `sync` prunes exactly the rows the console no longer carries for one reader. Authorization resolves the Space owner through `ctx.faberloomSpaces` and checks the `view` permission through `ctx.faberloomShares`; without either service the actor is trusted. The domain is opened lazily and closed with the calling fiber, like the other FaberLoom services.
 
+The domain uses the JSON backend's `per-record` layout: one document per shared Session under `storages/faberloom_session_shares/sessions/`. A transcript is large, and the `single` layout rewrote and re-parsed the complete catalog on every capture (a real catalog reached 117 MB), which spiked the host heap until it crashed. The first open after this change bootstraps the existing whole-unit file into one document per row and leaves the legacy file untouched.
+
 </details>

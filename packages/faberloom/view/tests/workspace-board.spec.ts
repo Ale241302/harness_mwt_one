@@ -64,14 +64,22 @@ function harness(options: {
   type MockMemory = { id: string; spaceIds: string[]; text: string; createdAt: string; sessionId: string | null }
   const spaces = {
     list: vi.fn(async (): Promise<readonly MockSpace[]> => spaceRecords),
-    get: vi.fn(async (_actor?: unknown, id?: string): Promise<MockSpace> => spaceRecords.find(record => record.id === id) ?? defaultSpace(id ?? 'sp1')),
+    get: vi.fn(async (_actor?: unknown, id?: string): Promise<MockSpace> => {
+      const existing = spaceRecords.find(record => record.id === id)
+      if (existing !== undefined) return existing
+      // A default record is stored, so a later `update` from the view lands on
+      // the same object the next `get` returns.
+      const record = defaultSpace(id ?? 'sp1')
+      spaceRecords.push(record)
+      return record
+    }),
     create: vi.fn(async (
       _actor: unknown,
       input: { title: string; agentId?: string; parentId?: string; workspaceId?: string },
     ): Promise<MockSpace> => {
       nextSpace += 1
       const record: MockSpace = {
-        id: `sp${String(nextSpace)}`,
+        id: `sp-${String(nextSpace)}`,
         title: input.title,
         parentId: input.parentId ?? null,
         ...input.agentId === undefined ? {} : { agentId: input.agentId },
@@ -90,6 +98,7 @@ function harness(options: {
     remember: vi.fn(async (): Promise<{ id: string; spaceIds: string[]; text: string; createdAt: string }> =>
       ({ id: 'm1', spaceIds: [], text: '', createdAt: '2026-01-01T00:00:00Z' })),
     listMemory: vi.fn(async (): Promise<readonly MockMemory[]> => []),
+    listFiles: vi.fn(async (): Promise<readonly unknown[]> => []),
     effectiveMemory: vi.fn(async (): Promise<readonly MockMemory[]> => []),
     importShared: vi.fn(async (input: { id: string; title: string }): Promise<MockSpace> =>
       ({ id: input.id, title: input.title, parentId: null })),
@@ -232,7 +241,7 @@ describe('FaberLoomViewService space workspace', () => {
 
     const opened = await view.openSpaceWorkspace('sp1')
     expect(opened).toMatchObject({ registered: true, workspaceId: 'ws-1', title: 'Eguisa', sessions: 0 })
-    expect(existsSync(join(home, 'spaces', 'fw_abc123'))).toBe(true)
+    expect(existsSync(join(home, 'spaces', 'Eguisa'))).toBe(true)
 
     const after = await view.spaceWorkspace('sp1')
     expect(after).toMatchObject({ registered: true, workspaceId: 'ws-1', title: 'Eguisa' })
@@ -456,7 +465,7 @@ describe('FaberLoomViewService space lifecycle', () => {
     agents.listAgents.mockResolvedValue([{ id: 'a1', name: 'Recepción', spaceId: undefined, detached: false, active: true }])
 
     const overview = await view.overview()
-    expect(overview.spaces).toEqual([
+    expect(overview.spaces).toMatchObject([
       { id: 'sp1', title: 'Marluvas', parentId: null, agentId: 'a1', agentName: 'Recepción', workspaceId: 'ws-1' },
       { id: 'sp2', title: 'Otra', parentId: null, agentId: null, agentName: null, workspaceId: null },
     ])

@@ -423,12 +423,14 @@ describe('FaberLoomMirror', () => {
     await grants(facility).put('g1', { id: 'g1', action: 'mail.send', note: 'listas no listas' })
     const result = await mirror.sync()
     expect(result?.pushed).toEqual([])
-    expect(result?.skipped).toEqual([])
+    // The fake harness opens only the grants domain; the other declared domains
+    // are reported as `domain-not-open` on every cycle and are not this case.
+    expect(result?.skipped.filter(skip => skip.reason !== 'domain-not-open')).toEqual([])
     // A skip entry without its three strings is dropped too.
     gateway.extras = { applied: [], skillsApplied: [], skipped: [{ domain: 'x' }, { domain: 'd', table: 't', reason: 'r' }] }
     await grants(facility).put('g1', { id: 'g1', action: 'mail.send', note: 'listas no listas 2' })
     const second = await mirror.sync()
-    expect(second?.skipped).toEqual([{ domain: 'd', table: 't', reason: 'r' }])
+    expect(second?.skipped.filter(skip => skip.reason !== 'domain-not-open')).toEqual([{ domain: 'd', table: 't', reason: 'r' }])
     gateway.extras = { applied: 'no-es-lista', skillsApplied: 'no-es-lista', skipped: null }
     await grants(facility).put('g1', { id: 'g1', action: 'mail.send', note: 'listas no listas 3' })
     const third = await mirror.sync()
@@ -471,7 +473,7 @@ describe('FaberLoomMirror', () => {
     // confirms nothing, so it stays pending for the next cycle.
     expect(result?.pushed).toEqual([])
     expect(result?.rows).toContainEqual({ domain: 'faberloom_grants', table: 'grants', key: 'g1' })
-    expect(result?.skipped).toEqual([])
+    expect(result?.skipped.filter(skip => skip.reason !== 'domain-not-open')).toEqual([])
   })
 
   it('logs a push the gateway refuses after a successful pull', async () => {

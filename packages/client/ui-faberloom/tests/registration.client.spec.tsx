@@ -1133,16 +1133,15 @@ describe('faberloom panel editors', () => {
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
     await view.findByText(SKILL_ROW.name)
 
-    expect(view.queryByText(faberloomEn['harness.title'])).toBeNull()
+    expect(view.queryByText(faberloomEn['harness.installButton'])).toBeNull()
     expect(view.getByText(faberloomEn['skills.upload'])).toBeTruthy()
 
     Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true })
     try {
-      // Remount the panel and reopen the Skills tab, so the block reads the marker.
-      act(() => { runtime.panelInfo.set({ activePanelId: null }) })
-      act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
-      fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
-      expect(await view.findByText(faberloomEn['harness.title'])).toBeTruthy()
+      // The panel keeps its tab state across a mount; switching tabs is what
+      // re-renders the shell and reads the Desktop marker.
+      fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.agents.title'] }))
+      expect(await view.findByText(faberloomEn['harness.installButton'])).toBeTruthy()
     } finally {
       Reflect.deleteProperty(globalThis, 'dshDesktop')
     }

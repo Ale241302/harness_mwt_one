@@ -542,6 +542,70 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
+   * Fold duplicate Spaces into one keeper.
+   *
+   * The keeper keeps its identity and Workspace binding and absorbs the
+   * duplicates' members, exclusions, sources, context, prompt, and agent. Memory
+   * entries that were attached to a duplicate are re-pointed at the keeper, and
+   * its files move with them, so nothing the owner captured becomes invisible.
+   * Curated context entries and shared Sessions are not handled here: the caller
+   * checks them before merging, because a record keyed to the duplicate would be
+   * lost with it.
+   * @param actor - the acting identity.
+   * @param keeperId - Space that survives.
+   * @param duplicates - Spaces to fold into the keeper.
+   * @returns the updated keeper.
+   * @throws when either side is absent or the actor cannot manage it.
+   */
+  async merge(
+    actor: SpaceActor,
+    keeperId: FaberLoomSpaceId,
+    duplicates: readonly FaberLoomSpaceId[],
+  ): Promise<FaberLoomSpace> {
+    const table = await this.table()
+    const keeper = table.get(keeperId)
+    if (keeper === undefined) throw new Error(`faberloom: space ${keeperId} not found`)
+    if (!await this.mayManage(keeperId, keeper, actor)) throw new Error('faberloom: identity cannot manage this space')
+    const folded: SpaceRecord[] = []
+    for (const id of duplicates) {
+      if (id === keeperId) continue
+      const record = table.get(id)
+      if (record === undefined) continue
+      if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
+      folded.push(record)
+    }
+    if (folded.length === 0) return toSpace(keeperId, keeper)
+    const memory = await this.memory()
+    for (const [entryId, record] of memory.entries()) {
+      if (!record.spaceIds.some(spaceId => duplicates.includes(spaceId))) continue
+      const spaceIds = [...new Set(record.spaceIds.map(spaceId => duplicates.includes(spaceId) ? keeperId : spaceId))]
+      await memory.update(entryId, () => ({ ...record, spaceIds }))
+    }
+    const files = await this.files()
+    for (const [fileId, file] of files.entries()) {
+      if (!duplicates.includes(file.spaceId as FaberLoomSpaceId)) continue
+      await files.update(fileId, () => ({ ...file, spaceId: keeperId }))
+    }
+    const merged: SpaceRecord = {
+      ...keeper,
+      members: [...new Set([...keeper.members, ...folded.flatMap(record => record.members)])],
+      excluded: [...new Set([...keeper.excluded, ...folded.flatMap(record => record.excluded)])],
+      sources: [...new Map([...keeper.sources, ...folded.flatMap(record => record.sources)]
+        .map(source => [`${source.kind}:${source.id}`, source])).values()],
+      context: { ...Object.assign({}, ...folded.map(record => record.context)), ...keeper.context },
+      prompt: keeper.prompt.length > 0 ? keeper.prompt : folded.find(record => record.prompt.length > 0)?.prompt ?? '',
+      agentId: keeper.agentId ?? folded.find(record => record.agentId !== null)?.agentId ?? null,
+      updatedAt: new Date().toISOString(),
+      version: keeper.version + 1,
+    }
+    await table.update(keeperId, () => merged)
+    for (const id of duplicates) {
+      if (id !== keeperId) await table.delete(id)
+    }
+    return toSpace(keeperId, merged)
+  }
+
+  /**
    * Attach one memory entry to one or more spaces the actor may read. A
    * sub-space with inheritance on later reads its ancestors' entries too.
    * @param actor - the acting identity.

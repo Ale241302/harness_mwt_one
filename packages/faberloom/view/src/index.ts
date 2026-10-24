@@ -1157,6 +1157,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     // repair folder-backed spaces whose physical nesting predates parentId.
     await this.adoptOrphanWorkspaces(actor)
     await this.repairSpaceParents(actor)
+    await this.mergeDuplicateSpaces(actor)
     const [spaces, agents, board, routines, memory] = await Promise.all([
       this.ctx.faberloomSpaces.list(actor),
       this.ctx.faberloomAgents.listAgents(),
@@ -5047,7 +5048,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     // A sub-space is a real folder inside its parent's folder: that physical
     // nesting is what lets the Workspaces sidebar show the same hierarchy.
     let base = join(this.dshHome(), 'spaces')
-    if (space.parentId !== undefined) {
+    if (space.parentId !== undefined && space.parentId !== null && space.parentId !== space.id) {
       const parent = await this.ctx.faberloomSpaces.get(actor, space.parentId)
       const parentWorkspace = await this.ensureSpaceWorkspace(actor, parent)
       if (parentWorkspace !== undefined) base = parentWorkspace.path
@@ -5075,7 +5076,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       let cursor = await this.ctx.faberloomSpaces.get(actor, parentId)
       while (true) {
         if (cursor.id === space.id) throw new Error('faberloom: un espacio no puede moverse dentro de sí mismo')
-        if (cursor.parentId === undefined) break
+        if (cursor.parentId === undefined || cursor.parentId === null) break
         cursor = await this.ctx.faberloomSpaces.get(actor, cursor.parentId)
       }
     }
@@ -5255,7 +5256,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const ids = new Set(spaces.map(space => String(space.id)))
     for (const space of spaces) dirs.set(String(space.id), await this.resolveSpaceDir(actor, space))
     for (const space of spaces) {
-      if (space.parentId !== undefined && ids.has(String(space.parentId))) continue
+      if (space.parentId !== undefined && space.parentId !== null && ids.has(String(space.parentId))) continue
       const dir = dirs.get(String(space.id)) ?? ''
       if (dir.length === 0) continue
       let parent: FaberLoomSpace | undefined
@@ -5272,6 +5273,70 @@ export class FaberLoomViewService extends TypertRemoteService {
         await this.ctx.faberloomSpaces.update(actor, space.id, { parentId: parent.id })
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: no se pudo reparar el padre de ${space.title}: ${String(error)}`)
+      }
+    }
+  }
+
+  /**
+   * Fold the Spaces the same owner created more than once under one title.
+   *
+   * Two homes mirror their Spaces, and older generations created a Space per
+   * adopted workspace, so the same work area can appear under two ids. The
+   * keeper is the one anchored to a real local folder (not the opaque
+   * `spaces/fw_*` area), then the one with the most captured material. A
+   * duplicate that still owns curated context entries or shared Sessions is
+   * left alone: those records name its id and cannot be moved, so folding it
+   * would hide them. Memory and files do move with the merge.
+   * @param actor - the acting identity.
+   */
+  private async mergeDuplicateSpaces(actor: SpaceActor): Promise<void> {
+    if (actor.readOnly) return
+    const registry = this.workspaceRegistryOrUndefined()
+    const known = new Set(registry?.list().map(workspace => String(workspace.id)) ?? [])
+    const groups = new Map<string, FaberLoomSpace[]>()
+    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
+      if (space.ownerId !== actor.id || space.archived) continue
+      const key = space.title.trim().toLocaleLowerCase('es')
+      const group = groups.get(key) ?? []
+      group.push(space)
+      groups.set(key, group)
+    }
+    const context = this.ctx.get('faberloomContext')
+    const shares = this.ctx.get('faberloomSessionShares')
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      const ranked: { space: FaberLoomSpace; opaque: boolean; anchored: boolean; captured: number }[] = []
+      for (const space of group) {
+        const dir = await this.resolveSpaceDir(actor, space)
+        const [memory, files] = await Promise.all([
+          this.ctx.faberloomSpaces.listMemory(actor, space.id),
+          this.ctx.faberloomSpaces.listFiles(actor, space.id),
+        ])
+        ranked.push({
+          space,
+          opaque: /[\\/]spaces[\\/]fw_[0-9a-f]{16}$/u.test(dir.replaceAll('\\', '/')),
+          anchored: space.workspaceId !== undefined && known.has(space.workspaceId),
+          captured: memory.length + files.length,
+        })
+      }
+      ranked.sort((left, right) => Number(right.anchored) - Number(left.anchored)
+        || Number(left.opaque) - Number(right.opaque)
+        || right.captured - left.captured
+        || right.space.updatedAt.localeCompare(left.space.updatedAt))
+      const keeper = ranked[0] as (typeof ranked)[number]
+      for (const loser of ranked.slice(1)) {
+        const owned = (await context?.listForSpace(actor, loser.space.id) ?? []).length
+        const shared = (await shares?.list({ id: actor.id }, loser.space.id) ?? []).length
+        if (owned > 0 || shared > 0) {
+          this.ctx.logger.info(`faberloom: Space ${loser.space.id} keeps its identity (${String(owned)} context entries, ${String(shared)} shared sessions)`)
+          continue
+        }
+        try {
+          await this.ctx.faberloomSpaces.merge(actor, keeper.space.id, [loser.space.id])
+          this.ctx.logger.info(`faberloom: merged duplicate Space ${loser.space.id} into ${keeper.space.id}`)
+        } catch (error: unknown) {
+          this.ctx.logger.warn(`faberloom: could not merge duplicate Space ${loser.space.id}: ${String(error)}`)
+        }
       }
     }
   }

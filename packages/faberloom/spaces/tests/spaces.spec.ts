@@ -39,6 +39,30 @@ describe('FaberLoomSpaces', () => {
     await expect(spaces.get(SONDEL, 'missing' as FaberLoomSpaceId)).rejects.toThrow('not found')
   })
 
+  it('folds a duplicate into the keeper, moving its memory and files', async () => {
+    const { spaces } = await harness()
+    const keeper = await spaces.create(SONDEL, { title: 'Prueba', workspaceId: 'ws-local' })
+    const duplicate = await spaces.create(SONDEL, { title: 'Prueba', workspaceId: 'ws-remote' })
+    await spaces.remember(SONDEL, 'nota del duplicado', [duplicate.id])
+    const file = await spaces.attachFile(SONDEL, duplicate.id, {
+      name: 'nota.txt', mediaType: 'text/plain', contentBase64: Buffer.from('hola').toString('base64'),
+    })
+    await spaces.update(SONDEL, duplicate.id, { members: ['miembro@cliente.com'], prompt: 'Contexto del duplicado' })
+
+    const merged = await spaces.merge(SONDEL, keeper.id, [duplicate.id])
+
+    expect(merged.id).toBe(keeper.id)
+    expect(merged.workspaceId).toBe('ws-local')
+    expect(merged.prompt).toBe('Contexto del duplicado')
+    expect(merged.members).toEqual(['miembro@cliente.com'])
+    expect((await spaces.list(SONDEL)).map(space => space.id)).toEqual([keeper.id])
+    expect((await spaces.listMemory(SONDEL, keeper.id)).map(entry => entry.text)).toEqual(['nota del duplicado'])
+    expect((await spaces.listFiles(SONDEL, keeper.id)).map(entry => entry.id)).toEqual([file.id])
+    // The duplicate's file record now answers through the keeper.
+    expect(await spaces.readFile(SONDEL, file.id)).toMatchObject({ spaceId: keeper.id })
+    await expect(spaces.merge(SONDEL, keeper.id, ['missing' as FaberLoomSpaceId])).resolves.toMatchObject({ id: keeper.id })
+  })
+
   it('creates a sub-space and rejects a missing or unmanageable parent', async () => {
     const { spaces } = await harness()
     const parent = await spaces.create(SONDEL, { title: 'Marluvas' })

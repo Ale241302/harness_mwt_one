@@ -26,6 +26,14 @@ Five product gaps remained after the provider-key vault shipped:
 
 **The projection owns a marked block.** `renderInstructions` wraps its output in `<!-- faberloom:begin -->` and `<!-- faberloom:end -->`, and `mergeInstructions` replaces that block in place. A previous full projection is replaced whole; any other file keeps its text and receives the block after it.
 
+**A duplicate Space is folded, not hidden.** `FaberLoomSpaces.merge` moves the duplicate's memory and files onto the keeper, unions members, exclusions, sources, context, prompt, and agent, and deletes the duplicate row. `mergeDuplicateSpaces` picks the keeper anchored to a real local folder (not the opaque `spaces/fw_*` area), then the one with the most captured material, and refuses to fold a duplicate that still owns curated context entries or shared Sessions because those records name its id. The Spaces panel shows the folder beside a repeated title, so same-title Spaces over different folders stay distinguishable.
+
+**A shared transcript is one file per Session.** The `faberloom_session_shares` domain uses the JSON backend's `per-record` layout: a `single` document rewrote and re-parsed every transcript on each capture, and a real catalog reached 117 MB, which drove the Desktop host heap to its 4 GB ceiling. The backend bootstraps the existing whole-unit file into one document per row on the first open.
+
+**A Space never follows itself as its parent.** `ensureSpaceWorkspace` treats `null` as no parent and refuses `parentId === id`, so a record with a null or self-referencing parent cannot recurse until the host runs out of memory. The same guard protects the parent-repair pass.
+
+**The desktop profile carries the vault plugin from its bundle.** `@deepseek-ai/dsh-credentials-console` is a dependency of `faberloom-app` and ships in the packed set; the profile module fallback links it like every other bundle-only package. The hand-made junction under `~/.dsh/profiles/desktop/node_modules` was a development workaround, not a packaging requirement, and is removed.
+
 ## Alternatives considered
 
 **Delete duplicate Spaces automatically.** Rejected: same-title Spaces can name different folders, and deleting one takes its memory and files with it. Prevention plus a visible folder is reversible; deletion is not.
@@ -49,5 +57,7 @@ The mirror no longer needs an operator-copied secret on the desktop, so a signed
 ## Verification
 
 - Unit: baseline collapse (keeper wins by stored key, skills merge, user rows untouched), mirror local-only rows (export and apply), optional mirror key, marked-block replacement, and the `client_b2b` read-only derivation.
+- Unit: Space merge (memory and files move, the duplicate row disappears), the null/self-parent guard (the 41-test workspace suite runs without the recursive heap failure), and the per-record shared-Session layout.
 - The mirror's routine and workflow name reconciliation tests stay green; routines now arrive on the desktop because sign-in enables the mirror.
-- Deployment: the gateway's `MWT_MCP_GATEWAY_KEY` and the MCP container's value are aligned, and a mirror cycle completes with `missing: []`.
+- The GUI suite is green, including the Desktop-only install block, and the full `faberloom/view` suite passes 132 tests.
+- Deployment: the gateway's `MWT_MCP_GATEWAY_KEY` and the MCP container's value are aligned, a mirror cycle completes with `missing: []`, and the Desktop profile resolves the vault plugin with the hand-made junction removed.

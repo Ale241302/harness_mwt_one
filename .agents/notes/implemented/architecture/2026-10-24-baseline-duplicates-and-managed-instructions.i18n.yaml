@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-24-baseline-duplicates-and-managed-instructions.md
-2026-10-24-baseline-duplicates-and-managed-instructions.md: e5b18bf81e539ec86b29ba12d8b2f3817e5a1d54
-2026-10-24-baseline-duplicates-and-managed-instructions.zh.md: 3e23749e38fce0e21dd06fd54832496f96fe9824
+2026-10-24-baseline-duplicates-and-managed-instructions.md: f148b07ae7a78227884f4c7befba3126c6ae5350
+2026-10-24-baseline-duplicates-and-managed-instructions.zh.md: 082fcfa894b423d343e4dbf4ca8648e3ac0bbd83

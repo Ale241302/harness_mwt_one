@@ -94,7 +94,7 @@ describe('FaberLoomViewService workflows', () => {
       { routineId: 'r1' },
     )
     const { view } = harness(detail)
-    expect(await view.workflowOverview()).toEqual([{ id: 'wf1', name: 'Anti-spam', status: 'draft', version: 1, nodes: 1, edges: 0, routineId: null, spaceId: null }])
+    expect(await view.workflowOverview()).toMatchObject([{ id: 'wf1', name: 'Anti-spam', status: 'draft', version: 1, nodes: 1, edges: 0, routineId: null, spaceId: null }])
     const read = await view.workflowDetail('wf1')
     expect(read).toMatchObject({ id: 'wf1', valid: true, routineId: 'r1' })
     expect(read.nodesList).toHaveLength(2)

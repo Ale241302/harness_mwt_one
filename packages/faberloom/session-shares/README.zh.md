@@ -64,4 +64,6 @@ kind: "package-reference"
 
 本地捕获以 `owner:<spaceId>\u0000<ownerId>\u0000<sessionId>` 为键；导入记录以 `console:<readerId>\u0000<consoleId>` 为键，使 `sync` 恰好清理某位读者在控制台上已不存在的记录。授权通过 `ctx.faberloomSpaces` 解析 Space 所有者，并通过 `ctx.faberloomShares` 检查 `view` 权限；缺少任一服务时信任执行者。该域惰性打开、随调用 fiber 关闭，与其他 FaberLoom 服务一致。
 
+该域使用 JSON 后端的 `per-record` 布局：每个共享会话在 `storages/faberloom_session_shares/sessions/` 下各有一个文档。会话记录很大，而 `single` 布局在每次捕获时重写并重新解析整个目录（真实目录达到 117 MB），使宿主堆飙升直至崩溃。切换后的首次打开会把现有的整单元文件引导为每行一个文档，并保留旧文件不动。
+
 </details>
