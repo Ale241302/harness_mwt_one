@@ -482,6 +482,8 @@ function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null 
 type SpaceTableRow = FaberLoomOverview['spaces'][number] & {
   readonly depth: number
   readonly childCount: number
+  /** Another Space of this owner has the same title, so the folder disambiguates it. */
+  readonly duplicateTitle: boolean
 }
 
 /** Every descendant id under one space, using the already-built child index. */
@@ -542,6 +544,11 @@ function spacesScreen() {
     }, [spaceList, byId])
     const rows = useMemo(() => {
       const needle = query.trim().toLowerCase()
+      const titleCounts = new Map<string, number>()
+      for (const space of spaceList) {
+        const key = space.title.trim().toLowerCase()
+        titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1)
+      }
       const keep = new Set<string>()
       if (needle.length > 0) {
         const mark = (id: string): void => {
@@ -568,6 +575,7 @@ function spacesScreen() {
           ...space,
           depth,
           childCount: childIds.length,
+          duplicateTitle: (titleCounts.get(space.title.trim().toLowerCase()) ?? 0) > 1,
         })
         if (needle.length > 0 || expanded.has(id)) {
           for (const child of childIds) visit(child, depth + 1)
@@ -684,6 +692,9 @@ function spacesScreen() {
             {space.depth > 0 && <span className={styles.spaceBranch} aria-hidden="true">↳</span>}
             <button className={styles.cellLink} type="button" title={space.folderPath}
               onClick={(event) => { event.stopPropagation(); goToWorkspace(space.id) }}>{space.title}</button>
+            {space.duplicateTitle && (
+              <span className={styles.cellMuted}> · {space.folderPath.split(/[\\/]/u).filter(Boolean).pop() ?? ''}</span>
+            )}
           </span>
         ),
       },

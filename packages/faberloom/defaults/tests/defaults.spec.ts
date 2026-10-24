@@ -71,6 +71,23 @@ function ownerHome(): string {
 }
 
 describe('FaberLoomDefaults', () => {
+  it('collapses the baseline rows two installations seeded under different ids', async () => {
+    const home = ownerHome()
+    const { ctx, catalog } = await services(home, [])
+    await ctx.faberloomAgents.createAgent({ name: 'Recepción', responsibility: 'primera', seeded: true, skills: ['uno'] })
+    await ctx.faberloomAgents.createAgent({ name: 'Recepción', responsibility: 'segunda', seeded: true, skills: ['dos'] })
+    const own = await ctx.faberloomAgents.createAgent({ name: 'Recepción', responsibility: 'mía' })
+
+    await seedWith(ctx, catalog)
+
+    const rows = (await ctx.faberloomAgents.listAgents()).filter(agent => agent.name === 'Recepción')
+    // The deployment's two rows become one, with both skill sets; the user's own
+    // row with the same name is untouched.
+    expect(rows.filter(agent => agent.seeded)).toHaveLength(1)
+    expect([...(rows.find(agent => agent.seeded)?.skills ?? [])].sort()).toEqual(['dos', 'uno'])
+    expect(rows.some(agent => agent.id === own.id)).toBe(true)
+  })
+
   it('F16 — seeds the plan agents and routine, keeping only the skills the role ships', async () => {
     const home = ownerHome()
     const { ctx, catalog } = await services(home, ['mwt-compras-clientes-leer', 'mwt-compras-inventario-leer'])

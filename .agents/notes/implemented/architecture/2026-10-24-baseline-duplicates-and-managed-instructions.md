@@ -1,0 +1,53 @@
+# Agent Note: Baseline rows, shared instructions, and the Client B2B write scope
+
+Status: implemented
+
+English | [中文](2026-10-24-baseline-duplicates-and-managed-instructions.zh.md)
+
+## Problem
+
+Five product gaps remained after the provider-key vault shipped:
+
+1. The Agents panel listed every deployment baseline two or three times, and the Spaces panel showed same-title rows with no way to tell them apart. Both installations of one account seed the same catalogue and mirror their product rows, so a home received the peer's baseline under a second id; the mirror also carried the agent copies each home materializes from console shares.
+2. The MWT MCP resolved callers to another identity. The gateway sent `X-MWT-Gateway-Key` from `MWT_MCP_GATEWAY_KEY`, while the MCP container held a different value, so the middleware refused the propagated identity and fell back to the service token.
+3. `client_b2b` was derived read-only whenever the console sent no actions. Those accounts are the product's customers; the role lock removed their write controls even though owning a Space always allowed writes.
+4. Routines created on the web never reached the desktop. The mirror plugin was mounted but off: the desktop sign-in wrote the console token and nothing that enables the mirror, and the mirror also required an internal credential the desktop could not obtain.
+5. A hand edit to `AGENTS.md` disappeared on the next projection. The projection rewrote the whole instruction file, so operator notes had no durable place.
+
+## Decision
+
+**A deployment baseline is one row per name, owned locally.** `faberloom-defaults` collapses the seeded baseline before each pass: only rows with `seeded` and an empty owner are grouped, a row holding a stored provider key wins the keeper, the keeper absorbs every skill and connected agent of the group, and the others are removed. An agent the user created with the same name is never touched. The mirror does not carry those rows, nor the `share:` copies, because each home seeds or imports its own; carrying them is what produced the duplicates.
+
+**A mirrored Space with a foreign Workspace id is re-anchored, not counted.** `adoptOrphanWorkspaces` treats a `workspaceId` the local registry does not hold as unbound, so the local folder is adopted by the existing Space of the same title instead of a new one. Same-title Spaces over genuinely different folders stay distinct, and the panel appends the folder name when a title repeats.
+
+**The console token is the mirror credential.** The route already validates the bearer token against `POST /portal/me/`; it now checks the internal key only when the caller presents one. The desktop sign-in writes `FABERLOOM_MIRROR_ENABLED=1` and `FABERLOOM_MIRROR_OWNER`, keeps `FABERLOOM_MIRROR_KEY` optional, and signs out by clearing all four names.
+
+**Client B2B writes in its own scope.** `deriveReadOnly` keeps `viewer` as the only role that is read-only without an explicit `permissions.read_only`; an explicit flag or a console action list still decides. Product guards (seeded agents, foreign Spaces, sharing) keep the customer out of the deployment's catalog.
+
+**The projection owns a marked block.** `renderInstructions` wraps its output in `<!-- faberloom:begin -->` and `<!-- faberloom:end -->`, and `mergeInstructions` replaces that block in place. A previous full projection is replaced whole; any other file keeps its text and receives the block after it.
+
+## Alternatives considered
+
+**Delete duplicate Spaces automatically.** Rejected: same-title Spaces can name different folders, and deleting one takes its memory and files with it. Prevention plus a visible folder is reversible; deletion is not.
+
+**Carry baseline agents through the mirror and dedupe on both sides at boot.** Rejected: the mirror would resurrect a row one home had just removed, and both sides would fight over the ids. Keeping the baseline local removes the conflict at its source.
+
+**Require the deployment's mirror key on the desktop.** Rejected: the desktop never sees that secret, so a fresh installation could not enable the mirror without an operator copying it. The console token is the real authority and is validated per request.
+
+**Keep `client_b2b` read-only and add a separate customer role.** Rejected: the console already expresses read-only with permissions, and a new role doubles the mapping in the gateway, the desktop, and the product guards.
+
+**Separate operator files (`AGENTS.local.md`).** Rejected: clients load `AGENTS.md` only; a pointer file would depend on every client following it, which the projection's own README says none guarantees.
+
+## Consequences
+
+A home now shows one row per baseline name and one Space per local folder; deleting a seeded agent still sticks, because the marker prevents re-seeding and the mirror never carries it back. A mirrored Space whose Workspace id belongs to the other home is re-anchored by title, which is a best-effort match: two different folders with the same name in the same home keep separate Spaces and the panel names their folders.
+
+The mirror no longer needs an operator-copied secret on the desktop, so a signed-in installation starts syncing routines and Work Flows on its next cycle. The gateway still accepts the internal key when present, and a deployment that sets one keeps the extra check.
+
+`client_b2b` accounts get the product's write controls; a console that wants them read-only sends `permissions.read_only: true`. `AGENTS.md` is now jointly owned: a projection replaces only its marked block, and a note placed outside it survives every refresh.
+
+## Verification
+
+- Unit: baseline collapse (keeper wins by stored key, skills merge, user rows untouched), mirror local-only rows (export and apply), optional mirror key, marked-block replacement, and the `client_b2b` read-only derivation.
+- The mirror's routine and workflow name reconciliation tests stay green; routines now arrive on the desktop because sign-in enables the mirror.
+- Deployment: the gateway's `MWT_MCP_GATEWAY_KEY` and the MCP container's value are aligned, and a mirror cycle completes with `missing: []`.

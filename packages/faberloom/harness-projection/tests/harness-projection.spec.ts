@@ -14,7 +14,7 @@ import type { FaberLoomSpaceId } from '@deepseek-ai/dsh-faberloom-spaces'
 import type { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { SkillRegistry } from '@deepseek-ai/dsh-skill'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import FaberLoomHarnessProjection, { DEFAULT_SCOPE_RULES, MANIFEST_PATH, planProjection, renderAgentDocument, renderAgentsIndex, renderInstructions, renderManifest, renderSettings, renderSkillDocument, readScopeUsage, resolveScopeSpace } from '../src/index.ts'
+import FaberLoomHarnessProjection, { DEFAULT_SCOPE_RULES, INSTRUCTION_BLOCK_START, MANIFEST_PATH, mergeInstructions, planProjection, renderAgentDocument, renderAgentsIndex, renderInstructions, renderManifest, renderSettings, renderSkillDocument, readScopeUsage, resolveScopeSpace } from '../src/index.ts'
 import type { Config, HarnessDomainSource, HarnessScope, HarnessSkillLookup, HarnessUsage } from '../src/index.ts'
 
 /** ISO-8601 instant every hand-written record carries. */
@@ -340,6 +340,28 @@ describe('generated files', () => {
     expect(text).toContain('## Cómo trabajar en este ámbito')
     expect(text).not.toContain('sin definición cargable')
     expect(text).not.toContain('no leídos')
+  })
+
+  it('replaces only its own block and keeps the notes written around it', () => {
+    const empty: HarnessUsage = {
+      spaceId: undefined, agents: [], skills: [], unresolvedSkills: [], workflows: [], routines: [],
+      memory: [], context: [], unreadableDomains: [],
+    }
+    const generated = renderInstructions({ scope: WORKSPACE_SCOPE, root: '/tmp/formatos', generatedAt: AT, usage: empty, maxListEntries: 1 })
+    // A file that never carried the markers and is not a previous projection is
+    // the operator's own: its text stays and the block lands after it.
+    const handwritten = mergeInstructions('# Mis notas\n\nNo toques la carpeta de clientes.\n', generated)
+    expect(handwritten.startsWith('# Mis notas\n\nNo toques la carpeta de clientes.\n\n')).toBe(true)
+    expect(handwritten).toContain(INSTRUCTION_BLOCK_START)
+    // A second pass replaces the block in place instead of appending another.
+    const replaced = mergeInstructions(handwritten.replace('Formatos', 'Otro'), generated)
+    expect(replaced.match(/faberloom:begin/gu)).toHaveLength(1)
+    expect(replaced).toContain('Mis notas')
+    expect(replaced).toContain('Formatos')
+    expect(replaced).not.toContain('Otro')
+    // A full projection written before the markers existed is replaced whole.
+    const legacy = '# Harness de Workspace: Formatos\n\nTexto viejo.\n'
+    expect(mergeInstructions(legacy, generated)).toBe(generated)
   })
 
   it('renders one agent definition per client and the agents index', () => {

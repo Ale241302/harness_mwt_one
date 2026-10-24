@@ -54,7 +54,14 @@ interface ConsoleUser {
 
 const MUTATING_ACTION = /\.(create|edit|update|delete|manage|write|activate|close|send|approve)/u
 
-/** Mirror the console sign-in's read-only derivation. */
+/**
+ * Mirror the console sign-in's read-only derivation. `client_b2b` is the
+ * product's customer and works in its own Spaces, agents, and routines, so only
+ * `viewer` stays read-only when the console sends no actions; an explicit
+ * `permissions.read_only` still wins for any role.
+ * @param user - the console account from `POST /auth/login/`.
+ * @returns whether the identity may only read product data.
+ */
 function deriveReadOnly(user: ConsoleUser): boolean {
   const permissions = typeof user.permissions === 'object' && user.permissions !== null
     ? user.permissions as { readonly read_only?: unknown; readonly actions?: unknown }
@@ -64,7 +71,7 @@ function deriveReadOnly(user: ConsoleUser): boolean {
   if (Array.isArray(actions) && actions.length > 0) {
     return !actions.some(action => typeof action === 'string' && MUTATING_ACTION.test(action))
   }
-  return user.role === 'viewer' || user.role === 'client_b2b'
+  return user.role === 'viewer'
 }
 
 /** Read the persisted identity, or undefined when the Desktop is signed out. */
@@ -318,6 +325,11 @@ export function writeIdentity(
   const envPath = join(dshHome, HOME_ENV_FILENAME)
   let env = existsSync(envPath) ? readFileSync(envPath, 'utf8') : ''
   env = setHomeEnvLine(env, 'CONSOLA_API_BASE', identity.consolaBase)
+  // The product mirror keeps the desktop's routines, Work Flows, and Spaces in
+  // step with the Web home. It needs the console token (written below), the
+  // owner, and this switch; the harness origin is derived from the console base.
+  env = setHomeEnvLine(env, 'FABERLOOM_MIRROR_ENABLED', '1')
+  env = setHomeEnvLine(env, 'FABERLOOM_MIRROR_OWNER', identity.email)
   if (credentials.token.length > 0) env = setHomeEnvLine(env, 'CONSOLA_TOKEN', credentials.token)
   // The refresh token is what lets a desktop session outlive the thirty-minute
   // access token without asking the operator to sign in again.
@@ -369,7 +381,7 @@ export function signOut(dshHome: string): string[] {
   removeConsoleTokenFile(dshHome)
   const envPath = join(dshHome, HOME_ENV_FILENAME)
   if (!existsSync(envPath)) return []
-  const names = ['CONSOLA_TOKEN', 'CONSOLA_REFRESH']
+  const names = ['CONSOLA_TOKEN', 'CONSOLA_REFRESH', 'FABERLOOM_MIRROR_ENABLED', 'FABERLOOM_MIRROR_OWNER']
   const content = readFileSync(envPath, 'utf8')
   const kept = content.split(/\r?\n/u).filter((line) => {
     const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/u.exec(line)

@@ -26,6 +26,9 @@
 /** Every product domain the mirror carries, in the order it traverses them. */
 export const FABERLOOM_MIRROR_DOMAINS: Readonly<Record<string, readonly string[]>> = {
   faberloom_spaces: ['spaces', 'files', 'memory'],
+  // The deployment baseline and the copies materialized from console shares stay
+  // in the home that holds them: every installation seeds or imports its own, so
+  // carrying them left the peer with two rows of the same name.
   faberloom_agents: ['models', 'agents', 'selections', 'outcomes'],
   faberloom_board: ['items'],
   // Definitions travel; executions do not. An execution is a run of one host:

@@ -33,6 +33,28 @@ export interface MirrorLiveDomain {
   table(name: string): KvTable<string, unknown>
 }
 
+/**
+ * Whether one mirrored row belongs to the installation that holds it and must
+ * not travel.
+ *
+ * The deployment baseline agents are seeded by every home from the same
+ * catalogue, and a shared agent is materialized by each home from the console
+ * shares it can read under its own id. Carrying either kind leaves the peer with
+ * a second row of the same name — the duplicate rows the catalogue showed. A
+ * user-created agent, a Space, and every other product row still travel.
+ * @param domain - declared domain of the row.
+ * @param table - table of the row.
+ * @param value - the row's record.
+ * @returns whether the row stays in the home that holds it.
+ */
+function staysLocal(domain: string, table: string, value: unknown): boolean {
+  if (domain !== 'faberloom_agents' || table !== 'agents') return false
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  if (record['seeded'] === true && (typeof record['ownerId'] !== 'string' || record['ownerId'].length === 0)) return true
+  return typeof record['originRef'] === 'string' && record['originRef'].startsWith('share:')
+}
+
 /** What one document read produced. */
 export interface MirrorReadResult {
   /** The transfer document, addressed by every domain the process holds open. */
@@ -72,7 +94,10 @@ export function readMirrorDocument(source: MirrorDomainSource, platform: 'web' |
         continue
       }
       const rows: Record<string, FaberLoomMirrorRow> = {}
-      for (const [key, value] of table.entries()) rows[key] = { deleted: false, value }
+      for (const [key, value] of table.entries()) {
+        if (staysLocal(domainName, tableName, value)) continue
+        rows[key] = { deleted: false, value }
+      }
       domainTables[tableName] = rows
     }
     const version = source.versionOf?.(domainName)
@@ -136,6 +161,10 @@ export async function applyMirrorDocument(
       for (const [key, row] of Object.entries(tableRows)) {
         const change = { domain: domainName, table: tableName, key }
         rows.push(change)
+        if (staysLocal(domainName, tableName, row.value)) {
+          kept.push(change)
+          continue
+        }
         if (options.overwrite !== undefined && !options.overwrite(domainName, tableName, key)) {
           kept.push(change)
           continue

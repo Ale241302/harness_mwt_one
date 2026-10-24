@@ -130,6 +130,7 @@ export class FaberLoomDefaults extends Service {
     // every identity, so a read-only member still sees and calls them; editing
     // stays gated by the acting role elsewhere.
     const shared = await this.seedSharedAgents()
+    if (this.config.readOnly !== true) await this.collapseDuplicateBaselines()
     await this.convergeBaselineAgents()
     if (this.config.readOnly === true) {
       return { seeded: shared.length > 0, skipped: 'read-only identity', agents: shared, routines: [] }
@@ -287,6 +288,55 @@ export class FaberLoomDefaults extends Service {
       created.push(seed.name)
     }
     return created
+  }
+
+  /**
+   * Remove the duplicate rows one deployment baseline agent accumulated.
+   *
+   * Two installations of the same catalogue each seed the baseline, so a home
+   * that received the peer's rows can hold the same seeded agent under two ids.
+   * Only rows the deployment owns (`seeded` with an empty owner) are grouped; a
+   * user-created agent that shares the name is never touched. The richest row
+   * absorbs every skill and connected agent of its group and stays; the rest are
+   * removed, which also drops their per-agent stored key.
+   * @returns the number of rows removed.
+   */
+  private async collapseDuplicateBaselines(): Promise<number> {
+    const groups = new Map<string, FaberLoomAgent[]>()
+    for (const agent of await this.ctx.faberloomAgents.listAgents()) {
+      if (!agent.seeded || agent.ownerId.length > 0) continue
+      const key = agent.name.trim().toLowerCase()
+      const group = groups.get(key) ?? []
+      group.push(agent)
+      groups.set(key, group)
+    }
+    let removed = 0
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      const ordered = [...group].sort((left, right) => {
+        // A stored provider key is per agent id, so the row that holds one is the
+        // keeper even when a twin carries more skills; removing it would drop a
+        // credential that cannot be read back.
+        if (left.hasApiKey !== right.hasApiKey) return left.hasApiKey ? -1 : 1
+        const byRichness = (right.skills.length + right.subagents.length) - (left.skills.length + left.subagents.length)
+        return byRichness !== 0 ? byRichness : left.createdAt.localeCompare(right.createdAt)
+      })
+      const keeper = ordered[0] as FaberLoomAgent
+      const skills = [...new Set(group.flatMap(agent => agent.skills))]
+      const connected = new Map(group.flatMap(agent => agent.subagents).map(entry => [entry.name, entry]))
+      const patch: { skills?: string[]; subagents?: FaberLoomAgent['subagents'] } = {}
+      if (skills.length !== keeper.skills.length) patch.skills = skills
+      if (connected.size !== keeper.subagents.length) patch.subagents = [...connected.values()]
+      if (patch.skills !== undefined || patch.subagents !== undefined) {
+        await this.ctx.faberloomAgents.updateAgent(keeper.id, patch)
+      }
+      for (const agent of group) {
+        if (agent.id === keeper.id) continue
+        if (await this.ctx.faberloomAgents.removeAgent(agent.id)) removed += 1
+      }
+    }
+    if (removed > 0) this.ctx.logger.info(`faberloom: collapsed ${String(removed)} duplicate baseline agent(s)`)
+    return removed
   }
 
   private async seedRoutines(ownerId: string): Promise<string[]> {

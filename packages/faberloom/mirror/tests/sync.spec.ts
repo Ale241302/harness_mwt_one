@@ -612,7 +612,7 @@ describe('FaberLoomMirror', () => {
     expect(mirror.status()).toMatchObject({
       enabled: false,
       active: false,
-      missing: ['gatewayUrl', 'ownerId', 'consoleToken', 'mirrorKey'],
+      missing: ['gatewayUrl', 'ownerId', 'consoleToken'],
       home,
     })
     // A wired mirror says the other word, so the line reads the real state.
@@ -630,6 +630,22 @@ describe('FaberLoomMirror', () => {
     await wired.refreshStatus()
     expect(wired.status()).toMatchObject({ active: true })
     expect(wiredInfo.mock.calls.flat().join(' ')).toContain('mirror active')
+  })
+
+  it('runs without an internal credential, because the gateway validates the console token', async () => {
+    const fake = await startGateway(remoteDocument('sin clave interna'))
+    closeGateway = fake.close
+    const ctx = await bootContext()
+    const mirror = new FaberLoomMirror(ctx, {
+      enabled: true,
+      gatewayUrl: fake.url,
+      ownerId: OWNER,
+      consoleToken: TOKEN,
+    })
+    mirror.clearTimers()
+    expect(mirror.status()).toMatchObject({ enabled: true, active: true, missing: [] })
+    expect(await mirror.sync()).toBeDefined()
+    mirror.stop()
   })
 
   it('reports which side it is and refuses a document of another format', async () => {

@@ -313,7 +313,8 @@ export class FaberLoomMirror extends Service {
     if (this.base() === undefined) missing.push('gatewayUrl')
     if (this.owner() === undefined) missing.push('ownerId')
     if (this.token() === undefined) missing.push('consoleToken')
-    if (this.key() === undefined) missing.push('mirrorKey')
+    // The internal credential is optional: the gateway validates the console
+    // token, and a value installed here is checked only when present.
     return missing
   }
 
@@ -1008,14 +1009,14 @@ export class FaberLoomMirror extends Service {
     const owner = this.owner()
     const token = this.token()
     const key = this.key()
-    if (base === undefined || owner === undefined || token === undefined || key === undefined) return undefined
+    if (base === undefined || owner === undefined || token === undefined) return undefined
     const document = body.document
     const headers: Record<string, string> = {
       'content-type': 'application/json',
       accept: 'application/json',
       authorization: `Bearer ${token}`,
       'x-faberloom-owner': encodeURIComponent(owner),
-      'x-faberloom-mirror-key': key,
+      ...(key === undefined ? {} : { 'x-faberloom-mirror-key': key }),
       'x-faberloom-mirror-action': body.action,
     }
     try {

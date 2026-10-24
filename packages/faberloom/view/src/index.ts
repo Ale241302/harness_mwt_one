@@ -5194,6 +5194,10 @@ export class FaberLoomViewService extends TypertRemoteService {
    * a Space becomes one, so both views name the same directory. Idempotent — an
    * already-mirrored Workspace is left alone, and a legacy space whose
    * deterministic area matches a Workspace is anchored instead of duplicated.
+   * A Space the mirror carried from another home names that home's Workspace id,
+   * which this registry does not hold; it is re-anchored to the local Workspace
+   * of the same title instead of counting as anchored and leaving the local
+   * folder without a Space.
    * Read-only identities are not written to.
    * @param actor - the acting identity.
    */
@@ -5201,21 +5205,33 @@ export class FaberLoomViewService extends TypertRemoteService {
     const registry = this.workspaceRegistryOrUndefined()
     if (registry === undefined || actor.readOnly) return
     const spaces = await this.ctx.faberloomSpaces.list(actor)
-    const anchored = new Set(spaces.map(space => space.workspaceId).filter((id): id is string => id !== undefined))
+    const known = new Set(registry.list().map(workspace => String(workspace.id)))
+    const anchored = new Set(spaces
+      .map(space => space.workspaceId)
+      .filter((id): id is string => id !== undefined && known.has(id)))
     const legacyByDir = new Map<string, FaberLoomSpace>()
+    const unboundByTitle = new Map<string, FaberLoomSpace[]>()
     for (const space of spaces) {
-      if (space.workspaceId !== undefined) continue
+      if (space.workspaceId !== undefined && known.has(space.workspaceId)) continue
       const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
-      legacyByDir.set(join(this.dshHome(), 'spaces', ref.ref), space)
+      const dir = join(this.dshHome(), 'spaces', ref.ref)
+      if (space.workspaceId === undefined) legacyByDir.set(dir, space)
+      const title = space.title.trim().toLowerCase()
+      const group = unboundByTitle.get(title) ?? []
+      group.push(space)
+      unboundByTitle.set(title, group)
     }
     for (const workspace of registry.list()) {
       const id = String(workspace.id)
       if (anchored.has(id)) continue
       try {
         const legacy = legacyByDir.get(workspace.path)
+          ?? (unboundByTitle.get(workspace.title.trim().toLowerCase()) ?? [])[0]
         if (legacy !== undefined) {
           await this.ctx.faberloomSpaces.update(actor, legacy.id, { workspaceId: id })
           legacyByDir.delete(workspace.path)
+          const title = legacy.title.trim().toLowerCase()
+          unboundByTitle.set(title, (unboundByTitle.get(title) ?? []).filter(space => space.id !== legacy.id))
         } else {
           await this.ctx.faberloomSpaces.create(actor, { title: workspace.title, workspaceId: id })
         }

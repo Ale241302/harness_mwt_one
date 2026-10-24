@@ -180,6 +180,37 @@ describe('mirror traversal', () => {
     expect(rows.get('g1')).toBeUndefined()
   })
 
+  it('keeps the deployment baseline and shared agents in the home that holds them', async () => {
+    const remote = new FakeDomains()
+    const agents = remote.openTable('faberloom_agents', 'agents')
+    await agents.put('baseline', { name: 'Architect', seeded: true, ownerId: '' })
+    await agents.put('shared', { name: 'Ajeno', seeded: false, ownerId: 'otro@example', originRef: 'share:otro@example' })
+    await agents.put('mine', { name: 'Mío', seeded: false, ownerId: 'yo@example' })
+    const read = readMirrorDocument(remote, 'web')
+    expect(Object.keys(read.document.domains['faberloom_agents']?.tables['agents'] ?? {})).toEqual(['mine'])
+
+    const local = new FakeDomains()
+    const rows = local.openTable('faberloom_agents', 'agents')
+    const applied = await applyMirrorDocument(local, {
+      version: FABERLOOM_MIRROR_FORMAT_VERSION,
+      platform: 'web',
+      domains: {
+        faberloom_agents: {
+          tables: {
+            agents: {
+              baseline: { deleted: false, value: { name: 'Architect', seeded: true, ownerId: '' } },
+              mine: { deleted: false, value: { name: 'Mío', seeded: false, ownerId: 'yo@example' } },
+            },
+          },
+        },
+      },
+      skills: {},
+    })
+    expect(rows.get('baseline')).toBeUndefined()
+    expect(rows.get('mine')).toEqual({ name: 'Mío', seeded: false, ownerId: 'yo@example' })
+    expect(applied.kept).toEqual([{ domain: 'faberloom_agents', table: 'agents', key: 'baseline' }])
+  })
+
   it('reports a domain this process does not hold open instead of dropping it', async () => {
     const local = new FakeDomains()
     const missing = await applyMirrorDocument(local, {

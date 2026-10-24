@@ -26,7 +26,7 @@ import z from '@deepseek-ai/schemastery'
 // ctx.skills and ctx.workspaceRegistry services read through ctx.get.
 import type {} from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-skill'
-import { HARNESS_PROJECTION_VERSION, planProjection } from './render.ts'
+import { HARNESS_PROJECTION_VERSION, mergeInstructions, planProjection } from './render.ts'
 import { readScopeUsage, resolveScopeSpace, type HarnessDomainSource, type HarnessSkillLookup } from './usage.ts'
 import type { HarnessProjectionReport, HarnessScope, HarnessUsage } from './types.ts'
 
@@ -34,7 +34,7 @@ export type * from './types.ts'
 export { HARNESS_PROJECTION_VERSION } from './render.ts'
 export { HARNESS_SKILL_NAME, readScopeUsage, resolveScopeSpace } from './usage.ts'
 export type { HarnessDomainSource, HarnessDomainView, HarnessSkillLookup, HarnessSpaceView, HarnessScopeSpace, HarnessTableView } from './usage.ts'
-export { DEFAULT_SCOPE_RULES, planProjection, renderAgentDocument, renderAgentsIndex, renderInstructions, renderManifest, renderSettings, renderSkillDocument } from './render.ts'
+export { DEFAULT_SCOPE_RULES, INSTRUCTION_BLOCK_END, INSTRUCTION_BLOCK_START, mergeInstructions, planProjection, renderAgentDocument, renderAgentsIndex, renderInstructions, renderManifest, renderSettings, renderSkillDocument } from './render.ts'
 export type { HarnessPlanInput, HarnessProjectionFile, HarnessProjectionPlan } from './render.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -51,6 +51,30 @@ export const DEFAULT_MAX_LIST_ENTRIES = 20
 
 /** A manifest path this service is willing to delete: a plain relative path inside the scope. */
 const SAFE_RELATIVE_PATH = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/
+
+/**
+ * Instruction files the projection shares with the operator. Only the marked
+ * block inside them is rewritten; a note written around it survives.
+ */
+const INSTRUCTION_FILES: ReadonlySet<string> = new Set([
+  'AGENTS.md', 'CLAUDE.md', 'GEMINI.md',
+  '.gemini/AGENTS.md', '.gemini/GEMINI.md',
+  '.kimi/AGENTS.md', '.kimi-code/AGENTS.md',
+])
+
+/**
+ * Read one file, answering undefined when it does not exist.
+ * @param path - absolute file path.
+ * @returns the file text, or undefined.
+ */
+async function readIfPresent(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+}
 
 /** Deployment-supplied wiring of the harness projection. */
 export interface Config {
@@ -176,7 +200,12 @@ export class FaberLoomHarnessProjection extends Service {
     for (const file of plan.files) {
       const absolute = join(root, file.path)
       await mkdir(dirname(absolute), { recursive: true })
-      await writeFile(absolute, file.content, 'utf8')
+      // The instructions files are shared with the operator: replace only the
+      // block this projection owns and keep the notes written around it.
+      const content = INSTRUCTION_FILES.has(file.path)
+        ? mergeInstructions(await readIfPresent(absolute), file.content)
+        : file.content
+      await writeFile(absolute, content, 'utf8')
       written.push(file.path)
     }
     const pruned = await this.prune(root, new Set(written))

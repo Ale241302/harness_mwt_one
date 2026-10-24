@@ -50,7 +50,8 @@ it('signs in and derives identity and credentials from the console answer', asyn
 
 it.each([
   [{ role: 'viewer' }, true],
-  [{ role: 'client_b2b' }, true],
+  [{ role: 'client_b2b' }, false],
+  [{ role: 'client_b2b', permissions: { read_only: true } }, true],
   [{ role: 'admin', permissions: { actions: ['doc.view'] } }, true],
   [{ role: 'admin', permissions: { actions: ['doc.view', 'doc.edit'] } }, false],
   [{ role: 'admin', permissions: { read_only: true } }, true],
@@ -105,7 +106,7 @@ it('writes the env layer, the patch, and the identity record', () => {
   const home = fixture()
   writeFileSync(join(home, '.env'), 'DEEPSEEK_API_KEY=sk-keep\n')
   writeIdentity(home, identity, { token: 'tok-1' }, {})
-  expect(readFileSync(join(home, '.env'), 'utf8')).toBe('DEEPSEEK_API_KEY=sk-keep\nCONSOLA_API_BASE=https://consola.mwt.one/api\nCONSOLA_TOKEN=tok-1\n')
+  expect(readFileSync(join(home, '.env'), 'utf8')).toBe('DEEPSEEK_API_KEY=sk-keep\nCONSOLA_API_BASE=https://consola.mwt.one/api\nFABERLOOM_MIRROR_ENABLED=1\nFABERLOOM_MIRROR_OWNER=alejandro@muitowork.com\nCONSOLA_TOKEN=tok-1\n')
   expect(readFileSync(join(home, IDENTITY_PATCH_FILENAME), 'utf8')).toContain('ownerId: "alejandro@muitowork.com"')
   expect(readIdentity(home)).toEqual(identity)
 })
@@ -162,14 +163,14 @@ it('replaces an existing console token instead of duplicating it', () => {
   writeFileSync(join(home, '.env'), 'CONSOLA_TOKEN=old\nOTHER=1\n')
   writeIdentity(home, identity, { token: 'new' }, {})
   const env = readFileSync(join(home, '.env'), 'utf8')
-  expect(env).toBe('CONSOLA_TOKEN=new\nOTHER=1\nCONSOLA_API_BASE=https://consola.mwt.one/api\n')
+  expect(env).toBe('CONSOLA_TOKEN=new\nOTHER=1\nCONSOLA_API_BASE=https://consola.mwt.one/api\nFABERLOOM_MIRROR_ENABLED=1\nFABERLOOM_MIRROR_OWNER=alejandro@muitowork.com\n')
 })
 
 it('signs out by clearing the record, the patch, and the console token only', () => {
   const home = fixture()
   writeIdentity(home, identity, { token: 'tok-1' }, {})
   writeFileSync(join(home, '.env'), 'DEEPSEEK_API_KEY=sk-keep\nCONSOLA_API_BASE=https://consola.mwt.one/api\nCONSOLA_TOKEN=tok-1\n')
-  expect(signOut(home)).toEqual(['CONSOLA_TOKEN', 'CONSOLA_REFRESH'])
+  expect(signOut(home)).toEqual(['CONSOLA_TOKEN', 'CONSOLA_REFRESH', 'FABERLOOM_MIRROR_ENABLED', 'FABERLOOM_MIRROR_OWNER'])
   expect(readIdentity(home)).toBeUndefined()
   expect(() => readFileSync(join(home, IDENTITY_PATCH_FILENAME), 'utf8')).toThrow()
   expect(readFileSync(join(home, '.env'), 'utf8')).toBe('DEEPSEEK_API_KEY=sk-keep\nCONSOLA_API_BASE=https://consola.mwt.one/api\n')

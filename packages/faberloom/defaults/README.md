@@ -31,6 +31,7 @@ Seeding is scoped to one owner home by a marker at `<DSH_HOME>/faberloom-default
 
 - a pass does nothing for a read-only identity or an empty owner;
 - an item whose name already exists is left alone, so a retry after a partial pass never duplicates it;
+- the deployment's baseline agents are collapsed to one row per name before the pass: two installations of the same catalogue can each seed the same name under different ids, a stored provider key wins the keeper, and the keeper absorbs every skill and connected agent of its group; an agent the owner created with the same name is never touched;
 - a successful pass writes the marker, including one that found nothing left to create, so the next boot never resurrects an item the owner deleted; a pass that throws leaves no marker and no claim, so the next start retries.
 
 Two starts can begin at once for the same home, and each reads the other's domains before either flushes. A pass therefore claims `<DSH_HOME>/faberloom-defaults.claim` with an exclusive create first: the winner seeds, the loser reports `another pass is seeding`, and a claim left behind by a pass that died is cleared after ten minutes so the next start retries.
