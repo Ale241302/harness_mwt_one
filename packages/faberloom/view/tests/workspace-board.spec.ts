@@ -51,6 +51,7 @@ function harness(options: {
     agentId?: string
     workspaceId?: string
     createdAt?: string
+    archived?: boolean
     inheritContext?: boolean
     excluded?: readonly string[]
     members?: readonly string[]
@@ -472,6 +473,20 @@ describe('FaberLoomViewService space lifecycle', () => {
     // The duplicate's Workspace registration is removed, so the adoption pass
     // cannot recreate the Space on the next overview.
     expect(registry.delete).toHaveBeenCalledWith('ws-new')
+  })
+
+  it('merges archived duplicates among themselves, never with a live Space', async () => {
+    const { view, spaces } = harness()
+    spaces.list.mockResolvedValue([
+      { id: 'a-old', title: 'Viejo', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-01-01T00:00:00Z', archived: true },
+      { id: 'a-new', title: 'Viejo', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-02-01T00:00:00Z', archived: true },
+      { id: 'live', title: 'Viejo', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-03-01T00:00:00Z' },
+    ])
+
+    await view.overview()
+
+    expect(spaces.merge).toHaveBeenCalledWith(expect.anything(), 'a-old', ['a-new'])
+    expect(spaces.merge).not.toHaveBeenCalledWith(expect.anything(), 'a-old', ['live'])
   })
 
   it('projects the responsible agent and workspace into the overview rows', async () => {

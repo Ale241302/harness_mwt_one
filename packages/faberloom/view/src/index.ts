@@ -5303,16 +5303,19 @@ export class FaberLoomViewService extends TypertRemoteService {
    * adopted workspace, so the same work area can appear under two ids. The
    * keeper is the oldest row, then the lowest id: both homes compute the same
    * keeper from the same createdAt, so the merge converges instead of each side
-   * keeping a different row. Its curated context and shared Sessions move to the
-   * keeper with its memory and files.
+   * keeping a different row. Archived rows form their own group, so folding an
+   * old generation never hides a live Space. Its curated context and shared
+   * Sessions move to the keeper with its memory and files.
    * @param actor - the acting identity.
    */
   private async mergeDuplicateSpaces(actor: SpaceActor): Promise<void> {
     if (actor.readOnly) return
     const groups = new Map<string, FaberLoomSpace[]>()
     for (const space of await this.ctx.faberloomSpaces.list(actor)) {
-      if (space.ownerId !== actor.id || space.archived) continue
-      const key = space.title.trim().toLocaleLowerCase('es')
+      if (space.ownerId !== actor.id) continue
+      // An archived Space is a separate generation: folding an active Space
+      // into an archived keeper (or the reverse) would hide live work.
+      const key = `${space.archived ? 'archived' : 'live'}\u0000${space.title.trim().toLocaleLowerCase('es')}`
       const group = groups.get(key) ?? []
       group.push(space)
       groups.set(key, group)
