@@ -586,6 +586,18 @@ export class FaberLoomSpaces extends Service {
       if (!duplicates.includes(file.spaceId as FaberLoomSpaceId)) continue
       await files.update(fileId, () => ({ ...file, spaceId: keeperId }))
     }
+    // Children of a folded Space follow the keeper; otherwise they become
+    // orphans at the root and the sidebar loses their nesting.
+    const now = new Date().toISOString()
+    for (const [id, record] of table.entries()) {
+      if (record.parentId === null || !duplicates.includes(record.parentId)) continue
+      await table.update(id, () => ({
+        ...record,
+        parentId: keeperId,
+        updatedAt: now,
+        version: record.version + 1,
+      }))
+    }
     const merged: SpaceRecord = {
       ...keeper,
       members: [...new Set([...keeper.members, ...folded.flatMap(record => record.members)])],

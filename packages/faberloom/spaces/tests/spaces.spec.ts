@@ -43,6 +43,7 @@ describe('FaberLoomSpaces', () => {
     const { spaces } = await harness()
     const keeper = await spaces.create(SONDEL, { title: 'Prueba', workspaceId: 'ws-local' })
     const duplicate = await spaces.create(SONDEL, { title: 'Prueba', workspaceId: 'ws-remote' })
+    const child = await spaces.create(SONDEL, { title: 'Hijo del duplicado', parentId: duplicate.id })
     await spaces.remember(SONDEL, 'nota del duplicado', [duplicate.id])
     const file = await spaces.attachFile(SONDEL, duplicate.id, {
       name: 'nota.txt', mediaType: 'text/plain', contentBase64: Buffer.from('hola').toString('base64'),
@@ -55,9 +56,12 @@ describe('FaberLoomSpaces', () => {
     expect(merged.workspaceId).toBe('ws-local')
     expect(merged.prompt).toBe('Contexto del duplicado')
     expect(merged.members).toEqual(['miembro@cliente.com'])
-    expect((await spaces.list(SONDEL)).map(space => space.id)).toEqual([keeper.id])
+    expect((await spaces.list(SONDEL)).map(space => space.id).sort()).toEqual([keeper.id, child.id].sort())
     expect((await spaces.listMemory(SONDEL, keeper.id)).map(entry => entry.text)).toEqual(['nota del duplicado'])
     expect((await spaces.listFiles(SONDEL, keeper.id)).map(entry => entry.id)).toEqual([file.id])
+    // The child of the folded Space follows the keeper instead of becoming an
+    // orphan at the root.
+    expect((await spaces.get(SONDEL, child.id)).parentId).toBe(keeper.id)
     // The duplicate's file record now answers through the keeper.
     expect(await spaces.readFile(SONDEL, file.id)).toMatchObject({ spaceId: keeper.id })
     await expect(spaces.merge(SONDEL, keeper.id, ['missing' as FaberLoomSpaceId])).resolves.toMatchObject({ id: keeper.id })
