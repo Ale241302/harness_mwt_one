@@ -34,6 +34,8 @@ Five product gaps remained after the provider-key vault shipped:
 
 **A child Space lives inside its parent's folder.** The Workspaces sidebar nests by path prefix, so a child whose folder sits at the spaces root appears as a separate folder even when `parentId` names its parent. `ensureSpaceWorkspace` refuses to root a child when the parent folder cannot be prepared, and `repairNestedSpaceFolders` moves a child found outside its parent back inside, carrying its files, descendants, Workspace registrations, and Session attachments. The repair runs on the same overview pass as the duplicate merge.
 
+**A Workspace binding stays local.** The mirror keeps the receiving home's `workspaceId` when a Space row arrives: a Workspace id names one registry, and writing the peer's id left the Space without a folder. Title, parentage, memory, and context still travel; each home binds the Space to its own folder and the nesting repair keeps that folder inside the parent's.
+
 **The desktop profile carries the vault plugin from its bundle.** `@deepseek-ai/dsh-credentials-console` is a dependency of `faberloom-app` and ships in the packed set; the profile module fallback links it like every other bundle-only package. The hand-made junction under `~/.dsh/profiles/desktop/node_modules` was a development workaround, not a packaging requirement, and is removed.
 
 ## Alternatives considered

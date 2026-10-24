@@ -211,6 +211,27 @@ describe('mirror traversal', () => {
     expect(applied.kept).toEqual([{ domain: 'faberloom_agents', table: 'agents', key: 'baseline' }])
   })
 
+  it('keeps the local Workspace binding when a Space row arrives from the peer', async () => {
+    const local = new FakeDomains()
+    const spaces = local.openTable('faberloom_spaces', 'spaces')
+    await spaces.put('s1', { title: 'Prueba', workspaceId: 'ws-local', context: { old: 'x' } })
+
+    await applyMirrorDocument(local, {
+      version: FABERLOOM_MIRROR_FORMAT_VERSION,
+      platform: 'web',
+      domains: {
+        faberloom_spaces: {
+          tables: {
+            spaces: { s1: { deleted: false, value: { title: 'Prueba', workspaceId: 'ws-peer', context: { new: 'y' } } } },
+          },
+        },
+      },
+      skills: {},
+    })
+
+    expect(spaces.get('s1')).toEqual({ title: 'Prueba', workspaceId: 'ws-local', context: { new: 'y' } })
+  })
+
   it('reports a domain this process does not hold open instead of dropping it', async () => {
     const local = new FakeDomains()
     const missing = await applyMirrorDocument(local, {

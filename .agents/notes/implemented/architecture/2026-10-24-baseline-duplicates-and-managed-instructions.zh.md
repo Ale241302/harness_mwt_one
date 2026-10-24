@@ -34,6 +34,8 @@
 
 **子 Space 必须位于父级文件夹内。** Workspaces 侧边栏按路径前缀嵌套，所以即使 `parentId` 指向父级，位于 spaces 根目录的子文件夹仍会显示为单独条目。`ensureSpaceWorkspace` 在无法准备父级文件夹时拒绝把子级放到根目录；`repairNestedSpaceFolders` 会把落在父级之外的子级移回内部，并携带其文件、后代、Workspace 注册与会话附件。该修复与重复合并运行在同一轮 overview 中。
 
+**Workspace 绑定只属于本机。** 镜像在接收 Space 行时保留本机的 `workspaceId`：Workspace id 属于某一套注册表，写入对端的 id 会让 Space 失去文件夹。标题、父子关系、记忆与上下文仍然传输；每套 home 把 Space 绑定到自己的文件夹，嵌套修复保证该文件夹位于父级之内。
+
 **桌面配置从自己的 bundle 携带密钥库插件。** `@deepseek-ai/dsh-credentials-console` 是 `faberloom-app` 的依赖并随打包集发布；配置的模块回退会像其他仅由 bundle 携带的包一样链接它。`~/.dsh/profiles/desktop/node_modules` 下手工创建的 junction 是开发期权宜，不是打包要求，已移除。
 
 ## 考虑过的替代方案

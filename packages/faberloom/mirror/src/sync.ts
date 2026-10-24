@@ -55,6 +55,28 @@ function staysLocal(domain: string, table: string, value: unknown): boolean {
   return typeof record['originRef'] === 'string' && record['originRef'].startsWith('share:')
 }
 
+/**
+ * Keep the local Workspace binding when a Space row arrives from the peer.
+ *
+ * A Workspace id names one home's registry: the peer's id does not resolve
+ * here, and writing it would leave the Space pointing at a folder this home does
+ * not hold. The rest of the row still lands, so memory, context, parentage, and
+ * the title travel; each home binds the Space to its own folder.
+ * @param domain - declared domain of the row.
+ * @param table - table of the row.
+ * @param current - the row this home holds, when any.
+ * @param incoming - the row the peer sent.
+ * @returns the value to store.
+ */
+function preserveLocalSpaceBinding(domain: string, table: string, current: unknown, incoming: unknown): unknown {
+  if (domain !== 'faberloom_spaces' || table !== 'spaces') return incoming
+  if (typeof current !== 'object' || current === null || Array.isArray(current)) return incoming
+  if (typeof incoming !== 'object' || incoming === null || Array.isArray(incoming)) return incoming
+  const local = (current as Record<string, unknown>)['workspaceId']
+  if (typeof local !== 'string' || local.length === 0) return incoming
+  return { ...(incoming as Record<string, unknown>), workspaceId: local }
+}
+
 /** What one document read produced. */
 export interface MirrorReadResult {
   /** The transfer document, addressed by every domain the process holds open. */
@@ -169,8 +191,11 @@ export async function applyMirrorDocument(
           kept.push(change)
           continue
         }
-        if (row.deleted) await table.delete(key)
-        else await table.put(key, row.value)
+        if (row.deleted) {
+          await table.delete(key)
+        } else {
+          await table.put(key, preserveLocalSpaceBinding(domainName, tableName, table.get(key), row.value))
+        }
         applied.push(change)
       }
     }
