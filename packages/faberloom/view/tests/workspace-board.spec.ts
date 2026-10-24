@@ -458,10 +458,10 @@ describe('FaberLoomViewService space lifecycle', () => {
   })
 
   it('merges same-title duplicates into the oldest one, moving context and shared sessions', async () => {
-    const { view, spaces, context, shares } = harness()
+    const { view, spaces, context, shares, registry } = harness()
     spaces.list.mockResolvedValue([
-      { id: 'sp-new', title: 'Prueba', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-10-19T00:00:00Z' },
-      { id: 'sp-old', title: 'Prueba', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-10-14T00:00:00Z' },
+      { id: 'sp-new', title: 'Prueba', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-10-19T00:00:00Z', workspaceId: 'ws-new' },
+      { id: 'sp-old', title: 'Prueba', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-10-14T00:00:00Z', workspaceId: 'ws-old' },
     ])
 
     await view.overview()
@@ -469,6 +469,9 @@ describe('FaberLoomViewService space lifecycle', () => {
     expect(context.reassign).toHaveBeenCalledWith(expect.anything(), 'sp-new', 'sp-old')
     expect(shares.reassign).toHaveBeenCalledWith('sp-new', 'sp-old')
     expect(spaces.merge).toHaveBeenCalledWith(expect.anything(), 'sp-old', ['sp-new'])
+    // The duplicate's Workspace registration is removed, so the adoption pass
+    // cannot recreate the Space on the next overview.
+    expect(registry.delete).toHaveBeenCalledWith('ws-new')
   })
 
   it('projects the responsible agent and workspace into the overview rows', async () => {

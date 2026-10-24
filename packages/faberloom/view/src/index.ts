@@ -5319,16 +5319,28 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     const context = this.ctx.get('faberloomContext')
     const shares = this.ctx.get('faberloomSessionShares')
+    const registry = this.workspaceRegistryOrUndefined()
     for (const group of groups.values()) {
       if (group.length < 2) continue
       const ordered = [...group].sort((left, right) => left.createdAt.localeCompare(right.createdAt)
         || String(left.id).localeCompare(String(right.id)))
       const keeper = ordered[0] as FaberLoomSpace
+      // Bind the keeper before folding, so deleting a duplicate's Workspace
+      // never leaves the survivor without one.
+      await this.ensureSpaceWorkspace(actor, keeper)
+      const boundKeeper = await this.ctx.faberloomSpaces.get(actor, keeper.id)
       for (const loser of ordered.slice(1)) {
+        const duplicateWorkspace = loser.workspaceId
         try {
           await context?.reassign(actor, loser.id, keeper.id)
           await shares?.reassign(loser.id, keeper.id)
           await this.ctx.faberloomSpaces.merge(actor, keeper.id, [loser.id])
+          if (registry !== undefined && duplicateWorkspace !== undefined && duplicateWorkspace !== boundKeeper.workspaceId) {
+            // The duplicate's Workspace is the leftover area the merge removed.
+            // Keeping its registration would make the adoption pass create the
+            // Space again on the next overview, forever.
+            await registry.delete(duplicateWorkspace as WorkspaceId)
+          }
           this.ctx.logger.info(`faberloom: merged duplicate Space ${loser.id} into ${keeper.id}`)
         } catch (error: unknown) {
           this.ctx.logger.warn(`faberloom: could not merge duplicate Space ${loser.id}: ${String(error)}`)
