@@ -1,5 +1,5 @@
 /**
- * Harness MWT · gateway de autenticación y supervisor de dsh por usuario.
+ * Faberloom · gateway de autenticación y supervisor de dsh por usuario.
  *
  * - Valida email/password contra la consola MWT.ONE (/api/auth/login/).
  * - Arranca y supervisa un proceso `dsh` aislado por usuario (DSH_HOME propio).
@@ -15,6 +15,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import express from 'express'
 import httpProxy from 'http-proxy'
+
+import { installMirrorRoute } from './mirror-route.mjs'
+import { installDesktopMcpBridge } from './desktop-mcp-route.mjs'
+import { repairWorkspaceOrder } from './workspace-registry.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -57,6 +61,17 @@ const cfg = {
   consolaApi: (process.env.CONSOLA_API_BASE || 'https://consola.mwt.one/api').replace(/\/+$/, ''),
   publicHost: process.env.PUBLIC_HOST || 'harness.mwt.one',
   deepseekKey: readSecret('DEEPSEEK_API_KEY'),
+  // Claves de los proveedores multi-modelo de llm-pi-ai. Se resuelven aquí
+  // (env o `<NAME>_FILE`) y se pasan al dsh hijo, que las lee por su
+  // referencia `apiKeyEnv` en cada request. La clave propia de un agente en el
+  // harness siempre gana sobre esta clave de despliegue.
+  openaiKey: readSecret('OPENAI_API_KEY'),
+  anthropicKey: readSecret('ANTHROPIC_API_KEY'),
+  googleKey: readSecret('GOOGLE_API_KEY'),
+  // `kimi` es el plan de código (api.kimi.com/coding); `moonshotai`, la
+  // plataforma Moonshot (api.moonshot.ai). Productos distintos, claves distintas.
+  kimiKey: readSecret('KIMI_API_KEY'),
+  moonshotKey: readSecret('MOONSHOT_API_KEY'),
   dataDir: process.env.DATA_DIR || '/data/users',
   dshBasePort: Number(process.env.DSH_BASE_PORT || 3100),
   dshBin: process.env.DSH_BIN || 'dsh',
@@ -74,6 +89,10 @@ const cfg = {
   // FaberLoom · MCP propio (espacios) por usuario.
   faberloomUrl: process.env.FABERLOOM_MCP_URL || '',
   faberloomGatewayKey: readSecret('FABERLOOM_GATEWAY_KEY'),
+  // Espejo de producto: la credencial con la que el gateway habla con el servidor
+  // MCP del propietario para leer y escribir sus filas. Sin ella la ruta responde
+  // 503 y el cliente local no se activa, para que el espejo nunca sea un no-op mudo.
+  mirrorKey: readSecret('FABERLOOM_MIRROR_KEY'),
   sessionSecret: readSecret('SESSION_SECRET'),
   // Sesión del gateway (la del harness dura 30 días por defecto).
   cookieName: 'hgate',
@@ -140,6 +159,9 @@ const cfg = {
   anydocApiKey: process.env.FIRECRAWL_API_KEY || '',
   // Plazo de una espera de rutina antes de pasar a revision (24 h por defecto).
   waitTimeoutMs: Number(process.env.WAIT_TIMEOUT_MS || 86400000),
+  // Cadencia del espejo del lado servido: recibe del escritorio y deja que el
+  // despachador local ejecute lo que llegue. El escritorio empuja al cambiar.
+  mirrorIntervalMs: Number(process.env.MIRROR_INTERVAL_MS || 120000),
   // M1 · rate limit de /mcp (peticiones por minuto por IP cliente).
   mcpRateLimitPerMin: Number(process.env.MCP_RATE_LIMIT_PER_MIN || 120),
   // M6 · rate limit de login por cuenta (además del de nginx por IP).
@@ -398,6 +420,11 @@ function isEnvValue(value) {
 // La consola no envía un booleano `read_only`: se deriva de las acciones del
 // login. Un usuario sin ninguna acción mutadora (solo .view/.download_doc) es
 // de solo lectura para los módulos de producto.
+//
+// `client_b2b` NO es de solo lectura por rol: es el usuario cliente del
+// producto y trabaja en sus propios Spaces, agentes y rutinas. La consola sigue
+// decidiendo con `permissions.read_only` o con sus acciones; solo `viewer`
+// queda de solo lectura aunque la consola no mande acciones.
 const MUTATING_ACTION = /\.(create|edit|update|delete|manage|write|activate|close|send|approve)/
 function deriveReadOnly(user) {
   if (user.permissions?.read_only === true) return true
@@ -405,7 +432,7 @@ function deriveReadOnly(user) {
   if (Array.isArray(actions) && actions.length > 0) {
     return !actions.some(action => typeof action === 'string' && MUTATING_ACTION.test(action))
   }
-  return user.role === 'viewer' || user.role === 'client_b2b'
+  return user.role === 'viewer'
 }
 function resolveClientId(user) {
   if (cfg.mcpClientId) return cfg.mcpClientId
@@ -538,6 +565,31 @@ function readUserState(email) {
     }
   } catch { /* ausente o ilegible */ }
   return undefined
+}
+
+/** Every stored account, in the order the gateway state file holds them. */
+function storedUsers() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cfg.userStateFile, 'utf8'))
+    return Object.values(parsed?.users ?? {}).filter(user => (
+      user !== null && typeof user === 'object'
+      && typeof user.id === 'string' && user.id.length > 0
+      && typeof user.email === 'string' && user.email.length > 0
+    ))
+  } catch {
+    return []
+  }
+}
+
+/** Whether one user's stored product state has a routine the dispatcher can start. */
+function hasActiveRoutine(userId) {
+  try {
+    const file = path.join(cfg.dataDir, userId, 'storages', 'faberloom_routines.json')
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+    return Object.values(parsed?.tables?.routines ?? {}).some(routine => routine?.status === 'active')
+  } catch {
+    return false
+  }
 }
 
 /** True when a JWT is missing, unreadable, or expires within ten minutes. */
@@ -867,6 +919,9 @@ function renderPatch(home, user, memory) {
     ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
     ...companyIdsYaml,
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
+    '    memoryTools: true',
+    '    workflowTools: true',
+    '    contextTools: true',
     `    mcpUrl: ${yamlScalar(cfg.mcpUrl)}`,
     '    mcpGatewayKey: !!js process.env.MWT_MCP_GATEWAY_KEY ?? \'\'',
     // El conversor de adjuntos que usa `faberloom_mail_read` para leer pdf/xlsx.
@@ -900,6 +955,15 @@ function renderPatch(home, user, memory) {
           `    memoryLimit: ${cfg.memoryLimit}`,
         ]
       : []),
+    '',
+    // La sesión de un Space corre como su agente responsable: la identidad
+    // autenticada es el actor con el que se leen los Spaces de este usuario.
+    '- id: faberloom-session-agent',
+    '  config:',
+    `    ownerId: ${yamlScalar(user.email)}`,
+    `    role: ${yamlScalar(user.role || 'client_b2b')}`,
+    ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
+    `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     '',
     // La siembra inicial usa la misma identidad y la misma raíz de skills: crea
     // una vez los agentes y la rutina del plan, con las skills del rol.
@@ -952,6 +1016,26 @@ function renderPatch(home, user, memory) {
     `    ownerId: ${yamlScalar(user.email)}`,
     '    enabled: true',
     `    socketPath: ${yamlScalar(path.join(home, 'faberloom-mcp.sock'))}`,
+    // La credencial interna con la que el gateway actúa como el propietario en la
+    // ruta del espejo; sin ella esa ruta responde "unknown or revoked token".
+    "    mirrorKey: !!js process.env.FABERLOOM_MIRROR_KEY ?? ''",
+    // El espejo le envia un documento entero en cada empuje: el limite por
+    // defecto del servidor MCP lo rechazaba ("request body too large") y la ruta
+    // lo convertia en 502.
+    `    maxBodyBytes: ${String(32 * 1024 * 1024)}`,
+    '',
+    // El espejo del lado servido: la fila debe estar MONTADA para que
+    // `faberloom_mirror_apply` escriba lo que publica el escritorio, pero sus
+    // ciclos quedan apagados. Si el lado web tambien empujara, devolveria sus
+    // filas viejas al escritorio y reabriria los duplicados que este cambio
+    // viene a cerrar. El escritorio es la fuente; la ruta aplica en el VPS.
+    '- id: faberloom-mirror',
+    '  config:',
+    '    enabled: false',
+    `    ownerId: ${yamlScalar(user.email)}`,
+    `    gatewayUrl: ${yamlScalar(`https://${cfg.publicHost}`)}`,
+    '    platform: web',
+    `    intervalMs: ${String(cfg.mirrorIntervalMs)}`,
   ]
 
   // Memoria: el modelo deja de ir directo a DeepSeek y pasa por el proxy de
@@ -969,10 +1053,16 @@ function renderPatch(home, user, memory) {
     )
   }
 
-  // El adaptador multi-proveedor (llm-pi-ai) viene dormido en el bundle base;
-  // este patch le da los perfiles para que OpenAI, Anthropic, Google y Moonshot
-  // aparezcan como rutas. Las claves se leen de estas variables de entorno
-  // (nunca del repo), resueltas por request.
+  // El adaptador multi-proveedor (llm-pi-ai) viene montado en el bundle base y
+  // el bundle de producto ya trae estas rutas por defecto; este patch las
+  // restablece por usuario para que el despliegue sea dueño de su conjunto de
+  // proveedores y de las referencias de clave. Los perfiles siguen al catálogo
+  // instalado de pi-ai (endpoint, protocolo y modelos). `kimi` es el plan de
+  // código (Anthropic Messages en api.kimi.com/coding; sin endpoint de modelos,
+  // su lista sale del catálogo); `moonshotai`, la plataforma Moonshot. La clave
+  // propia de un agente, resuelta por request, gana sobre estas referencias de
+  // despliegue. Las claves se leen de estas variables de entorno (nunca del
+  // repo), resueltas por request.
   lines.push(
     '',
     '- id: llm-pi-ai',
@@ -984,6 +1074,8 @@ function renderPatch(home, user, memory) {
     '        apiKeyEnv: ANTHROPIC_API_KEY',
     '      google:',
     '        apiKeyEnv: GOOGLE_API_KEY',
+    '      kimi:',
+    '        apiKeyEnv: KIMI_API_KEY',
     '      moonshotai:',
     '        apiKeyEnv: MOONSHOT_API_KEY',
   )
@@ -1216,6 +1308,17 @@ function startInstance(user, memory) {
   fs.mkdirSync(home, { recursive: true })
   writeConsolaTokenFile(user)
   ensureWorkspaceDirs(home)
+  // El registro de Workspaces se niega a cargar si un registro quedó fuera de
+  // su orden, y con él caen el controlador de sesiones y el del selector de
+  // carpetas. Un registro así solo puede venir de una escritura ajena (el
+  // espejo transfería este dominio desde un escritorio), así que el orden se
+  // repara antes de arrancar en vez de dejar al dueño sin producto.
+  const repaired = repairWorkspaceOrder(home)
+  if (repaired.added.length > 0) {
+    console.error(`[gateway] orden de Workspaces de ${home} reparado: ${repaired.added.length} registro(s) fuera del orden (copia: ${repaired.backup})`)
+  } else if (repaired.unreadable !== undefined) {
+    console.error(`[gateway] no se pudo leer el registro de Workspaces de ${home}: ${repaired.unreadable}`)
+  }
   const patchFile = writeUserPatch(home, user, memory)
   writeUserInstructions(home)
   writeUserPresets(home)
@@ -1255,10 +1358,28 @@ function startInstance(user, memory) {
         // usuario los deja bajo /data/users/<id>.
         HOME: home,
         DEEPSEEK_API_KEY: cfg.deepseekKey,
+        // Claves de despliegue de las rutas llm-pi-ai; el dsh las resuelve por
+        // su `apiKeyEnv`. Resueltas con readSecret para que `<NAME>_FILE`
+        // (Docker secret) funcione igual que la variable directa.
+        OPENAI_API_KEY: cfg.openaiKey,
+        ANTHROPIC_API_KEY: cfg.anthropicKey,
+        GOOGLE_API_KEY: cfg.googleKey,
+        KIMI_API_KEY: cfg.kimiKey,
+        MOONSHOT_API_KEY: cfg.moonshotKey,
         // El parche referencia estos secretos como `!!js process.env.*`, así que
         // el proceso hijo debe recibir el valor resuelto (env o *_FILE).
         ...(cfg.mcpGatewayKey ? { MWT_MCP_GATEWAY_KEY: cfg.mcpGatewayKey } : {}),
         ...(cfg.faberloomGatewayKey ? { FABERLOOM_GATEWAY_KEY: cfg.faberloomGatewayKey } : {}),
+        ...(cfg.mirrorKey ? { FABERLOOM_MIRROR_KEY: cfg.mirrorKey } : {}),
+        // El espejo del lado servido necesita su identidad para arrancar: sin
+        // `ownerId` el servicio se declaraba apagado y el VPS nunca aplicaba lo
+        // que el escritorio publicaba.
+        FABERLOOM_MIRROR_ENABLED: '1',
+        FABERLOOM_MIRROR_OWNER: user.email,
+        FABERLOOM_MIRROR_URL: `https://${cfg.publicHost}`,
+        // Este proceso ES el lado servido: el espejo lo reporta en su documento
+        // y en su documento de estado.
+        FABERLOOM_MIRROR_PLATFORM: 'web',
         // El servicio de compartir llama a la consola como el propio usuario: el
         // parche lee estos dos nombres como `!!js process.env.*`.
         CONSOLA_API_BASE: cfg.consolaApi,
@@ -1402,9 +1523,78 @@ app.get('/metrics', (_req, res) => {
   res.type('text/plain; version=0.0.4').send(prometheus({ instances: instances.size, faberloom: faberloomMetrics() }))
 })
 
-// Marca del producto: el favicon de la app y del login es el logo MWT.ONE.
-app.get(['/favicon.ico', '/brand-dark.png'], (_req, res) => {
-  res.sendFile(path.join(import.meta.dirname, 'assets', 'brand-dark.png'))
+// Marca del producto: el favicon de la app y del login es el icono FaberLoom,
+// el mismo cuadrado naranja que usa la aplicación de escritorio. Se sirve PNG
+// en las rutas que un cliente de conectores espera como imagen raster y SVG en
+// la ruta de 512; `no-cache` evita que un favicon anterior quede pegado.
+const iconAssets = {
+  png32: path.join(import.meta.dirname, 'assets', 'faberloom_favicon32.png'),
+  png512: path.join(import.meta.dirname, 'assets', 'faberloom_appicon512.png'),
+  png180: path.join(import.meta.dirname, 'assets', 'faberloom_appicon180.png'),
+  svg512: path.join(import.meta.dirname, 'assets', 'faberloom_appicon512.svg'),
+}
+app.get(['/favicon.ico', '/favicon.png', '/faberloom_favicon32.png'], (_req, res) => {
+  res.type('image/png')
+  res.set('cache-control', 'no-cache, max-age=0, must-revalidate')
+  res.sendFile(iconAssets.png32)
+})
+app.get(['/faberloom_appicon512.png', '/apple-touch-icon.png'], (_req, res) => {
+  res.type('image/png')
+  res.set('cache-control', 'no-cache, max-age=0, must-revalidate')
+  res.sendFile(iconAssets.png512)
+})
+app.get('/faberloom_appicon180.png', (_req, res) => {
+  res.type('image/png')
+  res.set('cache-control', 'no-cache, max-age=0, must-revalidate')
+  res.sendFile(iconAssets.png180)
+})
+app.get(['/favicon.svg', '/faberloom_favicon32.svg', '/faberloom_appicon.svg', '/faberloom_appicon512.svg'], (_req, res) => {
+  res.type('image/svg+xml')
+  res.set('cache-control', 'no-cache, max-age=0, must-revalidate')
+  res.sendFile(iconAssets.svg512)
+})
+
+// Tipografía de marca para las páginas sin sesión: solo se sirven los tres
+// archivos declarados en AUTH_FONTS, nunca un nombre del cliente.
+const AUTH_FONT_FILES = new Set(['geist.woff2', 'geist-mono.woff2', 'eb-garamond-italic.woff2'])
+app.get('/fonts/:file', (req, res) => {
+  const file = String(req.params.file)
+  if (!AUTH_FONT_FILES.has(file)) {
+    res.status(404).end()
+    return
+  }
+  res.type('font/woff2')
+  res.set('cache-control', 'public, max-age=31536000, immutable')
+  res.sendFile(path.join(import.meta.dirname, 'assets', 'fonts', file))
+})
+
+// Canal de actualización del escritorio FaberLoom. El paquete calcula la URL de su
+// actualizador como <origen>/_/harness/desktop/stable/<target>/<archivo>, así que esta
+// ruta sirve el árbol que scripts/publish-desktop-channel.ps1 deja en el directorio
+// montado. No se acepta un nombre arbitrario del cliente: el target tiene que ser uno
+// de los tres del canal, el nombre tiene que ser simple, y la ruta resuelta tiene que
+// seguir dentro del directorio de ese target, de modo que ningún nombre salga del canal.
+const DESKTOP_CHANNEL_ROOT = process.env.DESKTOP_CHANNEL_DIR || '/opt/mwt/harness-desktop-channel'
+const DESKTOP_CHANNEL_TARGETS = new Set(['mac-arm64', 'mac-x64', 'win-x64'])
+const DESKTOP_CHANNEL_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+app.get('/_/harness/desktop/stable/:target/:file', (req, res) => {
+  const target = String(req.params.target)
+  const file = String(req.params.file)
+  const targetRoot = path.join(DESKTOP_CHANNEL_ROOT, '_', 'harness', 'desktop', 'stable', target)
+  const filePath = path.join(targetRoot, file)
+  if (!DESKTOP_CHANNEL_TARGETS.has(target)
+    || !DESKTOP_CHANNEL_FILE.test(file)
+    || !filePath.startsWith(`${targetRoot}${path.sep}`)) {
+    res.status(404).end()
+    return
+  }
+  // La metadata del canal es la única pieza mutable: servirla cacheada dejaría al
+  // cliente sin ver nunca una versión nueva. Los artefactos sí se cachean un año,
+  // porque su nombre lleva la versión que contienen.
+  res.set('cache-control', file.endsWith('.yml') ? 'no-cache' : 'public, max-age=31536000, immutable')
+  res.sendFile(filePath, (error) => {
+    if (error !== undefined && !res.headersSent) res.status(404).end()
+  })
 })
 
 app.get('/login', (req, res) => {
@@ -1529,6 +1719,35 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
   }
 })
 
+// M10 · "Olvidé mi contraseña": el invitado sin sesión pide el enlace de
+// restablecimiento. Reenvía al endpoint público de la consola, que valida que
+// la cuenta exista y esté activa y envía el email con la misma plantilla que el
+// reset del panel de usuarios. La respuesta es neutra para no filtrar qué
+// correos existen.
+app.post('/forgot-password', express.urlencoded({ extended: false }), async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase()
+  if (!email) return res.redirect(303, '/login?e=forgot-missing')
+  if (!loginAccountLimiter(`forgot:${email}`) || !loginIpLimiter(req.ip || 'unknown')) {
+    metrics.rateLimited.login += 1
+    return res.redirect(303, '/login?e=limited')
+  }
+  if (!verifyCsrf(req)) return res.redirect(303, '/login?e=csrf')
+  try {
+    const resp = await fetch(`${cfg.consolaApi}/users/forgot-password/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ email }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!resp.ok) return res.redirect(303, '/login?e=forgot-error')
+  } catch (err) {
+    console.error('[gateway] consola forgot-password inalcanzable:', err.message)
+    return res.redirect(303, '/login?e=upstream')
+  }
+  logEvent({ ev: 'forgot-password', result: 'sent', account: email })
+  return res.redirect(303, '/login?e=forgot-sent')
+})
+
 // G7 · Empresa por defecto del usuario según la consola (`legal_entity_id` de su
 // ficha). Es best-effort: sin ella se conserva la elegida antes o no se fija
 // tenant. Evita obligar a elegir cuando la cuenta ya tiene una empresa principal.
@@ -1651,6 +1870,20 @@ app.post('/entity', express.urlencoded({ extended: false }), async (req, res) =>
   res.redirect(303, '/')
 })
 
+// Puente inverso del escritorio: el equipo del usuario no acepta conexiones
+// entrantes, así que registra sus tokens y sondea esta ruta; cuando llega una
+// llamada pública /mcp con uno de esos tokens, el gateway la encola y el
+// escritorio la ejecuta contra su propio MCP local. Sin registro o con el
+// escritorio cerrado, /mcp responde 503 en vez de fingir que llegó.
+const desktopBridge = installDesktopMcpBridge(app, {
+  consolaApi: cfg.consolaApi,
+  dataDir: cfg.dataDir,
+  userStateFile: cfg.userStateFile,
+  pollTimeoutMs: 25_000,
+  requestTimeoutMs: 120_000,
+  offlineAfterMs: 45_000,
+})
+
 // Servidor MCP de FaberLoom: el cliente se autentica con el token que el
 // propietario le dio, y el gateway enruta al dsh de ese propietario por el
 // socket de su home. El gateway no guarda tokens: los localiza en el almacén
@@ -1665,13 +1898,39 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     return res.status(429).json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'demasiadas peticiones' } })
   }
   const header = req.get('authorization') || ''
-  const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : ''
+  const headerToken = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : ''
+  // A connector UI that cannot set an Authorization header (Claude's custom
+  // connector on some builds) can present the same token as `?token=`; the
+  // gateway accepts either and never logs the query string.
+  const queryToken = typeof req.query?.token === 'string' ? req.query.token.trim() : ''
+  const token = headerToken.length > 0 ? headerToken : queryToken
   const refuse = (status, message) => {
     metrics.mcpRequests.denied += 1
     logEvent({ ev: 'mcp', result: 'denied', status, ip: req.ip })
     return res.status(status).json({ jsonrpc: '2.0', id: null, error: { code: -32000, message } })
   }
   if (!token) return refuse(401, 'falta el token Bearer')
+  const body = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : JSON.stringify(req.body ?? {})
+  // A desktop token is answered by the installation that minted it, even when
+  // the mirror once copied the same row to the web home: routing by the live
+  // desktop registration first is what keeps local files and sessions local.
+  const routed = await desktopBridge.route({
+    token,
+    body,
+    accept: req.get('accept') || 'application/json',
+  })
+  if (routed !== undefined) {
+    if ('offline' in routed) {
+      return refuse(503, 'FaberLoom está cerrado en ese equipo; abrelo para que la petición llegue')
+    }
+    metrics.mcpRequests.ok += 1
+    logEvent({ ev: 'mcp', result: 'desktop', status: routed.status, ip: req.ip, ms: Date.now() - started })
+    res.status(routed.status)
+    res.setHeader('content-type', routed.contentType)
+    res.setHeader('content-length', Buffer.byteLength(routed.body))
+    if (typeof routed.sessionId === 'string' && routed.sessionId.length > 0) res.setHeader('mcp-session-id', routed.sessionId)
+    return res.end(routed.body)
+  }
   const owner = findOwnerByMcpToken(token)
   if (!owner) return refuse(401, 'token desconocido o revocado')
   const stored = readUserState(owner.email)
@@ -1682,12 +1941,12 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     console.error('[gateway] no se pudo arrancar dsh para MCP:', error.message)
     return refuse(503, 'no se pudo arrancar el harness del propietario')
   }
-  const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {}))
+  const payload = Buffer.from(body, 'utf8')
   const upstream = http.request({
     socketPath: path.join(owner.home, 'faberloom-mcp.sock'),
     path: '/mcp',
     method: 'POST',
-    headers: { authorization: header, 'content-type': 'application/json', 'content-length': body.length, accept: req.get('accept') || 'application/json' },
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'content-length': payload.length, accept: req.get('accept') || 'application/json' },
   }, (reply) => {
     metrics.mcpRequests.ok += 1
     logEvent({ ev: 'mcp', result: 'ok', status: reply.statusCode || 502, owner: owner.email, ms: Date.now() - started })
@@ -1699,7 +1958,7 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     reply.pipe(res)
   })
   upstream.on('error', () => refuse(502, 'el servidor MCP del propietario no responde'))
-  upstream.end(body)
+  upstream.end(payload)
 })
 
 app.get('/logout', (req, res) => {
@@ -1714,6 +1973,31 @@ app.get('/logout', (req, res) => {
   }
   clearSessionCookie(res)
   res.redirect(303, '/login?e=bye')
+})
+
+// Espejo de producto: el escritorio lee y escribe a través de esta ruta las filas
+// de su propia casa en el despliegue, autenticada con el token de consola del
+// propietario y reenviada a su servidor MCP. Sin la credencial responde 503, así
+// que un despliegue que no lo configura lo dice en vez de fingir que sincroniza.
+installMirrorRoute(app, {
+  dataDir: cfg.dataDir,
+  userStateFile: cfg.userStateFile,
+  mirrorKey: cfg.mirrorKey,
+  consolaApi: cfg.consolaApi,
+  // Un primer ciclo entre dos casas ya pobladas empuja filas grandes (las
+  // ejecuciones de rutina de un usuario pasan de un megabyte), así que el
+  // limite y la espera se ponen por encima del valor por defecto del modulo.
+  maxBodyBytes: 16 * 1024 * 1024,
+  timeoutMs: 120_000,
+  // El espejo puede ser la primera petición de una cuenta inactiva: sin esto el
+  // socket no existe y la ruta responde 502. Es el mismo arranque que hace el login.
+  ensureOwner: async (owner) => {
+    const live = [...instances.values()].find((inst) => inst.email === owner.email && inst.alive && inst.token)
+    if (live) return
+    const stored = readUserState(owner.email)
+    if (!stored) throw new Error('la cuenta no tiene sesión guardada; entra una vez por la web')
+    await ensureInstance({ ...stored, legalEntityIds: stored.legalEntityIds || [] })
+  },
 })
 
 // Catch-all: exige sesión y proxya al dsh del usuario. M3 · si la sesión firmada
@@ -1766,6 +2050,36 @@ setInterval(() => {
   })
 }, 5 * 60 * 1000).unref()
 
+// Un dsh solo existe mientras alguien lo usa o el espejo lo despierta. Una
+// rutina de correo debe correr con la PC apagada, asi que el gateway mantiene
+// despierta a toda cuenta que tenga al menos una rutina activa. Sin esto, un
+// reinicio del contenedor dejaba las rutinas del VPS paradas hasta el proximo
+// login, aunque el escritorio estuviera apagado.
+let routineKeepAliveRunning = false
+async function ensureRoutineInstances() {
+  if (routineKeepAliveRunning) return
+  routineKeepAliveRunning = true
+  try {
+    for (const user of storedUsers()) {
+      const live = instances.get(user.id)
+      if (live?.alive && live.token) continue
+      if (!hasActiveRoutine(user.id)) continue
+      try {
+        const stored = readUserState(user.email)
+        if (!stored) continue
+        await ensureInstance({ ...stored, legalEntityIds: stored.legalEntityIds || [] })
+        logEvent({ ev: 'routine_instance_start', account: user.email })
+      } catch (error) {
+        console.error(`[gateway] no se pudo despertar la cuenta de ${user.email} para sus rutinas: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  } finally {
+    routineKeepAliveRunning = false
+  }
+}
+setTimeout(() => { void ensureRoutineInstances() }, 5_000).unref()
+setInterval(() => { void ensureRoutineInstances() }, 60_000).unref()
+
 // ── Apagado ordenado ──────────────────────────────────────────────────
 function shutdown() {
   console.log('[gateway] apagando…')
@@ -1801,35 +2115,127 @@ function escapeHtml(value) {
 }
 
 // Las páginas sin sesión del gateway no cargan el CSS del cliente, así que
-// repiten aquí los tokens oscuros de @deepseek-ai/dsh-client-ui-theme para verse
-// como el resto del producto: base #151517, capas #232324/#2c2c2e, texto
-// #f9fafb/#adb2b8, primario casi blanco, y la misma familia tipográfica.
-const AUTH_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Helvetica Neue',Helvetica,Arial,sans-serif"
-const AUTH_MONO = "'SF Mono','JetBrains Mono','Fira Code',Consolas,'Liberation Mono',Menlo,Courier,'PingFang SC','Microsoft YaHei'"
+// repiten aquí el sistema de marca de FaberLoom: las tres familias
+// tipográficas (Geist para interfaz, Geist Mono para datos, EB Garamond
+// itálica para títulos y wordmark), los tokens crema/tinta/coral y el tema
+// claro y oscuro. `GET /fonts/:file` sirve los woff2 desde assets/fonts.
+const AUTH_FONTS = `
+  @font-face{font-family:'Geist';font-style:normal;font-weight:300 700;font-display:swap;src:url('/fonts/geist.woff2') format('woff2')}
+  @font-face{font-family:'Geist Mono';font-style:normal;font-weight:400 500;font-display:swap;src:url('/fonts/geist-mono.woff2') format('woff2')}
+  @font-face{font-family:'EB Garamond';font-style:italic;font-weight:400 600;font-display:swap;src:url('/fonts/eb-garamond-italic.woff2') format('woff2')}
+`
+const AUTH_FONT = "'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Helvetica,Arial,sans-serif"
+const AUTH_MONO = "'Geist Mono','SF Mono','JetBrains Mono','Fira Code',Consolas,'Liberation Mono',Menlo,Courier,'PingFang SC','Microsoft YaHei'"
+const AUTH_SERIF = "'EB Garamond',Georgia,'Times New Roman',serif"
+
+// El tema de estas páginas es local (no hay sesión todavía): se elige con el
+// botón de la esquina, se recuerda en localStorage y, sin elección previa,
+// sigue al sistema. El atributo se fija antes del primer pintado para que no
+// haya parpadeo; sin JavaScript la base clara es la que queda.
+const AUTH_APPEARANCE_KEY = 'faberloom-appearance'
+const AUTH_APPEARANCE_EARLY = `
+  (function () {
+    try {
+      var stored = localStorage.getItem('${AUTH_APPEARANCE_KEY}')
+      if (stored !== 'light' && stored !== 'dark') {
+        stored = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      }
+      document.documentElement.setAttribute('data-appearance', stored)
+    } catch (error) {
+      document.documentElement.setAttribute('data-appearance', 'light')
+    }
+  })();
+`
+const AUTH_SUN = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">'
+  + '<circle cx="8" cy="8" r="3.1" fill="none" stroke="currentColor" stroke-width="1.3"/>'
+  + '<path fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" d="M8 1.4v1.6M8 13v1.6M1.4 8h1.6M13 8h1.6M3.3 3.3l1.2 1.2M11.5 11.5l1.2 1.2M12.7 3.3l-1.2 1.2M4.5 11.5l-1.2 1.2"/></svg>'
+const AUTH_MOON = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">'
+  + '<path fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" d="M13.2 9.9A5.4 5.4 0 0 1 6.1 2.8a5.6 5.6 0 1 0 7.1 7.1Z"/></svg>'
+const AUTH_TOGGLE = '<button type="button" id="appearance-toggle" class="appearance"></button>'
+const AUTH_APPEARANCE_SCRIPT = `
+  (function () {
+    var key = '${AUTH_APPEARANCE_KEY}'
+    var root = document.documentElement
+    var button = document.getElementById('appearance-toggle')
+    var sun = '${AUTH_SUN}'
+    var moon = '${AUTH_MOON}'
+    function label(value) {
+      return value === 'dark' ? 'Cambiar al modo claro' : 'Cambiar al modo oscuro'
+    }
+    function paint(value) {
+      root.setAttribute('data-appearance', value)
+      if (button === null) return
+      button.innerHTML = value === 'dark' ? sun : moon
+      button.setAttribute('aria-label', label(value))
+      button.setAttribute('title', label(value))
+      button.setAttribute('aria-pressed', value === 'dark' ? 'true' : 'false')
+    }
+    function current() {
+      var value = root.getAttribute('data-appearance')
+      return value === 'dark' ? 'dark' : 'light'
+    }
+    paint(current())
+    if (button !== null) button.addEventListener('click', function () {
+      var next = current() === 'dark' ? 'light' : 'dark'
+      paint(next)
+      try { localStorage.setItem(key, next) } catch (error) { /* almacenamiento bloqueado */ }
+    });
+  })();
+`
 const AUTH_CSS = `
-  :root{color-scheme:dark}
+  ${AUTH_FONTS}
+  /* --auth-primary is the surface behind the submit label, so it is deeper than
+     the brand coral: #A24E2C carries the cream #F4F1ED at 5.09:1, where the
+     coral #C96442 measures 3.46:1. The hover #94472A measures 5.84:1.
+     --auth-coral keeps the brand value for the wordmark. On the dark theme the
+     coral #CD6B4A already carries the ink label #1F1E1C at 4.60:1. */
+  :root{color-scheme:light;--auth-bg:#F4F1ED;--auth-card:#fff;--auth-ink:#1F1E1C;--auth-text2:#5A544C;
+        --auth-line:#D8D0C0;--auth-field:#fff;--auth-coral:#C96442;--auth-primary:#A24E2C;--auth-primary-ink:#F4F1ED;
+        --auth-primary-hover:#94472A;--auth-err:#B4452E;--auth-shadow:0 16px 48px rgba(31,30,28,.10)}
+  :root[data-appearance=dark]{color-scheme:dark;--auth-bg:#1F1E1C;--auth-card:#2A2724;--auth-ink:#F4F1ED;--auth-text2:#BEB6AB;
+        --auth-line:#3D3A34;--auth-field:#1B1A18;--auth-coral:#CD6B4A;--auth-primary:#CD6B4A;--auth-primary-ink:#1F1E1C;
+        --auth-primary-hover:#D97757;--auth-err:#D9695A;--auth-shadow:0 20px 56px rgba(0,0,0,.45)}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-       font-family:${AUTH_FONT};background:#151517;color:#f9fafb;-webkit-font-smoothing:antialiased}
-  .card{width:360px;max-width:92vw;background:#232324;border:1px solid rgba(255,255,255,.06);border-radius:16px;
-        padding:28px;box-shadow:0 16px 48px rgba(0,0,0,.4)}
+       font-family:${AUTH_FONT};background:var(--auth-bg);color:var(--auth-ink);-webkit-font-smoothing:antialiased}
+  .appearance{position:fixed;top:16px;left:16px;width:44px;height:44px;padding:0;margin:0;display:inline-flex;
+       align-items:center;justify-content:center;border:1px solid var(--auth-line);border-radius:10px;
+       background:var(--auth-card);color:var(--auth-text2);cursor:pointer}
+  .appearance:hover{color:var(--auth-ink);border-color:var(--auth-coral)}
+  .appearance:focus-visible{outline:2px solid var(--auth-coral);outline-offset:2px}
+  .card{width:360px;max-width:92vw;background:var(--auth-card);border:1px solid var(--auth-line);border-radius:16px;
+        padding:28px;box-shadow:var(--auth-shadow)}
   h1{font-size:18px;font-weight:600;margin:0 0 4px}
-  p.sub{margin:0 0 20px;font-size:13px;color:#adb2b8}
-  label:not(.opt){display:block;font-size:12px;color:#adb2b8;margin:14px 0 6px}
-  input:not([type=radio]){width:100%;padding:11px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);
-       background:#1b1b1c;color:#f9fafb;font-size:14px;font-family:inherit}
-  input:not([type=radio]):focus{outline:none;border-color:rgba(255,255,255,.24);box-shadow:0 0 0 3px rgba(255,255,255,.06)}
+  /* Wordmark: Faber sostiene el coral, Loom toma la tinta del fondo. */
+  .brand{font-family:${AUTH_SERIF};font-style:italic;font-weight:500;font-size:30px;line-height:1;
+        letter-spacing:-0.005em;margin:0 0 6px}
+  .brand .faber{color:var(--auth-coral)}
+  .brand .loom{color:var(--auth-ink)}
+  p.sub{margin:0 0 20px;font-size:13px;color:var(--auth-text2)}
+  label:not(.opt){display:block;font-size:12px;color:var(--auth-text2);margin:14px 0 6px}
+  input:not([type=radio]){width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--auth-line);
+       background:var(--auth-field);color:var(--auth-ink);font-size:14px;font-family:inherit}
+  input:not([type=radio]):focus{outline:none;border-color:var(--auth-coral);box-shadow:0 0 0 3px rgba(201,100,66,.18)}
   .secret{position:relative;display:block}
   .secret input{padding-right:40px}
   #secret-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:28px;height:28px;padding:0;margin:0;
-                 border:0;border-radius:8px;background:transparent;color:#adb2b8;cursor:pointer;
+                 border:0;border-radius:8px;background:transparent;color:var(--auth-text2);cursor:pointer;
                  display:inline-flex;align-items:center;justify-content:center}
-  #secret-toggle:hover{background:rgba(255,255,255,.08);color:#f9fafb}
-  button[type=submit]{margin-top:20px;width:100%;padding:12px;border:0;border-radius:10px;background:#f9fafb;color:#151517;
-       font-weight:600;font-size:14px;cursor:pointer;font-family:inherit}
-  button[type=submit]:hover{background:#e9ecf2}
-  .err{margin-top:16px;padding:10px 12px;border-radius:10px;background:rgba(242,90,90,.12);
-       border:1px solid rgba(242,90,90,.35);color:#f25a5a;font-size:13px}
+  #secret-toggle:hover{background:rgba(31,30,28,.06);color:var(--auth-ink)}
+  :root[data-appearance=dark] #secret-toggle:hover{background:rgba(244,241,237,.08)}
+  button[type=submit]{margin-top:20px;width:100%;padding:12px;border:0;border-radius:10px;background:var(--auth-primary);
+       color:var(--auth-primary-ink);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit;
+       display:inline-flex;align-items:center;justify-content:center;gap:8px}
+  button[type=submit]:hover{background:var(--auth-primary-hover)}
+  button[type=submit]:focus-visible{outline:2px solid var(--auth-ink);outline-offset:2px}
+  button[type=submit][aria-busy=true]{cursor:progress}
+  .spinner{display:none;width:14px;height:14px;border:2px solid currentColor;border-top-color:transparent;
+       border-radius:50%;animation:auth-spin .8s linear infinite}
+  button[type=submit][aria-busy=true] .spinner{display:inline-block}
+  @keyframes auth-spin{to{transform:rotate(360deg)}}
+  .err{margin-top:16px;padding:10px 12px;border-radius:10px;background:rgba(180,69,46,.10);
+       border:1px solid var(--auth-err);color:var(--auth-err);font-size:13px}
+  @media (prefers-reduced-motion:reduce){.spinner{animation:none;border-top-color:currentColor;opacity:.6}}
 `
 // El selector de empresa reutiliza el tema; sus opciones son radios en filas.
 const AUTH_ENTITY_CSS = `
@@ -1865,10 +2271,12 @@ function entityPage(sess, errCode) {
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" type="image/png" href="/brand-dark.png">
-<title>Cambiar de empresa · Harness MWT.ONE</title>
+<link rel="icon" type="image/svg+xml" href="/faberloom_favicon32.svg">
+<title>Cambiar de empresa · Faberloom</title>
+<script>${AUTH_APPEARANCE_EARLY}</script>
 <style>${AUTH_CSS}${AUTH_ENTITY_CSS}</style></head>
 <body>
+  ${AUTH_TOGGLE}
   <form class="card" method="post" action="/entity">
     <h1>Cambiar de empresa</h1>
     <p class="sub">Tu cuenta tiene varias empresas y FaberLoom ya trabaja con tu empresa principal. Cámbiala solo si necesitas operar como otra: el tenant viaja al MCP en cada llamada.</p>
@@ -1877,6 +2285,7 @@ function entityPage(sess, errCode) {
     <button type="submit">Usar esta entidad</button>
     ${msg ? `<div class="err">${msg}</div>` : ''}
   </form>
+  <script>${AUTH_APPEARANCE_SCRIPT}</script>
 </body></html>`
 }
 
@@ -1890,17 +2299,30 @@ function loginPage(errCode, csrf = '') {
     bye: 'Sesión cerrada.',
     limited: 'Demasiados intentos. Espera un momento e inténtalo de nuevo.',
     csrf: 'La sesión del formulario expiró. Recarga la página e inténtalo de nuevo.',
+    'forgot-sent': 'Si el correo existe y está activo, te enviamos un enlace para restablecer la contraseña.',
+    'forgot-missing': 'Escribe tu correo electrónico.',
+    'forgot-error': 'No se pudo enviar el enlace. Inténtalo de nuevo.',
   }
   const msg = messages[errCode] || ''
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" type="image/png" href="/brand-dark.png">
-<title>Harness MWT.ONE</title>
-<style>${AUTH_CSS}</style></head>
+<link rel="icon" type="image/svg+xml" href="/faberloom_favicon32.svg">
+<title>Faberloom</title>
+<script>${AUTH_APPEARANCE_EARLY}</script>
+<style>${AUTH_CSS}
+  a.forgot { display: inline-block; margin-top: 14px; font-size: 13px; color: var(--auth-text2); text-decoration: none; }
+  a.forgot:hover { color: var(--auth-coral); text-decoration: underline; }
+  dialog#forgot-dialog { border: 0; border-radius: 14px; padding: 0; width: min(92vw, 380px); color: inherit; background: transparent; }
+  dialog#forgot-dialog::backdrop { background: rgba(6, 12, 24, 0.62); }
+  dialog#forgot-dialog form { display: flex; flex-direction: column; gap: 10px; }
+  dialog#forgot-dialog h2 { margin: 0 0 2px; font-size: 18px; }
+  dialog#forgot-dialog .forgot-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+</style></head>
 <body>
+  ${AUTH_TOGGLE}
   <form class="card" method="post" action="/login">
-    <h1>Harness MWT.ONE</h1>
+    <h1 class="brand"><span class="faber">Faber</span><span class="loom">Loom</span></h1>
     <p class="sub">Entra con tu usuario de la consola</p>
     <input type="hidden" name="_csrf" value="${csrf}">
     <label for="usuario">Usuario o correo</label>
@@ -1910,10 +2332,36 @@ function loginPage(errCode, csrf = '') {
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button type="button" id="secret-toggle" aria-label="Mostrar la contraseña" aria-pressed="false" title="Mostrar la contraseña"></button>
     </span>
-    <button type="submit">Entrar</button>
+    <button type="submit" id="login-submit"><span class="spinner" aria-hidden="true"></span><span>Entrar</span></button>
+    <a class="forgot" href="#" id="forgot-open">¿Olvidaste tu contraseña?</a>
     ${msg ? `<div class="err">${msg}</div>` : ''}
   </form>
+  <dialog id="forgot-dialog" aria-labelledby="forgot-title">
+    <form class="card" method="post" action="/forgot-password">
+      <h2 id="forgot-title">Recuperar contraseña</h2>
+      <p class="sub">Escribe tu correo. Si la cuenta existe y está activa, te enviamos un enlace para restablecerla.</p>
+      <input type="hidden" name="_csrf" value="${csrf}">
+      <label for="forgot-email">Correo electrónico</label>
+      <input id="forgot-email" name="email" type="email" autocomplete="email" required>
+      <div class="forgot-actions">
+        <button type="button" class="ghost" id="forgot-cancel">Cerrar</button>
+        <button type="submit">Enviar enlace</button>
+      </div>
+    </form>
+  </dialog>
   <script>
+    ${AUTH_APPEARANCE_SCRIPT}
+    // El envío navega a la misma página: el botón se marca ocupado mientras
+    // dura la espera y se rearma si el usuario vuelve con el botón Atrás.
+    (function () {
+      var form = document.querySelector('form.card[action="/login"]')
+      var submit = document.getElementById('login-submit')
+      if (form === null || submit === null) return
+      var arm = function (busy) { submit.setAttribute('aria-busy', busy ? 'true' : 'false') }
+      arm(false)
+      form.addEventListener('submit', function () { arm(true) })
+      window.addEventListener('pageshow', function () { arm(false) })
+    })();
     // Reveal/hide the password without leaving the form.
     (function () {
       var toggle = document.getElementById('secret-toggle')
@@ -1936,6 +2384,24 @@ function loginPage(errCode, csrf = '') {
         field.type = visible ? 'text' : 'password'
         setState(visible)
         field.focus()
+      })
+    })();
+    // Open/close the "olvidé mi contraseña" dialog without a page reload.
+    (function () {
+      var dialog = document.getElementById('forgot-dialog')
+      var open = document.getElementById('forgot-open')
+      var cancel = document.getElementById('forgot-cancel')
+      if (dialog === null) return
+      if (open !== null) open.addEventListener('click', function (event) {
+        event.preventDefault()
+        if (typeof dialog.showModal === 'function') dialog.showModal()
+        else dialog.setAttribute('open', '')
+        var field = document.getElementById('forgot-email')
+        if (field !== null) field.focus()
+      })
+      if (cancel !== null) cancel.addEventListener('click', function () {
+        if (typeof dialog.close === 'function') dialog.close()
+        else dialog.removeAttribute('open')
       })
     })()
   </script>
