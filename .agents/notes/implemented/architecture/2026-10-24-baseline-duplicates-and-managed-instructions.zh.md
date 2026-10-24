@@ -32,6 +32,8 @@
 
 **Space 永不把自己当作父级。** `ensureSpaceWorkspace` 把 `null` 视为无父级，并拒绝 `parentId === id`，因此父级为 null 或指向自身的记录不会递归到宿主内存耗尽。同一守卫也保护父级修复过程。
 
+**子 Space 必须位于父级文件夹内。** Workspaces 侧边栏按路径前缀嵌套，所以即使 `parentId` 指向父级，位于 spaces 根目录的子文件夹仍会显示为单独条目。`ensureSpaceWorkspace` 在无法准备父级文件夹时拒绝把子级放到根目录；`repairNestedSpaceFolders` 会把落在父级之外的子级移回内部，并携带其文件、后代、Workspace 注册与会话附件。该修复与重复合并运行在同一轮 overview 中。
+
 **桌面配置从自己的 bundle 携带密钥库插件。** `@deepseek-ai/dsh-credentials-console` 是 `faberloom-app` 的依赖并随打包集发布；配置的模块回退会像其他仅由 bundle 携带的包一样链接它。`~/.dsh/profiles/desktop/node_modules` 下手工创建的 junction 是开发期权宜，不是打包要求，已移除。
 
 ## 考虑过的替代方案
@@ -58,6 +60,7 @@
 
 - 单元：基线合并（持钥行胜出、技能合并、用户行不受影响）、镜像仅本地行（导出与应用）、可选镜像密钥、标记块替换，以及 `client_b2b` 的只读推导。
 - 单元：Space 合并（记忆与文件移动、重复行消失）、null/自引用父级守卫（41 项工作区测试不再因递归堆耗尽而崩溃），以及共享会话的 per-record 布局。
+- 单元：子 Space 创建在父级文件夹内；位于 spaces 根目录的子级会连同文件被移回父级之下。
 - 镜像的例程与工作流同名合并测试保持通过；登录启用镜像后例程会到达桌面。
 - GUI 套件全绿，包括仅桌面显示的安装块；完整的 `faberloom/view` 套件 132 项通过。
 - 部署：网关与 MCP 容器的 `MWT_MCP_GATEWAY_KEY` 已对齐，镜像周期以 `missing: []` 完成，移除手工 junction 后桌面配置仍能解析密钥库插件。

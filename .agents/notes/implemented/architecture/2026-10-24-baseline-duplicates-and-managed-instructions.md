@@ -32,6 +32,8 @@ Five product gaps remained after the provider-key vault shipped:
 
 **A Space never follows itself as its parent.** `ensureSpaceWorkspace` treats `null` as no parent and refuses `parentId === id`, so a record with a null or self-referencing parent cannot recurse until the host runs out of memory. The same guard protects the parent-repair pass.
 
+**A child Space lives inside its parent's folder.** The Workspaces sidebar nests by path prefix, so a child whose folder sits at the spaces root appears as a separate folder even when `parentId` names its parent. `ensureSpaceWorkspace` refuses to root a child when the parent folder cannot be prepared, and `repairNestedSpaceFolders` moves a child found outside its parent back inside, carrying its files, descendants, Workspace registrations, and Session attachments. The repair runs on the same overview pass as the duplicate merge.
+
 **The desktop profile carries the vault plugin from its bundle.** `@deepseek-ai/dsh-credentials-console` is a dependency of `faberloom-app` and ships in the packed set; the profile module fallback links it like every other bundle-only package. The hand-made junction under `~/.dsh/profiles/desktop/node_modules` was a development workaround, not a packaging requirement, and is removed.
 
 ## Alternatives considered
@@ -58,6 +60,7 @@ The mirror no longer needs an operator-copied secret on the desktop, so a signed
 
 - Unit: baseline collapse (keeper wins by stored key, skills merge, user rows untouched), mirror local-only rows (export and apply), optional mirror key, marked-block replacement, and the `client_b2b` read-only derivation.
 - Unit: Space merge (memory and files move, the duplicate row disappears), the null/self-parent guard (the 41-test workspace suite runs without the recursive heap failure), and the per-record shared-Session layout.
+- Unit: a sub-space is created inside its parent's folder, and a child found at the spaces root is moved back under its parent with its files.
 - The mirror's routine and workflow name reconciliation tests stay green; routines now arrive on the desktop because sign-in enables the mirror.
 - The GUI suite is green, including the Desktop-only install block, and the full `faberloom/view` suite passes 132 tests.
 - Deployment: the gateway's `MWT_MCP_GATEWAY_KEY` and the MCP container's value are aligned, a mirror cycle completes with `missing: []`, and the Desktop profile resolves the vault plugin with the hand-made junction removed.

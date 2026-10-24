@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -360,13 +360,16 @@ describe('FaberLoomViewService space lifecycle', () => {
     const home = mkdtempSync(join(tmpdir(), 'view-space-'))
     homes.push(home)
     vi.stubEnv('DSH_HOME', home)
-    const { view, spaces } = harness()
+    const { view, spaces, entities } = harness()
 
     await view.createSpace('Hijo', 'a1', 'sp1')
     expect(spaces.create).toHaveBeenLastCalledWith(
       expect.anything(),
       { title: 'Hijo', agentId: 'a1', parentId: 'sp1' },
     )
+    // The sidebar nests by path, so the child's folder must live inside the
+    // parent's folder, never at the spaces root.
+    expect(entities.some(entity => entity.path === join(home, 'spaces', 'Eguisa', 'Hijo'))).toBe(true)
   })
 
   it('keeps creating a space when no workspace registry is mounted', async () => {
@@ -487,6 +490,31 @@ describe('FaberLoomViewService space lifecycle', () => {
 
     expect(spaces.merge).toHaveBeenCalledWith(expect.anything(), 'a-old', ['a-new'])
     expect(spaces.merge).not.toHaveBeenCalledWith(expect.anything(), 'a-old', ['live'])
+  })
+
+  it('moves a child Space whose folder sits outside its parent back inside it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-nest-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, entities, spaces } = harness()
+    entities.push({ id: 'ws-parent', path: join(home, 'spaces', 'Padre'), title: 'Padre', sessionIds: [] })
+    entities.push({ id: 'ws-child', path: join(home, 'spaces', 'Hijo'), title: 'Hijo', sessionIds: [] })
+    mkdirSync(join(home, 'spaces', 'Padre'), { recursive: true })
+    mkdirSync(join(home, 'spaces', 'Hijo'), { recursive: true })
+    writeFileSync(join(home, 'spaces', 'Hijo', 'nota.txt'), 'hola')
+    spaces.list.mockResolvedValue([
+      { id: 'p', title: 'Padre', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-01-01T00:00:00Z', workspaceId: 'ws-parent' },
+      { id: 'c', title: 'Hijo', parentId: 'p', ownerId: 'owner@muitowork.com', createdAt: '2026-02-01T00:00:00Z', workspaceId: 'ws-child' },
+    ])
+    spaces.get.mockImplementation(async (_actor: unknown, id?: string) => ({
+      id: id ?? 'p', title: id === 'c' ? 'Hijo' : 'Padre', parentId: id === 'c' ? 'p' : null,
+      ownerId: 'owner@muitowork.com', workspaceId: id === 'c' ? 'ws-child' : 'ws-parent',
+    }))
+
+    await view.overview()
+
+    expect(existsSync(join(home, 'spaces', 'Padre', 'Hijo', 'nota.txt'))).toBe(true)
+    expect(existsSync(join(home, 'spaces', 'Hijo'))).toBe(false)
   })
 
   it('projects the responsible agent and workspace into the overview rows', async () => {

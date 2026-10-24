@@ -1157,6 +1157,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     // repair folder-backed spaces whose physical nesting predates parentId.
     await this.adoptOrphanWorkspaces(actor)
     await this.repairSpaceParents(actor)
+    await this.repairNestedSpaceFolders(actor)
     await this.mergeDuplicateSpaces(actor)
     const [spaces, agents, board, routines, memory] = await Promise.all([
       this.ctx.faberloomSpaces.list(actor),
@@ -5051,7 +5052,13 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (space.parentId !== undefined && space.parentId !== null && space.parentId !== space.id) {
       const parent = await this.ctx.faberloomSpaces.get(actor, space.parentId)
       const parentWorkspace = await this.ensureSpaceWorkspace(actor, parent)
-      if (parentWorkspace !== undefined) base = parentWorkspace.path
+      // A child is never placed at the spaces root: that is exactly the shape
+      // that showed a sub-space as a separate sidebar folder. If the parent's
+      // folder cannot be prepared, the creation fails instead of rooting it.
+      if (parentWorkspace === undefined) {
+        throw new Error(`faberloom: la carpeta del Space padre '${parent.title}' no está disponible`)
+      }
+      base = parentWorkspace.path
     }
     const dir = this.uniqueDirectory(base, this.spaceFolderName(space.title))
     mkdirSync(dir, { recursive: true })
@@ -5348,6 +5355,40 @@ export class FaberLoomViewService extends TypertRemoteService {
         } catch (error: unknown) {
           this.ctx.logger.warn(`faberloom: could not merge duplicate Space ${loser.id}: ${String(error)}`)
         }
+      }
+    }
+  }
+
+  /**
+   * Move a child Space whose folder is outside its parent's folder back inside
+   * it. The sidebar nests by path prefix, so a child that lost its physical
+   * place (an older version created it at the spaces root, or a mirrored row
+   * arrived before its parent) showed as a separate folder even though
+   * `parentId` named the parent. The existing move keeps files, descendants,
+   * Workspace registrations, and Session attachments with the child.
+   * @param actor - the acting identity.
+   */
+  private async repairNestedSpaceFolders(actor: SpaceActor): Promise<void> {
+    if (actor.readOnly) return
+    if (this.workspaceRegistryOrUndefined() === undefined) return
+    const spaces = (await this.ctx.faberloomSpaces.list(actor))
+      .filter(space => space.ownerId === actor.id && !space.archived)
+    const byId = new Map(spaces.map(space => [String(space.id), space]))
+    const dirs = new Map<string, string>()
+    for (const space of spaces) dirs.set(String(space.id), await this.resolveSpaceDir(actor, space))
+    for (const space of spaces) {
+      if (space.parentId === undefined || space.parentId === null || space.parentId === space.id) continue
+      const parent = byId.get(String(space.parentId))
+      if (parent === undefined) continue
+      const dir = dirs.get(String(space.id)) ?? ''
+      const parentDir = dirs.get(String(parent.id)) ?? ''
+      if (dir.length === 0 || parentDir.length === 0) continue
+      if (dir === parentDir || isInsidePath(parentDir, dir)) continue
+      try {
+        await this.relocateSpace(actor, space, parent.id)
+        this.ctx.logger.info(`faberloom: nested ${space.title} under ${parent.title}`)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: could not nest ${space.title} under ${parent.title}: ${String(error)}`)
       }
     }
   }
