@@ -93,6 +93,7 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **跨设备后写者胜出**——密钥库没有逐键 revision 围栏；两个人或两台设备保存同一引用时收敛到较晚的推送。
+- **删除密钥不会到达另一安装**——密钥库行被删除，但另一 harness 已保存的副本会保留，直到它在那边重新保存或清除。
 - **只同步 `*_API_KEY` 引用**——OAuth grant、MCP 令牌与记录留在写入它们的安装里。
 - **密钥库故障只表现为警告**——本地密钥继续工作，失败的推送在下次本地写入或间隔轮询时重试。
 - **控制台持有密钥材料**——值在静态时加密，但控制台部署及其 `HARNESS_VAULT_KEY`/`DJANGO_SECRET_KEY` 成为信任边界的一部分。

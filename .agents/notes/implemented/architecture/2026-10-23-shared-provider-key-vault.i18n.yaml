@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-23-shared-provider-key-vault.md
-2026-10-23-shared-provider-key-vault.md: d34d96f99449c91ab9d07f18a85589851127aec4
-2026-10-23-shared-provider-key-vault.zh.md: 4ac40123cde5664d9d5b2a79b148747f4b99ff23
+2026-10-23-shared-provider-key-vault.md: 6da04831ea534a39b9ed3b46f68aed26b3583f7d
+2026-10-23-shared-provider-key-vault.zh.md: 52770c32b728945b4867c47188549cd0dfc652b3

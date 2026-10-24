@@ -32,7 +32,7 @@ Both sides already authenticate to the same MWT.ONE console account, and the gat
 
 ## Consequences
 
-A key saved in the desktop app reaches the web app within one interval (and vice versa), and the first sync after upgrade publishes keys that already existed locally. The console database and its encryption key become part of the provider-secret trust boundary; rotating `DJANGO_SECRET_KEY` without `HARNESS_VAULT_KEY` makes old rows undecryptable, and the plugin simply skips them until the key is written again. OAuth grants, MCP tokens, and credential records stay installation-local.
+A key saved in the desktop app reaches the web app within one interval (and vice versa), and the first sync after upgrade publishes keys that already existed locally. The console database and its encryption key become part of the provider-secret trust boundary; rotating `DJANGO_SECRET_KEY` without `HARNESS_VAULT_KEY` makes old rows undecryptable, and the plugin simply skips them until the key is written again. OAuth grants, MCP tokens, and credential records stay installation-local. Removing a key deletes its vault row but does not reach a copy already stored on the other installation; that copy remains until it is saved or cleared there.
 
 ## Testing
 

@@ -93,6 +93,7 @@ None; no key value enters a request prefix.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Last write wins across devices** — the vault has no revision fence per key; two people or two devices saving the same reference converge on the later push.
+- **Removing a key does not reach the other installation** — the vault row is deleted, but a copy already stored on the other harness stays there until that harness saves or clears it.
 - **Only `*_API_KEY` references sync** — OAuth grants, MCP tokens, and records stay in the installation that wrote them.
 - **A vault outage is invisible beyond a warning** — local keys keep working, and the failed push is retried on the next local write or interval pass.
 - **The console holds the key material** — values are encrypted at rest, but the console deployment and its `HARNESS_VAULT_KEY`/`DJANGO_SECRET_KEY` become part of the trust boundary.
