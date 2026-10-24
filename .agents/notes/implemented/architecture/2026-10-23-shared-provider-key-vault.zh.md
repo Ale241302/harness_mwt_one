@@ -14,7 +14,9 @@ Status: implemented
 
 **控制台拥有按账户隔离的加密提供方密钥库。** `core.harness_provider_keys` 保存 `(owner_email, ref, ciphertext, updated_at)`；Django viewset 提供 `GET/POST /api/harness/provider-keys/` 与 `DELETE /api/harness/provider-keys/<ref>/`，只作用于已认证邮箱自己的行，并绕过模块 RBAC，因为它只触碰调用者的数据。值使用 Fernet 加密：优先 `HARNESS_VAULT_KEY`，否则使用由 `DJANGO_SECRET_KEY` 派生的密钥。写入响应只携带引用与时间戳，从不返回值。
 
-**host 插件让两套安装收敛。** `@deepseek-ai/dsh-credentials-console` 注入本地 `credentials` 服务，在启动时与每 60 秒读取密钥库，通过 `credentials.set` 应用远程值，并在每次本地写入时推送。只有以 `_API_KEY` 结尾的引用参与。缺少 console base 或 token 时插件保持惰性，因此没有控制台登录的组合仍可在本地工作。
+**host 插件让两套安装收敛。** `@deepseek-ai/dsh-credentials-console` 注入本地 `credentials` 服务，在启动时与每 60 秒读取密钥库，通过 `credentials.set` 应用远程值，通过 `credentials.unset` 应用远程墓碑，并在每次本地写入或删除时推送。只有以 `_API_KEY` 结尾的引用参与。缺少 console base 或 token 时插件保持惰性，因此没有控制台登录的组合仍可在本地工作。
+
+**删除以墓碑传播，而不是让行消失。** `DELETE` 以 `deleted = true` 和空密文 upsert 该行，保留引用与时间戳。另一安装把它应用为 `unset`，因此在一台设备删除提供方密钥会在另一台移除它，而不是留下过期副本。之后的 `POST` 会复活该行并清除墓碑。
 
 **首次同步会播种已有的本地密钥。** 插件从 settings 描述符派生可配置的提供方引用（`llm-pi-ai` 提供方的 `apiKeyEnv` 或派生的 `<ROUTE>_API_KEY`，加上 `llm-deepseek.apiKeyEnv`），并发布来源为存储文件的本地值。从环境继承的部署密钥绝不会被当作用户密钥发布。
 
@@ -32,8 +34,8 @@ Status: implemented
 
 ## 后果
 
-在桌面保存的密钥会在一个间隔内到达 web（反之亦然），升级后首次同步会发布本地已有的密钥。控制台数据库及其加密密钥成为提供方秘密信任边界的一部分；在没有 `HARNESS_VAULT_KEY` 的情况下轮换 `DJANGO_SECRET_KEY` 会让旧行无法解密，插件会跳过它们，直到该密钥被重新写入。OAuth grant、MCP 令牌与凭据记录仍留在各自安装本地。删除密钥会移除其密钥库行，但不会到达另一安装已保存的副本；该副本会保留，直到它在那边重新保存或清除。
+在桌面保存的密钥会在一个间隔内到达 web（反之亦然），升级后首次同步会发布本地已有的密钥。控制台数据库及其加密密钥成为提供方秘密信任边界的一部分；在没有重新加密的情况下轮换 `HARNESS_VAULT_KEY` 会让旧行无法解密，插件会跳过它们，直到该密钥被重新写入。OAuth grant、MCP 令牌与凭据记录仍留在各自安装本地。任意一侧删除密钥都会写入墓碑，另一侧在下一轮应用；墓碑只保留引用与时间戳，从不保留秘密。
 
 ## 测试
 
-`packages/credentials/credentials-console/tests/vault.spec.ts` 覆盖远程应用、dirty 写入保护、种子列表与派生引用、本地推送与取消设置时的删除、未接线情形，以及间隔轮询的释放。控制台端点已用测试账户实测：POST 保存加密行，GET 只把该行返回给所有者，DELETE 将其删除。
+`packages/credentials/credentials-console/tests/vault.spec.ts` 覆盖远程应用、墓碑删除、dirty 写入保护、种子列表与派生引用、本地推送与取消设置时的删除、未接线情形，以及间隔轮询的释放。控制台端点已用测试账户实测：POST 保存加密行，GET 只把该行返回给所有者，DELETE 返回墓碑，第二次 POST 将其复活。

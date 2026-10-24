@@ -98,6 +98,33 @@ describe('CredentialVault', () => {
     expect(b.credentials.values.get('OPENAI_API_KEY')).toBe('local-new')
   })
 
+  it('applies a tombstone as a local unset so deletions reach the other device', async () => {
+    const tombstone = new Response(JSON.stringify({
+      keys: [{ ref: 'OPENAI_API_KEY', deleted: true, updatedAt: '2026-10-24T00:00:00Z' }],
+    }), { status: 200 })
+    const b = bench({ fetch: () => Promise.resolve(tombstone) })
+    b.credentials.values.set('OPENAI_API_KEY', 'old-local')
+    await b.vault.sync()
+
+    expect(b.credentials.values.has('OPENAI_API_KEY')).toBe(false)
+  })
+
+  it('does not apply a tombstone over a local edit whose push is failing', async () => {
+    const b = bench({
+      fetch: (_url, init) => {
+        if (init?.method === 'POST') return Promise.reject(new Error('offline'))
+        return Promise.resolve(new Response(JSON.stringify({
+          keys: [{ ref: 'OPENAI_API_KEY', deleted: true, updatedAt: '2026-10-24T00:00:00Z' }],
+        }), { status: 200 }))
+      },
+    })
+    b.credentials.values.set('OPENAI_API_KEY', 'local-new')
+    await b.vault.publish('OPENAI_API_KEY', 'local-new')
+    await b.vault.pull()
+
+    expect(b.credentials.values.get('OPENAI_API_KEY')).toBe('local-new')
+  })
+
   it('seeds provider keys that exist only in the local store', async () => {
     const b = bench({
       settings: [{

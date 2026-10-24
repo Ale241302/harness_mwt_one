@@ -17,6 +17,7 @@ import type { CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credent
 export interface VaultCredentials {
   resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined>
   set(ref: CredentialRef, value: string): Promise<void>
+  unset(ref: CredentialRef): Promise<void>
 }
 
 /** One namespace descriptor the seed reads; structurally the settings seam's answer. */
@@ -49,7 +50,8 @@ export interface VaultConfig {
 /** One vault row as the console returns it. */
 interface VaultEntry {
   readonly ref: string
-  readonly value: string
+  readonly value?: string
+  readonly deleted?: boolean
   readonly updatedAt: string
 }
 
@@ -120,7 +122,9 @@ export class CredentialVault {
   }
 
   /**
-   * Apply every remote value the local store does not already hold.
+   * Apply every remote value or tombstone the local store does not already
+   * reflect. A tombstone removes the local key, so a deletion on one device
+   * reaches the other.
    * @param entries - the vault rows.
    * @returns settlement after each local write.
    */
@@ -130,6 +134,11 @@ export class CredentialVault {
       for (const entry of entries) {
         if (!entry.ref.endsWith(this.config.refSuffix) || this.dirty.has(entry.ref)) continue
         const ref = entry.ref as CredentialRef
+        if (entry.deleted === true) {
+          await this.ctx.credentials.unset(ref)
+          continue
+        }
+        if (entry.value === undefined) continue
         const local = await this.ctx.credentials.resolve(ref)
         if (local?.value === entry.value) continue
         await this.ctx.credentials.set(ref, entry.value)
