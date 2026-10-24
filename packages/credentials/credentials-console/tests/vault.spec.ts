@@ -43,7 +43,7 @@ function bench(overrides: {
   const ctx: VaultContext = {
     credentials,
     logger: { warn },
-    ...settings === undefined ? {} : { settings: { describe: () => settings } },
+    get: name => name === 'settings' && settings !== undefined ? { describe: () => settings } : undefined,
     on: (_event, listener) => credentials.on(listener),
   }
   const requests: { url: string; init: RequestInit | undefined }[] = []

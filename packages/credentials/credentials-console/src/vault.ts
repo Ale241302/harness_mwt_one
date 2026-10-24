@@ -28,8 +28,8 @@ export interface VaultSettingsDescriptor {
 /** The slice of the host context the vault needs. */
 export interface VaultContext {
   readonly credentials: VaultCredentials
-  /** Optional settings seam; present in every shipped product profile. */
-  readonly settings?: { describe(options: { redactSecrets: boolean }): readonly VaultSettingsDescriptor[] }
+  /** Generic service lookup; the settings seam is optional in a composition. */
+  get?(name: string): unknown
   readonly logger: { warn(...args: unknown[]): void }
   on(event: 'credentials/reference-updated', listener: (ref: CredentialRef) => void): () => void
 }
@@ -100,7 +100,7 @@ export class CredentialVault {
   start(): () => void {
     const timer = setInterval(() => { void this.pull() }, this.config.intervalMs)
     const off = this.ctx.on('credentials/reference-updated', (ref) => { void this.onLocalWrite(ref) })
-    void this.sync()
+    void this.sync().catch((error) => { this.warn('initial synchronization failed', error) })
     return () => {
       clearInterval(timer)
       off()
@@ -226,7 +226,10 @@ export class CredentialVault {
 
   /** Provider references a product profile can configure, for the one-time seed. */
   private candidateRefs(): string[] {
-    const descriptors = this.ctx.settings?.describe({ redactSecrets: true }) ?? []
+    const settings = this.ctx.get?.('settings') as {
+      describe(options: { redactSecrets: boolean }): readonly VaultSettingsDescriptor[]
+    } | undefined
+    const descriptors = settings?.describe({ redactSecrets: true }) ?? []
     const refs = new Set<string>()
     for (const descriptor of descriptors) {
       if (descriptor.ns === 'llm-pi-ai') {
