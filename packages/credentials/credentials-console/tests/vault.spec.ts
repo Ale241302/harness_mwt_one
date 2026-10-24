@@ -125,6 +125,28 @@ describe('CredentialVault', () => {
     expect(b.credentials.values.get('OPENAI_API_KEY')).toBe('local-new')
   })
 
+  it('retries a failed push on the next pull so the edit eventually reaches the vault', async () => {
+    let attempts = 0
+    const b = bench({
+      fetch: (_url, init) => {
+        if (init?.method === 'POST') {
+          attempts += 1
+          return attempts === 1
+            ? Promise.reject(new Error('offline'))
+            : Promise.resolve(new Response('{}', { status: 201 }))
+        }
+        return Promise.resolve(remote([]))
+      },
+    })
+    b.credentials.values.set('OPENAI_API_KEY', 'local-new')
+    await b.vault.publish('OPENAI_API_KEY', 'local-new')
+    expect(b.warn).toHaveBeenCalled()
+
+    await b.vault.pull()
+    expect(attempts).toBe(2)
+    expect(b.requests.filter(request => request.init?.method === 'POST')).toHaveLength(2)
+  })
+
   it('seeds provider keys that exist only in the local store', async () => {
     const b = bench({
       settings: [{

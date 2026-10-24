@@ -115,6 +115,7 @@ export class CredentialVault {
    * @returns settlement after both directions settle; failures are logged.
    */
   async sync(): Promise<void> {
+    await this.retryDirty()
     const entries = await this.read()
     if (entries === undefined) return
     await this.applyRemote(entries)
@@ -190,8 +191,26 @@ export class CredentialVault {
   /** One periodic pull; the timer calls this path. */
   async pull(): Promise<void> {
     if (this.pulling) return
+    await this.retryDirty()
     const entries = await this.read()
     if (entries !== undefined) await this.applyRemote(entries)
+  }
+
+  /**
+   * Retry writes that failed earlier (an expired token, a network blip). A
+   * local edit must eventually reach the vault even when the failure happened
+   * before the next user gesture.
+   * @returns settlement after each retry.
+   */
+  private async retryDirty(): Promise<void> {
+    for (const ref of [...this.dirty]) {
+      try {
+        const resolved = await this.ctx.credentials.resolve(ref as CredentialRef)
+        await this.publish(ref, resolved?.source === 'file' ? resolved.value : undefined)
+      } catch (error) {
+        this.warn(`could not retry ${ref}`, error)
+      }
+    }
   }
 
   /** Resolve the current console endpoint, reading the live environment for both values. */
