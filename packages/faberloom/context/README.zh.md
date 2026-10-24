@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-在已具备 `ctx.storageDomain` 的组合中挂载此行；`ctx.faberloomSpaces` 与 `ctx.faberloomShares` 是可选的，仅用于更精确地决定归属。该服务打开 `faberloom_context` 域、注册 `ctx.faberloomContext`，并暴露 `create`、`list`、`get`、`listForSpace`、`update`、`versions`、`restore`、`approve`、`reject`、`remove`、`export`、`import` 与 `replace`。`listForSpace(actor, spaceId)` 返回某一空间下该行为者可读的条目；`ctx.faberloomSpaces.find` 与 `reference` 据此呈现另一空间的精选上下文。`create(actor, { title, body, spaceId })` 决定可见性：个人条目保持 `local`；Space 条目对其所有者（或持有有效 `index-context` 授权的成员）为 `shared`，否则为 `pending`。放入行为者不可读的 Space 会被拒绝。`update` 追加版本并把成员的编辑退回 `pending`；`restore(actor, id, version)` 将更早的版本前移为一个新版本。
+在已具备 `ctx.storageDomain` 的组合中挂载此行；`ctx.faberloomSpaces` 与 `ctx.faberloomShares` 是可选的，仅用于更精确地决定归属。该服务打开 `faberloom_context` 域、注册 `ctx.faberloomContext`，并暴露 `create`、`list`、`get`、`listForSpace`、`update`、`reassign`、`versions`、`restore`、`approve`、`reject`、`remove`、`export`、`import` 与 `replace`。`listForSpace(actor, spaceId)` 返回某一空间下该行为者可读的条目；`ctx.faberloomSpaces.find` 与 `reference` 据此呈现另一空间的精选上下文。`reassign(actor, fromSpaceId, toSpaceId)` 在重复 Space 合并到保留项时移动所有者的条目，并追加一个记录新归属的版本。`create(actor, { title, body, spaceId })` 决定可见性：个人条目保持 `local`；Space 条目对其所有者（或持有有效 `index-context` 授权的成员）为 `shared`，否则为 `pending`。放入行为者不可读的 Space 会被拒绝。`update` 追加版本并把成员的编辑退回 `pending`；`restore(actor, id, version)` 将更早的版本前移为一个新版本。
 
 -----
 

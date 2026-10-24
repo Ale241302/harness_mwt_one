@@ -362,6 +362,37 @@ export class FaberLoomContext extends Service {
   }
 
   /**
+   * Move every entry the owner holds on one Space to another Space.
+   *
+   * A duplicate Space is folded into its keeper; the entries keyed to the
+   * duplicate would otherwise become invisible when its row disappears. Only
+   * the owning identity's entries move, and each move appends a version so the
+   * history states where the entry now lives.
+   * @param actor - the acting identity.
+   * @param fromSpaceId - Space being folded away.
+   * @param toSpaceId - Space that survives.
+   * @returns the number of entries moved.
+   */
+  async reassign(actor: FaberLoomContextActor, fromSpaceId: string, toSpaceId: string): Promise<number> {
+    let moved = 0
+    const at = new Date().toISOString()
+    for (const [id, record] of (await this.entries()).entries()) {
+      if (record.spaceId !== fromSpaceId || record.ownerId !== actor.id) continue
+      const saved: ContextEntryRecord = {
+        ...record,
+        spaceId: toSpaceId,
+        visibility: 'shared',
+        version: record.version + 1,
+        updatedAt: at,
+      }
+      await (await this.entries()).put(id, saved)
+      await this.appendVersion(id, saved, actor.id, at)
+      moved += 1
+    }
+    return moved
+  }
+
+  /**
    * List one entry's version history, newest first.
    * @param actor - the acting identity.
    * @param id - entry id.

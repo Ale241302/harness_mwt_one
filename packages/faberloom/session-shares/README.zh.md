@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-在已具备 `ctx.storageDomain` 的组合中挂载此行，并配置 `consoleBase` 与 `consoleToken`（留空则回退到 `CONSOLA_API_BASE` 与 `CONSOLA_TOKEN`）。`ctx.faberloomSpaces` 与 `ctx.faberloomShares` 是可选的，仅用于执行 `view` 检查。该服务打开 `faberloom_session_shares` 域、注册 `ctx.faberloomSessionShares`，并暴露 `capture`、`list`、`content`、`remove` 与 `sync`。`capture(actor, input)` 把一个会话的可移植快照存入该 Space 并 POST 到控制台；`list(actor, spaceId)` 返回该 Space 的记录；`content(actor, spaceId, ownerId, sessionId)` 返回一条记录及其快照；`sync(readerId)` 为一个成员导入并清理控制台的记录。
+在已具备 `ctx.storageDomain` 的组合中挂载此行，并配置 `consoleBase` 与 `consoleToken`（留空则回退到 `CONSOLA_API_BASE` 与 `CONSOLA_TOKEN`）。`ctx.faberloomSpaces` 与 `ctx.faberloomShares` 是可选的，仅用于执行 `view` 检查。该服务打开 `faberloom_session_shares` 域、注册 `ctx.faberloomSessionShares`，并暴露 `capture`、`list`、`content`、`remove`、`reassign` 与 `sync`。`capture(actor, input)` 把一个会话的可移植快照存入该 Space 并 POST 到控制台；`list(actor, spaceId)` 返回该 Space 的记录；`content(actor, spaceId, ownerId, sessionId)` 返回一条记录及其快照；`reassign(fromSpaceId, toSpaceId)` 把重复 Space 下的全部会话移动到合并后保留的 Space；`sync(readerId)` 为一个成员导入并清理控制台的记录。
 
 控制台契约为 `${consoleBase}/harness/sessions`：`POST` 一条 `{ space_id, session_id, owner_email, title, workspace_id, created_at, updated_at, message_count, content }` 记录，`GET` 返回调用者可见的记录 `{ incoming: [...] }`，`DELETE /{id}` 撤回一条。
 

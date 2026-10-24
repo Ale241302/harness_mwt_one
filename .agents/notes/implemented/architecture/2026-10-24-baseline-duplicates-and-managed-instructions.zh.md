@@ -26,7 +26,7 @@
 
 **投影只拥有标记块。** `renderInstructions` 用 `<!-- faberloom:begin -->` 与 `<!-- faberloom:end -->` 包裹输出，`mergeInstructions` 原地替换该块。旧的整份投影会被整体替换；其他文件保留原文，并在其后追加该块。
 
-**重复 Space 被合并，而不是被隐藏。** `FaberLoomSpaces.merge` 把重复项的记忆与文件移到保留项，合并成员、排除、来源、上下文、提示词与 agent，然后删除重复行。`mergeDuplicateSpaces` 优先保留锚定到真实本地文件夹（而非不透明 `spaces/fw_*` 区域）的 Space，其次是捕获内容最多的；仍拥有策划上下文条目或共享会话的重复项不合并，因为这些记录以它的 id 命名。Spaces 面板在同名时显示文件夹，因此不同文件夹的同名 Space 仍可区分。
+**重复 Space 被合并，而不是被隐藏。** `FaberLoomSpaces.merge` 把重复项的记忆与文件移到保留项，合并成员、排除、来源、上下文、提示词与 agent，然后删除重复行。`FaberLoomContext.reassign` 与 `FaberLoomSessionShares.reassign` 会先移动策划条目与会话记录，因为这些行以重复项的 id 命名。`mergeDuplicateSpaces` 选择**最早的行，然后是最低 id**：两套 home 从相同的 `createdAt` 计算出同一个保留项，因此两端收敛而不是各留一行。绑定到不透明 `spaces/fw_*` 区域的保留项会重新绑定到同名真实文件夹，Spaces 面板在同名时显示文件夹。
 
 **共享会话每个会话一个文件。** `faberloom_session_shares` 域使用 JSON 后端的 `per-record` 布局：`single` 文档在每次捕获时重写并重新解析全部会话，真实目录达到 117 MB，把桌面宿主堆推到 4 GB 上限。首次打开时后端会把现有整单元文件引导为每行一个文档。
 

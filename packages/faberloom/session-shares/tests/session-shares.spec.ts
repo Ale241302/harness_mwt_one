@@ -51,6 +51,16 @@ describe('FaberLoomSessionShares capture, list, and content', () => {
     await expect(service.content(OWNER, 'sp-1', OWNER.id, 'missing')).rejects.toThrow('no encontrada')
   })
 
+  it('moves a Space’s shared Sessions to the keeper', async () => {
+    const { service } = await harness({ owner: OWNER.id })
+    await service.capture(OWNER, { spaceId: 'sp-1', sessionId: 's1', title: 'Consulta', content: '{"events":[]}', messageCount: 1 })
+
+    expect(await service.reassign('sp-1', 'sp-2')).toBe(1)
+
+    expect(await service.list(OWNER, 'sp-1')).toEqual([])
+    expect((await service.list(OWNER, 'sp-2')).map(row => row.sessionId)).toEqual(['s1'])
+  })
+
   it('F11 · a member reads only with an active view grant', async () => {
     const denied = await harness({ owner: OWNER.id, allowed: false })
     await expect(denied.service.list(MEMBER, 'sp-1')).rejects.toThrow('no tienes acceso')

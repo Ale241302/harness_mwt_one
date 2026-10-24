@@ -50,6 +50,7 @@ function harness(options: {
     ownerId?: string
     agentId?: string
     workspaceId?: string
+    createdAt?: string
     inheritContext?: boolean
     excluded?: readonly string[]
     members?: readonly string[]
@@ -100,6 +101,8 @@ function harness(options: {
     listMemory: vi.fn(async (): Promise<readonly MockMemory[]> => []),
     listFiles: vi.fn(async (): Promise<readonly unknown[]> => []),
     effectiveMemory: vi.fn(async (): Promise<readonly MockMemory[]> => []),
+    merge: vi.fn(async (_actor: unknown, keeperId: string): Promise<MockSpace> =>
+      spaceRecords.find(record => record.id === keeperId) ?? defaultSpace(keeperId)),
     importShared: vi.fn(async (input: { id: string; title: string }): Promise<MockSpace> =>
       ({ id: input.id, title: input.title, parentId: null })),
     forgetMemory: vi.fn(async (): Promise<boolean> => true),
@@ -144,6 +147,7 @@ function harness(options: {
   const context = {
     create: vi.fn(async () => ({})),
     update: vi.fn(async () => ({})),
+    reassign: vi.fn(async () => 0),
     list: vi.fn(async () => [] as unknown[]),
     remove: vi.fn(async () => true),
     export: vi.fn(async () => ({ filename: 'f.json', content: '{}', entries: 0 })),
@@ -152,6 +156,7 @@ function harness(options: {
   }
   const shares = {
     sync: vi.fn(async (): Promise<void> => undefined),
+    reassign: vi.fn(async (): Promise<number> => 0),
     list: vi.fn(async (): Promise<{ outgoing: readonly unknown[]; incoming: readonly unknown[] }> => ({ outgoing: [], incoming: [] })),
     snapshotFor: vi.fn(async (_email: string, _grantId: string): Promise<Record<string, unknown> | null> => null),
     syncContent: vi.fn(async (): Promise<void> => undefined),
@@ -180,6 +185,7 @@ function harness(options: {
       if (name === 'workspaceRegistry') return options.registry === false ? undefined : registry
       if (name === 'faberloomConnections' && options.connections !== undefined) return { list: vi.fn(async () => options.connections) }
       if (name === 'faberloomShares') return shares
+      if (name === 'faberloomSessionShares') return shares
       if (name === 'faberloomContext') return context
       if (name === 'faberloomWorkflows') return workflows
       return undefined
@@ -449,6 +455,20 @@ describe('FaberLoomViewService space lifecycle', () => {
     await view.deleteSpace('sp1')
     expect(registry.delete).toHaveBeenCalledWith('ws-sicop')
     expect(existsSync(dir)).toBe(true)
+  })
+
+  it('merges same-title duplicates into the oldest one, moving context and shared sessions', async () => {
+    const { view, spaces, context, shares } = harness()
+    spaces.list.mockResolvedValue([
+      { id: 'sp-new', title: 'Prueba', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-10-19T00:00:00Z' },
+      { id: 'sp-old', title: 'Prueba', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-10-14T00:00:00Z' },
+    ])
+
+    await view.overview()
+
+    expect(context.reassign).toHaveBeenCalledWith(expect.anything(), 'sp-new', 'sp-old')
+    expect(shares.reassign).toHaveBeenCalledWith('sp-new', 'sp-old')
+    expect(spaces.merge).toHaveBeenCalledWith(expect.anything(), 'sp-old', ['sp-new'])
   })
 
   it('projects the responsible agent and workspace into the overview rows', async () => {

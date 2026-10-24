@@ -238,6 +238,30 @@ export class FaberLoomSessionShares extends Service {
   }
 
   /**
+   * Move every shared Session recorded under one Space to another Space.
+   *
+   * Folding a duplicate Space into its keeper deletes the duplicate row; the
+   * transcripts keyed to it would otherwise disappear from the catalog. The
+   * console still holds the original placement, so a later `sync` can import the
+   * row again under the old Space; that Space no longer exists, and the import is
+   * reported as skipped by its caller.
+   * @param fromSpaceId - Space being folded away.
+   * @param toSpaceId - Space that survives.
+   * @returns the number of rows moved.
+   */
+  async reassign(fromSpaceId: string, toSpaceId: string): Promise<number> {
+    const table = await this.sessions()
+    let moved = 0
+    const at = new Date().toISOString()
+    for (const [key, record] of table.entries()) {
+      if (record.spaceId !== fromSpaceId) continue
+      await table.update(key, () => ({ ...record, spaceId: toSpaceId, updatedAt: at }))
+      moved += 1
+    }
+    return moved
+  }
+
+  /**
    * Read one shared Session's content.
    * @param actor - the acting identity.
    * @param spaceId - the Space the Session is shared in.

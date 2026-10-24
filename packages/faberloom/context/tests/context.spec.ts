@@ -65,6 +65,18 @@ describe('FaberLoomContext', () => {
     expect(await context.listForSpace(OWNER, 'sp-c')).toEqual([])
   })
 
+  it('moves an entry from a duplicate Space to its keeper', async () => {
+    const { context } = await harness()
+    const entry = await context.create(OWNER, { title: 'A', body: 'x', spaceId: 'sp-a' })
+    await context.create(OWNER, { title: 'B', body: 'y', spaceId: 'sp-c' })
+
+    expect(await context.reassign(OWNER, 'sp-a', 'sp-b')).toBe(1)
+
+    expect(await context.listForSpace(OWNER, 'sp-a')).toEqual([])
+    expect((await context.listForSpace(OWNER, 'sp-b')).map(row => row.id)).toEqual([entry.id])
+    expect((await context.versions(OWNER, entry.id))[0]?.version).toBe(2)
+  })
+
   it('F10 · appends versions on update and restores an earlier one', async () => {
     const { context } = await harness()
     const entry = await context.create(OWNER, { title: 'v1', body: 'uno' })

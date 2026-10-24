@@ -5210,6 +5210,25 @@ export class FaberLoomViewService extends TypertRemoteService {
     const anchored = new Set(spaces
       .map(space => space.workspaceId)
       .filter((id): id is string => id !== undefined && known.has(id)))
+    // A keeper that won the merge may carry the deterministic `spaces/fw_*`
+    // area instead of the user's folder. Re-bind it to the real folder of the
+    // same title so the Space keeps showing the folder the owner works in.
+    const areaRoot = join(this.dshHome(), 'spaces').replaceAll('\\', '/')
+    const isOpaque = (path: string): boolean => path.replaceAll('\\', '/').startsWith(`${areaRoot}/fw_`)
+    for (const space of spaces) {
+      const bound = space.workspaceId === undefined ? undefined : registry.get(space.workspaceId as WorkspaceId)
+      if (bound === undefined || !isOpaque(bound.path)) continue
+      const title = space.title.trim().toLowerCase()
+      const better = registry.list().find(workspace => workspace.title.trim().toLowerCase() === title
+        && !isOpaque(workspace.path) && !anchored.has(String(workspace.id)))
+      if (better === undefined) continue
+      try {
+        await this.ctx.faberloomSpaces.update(actor, space.id, { workspaceId: String(better.id) })
+        anchored.add(String(better.id))
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: could not rebind the space '${space.title}' to its folder: ${String(error)}`)
+      }
+    }
     const legacyByDir = new Map<string, FaberLoomSpace>()
     const unboundByTitle = new Map<string, FaberLoomSpace[]>()
     for (const space of spaces) {
@@ -5282,17 +5301,14 @@ export class FaberLoomViewService extends TypertRemoteService {
    *
    * Two homes mirror their Spaces, and older generations created a Space per
    * adopted workspace, so the same work area can appear under two ids. The
-   * keeper is the one anchored to a real local folder (not the opaque
-   * `spaces/fw_*` area), then the one with the most captured material. A
-   * duplicate that still owns curated context entries or shared Sessions is
-   * left alone: those records name its id and cannot be moved, so folding it
-   * would hide them. Memory and files do move with the merge.
+   * keeper is the oldest row, then the lowest id: both homes compute the same
+   * keeper from the same createdAt, so the merge converges instead of each side
+   * keeping a different row. Its curated context and shared Sessions move to the
+   * keeper with its memory and files.
    * @param actor - the acting identity.
    */
   private async mergeDuplicateSpaces(actor: SpaceActor): Promise<void> {
     if (actor.readOnly) return
-    const registry = this.workspaceRegistryOrUndefined()
-    const known = new Set(registry?.list().map(workspace => String(workspace.id)) ?? [])
     const groups = new Map<string, FaberLoomSpace[]>()
     for (const space of await this.ctx.faberloomSpaces.list(actor)) {
       if (space.ownerId !== actor.id || space.archived) continue
@@ -5305,37 +5321,17 @@ export class FaberLoomViewService extends TypertRemoteService {
     const shares = this.ctx.get('faberloomSessionShares')
     for (const group of groups.values()) {
       if (group.length < 2) continue
-      const ranked: { space: FaberLoomSpace; opaque: boolean; anchored: boolean; captured: number }[] = []
-      for (const space of group) {
-        const dir = await this.resolveSpaceDir(actor, space)
-        const [memory, files] = await Promise.all([
-          this.ctx.faberloomSpaces.listMemory(actor, space.id),
-          this.ctx.faberloomSpaces.listFiles(actor, space.id),
-        ])
-        ranked.push({
-          space,
-          opaque: /[\\/]spaces[\\/]fw_[0-9a-f]{16}$/u.test(dir.replaceAll('\\', '/')),
-          anchored: space.workspaceId !== undefined && known.has(space.workspaceId),
-          captured: memory.length + files.length,
-        })
-      }
-      ranked.sort((left, right) => Number(right.anchored) - Number(left.anchored)
-        || Number(left.opaque) - Number(right.opaque)
-        || right.captured - left.captured
-        || right.space.updatedAt.localeCompare(left.space.updatedAt))
-      const keeper = ranked[0] as (typeof ranked)[number]
-      for (const loser of ranked.slice(1)) {
-        const owned = (await context?.listForSpace(actor, loser.space.id) ?? []).length
-        const shared = (await shares?.list({ id: actor.id }, loser.space.id) ?? []).length
-        if (owned > 0 || shared > 0) {
-          this.ctx.logger.info(`faberloom: Space ${loser.space.id} keeps its identity (${String(owned)} context entries, ${String(shared)} shared sessions)`)
-          continue
-        }
+      const ordered = [...group].sort((left, right) => left.createdAt.localeCompare(right.createdAt)
+        || String(left.id).localeCompare(String(right.id)))
+      const keeper = ordered[0] as FaberLoomSpace
+      for (const loser of ordered.slice(1)) {
         try {
-          await this.ctx.faberloomSpaces.merge(actor, keeper.space.id, [loser.space.id])
-          this.ctx.logger.info(`faberloom: merged duplicate Space ${loser.space.id} into ${keeper.space.id}`)
+          await context?.reassign(actor, loser.id, keeper.id)
+          await shares?.reassign(loser.id, keeper.id)
+          await this.ctx.faberloomSpaces.merge(actor, keeper.id, [loser.id])
+          this.ctx.logger.info(`faberloom: merged duplicate Space ${loser.id} into ${keeper.id}`)
         } catch (error: unknown) {
-          this.ctx.logger.warn(`faberloom: could not merge duplicate Space ${loser.space.id}: ${String(error)}`)
+          this.ctx.logger.warn(`faberloom: could not merge duplicate Space ${loser.id}: ${String(error)}`)
         }
       }
     }
