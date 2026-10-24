@@ -42,7 +42,7 @@ Five product gaps remained after the provider-key vault shipped:
 
 A home now shows one row per baseline name and one Space per local folder; deleting a seeded agent still sticks, because the marker prevents re-seeding and the mirror never carries it back. A mirrored Space whose Workspace id belongs to the other home is re-anchored by title, which is a best-effort match: two different folders with the same name in the same home keep separate Spaces and the panel names their folders.
 
-The mirror no longer needs an operator-copied secret on the desktop, so a signed-in installation starts syncing routines and Work Flows on its next cycle. The gateway still accepts the internal key when present, and a deployment that sets one keeps the extra check.
+The mirror no longer needs an operator-copied secret on the desktop, so a signed-in installation starts syncing routines and Work Flows on its next cycle. Its interval stays referenced — an unref'd timer does not wake an idle Desktop host, which is why a Web change only landed when a local edit happened to tick the mirror — and a Windows rename refused by a scanner is retried before the cycle fails. The gateway still checks the internal key when a caller presents one, so a deployment that sets it keeps the extra check.
 
 `client_b2b` accounts get the product's write controls; a console that wants them read-only sends `permissions.read_only: true`. `AGENTS.md` is now jointly owned: a projection replaces only its marked block, and a note placed outside it survives every refresh.
 

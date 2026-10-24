@@ -279,8 +279,10 @@ export class FaberLoomMirror extends Service {
     const interval = this.config.intervalMs ?? DEFAULT_MIRROR_INTERVAL_MS
     this.ctx.on('domain/changed', (change: DomainChanged) => { this.observe(change) })
     this.ctx.effect(() => {
+      // Keep the interval referenced: an unref'd timer is not enough to wake an
+      // otherwise idle host (the Desktop's main process), so a routine created
+      // on the Web only arrived when some local change happened to tick it.
       this.timer = setInterval(() => { void this.tick() }, interval)
-      this.timer.unref()
       void this.tick()
       return () => { this.stop() }
     }, 'faberloom.mirror.lifecycle')
@@ -957,7 +959,6 @@ export class FaberLoomMirror extends Service {
     if (this.flushTimer !== undefined) clearTimeout(this.flushTimer)
     const debounce = this.config.debounceMs ?? DEFAULT_MIRROR_DEBOUNCE_MS
     this.flushTimer = setTimeout(() => { void this.flush() }, debounce)
-    this.flushTimer.unref()
   }
 
   /** Run one cycle for the observed changes. */

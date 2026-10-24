@@ -29,6 +29,40 @@ import { FABERLOOM_MIRROR_DOMAINS } from './domains.ts'
 import type { MirrorDomainSource, MirrorLiveDomain } from './sync.ts'
 import type { FaberLoomMirrorDocument, FaberLoomMirrorSkip } from './types.ts'
 
+/** Error codes Windows reports while another handle (antivirus, indexer) holds the target. */
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
+
+/**
+ * Rename one temp file over its target, retrying Windows' transient refusals.
+ *
+ * `MoveFileExW(REPLACE_EXISTING)` fails with `EPERM`/`EBUSY` while another
+ * process holds the destination open for a moment (a scanner reading the file
+ * that was just written). The replacement is still the right publication, so a
+ * short bounded backoff rides out the scan instead of failing a mirror cycle.
+ * @param from - temporary path.
+ * @param to - target path.
+ * @param operation - the rename to attempt; tests inject a failing one.
+ * @param wait - the backoff; tests inject a resolved one.
+ * @returns resolution after the replacement.
+ */
+export async function renameWithRetry(
+  from: string,
+  to: string,
+  operation: (from: string, to: string) => Promise<void> = rename,
+  wait: (ms: number) => Promise<void> = async (ms) => { await new Promise(resolve => setTimeout(resolve, ms)) },
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await operation(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? ''
+      if (!RENAME_RETRY_CODES.has(code) || attempt >= 8) throw error
+      await wait(20 * (attempt + 1))
+    }
+  }
+}
+
 /** One domain document as the medium holds it, with the path it is published under. */
 interface OpenDocument extends ParsedDocument {
   /** Declared domain name; also the unit name in the file header. */
@@ -211,7 +245,7 @@ export class MirrorHomeStore implements MirrorDomainSource {
     const temporary = join(dirname(document.path), `.${randomUUID()}.tmp`)
     try {
       await writeFile(temporary, serializeDocument(document), 'utf8')
-      await rename(temporary, document.path)
+      await renameWithRetry(temporary, document.path)
     } catch (error) {
       await rm(temporary, { force: true })
       throw error

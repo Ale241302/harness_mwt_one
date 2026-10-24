@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MirrorHomeStore } from '../src/store.ts'
+import { MirrorHomeStore, renameWithRetry } from '../src/store.ts'
 import type { MirrorDomainSource } from '../src/sync.ts'
 import { FABERLOOM_MIRROR_FORMAT_VERSION } from '../src/document.ts'
 import type { FaberLoomMirrorDocument } from '../src/types.ts'
@@ -231,5 +231,35 @@ describe('MirrorHomeStore', () => {
     await expect(grants?.put('g2', { id: 'g2' })).rejects.toThrow()
     const names = await readdir(root)
     expect(names.some(name => name.endsWith('.tmp'))).toBe(false)
+  })
+})
+
+describe('renameWithRetry', () => {
+  it('retries a transient Windows refusal and then replaces the file', async () => {
+    let calls = 0
+    await renameWithRetry('from', 'to', async () => {
+      calls += 1
+      if (calls === 1) throw Object.assign(new Error('busy'), { code: 'EPERM' })
+    })
+    expect(calls).toBe(2)
+  })
+
+  it('stops at a refusal a retry cannot fix', async () => {
+    let waited = false
+    await expect(renameWithRetry('from', 'to', async () => {
+      throw Object.assign(new Error('gone'), { code: 'ENOENT' })
+    }, async () => { waited = true })).rejects.toThrow('gone')
+    expect(waited).toBe(false)
+  })
+
+  it('gives up after the bounded number of attempts', async () => {
+    const waits: number[] = []
+    let calls = 0
+    await expect(renameWithRetry('from', 'to', async () => {
+      calls += 1
+      throw Object.assign(new Error('locked'), { code: 'EBUSY' })
+    }, async (ms) => { waits.push(ms) })).rejects.toThrow('locked')
+    expect(calls).toBe(9)
+    expect(waits).toHaveLength(8)
   })
 })
