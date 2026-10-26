@@ -25,7 +25,13 @@ import { bootRoutingHarness, cleanupRoutingHarness, driveTurn, turnEnds } from '
 import type { CatalogAgentSpec } from './routing-harness.ts'
 
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY
-const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com'
+/**
+ * The routing double performs the real `/v1/chat/completions` exchange, so it
+ * needs the chat root. The E2E workflow pins `DEEPSEEK_BASE_URL` to the Messages
+ * root (`/anthropic`) for the Messages suites, and appending a chat path there
+ * answered `404`; this spec therefore names its own root.
+ */
+const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_CHAT_BASE_URL ?? 'https://api.deepseek.com'
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_E2E_MODEL ?? 'deepseek-flash'
 const OPENAI_KEY = process.env.OPENAI_API_KEY
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com'
