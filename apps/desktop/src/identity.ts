@@ -216,13 +216,13 @@ export function renderIdentityPatch(
   const sharedSkills = yamlScalar(mounted.skillsSharedRoot)
   const sharedAgents = yamlScalar(mounted.agentsSharedRoot)
   // The agent-side provider mirrors the deployment's row: only the catalog
-  // directories that exist are mounted, and the owner's own skills keep theirs.
+  // directories that exist are mounted. The owner's own skills live under the
+  // home and are mounted first, because the first directory wins a duplicate
+  // name: an owner's edited copy of a role skill replaces the catalog one.
   const catalogSkillDirs = [
+    ...(existsSync(join(dshHome, 'skills')) ? [join(dshHome, 'skills')] : []),
     ...(existsSync(join(mounted.skillsCatalogRoot, roleName)) ? [join(mounted.skillsCatalogRoot, roleName)] : []),
     ...(existsSync(mounted.skillsSharedRoot) ? [mounted.skillsSharedRoot] : []),
-    // The owner's own skills live under the home, not under the packaged
-    // catalogs; mount them explicitly because this provider disables defaults.
-    ...(existsSync(join(dshHome, 'skills')) ? [join(dshHome, 'skills')] : []),
   ]
   const mcpEntries = renderProductMcpEntries(environment, identity.email)
   return [

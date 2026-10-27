@@ -19,6 +19,7 @@ function harness(options: {
   registry?: boolean
   role?: string
   connections?: readonly { id: string; kind: string; label: string }[]
+  skillsCatalogRoot?: string
 } = {}) {
   const board = {
     list: vi.fn(async () => []),
@@ -196,6 +197,7 @@ function harness(options: {
     ownerId: 'owner@muitowork.com',
     role: options.role ?? 'admin',
     readOnly: options.readOnly === true,
+    ...options.skillsCatalogRoot === undefined ? {} : { skillsCatalogRoot: options.skillsCatalogRoot },
   })
   return { view, board, registry, spaces, agents, workflows, routines, context, shares, entities, events, logger }
 }
@@ -793,6 +795,29 @@ describe('FaberLoomViewService space lifecycle', () => {
     const rows = await view.skills()
     expect(rows.find(row => row.name === 'mi-skill')).toMatchObject({ origin: 'incoming', sharedBy: 'ana@sondelsa.com' })
     await expect(view.removeSkill('mi-skill')).rejects.toThrow('Admin/CEO')
+  })
+
+  it('names the agents using a skill, and an edited role skill becomes the owner copy the reader returns', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-skill-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const catalog = join(home, 'catalog')
+    mkdirSync(join(catalog, 'admin', 'marluvas-correo'), { recursive: true })
+    writeFileSync(join(catalog, 'admin', 'marluvas-correo', 'SKILL.md'), '---\nname: marluvas-correo\ndescription: del rol\n---\nRol\n')
+    const { view, agents } = harness({ skillsCatalogRoot: catalog })
+    agents.listAgents.mockResolvedValue([{
+      id: 'a1', name: 'Operador Marluvas', spaceId: undefined, detached: false, active: true, skills: ['marluvas-correo'],
+    } as never])
+
+    const before = (await view.skills()).find(row => row.name === 'marluvas-correo')
+    expect(before).toMatchObject({ origin: 'role', replacesCatalog: false, assignedTo: ['a1'], assignedNames: ['Operador Marluvas'] })
+    expect(await view.skillMarkdown('marluvas-correo')).toContain('description: del rol')
+
+    await view.saveSkill('marluvas-correo', '---\nname: marluvas-correo\ndescription: editada\n---\nPropia\n')
+    const after = (await view.skills()).find(row => row.name === 'marluvas-correo')
+    expect(after).toMatchObject({ origin: 'owner', replacesCatalog: true, description: 'editada' })
+    expect(await view.skillMarkdown('marluvas-correo')).toContain('Propia')
+    await expect(view.skillMarkdown('no-existe')).rejects.toThrow('not found')
   })
 
   it('omits the workspace in the overview when no registry is mounted', async () => {

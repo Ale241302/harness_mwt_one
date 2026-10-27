@@ -740,6 +740,20 @@ async get(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEnt
 async update(actor: FaberLoomContextActor, id: string, edit: FaberLoomContextEdit): Promise<FaberLoomContextEntry>
 
 /**
+ * Move every entry the owner holds on one Space to another Space.
+ *
+ * A duplicate Space is folded into its keeper; the entries keyed to the
+ * duplicate would otherwise become invisible when its row disappears. Only
+ * the owning identity's entries move, and each move appends a version so the
+ * history states where the entry now lives.
+ * @param actor - the acting identity.
+ * @param fromSpaceId - Space being folded away.
+ * @param toSpaceId - Space that survives.
+ * @returns the number of entries moved.
+ */
+async reassign(actor: FaberLoomContextActor, fromSpaceId: string, toSpaceId: string): Promise<number>
+
+/**
  * List one entry's version history, newest first.
  * @param actor - the acting identity.
  * @param id - entry id.
@@ -1696,6 +1710,20 @@ async capture(actor: FaberLoomSessionActor, input: FaberLoomSharedSessionCapture
 async list(actor: FaberLoomSessionActor, spaceId: string): Promise<readonly FaberLoomSharedSession[]>
 
 /**
+ * Move every shared Session recorded under one Space to another Space.
+ *
+ * Folding a duplicate Space into its keeper deletes the duplicate row; the
+ * transcripts keyed to it would otherwise disappear from the catalog. The
+ * console still holds the original placement, so a later `sync` can import the
+ * row again under the old Space; that Space no longer exists, and the import is
+ * reported as skipped by its caller.
+ * @param fromSpaceId - Space being folded away.
+ * @param toSpaceId - Space that survives.
+ * @returns the number of rows moved.
+ */
+async reassign(fromSpaceId: string, toSpaceId: string): Promise<number>
+
+/**
  * Read one shared Session's content.
  * @param actor - the acting identity.
  * @param spaceId - the Space the Session is shared in.
@@ -1997,6 +2025,24 @@ async archive(actor: SpaceActor, id: FaberLoomSpaceId): Promise<FaberLoomSpace>
  * @throws when the space is absent or not manageable.
  */
 async remove(actor: SpaceActor, id: FaberLoomSpaceId): Promise<boolean>
+
+/**
+ * Fold duplicate Spaces into one keeper.
+ *
+ * The keeper keeps its identity and Workspace binding and absorbs the
+ * duplicates' members, exclusions, sources, context, prompt, and agent. Memory
+ * entries that were attached to a duplicate are re-pointed at the keeper, and
+ * its files move with them, so nothing the owner captured becomes invisible.
+ * Curated context entries and shared Sessions are not handled here: the caller
+ * checks them before merging, because a record keyed to the duplicate would be
+ * lost with it.
+ * @param actor - the acting identity.
+ * @param keeperId - Space that survives.
+ * @param duplicates - Spaces to fold into the keeper.
+ * @returns the updated keeper.
+ * @throws when either side is absent or the actor cannot manage it.
+ */
+async merge( actor: SpaceActor, keeperId: FaberLoomSpaceId, duplicates: readonly FaberLoomSpaceId[], ): Promise<FaberLoomSpace>
 
 /**
  * Attach one memory entry to one or more spaces the actor may read. A
@@ -2695,6 +2741,14 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the skill rows.
  */
 @Remote('skills') async skills(): Promise<readonly FaberLoomSkillRow[]>
+
+/**
+ * Read the full Markdown of one skill so the owner can edit it: the owner's own
+ * copy when one exists, otherwise the shared or role catalog copy the list shows.
+ * @param name - skill name.
+ * @returns the SKILL.md content.
+ */
+@Remote('skillMarkdown') async skillMarkdown(name: string): Promise<string>
 
 /**
  * Add or replace one skill from Markdown content the user uploaded.

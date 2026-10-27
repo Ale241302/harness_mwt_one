@@ -246,6 +246,23 @@ describe('FaberLoomDefaults', () => {
     }
   })
 
+  it('keeps the provider and model an owner chose for a baseline agent across restarts', async () => {
+    const home = ownerHome()
+    const pool = new MemoryMediaPool()
+    const config = { agentProvider: 'deepseek-official', agentModel: 'deepseek-flash' }
+    const first = await services(home, ['mwt-compras-clientes-leer'], pool)
+    await seedWith(first.ctx, first.catalog, config)
+    const [reception] = await first.ctx.faberloomAgents.listAgents()
+    if (reception === undefined) throw new Error('seeding created no agent')
+    expect(reception).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-flash' })
+    await first.ctx.faberloomAgents.updateAgent(reception.id, { provider: 'anthropic', model: 'claude-opus-5' })
+
+    const second = await services(home, ['mwt-compras-clientes-leer'], pool)
+    await seedWith(second.ctx, second.catalog, config)
+    const kept = (await second.ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === reception.id)
+    expect(kept).toMatchObject({ provider: 'anthropic', model: 'claude-opus-5' })
+  })
+
   it('F16 — seeds nothing for a read-only identity, and a retry never duplicates what already landed', async () => {
     const readOnlyHome = ownerHome()
     const readOnly = await services(readOnlyHome, ['mwt-compras-clientes-leer'])

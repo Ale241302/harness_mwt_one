@@ -97,6 +97,12 @@ interface SeedMarker {
   readonly routines?: string[]
 }
 
+/** The provider and model the deployment last applied to one baseline agent. */
+interface AppliedPair {
+  readonly provider: string | undefined
+  readonly model: string | undefined
+}
+
 /** FaberLoom's own default agents and routines for one owner. */
 export class FaberLoomDefaults extends Service {
   static inject = ['faberloomAgents', 'faberloomRoutines']
@@ -174,6 +180,9 @@ export class FaberLoomDefaults extends Service {
     }
     // Keep the native seeds current on every start, not just the seeding one.
     await this.reconcileNativeSeeds(available)
+    // Record the pair the agents created in this pass received, so an owner's
+    // later choice is recognised on the next start.
+    await this.convergeBaselineAgents()
     return report
   }
 
@@ -244,30 +253,84 @@ export class FaberLoomDefaults extends Service {
 
   /**
    * Set the configured provider, model, and API key on the deployment's baseline
-   * agents — the native seeds and the shared presets. The deployment owns the
-   * baseline, so its provider and model are authoritative and replace an earlier
-   * value; a user's own agents are untouched. The key is only written when none
-   * is stored, since a stored key can never be read back to compare. Runs on
-   * every start, so agents a previous deployment seeded converge in place.
+   * agents — the native seeds and the shared presets. A baseline agent follows
+   * the deployment's provider and model until its owner picks different ones:
+   * each pass records the pair it applied per agent, and an agent whose current
+   * pair differs from that record was edited by its owner, so the pass leaves its
+   * provider and model alone. An agent with no record yet converges once. The key
+   * is only written when none is stored, since a stored key can never be read
+   * back to compare. A user's own agents are untouched.
    * @returns the baseline agent names updated in this pass.
    */
   private async convergeBaselineAgents(): Promise<string[]> {
     const defaults = this.agentDefaults()
     if (defaults.provider === undefined && defaults.model === undefined && defaults.apiKey === undefined) return []
     const baseline = this.baselineNames()
+    const applied = this.readApplied()
     const updated: string[] = []
+    let recorded = false
     for (const agent of await this.ctx.faberloomAgents.listAgents()) {
       if (!baseline.has(agent.name)) continue
+      const previous = applied[agent.id]
+      const ownerChose = previous !== undefined && (previous.provider !== agent.provider || previous.model !== agent.model)
       const patch: { provider?: string; model?: string; apiKey?: string } = {}
-      if (defaults.provider !== undefined && agent.provider !== defaults.provider) patch.provider = defaults.provider
-      if (defaults.model !== undefined && agent.model !== defaults.model) patch.model = defaults.model
+      if (!ownerChose && defaults.provider !== undefined && agent.provider !== defaults.provider) patch.provider = defaults.provider
+      if (!ownerChose && defaults.model !== undefined && agent.model !== defaults.model) patch.model = defaults.model
       if (defaults.apiKey !== undefined && !agent.hasApiKey) patch.apiKey = defaults.apiKey
+      if (!ownerChose) {
+        const pair = { provider: patch.provider ?? agent.provider, model: patch.model ?? agent.model }
+        if (previous === undefined || previous.provider !== pair.provider || previous.model !== pair.model) {
+          applied[agent.id] = pair
+          recorded = true
+        }
+      }
       if (patch.provider === undefined && patch.model === undefined && patch.apiKey === undefined) continue
       await this.ctx.faberloomAgents.updateAgent(agent.id, patch)
       updated.push(agent.name)
     }
+    if (recorded) this.writeApplied(applied)
     if (updated.length > 0) this.ctx.logger.info(`faberloom: configured ${String(updated.length)} baseline agent(s)`)
     return updated
+  }
+
+  /** File recording the provider and model each baseline agent last received. */
+  private appliedPath(): string {
+    return join(this.dshHome(), 'faberloom-baseline-applied.json')
+  }
+
+  /**
+   * Read the provider/model pair each baseline agent last received from the deployment.
+   * @returns the pairs by agent id; empty when the file is absent or unreadable.
+   */
+  private readApplied(): Record<string, AppliedPair> {
+    const file = this.appliedPath()
+    if (!existsSync(file)) return {}
+    try {
+      const value: unknown = JSON.parse(readFileSync(file, 'utf8'))
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return {}
+      const pairs: Record<string, AppliedPair> = {}
+      for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
+        if (entry === null || typeof entry !== 'object') continue
+        const record = entry as Record<string, unknown>
+        pairs[id] = {
+          provider: typeof record['provider'] === 'string' ? record['provider'] : undefined,
+          model: typeof record['model'] === 'string' ? record['model'] : undefined,
+        }
+      }
+      return pairs
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: baseline provider record could not be read: ${String(error)}`)
+      return {}
+    }
+  }
+
+  /**
+   * Persist the provider/model pairs applied to baseline agents.
+   * @param applied - the pairs by agent id.
+   */
+  private writeApplied(applied: Record<string, AppliedPair>): void {
+    mkdirSync(this.dshHome(), { recursive: true })
+    writeFileSync(this.appliedPath(), `${JSON.stringify(applied, null, 2)}\n`, 'utf8')
   }
 
   /**

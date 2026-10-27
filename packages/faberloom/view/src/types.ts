@@ -952,6 +952,10 @@ export interface FaberLoomSkillRow {
   readonly origin: 'role' | 'owner' | 'shared' | 'incoming'
   /** Ids of the agents that already list this skill. */
   readonly assignedTo: readonly string[]
+  /** Names of the agents that already list this skill, in the same order as `assignedTo`. */
+  readonly assignedNames: readonly string[]
+  /** Whether this owner skill is an edited copy that replaces a role or shared skill of the same name. */
+  readonly replacesCatalog: boolean
   /** Publisher email when another user shared this skill; absent for a local one. */
   readonly sharedBy?: string
 }

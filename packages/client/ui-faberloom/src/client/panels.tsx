@@ -181,6 +181,8 @@ export interface FaberloomPanelInjected {
   openSpaceFile: (spaceId: string, path: string) => Promise<Result<{ opened: boolean }>>
   /** Add or replace one uploaded skill. */
   saveSkill: (name: string, markdown: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
+  /** Read the full Markdown of one skill for editing. */
+  skillMarkdown: (name: string) => Promise<Result<string>>
   /** Remove one uploaded skill. */
   removeSkill: (name: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** List this identity's recorded skill installs. */
@@ -475,7 +477,18 @@ function AgentsSkillsTabs({ t, active, onSelect }: {
 /** Write feedback line, shared by the editors. */
 function Feedback({ t, message }: { t: ScreenProps['t']; message: string | null }) {
   if (message === null) return null
-  return <StateBlock kind="error" title={t('state.writeError')} text={message} />
+  return <StateBlock kind="error" title={t('state.writeError')} text={serverUnavailable(message) ? t('state.serverUnavailable') : message} />
+}
+
+/**
+ * Whether a failure means the server did not answer the call: a restarting
+ * gateway serves an HTML page where the client expects JSON, and a dropped
+ * network rejects the request outright. Neither carries a reason worth showing.
+ * @param message - the failure text.
+ * @returns true for an unavailable server.
+ */
+function serverUnavailable(message: string): boolean {
+  return /Unexpected token '<'|<!DOCTYPE|is not valid JSON|Failed to fetch|NetworkError|ERR_QUIC_PROTOCOL_ERROR/i.test(message)
 }
 
 /** One Espacios row with its computed tree position. */
@@ -2000,15 +2013,176 @@ function emailScreen() {
   }
 }
 
+/** Runs shown before the list asks to show more. */
+const RUNS_PAGE = 10
+
+/** The status label key for each execution status token; an unknown token shows verbatim. */
+const RUN_STATUS_KEY: Readonly<Record<string, FaberloomKey>> = {
+  running: 'runs.status.running',
+  waiting: 'runs.status.waiting',
+  completed: 'runs.status.completed',
+  failed: 'runs.status.failed',
+  needs_review: 'runs.status.review',
+}
+
+/** The step status label key for each step status token. */
+const STEP_STATUS_KEY: Readonly<Record<string, FaberloomKey>> = {
+  pending: 'runs.step.pending',
+  running: 'runs.status.running',
+  waiting: 'runs.status.waiting',
+  completed: 'runs.step.done',
+  failed: 'runs.status.failed',
+  skipped: 'runs.step.skipped',
+}
+
+/**
+ * Read a run failure in plain language. The engine records the cause as a raw
+ * message (an id that no longer resolves, a provider's JSON error); the list
+ * names the cause and keeps the raw text behind the details toggle.
+ * @param text - the recorded reason or step text.
+ * @returns the locale key for the known cause, or null when the text reads as is.
+ */
+function runProblemKey(text: string | null): FaberloomKey | null {
+  if (text === null) return null
+  if (/routine\s+\S+\s+version\s+\d+\s+not found/i.test(text)) return 'runs.problem.version'
+  if (/agent\s+\S+\s+not found/i.test(text)) return 'runs.problem.agent'
+  if (/insufficient balance|RESOURCE_EXHAUSTED|"code":\s*(429|402)|\bQUOTA\b|exceeded your current quota/i.test(text)) return 'runs.problem.quota'
+  return null
+}
+
+/** One line of a step text: the first non-empty line without Markdown emphasis markers. */
+function firstLine(text: string): string {
+  const line = text.split('\n').map(value => value.trim()).find(value => value.length > 0) ?? ''
+  return line.replace(/^#+\s*/, '').replace(/\*\*/g, '')
+}
+
+/**
+ * The executions of one routine, newest first: what started each run, when,
+ * how far it got, and what it concluded. Steps and the reconcile/cancel actions
+ * sit behind a per-run details toggle.
+ */
+function RoutineRuns(props: {
+  readonly t: ScreenProps['t']
+  readonly runs: readonly FaberLoomExecutionRow[]
+  readonly onReconcile: (runId: string) => void
+  readonly onCancelEffect: (runId: string, stepId: string) => void
+}) {
+  const { t, runs, onReconcile, onCancelEffect } = props
+  const [limit, setLimit] = useState(RUNS_PAGE)
+  const ordered = useMemo(() => [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt)), [runs])
+  if (ordered.length === 0) return <span className={styles.cellMuted}>{t('routines.noExecutions')}</span>
+  return (
+    <div className={styles.runList}>
+      {ordered.slice(0, limit).map((run) => {
+        const statusKey = RUN_STATUS_KEY[run.status]
+        const withText = [...run.steps].reverse().find(step => step.text !== null || step.reason !== null)
+        const raw = run.reason ?? withText?.reason ?? withText?.text ?? null
+        const problem = runProblemKey(run.reason) ?? runProblemKey(withText?.reason ?? null) ?? runProblemKey(withText?.text ?? null)
+        const summary = withText?.text === null || withText?.text === undefined ? null : firstLine(withText.text)
+        const when = new Date(run.createdAt)
+        const reviewable = run.status === 'needs_review' || run.status === 'failed' || run.status === 'waiting'
+        return (
+          <article className={styles.runCard} key={run.id} data-status={run.status}>
+            <header className={styles.runHead}>
+              <span className={styles.runStatus}>{statusKey === undefined ? run.status : t(statusKey)}</span>
+              <time className={styles.runMeta} dateTime={run.createdAt} title={run.createdAt}>
+                {Number.isNaN(when.getTime()) ? run.createdAt : when.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </time>
+              <span className={styles.runMeta}>
+                {t('runs.progress').replace('{done}', String(run.doneSteps)).replace('{total}', String(run.totalSteps))}
+                {` · ${t('routines.versionShort')}${String(run.routineVersion)}`}
+              </span>
+            </header>
+            {run.event?.subject === null || run.event?.subject === undefined || run.event.subject.length === 0
+              ? null
+              : <p className={styles.runSubject} title={run.event.subject}>{run.event.subject}</p>}
+            {problem !== null
+              ? <p className={styles.runProblem}>{t(problem)}</p>
+              : run.waitingFor !== null
+                ? <p className={styles.runSummary}>{t('runs.waitingFor').replace('{what}', run.waitingFor)}</p>
+                : summary === null || summary.length === 0 ? null : <p className={styles.runSummary}>{summary}</p>}
+            <details className={styles.runDetails}>
+              <summary>{t('runs.details')}</summary>
+              <ol className={styles.runSteps}>
+                {run.steps.map((step) => {
+                  const stepKey = STEP_STATUS_KEY[step.status]
+                  const body = step.text ?? step.reason
+                  return (
+                    <li key={step.id}>
+                      <div className={styles.runStepHead}>
+                        <span className={styles.runStepId}>{step.id}</span>
+                        <span className={styles.runMeta}>{stepKey === undefined ? step.status : t(stepKey)}</span>
+                        {step.effect && step.status === 'completed'
+                          ? <button className={styles.ghost} type="button" onClick={() => { onCancelEffect(run.id, step.id) }}>{t('routines.cancelEffect')}</button>
+                          : null}
+                      </div>
+                      {body === null ? null : <pre className={styles.runStepText}>{body}</pre>}
+                    </li>
+                  )
+                })}
+              </ol>
+              {problem !== null && raw !== null && !run.steps.some(step => (step.text ?? step.reason) === raw)
+                ? <pre className={styles.runStepText}>{raw}</pre>
+                : null}
+              {reviewable
+                ? <button className={styles.secondary} type="button" onClick={() => { onReconcile(run.id) }}>{t('routines.reconcile')}</button>
+                : null}
+            </details>
+          </article>
+        )
+      })}
+      {ordered.length <= limit ? null : (
+        <button className={styles.ghost} type="button" onClick={() => { setLimit(limit + RUNS_PAGE) }}>
+          {t('runs.more').replace('{count}', String(ordered.length - limit))}
+        </button>
+      )}
+    </div>
+  )
+}
+
 /** Skills: the role catalog plus the owner's uploads. */
 function skillsScreen() {
   return function FaberloomSkills(props: ScreenProps & { tabs?: ReactNode; refresh?: number }) {
-    const { t, skills, saveSkill, removeSkill, shareSkill, shares, unshareShare, refresh } = props
+    const { t, skills, saveSkill, skillMarkdown, removeSkill, shareSkill, shares, unshareShare, refresh } = props
     const [list, setList] = useState<readonly FaberLoomSkillRow[] | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [query, setQuery] = useState('')
     const [moduleFilter, setModuleFilter] = useState('')
     const [selected, setSelected] = useState<string | null>(null)
+    // The skill being edited: null when the modal shows the read-only detail,
+    // 'loading' while its Markdown arrives, otherwise the draft text.
+    const [draft, setDraft] = useState<string | null>(null)
+    const [draftLoading, setDraftLoading] = useState(false)
+    const [draftSaving, setDraftSaving] = useState(false)
+    const [draftError, setDraftError] = useState<string | null>(null)
+    const select = (name: string | null): void => {
+      setSelected(name)
+      setDraft(null)
+      setDraftError(null)
+    }
+    const startEdit = (name: string): void => {
+      setDraftLoading(true)
+      setDraftError(null)
+      void skillMarkdown(name)
+        .then((result) => {
+          if (result.ok) setDraft(result.value)
+          else setDraftError(result.error.message)
+        })
+        .catch((cause: unknown) => { setDraftError(String(cause)) })
+        .finally(() => { setDraftLoading(false) })
+    }
+    const saveDraft = (name: string, markdown: string): void => {
+      setDraftSaving(true)
+      setDraftError(null)
+      void saveSkill(name, markdown)
+        .then((result) => {
+          if (!result.ok) { setDraftError(result.error.message); return }
+          setList(result.value)
+          setDraft(null)
+        })
+        .catch((cause: unknown) => { setDraftError(String(cause)) })
+        .finally(() => { setDraftSaving(false) })
+    }
     const [uploading, setUploading] = useState(false)
     const [shareEmails, setShareEmails] = useState('')
     const [shareAll, setShareAll] = useState(false)
@@ -2086,72 +2260,97 @@ function skillsScreen() {
             operator's own, which is the Desktop running the Host locally. */}
         {list === null
           ? <StateBlock kind="loading" title={t('state.loading')} />
-          : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={setSelected}
+          : <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={select}
             emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />}
         <Modal
           open={chosen !== null}
-          onClose={() => { setSelected(null) }}
+          onClose={() => { select(null) }}
           title={chosen?.name ?? t('skills.detail')}
           closeLabel={t('action.close')}
           className={styles.panelDialog ?? ''}
-          footer={chosen === null ? undefined : (
+          footer={chosen === null ? undefined : draft !== null ? (
             <>
-              <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+              <button className={styles.ghost} type="button" disabled={draftSaving} onClick={() => { setDraft(null); setDraftError(null) }}>{t('action.cancel')}</button>
+              <button className={styles.primary} type="button" disabled={draftSaving || draft.trim().length === 0} onClick={() => { saveDraft(chosen.name, draft) }}>
+                {draftSaving ? t('skills.saving') : t('action.save')}
+              </button>
+            </>
+          ) : (
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { select(null) }}>{t('action.close')}</button>
               {chosen.origin !== 'owner' ? null : (
                 <button className={styles.danger} type="button" onClick={() => {
-                  void removeSkill(chosen.name).then((result) => { apply(result); setSelected(null) })
-                }}>{t('action.delete')}</button>
+                  void removeSkill(chosen.name).then((result) => { apply(result); select(null) })
+                }}>{chosen.replacesCatalog ? t('skills.restoreCatalog') : t('action.delete')}</button>
+              )}
+              {chosen.origin === 'incoming' ? null : (
+                <button className={styles.primary} type="button" disabled={draftLoading} onClick={() => { startEdit(chosen.name) }}>
+                  {draftLoading ? t('state.loading') : t('action.edit')}
+                </button>
               )}
             </>
           )}
         >
           {chosen === null
             ? null
-            : (
-              <>
-                <Field label={t('field.module')}><span className={styles.cellMuted}>{chosen.module ?? t('cell.none')}{chosen.action === null ? '' : ` · ${chosen.action}`}</span></Field>
-                <Field label={t('field.description')}><span className={styles.cellMuted}>{chosen.description.length === 0 ? t('cell.none') : chosen.description}</span></Field>
-                <Field label={t('field.usedBy')}>
-                  {chosen.assignedTo.length === 0
-                    ? <span className={styles.cellMuted}>{t('skills.unused')}</span>
-                    : <span className={styles.chips}>{chosen.assignedTo.map(id => <Chip key={id}>{id.slice(0, 8)}</Chip>)}</span>}
+            : draft !== null
+              ? (
+                <Field label={t('skills.markdown')} hint={chosen.origin === 'owner' ? t('skills.editOwnHint') : t('skills.editCatalogHint')}>
+                  <textarea className={styles.skillEditor} value={draft} spellCheck={false} aria-label={t('skills.markdown')}
+                    onChange={(event) => { setDraft(event.target.value) }} />
+                  {draftError === null ? null : <span className={styles.error}>{draftError}</span>}
                 </Field>
-                <Field label={t('field.origin')}><Chip tone={chosen.origin === 'owner' ? 'accent' : 'muted'}>{chosen.origin === 'owner' ? t('skills.own') : chosen.origin === 'shared' ? t('skills.shared') : chosen.origin === 'incoming' ? t('skills.incoming') : t('skills.role')}</Chip></Field>
-                {chosen.sharedBy === undefined ? null : <Field label={t('skills.sharedBy')}><span className={styles.cellMuted}>{chosen.sharedBy}</span></Field>}
-                {chosen.origin !== 'owner' ? null : (
-                  <Field label={t('skills.share')} hint={t('skills.shareHint')}>
-                    <input type="text" value={shareEmails} placeholder={t('agents.sharePlaceholder')} onChange={(event) => { setShareEmails(event.target.value) }} />
-                    <label className={styles.stepFlag}>
-                      <input type="checkbox" checked={shareAll} onChange={(event) => { setShareAll(event.target.checked) }} />
-                      <span>{t('agents.shareAll')}</span>
-                    </label>
-                    <div className={styles.grid2}>
-                      <button className={styles.ghost} type="button" onClick={() => {
-                        const emails = shareEmails.split(',').map(value => value.trim()).filter(value => value.length > 0)
-                        if (!shareAll && emails.length === 0) { setShareMsg(t('agents.shareNeedTarget')); return }
-                        void shareSkill(chosen.name, emails, shareAll)
-                          .then((result) => {
-                            if (!result.ok) setShareMsg(result.error.message)
-                            else { setShareMsg(t('agents.shareDone')); setShareEmails(''); setShareAll(false); setOutShares(result.value.outgoing) }
-                          })
-                          .catch((cause: unknown) => { setShareMsg(String(cause)) })
-                      }}>{t('skills.share')}</button>
-                      {shareMsg === null ? null : <span className={styles.cellMuted}>{shareMsg}</span>}
-                    </div>
-                    {outShares.filter(share => share.kind === 'skill' && share.name === chosen.name).map(share => (
-                      <div key={share.id} className={styles.grid2}>
-                        <span className={styles.cellMuted}>{share.share_all ? t('agents.shareAllShort') : share.shared_emails.join(', ')}</span>
-                        <button className={styles.ghost} type="button" onClick={() => {
-                          void unshareShare(share.id)
-                            .then((result) => { if (result.ok) setOutShares(result.value.outgoing) })
-                            .catch(() => {})
-                        }}>{t('agents.unshare')}</button>
-                      </div>
-                    ))}
+              )
+              : (
+                <>
+                  {draftError === null ? null : <span className={styles.error}>{draftError}</span>}
+                  <Field label={t('field.module')}><span className={styles.cellMuted}>{chosen.module ?? t('cell.none')}{chosen.action === null ? '' : ` · ${chosen.action}`}</span></Field>
+                  <Field label={t('field.description')}><span className={styles.cellMuted}>{chosen.description.length === 0 ? t('cell.none') : chosen.description}</span></Field>
+                  <Field label={t('field.usedBy')}>
+                    {chosen.assignedNames.length === 0
+                      ? <span className={styles.cellMuted}>{t('skills.unused')}</span>
+                      : (
+                        <span className={styles.chips}>
+                          {chosen.assignedNames.map((name, index) => <Chip key={chosen.assignedTo[index] ?? name}>{name}</Chip>)}
+                        </span>
+                      )}
                   </Field>
-                )}
-              </>
-            )}
+                  <Field label={t('field.origin')}><Chip tone={chosen.origin === 'owner' ? 'accent' : 'muted'}>{chosen.replacesCatalog ? t('skills.ownCopy') : chosen.origin === 'owner' ? t('skills.own') : chosen.origin === 'shared' ? t('skills.shared') : chosen.origin === 'incoming' ? t('skills.incoming') : t('skills.role')}</Chip></Field>
+                  {chosen.sharedBy === undefined ? null : <Field label={t('skills.sharedBy')}><span className={styles.cellMuted}>{chosen.sharedBy}</span></Field>}
+                  {chosen.origin !== 'owner' ? null : (
+                    <Field label={t('skills.share')} hint={t('skills.shareHint')}>
+                      <input type="text" value={shareEmails} placeholder={t('agents.sharePlaceholder')} onChange={(event) => { setShareEmails(event.target.value) }} />
+                      <label className={styles.stepFlag}>
+                        <input type="checkbox" checked={shareAll} onChange={(event) => { setShareAll(event.target.checked) }} />
+                        <span>{t('agents.shareAll')}</span>
+                      </label>
+                      <div className={styles.grid2}>
+                        <button className={styles.ghost} type="button" onClick={() => {
+                          const emails = shareEmails.split(',').map(value => value.trim()).filter(value => value.length > 0)
+                          if (!shareAll && emails.length === 0) { setShareMsg(t('agents.shareNeedTarget')); return }
+                          void shareSkill(chosen.name, emails, shareAll)
+                            .then((result) => {
+                              if (!result.ok) setShareMsg(result.error.message)
+                              else { setShareMsg(t('agents.shareDone')); setShareEmails(''); setShareAll(false); setOutShares(result.value.outgoing) }
+                            })
+                            .catch((cause: unknown) => { setShareMsg(String(cause)) })
+                        }}>{t('skills.share')}</button>
+                        {shareMsg === null ? null : <span className={styles.cellMuted}>{shareMsg}</span>}
+                      </div>
+                      {outShares.filter(share => share.kind === 'skill' && share.name === chosen.name).map(share => (
+                        <div key={share.id} className={styles.grid2}>
+                          <span className={styles.cellMuted}>{share.share_all ? t('agents.shareAllShort') : share.shared_emails.join(', ')}</span>
+                          <button className={styles.ghost} type="button" onClick={() => {
+                            void unshareShare(share.id)
+                              .then((result) => { if (result.ok) setOutShares(result.value.outgoing) })
+                              .catch(() => {})
+                          }}>{t('agents.unshare')}</button>
+                        </div>
+                      ))}
+                    </Field>
+                  )}
+                </>
+              )}
         </Modal>
       </Screen>
     )
@@ -2514,7 +2713,6 @@ function routinesScreen() {
     )
     const cloud = detail.kind === 'ready' ? detail.value?.cloud : undefined
     const [runs, setRuns] = useState<readonly FaberLoomExecutionRow[]>([])
-    const [runStep, setRunStep] = useState<Record<string, string>>({})
     const loadedRuns = useLazy<readonly FaberLoomExecutionRow[]>(
       () => selected === null ? Promise.resolve({ ok: true, value: [] }) : executions(selected),
       [selected],
@@ -2717,37 +2915,9 @@ function routinesScreen() {
                           </select>
                         </Field>
                         <Field label={t('field.executions')} hint={t('routines.executionsHint')}>
-                          <div className={styles.steps}>
-                            {runs.length === 0
-                              ? <span className={styles.cellMuted}>{t('routines.noExecutions')}</span>
-                              : runs.map((run) => {
-                                const shown = run.steps.find(step => step.id === (runStep[run.id] ?? (run.steps[0]?.id ?? '')))
-                                return (
-                                  <div className={styles.run} key={run.id}>
-                                    <div className={styles.runRow}>
-                                      <Chip>{run.status}</Chip>
-                                      <span className={styles.cellMuted}>{`${t('routines.versionShort')}${String(run.routineVersion)}`} · {run.doneSteps}/{run.totalSteps}</span>
-                                      <span className={styles.cellMuted}>{run.waitingFor ?? run.reason ?? t('routines.ready')}</span>
-                                      {run.deadlineAt === null ? null : (
-                                        <span className={styles.cellMuted} title={run.deadlineAt}>{run.deadlineAt.slice(11, 16)}</span>
-                                      )}
-                                      <select aria-label={t('routines.effectStep')} value={runStep[run.id] ?? (run.steps[0]?.id ?? '')}
-                                        onChange={(event) => { setRunStep({ ...runStep, [run.id]: event.target.value }) }}>
-                                        {run.steps.map(step => (
-                                          <option key={step.id} value={step.id}>{step.id} · {step.status}</option>
-                                        ))}
-                                      </select>
-                                      <button className={styles.secondary} type="button" onClick={() => { applyRun(reconcileExecution(run.id)) }}>{t('routines.reconcile')}</button>
-                                      <button className={styles.rowAction} type="button" aria-label={t('routines.cancelEffect')}
-                                        onClick={() => { applyRun(cancelExecutionEffect(run.id, runStep[run.id] ?? (run.steps[0]?.id ?? ''))) }}>−</button>
-                                    </div>
-                                    {shown?.text === null || shown === undefined
-                                      ? null
-                                      : <p className={styles.runText} title={shown.text}>{shown.text}</p>}
-                                  </div>
-                                )
-                              })}
-                          </div>
+                          <RoutineRuns t={t} runs={runs}
+                            onReconcile={(runId) => { applyRun(reconcileExecution(runId)) }}
+                            onCancelEffect={(runId, stepId) => { applyRun(cancelExecutionEffect(runId, stepId)) }} />
                         </Field>
                       </>
                     )}

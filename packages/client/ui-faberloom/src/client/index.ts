@@ -90,7 +90,12 @@ export function apply(ctx: ClientContext): void {
   // (resolved synchronously, outside React) read the same live numbers.
   let latestOverview: FaberLoomOverview | null = null
 
-  /** Read once and publish; a failed read keeps the last rows and marks the state. */
+  /**
+   * Read once and publish. A failed read before any rows marks the state; once
+   * rows are shown, a failed background read keeps them without an error, since
+   * the panel polls again within seconds (a gateway restart answers a few reads
+   * with its HTML page).
+   */
   const refresh = (): void => {
     if (actions === undefined) return
     const bound = actions
@@ -99,9 +104,9 @@ export function apply(ctx: ClientContext): void {
         if (result.ok) {
           latestOverview = result.value
           bound.setOverview(result.value)
-        } else bound.setError(result.error.message)
+        } else if (latestOverview === null) bound.setError(result.error.message)
       })
-      .catch(() => { bound.setError('read failed') })
+      .catch(() => { if (latestOverview === null) bound.setError('read failed') })
   }
 
   /** Run one write and publish its fresh overview; a failure carries its message. */
@@ -207,6 +212,7 @@ export function apply(ctx: ClientContext): void {
       deleteSpaceEntries: (spaceId, paths) => ctx.remote.faberloomView.deleteSpaceEntries(spaceId, paths),
       openSpaceFile: (spaceId, path) => ctx.remote.faberloomView.openSpaceFile(spaceId, path),
       saveSkill: (name, markdown) => ctx.remote.faberloomView.saveSkill(name, markdown),
+      skillMarkdown: name => ctx.remote.faberloomView.skillMarkdown(name),
       removeSkill: name => ctx.remote.faberloomView.removeSkill(name),
       skillInstalls: () => ctx.remote.faberloomView.skillInstalls(),
       installHarness: (source, replace) => ctx.remote.faberloomView.installHarness(source, replace),

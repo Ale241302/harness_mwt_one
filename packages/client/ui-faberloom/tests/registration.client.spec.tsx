@@ -167,6 +167,8 @@ async function bench(
   const importWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const setMemoryVisibility = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const setWorkflowVisibility = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const saveSkill = vi.fn(async (_name: string, _markdown: string): Promise<unknown> => ({ ok: true, value: panels.skills ?? [] }))
+  const skillMarkdown = vi.fn(async (_name: string): Promise<unknown> => ({ ok: true, value: '---\nname: mwt-admin-builder-crear\ndescription: Crea una orden de compra\n---\n\nCuerpo.\n' }))
   const setRoutineVisibility = vi.fn(async (): Promise<unknown> => ({ ok: true, value: OVERVIEW }))
   const captureSpaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const spaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
@@ -195,7 +197,8 @@ async function bench(
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
     skills,
-    saveSkill: vi.fn(async () => ({ ok: true, value: panels.skills ?? [] })),
+    saveSkill,
+    skillMarkdown,
     removeSkill: vi.fn(async () => ({ ok: true, value: panels.skills ?? [] })),
     shareSkill: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
     shareAgent: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
@@ -296,6 +299,7 @@ async function bench(
     setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
     saveRoutine, createRoutine, routineDetail, removeRoutine, setRoutineActive,
     mcpServers, saveMcpServer, removeMcpServer, probeMcpServer,
+    saveSkill, skillMarkdown, executions, reconcileExecution,
   }
 }
 
@@ -1073,7 +1077,11 @@ describe('faberloom work-flow canvas', () => {
 describe('faberloom panel editors', () => {
   const SKILL_ROW = {
     id: 'skill-1', name: 'mwt-admin-builder-crear', module: 'builder', action: 'create',
-    description: 'Crea una orden de compra', origin: 'owner', assignedTo: [],
+    description: 'Crea una orden de compra', origin: 'owner', assignedTo: [], assignedNames: [], replacesCatalog: false,
+  }
+  const ROLE_SKILL_ROW = {
+    ...SKILL_ROW, id: 'skill-2', name: 'marluvas-correo', origin: 'role',
+    assignedTo: ['052664bf-51a1-4ca4-846c-23728902e75b'], assignedNames: ['Operador Marluvas'],
   }
   const CONNECTION_ROW = {
     id: 'conn-1', kind: 'imap', label: '506@muitowork.com', host: 'imap.hostinger.com', port: 993,
@@ -1114,6 +1122,26 @@ describe('faberloom panel editors', () => {
     expect(dialog.textContent).toContain(faberloomEn['field.origin'])
     fireEvent.click(view.getAllByRole('button', { name: faberloomEn['action.close'] })[0] as HTMLButtonElement)
     await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+  })
+
+  it('names the agents that use a skill and edits a catalog skill into the owner copy', async () => {
+    const { runtime, view, saveSkill, skillMarkdown } = await bench(undefined, undefined, {}, [], { skills: [ROLE_SKILL_ROW] })
+    act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
+    fireEvent.click(await view.findByText(ROLE_SKILL_ROW.name))
+
+    const dialog = await view.findByRole('dialog')
+    expect(dialog.textContent).toContain('Operador Marluvas')
+    expect(dialog.textContent).not.toContain('052664bf')
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.edit'] }))
+    const editor = await view.findByLabelText(faberloomEn['skills.markdown'])
+    expect(skillMarkdown).toHaveBeenCalledWith(ROLE_SKILL_ROW.name)
+    expect(dialog.textContent).toContain(faberloomEn['skills.editCatalogHint'])
+    fireEvent.change(editor, { target: { value: '---\nname: marluvas-correo\ndescription: editada\n---\n' } })
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.save'] }))
+    await waitFor(() => { expect(saveSkill).toHaveBeenCalledWith(ROLE_SKILL_ROW.name, '---\nname: marluvas-correo\ndescription: editada\n---\n') })
+    await waitFor(() => { expect(view.queryByLabelText(faberloomEn['skills.markdown'])).toBeNull() })
   })
 
   it('mounts the folder install block only inside the Desktop application', async () => {
@@ -1203,6 +1231,47 @@ describe('faberloom routines visibility', () => {
     fireEvent.click((await view.findAllByRole('row'))[1] as HTMLTableRowElement)
     fireEvent.click(await view.findByRole('button', { name: 'Make shared' }))
     await waitFor(() => { expect(setRoutineVisibility).toHaveBeenCalledWith('routine-1', 'shared') })
+  })
+
+  it('lists runs newest first with their trigger and a plain-language failure', async () => {
+    const { runtime, view, executions, reconcileExecution } = await bench()
+    const step = (id: string, status: string, text: string | null, reason: string | null = null) =>
+      ({ id, status, text, reason, effect: false })
+    executions.mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: 'run-old', routineId: 'routine-1', routineName: 'Pedido a proforma', routineVersion: 3, status: 'completed',
+          waitingFor: null, deadlineAt: null, reason: null, doneSteps: 1, totalSteps: 1,
+          steps: [step('triar', 'completed', '**Resumen:** la OC 20845 queda registrada.\nDetalle largo.')],
+          evidenceCount: 0, event: { key: 'k1', type: 'email', subject: 'OC 20845' },
+          createdAt: '2026-10-20T10:00:00.000Z', updatedAt: '2026-10-20T10:05:00.000Z',
+        },
+        {
+          id: 'run-new', routineId: 'routine-1', routineName: 'Pedido a proforma', routineVersion: 4, status: 'needs_review',
+          waitingFor: null, deadlineAt: null, reason: null, doneSteps: 0, totalSteps: 1,
+          steps: [step('triar', 'failed', null, 'faberloom: agent 7945b799-3211-4128-b641-e1e3ab8cd7c1 not found')],
+          evidenceCount: 0, event: { key: 'k2', type: 'email', subject: 'PF 2494-2026 - Packing List' },
+          createdAt: '2026-10-27T10:00:00.000Z', updatedAt: '2026-10-27T10:01:00.000Z',
+        },
+      ],
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: ROUTINES }) })
+    await view.findByText('Pedido a proforma')
+    fireEvent.click((await view.findAllByRole('row'))[1] as HTMLTableRowElement)
+
+    await view.findByText('PF 2494-2026 - Packing List')
+    const subjects = [...view.container.querySelectorAll(`.${css.runSubject}`)]
+    expect(subjects.map(node => node.textContent)).toEqual(['PF 2494-2026 - Packing List', 'OC 20845'])
+    expect(view.getByText(faberloomEn['runs.problem.agent'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['runs.status.review'])).toBeTruthy()
+    expect(view.getByText('Resumen: la OC 20845 queda registrada.')).toBeTruthy()
+
+    // The steps and actions of each run sit in a collapsed details element.
+    const reconcile = view.getAllByText(faberloomEn['routines.reconcile'])
+    expect(reconcile).toHaveLength(1)
+    fireEvent.click(reconcile[0] as HTMLElement)
+    await waitFor(() => { expect(reconcileExecution).toHaveBeenCalledWith('run-new') })
   })
 
   it('scopes a routine to a Space from the editor', async () => {

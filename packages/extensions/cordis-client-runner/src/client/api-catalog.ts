@@ -365,9 +365,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'sessionId', description: 'Session to unarchive.' }],
       },
       {
-        signature: 'pickDirectory(): Promise<string | null>',
+        signature: 'pickDirectory(startPath?: string): Promise<string | null>',
         description: 'Open the Host-native directory picker.',
-        parameters: [],
+        parameters: [{ name: 'startPath', description: 'directory the chooser should open in, when known.' }],
         returns: 'the selected directory, or null when cancelled.',
       },
       {

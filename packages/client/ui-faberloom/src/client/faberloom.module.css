@@ -913,6 +913,17 @@
   color: var(--dsw-alias-label-caption);
 }
 
+/* The skill editor shows SKILL.md source: the data face keeps the YAML
+   frontmatter's indentation readable, and the height fits a whole skill. */
+.field textarea.skillEditor {
+  min-height: 52vh;
+  font: var(--dsw-font-data);
+  line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
 /* ── skill transfer ──────────────────────────────────────────────────── */
 
 .transfer {
@@ -1046,28 +1057,125 @@
   align-items: center;
 }
 
-.run {
+/* Routine runs: one flat entry per run, separated by a hairline. The status
+   word carries the state color because it is the one fact a reader scans for;
+   everything else stays in the label greys. */
+.runList {
+  display: flex;
+  flex-direction: column;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.runCard {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  min-width: 0;
 }
 
-.runRow {
-  display: grid;
-  grid-template-columns: auto minmax(0, 0.7fr) minmax(0, 1.2fr) minmax(0, 0.9fr) auto auto;
-  gap: 6px;
-  align-items: center;
+.runHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
 }
 
-.runText {
+.runStatus {
+  font: var(--dsw-font-ui-body);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.runCard[data-status='completed'] .runStatus { color: var(--dsw-alias-state-success-primary); }
+.runCard[data-status='needs_review'] .runStatus,
+.runCard[data-status='waiting'] .runStatus { color: var(--dsw-alias-state-warn-primary); }
+.runCard[data-status='failed'] .runStatus { color: var(--dsw-alias-state-error-primary); }
+
+.runMeta {
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+}
+
+.runSubject {
   margin: 0;
-  padding: 6px 8px;
-  border-left: 0.5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runSummary,
+.runProblem {
+  margin: 0;
+  font: var(--dsw-font-caption);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.runSummary { color: var(--dsw-alias-label-secondary); }
+.runProblem { color: var(--dsw-alias-state-error-primary); }
+
+.runDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runDetails > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+}
+
+.runDetails > summary:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.runDetails[open] > summary {
+  margin-bottom: 6px;
+}
+
+.runSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runStepHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.runStepId {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-data);
+}
+
+.runStepText {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-data);
   white-space: pre-wrap;
-  overflow: hidden;
-  max-height: 5.6em;
+  overflow-wrap: anywhere;
+  max-height: 16em;
+  overflow: auto;
 }
 
 .stepRow input[type='text'] {

@@ -193,6 +193,8 @@ function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' 
       action: field('action'),
       origin: sharedBy.length > 0 ? 'incoming' : origin,
       assignedTo: [],
+      assignedNames: [],
+      replacesCatalog: false,
       ...sharedBy.length === 0 ? {} : { sharedBy },
     })
   }
@@ -3380,13 +3382,32 @@ export class FaberLoomViewService extends TypertRemoteService {
       rows.set(entry.name, entry)
     }
     for (const entry of readSkillDirectories(join(this.dshHome(), 'skills'), 'owner')) {
-      rows.set(entry.name, entry)
+      rows.set(entry.name, { ...entry, replacesCatalog: rows.has(entry.name) })
     }
     const agents = await this.ctx.faberloomAgents.listAgents()
-    return [...rows.values()].map(row => ({
-      ...row,
-      assignedTo: agents.filter(agent => agent.skills.includes(row.name)).map(agent => agent.id),
-    }))
+    return [...rows.values()].map((row) => {
+      const users = agents.filter(agent => agent.skills.includes(row.name))
+      return { ...row, assignedTo: users.map(agent => agent.id), assignedNames: users.map(agent => agent.name) }
+    })
+  }
+
+  /**
+   * Read the full Markdown of one skill so the owner can edit it: the owner's own
+   * copy when one exists, otherwise the shared or role catalog copy the list shows.
+   * @param name - skill name.
+   * @returns the SKILL.md content.
+   */
+  @Remote('skillMarkdown')
+  async skillMarkdown(name: string): Promise<string> {
+    const clean = name.trim().replace(/[^a-zA-Z0-9-]+/g, '')
+    if (clean.length === 0) throw new Error('faberloom: the skill needs a name')
+    const roots = [join(this.dshHome(), 'skills'), this.sharedSkillsDir(), this.roleSkillsDir()]
+    for (const root of roots) {
+      if (root === undefined) continue
+      const file = join(root, clean, 'SKILL.md')
+      if (existsSync(file)) return readFileSync(file, 'utf8')
+    }
+    throw new Error(`faberloom: skill ${clean} not found`)
   }
 
   /**

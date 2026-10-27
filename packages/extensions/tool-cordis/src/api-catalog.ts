@@ -1393,6 +1393,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated entry.',
       },
       {
+        signature: 'async reassign(actor: FaberLoomContextActor, fromSpaceId: string, toSpaceId: string): Promise<number>',
+        description: 'Move every entry the owner holds on one Space to another Space.\n\nA duplicate Space is folded into its keeper; the entries keyed to the duplicate would otherwise become invisible when its row disappears. Only the owning identity\'s entries move, and each move appends a version so the history states where the entry now lives.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'fromSpaceId', description: 'Space being folded away.' }, { name: 'toSpaceId', description: 'Space that survives.' }],
+        returns: 'the number of entries moved.',
+      },
+      {
         signature: 'async versions(actor: FaberLoomContextActor, id: string): Promise<readonly FaberLoomContextVersion[]>',
         description: 'List one entry\'s version history, newest first.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
@@ -2068,6 +2074,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the rows, without content.',
       },
       {
+        signature: 'async reassign(fromSpaceId: string, toSpaceId: string): Promise<number>',
+        description: 'Move every shared Session recorded under one Space to another Space.\n\nFolding a duplicate Space into its keeper deletes the duplicate row; the transcripts keyed to it would otherwise disappear from the catalog. The console still holds the original placement, so a later `sync` can import the row again under the old Space; that Space no longer exists, and the import is reported as skipped by its caller.',
+        parameters: [{ name: 'fromSpaceId', description: 'Space being folded away.' }, { name: 'toSpaceId', description: 'Space that survives.' }],
+        returns: 'the number of rows moved.',
+      },
+      {
         signature: 'async content(actor: FaberLoomSessionActor, spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContent>',
         description: 'Read one shared Session\'s content.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space the Session is shared in.' }, { name: 'ownerId', description: 'the member whose host holds the Session.' }, { name: 'sessionId', description: 'the Session id.' }],
@@ -2251,6 +2263,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }],
         returns: '`true` when the stored record was deleted.',
         throws: ['when the space is absent or not manageable.'],
+      },
+      {
+        signature: 'async merge( actor: SpaceActor, keeperId: FaberLoomSpaceId, duplicates: readonly FaberLoomSpaceId[], ): Promise<FaberLoomSpace>',
+        description: 'Fold duplicate Spaces into one keeper.\n\nThe keeper keeps its identity and Workspace binding and absorbs the duplicates\' members, exclusions, sources, context, prompt, and agent. Memory entries that were attached to a duplicate are re-pointed at the keeper, and its files move with them, so nothing the owner captured becomes invisible. Curated context entries and shared Sessions are not handled here: the caller checks them before merging, because a record keyed to the duplicate would be lost with it.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'keeperId', description: 'Space that survives.' }, { name: 'duplicates', description: 'Spaces to fold into the keeper.' }],
+        returns: 'the updated keeper.',
+        throws: ['when either side is absent or the actor cannot manage it.'],
       },
       {
         signature: 'async remember( actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[], sessionId?: string, ): Promise<FaberLoomSpaceMemory>',
@@ -2736,6 +2755,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List the skills available to this owner: the role catalog plus the owner\'s own uploaded skills, each marked with the agents that already use it.',
         parameters: [],
         returns: 'the skill rows.',
+      },
+      {
+        signature: '@Remote(\'skillMarkdown\') async skillMarkdown(name: string): Promise<string>',
+        description: 'Read the full Markdown of one skill so the owner can edit it: the owner\'s own copy when one exists, otherwise the shared or role catalog copy the list shows.',
+        parameters: [{ name: 'name', description: 'skill name.' }],
+        returns: 'the SKILL.md content.',
       },
       {
         signature: '@Remote(\'saveSkill\') async saveSkill(name: string, markdown: string): Promise<readonly FaberLoomSkillRow[]>',
@@ -7826,7 +7851,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSkillRow',
-    declaration: 'export interface FaberLoomSkillRow {\n    readonly name: string;\n    readonly description: string;\n    readonly module: string | null;\n    readonly action: string | null;\n    readonly origin: \'role\' | \'owner\' | \'shared\' | \'incoming\';\n    readonly assignedTo: readonly string[];\n    readonly sharedBy?: string;\n}',
+    declaration: 'export interface FaberLoomSkillRow {\n    readonly name: string;\n    readonly description: string;\n    readonly module: string | null;\n    readonly action: string | null;\n    readonly origin: \'role\' | \'owner\' | \'shared\' | \'incoming\';\n    readonly assignedTo: readonly string[];\n    readonly assignedNames: readonly string[];\n    readonly replacesCatalog: boolean;\n    readonly sharedBy?: string;\n}',
   },
   {
     name: 'FaberLoomSpace',
