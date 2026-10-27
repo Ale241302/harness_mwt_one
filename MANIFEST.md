@@ -1,8 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-07-tombstones-edit-agents-skills` (commit `148006210382d3e9bd5cf643686971926664469f`: borrado bidireccional real de contenido ajeno mediante tombstones (columna `deleted_at` en la consola, `M4`), enforcement de `edit-<módulo>` sobre copias compartidas, y Agents+Skills en un único panel con pestañas locales (una sola fila de sidebar, resaltado correcto). Sobre `714b74392e`).
-**Imagen desplegada actual:** build de `main` @ `148006210382d3e9bd5cf643686971926664469f` (deploy caliente).
-**Verificado en el VPS:** 5 de octubre de 2026.
+**Tag de despliegue:** `deploy-2026-10-26-marluvas-live-operator` (commit `91834a4c0b26618dd105aa1f316f7b8fbb85fead`: agente de catálogo **Operador Marluvas** para roles admin/superadmin/CEO, diez skills `marluvas-*` en el catálogo por rol, siembra de agentes nuevos sobre un marcador existente sin resucitar los borrados, y la rutina viva `Vigía de correo` converge a tres pasos Marluvas ligados al agente cuando el IMAP es `alvaro@muitowork.com` o `506@muitowork.com`). Sobre `c9c2e99a6a`.
+**Imagen desplegada actual:** build de `main` @ `91834a4c0b26618dd105aa1f316f7b8fbb85fead` (deploy caliente).
+**Verificado en el VPS:** 26 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
