@@ -47,6 +47,8 @@ The receiver reads the owner's credentials through `ctx.faberloomConnections.ima
 
 Idempotency belongs to the engine, not the poller: the event key is the message's `Message-ID` when it has one and the mailbox UID otherwise, so re-reading a message never starts the same run twice.
 
+A desktop that mirrors to the VPS (`FABERLOOM_MIRROR_ENABLED=1`, platform not `web`) reads the same mailbox the VPS reads, and executions do not travel between the two. The VPS owns the mail-triggered runs of cloud-ready routines, so the desktop ingests with `skipCloudReady` and only starts the routines whose steps need the PC; the same message never runs the same routine on both.
+
 The receiver never writes to the mailbox. It does not mark messages read, move them, or delete them: the owner's own mail client keeps whatever state it had.
 
 `searchMailbox(ownerId, query, limit?, connectionId?)` answers a chat query against the same mailbox, newest first. It prefers the server's `UID SEARCH` and falls back to matching `From`/`Subject` over the most recent envelopes when the server refuses a UTF-8 charset. It is as read-only as the poller and never advances the receiver's cursor, so searching never hides mail from the triggers. The model reaches it through the `faberloom_mail_search` tool.

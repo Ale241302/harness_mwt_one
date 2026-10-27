@@ -24,7 +24,7 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomConnection } from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
 import { fetchContent, fetchMessages, markMessageSeen, moveMessage, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
@@ -368,7 +368,10 @@ export class FaberLoomInbound extends Service {
           receivedAt: now.toISOString(),
         },
       }
-      for (const result of await this.ctx.faberloomRoutines.ingest(ownerId, event)) {
+      // A desktop mirroring to the VPS reads the same mailbox the VPS reads;
+      // the VPS owns the mail-triggered runs of cloud-ready routines, so the
+      // same message never starts the same routine on both.
+      for (const result of await this.ctx.faberloomRoutines.ingest(ownerId, event, { skipCloudReady: vpsOwnsCloudRuns() })) {
         if (!result.deduped) started.push(`${String(result.execution.routineId)}:${event.key}`)
       }
     }

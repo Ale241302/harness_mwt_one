@@ -20,7 +20,7 @@ import z from '@deepseek-ai/schemastery'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Execution, ExecutionReview, FaberLoomRoutineId, FaberLoomRoutine, RoutineTrigger } from '@deepseek-ai/dsh-faberloom-routines'
-import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
+import { classifyRoutine, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 
@@ -415,11 +415,7 @@ export class FaberLoomExecutions extends Service {
       // mail-triggered runs of cloud-ready routines. The desktop still runs a
       // manual start and every routine that needs local files; otherwise both
       // dispatchers would send the same mail.
-      if (
-        process.env['FABERLOOM_MIRROR_PLATFORM'] === 'desktop'
-        && process.env['FABERLOOM_MIRROR_ENABLED'] === '1'
-        && cloud.cloudReady
-      ) continue
+      if (vpsOwnsCloudRuns() && cloud.cloudReady) continue
       const max = routine.definition.maxConcurrency
       let active = max === null ? 0 : executions.filter(execution => execution.routineId === routine.id
         && execution.status !== 'completed' && execution.status !== 'failed').length

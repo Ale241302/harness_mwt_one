@@ -47,6 +47,8 @@ kind: "package-reference"
 
 幂等属于引擎，而不属于轮询器：事件键在有 `Message-ID` 时用它，否则用邮箱 UID，因此重读同一封邮件永不重复启动同一次运行。
 
+镜像到 VPS 的桌面端（`FABERLOOM_MIRROR_ENABLED=1`，平台不是 `web`）读取与 VPS 相同的邮箱，而执行不会在两者之间传递。VPS 负责可在云端运行的例程由邮件触发的运行，因此桌面端以 `skipCloudReady` 摄取，只启动其步骤需要 PC 的例程；同一封邮件永远不会在两边运行同一个例程。
+
 接收器从不写入邮箱。它不标记已读、不移动、也不删除邮件：owner 自己的邮件客户端保持其原有状态。
 
 `searchMailbox(ownerId, query, limit?, connectionId?)` 以最新在前的方式，在同一个邮箱上回答来自聊天的查询。它优先使用服务器的 `UID SEARCH`，当服务器拒绝 UTF-8 字符集时，回退为在最近信封中匹配 `From`/`Subject`。它与轮询器同样只读，且从不推进接收器的游标，因此搜索不会让触发器漏掉任何邮件。模型通过 `faberloom_mail_search` 工具触达它。

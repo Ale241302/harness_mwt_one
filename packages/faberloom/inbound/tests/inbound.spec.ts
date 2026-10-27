@@ -1,5 +1,5 @@
 import { createServer, type Server, type Socket } from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -103,6 +103,29 @@ function emailRoutine(match: string): RoutineDefinitionInput {
 }
 
 describe('FaberLoomInbound', () => {
+  it('leaves the cloud-ready routines of a mail to the VPS on a desktop that mirrors to it', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 11, messageId: 'oc-2@eguisa.example', from: 'cliente@eguisa.example', subject: 'Orden de compra 4712' },
+    ], log)
+    servers.push(fake.server)
+    vi.stubEnv('FABERLOOM_MIRROR_ENABLED', '1')
+    try {
+      const { connections, routines, inbound } = await harness()
+      await connections.save(OWNER, { kind: 'imap', label: 'Correo Eguisa', host: '127.0.0.1', port: fake.port, secure: false, username: 'compras2', secret: 'secreta' })
+      const cloud = { ...emailRoutine('orden de compra'), steps: [{ id: 's1', instruction: 'atiende el correo', handler: 'agent' }] }
+      const routine = await routines.createRoutine(OWNER, { name: 'Pedidos por correo', definition: cloud })
+      await routines.activateRoutine(OWNER, routine.id)
+
+      const report = await inbound.runOnce()
+      expect(report).toMatchObject({ read: 1, error: null })
+      expect(report.started).toEqual([])
+      expect(await routines.listExecutions({ routineId: routine.id })).toEqual([])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('F07 — turns a new message of the owner mailbox into one routine run', async () => {
     const log: string[] = []
     const fake = await fakeServer([

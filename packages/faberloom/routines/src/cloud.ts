@@ -199,3 +199,16 @@ export function classifyRoutine(definition: RoutineDefinition): CloudExecutionPr
     text: `${step.instruction}\n${JSON.stringify(step.config)}`,
   })))
 }
+
+/**
+ * Whether this process is a desktop mirroring to a live VPS, so the VPS owns the
+ * timed and mail-triggered runs of cloud-ready routines and this process must not
+ * start them too. The desktop exports `FABERLOOM_MIRROR_ENABLED=1` and leaves the
+ * platform unset (the mirror reads an unset platform as the desktop); the web side
+ * sets `FABERLOOM_MIRROR_PLATFORM=web`.
+ * @param env - the process environment.
+ * @returns true on a mirroring desktop.
+ */
+export function vpsOwnsCloudRuns(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
+  return env['FABERLOOM_MIRROR_ENABLED'] === '1' && env['FABERLOOM_MIRROR_PLATFORM'] !== 'web'
+}

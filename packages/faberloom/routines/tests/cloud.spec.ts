@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyCloudSteps, classifyRoutine } from '../src/cloud.ts'
+import { classifyCloudSteps, classifyRoutine, vpsOwnsCloudRuns } from '../src/cloud.ts'
 import type { RoutineDefinition } from '../src/types.ts'
 
 /** A minimal stored definition with one step. */
@@ -27,6 +27,16 @@ function definition(handler: string, instruction: string): RoutineDefinition {
     maxConcurrency: null,
   }
 }
+
+describe('who owns the cloud-ready runs', () => {
+  it('is the VPS only for a desktop that mirrors to it', () => {
+    expect(vpsOwnsCloudRuns({ FABERLOOM_MIRROR_ENABLED: '1' })).toBe(true)
+    expect(vpsOwnsCloudRuns({ FABERLOOM_MIRROR_ENABLED: '1', FABERLOOM_MIRROR_PLATFORM: 'desktop' })).toBe(true)
+    expect(vpsOwnsCloudRuns({ FABERLOOM_MIRROR_ENABLED: '1', FABERLOOM_MIRROR_PLATFORM: 'web' })).toBe(false)
+    expect(vpsOwnsCloudRuns({})).toBe(false)
+    expect(typeof vpsOwnsCloudRuns()).toBe('boolean')
+  })
+})
 
 describe('cloud execution profile', () => {
   it('runs an email-only routine on the VPS', () => {

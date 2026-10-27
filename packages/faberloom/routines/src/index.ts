@@ -48,7 +48,7 @@ import type {
 export type * from './types.ts'
 export * from './builtins.ts'
 export { routineDefinitionsMatch } from './equality.ts'
-export { classifyCloudSteps, classifyRoutine } from './cloud.ts'
+export { classifyCloudSteps, classifyRoutine, vpsOwnsCloudRuns } from './cloud.ts'
 export type { CloudExecutionProfile, CloudExecutionScope, CloudStepInput } from './cloud.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -1149,12 +1149,19 @@ export class FaberLoomRoutines extends Service {
    * dedupes to its case.
    * @param ownerId - the owning identity the event belongs to.
    * @param event - the event.
+   * @param options - `skipCloudReady` leaves the routines that can run on the VPS
+   *   to the VPS, for a desktop that mirrors to one and reads the same mailbox.
    * @returns the executions started or deduped.
    */
-  async ingest(ownerId: string, event: IngestEvent): Promise<StartExecutionResult[]> {
+  async ingest(
+    ownerId: string,
+    event: IngestEvent,
+    options: { readonly skipCloudReady?: boolean } = {},
+  ): Promise<StartExecutionResult[]> {
     const results: StartExecutionResult[] = []
     for (const [rawId, record] of (await this.routines()).entries()) {
       if (record.ownerId !== ownerId || record.status !== 'active') continue
+      if (options.skipCloudReady === true && classifyRoutine(record.definition).cloudReady) continue
       const matches = record.definition.triggers.some(trigger =>
         (trigger.kind === 'event' || trigger.kind === 'email')
         && (trigger.match === null || eventMatches(trigger.match, event)))

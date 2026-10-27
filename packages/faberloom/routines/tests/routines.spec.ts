@@ -257,6 +257,24 @@ describe('FaberLoomRoutines', () => {
     expect(await routines.removeSource(OWNER, source.id)).toBe(true)
   })
 
+  it('leaves a cloud-ready routine to the VPS when asked, still starting one that needs the PC', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('agent', () => 'done')
+    const cloud = await routines.createRoutine(OWNER, {
+      name: 'nube', definition: definition([{ id: 's1', instruction: 'clasifica el correo', handler: 'agent' }], [{ kind: 'email' }]),
+    })
+    const local = await routines.createRoutine(OWNER, {
+      name: 'pc',
+      definition: definition([{ id: 's1', instruction: 'actualiza el archivo C:\\datos\\pedidos.xlsx', handler: 'agent' }], [{ kind: 'email' }]),
+    })
+    await routines.activateRoutine(OWNER, cloud.id)
+    await routines.activateRoutine(OWNER, local.id)
+    const started = await routines.ingest(OWNER, { key: 'm-pc', type: 'email', subject: 'hola' }, { skipCloudReady: true })
+    expect(started.map(result => result.execution.routineId)).toEqual([local.id])
+    const both = await routines.ingest(OWNER, { key: 'm-both', type: 'email', subject: 'hola' })
+    expect(both).toHaveLength(2)
+  })
+
   it('F06 — removes a routine and its versions while its executions stay as history', async () => {
     const { routines } = await harness()
     routines.registerHandler('step', () => 'done')
