@@ -156,6 +156,17 @@ describe('baseline agents between two homes', () => {
     expect(store.get('faberloom_agents')?.table('baseline').get('Nadie')).toBeUndefined()
   })
 
+  it('lands the settings when the credential seam refuses the key', async () => {
+    const refusing: BaselineSecrets = {
+      read: async () => undefined,
+      write: async () => { throw new Error('seam refused') },
+    }
+    const desk = await home({ 'd-op': agent('d-op', 'Operador Marluvas') }, refusing)
+    await desk.store.get('faberloom_agents')?.table('baseline').put('Operador Marluvas', { provider: 'anthropic', apiKey: 'sk-ant-nueva' })
+    const rows = await storedAgents(desk.root)
+    expect(rows['d-op']).toMatchObject({ provider: 'anthropic', hasApiKey: false })
+  })
+
   it('reads the table without a credential seam, and a seam-less put leaves the key alone', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'faberloom-mirror-baseline-'))
     homes.push(dir)

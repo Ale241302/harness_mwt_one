@@ -333,6 +333,20 @@ describe('FaberLoomMirror', () => {
     expect(grants(facility).get('g1')).toMatchObject({ note: 'cambiado en la web con el escritorio cerrado' })
   })
 
+  it('finds a credential seam that registers after the mirror was built', async () => {
+    const { mirror, ctx } = await harness(remoteDocument('base'))
+    const secrets = mirror['baselineSecrets']()
+    expect(await secrets.read('agent-1')).toBeUndefined()
+    await expect(secrets.write('agent-1', 'sk-x')).rejects.toThrow('no credential seam')
+    const stored = new Map<string, string>()
+    ctx.provide('credentials', {
+      resolve: async (ref: string) => (stored.has(ref) ? { value: stored.get(ref) } : undefined),
+      set: async (ref: string, value: string) => { stored.set(ref, value) },
+    } as never)
+    await secrets.write('agent-1', 'sk-x')
+    expect(await secrets.read('agent-1')).toBe('sk-x')
+  })
+
   it('starts with an empty journal when the saved one is unreadable or belongs to another owner', async () => {
     const { mirror, gateway, facility, url } = await harness(remoteDocument('base'))
     const journals = [

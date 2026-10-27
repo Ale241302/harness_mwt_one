@@ -409,26 +409,34 @@ export class FaberLoomMirror extends Service {
    * mirrored domain read from its own document on the medium.
    */
   private store(): MirrorHomeStore {
-    const secrets = this.baselineSecrets()
     this.storeInstance ??= new MirrorHomeStore({
       ...this.config.storagesRoot === undefined ? {} : { storagesRoot: this.config.storagesRoot },
       facility: this.ctx.storageDomain as unknown as MirrorDomainSource,
-      ...secrets === undefined ? {} : { secrets },
+      secrets: this.baselineSecrets(),
     })
     return this.storeInstance
   }
 
   /**
    * The baseline agents' provider keys as the credential seam stores them, under
-   * the same per-agent reference the agents service uses. Absent when this
-   * process mounts no credential seam; the settings then travel without keys.
+   * the same per-agent reference the agents service uses. The seam is looked up
+   * on every call: the store is built before the seam registers (the status is
+   * written at construction), so a seam captured then would stay missing for
+   * the whole process. Without a seam a read answers no key and a write is
+   * refused, and the settings travel without keys.
    */
-  private baselineSecrets(): BaselineSecrets | undefined {
-    const credentials = this.ctx.get('credentials')
-    if (credentials === undefined) return undefined
+  private baselineSecrets(): BaselineSecrets {
     return {
-      read: async agentId => (await credentials.resolve(agentCredentialRef(agentId as FaberLoomAgentId)))?.value,
-      write: async (agentId, key) => { await credentials.set(agentCredentialRef(agentId as FaberLoomAgentId), key) },
+      read: async (agentId) => {
+        const credentials = this.ctx.get('credentials')
+        if (credentials === undefined) return undefined
+        return (await credentials.resolve(agentCredentialRef(agentId as FaberLoomAgentId)))?.value
+      },
+      write: async (agentId, key) => {
+        const credentials = this.ctx.get('credentials')
+        if (credentials === undefined) throw new Error('faberloom: no credential seam to store the baseline agent key')
+        await credentials.set(agentCredentialRef(agentId as FaberLoomAgentId), key)
+      },
     }
   }
 

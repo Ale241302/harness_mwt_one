@@ -156,10 +156,15 @@ export class BaselineAgentTable implements KvTable<string, unknown> {
     }
     const key = settings['apiKey']
     if (typeof key === 'string' && key.length > 0 && this.secrets !== undefined && this.secretCache.get(id) !== key) {
-      await this.secrets.write(id, key)
-      this.secretCache.set(id, key)
-      next['hasApiKey'] = true
-      next['apiKeyTail'] = key.slice(-4)
+      try {
+        await this.secrets.write(id, key)
+        this.secretCache.set(id, key)
+        next['hasApiKey'] = true
+        next['apiKeyTail'] = key.slice(-4)
+      } catch {
+        // A seam that refuses the key leaves this home's key as it was; the
+        // settings still land, and the differing projection retries next cycle.
+      }
     }
     next['version'] = typeof row['version'] === 'number' ? row['version'] + 1 : 1
     next['updatedAt'] = new Date().toISOString()
