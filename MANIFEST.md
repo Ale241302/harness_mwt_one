@@ -1,8 +1,8 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-26-marluvas-live-operator` (commit `7e3067f1266886321ecc5daad73d24811e881ef6`: agente de catálogo **Operador Marluvas** para roles admin/superadmin/CEO, diez skills `marluvas-*` en el catálogo por rol, siembra de agentes nuevos sobre un marcador existente sin resucitar los borrados, la rutina viva `Vigía de correo` converge a tres pasos Marluvas ligados al agente por nombre cuando el IMAP es `alvaro@muitowork.com` o `506@muitowork.com`, y la convergencia compara los campos propios —incluido un matcher vacío como `null`— en vez de la forma almacenada para no crear una versión por sondeo; el receptor IMAP recibe el rol para mantener la puerta admin/CEO). Sobre `c9c2e99a6a`.
-**Imagen desplegada actual:** build de `main` @ `7e3067f1266886321ecc5daad73d24811e881ef6` (deploy caliente).
-**Verificado en el VPS:** 26 de octubre de 2026.
+**Tag de despliegue:** `deploy-2026-10-26-marluvas-live-operator` (commit `04d4154bc02109f00daa7cae6dda4a64beaae32f`: se oculta el panel Predicción hasta desplegar su sidecar; agente de catálogo **Operador Marluvas** para roles admin/superadmin/CEO, diez skills `marluvas-*` en el catálogo por rol, siembra de agentes nuevos sobre un marcador existente sin resucitar los borrados, la rutina viva `Vigía de correo` converge a tres pasos Marluvas ligados al agente por nombre cuando el IMAP es `alvaro@muitowork.com` o `506@muitowork.com`, y la convergencia compara los campos propios —incluido un matcher vacío como `null`— en vez de la forma almacenada para no crear una versión por sondeo; el receptor IMAP recibe el rol para mantener la puerta admin/CEO). Sobre `c9c2e99a6a`.
+**Imagen desplegada actual:** build de `main` @ `04d4154bc02109f00daa7cae6dda4a64beaae32f` (deploy caliente).
+**Verificado en el VPS:** 27 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
 de FaberLoom; solo lo que está desplegado y comprobado.
