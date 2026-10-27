@@ -1,9 +1,11 @@
 /**
  * Native product defaults (`ctx.faberloomDefaults`): the agents and routines
  * FaberLoom seeds for a new owner, taken from the product plan and the screen
- * schemas. Seeding runs once per owner — the marker under the owner's home
- * prevents both duplicates and resurrection after a deletion — and only the
- * skills the owner's role actually ships are assigned to the seeded agents.
+ * schemas. The plan agents and routines seed once per owner — the marker under
+ * the owner's home prevents both duplicates and resurrection after a deletion —
+ * while a newer catalogue adds its new agents to an existing marker without
+ * resurrecting a deleted name. Only the skills the owner's role actually ships
+ * are assigned to the seeded agents.
  *
  * Seeded routines stay `draft`: the owner activates them in the panel.
  * @module @deepseek-ai/dsh-faberloom-defaults
@@ -18,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import { SEED_AGENTS, SEED_ROUTINES } from './catalog.ts'
 import { PRESET_CURATION } from './preset-curation.ts'
+import type { SeedAgent } from './catalog.ts'
 import type { FaberLoomAgent, FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
 
 export type * from './catalog.ts'
@@ -86,6 +89,14 @@ export interface SeedReport {
   readonly routines: readonly string[]
 }
 
+/** The materialized marker recording what one owner already received. */
+interface SeedMarker {
+  readonly seededAt?: string
+  readonly role?: string
+  readonly agents?: string[]
+  readonly routines?: string[]
+}
+
 /** FaberLoom's own default agents and routines for one owner. */
 export class FaberLoomDefaults extends Service {
   static inject = ['faberloomAgents', 'faberloomRoutines']
@@ -138,20 +149,23 @@ export class FaberLoomDefaults extends Service {
     const marker = this.markerPath()
     let report: SeedReport
     if (existsSync(marker)) {
-      report = { seeded: shared.length > 0, skipped: 'already seeded', agents: shared, routines: [] }
+      // A newer catalogue can add an agent after this owner was seeded. Create
+      // only the names the marker does not already record, so a deleted seed is
+      // never resurrected.
+      const added = await this.seedNewCatalogAgents(available)
+      report = { seeded: shared.length > 0 || added.length > 0, skipped: 'already seeded', agents: [...shared, ...added], routines: [] }
     } else if (!this.claim()) {
       report = { seeded: shared.length > 0, skipped: 'another pass is seeding', agents: shared, routines: [] }
     } else {
       try {
         const agents = [...shared, ...await this.seedAgents(available)]
         const routines = await this.seedRoutines(ownerId)
-        mkdirSync(this.dshHome(), { recursive: true })
-        writeFileSync(marker, `${JSON.stringify({
+        this.writeMarker({
           seededAt: new Date().toISOString(),
           role: this.config.role ?? '',
           agents,
           routines,
-        }, null, 2)}\n`, 'utf8')
+        })
         this.ctx.logger.info(`faberloom: seeded ${String(agents.length)} agent(s) and ${String(routines.length)} routine(s) for ${ownerId}`)
         report = { seeded: agents.length > 0 || routines.length > 0, skipped: null, agents, routines }
       } finally {
@@ -172,6 +186,7 @@ export class FaberLoomDefaults extends Service {
   private async reconcileNativeSeeds(available: ReadonlySet<string>): Promise<void> {
     const byName = new Map<string, FaberLoomAgent>((await this.ctx.faberloomAgents.listAgents()).map(agent => [agent.name, agent]))
     for (const seed of SEED_AGENTS) {
+      if (!this.seedApplies(seed)) continue
       const agent = byName.get(seed.name)
       if (agent === undefined) continue
       const curated = seed.skills.filter(skill => available.has(skill))
@@ -276,6 +291,7 @@ export class FaberLoomDefaults extends Service {
     const existing = new Set((await this.ctx.faberloomAgents.listAgents()).map(agent => agent.name))
     const created: string[] = []
     for (const seed of SEED_AGENTS) {
+      if (!this.seedApplies(seed)) continue
       if (existing.has(seed.name)) continue
       await this.ctx.faberloomAgents.createAgent({
         name: seed.name,
@@ -288,6 +304,59 @@ export class FaberLoomDefaults extends Service {
       created.push(seed.name)
     }
     return created
+  }
+
+  /**
+   * Create the catalogue agents a newer release added after this owner's marker.
+   *
+   * The marker records every name a pass created, so a deleted agent is never
+   * resurrected. A name the marker does not record is either new in the
+   * catalogue or an agent the owner created by hand; a hand-created agent is
+   * left untouched and recorded, while a new catalogue name is created with the
+   * role's available skills.
+   * @param available - the skill names the owner's role can use.
+   * @returns the catalogue names created in this pass.
+   */
+  private async seedNewCatalogAgents(available: ReadonlySet<string>): Promise<string[]> {
+    const marker = this.readMarker()
+    if (marker === undefined) return []
+    const known = new Set(marker.agents ?? [])
+    const existing = new Set((await this.ctx.faberloomAgents.listAgents()).map(agent => agent.name))
+    const created: string[] = []
+    let changed = false
+    for (const seed of SEED_AGENTS) {
+      if (!this.seedApplies(seed)) continue
+      if (known.has(seed.name)) continue
+      if (!existing.has(seed.name)) {
+        await this.ctx.faberloomAgents.createAgent({
+          name: seed.name,
+          responsibility: seed.responsibility,
+          origin: 'scratch',
+          seeded: true,
+          skills: seed.skills.filter(skill => available.has(skill)),
+          ...this.agentDefaults(),
+        })
+        created.push(seed.name)
+      }
+      known.add(seed.name)
+      changed = true
+    }
+    if (changed) {
+      this.writeMarker({ ...marker, agents: [...known] })
+      if (created.length > 0) this.ctx.logger.info(`faberloom: added ${String(created.length)} catalogue agent(s)`)
+    }
+    return created
+  }
+
+  /**
+   * Whether the owner's role receives one catalogue agent.
+   * @param seed - the catalogue entry.
+   * @returns true when the entry has no role restriction or the role matches.
+   */
+  private seedApplies(seed: SeedAgent): boolean {
+    if (seed.roles === undefined) return true
+    const role = (this.config.role ?? '').toLowerCase()
+    return role.length > 0 && seed.roles.includes(role)
   }
 
   /**
@@ -470,6 +539,43 @@ export class FaberLoomDefaults extends Service {
   /** Marker file recording that this owner was seeded. */
   private markerPath(): string {
     return join(this.dshHome(), 'faberloom-defaults.json')
+  }
+
+  /**
+   * Read the marker this owner's earlier pass wrote.
+   * @returns the recorded names, or undefined when the marker is absent or unreadable.
+   */
+  private readMarker(): SeedMarker | undefined {
+    const file = this.markerPath()
+    if (!existsSync(file)) return undefined
+    try {
+      const value: unknown = JSON.parse(readFileSync(file, 'utf8'))
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+      const record = value as Record<string, unknown>
+      return {
+        ...typeof record['seededAt'] === 'string' ? { seededAt: record['seededAt'] } : {},
+        ...typeof record['role'] === 'string' ? { role: record['role'] } : {},
+        ...Array.isArray(record['agents'])
+          ? { agents: record['agents'].filter((name): name is string => typeof name === 'string') }
+          : {},
+        ...Array.isArray(record['routines'])
+          ? { routines: record['routines'].filter((name): name is string => typeof name === 'string') }
+          : {},
+      }
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: defaults marker could not be read: ${String(error)}`)
+      return undefined
+    }
+  }
+
+  /**
+   * Write the marker atomically enough for one process: the file is small and a
+   * partial write only makes the next pass retry the same idempotent creates.
+   * @param marker - the names this owner has received.
+   */
+  private writeMarker(marker: SeedMarker): void {
+    mkdirSync(this.dshHome(), { recursive: true })
+    writeFileSync(this.markerPath(), `${JSON.stringify(marker, null, 2)}\n`, 'utf8')
   }
 
   /** Claim file a running pass holds. */

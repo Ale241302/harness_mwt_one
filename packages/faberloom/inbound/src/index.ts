@@ -23,7 +23,8 @@ import z from '@deepseek-ai/schemastery'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MARLUVAS_AGENT_NAME, marluvasLiveMailRoutine } from '@deepseek-ai/dsh-faberloom-routines'
+import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import { fetchContent, fetchMessages, markMessageSeen, moveMessage, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
@@ -177,11 +178,17 @@ export class FaberLoomInbound extends Service {
     const list = await connections.list(ownerId)
     if (!list.some(connection => connection.kind === 'imap') || !list.some(connection => connection.kind === 'smtp')) return
     const routines = this.ctx.faberloomRoutines
+    const agents = this.ctx.get('faberloomAgents')
+    const agent = agents === undefined ? undefined : (await agents.listAgents()).find(candidate => candidate.name === MARLUVAS_AGENT_NAME)
+    const input = agent === undefined ? LIVE_MAIL_ROUTINE : marluvasLiveMailRoutine(agent.id)
     const existing = (await routines.listRoutines(ownerId)).find(routine => routine.name === LIVE_MAIL_ROUTINE_NAME)
     if (existing === undefined) {
-      const created = await routines.createRoutine(ownerId, LIVE_MAIL_ROUTINE)
+      const created = await routines.createRoutine(ownerId, input)
       await routines.activateRoutine(ownerId, created.id)
       return
+    }
+    if (JSON.stringify(existing.definition) !== JSON.stringify(input.definition)) {
+      await routines.updateRoutine(ownerId, existing.id, input)
     }
     if (existing.status !== 'active') await routines.activateRoutine(ownerId, existing.id)
   }

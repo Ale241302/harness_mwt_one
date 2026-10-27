@@ -26,7 +26,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, normalizePermissions } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MARLUVAS_AGENT_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
@@ -48,6 +48,7 @@ import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
 import { classifyWorkflow } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { FaberLoomConnections, FaberLoomEmailDraft } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
+import type {} from '@deepseek-ai/dsh-faberloom-defaults'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
 // Type-only: the subprocess provider that runs the optional document converter.
 import type {} from '@deepseek-ai/dsh-subprocess'
@@ -3740,8 +3741,29 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     const connections = await this.connectionsService().list(ownerId)
     const hasMail = connections.some(connection => connection.kind === 'imap') && connections.some(connection => connection.kind === 'smtp')
-    if (hasMail) await ensure(LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME)
+    if (hasMail) {
+      const marluvas = this.isMarluvasMailbox(connections)
+      if (marluvas) await this.ctx.get('faberloomDefaults')?.seed()
+      const agent = marluvas
+        ? (await this.ctx.faberloomAgents.listAgents()).find(candidate => candidate.name === MARLUVAS_AGENT_NAME)
+        : undefined
+      await ensure(agent === undefined ? LIVE_MAIL_ROUTINE : marluvasLiveMailRoutine(agent.id), LIVE_MAIL_ROUTINE_NAME)
+    }
     if (this.hasMwtTools()) await ensure(MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME)
+  }
+
+  /**
+   * Whether this owner is a privileged Marluvas mailbox operator: an admin/CEO
+   * whose primary mail account is one of the two shared operations mailboxes.
+   * @param connections - the owner's saved connections.
+   * @returns true when the Marluvas live routine should replace the generic one.
+   */
+  private isMarluvasMailbox(connections: readonly FaberLoomConnection[]): boolean {
+    if (!this.isPrivileged()) return false
+    const allowlist = new Set(['alvaro@muitowork.com', '506@muitowork.com'])
+    return connections.some(connection => connection.kind === 'imap'
+      && typeof connection.username === 'string'
+      && allowlist.has(connection.username.trim().toLowerCase()))
   }
 
   /** Whether this deployment mounted the MWT.ONE MCP client tools. */

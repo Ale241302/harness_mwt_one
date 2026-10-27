@@ -17,16 +17,30 @@ import { SEED_AGENTS, SEED_ROUTINES } from '../src/catalog.ts'
 const OWNER = 'compras2@sondelsa.com'
 const homes: string[] = []
 
+/** The ten skills the Marluvas operator carries. */
+const MARLUVAS_SKILLS = [
+  'marluvas-operacion',
+  'marluvas-correo',
+  'marluvas-expediente',
+  'marluvas-proforma',
+  'marluvas-sap',
+  'marluvas-estados',
+  'marluvas-documentos',
+  'marluvas-aduana',
+  'marluvas-logistica',
+  'marluvas-calidad',
+] as const
+
 afterEach(() => {
   delete process.env.DSH_HOME
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
 })
 
 /** One fake role catalogue shipping only the named skills. */
-function roleCatalog(skills: readonly string[]): string {
+function roleCatalog(skills: readonly string[], role = 'compras'): string {
   const root = mkdtempSync(join(tmpdir(), 'faberloom-catalog-'))
   homes.push(root)
-  const dir = join(root, 'compras')
+  const dir = join(root, role)
   for (const skill of skills) {
     mkdirSync(join(dir, skill), { recursive: true })
     writeFileSync(join(dir, skill, 'SKILL.md'), `---\nname: ${skill}\n---\n`, 'utf8')
@@ -34,8 +48,15 @@ function roleCatalog(skills: readonly string[]): string {
   return root
 }
 
+/** The catalogue agents one role receives. */
+function agentsFor(role: string): string[] {
+  return SEED_AGENTS
+    .filter(seed => seed.roles === undefined || seed.roles.includes(role))
+    .map(seed => seed.name)
+}
+
 /** Boot storage plus the product services over one owner home, without the seeder. */
-async function services(home: string, skills: readonly string[], pool = new MemoryMediaPool()) {
+async function services(home: string, skills: readonly string[], pool = new MemoryMediaPool(), role = 'compras') {
   process.env.DSH_HOME = home
   const ctx = new Context()
   await ctx.plugin(Storage)
@@ -48,7 +69,7 @@ async function services(home: string, skills: readonly string[], pool = new Memo
   await ctx.plugin(FaberLoomRoutines)
   await ctx.plugin(FaberLoomBackup)
   await ctx.plugin(FaberLoomHandlers)
-  return { ctx, catalog: roleCatalog(skills), pool }
+  return { ctx, catalog: roleCatalog(skills, role), pool }
 }
 
 /** Mount the seeder and wait for its activation pass. */
@@ -93,11 +114,11 @@ describe('FaberLoomDefaults', () => {
     const { ctx, catalog } = await services(home, ['mwt-compras-clientes-leer', 'mwt-compras-inventario-leer'])
     const report = await seedWith(ctx, catalog)
     expect(report).toMatchObject({ seeded: true, skipped: null })
-    expect(report.agents).toEqual(SEED_AGENTS.map(agent => agent.name))
+    expect(report.agents).toEqual(agentsFor('compras'))
     expect(report.routines).toEqual(SEED_ROUTINES.map(routine => routine.name))
 
     const agents = await ctx.faberloomAgents.listAgents()
-    expect(agents.map(agent => agent.name)).toEqual(SEED_AGENTS.map(agent => agent.name))
+    expect(agents.map(agent => agent.name)).toEqual(agentsFor('compras'))
     expect(agents.find(agent => agent.name === 'Recepción')?.skills).toEqual(['mwt-compras-clientes-leer'])
     expect(agents.find(agent => agent.name === 'Proformas')?.skills).toEqual(['mwt-compras-clientes-leer', 'mwt-compras-inventario-leer'])
 
@@ -134,7 +155,7 @@ describe('FaberLoomDefaults', () => {
     expect(report).toMatchObject({ seeded: false, skipped: 'already seeded' })
     const names = (await second.ctx.faberloomAgents.listAgents()).map(agent => agent.name)
     expect(names).not.toContain(removed.name)
-    expect(names).toHaveLength(SEED_AGENTS.length - 1)
+    expect(names).toHaveLength(agentsFor('compras').length - 1)
     expect(await second.ctx.faberloomRoutines.listRoutines(OWNER)).toHaveLength(SEED_ROUTINES.length)
   })
 
@@ -152,7 +173,7 @@ describe('FaberLoomDefaults', () => {
     expect(seeded).toHaveLength(1)
     expect(reports.filter(report => report.skipped === 'another pass is seeding')).toHaveLength(1)
     expect(await second.ctx.faberloomRoutines.listRoutines(OWNER)).toHaveLength(SEED_ROUTINES.length)
-    expect(await first.ctx.faberloomAgents.listAgents()).toHaveLength(SEED_AGENTS.length)
+    expect(await first.ctx.faberloomAgents.listAgents()).toHaveLength(agentsFor('compras').length)
   })
 
   it('F16 — re-syncs the shared agent presets on restart without duplicating them', async () => {
@@ -235,8 +256,62 @@ describe('FaberLoomDefaults', () => {
     const { ctx, catalog } = await services(home, ['mwt-compras-clientes-leer'])
     await ctx.faberloomAgents.createAgent({ name: 'Recepción', responsibility: 'ya existía' })
     const report = await seedWith(ctx, catalog, { skillsCatalogRoot: catalog })
-    expect(report.agents).toEqual(SEED_AGENTS.map(agent => agent.name).filter(name => name !== 'Recepción'))
+    expect(report.agents).toEqual(agentsFor('compras').filter(name => name !== 'Recepción'))
     const names = (await ctx.faberloomAgents.listAgents()).map(agent => agent.name)
     expect(names.filter(name => name === 'Recepción')).toHaveLength(1)
+  })
+
+  it('seeds the Marluvas operator for a privileged role with its ten skills', async () => {
+    const home = ownerHome()
+    const { ctx, catalog } = await services(home, MARLUVAS_SKILLS, new MemoryMediaPool(), 'admin')
+
+    const report = await seedWith(ctx, catalog, { role: 'admin' })
+
+    expect(report.agents).toContain('Operador Marluvas')
+    const agent = (await ctx.faberloomAgents.listAgents()).find(candidate => candidate.name === 'Operador Marluvas')
+    expect(agent?.seeded).toBe(true)
+    expect(agent?.ownerId).toBe('')
+    expect(agent?.skills).toEqual([...MARLUVAS_SKILLS])
+  })
+
+  it('adds the Marluvas operator to an owner seeded before it existed, and never resurrects it after deletion', async () => {
+    const home = ownerHome()
+    const pool = new MemoryMediaPool()
+    const first = await services(home, MARLUVAS_SKILLS, pool, 'admin')
+    writeFileSync(join(home, 'faberloom-defaults.json'), `${JSON.stringify({
+      seededAt: '2026-01-01T00:00:00.000Z',
+      role: 'admin',
+      agents: agentsFor('admin').filter(name => name !== 'Operador Marluvas'),
+      routines: [],
+    }, null, 2)}\n`, 'utf8')
+
+    const report = await seedWith(first.ctx, first.catalog, { role: 'admin' })
+    expect(report).toMatchObject({ seeded: true, skipped: 'already seeded' })
+    expect(report.agents).toEqual(['Operador Marluvas'])
+    const created = (await first.ctx.faberloomAgents.listAgents()).find(candidate => candidate.name === 'Operador Marluvas')
+    if (created === undefined) throw new Error('the upgrade did not create the Marluvas operator')
+    expect(created.skills).toEqual([...MARLUVAS_SKILLS])
+
+    await first.ctx.faberloomAgents.removeAgent(created.id)
+    const second = await services(home, MARLUVAS_SKILLS, pool, 'admin')
+    const again = await seedWith(second.ctx, second.catalog, { role: 'admin' })
+    expect(again.agents).not.toContain('Operador Marluvas')
+    expect((await second.ctx.faberloomAgents.listAgents()).map(candidate => candidate.name)).not.toContain('Operador Marluvas')
+  })
+
+  it('does not seed the Marluvas operator for a non-privileged role', async () => {
+    const home = ownerHome()
+    const pool = new MemoryMediaPool()
+    const { ctx, catalog } = await services(home, MARLUVAS_SKILLS, pool, 'compras')
+    writeFileSync(join(home, 'faberloom-defaults.json'), `${JSON.stringify({
+      seededAt: '2026-01-01T00:00:00.000Z',
+      role: 'compras',
+      agents: agentsFor('compras'),
+      routines: [],
+    }, null, 2)}\n`, 'utf8')
+
+    await seedWith(ctx, catalog)
+
+    expect((await ctx.faberloomAgents.listAgents()).map(candidate => candidate.name)).not.toContain('Operador Marluvas')
   })
 })

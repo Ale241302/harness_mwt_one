@@ -25,12 +25,14 @@ kind: "package-reference"
 
 在存在 `ctx.faberloomAgents` 与 `ctx.faberloomRoutines` 的位置挂载这一行，并带上部署身份：`ownerId`、`role`、`readOnly` 与 `skillsCatalogRoot`。服务在激活时播种。
 
-目录就是计划中走通的示例：来自代理界面的代理名册（`Recepción`、`Revisión de pedidos`、`Proformas`），以及例程 `Pedido a proforma` —— 它的四个步骤分别走一次真实的代理轮次、一次 MCP 操作，以及在结案前等待复核。
+目录就是计划中走通的示例：来自代理界面的代理名册（`Recepción`、`Revisión de pedidos`、`Proformas`），再加上特权角色使用的 `Operador Marluvas` 代理，它携带十个 `marluvas-*` 技能。例程 `Pedido a proforma` 走一次真实的代理轮次、一次 MCP 操作，以及在结案前等待复核。
 
 播种以 owner home 为范围，标记文件为 `<DSH_HOME>/faberloom-defaults.json`：
 
 - 只读身份或空 owner 的那一趟不做任何事；
 - 名称已存在的条目会被跳过，因此部分完成后重试也不会重复；
+- 带 `roles` 的条目只到达这些角色；`Operador Marluvas` 仅限 `admin`、`superadmin` 与 `ceo`；
+- 当较新的目录新增代理时，这一趟只创建标记尚未记录的名称，因此升级会加入新代理，而 owner 删除过的名称仍保持删除；
 - 每次执行前会把部署基线代理按名称合并为一行：同一目录的两套安装可能用不同 id 各播种一次，持有已存供应商密钥的行成为保留行，保留行吸收组内全部技能与已连接 agent；用户自建的同名 agent 永不受影响；
 - 成功的一趟会写标记，包括没有新条目可创建的那一趟，因此下次启动不会复生 owner 已删除的条目；抛错的一趟既不留下标记也不留下认领，因此下次启动重试。
 
@@ -62,6 +64,8 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **目录固定在源码中。** 改变新 owner 收到什么需要修改 `src/catalog.ts`；目前还没有由部署提供的目录文件。
+- **按角色门控的条目对其他角色静默。** 即使部署随附了 `marluvas-*` 技能，`Operador Marluvas` 也不会为 `admin`、`superadmin` 或 `ceo` 之外的角色创建。
+- **实时邮件例程在其他包中投放。** 本包只播种代理；`@deepseek-ai/dsh-faberloom-inbound` 与 `@deepseek-ai/dsh-faberloom-view` 在 owner 拥有邮箱后创建并激活内置例程。
 - **播种以 owner home 为键，而不是以身份为键。** 共享同一个 home 的两个部署会共享同一个标记。
 - **每个进程只跑一趟。** 服务缓存自己的 promise，因此在进程存活期间删除标记不会有任何变化；要让已删除的播种条目回来，需要删除标记并重启进程，从而重跑这一趟。
 - **播种出的例程永不自动激活。** 它连同其触发器一直保持 `draft`，因此在 owner 激活之前，由邮件驱动的例程不会运行。

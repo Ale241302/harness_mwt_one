@@ -85,6 +85,7 @@ async function harness(pool = new MemoryMediaPool()) {
   await ctx.plugin(FaberLoomAccess)
   await ctx.plugin(FaberLoomRoutines)
   ctx.faberloomRoutines.registerHandler('step', () => 'ok')
+  ctx.faberloomRoutines.registerHandler('agent', () => 'ok')
   await ctx.plugin(FaberLoomInbound, { ownerId: OWNER, enabled: false, intervalMs: MIN_INTERVAL_MS, mailbox: 'INBOX' })
   return { ctx, connections: ctx.faberloomConnections, routines: ctx.faberloomRoutines, inbound: ctx.faberloomInbound }
 }
@@ -122,6 +123,26 @@ describe('FaberLoomInbound', () => {
     expect(executions).toHaveLength(1)
     expect(executions[0]?.event).toMatchObject({ key: 'imap:<oc-1@eguisa.example>', type: 'email', subject: 'Orden de compra 4711' })
     expect(log).toContain('UID SEARCH UNSEEN')
+  })
+
+  it('provisions the Marluvas live routine when the operator agent is present', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 20, messageId: 'marluvas-1@marluvas.example', from: 'samuel.fernandes@marluvas.com.br', subject: 'Proforma 2500-2026' },
+    ], log)
+    servers.push(fake.server)
+
+    const { ctx, connections, routines, inbound } = await harness()
+    ctx.provide('faberloomAgents', { listAgents: async () => [{ id: 'a1', name: 'Operador Marluvas' }] } as never)
+    await connections.save(OWNER, { kind: 'imap', label: 'Marluvas', host: '127.0.0.1', port: fake.port, secure: false, username: 'marluvas', secret: 'secreta' })
+    await connections.save(OWNER, { kind: 'smtp', label: 'Marluvas SMTP', host: '127.0.0.1', port: 465, secure: true, username: 'marluvas', secret: 'secreta' })
+
+    await inbound.runOnce()
+
+    const [routine] = (await routines.listRoutines(OWNER)).filter(candidate => candidate.name === 'Vigía de correo')
+    expect(routine?.status).toBe('active')
+    expect(routine?.definition.intent).toContain('Marluvas')
+    expect(routine?.definition.steps.every(step => step.config['agentId'] === 'a1')).toBe(true)
   })
 
   it('F07 — re-reading the mailbox never starts the same message twice', async () => {

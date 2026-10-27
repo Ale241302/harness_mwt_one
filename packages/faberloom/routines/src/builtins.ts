@@ -12,6 +12,9 @@ import type { RoutineInput } from './types.ts'
 /** Display name of the built-in live mail routine; provisioning matches on it. */
 export const LIVE_MAIL_ROUTINE_NAME = 'Vigía de correo'
 
+/** Catalog agent that operates the Marluvas mailboxes; provisioning matches on it. */
+export const MARLUVAS_AGENT_NAME = 'Operador Marluvas'
+
 /** Display name of the built-in MWT.ONE guard routine; provisioning matches on it. */
 export const MWT_GUARD_ROUTINE_NAME = 'Vigía MWT.ONE'
 
@@ -73,4 +76,50 @@ export const LIVE_MAIL_ROUTINE: RoutineInput = {
     permissions: ['mwt'],
     failurePolicy: 'review',
   },
+}
+
+/**
+ * The Marluvas variant of the live mail routine: one mail-driven loop that reads
+ * the full thread, extracts the logistics documents, and operates the expediente
+ * through the `mwt` MCP. It keeps the built-in name so provisioning converges the
+ * routine an owner already has instead of creating a second trigger on the same
+ * mailbox.
+ * @param agentId - catalog agent that supplies the operator persona and model.
+ * @returns the routine input, with every agent step bound to that agent.
+ */
+export function marluvasLiveMailRoutine(agentId: string): RoutineInput {
+  const config = { agentId }
+  return {
+    name: LIVE_MAIL_ROUTINE_NAME,
+    definition: {
+      intent: 'Operar el correo de Marluvas, de sus clientes y de Muito Work Limitada: leer el hilo completo, extraer PF, OC, SAP, embarque, DUA y documentos, y dejar el expediente actualizado en MWT.ONE con fechas, estados, artefactos, recepción, movimiento y finanzas.',
+      triggers: [{ kind: 'email', match: '' }],
+      steps: [
+        {
+          id: 'marluvas-triar',
+          instruction: 'Eres el Operador Marluvas de Muito Work Limitada. Carga con la tool `skill` las skills `marluvas-operacion` y `marluvas-correo` y síguelas. Lee el correo entrante con `faberloom_mail_read` usando el uid del evento. Reconstruye el hilo con `faberloom_mail_search` por asunto normalizado, PF, OC, SAP y remitente; lee los mensajes relacionados y descarga sus adjuntos y enlaces con `faberloom_mail_attachment` y `faberloom_mail_download`. Clasifica el correo: PF/proforma/OC, SAP, embarque, documento, aduana, precio o irrelevante. Identifica cliente, operador, PF/OC/SAP, productos, tallas, cantidades, precios, plazos, comisión, fechas y documentos. No escribas todavía en MWT.ONE. Si no es un correo de Marluvas, de un cliente o de la operación de Muito Work, responde exactamente `IRRELEVANTE` y termina sin tocar el MCP. Si es relevante, responde con un bloque `TRIAGE:` que diga el tipo, el expediente, la evidencia descargada, los datos confirmados, lo que falta y las skills que hay que cargar después.',
+          handler: 'agent',
+          dependsOn: [],
+          config,
+        },
+        {
+          id: 'marluvas-operar',
+          instruction: 'Si el turno anterior concluyó `IRRELEVANTE`, termina sin hacer nada. Si es relevante, carga con la tool `skill` las skills que correspondan al TRIAGE (`marluvas-expediente`, `marluvas-proforma`, `marluvas-sap`, `marluvas-estados`, `marluvas-documentos`, `marluvas-aduana`, `marluvas-logistica`) y ejecuta el playbook completo. Verifica primero `mcp__mwt__mwt_whoami`; solo escribe si la identidad es admin, superadmin o CEO. Busca antes de crear (`expediente_buscar`), crea o actualiza el expediente con líneas SKU × talla reales, registra o actualiza el SAP, sube OC/PF/ documentos, persiste los artefactos del Builder, avanza los estados con la fecha real de la evidencia y, si corresponde, crea la recepción y el movimiento con sus costos. No inventes datos. No envíes correos. Si falta un dato o la decisión no es segura, deja una tarea con `faberloom_board_create` y continúa con lo confirmado.',
+          handler: 'agent',
+          dependsOn: ['marluvas-triar'],
+          config,
+        },
+        {
+          id: 'marluvas-verificar',
+          instruction: 'Verifica en MWT.ONE lo que hizo el turno anterior: `expediente_obtener`, `expediente_lineas`, `sap_obtener`, `documento_listar`, `inventario_artefactos_expediente`, `transferencia_obtener` y las finanzas del expediente. Si no hubo cambios porque el correo era irrelevante, dilo y termina. Si algo quedó mal o incompleto, corrígelo o deja una tarea. Devuelve un reporte corto: PF/OC/SAP, cliente, operador, qué se creó o actualizó, estado y fechas, documentos y artefactos, recepción y movimiento, finanzas, discrepancias y pendientes.',
+          handler: 'agent',
+          dependsOn: ['marluvas-operar'],
+          config,
+        },
+      ],
+      expectedResult: 'El correo de Marluvas o de un cliente queda entendido y el expediente queda actualizado en MWT.ONE, con evidencia, fechas, estados, documentos y pendientes explícitos.',
+      permissions: ['mwt'],
+      failurePolicy: 'review',
+    },
+  }
 }

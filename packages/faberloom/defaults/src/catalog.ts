@@ -8,6 +8,8 @@
  * @module @deepseek-ai/dsh-faberloom-defaults/catalog
  */
 
+import { MARLUVAS_AGENT_NAME } from '@deepseek-ai/dsh-faberloom-routines'
+
 /** One agent the catalogue seeds. */
 export interface SeedAgent {
   /** Display name. */
@@ -18,6 +20,8 @@ export interface SeedAgent {
   readonly skills: readonly string[]
   /** Names of the other seeded agents this one works with, wired as its connected agents. */
   readonly connects: readonly string[]
+  /** Roles that receive this agent; omitted means every role. */
+  readonly roles?: readonly string[]
 }
 
 /** One routine step the catalogue seeds. */
@@ -73,6 +77,24 @@ export const SEED_AGENTS: readonly SeedAgent[] = [
     responsibility: 'Prepara el documento con precios verificados y lo deja listo para revisión.',
     skills: ['mwt-compras-clientes-leer', 'mwt-compras-inventario-leer', 'mwt-compras-historial-precios-leer', 'mwt-admin-clientes-leer', 'mwt-admin-inventario-leer', 'mwt-admin-historial-precios-leer'],
     connects: [],
+  },
+  {
+    name: MARLUVAS_AGENT_NAME,
+    responsibility: 'Vigila el correo de Marluvas, de sus clientes y de Muito Work Limitada, entiende cada hilo y opera el expediente completo en MWT.ONE: cliente, productos, OC, PF, SAP, estados, documentos, artefactos, recepción, movimiento, aduana, finanzas y cierre.',
+    skills: [
+      'marluvas-operacion',
+      'marluvas-correo',
+      'marluvas-expediente',
+      'marluvas-proforma',
+      'marluvas-sap',
+      'marluvas-estados',
+      'marluvas-documentos',
+      'marluvas-aduana',
+      'marluvas-logistica',
+      'marluvas-calidad',
+    ],
+    connects: [],
+    roles: ['admin', 'superadmin', 'ceo'],
   },
 ]
 
