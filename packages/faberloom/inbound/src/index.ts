@@ -23,7 +23,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MARLUVAS_AGENT_NAME, marluvasLiveMailRoutine } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MARLUVAS_AGENT_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import { fetchContent, fetchMessages, markMessageSeen, moveMessage, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
@@ -187,7 +187,7 @@ export class FaberLoomInbound extends Service {
       await routines.activateRoutine(ownerId, created.id)
       return
     }
-    if (JSON.stringify(existing.definition) !== JSON.stringify(input.definition)) {
+    if (existing.definition === undefined || !routineDefinitionsMatch(existing.definition, input.definition)) {
       await routines.updateRoutine(ownerId, existing.id, input)
     }
     if (existing.status !== 'active') await routines.activateRoutine(ownerId, existing.id)

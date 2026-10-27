@@ -47,6 +47,7 @@ import type {
 
 export type * from './types.ts'
 export * from './builtins.ts'
+export { routineDefinitionsMatch } from './equality.ts'
 export { classifyCloudSteps, classifyRoutine } from './cloud.ts'
 export type { CloudExecutionProfile, CloudExecutionScope, CloudStepInput } from './cloud.ts'
 

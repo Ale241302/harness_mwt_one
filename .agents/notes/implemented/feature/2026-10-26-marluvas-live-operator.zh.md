@@ -14,6 +14,8 @@ Status: implemented
 
 **实时邮件例程在原位收敛，适用于运营邮箱。** 当所有者保存的 IMAP 用户名为 `alvaro@muitowork.com` 或 `506@muitowork.com`、角色为特权角色且代理存在时，内置的 `Vigía de correo` 定义会更新为 Marluvas 三步流程，并通过 `config.agentId` 把每个代理步骤绑定到该目录代理。例程保留原名，因此所有者不会在同一邮箱上得到第二个触发器。非特权角色、其他邮箱或代理缺失时，保留通用定义。
 
+**收敛比较的是归属字段，而不是存储形状。** 存储层会为每个可选步骤字段填入值（`config: {}`、`waitFor: null`、`maxAttempts: 1`），而作者输入会省略它们，因此原始 JSON 比较永远不相等，会把每次轮询变成一个新的例程版本。共享的 `routineDefinitionsMatch` 在比较前投影作者定义与存储定义。
+
 **种子器只增加一项能力：目录升级。** 标记文件仍然记录每个已投放名称，因此已删除的代理不会被复活。早于新目录条目的标记文件现在只创建它尚未记录的名称；用户手工创建的同名代理保持不变并被记录。这样已有安装无需全新 home 就能获得 `Operador Marluvas`。
 
 **模型不得凭空编造业务事实。** 技能要求身份校验、完整线程读取、附件和链接下载、来源引用，以及证据不完整时创建看板任务。技能还写明 MWT 运营与直采订单的定价规则，以及确切的形式发票行为：对 MWT 运营的业务档案，一次 `proforma_generar` 调用会生成三份 HTML 文档（客户、MWT、工厂）。
@@ -40,4 +42,4 @@ Status: implemented
 
 ## Testing
 
-`packages/faberloom/defaults/tests/defaults.spec.ts` 覆盖角色门控、十个技能、标记升级以及删除后不复活。`packages/faberloom/view/tests/email-actions.spec.ts` 覆盖白名单邮箱、非白名单邮箱和非特权角色。`packages/faberloom/inbound/tests/inbound.spec.ts` 覆盖轮询器在操作员代理存在时的投放。`scripts/verify-skills-catalog.ts` 检查每个技能目录的 frontmatter 和路由触发语。
+`packages/faberloom/defaults/tests/defaults.spec.ts` 覆盖角色门控、十个技能、标记升级以及删除后不复活。`packages/faberloom/view/tests/email-actions.spec.ts` 覆盖白名单邮箱、非白名单邮箱和非特权角色。`packages/faberloom/inbound/tests/inbound.spec.ts` 覆盖轮询器在操作员代理存在时的投放。`packages/faberloom/routines/tests/equality.spec.ts` 固定作者/存储比较以及代理绑定变化。`scripts/verify-skills-catalog.ts` 检查每个技能目录的 frontmatter 和路由触发语。

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-26-marluvas-live-operator.md
-2026-10-26-marluvas-live-operator.md: 2191dace94b058a5fc783c7b9bbbc1b707718632
-2026-10-26-marluvas-live-operator.zh.md: d82a8d44c5d51e207551576385c21f22b0f9c0d0
+2026-10-26-marluvas-live-operator.md: 5a9728242f9897bd6132091d10f1ddf07d29c977
+2026-10-26-marluvas-live-operator.zh.md: f1655974f991bc295ffb4bfc28b8cadcf78936af

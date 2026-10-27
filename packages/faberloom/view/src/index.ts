@@ -26,7 +26,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MARLUVAS_AGENT_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MARLUVAS_AGENT_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
@@ -3733,8 +3733,10 @@ export class FaberLoomViewService extends TypertRemoteService {
         return
       }
       // Converge the deployment-owned definition so an improved prompt reaches
-      // an owner provisioned by an earlier deployment.
-      if (JSON.stringify(found.definition) !== JSON.stringify(input.definition)) {
+      // an owner provisioned by an earlier deployment. Compare the owned fields,
+      // not the stored shape: the store materializes every optional step field,
+      // so a raw JSON comparison would rewrite a version on every pass.
+      if (found.definition === undefined || !routineDefinitionsMatch(found.definition, input.definition)) {
         await routines.updateRoutine(ownerId, found.id, input)
       }
       if (found.status !== 'active') await routines.activateRoutine(ownerId, found.id)

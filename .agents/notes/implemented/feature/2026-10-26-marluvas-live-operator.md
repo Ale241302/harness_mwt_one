@@ -34,6 +34,13 @@ routine keeps its name, so the owner does not get a second trigger on the same
 mailbox. A non-privileged role, a different mailbox, or a missing agent keeps
 the generic definition.
 
+**Convergence compares the owned fields, not the stored shape.** The store
+materializes every optional step field (`config: {}`, `waitFor: null`,
+`maxAttempts: 1`), while the authored input omits them, so a raw JSON
+comparison never matches and turns every poll into a new routine version. The
+shared `routineDefinitionsMatch` projects the authored and stored definitions
+before comparing them.
+
 **The seeder learns one new trick: catalogue upgrades.** The marker still
 records every seeded name, so a deleted agent is not resurrected. A marker that
 predates a new catalogue entry now creates only the names it does not record;
@@ -97,5 +104,8 @@ ten skills, the marker upgrade, and no resurrection after deletion.
 `packages/faberloom/view/tests/email-actions.spec.ts` covers the allowlisted
 mailbox, the non-allowlisted mailbox, and the non-privileged role.
 `packages/faberloom/inbound/tests/inbound.spec.ts` covers the poller's
-provisioning with the operator agent present. `scripts/verify-skills-catalog.ts`
-checks the frontmatter and the routing trigger of every skill directory.
+provisioning with the operator agent present.
+`packages/faberloom/routines/tests/equality.spec.ts` pins the authored/stored
+comparison and the changed agent binding.
+`scripts/verify-skills-catalog.ts` checks the frontmatter and the routing
+trigger of every skill directory.
