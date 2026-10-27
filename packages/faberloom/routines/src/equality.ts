@@ -39,7 +39,7 @@ interface ComparableDefinition {
 function comparable(definition: ComparableDefinition): unknown {
   return {
     intent: definition.intent,
-    triggers: definition.triggers.map(trigger => ({ kind: trigger.kind, match: trigger.match ?? null })),
+    triggers: definition.triggers.map(trigger => ({ kind: trigger.kind, match: normalizedMatch(trigger.match) })),
     steps: definition.steps.map(step => ({
       id: step.id,
       instruction: step.instruction,
@@ -54,6 +54,11 @@ function comparable(definition: ComparableDefinition): unknown {
     permissions: [...definition.permissions],
     failurePolicy: definition.failurePolicy,
   }
+}
+
+/** The store records an empty matcher as null; an authored input may keep ''. */
+function normalizedMatch(match: string | null | undefined): string | null {
+  return match === undefined || match === null || match.length === 0 ? null : match
 }
 
 /**

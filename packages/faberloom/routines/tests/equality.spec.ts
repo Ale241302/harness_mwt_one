@@ -26,6 +26,15 @@ describe('routineDefinitionsMatch', () => {
     expect(routineDefinitionsMatch(stored(LIVE_MAIL_ROUTINE), LIVE_MAIL_ROUTINE.definition)).toBe(true)
   })
 
+  it('treats an authored empty matcher as the store\'s null matcher', () => {
+    const authored = marluvasLiveMailRoutine('agent-1')
+    const withNull = {
+      ...authored.definition,
+      triggers: authored.definition.triggers.map(trigger => ({ ...trigger, match: null })),
+    }
+    expect(routineDefinitionsMatch(withNull, authored.definition)).toBe(true)
+  })
+
   it('reports a changed agent binding or instruction', () => {
     const left = marluvasLiveMailRoutine('agent-1')
     const right = marluvasLiveMailRoutine('agent-2')
