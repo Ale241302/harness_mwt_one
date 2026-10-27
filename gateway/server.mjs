@@ -127,6 +127,11 @@ const cfg = {
   skillsCatalogRoot: process.env.SKILLS_CATALOG_ROOT || '/opt/skills-catalog',
   // Skills curadas compartidas por todos los roles (ECC + propias).
   skillsSharedRoot: process.env.SKILLS_SHARED_ROOT || '/opt/skills-shared',
+  // Edicion global de los agentes base, compartida por todos los usuarios del
+  // despliegue; vive en el volumen persistente, fuera del home de cada usuario.
+  globalAgentsFile: process.env.GLOBAL_AGENTS_FILE || '/data/shared/faberloom-global-agents.json',
+  // Edicion global de las skills del catalogo (Admin/CEO), cargada por todos.
+  globalSkillsRoot: process.env.GLOBAL_SKILLS_ROOT || '/data/shared/skills',
   // Presets de agente nativos (ECC) sembrados en el home del usuario.
   agentsSharedRoot: process.env.AGENTS_SHARED_ROOT || '/opt/agents-shared',
   // Proveedor/modelo de los agentes sembrados. La API key NUNCA va en el repo:
@@ -882,8 +887,10 @@ function renderPatch(home, user, memory) {
   // nombre repetido, asi la copia editada de una skill del rol la reemplaza.
   const ownSkillsDir = path.join(home, 'skills')
   fs.mkdirSync(ownSkillsDir, { recursive: true })
+  fs.mkdirSync(cfg.globalSkillsRoot, { recursive: true })
   const skillDirs = [
     ownSkillsDir,
+    cfg.globalSkillsRoot,
     ...role.length > 0 && fs.existsSync(roleDir) ? [roleDir] : [],
     ...fs.existsSync(sharedDir) ? [sharedDir] : [],
   ]
@@ -947,6 +954,8 @@ function renderPatch(home, user, memory) {
     // Catálogos de skills para el panel Skills: el del rol y el compartido.
     `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,
     `    skillsSharedRoot: ${yamlScalar(cfg.skillsSharedRoot)}`,
+    // Lo que un Admin/CEO edita de una skill del catalogo vale para todos.
+    `    globalSkillsRoot: ${yamlScalar(cfg.globalSkillsRoot)}`,
     // Ingesta de adjuntos: el conversor `anydoc` ya viene instalado en el árbol.
     `    anydoc: ${cfg.anydocEnabled ? 'true' : 'false'}`,
     `    anydocOcr: ${yamlScalar(cfg.anydocOcr)}`,
@@ -983,6 +992,9 @@ function renderPatch(home, user, memory) {
     `    agentProvider: ${yamlScalar(cfg.agentProvider)}`,
     `    agentModel: ${yamlScalar(cfg.agentModel)}`,
     `    agentApiKeyEnv: ${yamlScalar(cfg.agentApiKeyEnv)}`,
+    // Edicion global de los agentes base: lo que un Admin/CEO cambia en un
+    // agente del catalogo se publica aqui y se aplica a todos los usuarios.
+    `    globalAgentsFile: ${yamlScalar(cfg.globalAgentsFile)}`,
     '',
     // El despachador persistente: sin el nadie inicia las rutinas con
     // disparador de fecha o recurrencia cuando el usuario no tiene el panel abierto.
@@ -1042,6 +1054,8 @@ function renderPatch(home, user, memory) {
     `    gatewayUrl: ${yamlScalar(`https://${cfg.publicHost}`)}`,
     '    platform: web',
     `    intervalMs: ${String(cfg.mirrorIntervalMs)}`,
+    // El escritorio recibe tambien las skills editadas globalmente.
+    `    globalSkillsRoot: ${yamlScalar(cfg.globalSkillsRoot)}`,
   ]
 
   // Memoria: el modelo deja de ir directo a DeepSeek y pasa por el proxy de
