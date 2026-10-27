@@ -878,7 +878,12 @@ function renderPatch(home, user, memory) {
   const roleDir = path.join(cfg.skillsCatalogRoot, role)
   // Skills compartidas (curadas) para todos los roles, además del catálogo del rol.
   const sharedDir = cfg.skillsSharedRoot
+  // Las skills propias del usuario van primero: el primer directorio gana un
+  // nombre repetido, asi la copia editada de una skill del rol la reemplaza.
+  const ownSkillsDir = path.join(home, 'skills')
+  fs.mkdirSync(ownSkillsDir, { recursive: true })
   const skillDirs = [
+    ownSkillsDir,
     ...role.length > 0 && fs.existsSync(roleDir) ? [roleDir] : [],
     ...fs.existsSync(sharedDir) ? [sharedDir] : [],
   ]
