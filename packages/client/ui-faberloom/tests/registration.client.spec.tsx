@@ -27,7 +27,6 @@ const ROUTINES = 'faberloom-routines' as MainPanelId
 const SKILLS = 'faberloom-agents' as MainPanelId
 const CONNECTIONS = 'faberloom-connections' as MainPanelId
 const CONTEXT = 'faberloom-context' as MainPanelId
-const PREDICCION = 'faberloom-prediccion' as MainPanelId
 
 const OVERVIEW = {
   spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null, agentId: 'agent-1', agentName: 'Proformas', workspaceId: 'ws-1' }],
@@ -320,7 +319,6 @@ describe('faberloom surface', () => {
       'faberloom-agents',
       'faberloom-email',
       'faberloom-connections',
-      'faberloom-prediccion',
     ])
     expect(runtime.slots.entries('main').map(entry => entry.options.key)).toEqual([
       'faberloom-conversar',
@@ -334,21 +332,12 @@ describe('faberloom surface', () => {
       'faberloom-context',
       'faberloom-approvals',
       'faberloom-connections',
-      'faberloom-prediccion',
       'faberloom-email',
     ])
     expect(view.getByText('Faber').style.color).toBe('var(--dsw-alias-brand-primary-new-colorprimary-new-color)')
     expect(view.getByText('Loom').style.color).toBe('var(--dsw-alias-label-primary)')
     expect(view.getByRole('heading', { name: 'What do you want to solve today?' })).toBeTruthy()
     await surface.dispose()
-  })
-
-  it('embeds the prediction sidecar as a same-origin frame', async () => {
-    const { runtime, view } = await bench()
-    act(() => { runtime.panelInfo.set({ activePanelId: PREDICCION }) })
-    const frame = await view.findByTitle(faberloomEn['panel.prediccion.title'])
-    // The gateway gates and forwards `/prediccion/`; the panel is only the door.
-    expect(frame.getAttribute('src')).toBe('/prediccion/')
   })
 
   it('adds the web sign-out action beside the Settings control', async () => {

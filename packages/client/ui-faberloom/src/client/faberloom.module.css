@@ -1922,14 +1922,3 @@
   background: var(--dsw-alias-label-primary);
   transition: width 120ms linear;
 }
-
-/* The prediction sidecar is a whole app in a frame: it owns its own scroll,
-   chrome, and colors, so the frame only supplies the box it lives in. */
-.embed {
-  flex: 1;
-  width: 100%;
-  min-height: 480px;
-  border: 0;
-  border-radius: 12px;
-  overflow: hidden;
-}
