@@ -1,7 +1,7 @@
 # Manifiesto de compatibilidad · mwt-one-harness
 
-**Tag de despliegue:** `deploy-2026-10-26-marluvas-live-operator` (commit `91834a4c0b26618dd105aa1f316f7b8fbb85fead`: agente de catálogo **Operador Marluvas** para roles admin/superadmin/CEO, diez skills `marluvas-*` en el catálogo por rol, siembra de agentes nuevos sobre un marcador existente sin resucitar los borrados, y la rutina viva `Vigía de correo` converge a tres pasos Marluvas ligados al agente cuando el IMAP es `alvaro@muitowork.com` o `506@muitowork.com`). Sobre `c9c2e99a6a`.
-**Imagen desplegada actual:** build de `main` @ `91834a4c0b26618dd105aa1f316f7b8fbb85fead` (deploy caliente).
+**Tag de despliegue:** `deploy-2026-10-26-marluvas-live-operator` (commit `ea2740307e158b26efe305914f3912c1926bc834`: agente de catálogo **Operador Marluvas** para roles admin/superadmin/CEO, diez skills `marluvas-*` en el catálogo por rol, siembra de agentes nuevos sobre un marcador existente sin resucitar los borrados, la rutina viva `Vigía de correo` converge a tres pasos Marluvas ligados al agente cuando el IMAP es `alvaro@muitowork.com` o `506@muitowork.com`, y la convergencia compara los campos propios en vez de la forma almacenada para no crear una versión por sondeo). Sobre `c9c2e99a6a`.
+**Imagen desplegada actual:** build de `main` @ `ea2740307e158b26efe305914f3912c1926bc834` (deploy caliente).
 **Verificado en el VPS:** 26 de octubre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
