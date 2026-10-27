@@ -1077,7 +1077,7 @@ describe('faberloom work-flow canvas', () => {
 describe('faberloom panel editors', () => {
   const SKILL_ROW = {
     id: 'skill-1', name: 'mwt-admin-builder-crear', module: 'builder', action: 'create',
-    description: 'Crea una orden de compra', origin: 'owner', assignedTo: [], assignedNames: [], replacesCatalog: false,
+    description: 'Crea una orden de compra', origin: 'owner', assignedTo: [], assignedNames: [], replacesCatalog: false, editsGlobally: false,
   }
   const ROLE_SKILL_ROW = {
     ...SKILL_ROW, id: 'skill-2', name: 'marluvas-correo', origin: 'role',

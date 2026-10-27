@@ -30,6 +30,9 @@ import {
   hashRow,
   hashSkill,
 } from './document.ts'
+import { agentCredentialRef, type FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
+import type {} from '@deepseek-ai/dsh-credentials'
+import type { BaselineSecrets } from './baseline.ts'
 import { MirrorHomeStore } from './store.ts'
 import { applyMirrorDocument, readMirrorDocument, type MirrorDomainSource } from './sync.ts'
 import type {
@@ -86,6 +89,9 @@ export const DEFAULT_MIRROR_CHUNK_BYTES = 3 * 1024 * 1024
 /** Name of the status document the mirror keeps in its home. */
 export const MIRROR_STATUS_FILE = 'mirror-status.json'
 
+/** File name of the row journal this side keeps between processes, beside the status document. */
+export const MIRROR_JOURNAL_FILE = 'mirror-journal.json'
+
 /** Deployment-supplied wiring of the desktop side of the mirror. */
 export interface Config {
   /** Whether the mirror runs at all. It is off when absent. */
@@ -102,6 +108,13 @@ export interface Config {
   mirrorKey?: string
   /** Owner skills root; defaults to `<home>/skills`. */
   skillsRoot?: string
+  /**
+   * The deployment-wide skill edition root (Admin/CEO edits of catalogue
+   * skills). The side that serves documents offers those bundles to its peer
+   * under their names, with the owner's own bundle of a name winning; it never
+   * writes this root.
+   */
+  globalSkillsRoot?: string
   /**
    * Root holding the product's `single`-layout domain documents; defaults to
    * `<home>/storages`, where the JSON backend keeps them. A deployment that
@@ -130,6 +143,7 @@ export const Config: z<Config> = z.object({
   consoleBase: z.string(),
   mirrorKey: z.string(),
   skillsRoot: z.string(),
+  globalSkillsRoot: z.string(),
   storagesRoot: z.string(),
   platform: z.union(['web', 'desktop']),
   intervalMs: z.number(),
@@ -235,6 +249,8 @@ export class FaberLoomMirror extends Service {
   static inject = ['storageDomain']
 
   private readonly journal = new Map<string, JournalEntry>()
+  /** Whether this process already read the journal the previous one left. */
+  private journalLoaded = false
   /** The last remote address of every journaled row, so a local deletion is pushable. */
   private readonly synced = new Map<string, FaberLoomMirrorRowChange>()
   private readonly changed = new Set<string>()
@@ -393,11 +409,27 @@ export class FaberLoomMirror extends Service {
    * mirrored domain read from its own document on the medium.
    */
   private store(): MirrorHomeStore {
+    const secrets = this.baselineSecrets()
     this.storeInstance ??= new MirrorHomeStore({
       ...this.config.storagesRoot === undefined ? {} : { storagesRoot: this.config.storagesRoot },
       facility: this.ctx.storageDomain as unknown as MirrorDomainSource,
+      ...secrets === undefined ? {} : { secrets },
     })
     return this.storeInstance
+  }
+
+  /**
+   * The baseline agents' provider keys as the credential seam stores them, under
+   * the same per-agent reference the agents service uses. Absent when this
+   * process mounts no credential seam; the settings then travel without keys.
+   */
+  private baselineSecrets(): BaselineSecrets | undefined {
+    const credentials = this.ctx.get('credentials')
+    if (credentials === undefined) return undefined
+    return {
+      read: async agentId => (await credentials.resolve(agentCredentialRef(agentId as FaberLoomAgentId)))?.value,
+      write: async (agentId, key) => { await credentials.set(agentCredentialRef(agentId as FaberLoomAgentId), key) },
+    }
   }
 
   /** Which side this process reports itself as in the transfer document. */
@@ -473,6 +505,7 @@ export class FaberLoomMirror extends Service {
     // One cycle owns one failure: the transport records a reason here and the
     // guard that runs the cycle reads it, so a reason never outlives its cycle.
     this.cycleError = undefined
+    await this.loadJournal()
     const store = this.store()
     const medium = await store.load()
     const remote = await this.pull()
@@ -1001,6 +1034,71 @@ export class FaberLoomMirror extends Service {
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: mirror could not write its state to ${this.statusPath()}: ${String(error)}`)
       }
+      await this.saveJournal()
+    }
+  }
+
+  /**
+   * Absolute path of the row journal this side keeps between processes.
+   * @returns the absolute path.
+   */
+  journalPath(): string {
+    return join(this.home(), MIRROR_JOURNAL_FILE)
+  }
+
+  /**
+   * Read the journal the previous process left, once per process. Without it a
+   * restart reads every row that differs between the homes as a first sync, and
+   * the first-sync rule keeps the local value and pushes it: a change made on the
+   * peer while this process was down would be overwritten by the stale local
+   * row. A journal recorded against another owner or peer is ignored.
+   */
+  private async loadJournal(): Promise<void> {
+    if (this.journalLoaded) return
+    this.journalLoaded = true
+    let text: string
+    try {
+      text = await readFile(this.journalPath(), 'utf8')
+    } catch {
+      // No journal yet: the first cycle records one.
+      return
+    }
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>
+      if (parsed['owner'] !== (this.owner() ?? null) || parsed['url'] !== (this.base() ?? null)) return
+      const entries = Array.isArray(parsed['entries']) ? parsed['entries'] : []
+      for (const entry of entries) {
+        if (!Array.isArray(entry) || typeof entry[0] !== 'string' || typeof entry[1] !== 'object' || entry[1] === null) continue
+        const value = entry[1] as Record<string, unknown>
+        if (typeof value['local'] !== 'string' || typeof value['remote'] !== 'string') continue
+        this.journal.set(entry[0], { syncedLocalHash: value['local'], syncedRemoteHash: value['remote'] })
+        const change = value['change']
+        if (typeof change === 'object' && change !== null) {
+          const { domain, table, key } = change as Record<string, unknown>
+          if (typeof domain === 'string' && typeof table === 'string' && typeof key === 'string') {
+            this.synced.set(entry[0], { domain, table, key })
+          }
+        }
+      }
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: mirror journal at ${this.journalPath()} is unreadable and starts empty: ${String(error)}`)
+    }
+  }
+
+  /** Write the journal after a cycle; a failure is logged and the next cycle writes it again. */
+  private async saveJournal(): Promise<void> {
+    if (!this.journalLoaded) return
+    const entries = [...this.journal].map(([key, entry]) => [key, {
+      local: entry.syncedLocalHash,
+      remote: entry.syncedRemoteHash,
+      ...this.synced.has(key) ? { change: this.synced.get(key) } : {},
+    }])
+    const target = this.journalPath()
+    try {
+      await mkdir(dirname(target), { recursive: true })
+      await writeFile(target, `${JSON.stringify({ version: 1, owner: this.owner() ?? null, url: this.base() ?? null, entries })}\n`, 'utf8')
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: mirror could not write its journal to ${target}: ${String(error)}`)
     }
   }
 
@@ -1066,26 +1164,30 @@ export class FaberLoomMirror extends Service {
    * @returns the bundle texts and the bundles with no readable `SKILL.md`.
    */
   async readSkills(): Promise<{ skills: Record<string, string>; skipped: readonly FaberLoomMirrorSkip[] }> {
-    const root = this.skillsRoot()
     const skills: Record<string, string> = {}
     const skipped: FaberLoomMirrorSkip[] = []
-    let entries
-    try {
-      entries = await readdir(root, { withFileTypes: true })
-    } catch {
-      return { skills, skipped }
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      if (!SKILL_BUNDLE_NAME.test(entry.name)) continue
-      let content
+    // The deployment-wide edition first, so the owner's own bundle of a name wins.
+    const roots = [this.config.globalSkillsRoot, this.skillsRoot()]
+      .filter((root): root is string => root !== undefined && root.length > 0)
+    for (const root of roots) {
+      let entries
       try {
-        content = await readFile(join(root, entry.name, 'SKILL.md'), 'utf8')
+        entries = await readdir(root, { withFileTypes: true })
       } catch {
-        skipped.push({ domain: 'skills', table: entry.name, reason: 'SKILL.md-not-readable' })
         continue
       }
-      skills[entry.name] = content
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        if (!SKILL_BUNDLE_NAME.test(entry.name)) continue
+        let content
+        try {
+          content = await readFile(join(root, entry.name, 'SKILL.md'), 'utf8')
+        } catch {
+          skipped.push({ domain: 'skills', table: entry.name, reason: 'SKILL.md-not-readable' })
+          continue
+        }
+        skills[entry.name] = content
+      }
     }
     return { skills, skipped }
   }

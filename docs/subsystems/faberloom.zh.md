@@ -845,6 +845,14 @@ FaberLoom's own default agents and routines for one owner.
 
 ```ts cordis-catalog
 /**
+ * Publish this home's Admin/CEO edits of baseline agents to the deployment and
+ * apply newer editions to this home, after seeding has run. A failure is
+ * logged and the next pass retries.
+ * @returns what the pass published and applied, or undefined when it is off or failed.
+ */
+async syncGlobal(): Promise<GlobalAgentReport | undefined>
+
+/**
  * Seed the catalogue once for this owner.
  *
  * A pass seeds the deployment's shared agents for every identity, and the
@@ -1302,6 +1310,12 @@ async writeMirroredSkills( skills: Readonly<Record<string, string | null>>, ): P
  * @returns the parsed document, or undefined when the request failed.
  */
 async pull(): Promise<FaberLoomMirrorDocument | undefined>
+
+/**
+ * Absolute path of the row journal this side keeps between processes.
+ * @returns the absolute path.
+ */
+journalPath(): string
 
 /**
  * Read every skill bundle this owner holds as `name -> SKILL.md` text.
@@ -2744,7 +2758,8 @@ async mirrorSharedSpaces(): Promise<void>
 
 /**
  * Read the full Markdown of one skill so the owner can edit it: the owner's own
- * copy when one exists, otherwise the shared or role catalog copy the list shows.
+ * copy when one exists, then the deployment-wide edition, then the shared or
+ * role catalog copy the list shows.
  * @param name - skill name.
  * @returns the SKILL.md content.
  */

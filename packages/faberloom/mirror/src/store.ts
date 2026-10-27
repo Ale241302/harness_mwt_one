@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { BASELINE_DOMAIN, BASELINE_SOURCE_TABLE, BASELINE_TABLE, BaselineAgentTable, preloadBaselineKeys, type BaselineSecrets } from './baseline.ts'
 import { FABERLOOM_MIRROR_DOMAINS } from './domains.ts'
 import type { MirrorDomainSource, MirrorLiveDomain } from './sync.ts'
 import type { FaberLoomMirrorDocument, FaberLoomMirrorSkip } from './types.ts'
@@ -87,6 +88,8 @@ export interface MirrorHomeStoreOptions {
   readonly storagesRoot?: string
   /** The open-domain facility of this process; a domain it holds wins over the medium. */
   readonly facility?: MirrorDomainSource
+  /** The credential seam for baseline agent keys; without it the keys stay where they are. */
+  readonly secrets?: BaselineSecrets
 }
 
 /**
@@ -96,6 +99,8 @@ export interface MirrorHomeStoreOptions {
 export class MirrorHomeStore implements MirrorDomainSource {
   private readonly documents = new Map<string, OpenDocument>()
   private readonly handles = new Map<string, DocumentTable>()
+  /** Baseline agent keys read at the start of the cycle, by local agent id. */
+  private baselineKeys = new Map<string, string>()
 
   /**
    * @param options - the medium root and, when available, this process's open-domain facility.
@@ -140,6 +145,18 @@ export class MirrorHomeStore implements MirrorDomainSource {
         continue
       }
       if (document !== undefined) this.documents.set(name, document)
+    }
+    this.baselineKeys = new Map()
+    const secrets = this.options.secrets
+    const agents = this.rawDomain(BASELINE_DOMAIN)
+    if (secrets !== undefined && agents !== undefined) {
+      try {
+        this.baselineKeys = await preloadBaselineKeys(agents.table(BASELINE_SOURCE_TABLE), secrets)
+      } catch (error) {
+        // A credential seam that cannot answer leaves the keys out of this
+        // cycle; the settings still travel and the next cycle retries.
+        skipped.push({ domain: BASELINE_DOMAIN, table: BASELINE_TABLE, reason: `keys-unreadable: ${String(error)}` })
+      }
     }
     return skipped
   }
@@ -188,6 +205,19 @@ export class MirrorHomeStore implements MirrorDomainSource {
    * @returns the live domain, or undefined when neither the scope nor the medium holds it.
    */
   get(name: string): MirrorLiveDomain | undefined {
+    const domain = this.rawDomain(name)
+    if (domain === undefined || name !== BASELINE_DOMAIN) return domain
+    // The agents domain also answers for the virtual baseline table, projected
+    // over its real `agents` table (see baseline.ts).
+    return {
+      table: (table: string): KvTable<string, unknown> => table === BASELINE_TABLE
+        ? new BaselineAgentTable(domain.table(BASELINE_SOURCE_TABLE), this.baselineKeys, this.options.secrets)
+        : domain.table(table),
+    }
+  }
+
+  /** One domain without the virtual tables: the open domain, or the medium's document. */
+  private rawDomain(name: string): MirrorLiveDomain | undefined {
     if (FABERLOOM_MIRROR_DOMAINS[name] === undefined) return undefined
     const open = this.options.facility?.get(name)
     if (open !== undefined) return open

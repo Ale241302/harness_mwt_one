@@ -948,14 +948,19 @@ export interface FaberLoomSkillRow {
   readonly module: string | null
   /** Action the skill covers, when the frontmatter declares one. */
   readonly action: string | null
-  /** Where the skill came from: the role catalog, the deployment's shared catalog, the owner's own uploads, or another user. */
-  readonly origin: 'role' | 'owner' | 'shared' | 'incoming'
+  /**
+   * Where the skill came from: the role catalog, the deployment's shared catalog,
+   * the deployment-wide Admin/CEO edition, the owner's own uploads, or another user.
+   */
+  readonly origin: 'role' | 'owner' | 'shared' | 'global' | 'incoming'
   /** Ids of the agents that already list this skill. */
   readonly assignedTo: readonly string[]
   /** Names of the agents that already list this skill, in the same order as `assignedTo`. */
   readonly assignedNames: readonly string[]
   /** Whether this owner skill is an edited copy that replaces a role or shared skill of the same name. */
   readonly replacesCatalog: boolean
+  /** Whether saving this skill writes the deployment-wide edition every user loads (an Admin/CEO editing a catalogue skill). */
+  readonly editsGlobally: boolean
   /** Publisher email when another user shared this skill; absent for a local one. */
   readonly sharedBy?: string
 }

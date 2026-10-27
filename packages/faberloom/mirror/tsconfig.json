@@ -15,6 +15,12 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../credentials/credentials"
+    },
+    {
+      "path": "../agents"
+    },
+    {
       "path": "../../storage/storage-domain"
     },
     {

@@ -20,6 +20,7 @@ function harness(options: {
   role?: string
   connections?: readonly { id: string; kind: string; label: string }[]
   skillsCatalogRoot?: string
+  globalSkillsRoot?: string
 } = {}) {
   const board = {
     list: vi.fn(async () => []),
@@ -198,6 +199,7 @@ function harness(options: {
     role: options.role ?? 'admin',
     readOnly: options.readOnly === true,
     ...options.skillsCatalogRoot === undefined ? {} : { skillsCatalogRoot: options.skillsCatalogRoot },
+    ...options.globalSkillsRoot === undefined ? {} : { globalSkillsRoot: options.globalSkillsRoot },
   })
   return { view, board, registry, spaces, agents, workflows, routines, context, shares, entities, events, logger }
 }
@@ -818,6 +820,44 @@ describe('FaberLoomViewService space lifecycle', () => {
     expect(after).toMatchObject({ origin: 'owner', replacesCatalog: true, description: 'editada' })
     expect(await view.skillMarkdown('marluvas-correo')).toContain('Propia')
     await expect(view.skillMarkdown('no-existe')).rejects.toThrow('not found')
+  })
+
+  it('turns an Admin edit of a catalogue skill into the deployment edition, and a member edit into a personal copy', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-skill-global-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const catalog = join(home, 'catalog')
+    const globalRoot = join(home, 'global-skills')
+    for (const role of ['admin', 'compras']) {
+      mkdirSync(join(catalog, role, 'marluvas-correo'), { recursive: true })
+      writeFileSync(join(catalog, role, 'marluvas-correo', 'SKILL.md'), '---\nname: marluvas-correo\ndescription: del rol\n---\n')
+    }
+    // The Admin had an own copy from before; the global save removes it so the edition shows.
+    mkdirSync(join(home, 'skills', 'marluvas-correo'), { recursive: true })
+    writeFileSync(join(home, 'skills', 'marluvas-correo', 'SKILL.md'), '---\nname: marluvas-correo\ndescription: copia vieja\n---\n')
+    const admin = harness({ skillsCatalogRoot: catalog, globalSkillsRoot: globalRoot }).view
+
+    expect((await admin.skills()).find(row => row.name === 'marluvas-correo')).toMatchObject({ origin: 'owner', editsGlobally: true })
+    await admin.saveSkill('marluvas-correo', '---\nname: marluvas-correo\ndescription: global\n---\nPara todos\n')
+    expect(existsSync(join(home, 'skills', 'marluvas-correo'))).toBe(false)
+    expect(readFileSync(join(globalRoot, 'marluvas-correo', 'SKILL.md'), 'utf8')).toContain('Para todos')
+    expect((await admin.skills()).find(row => row.name === 'marluvas-correo')).toMatchObject({ origin: 'global', replacesCatalog: true, description: 'global' })
+    expect(await admin.skillMarkdown('marluvas-correo')).toContain('Para todos')
+    // A new skill of the Admin's own stays personal.
+    await admin.saveSkill('mi-skill', '---\nname: mi-skill\ndescription: propia\n---\n')
+    expect(existsSync(join(home, 'skills', 'mi-skill', 'SKILL.md'))).toBe(true)
+
+    const member = harness({ role: 'compras', skillsCatalogRoot: catalog, globalSkillsRoot: globalRoot }).view
+    expect((await member.skills()).find(row => row.name === 'marluvas-correo')).toMatchObject({ origin: 'global', editsGlobally: false })
+    await member.saveSkill('marluvas-correo', '---\nname: marluvas-correo\ndescription: mia\n---\n')
+    expect(readFileSync(join(globalRoot, 'marluvas-correo', 'SKILL.md'), 'utf8')).toContain('Para todos')
+    await expect(member.removeSkill('otra')).rejects.toThrow('only uploaded skills')
+    await member.removeSkill('marluvas-correo')
+
+    // Removing the edition restores the catalogue version for everyone.
+    await admin.removeSkill('marluvas-correo')
+    expect(existsSync(join(globalRoot, 'marluvas-correo'))).toBe(false)
+    expect((await admin.skills()).find(row => row.name === 'marluvas-correo')).toMatchObject({ origin: 'role', description: 'del rol' })
   })
 
   it('omits the workspace in the overview when no registry is mounted', async () => {

@@ -33,12 +33,15 @@ Seeding is scoped to one owner home by a marker at `<DSH_HOME>/faberloom-default
 - an item whose name already exists is left alone, so a retry after a partial pass never duplicates it;
 - an entry with `roles` reaches only those roles; `Operador Marluvas` is limited to `admin`, `superadmin`, and `ceo`;
 - when a newer catalogue adds an agent, the pass creates only the names the marker does not already record, so an upgrade adds the new agent while a name the owner deleted stays deleted;
-- the deployment's baseline agents are collapsed to one row per name before the pass: two installations of the same catalogue can each seed the same name under different ids, a stored provider key wins the keeper, and the keeper absorbs every skill and connected agent of its group; an agent the owner created with the same name is never touched;
+- the deployment's baseline agents are collapsed to one row per name before the pass: two installations of the same catalogue can each seed the same name under different ids, a stored provider key wins the keeper, and the keeper absorbs every skill and connected agent of its group; an unseeded, ownerless agent with a baseline name and the same responsibility is a copy another home carried here and is removed; an agent the owner created with the same name and its own responsibility is never touched;
+- the deployment's provider and model reach a baseline agent until its owner picks others: `<DSH_HOME>/faberloom-baseline-applied.json` records the pair each pass applied, and a differing current pair is left alone;
 - a successful pass writes the marker, including one that found nothing left to create, so the next boot never resurrects an item the owner deleted; a pass that throws leaves no marker and no claim, so the next start retries.
 
 Two starts can begin at once for the same home, and each reads the other's domains before either flushes. A pass therefore claims `<DSH_HOME>/faberloom-defaults.claim` with an exclusive create first: the winner seeds, the loser reports `another pass is seeding`, and a claim left behind by a pass that died is cleared after ten minutes so the next start retries.
 
 Skills are matched against what exists — the owner's own uploads under `<DSH_HOME>/skills` and the role's catalogue under `skillsCatalogRoot/<role>` — and a declared skill the role does not ship is simply not assigned.
+
+With `globalAgentsFile` set to a file every home of the deployment shares, a pass every `globalAgentsIntervalMs` (`src/global.ts`) makes an Admin/CEO edit of a baseline agent the deployment's edition: a privileged home whose baseline agent changed since its last pass publishes its settings and provider key with the next revision, and every home applies an edition newer than the revision it records in `<DSH_HOME>/faberloom-global-agents.json`. A home's first pass only records what it holds. Mail connections stay out of the edition because they name each user's mailboxes.
 
 -----
 

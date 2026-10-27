@@ -296,6 +296,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FaberLoomRoutineStepRow: 'faberloom.md',
   FaberLoomExecutionRow: 'faberloom.md',
   SeedReport: 'faberloom.md',
+  GlobalAgentReport: 'faberloom.md',
   DispatchReport: 'faberloom.md',
   InboundReport: 'faberloom.md',
   FaberLoomModelRow: 'faberloom.md',

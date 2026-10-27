@@ -165,7 +165,7 @@ function archifyHtml(flow: WorkFlow): string {
 }
 
 /** Reads one skill root into rows, ignoring anything without a frontmatter name. */
-function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' = 'role'): FaberLoomSkillRow[] {
+function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' | 'global' = 'role'): FaberLoomSkillRow[] {
   if (!existsSync(root)) return []
   const rows: FaberLoomSkillRow[] = []
   for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -195,6 +195,7 @@ function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' 
       assignedTo: [],
       assignedNames: [],
       replacesCatalog: false,
+      editsGlobally: false,
       ...sharedBy.length === 0 ? {} : { sharedBy },
     })
   }
@@ -384,6 +385,12 @@ export interface Config {
   skillsCatalogRoot?: string
   /** Root of the shared skill catalog mounted in the deployment (ECC plus the owner set). */
   skillsSharedRoot?: string
+  /**
+   * Writable deployment-wide root where an Admin/CEO edit of a role or shared
+   * skill lands, so every user of the deployment loads the edited version.
+   * Empty keeps such an edit as the editor's own copy.
+   */
+  globalSkillsRoot?: string
   /** Whether email attachments are converted to Markdown for Space memory. */
   anydoc?: boolean
   /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
@@ -407,6 +414,7 @@ export const Config: z<Config> = z.object({
   memoryLimit: z.number(),
   skillsCatalogRoot: z.string(),
   skillsSharedRoot: z.string().default(''),
+  globalSkillsRoot: z.string().default(''),
   anydoc: z.boolean().default(false),
   anydocOcr: z.string().default('reject'),
   anydocApiKey: z.string().default(''),
@@ -3381,19 +3389,30 @@ export class FaberLoomViewService extends TypertRemoteService {
     for (const entry of sharedDir === undefined ? [] : readSkillDirectories(sharedDir, 'shared')) {
       rows.set(entry.name, entry)
     }
+    const globalDir = this.globalSkillsDir()
+    for (const entry of globalDir === undefined ? [] : readSkillDirectories(globalDir, 'global')) {
+      rows.set(entry.name, { ...entry, replacesCatalog: rows.has(entry.name) })
+    }
     for (const entry of readSkillDirectories(join(this.dshHome(), 'skills'), 'owner')) {
       rows.set(entry.name, { ...entry, replacesCatalog: rows.has(entry.name) })
     }
     const agents = await this.ctx.faberloomAgents.listAgents()
+    const global = globalDir !== undefined && this.isPrivileged()
     return [...rows.values()].map((row) => {
       const users = agents.filter(agent => agent.skills.includes(row.name))
-      return { ...row, assignedTo: users.map(agent => agent.id), assignedNames: users.map(agent => agent.name) }
+      return {
+        ...row,
+        assignedTo: users.map(agent => agent.id),
+        assignedNames: users.map(agent => agent.name),
+        editsGlobally: global && row.origin !== 'incoming' && this.isCatalogSkill(row.name),
+      }
     })
   }
 
   /**
    * Read the full Markdown of one skill so the owner can edit it: the owner's own
-   * copy when one exists, otherwise the shared or role catalog copy the list shows.
+   * copy when one exists, then the deployment-wide edition, then the shared or
+   * role catalog copy the list shows.
    * @param name - skill name.
    * @returns the SKILL.md content.
    */
@@ -3401,7 +3420,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   async skillMarkdown(name: string): Promise<string> {
     const clean = name.trim().replace(/[^a-zA-Z0-9-]+/g, '')
     if (clean.length === 0) throw new Error('faberloom: the skill needs a name')
-    const roots = [join(this.dshHome(), 'skills'), this.sharedSkillsDir(), this.roleSkillsDir()]
+    const roots = [join(this.dshHome(), 'skills'), this.globalSkillsDir(), this.sharedSkillsDir(), this.roleSkillsDir()]
     for (const root of roots) {
       if (root === undefined) continue
       const file = join(root, clean, 'SKILL.md')
@@ -3426,9 +3445,31 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (existsSync(join(dir, '.shared-by')) && !this.isPrivileged()) {
       throw new Error('faberloom: una skill compartida por otro usuario solo la puede cambiar un Admin/CEO')
     }
+    // An Admin/CEO edit of a catalogue skill is the deployment's edition: it
+    // lands in the global root every user loads, and the editor's own copy of
+    // that name goes so it does not hide the edition from the editor.
+    const globalDir = this.globalSkillsDir()
+    if (globalDir !== undefined && this.isPrivileged() && this.isCatalogSkill(clean)) {
+      mkdirSync(join(globalDir, clean), { recursive: true })
+      writeFileSync(join(globalDir, clean, 'SKILL.md'), markdown, 'utf8')
+      if (!existsSync(join(dir, '.shared-by'))) rmSync(dir, { recursive: true, force: true })
+      return await this.skills()
+    }
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'SKILL.md'), markdown, 'utf8')
     return await this.skills()
+  }
+
+  /** Whether a role, shared, or deployment-wide skill carries this name. */
+  private isCatalogSkill(name: string): boolean {
+    return [this.globalSkillsDir(), this.sharedSkillsDir(), this.roleSkillsDir()]
+      .some(root => root !== undefined && existsSync(join(root, name, 'SKILL.md')))
+  }
+
+  /** The writable deployment-wide skill root, when the deployment mounts one. */
+  private globalSkillsDir(): string | undefined {
+    const root = this.config.globalSkillsRoot
+    return root === undefined || root.length === 0 ? undefined : root
   }
 
   /**
@@ -3441,6 +3482,12 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove skills')
     const clean = name.trim().replace(/[^a-zA-Z0-9-]+/g, '')
     const dir = join(this.dshHome(), 'skills', clean)
+    const globalDir = this.globalSkillsDir()
+    if (!existsSync(dir) && globalDir !== undefined && this.isPrivileged() && existsSync(join(globalDir, clean, 'SKILL.md'))) {
+      // Removing the deployment-wide edition restores the catalogue version for everyone.
+      rmSync(join(globalDir, clean), { recursive: true, force: true })
+      return await this.skills()
+    }
     if (!existsSync(dir)) throw new Error('faberloom: only uploaded skills can be removed')
     if (existsSync(join(dir, '.shared-by')) && !this.isPrivileged()) {
       throw new Error('faberloom: una skill compartida por otro usuario solo la puede quitar un Admin/CEO')

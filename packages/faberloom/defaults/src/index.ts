@@ -16,8 +16,10 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-faberloom-agents'
+import { agentCredentialRef } from '@deepseek-ai/dsh-faberloom-agents'
+import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
+import { syncGlobalAgents, type GlobalAgentReport } from './global.ts'
 import { SEED_AGENTS, SEED_ROUTINES } from './catalog.ts'
 import { PRESET_CURATION } from './preset-curation.ts'
 import type { SeedAgent } from './catalog.ts'
@@ -59,6 +61,14 @@ export interface Config {
    * returned by a read.
    */
   agentApiKeyEnv?: string
+  /**
+   * The deployment-wide file holding the newest Admin/CEO edition of each
+   * baseline agent, shared by every home of the deployment. Empty turns the
+   * deployment-wide edition off (a desktop receives it through its mirror).
+   */
+  globalAgentsFile?: string
+  /** Milliseconds between deployment-wide edition passes. */
+  globalAgentsIntervalMs?: number
 }
 
 /** Schemastery configuration for the defaults seeder. */
@@ -72,7 +82,12 @@ export const Config: z<Config> = z.object({
   agentProvider: z.string().default(''),
   agentModel: z.string().default(''),
   agentApiKeyEnv: z.string().default(''),
+  globalAgentsFile: z.string().default(''),
+  globalAgentsIntervalMs: z.natural().min(5_000).default(60_000),
 })
+
+/** Roles whose baseline agent edits become the deployment's edition. */
+const PRIVILEGED_ROLES = new Set(['admin', 'superadmin', 'ceo'])
 
 /** How long a claim left by a dead pass blocks the next one. */
 const CLAIM_GRACE_MS = 10 * 60 * 1000
@@ -121,6 +136,43 @@ export class FaberLoomDefaults extends Service {
       })
       return () => {}
     }, 'faberloom.defaults.seed')
+    if ((this.config.globalAgentsFile ?? '').length > 0 && (this.config.ownerId ?? '').length > 0) {
+      this.ctx.effect(() => {
+        const timer = setInterval(() => { void this.syncGlobal() }, this.config.globalAgentsIntervalMs ?? 60_000)
+        return () => { clearInterval(timer) }
+      }, 'faberloom.defaults.global')
+    }
+  }
+
+  /**
+   * Publish this home's Admin/CEO edits of baseline agents to the deployment and
+   * apply newer editions to this home, after seeding has run. A failure is
+   * logged and the next pass retries.
+   * @returns what the pass published and applied, or undefined when it is off or failed.
+   */
+  async syncGlobal(): Promise<GlobalAgentReport | undefined> {
+    const sharedFile = this.config.globalAgentsFile ?? ''
+    if (sharedFile.length === 0) return undefined
+    try {
+      await this.seed()
+      const credentials = this.ctx.get('credentials')
+      const report = await syncGlobalAgents({
+        listAgents: async () => await this.ctx.faberloomAgents.listAgents(),
+        updateAgent: async (id, patch) => await this.ctx.faberloomAgents.updateAgent(id, patch),
+        readKey: async id => credentials === undefined ? undefined : (await credentials.resolve(agentCredentialRef(id)))?.value,
+      }, {
+        sharedFile,
+        stateFile: join(this.dshHome(), 'faberloom-global-agents.json'),
+        privileged: this.config.readOnly !== true && PRIVILEGED_ROLES.has((this.config.role ?? '').toLowerCase()),
+        actor: this.config.ownerId ?? '',
+      })
+      if (report.published.length > 0) this.ctx.logger.info(`faberloom: published ${String(report.published.length)} baseline agent edit(s) to the deployment`)
+      if (report.applied.length > 0) this.ctx.logger.info(`faberloom: applied ${String(report.applied.length)} deployment baseline agent edit(s)`)
+      return report
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: deployment baseline agent pass failed: ${String(error)}`)
+      return undefined
+    }
   }
 
   /**
@@ -435,7 +487,8 @@ export class FaberLoomDefaults extends Service {
    */
   private async collapseDuplicateBaselines(): Promise<number> {
     const groups = new Map<string, FaberLoomAgent[]>()
-    for (const agent of await this.ctx.faberloomAgents.listAgents()) {
+    const all = await this.ctx.faberloomAgents.listAgents()
+    for (const agent of all) {
       if (!agent.seeded || agent.ownerId.length > 0) continue
       const key = agent.name.trim().toLowerCase()
       const group = groups.get(key) ?? []
@@ -443,6 +496,19 @@ export class FaberLoomDefaults extends Service {
       groups.set(key, group)
     }
     let removed = 0
+    // The other home's baseline rows that a mirror without the baseline rule
+    // carried here arrive unseeded and ownerless under that home's ids, with
+    // the catalogue's own responsibility. They are copies of an agent this home
+    // already seeds, and the owner's settings now travel through the mirror's
+    // baseline table, so the copies go. An ownerless agent someone created with
+    // the same name keeps its own responsibility and stays.
+    for (const agent of all) {
+      if (agent.seeded || agent.ownerId.length > 0) continue
+      if (agent.originRef?.startsWith('share:') === true) continue
+      const twins = groups.get(agent.name.trim().toLowerCase())
+      if (twins?.some(twin => twin.responsibility === agent.responsibility) !== true) continue
+      if (await this.ctx.faberloomAgents.removeAgent(agent.id)) removed += 1
+    }
     for (const group of groups.values()) {
       if (group.length < 2) continue
       const ordered = [...group].sort((left, right) => {

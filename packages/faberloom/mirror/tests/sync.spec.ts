@@ -1,5 +1,5 @@
 import { createServer, type Server } from 'node:http'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -186,7 +186,7 @@ async function harness(document: FaberLoomMirrorDocument, debounceMs = 60_000) {
   // cycle and the debounce timer it wants.
   mirror.clearTimers()
   context = ctx
-  return { mirror: mirror, gateway: fake.gateway, facility, ctx }
+  return { mirror: mirror, gateway: fake.gateway, facility, ctx, url: fake.url }
 }
 
 /** The grants table the real access domain writes. */
@@ -210,6 +210,13 @@ async function waitFor(condition: () => boolean): Promise<boolean> {
 /** The pushed documents one fake gateway received; a pull carries no body. */
 function pushedDocuments(gateway: FakeGateway): FaberLoomMirrorDocument[] {
   return gateway.received.filter(entry => entry !== undefined) as FaberLoomMirrorDocument[]
+}
+
+/** Drop the mirror's in-memory journal so the next cycle reads the saved one, as a new process does. */
+function restartJournal(mirror: FaberLoomMirror): void {
+  mirror['journal'].clear()
+  mirror['synced'].clear()
+  mirror['journalLoaded'] = false
 }
 
 /** Build a fresh storage/domain context, for a spec that needs more than one. */
@@ -305,6 +312,43 @@ describe('FaberLoomMirror', () => {
     const pulled = await mirror.sync()
     expect(pulled?.applied).toEqual([{ domain: 'faberloom_grants', table: 'grants', key: 'g1' }])
     expect(grants(facility).get('g1')).toMatchObject({ note: 'movido en la web' })
+  })
+
+  it('lands a change the peer made while this process was down, from the journal the previous process left', async () => {
+    const { mirror, gateway, facility } = await harness(remoteDocument('base'))
+    // A guarded cycle writes the journal beside the status document; the boot
+    // cycle the constructor started has to finish first.
+    expect(await waitFor(() => !mirror['running'])).toBe(true)
+    await mirror['tick']()
+    const saved = JSON.parse(readFileSync(mirror.journalPath(), 'utf8')) as { owner: string; entries: unknown[] }
+    expect(saved.owner).toBe(OWNER)
+    expect(saved.entries.length).toBeGreaterThan(0)
+
+    // A new process starts with nothing in memory and reads the journal back.
+    restartJournal(mirror)
+    gateway.document = remoteDocument('cambiado en la web con el escritorio cerrado')
+    const result = await mirror.sync()
+    // Without the journal the restart read the row as a first sync and kept the stale local value.
+    expect(result?.applied).toEqual([{ domain: 'faberloom_grants', table: 'grants', key: 'g1' }])
+    expect(grants(facility).get('g1')).toMatchObject({ note: 'cambiado en la web con el escritorio cerrado' })
+  })
+
+  it('starts with an empty journal when the saved one is unreadable or belongs to another owner', async () => {
+    const { mirror, gateway, facility, url } = await harness(remoteDocument('base'))
+    const journals = [
+      '{ no es json',
+      JSON.stringify({ version: 1, owner: 'otro@muitowork.com', url, entries: [] }),
+      JSON.stringify({ version: 1, owner: OWNER, url, entries: [['x', null], ['y', { local: 1 }], 'z'] }),
+    ]
+    for (const text of journals) {
+      gateway.document = remoteDocument('suyo')
+      writeFileSync(mirror.journalPath(), text, 'utf8')
+      restartJournal(mirror)
+      const result = await mirror.sync()
+      // No usable journal: the first-sync rule keeps the local row.
+      expect(result?.keptLocal).toEqual([{ domain: 'faberloom_grants', table: 'grants', key: 'g1' }])
+    }
+    expect(grants(facility).get('g1')).toMatchObject({ note: 'base' })
   })
 
   it('keeps a locally changed row the other side also changed, and reports it', async () => {
@@ -503,6 +547,20 @@ describe('FaberLoomMirror', () => {
     expect(read.skipped).toEqual([{ domain: 'skills', table: 'sin-cuerpo', reason: 'SKILL.md-not-readable' }])
     writeFileSync(join(mirror.skillsRoot(), 'sin-cuerpo', 'SKILL.md'), '# Cuerpo\n')
     expect(await mirror.readSkills()).toMatchObject({ skills: { 'sin-cuerpo': '# Cuerpo\n' } })
+  })
+
+  it('offers the deployment-wide skill edition, with the owner bundle of a name winning', async () => {
+    const { mirror } = await harness(remoteDocument('skills'))
+    const ctx = await bootContext()
+    const globalRoot = join(home ?? '', 'global-skills')
+    mkdirSync(join(globalRoot, 'marluvas-correo'), { recursive: true })
+    writeFileSync(join(globalRoot, 'marluvas-correo', 'SKILL.md'), '# Global\n')
+    mkdirSync(join(globalRoot, 'informe-diario'), { recursive: true })
+    writeFileSync(join(globalRoot, 'informe-diario', 'SKILL.md'), '# Global pisado\n')
+    const web = new FaberLoomMirror(ctx, { skillsRoot: mirror.skillsRoot(), globalSkillsRoot: globalRoot, platform: 'web' })
+    expect((await web.readSkills()).skills).toEqual({ 'marluvas-correo': '# Global\n', 'informe-diario': '# Informe\n\nCuerpo.' })
+    const missing = new FaberLoomMirror(await bootContext(), { skillsRoot: mirror.skillsRoot(), globalSkillsRoot: join(globalRoot, 'no-existe'), platform: 'web' })
+    expect((await missing.readSkills()).skills).toEqual({ 'informe-diario': '# Informe\n\nCuerpo.' })
   })
 
   it('pushes a local skill bundle and skips a null entry in a written document', async () => {

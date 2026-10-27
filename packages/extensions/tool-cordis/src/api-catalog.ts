@@ -1459,6 +1459,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'FaberLoom\'s own default agents and routines for one owner.',
     methods: [
       {
+        signature: 'async syncGlobal(): Promise<GlobalAgentReport | undefined>',
+        description: 'Publish this home\'s Admin/CEO edits of baseline agents to the deployment and apply newer editions to this home, after seeding has run. A failure is logged and the next pass retries.',
+        parameters: [],
+        returns: 'what the pass published and applied, or undefined when it is off or failed.',
+      },
+      {
         signature: 'async seed(): Promise<SeedReport>',
         description: 'Seed the catalogue once for this owner.\n\nA pass seeds the deployment\'s shared agents for every identity, and the owner\'s plan agents once (no-op while the marker exists). A read-only identity still receives the shared agents but no plan agents or routines. Items are matched by name, so a retry after a partial pass never duplicates what already landed.',
         parameters: [],
@@ -1790,6 +1796,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read the remote document from the gateway.',
         parameters: [],
         returns: 'the parsed document, or undefined when the request failed.',
+      },
+      {
+        signature: 'journalPath(): string',
+        description: 'Absolute path of the row journal this side keeps between processes.',
+        parameters: [],
+        returns: 'the absolute path.',
       },
       {
         signature: 'async readSkills(): Promise<{ skills: Record<string, string>; skipped: readonly FaberLoomMirrorSkip[] }>',
@@ -2758,7 +2770,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'skillMarkdown\') async skillMarkdown(name: string): Promise<string>',
-        description: 'Read the full Markdown of one skill so the owner can edit it: the owner\'s own copy when one exists, otherwise the shared or role catalog copy the list shows.',
+        description: 'Read the full Markdown of one skill so the owner can edit it: the owner\'s own copy when one exists, then the deployment-wide edition, then the shared or role catalog copy the list shows.',
         parameters: [{ name: 'name', description: 'skill name.' }],
         returns: 'the SKILL.md content.',
       },
@@ -7851,7 +7863,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSkillRow',
-    declaration: 'export interface FaberLoomSkillRow {\n    readonly name: string;\n    readonly description: string;\n    readonly module: string | null;\n    readonly action: string | null;\n    readonly origin: \'role\' | \'owner\' | \'shared\' | \'incoming\';\n    readonly assignedTo: readonly string[];\n    readonly assignedNames: readonly string[];\n    readonly replacesCatalog: boolean;\n    readonly sharedBy?: string;\n}',
+    declaration: 'export interface FaberLoomSkillRow {\n    readonly name: string;\n    readonly description: string;\n    readonly module: string | null;\n    readonly action: string | null;\n    readonly origin: \'role\' | \'owner\' | \'shared\' | \'global\' | \'incoming\';\n    readonly assignedTo: readonly string[];\n    readonly assignedNames: readonly string[];\n    readonly replacesCatalog: boolean;\n    readonly editsGlobally: boolean;\n    readonly sharedBy?: string;\n}',
   },
   {
     name: 'FaberLoomSpace',
@@ -8072,6 +8084,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GenericResultView',
     declaration: 'export interface GenericResultView {\n    card: \'generic\';\n    title?: string;\n    content?: ContentBlock[];\n}',
+  },
+  {
+    name: 'GlobalAgentReport',
+    declaration: 'export interface GlobalAgentReport {\n    readonly published: readonly string[];\n    readonly applied: readonly string[];\n}',
   },
   {
     name: 'GoalActivation',

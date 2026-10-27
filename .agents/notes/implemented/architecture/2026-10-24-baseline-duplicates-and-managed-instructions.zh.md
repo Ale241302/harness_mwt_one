@@ -16,7 +16,7 @@
 
 ## 决定
 
-**部署基线每个名称只保留一行，并由本机拥有。** `faberloom-defaults` 在每次执行前合并已播种的基线：只对 `seeded` 且 owner 为空的行分组；持有已存供应商密钥的行成为保留行，保留行吸收组内全部技能与已连接 agent，其余删除。用户自建的同名 agent 永不受影响。镜像不携带这些行，也不携带 `share:` 副本，因为每套安装自行播种或导入。
+**部署基线每个名称只保留一行，并由本机拥有。** `faberloom-defaults` 在每次执行前合并已播种的基线：只对 `seeded` 且 owner 为空的行分组；持有已存供应商密钥的行成为保留行，保留行吸收组内全部技能与已连接 agent，其余删除。用户自建的同名 agent 永不受影响。镜像不携带这些行，也不携带 `share:` 副本，因为每套安装自行播种或导入。所有者对基线 agent 的修改改为按名称，通过镜像的虚拟 `baseline` 表传递（[基线 agent 与技能的传递](../feature/2026-10-27-baseline-agents-and-skills-travel.zh.md)）。
 
 **带外部 Workspace id 的镜像 Space 会被重新锚定，而不是计为已锚定。** `adoptOrphanWorkspaces` 把本地注册表不认识的 `workspaceId` 视为未绑定，于是同名 Space 接管本地文件夹，而不是再建一个。真正位于不同文件夹的同名 Space 仍然分开，面板在同名时追加文件夹名。
 

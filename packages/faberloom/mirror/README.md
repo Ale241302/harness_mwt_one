@@ -40,6 +40,7 @@ The `faberloom-app` bundle mounts this row disabled; a deployment turns it on an
 | `consoleToken` | `CONSOLA_TOKEN` | The console bearer token the Desktop wrote at sign-in. |
 | `mirrorKey` | `FABERLOOM_MIRROR_KEY` | Internal credential the owner's product MCP server accepts. |
 | `skillsRoot` | - | Owner skills root; defaults to `<home>/skills`. |
+| `globalSkillsRoot` | - | Deployment-wide Admin/CEO skill edition the serving side offers to its peer; never written. |
 | `storagesRoot` | - | Root of the `single`-layout domain documents; defaults to `<home>/storages`. |
 | `platform` | `FABERLOOM_MIRROR_PLATFORM` | Which side this process reports itself as; `desktop` unless the deployment says `web`. |
 | `intervalMs` | - | Milliseconds between two cycles; defaults to 120000. |
@@ -63,13 +64,17 @@ Creating a document needs the format version its owner stamps, and only the medi
 
 The `workspace` registry is deliberately outside that scope. A Workspace record names an absolute folder and the Session identities of the machine that created it, and the service that owns the registry builds its ordered view once when it opens and never adopts a row written beside it — the Workspace feed drops an id it never knew — so a carried row would name a folder that does not exist on the other side in a registry that ignores it. The Space is the product's travelling work area, and it carries its memory and context with it.
 
-Skills travel as files: `$DSH_HOME/skills/<name>/SKILL.md` becomes one entry of the document's `skills` map. The deployment's own read-only catalogs (`/opt/skills-catalog/<role>`, `/opt/skills-shared`) are not mirrored, and neither is anything outside the owner's own skills root.
+Skills travel as files: `$DSH_HOME/skills/<name>/SKILL.md` becomes one entry of the document's `skills` map. The deployment's own read-only catalogs (`/opt/skills-catalog/<role>`, `/opt/skills-shared`) are not mirrored. A side configured with `globalSkillsRoot` (the web side, pointing at the deployment-wide Admin/CEO skill edition) also offers those bundles, with the owner's own bundle of a name winning; it never writes that root.
+
+The deployment baseline agents (`seeded`, no owner) keep their `agents` rows local, because each home seeds them under its own ids. Their owner-editable settings travel through the virtual `baseline` table of `faberloom_agents` (`src/baseline.ts`), keyed by agent name: a read projects each local baseline row, a write patches the local row of that name and binds connected agents to local ids, and a tombstone never removes one. The provider key travels in that row between the owner's own homes: the store preloads it from the credential seam and a write stores it in the receiving seam, never in the `agents` row.
 
 ### Conflict rule
 
 Each synced row has a journal entry holding two digests: the local value and the remote value as of the last sync that touched it. An incoming remote row is written only when the local side still holds what that sync left there and the remote value moved since then. A row both sides changed keeps the local value, is reported as `keptLocal`, and is pushed back. A row only the local side changed is pushed. A row the local side does not hold at all is written, which is how a first pull lands the other home's rows. A row this side never journaled lands when it is absent **or** when both sides already hold the same value: two homes that were filled independently record their agreement on the first cycle instead of sending every equal row back over the wire.
 
 Local deletions are pushed as tombstones, and remote tombstones are applied, so a delete travels in both directions under the same rule.
+
+The journal is written to `mirror-journal.json` beside `mirror-status.json` after each guarded cycle and read once before a process's first cycle, so a restart keeps applying the rule above instead of reading every differing row as a first sync. A journal recorded for another owner or gateway, or one that does not parse, is ignored.
 
 A row the journal recorded as synced whose value is still local while the peer answered for that domain without it is pushed again: a medium rewritten from an older state loses rows the journal had already recorded, and re-sending them is what makes a cycle self-healing. A domain the peer could not read at all is not evidence of a deletion, and neither is a peer that never answered.
 

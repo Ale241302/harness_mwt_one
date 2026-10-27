@@ -33,12 +33,15 @@ kind: "package-reference"
 - 名称已存在的条目会被跳过，因此部分完成后重试也不会重复；
 - 带 `roles` 的条目只到达这些角色；`Operador Marluvas` 仅限 `admin`、`superadmin` 与 `ceo`；
 - 当较新的目录新增代理时，这一趟只创建标记尚未记录的名称，因此升级会加入新代理，而 owner 删除过的名称仍保持删除；
-- 每次执行前会把部署基线代理按名称合并为一行：同一目录的两套安装可能用不同 id 各播种一次，持有已存供应商密钥的行成为保留行，保留行吸收组内全部技能与已连接 agent；用户自建的同名 agent 永不受影响；
+- 每次执行前会把部署基线代理按名称合并为一行：同一目录的两套安装可能用不同 id 各播种一次，持有已存供应商密钥的行成为保留行，保留行吸收组内全部技能与已连接 agent；未播种、无 owner、名称为基线名称且职责相同的 agent 是另一个 home 带来的副本，会被删除；用户自建、职责不同的同名 agent 永不受影响；
+- 部署的供应商与模型会作用于基线 agent，直到其所有者另选：`<DSH_HOME>/faberloom-baseline-applied.json` 记录每一趟应用的组合，当前组合不同的保持不动；
 - 成功的一趟会写标记，包括没有新条目可创建的那一趟，因此下次启动不会复生 owner 已删除的条目；抛错的一趟既不留下标记也不留下认领，因此下次启动重试。
 
 同一个 home 可能同时启动两个进程，而两者都可能在对方写入落盘之前读到彼此的域。因此每一趟先用独占创建认领 `<DSH_HOME>/faberloom-defaults.claim`：胜者播种，败者报告 `another pass is seeding`；若某一趟在完成前死亡，其认领会在十分钟后被清除，下一次启动重试。
 
 技能会与实际存在的内容匹配 —— owner 自己在 `<DSH_HOME>/skills` 下的上传，以及 `skillsCatalogRoot/<role>` 下的角色目录 —— 角色没有随附的声明技能不会被分配。
+
+当 `globalAgentsFile` 指向部署内所有 home 共享的文件时，每隔 `globalAgentsIntervalMs` 运行一趟（`src/global.ts`），使 Admin/CEO 对基线 agent 的编辑成为部署版本：自上一趟以来基线 agent 有变化的特权 home 以下一个修订号发布其设置与供应商密钥，每个 home 应用比其在 `<DSH_HOME>/faberloom-global-agents.json` 中记录的修订更新的版本。一个 home 的第一趟只记录其持有的内容。邮件连接不进入版本，因为它们指向每个用户自己的邮箱。
 
 -----
 

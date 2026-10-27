@@ -8,6 +8,7 @@
  */
 
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { BASELINE_DOMAIN, BASELINE_TABLE } from './baseline.ts'
 import { FABERLOOM_MIRROR_DOMAINS, FABERLOOM_MIRROR_FORMAT_VERSION } from './document.ts'
 import type { FaberLoomMirrorDocument, FaberLoomMirrorRow, FaberLoomMirrorRowChange, FaberLoomMirrorSkip } from './types.ts'
 
@@ -31,6 +32,15 @@ export interface MirrorDomainSource {
 export interface MirrorLiveDomain {
   /** One declared table of the domain. */
   table(name: string): KvTable<string, unknown>
+}
+
+/**
+ * Tables a domain answers for without holding them: projections over its real
+ * rows that travel under the journal rule like any row. The baseline agents'
+ * shared settings are the one such table (see baseline.ts).
+ */
+const MIRROR_VIRTUAL_TABLES: Readonly<Record<string, readonly string[]>> = {
+  [BASELINE_DOMAIN]: [BASELINE_TABLE],
 }
 
 /**
@@ -121,6 +131,16 @@ export function readMirrorDocument(source: MirrorDomainSource, platform: 'web' |
         rows[key] = { deleted: false, value }
       }
       domainTables[tableName] = rows
+    }
+    for (const tableName of MIRROR_VIRTUAL_TABLES[domainName] ?? []) {
+      let table: KvTable<string, unknown>
+      try {
+        table = domain.table(tableName)
+      } catch {
+        // A source without the virtual table (an in-memory fake) has nothing to project.
+        continue
+      }
+      domainTables[tableName] = Object.fromEntries([...table.entries()].map(([key, value]) => [key, { deleted: false, value }]))
     }
     const version = source.versionOf?.(domainName)
     domains[domainName] = { ...version === undefined ? {} : { version }, tables: domainTables }

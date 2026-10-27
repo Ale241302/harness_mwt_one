@@ -2140,6 +2140,20 @@ function RoutineRuns(props: {
   )
 }
 
+/**
+ * The origin label of one skill row.
+ * @param row - the skill row.
+ * @returns the locale key naming where the version the owner sees comes from.
+ */
+function skillOriginKey(row: FaberLoomSkillRow): FaberloomKey {
+  if (row.origin === 'global') return 'skills.global'
+  if (row.replacesCatalog) return 'skills.ownCopy'
+  if (row.origin === 'owner') return 'skills.own'
+  if (row.origin === 'shared') return 'skills.shared'
+  if (row.origin === 'incoming') return 'skills.incoming'
+  return 'skills.role'
+}
+
 /** Skills: the role catalog plus the owner's uploads. */
 function skillsScreen() {
   return function FaberloomSkills(props: ScreenProps & { tabs?: ReactNode; refresh?: number }) {
@@ -2278,11 +2292,13 @@ function skillsScreen() {
           ) : (
             <>
               <button className={styles.ghost} type="button" onClick={() => { select(null) }}>{t('action.close')}</button>
-              {chosen.origin !== 'owner' ? null : (
+              {chosen.origin === 'owner' || (chosen.origin === 'global' && chosen.editsGlobally) ? (
                 <button className={styles.danger} type="button" onClick={() => {
                   void removeSkill(chosen.name).then((result) => { apply(result); select(null) })
-                }}>{chosen.replacesCatalog ? t('skills.restoreCatalog') : t('action.delete')}</button>
-              )}
+                }}>
+                  {chosen.origin === 'global' ? t('skills.restoreCatalogAll') : chosen.replacesCatalog ? t('skills.restoreCatalog') : t('action.delete')}
+                </button>
+              ) : null}
               {chosen.origin === 'incoming' ? null : (
                 <button className={styles.primary} type="button" disabled={draftLoading} onClick={() => { startEdit(chosen.name) }}>
                   {draftLoading ? t('state.loading') : t('action.edit')}
@@ -2295,7 +2311,8 @@ function skillsScreen() {
             ? null
             : draft !== null
               ? (
-                <Field label={t('skills.markdown')} hint={chosen.origin === 'owner' ? t('skills.editOwnHint') : t('skills.editCatalogHint')}>
+                <Field label={t('skills.markdown')}
+                  hint={chosen.editsGlobally ? t('skills.editGlobalHint') : chosen.origin === 'owner' ? t('skills.editOwnHint') : t('skills.editCatalogHint')}>
                   <textarea className={styles.skillEditor} value={draft} spellCheck={false} aria-label={t('skills.markdown')}
                     onChange={(event) => { setDraft(event.target.value) }} />
                   {draftError === null ? null : <span className={styles.error}>{draftError}</span>}
@@ -2315,7 +2332,7 @@ function skillsScreen() {
                         </span>
                       )}
                   </Field>
-                  <Field label={t('field.origin')}><Chip tone={chosen.origin === 'owner' ? 'accent' : 'muted'}>{chosen.replacesCatalog ? t('skills.ownCopy') : chosen.origin === 'owner' ? t('skills.own') : chosen.origin === 'shared' ? t('skills.shared') : chosen.origin === 'incoming' ? t('skills.incoming') : t('skills.role')}</Chip></Field>
+                  <Field label={t('field.origin')}><Chip tone={chosen.origin === 'owner' ? 'accent' : 'muted'}>{t(skillOriginKey(chosen))}</Chip></Field>
                   {chosen.sharedBy === undefined ? null : <Field label={t('skills.sharedBy')}><span className={styles.cellMuted}>{chosen.sharedBy}</span></Field>}
                   {chosen.origin !== 'owner' ? null : (
                     <Field label={t('skills.share')} hint={t('skills.shareHint')}>

@@ -109,6 +109,46 @@ describe('FaberLoomDefaults', () => {
     expect(rows.some(agent => agent.id === own.id)).toBe(true)
   })
 
+  it('runs the deployment-wide edition pass only when the deployment names its file', async () => {
+    const home = ownerHome()
+    const { ctx, catalog } = await services(home, ['mwt-compras-clientes-leer'])
+    await seedWith(ctx, catalog)
+    expect(await ctx.faberloomDefaults.syncGlobal()).toBeUndefined()
+
+    const other = ownerHome()
+    const second = await services(other, ['mwt-compras-clientes-leer'])
+    const shared = join(other, 'global', 'agents.json')
+    await seedWith(second.ctx, second.catalog, { role: 'admin', globalAgentsFile: shared, globalAgentsIntervalMs: 3_600_000 })
+    expect(await second.ctx.faberloomDefaults.syncGlobal()).toEqual({ published: [], applied: [] })
+    expect(existsSync(join(other, 'faberloom-global-agents.json'))).toBe(true)
+
+    // A shared path that cannot be written fails the pass without throwing.
+    const [first] = await second.ctx.faberloomAgents.listAgents()
+    if (first === undefined) throw new Error('seeding created no agent')
+    await second.ctx.faberloomAgents.updateAgent(first.id, { model: 'deepseek-pro' })
+    writeFileSync(join(other, 'global-blocker'), 'x', 'utf8')
+    const blocked = await services(other, ['mwt-compras-clientes-leer'], second.pool)
+    await seedWith(blocked.ctx, blocked.catalog, { role: 'admin', globalAgentsFile: join(other, 'global-blocker', 'agents.json') })
+    expect(await blocked.ctx.faberloomDefaults.syncGlobal()).toBeUndefined()
+  })
+
+  it('removes the copies of the baseline another home carried here, keeping same-name agents of its own', async () => {
+    const home = ownerHome()
+    const { ctx, catalog } = await services(home, [])
+    const seeded = await ctx.faberloomAgents.createAgent({ name: 'Proformas', responsibility: 'Prepara proformas.', seeded: true })
+    const copy = await ctx.faberloomAgents.createAgent({ name: 'Proformas', responsibility: 'Prepara proformas.' })
+    const own = await ctx.faberloomAgents.createAgent({ name: 'Proformas', responsibility: 'Mis proformas.' })
+    const owned = await ctx.faberloomAgents.createAgent({ name: 'Proformas', responsibility: 'Prepara proformas.', ownerId: 'ana@muitowork.com' })
+    const shared = await ctx.faberloomAgents.createAgent({ name: 'Proformas', responsibility: 'Prepara proformas.', originRef: 'share:ana@muitowork.com' })
+    const unrelated = await ctx.faberloomAgents.createAgent({ name: 'Sin gemelo', responsibility: 'Prepara proformas.' })
+
+    await seedWith(ctx, catalog)
+
+    const ids = new Set((await ctx.faberloomAgents.listAgents()).map(agent => agent.id))
+    expect(ids.has(copy.id)).toBe(false)
+    for (const kept of [seeded, own, owned, shared, unrelated]) expect(ids.has(kept.id)).toBe(true)
+  })
+
   it('F16 — seeds the plan agents and routine, keeping only the skills the role ships', async () => {
     const home = ownerHome()
     const { ctx, catalog } = await services(home, ['mwt-compras-clientes-leer', 'mwt-compras-inventario-leer'])
