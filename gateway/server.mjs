@@ -992,6 +992,7 @@ function renderPatch(home, user, memory) {
     '- id: faberloom-inbound',
     '  config:',
     `    ownerId: ${yamlScalar(user.email)}`,
+    `    role: ${yamlScalar(String(user.role || ''))}`,
     `    enabled: ${cfg.inboundEnabled ? 'true' : 'false'}`,
     `    intervalMs: ${cfg.inboundIntervalMs}`,
     `    mailbox: ${yamlScalar(cfg.inboundMailbox)}`,
