@@ -7045,9 +7045,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-faberloom-agents':
-        specifier: workspace:^
-        version: link:../agents
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../connections

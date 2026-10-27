@@ -283,6 +283,7 @@ export function renderIdentityPatch(
     '- id: faberloom-inbound',
     '  config:',
     `    ownerId: ${owner}`,
+    `    role: ${role}`,
     '    enabled: true',
     '    intervalMs: 60000',
     `    mailbox: ${yamlScalar('INBOX')}`,

@@ -29,10 +29,16 @@ persona, model, and skill list.
 the owner's saved IMAP username is `alvaro@muitowork.com` or
 `506@muitowork.com`, is privileged, and the agent exists, the built-in
 `Vigía de correo` definition is updated to the Marluvas three-step flow and
-every agent step is bound to the catalog agent through `config.agentId`. The
-routine keeps its name, so the owner does not get a second trigger on the same
-mailbox. A non-privileged role, a different mailbox, or a missing agent keeps
-the generic definition.
+every agent step names the catalog agent through `config.agentName`. The routine
+keeps its name, so the owner does not get a second trigger on the same mailbox.
+A non-privileged role, a different mailbox, or a missing agent keeps the generic
+definition.
+
+**The binding names the agent, not its id.** The agent id is home-local and the
+mirror syncs routines across homes, so a stored id would flip on every sync and
+create a new routine version on every poll. The steps carry the stable catalog
+name and `agentRuntimeFor` resolves it at execution time, so the definition is
+identical on every home.
 
 **Convergence compares the owned fields, not the stored shape.** The store
 materializes every optional step field (`config: {}`, `waitFor: null`,

@@ -158,7 +158,7 @@ describe('FaberLoomViewService mailbox writes', () => {
       definition: { intent: string; steps: readonly { config?: Readonly<Record<string, unknown>> }[] }
     } | undefined
     expect(input?.definition.intent).toContain('Marluvas')
-    expect(input?.definition.steps.every(step => step.config?.['agentId'] === 'a1')).toBe(true)
+    expect(input?.definition.steps.every(step => step.config?.['agentName'] === 'Operador Marluvas')).toBe(true)
     expect(routines.activateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'r1')
   })
 
@@ -185,7 +185,7 @@ describe('FaberLoomViewService mailbox writes', () => {
       definition: { intent: string; steps: readonly { config?: Readonly<Record<string, unknown>> }[] }
     } | undefined
     expect(input?.definition.intent).toContain('Clasificar')
-    expect(input?.definition.steps.every(step => step.config?.['agentId'] === undefined)).toBe(true)
+    expect(input?.definition.steps.every(step => step.config?.['agentName'] === undefined)).toBe(true)
   })
 
   it('keeps the generic live mail routine for a non-privileged role even on an operations mailbox', async () => {
@@ -211,7 +211,7 @@ describe('FaberLoomViewService mailbox writes', () => {
       definition: { intent: string; steps: readonly { config?: Readonly<Record<string, unknown>> }[] }
     } | undefined
     expect(input?.definition.intent).toContain('Clasificar')
-    expect(input?.definition.steps.every(step => step.config?.['agentId'] === undefined)).toBe(true)
+    expect(input?.definition.steps.every(step => step.config?.['agentName'] === undefined)).toBe(true)
   })
 
   it('deletes one space-memory entry and returns the refreshed list', async () => {

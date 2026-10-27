@@ -74,7 +74,7 @@ afterEach(() => {
 })
 
 /** Boot storage, connections, routines, and the receiver over one owner pool. */
-async function harness(pool = new MemoryMediaPool()) {
+async function harness(pool = new MemoryMediaPool(), role = '') {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
@@ -86,7 +86,7 @@ async function harness(pool = new MemoryMediaPool()) {
   await ctx.plugin(FaberLoomRoutines)
   ctx.faberloomRoutines.registerHandler('step', () => 'ok')
   ctx.faberloomRoutines.registerHandler('agent', () => 'ok')
-  await ctx.plugin(FaberLoomInbound, { ownerId: OWNER, enabled: false, intervalMs: MIN_INTERVAL_MS, mailbox: 'INBOX' })
+  await ctx.plugin(FaberLoomInbound, { ownerId: OWNER, enabled: false, intervalMs: MIN_INTERVAL_MS, mailbox: 'INBOX', role })
   return { ctx, connections: ctx.faberloomConnections, routines: ctx.faberloomRoutines, inbound: ctx.faberloomInbound }
 }
 
@@ -125,24 +125,41 @@ describe('FaberLoomInbound', () => {
     expect(log).toContain('UID SEARCH UNSEEN')
   })
 
-  it('provisions the Marluvas live routine when the operator agent is present', async () => {
+  it('provisions the Marluvas live routine for a privileged owner of the operations mailbox', async () => {
     const log: string[] = []
     const fake = await fakeServer([
       { uid: 20, messageId: 'marluvas-1@marluvas.example', from: 'samuel.fernandes@marluvas.com.br', subject: 'Proforma 2500-2026' },
     ], log)
     servers.push(fake.server)
 
-    const { ctx, connections, routines, inbound } = await harness()
-    ctx.provide('faberloomAgents', { listAgents: async () => [{ id: 'a1', name: 'Operador Marluvas' }] } as never)
-    await connections.save(OWNER, { kind: 'imap', label: 'Marluvas', host: '127.0.0.1', port: fake.port, secure: false, username: 'marluvas', secret: 'secreta' })
-    await connections.save(OWNER, { kind: 'smtp', label: 'Marluvas SMTP', host: '127.0.0.1', port: 465, secure: true, username: 'marluvas', secret: 'secreta' })
+    const { connections, routines, inbound } = await harness(new MemoryMediaPool(), 'admin')
+    await connections.save(OWNER, { kind: 'imap', label: 'Marluvas', host: '127.0.0.1', port: fake.port, secure: false, username: 'alvaro@muitowork.com', secret: 'secreta' })
+    await connections.save(OWNER, { kind: 'smtp', label: 'Marluvas SMTP', host: '127.0.0.1', port: 465, secure: true, username: 'alvaro@muitowork.com', secret: 'secreta' })
 
     await inbound.runOnce()
 
     const [routine] = (await routines.listRoutines(OWNER)).filter(candidate => candidate.name === 'Vigía de correo')
     expect(routine?.status).toBe('active')
     expect(routine?.definition.intent).toContain('Marluvas')
-    expect(routine?.definition.steps.every(step => step.config['agentId'] === 'a1')).toBe(true)
+    expect(routine?.definition.steps.every(step => step.config['agentName'] === 'Operador Marluvas')).toBe(true)
+  })
+
+  it('keeps the generic live mail routine for a non-privileged role on the operations mailbox', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 30, messageId: 'marluvas-2@marluvas.example', from: 'samuel.fernandes@marluvas.com.br', subject: 'Proforma 2501-2026' },
+    ], log)
+    servers.push(fake.server)
+
+    const { connections, routines, inbound } = await harness(new MemoryMediaPool(), 'manager')
+    await connections.save(OWNER, { kind: 'imap', label: 'Marluvas', host: '127.0.0.1', port: fake.port, secure: false, username: 'alvaro@muitowork.com', secret: 'secreta' })
+    await connections.save(OWNER, { kind: 'smtp', label: 'Marluvas SMTP', host: '127.0.0.1', port: 465, secure: true, username: 'alvaro@muitowork.com', secret: 'secreta' })
+
+    await inbound.runOnce()
+
+    const [routine] = (await routines.listRoutines(OWNER)).filter(candidate => candidate.name === 'Vigía de correo')
+    expect(routine?.definition.intent).toContain('Clasificar')
+    expect(routine?.definition.steps.every(step => step.config['agentName'] === undefined)).toBe(true)
   })
 
   it('F07 — re-reading the mailbox never starts the same message twice', async () => {

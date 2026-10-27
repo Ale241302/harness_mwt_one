@@ -22,9 +22,9 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
+import type { FaberLoomConnection } from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MARLUVAS_AGENT_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
-import type {} from '@deepseek-ai/dsh-faberloom-agents'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import { fetchContent, fetchMessages, markMessageSeen, moveMessage, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
@@ -53,6 +53,8 @@ export interface Config {
   mailbox?: string
   /** Mailbox the Trash action moves a message to; empty uses the built-in candidates. */
   trashMailbox?: string
+  /** Console role; the Marluvas live routine is only provisioned for privileged roles. */
+  role?: string
   /** Most messages one pass reads, oldest first. */
   maxMessages?: number
   /** Milliseconds before a mailbox connection is abandoned. */
@@ -66,6 +68,7 @@ export const Config: z<Config> = z.object({
   intervalMs: z.number(),
   mailbox: z.string(),
   trashMailbox: z.string().default(''),
+  role: z.string().default(''),
   maxMessages: z.number(),
   timeoutMs: z.number(),
 })
@@ -166,6 +169,21 @@ export class FaberLoomInbound extends Service {
   }
 
   /**
+   * Whether this owner is a privileged Marluvas mailbox operator: an admin/CEO
+   * role whose saved IMAP account is one of the two shared operations mailboxes.
+   * @param connections - the owner's saved connections.
+   * @returns true when the Marluvas live routine should replace the generic one.
+   */
+  private isMarluvasMailbox(connections: readonly FaberLoomConnection[]): boolean {
+    const role = (this.config.role ?? '').toLowerCase()
+    if (role !== 'admin' && role !== 'superadmin' && role !== 'ceo') return false
+    const allowlist = new Set(['alvaro@muitowork.com', '506@muitowork.com'])
+    return connections.some(connection => connection.kind === 'imap'
+      && typeof connection.username === 'string'
+      && allowlist.has(connection.username.trim().toLowerCase()))
+  }
+
+  /**
    * Provision and activate the built-in live mail routine once the owner has an
    * IMAP and an SMTP connection. This is the path that covers connections saved
    * outside the Connections panel (MCP, an earlier deployment), so the routine
@@ -178,9 +196,7 @@ export class FaberLoomInbound extends Service {
     const list = await connections.list(ownerId)
     if (!list.some(connection => connection.kind === 'imap') || !list.some(connection => connection.kind === 'smtp')) return
     const routines = this.ctx.faberloomRoutines
-    const agents = this.ctx.get('faberloomAgents')
-    const agent = agents === undefined ? undefined : (await agents.listAgents()).find(candidate => candidate.name === MARLUVAS_AGENT_NAME)
-    const input = agent === undefined ? LIVE_MAIL_ROUTINE : marluvasLiveMailRoutine(agent.id)
+    const input = this.isMarluvasMailbox(list) ? marluvasLiveMailRoutine() : LIVE_MAIL_ROUTINE
     const existing = (await routines.listRoutines(ownerId)).find(routine => routine.name === LIVE_MAIL_ROUTINE_NAME)
     if (existing === undefined) {
       const created = await routines.createRoutine(ownerId, input)

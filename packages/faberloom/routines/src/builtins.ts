@@ -84,11 +84,13 @@ export const LIVE_MAIL_ROUTINE: RoutineInput = {
  * through the `mwt` MCP. It keeps the built-in name so provisioning converges the
  * routine an owner already has instead of creating a second trigger on the same
  * mailbox.
- * @param agentId - catalog agent that supplies the operator persona and model.
- * @returns the routine input, with every agent step bound to that agent.
+ *
+ * The steps name the catalog agent, not its id: the id is home-local and the
+ * mirror syncs routines across homes, so a stored id would flip on every sync.
+ * @returns the routine input.
  */
-export function marluvasLiveMailRoutine(agentId: string): RoutineInput {
-  const config = { agentId }
+export function marluvasLiveMailRoutine(): RoutineInput {
+  const config = { agentName: MARLUVAS_AGENT_NAME }
   return {
     name: LIVE_MAIL_ROUTINE_NAME,
     definition: {

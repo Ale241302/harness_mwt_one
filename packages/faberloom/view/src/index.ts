@@ -26,7 +26,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MARLUVAS_AGENT_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
@@ -3746,10 +3746,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (hasMail) {
       const marluvas = this.isMarluvasMailbox(connections)
       if (marluvas) await this.ctx.get('faberloomDefaults')?.seed()
-      const agent = marluvas
-        ? (await this.ctx.faberloomAgents.listAgents()).find(candidate => candidate.name === MARLUVAS_AGENT_NAME)
-        : undefined
-      await ensure(agent === undefined ? LIVE_MAIL_ROUTINE : marluvasLiveMailRoutine(agent.id), LIVE_MAIL_ROUTINE_NAME)
+      await ensure(marluvas ? marluvasLiveMailRoutine() : LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME)
     }
     if (this.hasMwtTools()) await ensure(MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME)
   }
