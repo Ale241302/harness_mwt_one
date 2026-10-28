@@ -33,6 +33,7 @@ The subsystem reference is [docs/subsystems/faberloom.md](../../docs/subsystems/
 - `@deepseek-ai/dsh-faberloom-agent-runtime` — the durable consultations between a caller session and a Space agent.
 - `@deepseek-ai/dsh-faberloom-knowledge-index` — the space search ranker: embeddings, the Knowledge Hub corpus, and a lexical fallback.
 - `@deepseek-ai/dsh-faberloom-board` — the work table: versioned items, approvals, and revalidation.
+- `@deepseek-ai/dsh-faberloom-checks-mwt` — the proforma controls filled from the MWT MCP reads.
 - `@deepseek-ai/dsh-faberloom-routines` — declarative versioned routines.
 - `@deepseek-ai/dsh-faberloom-execution` — persistent execution, waits, and the effects ledger.
 - `@deepseek-ai/dsh-faberloom-learning` — memory, versioned teachings, and contextual performance.

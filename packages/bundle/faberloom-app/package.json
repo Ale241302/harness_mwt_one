@@ -42,6 +42,7 @@
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
     "@deepseek-ai/dsh-faberloom-backup": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-checks-mwt": "workspace:^",
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
     "@deepseek-ai/dsh-faberloom-context": "workspace:^",
     "@deepseek-ai/dsh-faberloom-defaults": "workspace:^",

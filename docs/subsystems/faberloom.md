@@ -443,6 +443,39 @@ The product board service: WorkLoom states, commands, audit, candidates, and opt
 
 ```ts cordis-catalog
 /**
+ * Register one check implementation for a declared control. The registry is
+ * mounted from outside the board (ADR-003): an adapter calls this from
+ * `ctx.effect`, exactly like the handlers package mounts its handlers.
+ *
+ * A pair the board does not declare is refused, so a typo in an artifact type
+ * or a check id fails at load instead of silently never running. The class is
+ * signed by D-8, and a registration that disagrees is refused.
+ * @param artifactType - artifact type the check applies to.
+ * @param checkId - declared check id.
+ * @param fn - the implementation.
+ * @param options - signed class and the source port the check reads.
+ * @returns the disposer that removes this registration.
+ */
+registerCheck(artifactType: string, checkId: string, fn: BoardCheckFn, options: BoardCheckOptions): () => void
+
+/**
+ * Which declared controls of one artifact type have an adapter.
+ * @param artifactType - artifact type to inspect.
+ * @returns the declared controls with their registration state.
+ */
+checkStatus(artifactType: string): readonly BoardCheckStatusEntry[]
+
+/**
+ * Run every declared control of one item without persisting anything. The
+ * panel reads this for its verification zone; approval calls the same path
+ * immediately before the transition, with no cache (W-50).
+ * @param actor - the authenticated reader.
+ * @param id - item id.
+ * @returns the executed controls and the declared ones with no adapter.
+ */
+async runChecks(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardCheckReport>
+
+/**
  * Create one prepared item awaiting review; evidence is mandatory.
  * @param writer - the owning identity; a bare id is a legacy single-tenant actor.
  * @param input - title, summary, evidence, optional space, document, execution.
@@ -481,16 +514,19 @@ async setSeverity( writer: BoardWriter, id: FaberLoomBoardItemId, severity: Boar
 async saveEdits(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEditsInput): Promise<FaberLoomBoardItem>
 
 /**
- * Approve the exact artifact version. It never sends anything.
+ * Approve the exact artifact version. It never sends anything, and the
+ * blocking and source-changing controls run again immediately before the
+ * transition, with no cache (W-49, W-50).
  * @param writer - the acting identity.
  * @param id - item id.
- * @param input - expected row, artifact version, and hash.
+ * @param input - expected row, artifact version and hash, and confirmed controls.
  * @returns the approved item.
  */
 async approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem>
 
 /**
- * Save edits and approve the resulting version in one command.
+ * Save edits and approve the resulting version in one command. The controls
+ * run against the edited content, because that is the version being approved.
  * @param writer - the acting identity.
  * @param id - item id.
  * @param input - approval expectations plus the edits.
@@ -574,10 +610,12 @@ async discardEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<voi
 async events(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardEvent[]>
 
 /**
- * Submit a correction as the next revision, awaiting a fresh review.
+ * Submit a correction as the next revision, awaiting a fresh review. The
+ * revision carries the content the caller supplies, so the controls of the
+ * next approval evaluate the corrected artifact.
  * @param writer - the acting identity.
  * @param id - item id.
- * @param input - summary, evidence, and optional document reference.
+ * @param input - summary, evidence, optional document reference, content, and origins.
  * @returns the updated item.
  */
 async submitRevision(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardSubmitInput): Promise<FaberLoomBoardItem>

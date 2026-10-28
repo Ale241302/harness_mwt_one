@@ -1186,6 +1186,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The product board service: WorkLoom states, commands, audit, candidates, and optimistic concurrency over one key-value aggregate per item.',
     methods: [
       {
+        signature: 'registerCheck(artifactType: string, checkId: string, fn: BoardCheckFn, options: BoardCheckOptions): () => void',
+        description: 'Register one check implementation for a declared control. The registry is mounted from outside the board (ADR-003): an adapter calls this from `ctx.effect`, exactly like the handlers package mounts its handlers.\n\nA pair the board does not declare is refused, so a typo in an artifact type or a check id fails at load instead of silently never running. The class is signed by D-8, and a registration that disagrees is refused.',
+        parameters: [{ name: 'artifactType', description: 'artifact type the check applies to.' }, { name: 'checkId', description: 'declared check id.' }, { name: 'fn', description: 'the implementation.' }, { name: 'options', description: 'signed class and the source port the check reads.' }],
+        returns: 'the disposer that removes this registration.',
+      },
+      {
+        signature: 'checkStatus(artifactType: string): readonly BoardCheckStatusEntry[]',
+        description: 'Which declared controls of one artifact type have an adapter.',
+        parameters: [{ name: 'artifactType', description: 'artifact type to inspect.' }],
+        returns: 'the declared controls with their registration state.',
+      },
+      {
+        signature: 'async runChecks(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardCheckReport>',
+        description: 'Run every declared control of one item without persisting anything. The panel reads this for its verification zone; approval calls the same path immediately before the transition, with no cache (W-50).',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the executed controls and the declared ones with no adapter.',
+      },
+      {
         signature: 'async create(writer: BoardWriter, input: BoardCreateInput): Promise<FaberLoomBoardItem>',
         description: 'Create one prepared item awaiting review; evidence is mandatory.',
         parameters: [{ name: 'writer', description: 'the owning identity; a bare id is a legacy single-tenant actor.' }, { name: 'input', description: 'title, summary, evidence, optional space, document, execution.' }],
@@ -1211,13 +1229,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem>',
-        description: 'Approve the exact artifact version. It never sends anything.',
-        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'expected row, artifact version, and hash.' }],
+        description: 'Approve the exact artifact version. It never sends anything, and the blocking and source-changing controls run again immediately before the transition, with no cache (W-49, W-50).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'expected row, artifact version and hash, and confirmed controls.' }],
         returns: 'the approved item.',
       },
       {
         signature: 'async approveWithEdits( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput & BoardEditsInput, ): Promise<FaberLoomBoardItem>',
-        description: 'Save edits and approve the resulting version in one command.',
+        description: 'Save edits and approve the resulting version in one command. The controls run against the edited content, because that is the version being approved.',
         parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'approval expectations plus the edits.' }],
         returns: 'the approved item.',
       },
@@ -1270,8 +1288,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async submitRevision(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardSubmitInput): Promise<FaberLoomBoardItem>',
-        description: 'Submit a correction as the next revision, awaiting a fresh review.',
-        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'summary, evidence, and optional document reference.' }],
+        description: 'Submit a correction as the next revision, awaiting a fresh review. The revision carries the content the caller supplies, so the controls of the next approval evaluate the corrected artifact.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'summary, evidence, optional document reference, content, and origins.' }],
         returns: 'the updated item.',
       },
       {
@@ -6969,11 +6987,55 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardApproveInput',
-    declaration: 'export interface BoardApproveInput {\n    readonly expectedRowVersion: number;\n    readonly expectedArtifactVersion: number;\n    readonly expectedArtifactHash: string;\n}',
+    declaration: 'export interface BoardApproveInput {\n    readonly expectedRowVersion: number;\n    readonly expectedArtifactVersion: number;\n    readonly expectedArtifactHash: string;\n    readonly confirmations?: readonly string[];\n}',
+  },
+  {
+    name: 'BoardArtifact',
+    declaration: 'export interface BoardArtifact {\n    readonly type: string;\n    readonly version: number;\n    readonly content: Readonly<Record<string, unknown>>;\n}',
   },
   {
     name: 'BoardCandidate',
     declaration: 'export interface BoardCandidate {\n    readonly id: string;\n    readonly hash: string;\n    readonly summary: string;\n    readonly evidence: string[];\n    readonly at: string;\n}',
+  },
+  {
+    name: 'BoardCheckClass',
+    declaration: 'export type BoardCheckClass = \'informativo\' | \'confirmacion\' | \'bloqueante\';',
+  },
+  {
+    name: 'BoardCheckFn',
+    declaration: 'export type BoardCheckFn = (input: BoardCheckInput) => BoardCheckResult | Promise<BoardCheckResult>;',
+  },
+  {
+    name: 'BoardCheckInput',
+    declaration: 'export interface BoardCheckInput {\n    readonly item: FaberLoomBoardItem;\n    readonly artifact: BoardArtifact;\n    readonly source: BoardCheckSource | undefined;\n}',
+  },
+  {
+    name: 'BoardCheckOptions',
+    declaration: 'export interface BoardCheckOptions {\n    readonly class: BoardCheckClass;\n    readonly source?: BoardCheckSource;\n}',
+  },
+  {
+    name: 'BoardCheckOutcome',
+    declaration: 'export interface BoardCheckOutcome {\n    readonly id: string;\n    readonly class: BoardCheckClass;\n    readonly result: BoardCheckResult;\n}',
+  },
+  {
+    name: 'BoardCheckReport',
+    declaration: 'export interface BoardCheckReport {\n    readonly checks: readonly BoardCheckOutcome[];\n    readonly missing: readonly string[];\n}',
+  },
+  {
+    name: 'BoardCheckResult',
+    declaration: 'export interface BoardCheckResult {\n    readonly status: BoardCheckStatus;\n    readonly source: string;\n    readonly sourceVersion: string | null;\n    readonly checkedAt: string;\n    readonly fields: readonly string[];\n    readonly reason?: string | null;\n    readonly detail?: string | null;\n}',
+  },
+  {
+    name: 'BoardCheckSource',
+    declaration: 'export interface BoardCheckSource {\n    sku(sku: string): Promise<BoardSourceAnswer<BoardSkuFacts>>;\n    price(request: {\n        readonly accountRef: string;\n        readonly sku: string;\n    }): Promise<BoardSourceAnswer<BoardPriceFacts>>;\n    stock(sku: string): Promise<BoardSourceAnswer<BoardStockFacts>>;\n    orderLines(orderRef: string): Promise<BoardSourceAnswer<readonly BoardOrderLine[]>>;\n    separation(request: {\n        readonly accountRef: string;\n        readonly businessKey: string | null;\n    }): Promise<BoardSourceAnswer<BoardSeparationFacts>>;\n}',
+  },
+  {
+    name: 'BoardCheckStatus',
+    declaration: 'export type BoardCheckStatus = \'ok\' | \'warning\' | \'fail\';',
+  },
+  {
+    name: 'BoardCheckStatusEntry',
+    declaration: 'export interface BoardCheckStatusEntry {\n    readonly id: string;\n    readonly class: BoardCheckClass;\n    readonly registered: boolean;\n}',
   },
   {
     name: 'BoardColumn',
@@ -7008,6 +7070,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoardEvent {\n    readonly id: string;\n    readonly command: string;\n    readonly actor: string;\n    readonly fromState: BoardState | null;\n    readonly toState: BoardState;\n    readonly revision: number | null;\n    readonly artifactHash: string | null;\n    readonly reason: string | null;\n    readonly at: string;\n    readonly data: Record<string, unknown> | null;\n}',
   },
   {
+    name: 'BoardFieldOriginEntry',
+    declaration: 'export interface BoardFieldOriginEntry {\n    readonly field: string;\n    readonly source: string | null;\n    readonly ref: string | null;\n    readonly at: string | null;\n}',
+  },
+  {
+    name: 'BoardOrderLine',
+    declaration: 'export interface BoardOrderLine {\n    readonly sku: string;\n    readonly quantity: number;\n}',
+  },
+  {
+    name: 'BoardPriceFacts',
+    declaration: 'export interface BoardPriceFacts {\n    readonly listPrice: number;\n    readonly overcharge: number;\n}',
+  },
+  {
     name: 'BoardReviewInput',
     declaration: 'export interface BoardReviewInput {\n    readonly decision: \'approve\' | \'reject\';\n    readonly version: number;\n    readonly hash?: string;\n    readonly note?: string;\n}',
   },
@@ -7016,8 +7090,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoardRevisionInput {\n    readonly summary: string;\n    readonly evidence: readonly string[];\n}',
   },
   {
+    name: 'BoardSeparationFacts',
+    declaration: 'export interface BoardSeparationFacts {\n    readonly required: \'complement\' | \'new\';\n}',
+  },
+  {
     name: 'BoardSeverity',
     declaration: 'export type BoardSeverity = \'LOW\' | \'MEDIUM\' | \'HIGH\' | \'CRITICAL\';',
+  },
+  {
+    name: 'BoardSkuFacts',
+    declaration: 'export interface BoardSkuFacts {\n    readonly exists: boolean;\n}',
+  },
+  {
+    name: 'BoardSourceAnswer',
+    declaration: 'export interface BoardSourceAnswer<T> {\n    readonly value: T | null;\n    readonly source: string;\n    readonly version: string | null;\n    readonly readAt: string;\n}',
   },
   {
     name: 'BoardState',
@@ -7028,8 +7114,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BoardStatus = \'in_progress\' | \'waiting_data\' | \'waiting_approval\' | \'approved\' | \'completed\' | \'failed\' | \'reopened\' | \'needs_review\';',
   },
   {
+    name: 'BoardStockFacts',
+    declaration: 'export interface BoardStockFacts {\n    readonly available: number;\n}',
+  },
+  {
     name: 'BoardSubmitInput',
-    declaration: 'export interface BoardSubmitInput {\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly documentRef?: string;\n}',
+    declaration: 'export interface BoardSubmitInput {\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly documentRef?: string;\n    readonly content?: Record<string, unknown>;\n    readonly fieldOrigins?: readonly BoardFieldOriginEntry[];\n}',
   },
   {
     name: 'BoardSubmitRequest',
@@ -7597,7 +7687,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomBoardApproveInput',
-    declaration: 'export interface FaberLoomBoardApproveInput {\n    readonly expectedRowVersion: number;\n    readonly expectedArtifactVersion: number;\n    readonly expectedArtifactHash: string;\n}',
+    declaration: 'export interface FaberLoomBoardApproveInput {\n    readonly expectedRowVersion: number;\n    readonly expectedArtifactVersion: number;\n    readonly expectedArtifactHash: string;\n    readonly confirmations?: readonly string[];\n}',
   },
   {
     name: 'FaberLoomBoardDetail',
@@ -7625,7 +7715,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomBoardItem',
-    declaration: 'export interface FaberLoomBoardItem {\n    readonly id: FaberLoomBoardItemId;\n    readonly ownerId: string;\n    readonly companyId: string | null;\n    readonly spaceId: string | null;\n    readonly routineId: string | null;\n    readonly title: string;\n    readonly status: BoardStatus;\n    readonly state: BoardState;\n    readonly column: BoardColumn;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly severity: BoardSeverity | null;\n    readonly severitySource: \'RULE\' | \'LLM\' | \'HUMAN\' | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueAmount: number | null;\n    readonly valueCurrency: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: BoardDataClass;\n    readonly dataClassProvisional: boolean;\n    readonly runId: string | null;\n    readonly idempotencyKey: string | null;\n    readonly businessKey: string | null;\n    readonly supersedesItemId: string | null;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly artifactHash: string | null;\n    readonly pendingCandidate: BoardCandidate | null;\n    readonly events: readonly BoardEvent[];\n    readonly discardReason: string | null;\n    readonly discardNote: string | null;\n    readonly iterationId: string | null;\n    readonly iterationDraftKey: string | null;\n    readonly iterationLockUntil: string | null;\n    readonly iterationLockGeneration: number;\n    readonly revisions: readonly BoardRevisi /* …truncated — full shape in source */',
+    declaration: 'export interface FaberLoomBoardItem {\n    readonly id: FaberLoomBoardItemId;\n    readonly ownerId: string;\n    readonly companyId: string | null;\n    readonly spaceId: string | null;\n    readonly routineId: string | null;\n    readonly title: string;\n    readonly status: BoardStatus;\n    readonly state: BoardState;\n    readonly column: BoardColumn;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly severity: BoardSeverity | null;\n    readonly severitySource: \'RULE\' | \'LLM\' | \'HUMAN\' | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueAmount: number | null;\n    readonly valueCurrency: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: BoardDataClass;\n    readonly dataClassProvisional: boolean;\n    readonly runId: string | null;\n    readonly idempotencyKey: string | null;\n    readonly businessKey: string | null;\n    readonly supersedesItemId: string | null;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly artifactHash: string | null;\n    readonly content: Readonly<Record<string, unknown>>;\n    readonly fieldOrigins: readonly BoardFieldOriginEntry[];\n    readonly pendingCandidate: BoardCandidate | null;\n    readonly events: readonly BoardEvent[];\n    readonly discardReason: string | null;\n    readonly discardNote: string | null;\n    readonly iterationId: string | null;\n    readonly iterationDraftKey: string | null;\n    readonly iterati /* …truncated — full shape in source */',
   },
   {
     name: 'FaberLoomBoardItemId',

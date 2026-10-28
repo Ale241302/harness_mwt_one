@@ -1785,6 +1785,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-board':
         specifier: workspace:^
         version: link:../../faberloom/board
+      '@deepseek-ai/dsh-faberloom-checks-mwt':
+        specifier: workspace:^
+        version: link:../../faberloom/checks-mwt
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../../faberloom/connections
@@ -6846,6 +6849,31 @@ importers:
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain
+
+  packages/faberloom/checks-mwt:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-board':
+        specifier: workspace:^
+        version: link:../board
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
 
   packages/faberloom/connections:
     dependencies:

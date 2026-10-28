@@ -33,6 +33,7 @@ kind: "package-group"
 - `@deepseek-ai/dsh-faberloom-agent-runtime` — 调用方会话与 Space 代理之间的持久化咨询。
 - `@deepseek-ai/dsh-faberloom-knowledge-index` — 空间搜索排序器：embeddings、Knowledge Hub 语料与词法回退。
 - `@deepseek-ai/dsh-faberloom-board` — 工作台：版本化工单、批准与重新校验。
+- `@deepseek-ai/dsh-faberloom-checks-mwt` — 用 MWT MCP 读取填充的 proforma 控制。
 - `@deepseek-ai/dsh-faberloom-routines` — 声明式版本化例程。
 - `@deepseek-ai/dsh-faberloom-execution` — 持久化执行、等待与效应账本。
 - `@deepseek-ai/dsh-faberloom-learning` — 记忆、版本化教学与情境绩效。

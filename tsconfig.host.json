@@ -232,6 +232,7 @@
     { "path": "./packages/faberloom/model-catalog" },
     { "path": "./packages/faberloom/mcp-registry" },
     { "path": "./packages/faberloom/board" },
+    { "path": "./packages/faberloom/checks-mwt" },
     { "path": "./packages/faberloom/routines" },
     { "path": "./packages/faberloom/execution" },
     { "path": "./packages/faberloom/learning" },
