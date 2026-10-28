@@ -50,6 +50,7 @@ import type {
   FaberLoomBoardIterationContext, FaberLoomBoardIterationDifference, FaberLoomBoardIterationDraftRead,
   FaberLoomBoardIterationDraftRow, FaberLoomBoardEditResult,
   FaberLoomBoardIterationExit, FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationResume,
+  FaberLoomBoardIterationLockInput,
   FaberLoomBoardIterationSaveInput, FaberLoomBoardIterationChoice, FaberLoomBoardCorrectionScope,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
@@ -168,7 +169,11 @@ export interface FaberloomPanelInjected {
   boardRevalidate: (id: string, changed: boolean) => Promise<Result<FaberLoomBoardDetail | undefined>>
   /** Read one item's iteration attempt, already filtered by the host. */
   boardIteration: (id: string) => Promise<Result<FaberLoomBoardIteration | undefined>>
-  /** Read the pinned chat context, minimised to the item the actor may see. */
+  /**
+   * Read the pinned chat context, minimised to the item and capped by the
+   * provider's data-class ceiling. The panel names no provider, so the host
+   * assumes the deployment's default (§8.5, W-48).
+   */
   boardIterationContext: (id: string) => Promise<Result<FaberLoomBoardIterationContext | undefined>>
   /** Start an attempt over the version the panel shows. */
   boardIterationStart: (id: string, baseVersion: number, actorSession: string) => Promise<Result<FaberLoomBoardIteration>>
@@ -185,7 +190,7 @@ export interface FaberloomPanelInjected {
   /** Extend the live attempt's lock while this tab works it. */
   boardIterationRenew: (
     id: string,
-    input: { iterationId: string; generation: number },
+    input: FaberLoomBoardIterationLockInput,
   ) => Promise<Result<FaberLoomBoardIteration>>
   /** Save and exit, carry to SpaceLoom, or return without resolving. */
   boardIterationPause: (
@@ -198,9 +203,9 @@ export interface FaberloomPanelInjected {
     input: FaberLoomBoardIterationCancelInput,
   ) => Promise<Result<FaberLoomBoardIteration>>
   /** Reopen the retained draft, or receive its differences when stale. */
-  boardIterationResume: (id: string, baseVersion: number, actorSession?: string) => Promise<Result<FaberLoomBoardIterationResume>>
+  boardIterationResume: (id: string, baseVersion: number, actorSession: string) => Promise<Result<FaberLoomBoardIterationResume>>
   /** Read the retained draft and, when stale, where it disagrees. */
-  boardIterationDraft: (id: string) => Promise<Result<FaberLoomBoardIterationDraftRead>>
+  boardIterationDraft: (id: string, iterationId?: string) => Promise<Result<FaberLoomBoardIterationDraftRead>>
   /** Create a draft routine, optionally scoped to a Space. */
   createRoutine: (name: string, spaceId: string | null) => void
   /** Activate or pause one routine. */
@@ -2563,14 +2568,25 @@ function tabSession(): string {
 }
 
 /**
- * Whether one refusal means the attempt this tab held is over: the lock expired
- * or another attempt replaced it (W-43). The board writes the stable code into
- * the message, and the transported error carries it as its code when it can.
+ * Whether one refusal means the attempt this tab worked is over: the lock
+ * expired, another attempt replaced it, or another tab session holds it
+ * (W-43, §9.7.1). The board writes the stable code into the message, and the
+ * transported error carries it as its code when it can.
  * @param error - the refusal the Remote answered.
  * @returns true when the panel must return to the paused state.
  */
 function attemptIsOver(error: { readonly code: string; readonly message: string }): boolean {
-  return /LOCK_LOST|ITERATION_STALE/u.test(`${error.code} ${error.message}`)
+  return /LOCK_LOST|LOCK_HELD|ITERATION_STALE/u.test(`${error.code} ${error.message}`)
+}
+
+/**
+ * Whether one refusal says the attempt is another tab's, so the item reads
+ * read-only there instead of resuming this tab's work (§9.7.1).
+ * @param error - the refusal the Remote answered.
+ * @returns true when the refusal is a held lock.
+ */
+function lockIsHeld(error: { readonly code: string; readonly message: string }): boolean {
+  return /LOCK_HELD/u.test(`${error.code} ${error.message}`)
 }
 
 /** The WorkLoom Mesa: Foco, Kanban, Lista, and the detail zones. */function mesaScreen() {
@@ -2613,11 +2629,17 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
     const [showApprove, setShowApprove] = useState(false)
     const [confirmations, setConfirmations] = useState<readonly string[]>([])
     const [iterationDraft, setIterationDraft] = useState<string | null>(null)
+    // Text of a draft write the board refused because the attempt was over,
+    // kept for this item so the work is never dropped without a trace (W-43).
+    const [residue, setResidue] = useState<{ readonly id: string; readonly text: string } | null>(null)
     const [differences, setDifferences] = useState<readonly FaberLoomBoardIterationDifference[]>([])
     const [exitMode, setExitMode] = useState<'apply' | 'discard' | null>(null)
     const [scope, setScope] = useState<FaberLoomBoardCorrectionScope>('puntual')
     const [candidateChoice, setCandidateChoice] = useState<'adopt' | 'keep' | null>(null)
     const [writerSession] = useState(tabSession)
+    // The draft area's current text, so a handler created earlier reads the latest
+    // one without restarting the renewal timer on every keystroke.
+    const draftText = useRef<string | null>(null)
     const hydrated = useRef<string | null>(null)
     const editRef = useRef<HTMLTextAreaElement>(null)
     const severityRef = useRef<HTMLSelectElement>(null)
@@ -2634,6 +2656,8 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
     )
     const value = detail.kind === 'ready' ? detail.value : undefined
     const pending = value?.pendingCandidate ?? null
+    // Work a collision moved to this item from the one it closed (§2.3, W-98).
+    const transferred = value?.transferredDrafts ?? []
     const foreignDraft = value?.editDraft !== null && value?.editDraft !== undefined && value.editDraft.writerSession !== writerSession
     const editable = value?.state === 'PENDIENTE_CRITERIO' && !foreignDraft
     const draftChanged = draft !== null && value !== undefined && draft !== value.summary
@@ -2709,6 +2733,50 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
       })
     }
 
+    /**
+     * Keep the work of an attempt this tab no longer holds. One last draft
+     * write carries the dead attempt's id, generation, session, and the current
+     * text, so the board archives it and the retained draft still offers it
+     * (W-43, W-57). A board that refuses that write too (another tab holds the
+     * attempt) leaves the text in this panel, and the one-line message says so
+     * instead of dropping it silently.
+     * @param text - the text the draft area held when the refusal arrived.
+     * @param held - whether another tab session holds the attempt.
+     */
+    function endAttempt(text: string | null, held: boolean): void {
+      if (value === undefined || attempt === undefined || attempt.iterationId === null) return
+      const itemId = value.id
+      const iterationId = attempt.iterationId
+      const generation = attempt.generation
+      const baseVersion = attempt.baseVersion ?? value.version
+      setDifferences([])
+      setExitMode(null)
+      setCandidateChoice(null)
+      if (text === null || text.length === 0) {
+        setIterationDraft(null)
+        draftText.current = null
+        if (!held) setMessage(t('mesa.iteration.lockLost'))
+        setTick(count => count + 1)
+        return
+      }
+      void boardIterationSaveDraft(itemId, {
+        iterationId, generation, actorSession: writerSession, baseVersion, summary: text,
+      }).then((result) => {
+        if (result.ok) {
+          setIterationDraft(null)
+          draftText.current = null
+          setResidue(null)
+          setMessage(t('mesa.iteration.lockLost'))
+        } else {
+          setIterationDraft(text)
+          draftText.current = text
+          setResidue({ id: itemId, text })
+          setMessage(t('mesa.iteration.residueKept'))
+        }
+        setTick(count => count + 1)
+      })
+    }
+
     useEffect(() => {
       if (view !== 'foco') return
       if (selected !== null && visible.some(row => row.id === selected)) return
@@ -2731,14 +2799,22 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
         ? value.editDraft.changes['summary'] ?? value.summary
         : value.summary)
       setDraftRevision(value.editDraft?.revision ?? 0)
-      setIterationDraft(live ? attempt?.draft?.summary ?? value.summary : null)
+      // A text the board refused to store survives the re-read and returns to
+      // the draft area, so reopening the attempt can still carry it (E7).
+      const kept = residue !== null && residue.id === value.id ? residue.text : null
+      const attemptText = kept ?? (live ? attempt?.draft?.summary ?? value.summary : null)
+      setIterationDraft(attemptText)
+      draftText.current = attemptText
       setDifferences([])
       setShowApprove(false)
       setShowDiscard(false)
       setExitMode(null)
       setCandidateChoice(null)
       setConfirmations([])
-    }, [value?.id, value?.version, value?.editDraft?.writerSession, attempt?.iterationId, attempt?.phase, attempt?.draft?.updatedAt])
+    }, [
+      value?.id, value?.version, value?.editDraft?.writerSession,
+      attempt?.iterationId, attempt?.phase, attempt?.draft?.updatedAt, residue,
+    ])
 
     // The approval panel is a dialog: it takes focus when it opens and hands it
     // back to the button that opened it, so keyboard users never lose their place.
@@ -2776,9 +2852,17 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
       const generation = attempt.generation
       const baseVersion = value.version
       const timer = setTimeout(() => {
-        void boardIterationSaveDraft(value.id, { iterationId, generation, baseVersion, summary: iterationDraft })
+        void boardIterationSaveDraft(value.id, {
+          iterationId, generation, actorSession: writerSession, baseVersion, summary: iterationDraft,
+        })
           .then((result) => {
-            if (!result.ok) { setMessage(result.error.message); return }
+            if (!result.ok) {
+              // The attempt ended elsewhere while this tab was typing: the work
+              // is kept as a late draft instead of being dropped (W-43, W-57).
+              if (attemptIsOver(result.error)) endAttempt(iterationDraft, lockIsHeld(result.error))
+              else setMessage(result.error.message)
+              return
+            }
             if (!result.value.linked) setTick(count => count + 1)
           })
       }, 350)
@@ -2788,8 +2872,8 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
     // D-09: a tab that holds the attempt renews it on the cadence the host
     // projects, so work in progress never loses the lock. The timer stops with
     // the attempt or the panel, and a refusal means the attempt ended elsewhere:
-    // the panel returns to the paused state with the stored draft, and the item
-    // is never written from here (W-43, W-44).
+    // its last text is archived as a draft of that attempt, the panel returns to
+    // the paused state, and the item is never written from here (W-43, W-44).
     useEffect(() => {
       if (value === undefined || attempt === undefined) return
       if (!live || attempt.iterationId === null) return
@@ -2802,15 +2886,12 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
       const period = attempt.renewalSeconds * 1_000
       const timer = setInterval(() => {
         if (document.visibilityState !== 'visible') return
-        void boardIterationRenew(itemId, { iterationId, generation }).then((result) => {
+        void boardIterationRenew(itemId, { iterationId, generation, actorSession: writerSession }).then((result) => {
           if (result.ok) { setTick(count => count + 1); return }
           if (!attemptIsOver(result.error)) { setMessage(result.error.message); return }
-          setMessage(t('mesa.iteration.lockLost'))
-          setIterationDraft(null)
-          setDifferences([])
-          setExitMode(null)
-          setCandidateChoice(null)
-          setTick(count => count + 1)
+          // The attempt is no longer this tab's: the last text goes to the dead
+          // attempt before the panel returns to the paused state (W-43, W-57).
+          endAttempt(draftText.current, lockIsHeld(result.error))
         })
       }, period)
       return () => { clearInterval(timer) }
@@ -2870,13 +2951,20 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
       const run = boardIterationPause(value.id, {
         iterationId: attempt.iterationId,
         generation: attempt.generation,
+        actorSession: writerSession,
         reason,
       })
       void run.then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
+        if (!result.ok) {
+          if (attemptIsOver(result.error)) { endAttempt(iterationDraft, lockIsHeld(result.error)); return }
+          setMessage(result.error.message)
+          return
+        }
         setExitMode(null)
         setCandidateChoice(null)
         setIterationDraft(null)
+        draftText.current = null
+        setResidue(null)
         setDifferences([])
         setTick(count => count + 1)
         then?.()
@@ -2895,15 +2983,22 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
       const run = boardIterationApply(value.id, {
         iterationId: attempt.iterationId,
         generation: attempt.generation,
+        actorSession: writerSession,
         baseVersion: value.version,
         scope,
         ...candidatePayload(),
       })
       void run.then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
+        if (!result.ok) {
+          if (attemptIsOver(result.error)) { endAttempt(iterationDraft, lockIsHeld(result.error)); return }
+          setMessage(result.error.message)
+          return
+        }
         setExitMode(null)
         setCandidateChoice(null)
         setIterationDraft(null)
+        draftText.current = null
+        setResidue(null)
         setDifferences([])
         setTick(count => count + 1)
         // The version is committed: a correction that could not be recorded is
@@ -2920,15 +3015,63 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
       const run = boardIterationCancel(value.id, {
         iterationId: attempt.iterationId,
         generation: attempt.generation,
+        actorSession: writerSession,
         ...candidatePayload(),
       })
       void run.then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
+        if (!result.ok) {
+          if (attemptIsOver(result.error)) { endAttempt(iterationDraft, lockIsHeld(result.error)); return }
+          setMessage(result.error.message)
+          return
+        }
         setExitMode(null)
         setCandidateChoice(null)
         setIterationDraft(null)
+        draftText.current = null
+        setResidue(null)
         setDifferences([])
         setTick(count => count + 1)
+      })
+    }
+
+    /**
+     * Assign a space and follow the board's answer: a collision can close the
+     * item this panel had open and keep a peer live, so the panel selects the
+     * live item and reads the drafts the collision moved there (§2.3, W-98).
+     * @param spaceId - the space the user chose.
+     */
+    const assignSpace = (spaceId: string): void => {
+      if (value === undefined) return
+      const itemId = value.id
+      void boardAssignWorkspace(itemId, spaceId).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        if (result.value !== undefined && result.value.id !== itemId) setSelected(result.value.id)
+        setTick(count => count + 1)
+      })
+    }
+
+    /**
+     * Show what a draft the assignment moved here changed against the current
+     * version, so the reader decides over that work before anything is applied
+     * (§2.3, W-98). The draft is read, never resumed or applied by this button.
+     */
+    const compareTransferred = (): void => {
+      if (value === undefined) return
+      const entry = transferred.find(item => item.kind === 'iteration' && item.iterationId !== null)
+      if (entry === undefined) {
+        setMessage(t('mesa.iteration.transferredEdit'))
+        return
+      }
+      void boardIterationDraft(value.id, entry.iterationId ?? undefined).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        const draft = result.value.draft
+        const rows = result.value.differences.length > 0
+          ? result.value.differences
+          : draft?.summary == null || draft.summary === value.summary
+            ? []
+            : [{ field: 'summary', draftValue: draft.summary, currentValue: value.summary }]
+        if (rows.length === 0) { setMessage(t('mesa.iteration.transferredSame')); return }
+        setDifferences(rows)
       })
     }
 
@@ -3130,6 +3273,20 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
           action: <button className={styles.secondary} type="button" onClick={iterate}>{t('mesa.iterationOpen')}</button>,
         })
       }
+      // Work a collision moved here from the item it closed is offered for
+      // review, never applied by itself (§2.3, W-98). One notice covers every
+      // transferred draft; the rest of the notices fold behind the counter (E4).
+      if (transferred.length > 0) {
+        notices.push({
+          title: t('mesa.iteration.diffTitle'),
+          body: t('mesa.iteration.transferredText'),
+          action: (
+            <button className={styles.secondary} type="button" onClick={compareTransferred}>
+              {t('mesa.iteration.transferredReview')}
+            </button>
+          ),
+        })
+      }
       if (foreignDraft) {
         notices.push({
           title: t('mesa.foreignDraft'),
@@ -3213,7 +3370,7 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
                       aria-label={t('mesa.space')}
                       onChange={(event) => {
                         if (event.target.value.length === 0) return
-                        apply(boardAssignWorkspace(value.id, event.target.value))
+                        assignSpace(event.target.value)
                       }}
                     >
                       <option value="">{t('mesa.noSpace')}</option>
@@ -3253,8 +3410,10 @@ function attemptIsOver(error: { readonly code: string; readonly message: string 
                       value={(live ? iterationDraft ?? attempt?.draft?.summary ?? value.summary : draft) ?? ''}
                       disabled={otherTabHolds || (!live && !editable)}
                       onChange={(event) => {
-                        if (live) setIterationDraft(event.target.value)
-                        else setDraft(event.target.value)
+                        if (live) {
+                          setIterationDraft(event.target.value)
+                          draftText.current = event.target.value
+                        } else setDraft(event.target.value)
                       }}
                     />
                   )}

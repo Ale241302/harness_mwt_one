@@ -51,6 +51,9 @@ function promptFor(input: TaskChatInput): string {
 function taskBody(input: TaskChatInput): string {
   if (input.kind === 'iteration' && input.iteration !== undefined) {
     const pinned = input.iteration
+    // A provider above the item's data class receives metadata only, so the
+    // prompt names what is missing instead of sending an empty summary (W-48).
+    const withheld = pinned.summary === null
     return [
       'Estoy iterando un ítem del banco de trabajo (Work bench) desde la Mesa.',
       '',
@@ -58,8 +61,12 @@ function taskBody(input: TaskChatInput): string {
       `Cuenta: ${pinned.accountRef ?? 'sin cuenta'}`,
       `Espacio: ${pinned.spaceTitle ?? 'sin espacio'}`,
       `Versión: v${String(pinned.version)}`,
-      `Resumen vigente: ${pinned.summary}`,
+      ...pinned.summary === null ? [] : [`Resumen vigente: ${pinned.summary}`],
       ...pinned.draftSummary === null ? [] : ['', `Trabajo sin terminar: ${pinned.draftSummary}`],
+      ...withheld
+        ? ['', 'El contenido de este ítem no se carga en este proveedor: trabaja solo con estos metadatos '
+          + 'y pídeme el dato que falte en vez de suponerlo.']
+        : [],
       '',
       'El ítem queda fijado: partimos de esa cuenta, ese espacio y esa versión, '
         + 'y no inventamos datos que no estén en el contexto cargado.',

@@ -51,7 +51,7 @@ const DETAIL = {
   artifactType: 'proforma', accountRef: 'eguisa', artifactHash: 'h1', runId: 'run-1', supersedesItemId: null,
   pendingCandidate: null, spaceId: null, iterationId: null, iterationDraftKey: null, editDraft: null,
   events: [], effects: [], routineId: null,
-  checks: [], missingChecks: [], checksError: null, fieldOrigins: [],
+  checks: [], missingChecks: [], checksError: null, fieldOrigins: [], transferredDrafts: [],
 }
 
 const IDLE_ATTEMPT = {
@@ -359,7 +359,7 @@ async function bench(
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
     deleteBoardItem, boardDetail, boardSaveEdits, boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
-    boardSaveDraft,
+    boardSaveDraft, boardAssignWorkspace,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
     boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationDraft,
     emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
@@ -629,6 +629,48 @@ describe('faberloom surface', () => {
     expect(view.getByRole('button', { name: faberloomEn['mesa.iterationOpen'] })).toBeTruthy()
   })
 
+  it('offers the work a collision moved here and compares it on request', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationDraft, boardIterationResume } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        transferredDrafts: [{ kind: 'iteration', iterationId: 'iter-0', baseVersion: 1, transferredFrom: 'item-0' }],
+      },
+    } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: IDLE_ATTEMPT } as never)
+    boardIterationDraft.mockResolvedValue({
+      ok: true,
+      value: {
+        draft: { ...LIVE_ATTEMPT.draft, summary: null },
+        differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.diffTitle'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.iteration.transferredText'])).toBeTruthy()
+    expect(boardIterationResume).not.toHaveBeenCalled()
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iteration.transferredReview'] }))
+    await waitFor(() => { expect(boardIterationDraft).toHaveBeenCalledWith('item-1', 'iter-0') })
+    expect(await view.findByText('1200')).toBeTruthy()
+  })
+
+  it('follows the live item a space assignment kept instead of the closed one', async () => {
+    const { runtime, view, boardDetail, boardAssignWorkspace } = await bench()
+    boardDetail.mockImplementation((async (id: string) => ({
+      ok: true,
+      value: id === 'item-2' ? { ...DETAIL, id: 'item-2', title: 'Vigente' } : DETAIL,
+    })) as never)
+    boardAssignWorkspace.mockResolvedValue({ ok: true, value: { ...DETAIL, id: 'item-2', title: 'Vigente' } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+    const space = within(view.getByRole('article')).getByRole('combobox', { name: faberloomEn['mesa.space'] }) as HTMLSelectElement
+    fireEvent.change(space, { target: { value: 'space-1' } })
+    await waitFor(() => { expect(boardAssignWorkspace).toHaveBeenCalledWith('item-1', 'space-1') })
+    expect(await view.findByText('Vigente')).toBeTruthy()
+    await waitFor(() => { expect(boardDetail).toHaveBeenCalledWith('item-2') })
+  })
+
   it('starts the iteration over the shown version and pins the chat context', async () => {
     const { runtime, view, boardDetail, boardIterationStart, boardIterationContext } = await bench()
     boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
@@ -645,7 +687,7 @@ describe('faberloom surface', () => {
     await waitFor(() => {
       expect(boardIterationStart).toHaveBeenCalledWith('item-1', 1, expect.stringMatching(/^tab-/))
     })
-    await waitFor(() => { expect(boardIterationContext).toHaveBeenCalledWith('item-1') })
+    await waitFor(() => { expect(boardIterationContext).toHaveBeenCalledWith('item-1', '') })
   })
 
   it('edits the iteration draft and applies it with the default scope', async () => {
@@ -664,6 +706,7 @@ describe('faberloom surface', () => {
       expect(boardIterationApply).toHaveBeenCalledWith('item-1', {
         iterationId: 'iter-1',
         generation: 4,
+        actorSession: expect.stringMatching(/^tab-/u),
         baseVersion: 1,
         scope: 'puntual',
       })
@@ -719,7 +762,7 @@ describe('faberloom surface', () => {
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.saveExit'] }))
     await waitFor(() => {
       expect(boardIterationPause).toHaveBeenCalledWith('item-1', {
-        iterationId: 'iter-1', generation: 4, reason: 'guardar-y-salir',
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u), reason: 'guardar-y-salir',
       })
     })
     expect(boardIterationCancel).not.toHaveBeenCalled()
@@ -735,7 +778,9 @@ describe('faberloom surface', () => {
     const dialog = view.getByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['mesa.iteration.discardChanges'] }))
     await waitFor(() => {
-      expect(boardIterationCancel).toHaveBeenCalledWith('item-1', { iterationId: 'iter-1', generation: 4 })
+      expect(boardIterationCancel).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u),
+      })
     })
     expect(boardIterationApply).not.toHaveBeenCalled()
     expect(boardIterationPause).not.toHaveBeenCalled()
@@ -788,7 +833,8 @@ describe('faberloom surface', () => {
     fireEvent.change(editor, { target: { value: 'Precio 1200' } })
     await waitFor(() => {
       expect(boardIterationSaveDraft).toHaveBeenCalledWith('item-1', {
-        iterationId: 'iter-1', generation: 4, baseVersion: 1, summary: 'Precio 1200',
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u),
+        baseVersion: 1, summary: 'Precio 1200',
       })
     }, { timeout: 3_000 })
     expect(boardSaveDraft).not.toHaveBeenCalled()
@@ -818,12 +864,14 @@ describe('faberloom surface', () => {
     boardIteration.mockResolvedValue({ ok: true, value: { ...LIVE_ATTEMPT, renewalSeconds: 0.05 } })
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     await waitFor(() => {
-      expect(boardIterationRenew).toHaveBeenCalledWith('item-1', { iterationId: 'iter-1', generation: 4 })
+      expect(boardIterationRenew).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u),
+      })
     }, { timeout: 3_000 })
   })
 
   it('returns to the paused state with its draft when the renewal loses the lock', async () => {
-    const { runtime, view, boardDetail, boardIteration, boardIterationRenew, boardSaveEdits } = await bench()
+    const { runtime, view, boardDetail, boardIteration, boardIterationRenew, boardIterationSaveDraft, boardSaveEdits } = await bench()
     boardDetail
       .mockResolvedValueOnce({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
       .mockResolvedValue({ ok: true, value: DETAIL } as never)
@@ -836,9 +884,51 @@ describe('faberloom surface', () => {
     })
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     expect(await view.findByText(faberloomEn['mesa.iteration.lockLost'], undefined, { timeout: 3_000 })).toBeTruthy()
+    // The last text reaches the dead attempt before the panel drops its mirror,
+    // so the retained draft still offers it (W-43, W-57).
+    await waitFor(() => {
+      expect(boardIterationSaveDraft).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u),
+        baseVersion: 1, summary: 'Borrador',
+      })
+    })
     expect(await view.findByText(faberloomEn['mesa.iterationDraft'])).toBeTruthy()
     expect(view.queryByRole('button', { name: faberloomEn['mesa.iteration.saveExit'] })).toBeNull()
     expect(boardSaveEdits).not.toHaveBeenCalled()
+  })
+
+  it('keeps the last text in the panel when another tab holds the attempt', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationRenew, boardIterationSaveDraft } = await bench()
+    boardDetail
+      .mockResolvedValueOnce({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+      .mockResolvedValue({ ok: true, value: DETAIL } as never)
+    const held = {
+      ...LIVE_ATTEMPT, renewalSeconds: 0.05, draft: { ...LIVE_ATTEMPT.draft, summary: 'Borrador' },
+    }
+    boardIteration
+      .mockResolvedValueOnce({ ok: true, value: held })
+      .mockResolvedValue({ ok: true, value: { ...held, lockBy: 'tab-other' } })
+    // The attempt reads as this tab's when the timer starts and as the other
+    // tab's after the refusal; the late draft write meets the same held lock.
+    boardIterationSaveDraft.mockResolvedValue({
+      ok: false,
+      error: { code: 'LOCK_HELD', message: 'faberloom: LOCK_HELD — another tab session holds the attempt' },
+    } as never)
+    boardIterationRenew.mockResolvedValue({
+      ok: false,
+      error: { code: 'LOCK_HELD', message: 'faberloom: LOCK_HELD — another tab session holds the attempt' },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.residueKept'], undefined, { timeout: 3_000 })).toBeTruthy()
+    await waitFor(() => {
+      expect(boardIterationSaveDraft).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u),
+        baseVersion: 1, summary: 'Borrador',
+      })
+    })
+    expect(await view.findByText(faberloomEn['mesa.iteration.otherTab'])).toBeTruthy()
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true)
+    expect(view.queryByRole('button', { name: faberloomEn['mesa.iteration.saveExit'] })).toBeNull()
   })
 
   it('reads the item and offers no exit while another tab iterates it', async () => {

@@ -239,7 +239,9 @@ export function apply(ctx: ClientContext): void {
         return run
       },
       boardIteration: id => ctx.remote.faberloomView.boardIteration(id),
-      boardIterationContext: id => ctx.remote.faberloomView.boardIterationContext(id),
+      // An empty provider says the session names none, so the host assumes the
+      // deployment's default; the wire always carries the field (§8.5, W-48).
+      boardIterationContext: (id, providerId = '') => ctx.remote.faberloomView.boardIterationContext(id, providerId),
       boardIterationStart: (id, baseVersion, actorSession) => {
         const run = ctx.remote.faberloomView.boardIterationStart(id, baseVersion, actorSession)
         void run.then((result) => { if (result.ok) refresh() })
@@ -267,7 +269,7 @@ export function apply(ctx: ClientContext): void {
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardIterationDraft: id => ctx.remote.faberloomView.boardIterationDraft(id),
+      boardIterationDraft: (id, iterationId) => ctx.remote.faberloomView.boardIterationDraft(id, iterationId),
       createRoutine: (name, spaceId) => { write(() => ctx.remote.faberloomView.createRoutine(name, name, spaceId ?? undefined)) },
       setRoutineActive: (id, active) => { write(() => ctx.remote.faberloomView.setRoutineActive(id, active)) },
       remember: (text, spaceId) => { write(() => ctx.remote.faberloomView.remember(text, spaceId ?? undefined)) },

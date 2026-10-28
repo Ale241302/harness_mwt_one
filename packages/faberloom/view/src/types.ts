@@ -616,6 +616,29 @@ export interface SpaceSaveInput {
   readonly prompt?: string
 }
 
+/**
+ * Data classification of a board artifact, ordered lowest first. §8.4 keeps an
+ * N3/N4 item's summary and amount out of the card, and W-48 keeps content at or
+ * below the class the deployment cleared for the provider.
+ */
+export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
+
+/**
+ * One draft an assignment moved from the item a collision closed to the live
+ * item (§2.3, W-98). `baseVersion` is the artifact version the draft was
+ * written on, and `transferredFrom` names the item the collision closed.
+ */
+export interface FaberLoomBoardTransferredDraft {
+  /** Table that holds the draft: an iteration draft or an inline edit. */
+  readonly kind: 'iteration' | 'edit'
+  /** Attempt that produced an iteration draft, or null for an edit draft. */
+  readonly iterationId: string | null
+  /** Artifact version the draft was written on. */
+  readonly baseVersion: number
+  /** Item the draft was made on, which the collision closed. */
+  readonly transferredFrom: string
+}
+
 /** One board item with its review state. */
 export interface FaberLoomBoardDetail {
   /** Board item id. */
@@ -699,6 +722,12 @@ export interface FaberLoomBoardDetail {
   readonly checksError: string | null
   /** Source each editable field came from, or the mark that it has none. */
   readonly fieldOrigins: readonly FaberLoomBoardFieldOriginRow[]
+  /**
+   * Work a collision transferred here from the item it closed (§2.3, W-98). It
+   * is offered for review, never applied by itself and never consumed as the
+   * item's current attempt.
+   */
+  readonly transferredDrafts: readonly FaberLoomBoardTransferredDraft[]
 }
 
 /** One executed verification control, as the detail projects it. */
@@ -918,6 +947,12 @@ export interface FaberLoomBoardIterationLockInput {
   readonly iterationId: string
   /** Lock generation the panel has open. */
   readonly generation: number
+  /**
+   * Tab session issuing the write. It must be the session that opened the
+   * attempt: another session is refused with `LOCK_HELD` and nothing is stored
+   * (§9.7.1).
+   */
+  readonly actorSession: string
 }
 
 /** One draft write from the panel; it edits the summary the draft area shows. */
@@ -987,9 +1022,12 @@ export interface FaberLoomBoardIterationResume {
 }
 
 /**
- * The pinned context the iteration chat starts from (§9.7, §8.5). It carries
- * only the item and the space title the actor may see: no account history, no
- * space memory, no other item.
+ * The pinned context the iteration chat starts from (§9.7, §8.5, W-48). It
+ * carries only the item and the space title the actor may see: no account
+ * history, no space memory, no other item. The summary and the working draft
+ * are null when the item's data class is above the ceiling the deployment
+ * cleared for the provider the session runs on, so metadata alone reaches a
+ * model that may not receive the content.
  */
 export interface FaberLoomBoardIterationContext {
   /** Board item id. */
@@ -1004,11 +1042,11 @@ export interface FaberLoomBoardIterationContext {
   readonly spaceTitle: string | null
   /** Current artifact version. */
   readonly version: number
-  /** Summary of the current revision. */
-  readonly summary: string
-  /** Working draft still to be applied, or null. */
+  /** Summary of the current revision, or null when the provider may not receive it. */
+  readonly summary: string | null
+  /** Working draft still to be applied, or null when none exists or none may travel. */
   readonly draftSummary: string | null
-  /** Rounds applied to this item so far. */
+  /** Rounds applied to this item so far; a counter, never artifact content. */
   readonly rounds: number
 }
 

@@ -64,6 +64,7 @@ import type {
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
   FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
+  FaberLoomBoardDataClass,
   FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
   FaberLoomBoardSeverity, FaberLoomBoardEventRow, FaberLoomBoardDraftInput, FaberLoomBoardDraftRow,
   FaberLoomBoardIteration, FaberLoomBoardIterationApplyInput,
@@ -375,6 +376,9 @@ function unquoteHarnessScalar(value: string): string {
   return value
 }
 
+/** Data classes, lowest first: the order the provider ceiling compares on. */
+const DATA_CLASSES = ['N0', 'N1', 'N2', 'N3', 'N4'] as const
+
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
 export interface Config {
   /** The gateway injects the logged-in user's email here, per dsh process. */
@@ -415,6 +419,19 @@ export interface Config {
   anydocOcr?: string
   /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
   anydocApiKey?: string
+  /**
+   * Highest data class each model provider is cleared to receive, keyed by the
+   * provider id the session runs on (`{ deepseek: 'N2' }`). These values are
+   * deployment configuration, not a product rule: POL_DATA_CLASSIFICATION owns
+   * the per-level detail (§8.5). A provider absent from the map receives the
+   * lowest class, so nothing leaves until a deployment declares otherwise.
+   */
+  providerDataClassCeilings?: Record<string, FaberLoomBoardDataClass>
+  /**
+   * Provider assumed for a session that names none. Absent means no provider,
+   * and the context falls back to the lowest class: the fallback is deny.
+   */
+  defaultProvider?: string
 }
 
 /** Schemastery configuration for the workspace view. */
@@ -436,6 +453,8 @@ export const Config: z<Config> = z.object({
   anydoc: z.boolean().default(false),
   anydocOcr: z.string().default('reject'),
   anydocApiKey: z.string().default(''),
+  providerDataClassCeilings: z.dict(z.union(DATA_CLASSES)).default({}),
+  defaultProvider: z.string().default(''),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -950,6 +969,19 @@ function iterationOf(status: BoardIterationStatus): FaberLoomBoardIteration {
     candidatePending: status.candidatePending,
     draft: status.draft === null ? null : iterationDraftOf(status.draft),
   }
+}
+
+/**
+ * Whether one item's content may travel to the provider a session runs on. A
+ * provisional class carries no permitted field list (D-05, W-99), and the class
+ * must not exceed the deployment's ceiling for that provider (W-48).
+ * @param item - the board item the context describes.
+ * @param ceiling - highest class the provider may receive.
+ * @returns true when the summary and the working draft may reach the model.
+ */
+function contentMayTravel(item: FaberLoomBoardItem, ceiling: FaberLoomBoardDataClass): boolean {
+  if (item.dataClassProvisional) return false
+  return DATA_CLASSES.indexOf(item.dataClass) <= DATA_CLASSES.indexOf(ceiling)
 }
 
 /**
@@ -6330,6 +6362,10 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (item === undefined) return undefined
     const revision = item.revisions[item.revisions.length - 1]
     const draft = await this.ctx.faberloomBoard.getEditDraft(this.actor(), item.id)
+    // Work a collision moved here from the item it closed is listed beside the
+    // item, so the panel offers it for review instead of leaving it on a closed
+    // item the reader cannot open (§2.3, W-98).
+    const transferred = await this.ctx.faberloomBoard.transferredDrafts(this.actor(), item.id)
     // The verification zone reads the same live path approval will run, so the
     // panel never shows a cached verdict (W-50). A source that cannot answer is
     // reported here instead of hiding the zone.
@@ -6404,6 +6440,12 @@ export class FaberLoomViewService extends TypertRemoteService {
         source: origin.source,
         ref: origin.ref,
         at: origin.at,
+      })),
+      transferredDrafts: transferred.map(entry => ({
+        kind: entry.kind,
+        iterationId: entry.iterationId,
+        baseVersion: entry.baseVersion,
+        transferredFrom: String(entry.transferredFrom),
       })),
     }
   }
@@ -6525,16 +6567,21 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Assign a space to an item.
+   * Assign a space to an item. A collision can close the item the caller named
+   * and keep a peer live (§2.3), so the detail is read for the item the board
+   * answered with and not for the id the view had; the drafts the collision
+   * moved to it arrive in that detail (W-98).
    * @param id - board item id.
    * @param workspaceId - target space id.
-   * @returns the refreshed detail.
+   * @returns the refreshed detail of the live item.
    */
   @Remote('boardAssignWorkspace')
   async boardAssignWorkspace(id: string, workspaceId: string): Promise<FaberLoomBoardDetail | undefined> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot assign spaces')
-    await this.ctx.faberloomBoard.assignWorkspace(this.actor(), id as FaberLoomBoardItemId, workspaceId)
-    return await this.boardDetail(id)
+    const assignment = await this.ctx.faberloomBoard.assignWorkspace(
+      this.actor(), id as FaberLoomBoardItemId, workspaceId,
+    )
+    return await this.boardDetail(String(assignment.item.id))
   }
 
   /**
@@ -6567,17 +6614,25 @@ export class FaberLoomViewService extends TypertRemoteService {
    * Read the pinned context an iteration chat starts from (§8.5, §9.7). It is
    * minimised to the item: the board filters the item by owner and company, the
    * spaces service filters the title, and no account history or space memory
-   * travels with it.
+   * travels with it. The summary and the working draft travel only while the
+   * item's data class is within the ceiling the deployment declared for the
+   * provider the session runs on (W-48); above it the context keeps metadata
+   * alone, so a model that may not receive the content receives none of it.
    * @param id - board item id.
+   * @param providerId - provider the session runs on; an empty string means the
+   * session names none, so the configured default is assumed.
    * @returns the context, or undefined when the reader holds no item with that id.
    */
   @Remote('boardIterationContext')
-  async boardIterationContext(id: string): Promise<FaberLoomBoardIterationContext | undefined> {
+  async boardIterationContext(id: string, providerId: string): Promise<FaberLoomBoardIterationContext | undefined> {
     const actor = this.actor()
     const item = (await this.ctx.faberloomBoard.list(actor)).find(entry => entry.id === id)
     if (item === undefined) return undefined
+    const ceiling = this.providerCeiling(providerId)
+    const content = contentMayTravel(item, ceiling)
     const revision = item.revisions[item.revisions.length - 1]
-    const draft = await this.ctx.faberloomBoard.getIterationDraft(actor, item.id)
+    // A draft above the ceiling is not even read: the read would be the leak.
+    const draft = content ? await this.ctx.faberloomBoard.getIterationDraft(actor, item.id) : undefined
     let spaceTitle: string | null = null
     if (item.spaceId !== null) {
       // A space the actor may not read contributes no title; the pinned context
@@ -6592,10 +6647,26 @@ export class FaberLoomViewService extends TypertRemoteService {
       spaceId: item.spaceId,
       spaceTitle,
       version: item.version,
-      summary: revision?.summary ?? '',
+      summary: content ? revision?.summary ?? '' : null,
       draftSummary: draft === undefined ? null : draft.summary,
       rounds: item.iterationRoundCount,
     }
+  }
+
+  /**
+   * The highest data class one provider may receive. The values are deployment
+   * configuration, not a product rule (POL_DATA_CLASSIFICATION owns the levels);
+   * a provider the deployment did not declare, and a session that names none,
+   * fall back to the lowest class, so the fallback denies rather than guesses.
+   * @param providerId - provider the session runs on; empty assumes the configured default.
+   * @returns the highest class that provider may receive.
+   */
+  private providerCeiling(providerId: string): FaberLoomBoardDataClass {
+    const named = providerId.length === 0 ? this.config.defaultProvider : providerId
+    // No provider named and no default declared is no policy at all: the lowest
+    // class, so content stays home instead of being guessed into a model.
+    if (named === undefined || named.length === 0) return DATA_CLASSES[0]
+    return this.config.providerDataClassCeilings?.[named] ?? DATA_CLASSES[0]
   }
 
   /**
@@ -6623,9 +6694,10 @@ export class FaberLoomViewService extends TypertRemoteService {
   /**
    * Store one write of the attempt's work as its working draft. A write for an
    * attempt that already ended is archived and the item is left untouched
-   * (W-57), which is what `linked: false` tells the panel.
+   * (W-57), which is what `linked: false` tells the panel. A write from another
+   * tab session is refused with `LOCK_HELD` and stores nothing (§9.7.1).
    * @param id - board item id.
-   * @param input - attempt, base version, and the draft summary.
+   * @param input - attempt, generation, session, base version, and the draft summary.
    * @returns the stored draft and whether the item still links it.
    */
   @Remote('boardIterationSaveDraft')
@@ -6637,6 +6709,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const outcome = await this.ctx.faberloomBoard.saveIterationDraft(this.actor(), id as FaberLoomBoardItemId, {
       iterationId: input.iterationId,
       generation: input.generation,
+      actorSession: input.actorSession,
       baseVersion: input.baseVersion,
       summary: input.summary,
     })
@@ -6649,7 +6722,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    * after the commit and is best effort: it may be missing while the item is
    * committed, which is what `correctionError` reports.
    * @param id - board item id.
-   * @param input - attempt, base version, scope, and the candidate choice when one is pending.
+   * @param input - attempt, generation, session, base version, scope, and the candidate choice when one is pending.
    * @returns the attempt after the commit and the correction failure, when any.
    */
   @Remote('boardIterationApply')
@@ -6667,6 +6740,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const result = await board.applyIteration(actor, id as FaberLoomBoardItemId, {
       iterationId: input.iterationId,
       generation: input.generation,
+      actorSession: input.actorSession,
       baseVersion: input.baseVersion,
       scope: input.scope,
       ...input.candidate === undefined ? {} : { candidate: input.candidate },
@@ -6677,11 +6751,12 @@ export class FaberLoomViewService extends TypertRemoteService {
 
   /**
    * Extend the live attempt's lock while this tab works it (D-09, §9.7.1). The
-   * board refuses a stale attempt id, a stale generation, or an expired deadline
-   * with `LOCK_LOST` or `ITERATION_STALE` and no effects (W-43), so a renewal
-   * never touches the item's content or version.
+   * board refuses a stale attempt id, a stale generation, another tab session,
+   * or an expired deadline with `LOCK_LOST`, `ITERATION_STALE`, or `LOCK_HELD`
+   * and no effects (W-43), so a renewal never touches the item's content or
+   * version.
    * @param id - board item id.
-   * @param input - attempt id and generation the panel has open.
+   * @param input - attempt id, generation, and the tab session holding it.
    * @returns the attempt after the renewal.
    */
   @Remote('boardIterationRenew')
@@ -6690,6 +6765,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const result = await this.ctx.faberloomBoard.renewIteration(this.actor(), id as FaberLoomBoardItemId, {
       iterationId: input.iterationId,
       generation: input.generation,
+      actorSession: input.actorSession,
     })
     return iterationOf(result.status)
   }
@@ -6698,7 +6774,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    * Save and exit, carry to SpaceLoom, or return without resolving: the attempt
    * releases the lock and keeps its draft (W-67, W-97).
    * @param id - board item id.
-   * @param input - attempt and the exit the user chose.
+   * @param input - attempt, session, and the exit the user chose.
    * @returns the attempt after the commit.
    */
   @Remote('boardIterationPause')
@@ -6710,6 +6786,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const result = await this.ctx.faberloomBoard.pauseIteration(this.actor(), id as FaberLoomBoardItemId, {
       iterationId: input.iterationId,
       generation: input.generation,
+      actorSession: input.actorSession,
       reason: input.reason,
     })
     return iterationOf(result.status)
@@ -6719,7 +6796,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    * Discard the attempt's work and release the lock. The version does not
    * change except through an explicit candidate adoption (W-41).
    * @param id - board item id.
-   * @param input - attempt and the candidate choice when one is pending.
+   * @param input - attempt, session, and the candidate choice when one is pending.
    * @returns the attempt after the commit.
    */
   @Remote('boardIterationCancel')
@@ -6731,6 +6808,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const result = await this.ctx.faberloomBoard.cancelIteration(this.actor(), id as FaberLoomBoardItemId, {
       iterationId: input.iterationId,
       generation: input.generation,
+      actorSession: input.actorSession,
       ...input.candidate === undefined ? {} : { candidate: input.candidate },
     })
     return iterationOf(result.status)
@@ -6739,19 +6817,20 @@ export class FaberLoomViewService extends TypertRemoteService {
   /**
    * Take a new attempt over the retained draft. A draft written against an
    * older version is returned with its differences instead of overwriting the
-   * newer content (W-68).
+   * newer content (W-68). The tab session is required: the resumed attempt
+   * belongs to the session that opened it (§9.7.1).
    * @param id - board item id.
    * @param baseVersion - base version of the draft the caller saw.
    * @param actorSession - tab opening the attempt, so a resumed attempt belongs to it.
    * @returns the new attempt, or the stale draft's differences.
    */
   @Remote('boardIterationResume')
-  async boardIterationResume(id: string, baseVersion: number, actorSession?: string): Promise<FaberLoomBoardIterationResume> {
+  async boardIterationResume(id: string, baseVersion: number, actorSession: string): Promise<FaberLoomBoardIterationResume> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
     const board = this.ctx.faberloomBoard
     const result = await board.resumeIteration(this.actor(), id as FaberLoomBoardItemId, {
       baseVersion,
-      ...actorSession === undefined ? {} : { actorSession },
+      actorSession,
     })
     const iteration = iterationOf(await board.iterationStatus(this.actor(), id as FaberLoomBoardItemId))
     if (result.status === 'started') return { status: 'started', iteration, differences: [] }

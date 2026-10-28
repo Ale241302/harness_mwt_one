@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-28-mesa-iteration-surface.md
-2026-10-28-mesa-iteration-surface.md: 1ca47e7deecca10f489cb8c7d153d5928cd5e823
-2026-10-28-mesa-iteration-surface.zh.md: 9b9cd7ad86dc969ea25dfd377ff6ad857fca7128
+2026-10-28-mesa-iteration-surface.md: f878a50dc67ec4d0eb6cf0fe727a3cc41d3b2594
+2026-10-28-mesa-iteration-surface.zh.md: a47cdb22554ce8ced7c1904a1cdaaeea09f90170

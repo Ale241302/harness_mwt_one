@@ -105,7 +105,11 @@ function item(overrides: Partial<{
 }
 
 /** The view's dependency graph, with the board recording every command it receives. */
-function harness(options: { readOnly?: boolean } = {}) {
+function harness(options: {
+  readOnly?: boolean
+  ceilings?: Record<string, 'N0' | 'N1' | 'N2' | 'N3' | 'N4'>
+  defaultProvider?: string
+} = {}) {
   const records = { iterationStatus: status(), draft: draft() as ReturnType<typeof draft> | undefined }
   const board = {
     list: vi.fn(async () => [item()]),
@@ -121,6 +125,8 @@ function harness(options: { readOnly?: boolean } = {}) {
     cancelIteration: vi.fn(async () => ({ item: item(), status: status({ phase: 'idle', iterationId: null }) })),
     resumeIteration: vi.fn(async () => ({ item: item(), status: 'started' as const })),
     getIterationDraft: vi.fn(async () => records.draft),
+    transferredDrafts: vi.fn(async (): Promise<readonly unknown[]> => []),
+    assignWorkspace: vi.fn(async (): Promise<unknown> => ({ item: item(), transferredDrafts: [] })),
   }
   const spaces = {
     get: vi.fn(async () => ({ id: 'sp-1', title: 'Marluvas', parentId: null, agentId: 'agent-1' })),
@@ -142,6 +148,10 @@ function harness(options: { readOnly?: boolean } = {}) {
     role: ACTOR.role,
     companyId: ACTOR.companyId,
     readOnly: options.readOnly === true,
+    // A declared policy clears an N2 item for the default provider; a test that
+    // proves the fallback denies passes an empty map instead.
+    providerDataClassCeilings: options.ceilings ?? { deepseek: 'N2' },
+    defaultProvider: options.defaultProvider ?? 'deepseek',
   })
   return { view, board, spaces, records, onCorrection }
 }
@@ -178,8 +188,9 @@ describe('FaberLoomViewService board iteration', () => {
   it('refuses every iteration write from a read-only identity', async () => {
     const { view, board } = harness({ readOnly: true })
     await expect(view.boardIterationStart('b1', 3, 'tab-1')).rejects.toThrow('read-only')
-    await expect(view.boardIterationApply('b1', { iterationId: 'iter-1', generation: 4, baseVersion: 3, scope: 'puntual' }))
-      .rejects.toThrow('read-only')
+    await expect(view.boardIterationApply('b1', {
+      iterationId: 'iter-1', generation: 4, actorSession: 'tab-1', baseVersion: 3, scope: 'puntual',
+    })).rejects.toThrow('read-only')
     expect(board.iterate).not.toHaveBeenCalled()
     expect(board.applyIteration).not.toHaveBeenCalled()
   })
@@ -189,12 +200,14 @@ describe('FaberLoomViewService board iteration', () => {
     await view.boardIterationApply('b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       baseVersion: 3,
       scope: 'cuenta',
     })
     expect(board.applyIteration).toHaveBeenCalledWith(ACTOR, 'b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       baseVersion: 3,
       scope: 'cuenta',
     })
@@ -205,6 +218,7 @@ describe('FaberLoomViewService board iteration', () => {
     await view.boardIterationApply('b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       baseVersion: 3,
       scope: 'espacio',
       candidate: { id: 'c1', hash: 'h1', decision: 'adopt' },
@@ -212,6 +226,7 @@ describe('FaberLoomViewService board iteration', () => {
     expect(board.applyIteration).toHaveBeenCalledWith(ACTOR, 'b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       baseVersion: 3,
       scope: 'espacio',
       candidate: { id: 'c1', hash: 'h1', decision: 'adopt' },
@@ -220,10 +235,13 @@ describe('FaberLoomViewService board iteration', () => {
 
   it('pauses with the exit the user chose and leaves the draft alone', async () => {
     const { view, board } = harness()
-    await view.boardIterationPause('b1', { iterationId: 'iter-1', generation: 4, reason: 'guardar-y-salir' })
+    await view.boardIterationPause('b1', {
+      iterationId: 'iter-1', generation: 4, actorSession: 'tab-1', reason: 'guardar-y-salir',
+    })
     expect(board.pauseIteration).toHaveBeenCalledWith(ACTOR, 'b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       reason: 'guardar-y-salir',
     })
     expect(board.applyIteration).not.toHaveBeenCalled()
@@ -235,11 +253,13 @@ describe('FaberLoomViewService board iteration', () => {
     await view.boardIterationCancel('b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       candidate: { id: 'c1', hash: 'h1', decision: 'keep' },
     })
     expect(board.cancelIteration).toHaveBeenCalledWith(ACTOR, 'b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       candidate: { id: 'c1', hash: 'h1', decision: 'keep' },
     })
     expect(board.applyIteration).not.toHaveBeenCalled()
@@ -250,14 +270,23 @@ describe('FaberLoomViewService board iteration', () => {
     expect(await view.boardIterationSaveDraft('b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       baseVersion: 3,
       summary: 'Precio revisado',
     })).toEqual({ summary: 'Precio revisado', baseVersion: 3, linked: true })
+    expect(board.saveIterationDraft).toHaveBeenCalledWith(ACTOR, 'b1', {
+      iterationId: 'iter-1',
+      generation: 4,
+      actorSession: 'tab-1',
+      baseVersion: 3,
+      summary: 'Precio revisado',
+    })
 
     board.saveIterationDraft.mockResolvedValue({ draft: draft(), linked: false, code: 'LOCK_LOST' } as never)
     expect(await view.boardIterationSaveDraft('b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       baseVersion: 3,
       summary: 'Tarde',
     })).toEqual({ summary: 'Precio revisado', baseVersion: 3, linked: false })
@@ -273,7 +302,7 @@ describe('FaberLoomViewService board iteration', () => {
       status: 'outdated' as never,
       differences: [{ field: 'total', draftValue: 1200, currentValue: 1000 }],
     } as never)
-    expect(await view.boardIterationResume('b1', 3)).toEqual({
+    expect(await view.boardIterationResume('b1', 3, 'tab-9')).toEqual({
       status: 'outdated',
       iteration: expect.objectContaining({ phase: 'active' }),
       differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
@@ -303,7 +332,7 @@ describe('FaberLoomViewService board iteration', () => {
 
   it('pins the chat context to the item and the space title the actor may read', async () => {
     const { view, spaces } = harness()
-    expect(await view.boardIterationContext('b1')).toEqual({
+    expect(await view.boardIterationContext('b1', '')).toEqual({
       itemId: 'b1',
       title: 'PF 9001-2026',
       accountRef: 'Cuenta Demo',
@@ -320,10 +349,57 @@ describe('FaberLoomViewService board iteration', () => {
   it('omits the space title the actor may not read and the context of an absent item', async () => {
     const { view, board, spaces } = harness()
     spaces.get.mockRejectedValue(new Error('faberloom: NO_ACCESS — the space belongs to another owner'))
-    expect((await view.boardIterationContext('b1'))?.spaceTitle).toBeNull()
+    expect((await view.boardIterationContext('b1', ''))?.spaceTitle).toBeNull()
 
     board.list.mockResolvedValue([])
-    expect(await view.boardIterationContext('other')).toBeUndefined()
+    expect(await view.boardIterationContext('other', '')).toBeUndefined()
+  })
+
+  it('sends the summary to a provider the deployment cleared and withholds it from an undeclared one', async () => {
+    const { view } = harness({ ceilings: { deepseek: 'N2' } })
+    expect(await view.boardIterationContext('b1', 'deepseek')).toMatchObject({
+      summary: 'Proforma DDP 100 pares',
+      draftSummary: 'Precio revisado',
+    })
+    expect(await view.boardIterationContext('b1', 'anthropic')).toEqual({
+      itemId: 'b1',
+      title: 'PF 9001-2026',
+      accountRef: 'Cuenta Demo',
+      spaceId: 'sp-1',
+      spaceTitle: 'Marluvas',
+      version: 3,
+      summary: null,
+      draftSummary: null,
+      rounds: 2,
+    })
+  })
+
+  it('drops the content a lower ceiling forbids and keeps what a higher one allows', async () => {
+    const lower = harness({ ceilings: { deepseek: 'N1' } })
+    expect((await lower.view.boardIterationContext('b1', 'deepseek'))?.summary).toBeNull()
+    expect(lower.records.draft).toEqual(expect.objectContaining({ summary: 'Precio revisado' }))
+    expect(lower.board.getIterationDraft).not.toHaveBeenCalled()
+
+    const higher = harness({ ceilings: { deepseek: 'N3' } })
+    expect((await higher.view.boardIterationContext('b1', 'deepseek'))?.summary).toBe('Proforma DDP 100 pares')
+  })
+
+  it('fails closed when no policy is declared and assumes the configured provider when none is named', async () => {
+    const undeclared = harness({ ceilings: {} })
+    expect(await undeclared.view.boardIterationContext('b1', 'deepseek')).toMatchObject({
+      summary: null,
+      draftSummary: null,
+      rounds: 2,
+    })
+
+    const assumed = harness({ ceilings: { openai: 'N2' }, defaultProvider: 'openai' })
+    expect((await assumed.view.boardIterationContext('b1', ''))?.summary).toBe('Proforma DDP 100 pares')
+  })
+
+  it('withholds content from an item whose data class is still provisional', async () => {
+    const { view, board } = harness({ ceilings: { deepseek: 'N4' } })
+    board.list.mockResolvedValue([{ ...item(), dataClassProvisional: true }])
+    expect((await view.boardIterationContext('b1', 'deepseek'))?.summary).toBeNull()
   })
 
   it('projects the tab session that holds the attempt', async () => {
@@ -331,16 +407,59 @@ describe('FaberLoomViewService board iteration', () => {
     expect((await view.boardIteration('b1'))?.lockBy).toBe('tab-1')
   })
 
-  it('renews the live attempt with the attempt id and generation it was given', async () => {
+  it('lists the work a collision moved to the item inside its detail', async () => {
     const { view, board } = harness()
-    const attempt = await view.boardIterationRenew('b1', { iterationId: 'iter-1', generation: 4 })
-    expect(board.renewIteration).toHaveBeenCalledWith(ACTOR, 'b1', { iterationId: 'iter-1', generation: 4 })
+    board.transferredDrafts.mockResolvedValue([
+      { kind: 'iteration', itemId: 'b1', key: 'b1:iter-0', iterationId: 'iter-0', userId: null, baseVersion: 2, transferredFrom: 'b0' },
+      {
+        kind: 'edit', itemId: 'b1', key: 'b1:owner@muitowork.com', iterationId: null,
+        userId: ACTOR.id, baseVersion: 1, transferredFrom: 'b0',
+      },
+    ])
+
+    expect((await view.boardDetail('b1'))?.transferredDrafts).toEqual([
+      { kind: 'iteration', iterationId: 'iter-0', baseVersion: 2, transferredFrom: 'b0' },
+      { kind: 'edit', iterationId: null, baseVersion: 1, transferredFrom: 'b0' },
+    ])
+    expect(board.transferredDrafts).toHaveBeenCalledWith(ACTOR, 'b1')
+  })
+
+  it('reads the live item a collision kept, not the item the assignment closed', async () => {
+    const { view, board } = harness()
+    board.assignWorkspace.mockResolvedValue({
+      item: { ...item(), id: 'b2', title: 'Vigente' },
+      transferredDrafts: [
+        { kind: 'iteration', itemId: 'b2', key: 'b2:iter-0', iterationId: 'iter-0', userId: null, baseVersion: 2, transferredFrom: 'b1' },
+      ],
+    })
+    board.list.mockResolvedValue([{ ...item(), id: 'b2', title: 'Vigente' }])
+    board.transferredDrafts.mockResolvedValue([
+      { kind: 'iteration', itemId: 'b2', key: 'b2:iter-0', iterationId: 'iter-0', userId: null, baseVersion: 2, transferredFrom: 'b1' },
+    ])
+
+    const detail = await view.boardAssignWorkspace('b1', 'sp-1')
+
+    expect(board.assignWorkspace).toHaveBeenCalledWith(ACTOR, 'b1', 'sp-1')
+    expect(detail).toMatchObject({
+      id: 'b2',
+      title: 'Vigente',
+      transferredDrafts: [{ iterationId: 'iter-0', baseVersion: 2, transferredFrom: 'b1' }],
+    })
+  })
+
+  it('renews the live attempt with the attempt id, generation, and session it was given', async () => {
+    const { view, board } = harness()
+    const attempt = await view.boardIterationRenew('b1', { iterationId: 'iter-1', generation: 4, actorSession: 'tab-1' })
+    expect(board.renewIteration).toHaveBeenCalledWith(ACTOR, 'b1', {
+      iterationId: 'iter-1', generation: 4, actorSession: 'tab-1',
+    })
     expect(attempt).toMatchObject({ phase: 'active', iterationId: 'iter-1', generation: 4 })
   })
 
   it('refuses a renewal from a read-only identity', async () => {
     const { view, board } = harness({ readOnly: true })
-    await expect(view.boardIterationRenew('b1', { iterationId: 'iter-1', generation: 4 })).rejects.toThrow('read-only')
+    await expect(view.boardIterationRenew('b1', { iterationId: 'iter-1', generation: 4, actorSession: 'tab-1' }))
+      .rejects.toThrow('read-only')
     expect(board.renewIteration).not.toHaveBeenCalled()
   })
 
@@ -354,6 +473,7 @@ describe('FaberLoomViewService board iteration', () => {
     const answer = await view.boardIterationApply('b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       baseVersion: 3,
       scope: 'cuenta',
     })
@@ -396,7 +516,9 @@ describe('FaberLoomViewService board iteration', () => {
       status: status({ phase: 'idle', iterationId: null }),
     })
 
-    await view.boardIterationApply('b1', { iterationId: 'iter-1', generation: 4, baseVersion: 3, scope: 'puntual' })
+    await view.boardIterationApply('b1', {
+      iterationId: 'iter-1', generation: 4, actorSession: 'tab-1', baseVersion: 3, scope: 'puntual',
+    })
 
     expect(onCorrection).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       dataClassProvisional: true,
@@ -438,6 +560,7 @@ describe('FaberLoomViewService board iteration', () => {
     const answer = await view.boardIterationApply('b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       baseVersion: 3,
       scope: 'puntual',
     })
@@ -468,6 +591,7 @@ describe('FaberLoomViewService board iteration', () => {
     const answer = await view.boardIterationApply('b1', {
       iterationId: 'iter-1',
       generation: 4,
+      actorSession: 'tab-1',
       baseVersion: 3,
       scope: 'puntual',
     })
