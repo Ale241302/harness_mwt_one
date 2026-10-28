@@ -13,6 +13,8 @@ import { z } from 'zod'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { boardDomainSpec, type BoardDraftRecord, type BoardItemRecord, type BoardKeyRecord } from './spec.ts'
+import { submittedSeverity } from './classify.ts'
+import { orderBoardItems } from './order.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   BoardActor,
@@ -38,6 +40,8 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export * from './classify.ts'
+export * from './order.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -49,11 +53,17 @@ declare module '@deepseek-ai/cordis' {
 export interface Config {
   /** Maximum inline audit events kept per item. */
   readonly eventCap?: number
+  /**
+   * Minimum classifier confidence accepted as a severity. A proposal below it
+   * leaves the item unclassified; the signed pilot value is 0.80 (D-08).
+   */
+  readonly classifierConfidenceThreshold?: number
 }
 
 /** Validated board configuration. */
 export const Config = z.object({
   eventCap: z.number().int().positive().default(200),
+  classifierConfidenceThreshold: z.number().min(0).max(1).default(0.8),
 })
 
 /** Discard reasons signed in the specification. */
@@ -141,15 +151,18 @@ export class FaberLoomBoard extends Service {
 
   private domainPromise: Promise<Domain<typeof boardDomainSpec>> | undefined
   private readonly eventCap: number
+  private readonly confidenceThreshold: number
   private readonly claims = new Map<string, Promise<unknown>>()
 
   /**
    * @param ctx - Cordis context owning the service fiber.
-   * @param config - inline audit cap.
+   * @param config - inline audit cap and classifier confidence threshold.
    */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'faberloomBoard')
-    this.eventCap = config.eventCap ?? 200
+    const resolved = Config.parse(config)
+    this.eventCap = resolved.eventCap
+    this.confidenceThreshold = resolved.classifierConfidenceThreshold
   }
 
   private domain(): Promise<Domain<typeof boardDomainSpec>> {
@@ -300,6 +313,11 @@ export class FaberLoomBoard extends Service {
     const now = new Date().toISOString()
     const evidence = requireEvidence(input.evidence)
     const artifactHash = hashOf({ summary: input.summary, evidence })
+    const severity = submittedSeverity(
+      input.severity,
+      input.severityConfidence ?? null,
+      this.confidenceThreshold,
+    )
     return {
       ownerId: actor.id,
       companyId: input.companyId ?? actor.companyId ?? null,
@@ -309,9 +327,9 @@ export class FaberLoomBoard extends Service {
       status: 'waiting_approval',
       state: input.state ?? 'PENDIENTE_CRITERIO',
       rowVersion: 1,
-      severity: input.severity ?? null,
-      severitySource: input.severity === undefined ? null : 'LLM',
-      severityConfidence: input.severityConfidence ?? null,
+      severity: severity.severity,
+      severitySource: severity.source,
+      severityConfidence: severity.confidence,
       dueAt: input.dueAt ?? null,
       valueAmount: input.valueAmount ?? null,
       valueCurrency: input.valueCurrency ?? null,
@@ -1020,7 +1038,8 @@ export class FaberLoomBoard extends Service {
    * scoped to one identity and, when the deployment knows it, one company.
    * @param actor - the authenticated reader.
    * @param filter - optional state, status, and space filters.
-   * @returns items oldest first.
+   * @returns items in the canonical queue order (§4): unclassified and
+   * space-less first, then the severity, due date, value, creation, and id tuple.
    */
   async list(
     actor: BoardActor,
@@ -1035,8 +1054,7 @@ export class FaberLoomBoard extends Service {
       if (filter.spaceId !== undefined && record.spaceId !== filter.spaceId) continue
       out.push(toItem(id, record))
     }
-    out.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-    return out
+    return orderBoardItems(out)
   }
 }
 

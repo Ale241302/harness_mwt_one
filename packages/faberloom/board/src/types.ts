@@ -348,3 +348,112 @@ export interface BoardDiscardInput {
   /** Note; required only for `OTRA`. */
   readonly note?: string
 }
+
+/** The item fields the canonical queue order reads. */
+export interface BoardOrderFields {
+  /** Item identity; the final tiebreaker. */
+  readonly id: string
+  /** Severity, or null while unclassified. */
+  readonly severity: BoardSeverity | null
+  /** Owning space, or null when the item has none. */
+  readonly spaceId: string | null
+  /** Deadline in UTC, or null. */
+  readonly dueAt: string | null
+  /** Amount in USD at creation, or null. */
+  readonly valueUsd: number | null
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+}
+
+/** One space group ordered by the tuple of its first item. */
+export interface BoardOrderGroup<T extends BoardOrderFields = BoardOrderFields> {
+  /** Space the group belongs to, or null for items without one. */
+  readonly spaceId: string | null
+  /** Members, in any input order. */
+  readonly items: readonly T[]
+}
+
+/** Who produced a classification value. */
+export type BoardClassifySource = 'RULE' | 'LLM'
+
+/** One deterministic severity rule, keyed by artifact type and optionally by account. */
+export interface BoardSeverityRule {
+  /** Artifact type the rule matches. */
+  readonly artifactType: string
+  /** Account the rule is limited to; absent matches every account. */
+  readonly accountRef?: string
+  /** Severity the rule assigns. */
+  readonly severity: BoardSeverity
+}
+
+/** A severity rule table with its version. */
+export interface BoardClassifyRules {
+  /** Rule version; a change invalidates classifications cached under the old version. */
+  readonly version: string
+  /** Rules in input order; an account-specific rule wins over a type-wide one. */
+  readonly rules: readonly BoardSeverityRule[]
+}
+
+/** One deterministic data-class rule. */
+export interface BoardDataClassRule {
+  /** Artifact type the rule matches. */
+  readonly artifactType: string
+  /** Account the rule is limited to; absent matches every account. */
+  readonly accountRef?: string
+  /** Class the rule assigns. */
+  readonly dataClass: BoardDataClass
+  /** Fields the class permits to a provider and to the card. */
+  readonly permittedFields: readonly string[]
+}
+
+/** A data-class policy with its version. */
+export interface BoardDataClassPolicy {
+  /** Policy version; a change invalidates classifications cached under the old version. */
+  readonly version: string
+  /** Rules in input order; an account-specific rule wins over a type-wide one. */
+  readonly rules: readonly BoardDataClassRule[]
+}
+
+/** What the classifier reported for one field. */
+export type BoardClassifierResult =
+  | { readonly status: 'classified'; readonly severity: BoardSeverity; readonly confidence: number }
+  | { readonly status: 'timeout' }
+  | { readonly status: 'invalid'; readonly detail: string }
+
+/** Severity with the provenance to persist beside it. */
+export interface BoardSeverityDecision {
+  /** Resolved severity, or null when nothing resolved. */
+  readonly severity: BoardSeverity | null
+  /** Who produced it, or null when nothing resolved. */
+  readonly source: BoardClassifySource | null
+  /** Confidence of the proposal, or null when nothing resolved. */
+  readonly confidence: number | null
+}
+
+/** Data class of an item and the provider class it may reach. */
+export interface BoardDataClassDecision {
+  /** Class assigned by rule, or N2 while provisional. */
+  readonly dataClass: BoardDataClass
+  /** True while the class is provisional and no field list is defined. */
+  readonly provisional: boolean
+  /** Highest provider class allowed by this decision. */
+  readonly providerClass: BoardDataClass
+  /** Fields a deterministic rule enabled; empty while provisional. */
+  readonly permittedFields: readonly string[]
+}
+
+/** What one item may show, send, and feed into derived products. */
+export interface BoardContentProjection {
+  /** True when the card may show the item's content. */
+  readonly contentVisible: boolean
+  /** Fields the card and the provider may receive. */
+  readonly fields: readonly string[]
+  /** Whether the item enters the search index. */
+  readonly indexed: boolean
+  /** Whether the item may produce learning candidates. */
+  readonly learningCandidates: boolean
+  /** Whether the item may enter the classification cache. */
+  readonly classificationCache: boolean
+  /** Whether the item may enter another item's context. */
+  readonly sharedContext: boolean
+}

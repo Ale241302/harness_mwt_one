@@ -35,6 +35,8 @@ Mount this row in a composition to expose `ctx.faberloomBoard`. The service is a
 
 A conversation prompt is not an item. The item is a prepared result from a run, or a concrete missing-data task with its PF/OC/SAP, account, and evidence; `artifactType` distinguishes `proforma` from `tarea`. `submit` accepts `accountRef`, `valueAmount`, `valueCurrency`, `dueAt`, `dataClass`, `severity`, and `severityConfidence`, so the Mesa can show money, deadline, and classification without a second write.
 
+`list` returns the canonical queue order: priority rank descending, where an unclassified or space-less item outranks every `CRITICAL`, then due date, then USD value, then creation instant, then id. Severity and data classification come from `classify.ts`: deterministic rules run first, and an artifact no rule resolves stays unclassified rather than guessed. A provisional item permits no field, so it is neither indexed nor sent to a provider until it is classified.
+
 Commands mutate through one `KvTable.update` transform, so the state change and its audit event commit in one record:
 
 - `setSeverity(writer, id, severity, source, confidence, expectedRowVersion?)`
