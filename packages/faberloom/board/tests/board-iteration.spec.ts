@@ -12,6 +12,7 @@ import {
   seedSpace,
 } from './helpers/harness.ts'
 import type { Config as BoardConfig } from '../src/index.ts'
+import { draftOf } from '../src/iteration.ts'
 
 type Harness = Awaited<ReturnType<typeof bootBoard>>
 
@@ -177,9 +178,12 @@ describe('FaberLoomBoard iteration lease holder (§9.7.1)', () => {
     })
     expect(saved.linked).toBe(true)
     const renewed = await harness.board.renewIteration(ACTOR_A, seeded.id, attempt)
-    expect(Date.parse(renewed.item.iterationLockUntil ?? '')).toBeGreaterThan(
-      Date.parse(started.item.iterationLockUntil ?? ''),
-    )
+    // Two calls can land in the same millisecond, so the renewal is proven by
+    // the fresh future deadline and the event it recorded, not by a strict rise.
+    const deadline = Date.parse(renewed.item.iterationLockUntil ?? '')
+    expect(deadline).toBeGreaterThanOrEqual(Date.parse(started.item.iterationLockUntil ?? ''))
+    expect(deadline).toBeGreaterThan(Date.now())
+    expect(renewed.item.events.at(-1)?.command).toBe('iteration.renewed')
     const applied = await harness.board.applyIteration(ACTOR_A, seeded.id, {
       ...attempt, baseVersion: 1, scope: 'puntual',
     })
@@ -307,7 +311,7 @@ describe('FaberLoomBoard iteration exits (W-41, W-44, W-67, W-97)', () => {
     }), 'item-expired')
     await seedRawIterationDraft(pool, {
       itemId: expired, iterationId: 'att-old', baseVersion: 1, summary: 'casi lista', evidence: ['oc:1'],
-      content: { total: 5 }, archived: false, outdated: false, updatedAt: EXPIRED,
+      content: { total: 5 }, archived: false, superseded: false, outdated: false, updatedAt: EXPIRED,
       retainUntil: '2099-01-01T00:00:00.000Z', transferredFrom: null,
     })
     const harness = await bootBoard({ pool })
@@ -363,7 +367,64 @@ describe('FaberLoomBoard iteration exits (W-41, W-44, W-67, W-97)', () => {
 
     expect(second.item.iterationDraftKey).toBeNull()
     expect(await harness.board.getIterationDraft(ACTOR_A, seeded.id)).toBeUndefined()
-    expect((await harness.board.getIterationDraft(ACTOR_A, seeded.id, first.draft.iterationId))?.archived).toBe(true)
+    expect((await harness.board.iterationStatus(ACTOR_A, seeded.id)).draft).toBeNull()
+    expect((await harness.board.getIterationDraft(ACTOR_A, seeded.id, first.draft.iterationId)))
+      .toMatchObject({ archived: true, superseded: true })
+  })
+
+  it('W-44, W-57 · resumes the retained draft of a dead attempt the item never linked', async () => {
+    const { harness, seeded, started } = await bootIterating()
+    const dead = attemptOf(started.item)
+    await harness.board.pauseIteration(ACTOR_A, seeded.id, { ...dead, reason: 'guardar-y-salir' })
+    const before = await harness.board.get(ACTOR_A, seeded.id)
+    const residue = await harness.board.saveIterationDraft(ACTOR_A, seeded.id, {
+      ...dead, baseVersion: 1, summary: 'respuesta tardía', content: { total: 77 },
+    })
+    const stored = await harness.board.get(ACTOR_A, seeded.id)
+
+    expect(residue).toMatchObject({ linked: false, code: 'LOCK_LOST' })
+    expect(residue.draft).toMatchObject({ archived: true, superseded: false, retained: true })
+    expect(before.iterationDraftKey).toBeNull()
+    expect(stored).toMatchObject({ rowVersion: before.rowVersion, version: before.version, iterationDraftKey: null })
+
+    const status = await harness.board.iterationStatus(ACTOR_A, seeded.id)
+    expect(status).toMatchObject({ phase: 'idle', draftLinked: false, draftOutdated: false })
+    expect(status.draft).toMatchObject({
+      key: residue.draft.key, iterationId: dead.iterationId, baseVersion: 1, archived: true, retained: true,
+    })
+    expect((await harness.board.getIterationDraft(ACTOR_A, seeded.id))?.content).toEqual({ total: 77 })
+
+    const resumed = await harness.board.resumeIteration(ACTOR_A, seeded.id, { baseVersion: 1, actorSession: 'tab-b' })
+
+    expect(resumed.status).toBe('started')
+    // Recovery links the draft and starts the attempt; the artifact only moves on apply.
+    expect(resumed.item).toMatchObject({
+      state: 'ITERANDO', version: 1, iterationBaseVersion: 1, iterationLockBy: 'tab-b', iterationRoundCount: 0,
+    })
+    expect(resumed.item.iterationDraftKey).not.toBeNull()
+    expect(resumed.item.revisions).toHaveLength(before.revisions.length)
+    expect(resumed.item.artifactHash).toBe(before.artifactHash)
+    expect((await harness.board.iterationStatus(ACTOR_A, seeded.id)).draftLinked).toBe(true)
+
+    const applied = await harness.board.applyIteration(ACTOR_A, seeded.id, {
+      ...attemptOf(resumed.item, 'tab-b'), baseVersion: 1, scope: 'puntual',
+    })
+    expect(applied.item).toMatchObject({ version: 2, content: { total: 77 }, iterationRoundCount: 1 })
+  })
+
+  it('does not offer the draft of a dead attempt past its retention window', async () => {
+    const pool = new MemoryMediaPool()
+    const pending = await seedRawItem(pool, rawBoardItem({}), 'item-residue')
+    await seedRawIterationDraft(pool, {
+      itemId: pending, iterationId: 'att-gone', baseVersion: 1, summary: 'viejo', evidence: ['oc:1'],
+      content: { total: 1 }, archived: true, superseded: false, outdated: false,
+      updatedAt: '2026-01-01T00:00:00.000Z', retainUntil: '2026-01-31T00:00:00.000Z', transferredFrom: null,
+    })
+    const harness = await bootBoard({ pool })
+
+    expect((await harness.board.iterationStatus(ACTOR_A, pending)).draft).toBeNull()
+    await expect(harness.board.resumeIteration(ACTOR_A, pending, { baseVersion: 1, actorSession: 'tab-a' }))
+      .rejects.toThrow('NO_DRAFT')
   })
 
   it('refuses a live draft write made against another artifact version', async () => {
@@ -411,7 +472,35 @@ describe('FaberLoomBoard iteration exits (W-41, W-44, W-67, W-97)', () => {
       state: before.state, version: before.version, rowVersion: before.rowVersion, iterationDraftKey: before.iterationDraftKey,
     })
     expect((await harness.board.getIterationDraft(ACTOR_A, seeded.id, dead.iterationId))?.content).toEqual({ total: 99 })
-    expect(await harness.board.getIterationDraft(ACTOR_A, seeded.id)).toBeUndefined()
+    // The item links nothing, so the archived draft is the work it offers; the
+    // item itself was not written.
+    expect(await harness.board.getIterationDraft(ACTOR_A, seeded.id)).toMatchObject({
+      iterationId: dead.iterationId, archived: true,
+    })
+  })
+})
+
+describe('FaberLoomBoard iteration draft projection (D-09)', () => {
+  it('reports a draft past its retention window as not retained', () => {
+    const row = {
+      itemId: 'item-a',
+      transferredFrom: null,
+      iterationId: 'att-a',
+      baseVersion: 1,
+      summary: null,
+      evidence: [],
+      content: null,
+      archived: true,
+      superseded: false,
+      outdated: false,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      retainUntil: '2026-01-31T00:00:00.000Z',
+    }
+
+    expect(draftOf('item-a:att-a', row, new Date('2026-01-15T00:00:00.000Z')))
+      .toMatchObject({ iterationId: 'att-a', archived: true, retained: true })
+    expect(draftOf('item-a:att-a', row, new Date('2026-02-01T00:00:00.000Z')))
+      .toMatchObject({ retained: false })
   })
 })
 
@@ -587,7 +676,7 @@ describe('FaberLoomBoard iteration apply and rounds (W-40, W-69, D-10)', () => {
     }), 'item-retained')
     await seedRawIterationDraft(pool, {
       itemId: pending, iterationId: 'att-old', baseVersion: 1, summary: 'viejo', evidence: ['oc:1'],
-      content: { total: 1 }, archived: false, outdated: false, updatedAt: '2026-01-01T00:00:00.000Z',
+      content: { total: 1 }, archived: false, superseded: false, outdated: false, updatedAt: '2026-01-01T00:00:00.000Z',
       retainUntil: '2026-01-31T00:00:00.000Z', transferredFrom: null,
     })
     const harness = await bootBoard({ pool })

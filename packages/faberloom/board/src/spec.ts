@@ -205,8 +205,13 @@ export const boardIterationDraftRecord = z.object({
   evidence: z.array(z.string()),
   /** Draft artifact content, or null. */
   content: z.record(z.string(), z.unknown()).nullable(),
-  /** True when the attempt is no longer live, so the panel does not offer it. */
+  /** True when the attempt is no longer live; such a draft is offered while it is retained. */
   archived: z.boolean().default(false),
+  /**
+   * True when a newer attempt over the item replaced this draft, so it stays
+   * stored for its attempt id and is never offered again (W-57).
+   */
+  superseded: z.boolean().default(false),
   /** True once a resume found the draft written against an older version (W-68). */
   outdated: z.boolean().default(false),
   /** ISO-8601 instant of the last draft write. */

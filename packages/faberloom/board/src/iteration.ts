@@ -135,9 +135,10 @@ export function iterationDraftKeyOf(itemId: string, iterationId: string): string
  * Project one stored draft for consumers.
  * @param key - storage key.
  * @param record - stored row.
- * @returns the draft with its key.
+ * @param now - the server clock, which decides whether the draft is still retained.
+ * @returns the draft with its key and retention state.
  */
-export function draftOf(key: string, record: BoardIterationDraftRecord): BoardIterationDraft {
+export function draftOf(key: string, record: BoardIterationDraftRecord, now: Date): BoardIterationDraft {
   return {
     key,
     itemId: record.itemId,
@@ -148,9 +149,11 @@ export function draftOf(key: string, record: BoardIterationDraftRecord): BoardIt
     evidence: [...record.evidence],
     content: record.content === null ? null : { ...record.content },
     archived: record.archived,
+    superseded: record.superseded,
     outdated: record.outdated,
     updatedAt: record.updatedAt,
     retainUntil: record.retainUntil,
+    retained: draftIsRetained(record, now),
   }
 }
 
@@ -382,9 +385,10 @@ export function roundSuggestion(record: IterationFields, policy: IterationPolicy
 }
 
 /**
- * The attempt state the panel reads.
+ * The attempt state the panel reads. `draft` is the draft the item offers: the
+ * linked one, or the retained draft of an attempt it no longer links (W-57).
  * @param record - the stored item.
- * @param draft - draft linked by the item, or null.
+ * @param draft - draft the item offers, or null.
  * @param policy - resolved iteration policy.
  * @param now - the server clock.
  * @returns the status projection.
@@ -407,6 +411,7 @@ export function iterationStatusOf(
     roundLimit: policy.roundLimit,
     suggestRewrite: roundSuggestion(record, policy),
     draft,
+    draftLinked: draft !== null && record.iterationDraftKey === draft.key,
     draftOutdated: draft !== null && draft.baseVersion !== record.version,
     candidatePending: record.pendingCandidate !== null,
   }
@@ -447,6 +452,7 @@ export function draftRecordFor(
       ? previous?.content ?? null
       : { ...(previous?.content ?? {}), ...input.content },
     archived,
+    superseded: previous?.superseded ?? false,
     outdated: false,
     updatedAt: now.toISOString(),
     retainUntil: retainUntil(policy, now),

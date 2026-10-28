@@ -54,7 +54,7 @@ kind: "package-reference"
 
 `approve` 要求已确认严重性，并拒绝待处理候选、过期条目或与当前不一致的版本/哈希。试点中批准绝不发送外部效果。`saveEdits` 与 `discard` 拒绝处于 `ITERANDO` 或已关闭的条目，`discard` 还拒绝 `DESCONOCIDO`；面板隐藏这些控件，而由服务对 MCP 与智能体调用者强制实施。旧的 `review`、`submitRevision`、`reopen`、`requestData`、`fail` 与 `complete` 仍作为现有面板的别名保留；`review` 批准时必须提供产物哈希，因此调用者批准的正是它看到的内容，`fail(writer, id, 'DESCONOCIDO')` 记录未确认的效应。
 
-`assignWorkspace(writer, id, workspaceId)` 保留条目的业务键，要求目标空间位于 actor 的租户内（`NO_ACCESS`）且服务于条目的账户（`ACCOUNT_MISMATCH`），并返回 `BoardAssignment`：活跃条目，以及冲突转移给它的草稿。与另一个同键活跃条目冲突时，可替代的对等条目被关闭；对 `ITERANDO`、`EJECUCION_PENDIENTE` 或 `DESCONOCIDO` 的对等条目则把产物作为候选转移过去，并打开该条目（W-87、W-88）。被关闭条目的草稿 —— 它链接的迭代草稿与它的行内编辑草稿 —— 转移到活跃条目，并标记写入时所依据的版本与指向其来源条目的 `transferredFrom`，因此面板可以把它们作为“在更早版本上完成的工作”提供出来（W-98）。`transferredDrafts(actor, id)` 列出它们；来源键无法归属到该条目的行、或目标键已被占用的行，保持原位而不是猜测。
+`assignWorkspace(writer, id, workspaceId)` 保留条目的业务键，要求目标空间位于 actor 的租户内（`NO_ACCESS`）且服务于条目的账户（`ACCOUNT_MISMATCH`），并返回 `BoardAssignment`：活跃条目，以及冲突转移给它的草稿。与另一个同键活跃条目冲突时，可替代的对等条目被关闭；对 `ITERANDO`、`EJECUCION_PENDIENTE` 或 `DESCONOCIDO` 的对等条目则把产物作为候选转移过去，并打开该条目（W-87、W-88）。被关闭条目的草稿 —— 它链接的迭代草稿与它的行内编辑草稿 —— 转移到活跃条目，并标记写入时所依据的版本与指向其来源条目的 `transferredFrom`，因此面板可以把它们作为“在更早版本上完成的工作”提供出来（W-98）。`transferredDrafts(actor, id)` 列出它们；来源键无法归属到该条目的行、或目标键已被占用的行，保持原位而不是猜测。`recoverTransferredDraft` 把其中列出的一个草稿变为活跃尝试的草稿，因此接收条目可以继续该工作，而不只是比较它（W-98）。
 
 ### 校验（E12）
 
@@ -87,17 +87,19 @@ kind: "package-reference"
 
 `iterateWithEdits(writer, id, { expectedRowVersion, baseVersion, changes, actorSession })` 在同一次 `update` 中把编辑保存为下一个版本并在其上开启尝试，因此行、基础版本或状态冲突时不会创建版本、不会发生状态转换，调用者的编辑留在条目之外（W-69）。
 
-锁保存在条目上：`iterationId`、`iterationLockGeneration`、`iterationBaseVersion`、`iterationLockUntil`、`iterationLockBy` 与 `iterationDraftKey`。`renewIteration(writer, id, { iterationId, generation, actorSession })` 延长到期时刻，并拒绝过期尝试。`iterationStatus(actor, id)` 报告阶段、锁、轮次与保留的草稿；已记录的到期时刻已过的 `ITERANDO` 记录报告 `expired`，并按 `PENDIENTE_CRITERIO` 读取，因此到期等价于“保存并退出”，且读取不会写入条目（W-44）。没有记录到期时刻的记录视为有效，因此本版本之前写入的行仍然拒绝编辑。
+锁保存在条目上：`iterationId`、`iterationLockGeneration`、`iterationBaseVersion`、`iterationLockUntil`、`iterationLockBy` 与 `iterationDraftKey`。`renewIteration(writer, id, { iterationId, generation, actorSession })` 延长到期时刻，并拒绝过期尝试。`iterationStatus(actor, id)` 报告阶段、锁、轮次与条目提供的草稿：已链接的那份，或条目不再链接的失效尝试所留下的保留草稿，并给出其尝试 id、基础版本、`archived`、`superseded` 与 `retained` 标记，以及说明属于哪一种的 `draftLinked`。已记录的到期时刻已过的 `ITERANDO` 记录报告 `expired`，并按 `PENDIENTE_CRITERIO` 读取，因此到期等价于“保存并退出”，且读取不会写入条目（W-44）。没有记录到期时刻的记录视为有效，因此本版本之前写入的行仍然拒绝编辑。
 
 每次迭代写入都在 `actorSession` 中携带调用者的标签页会话，尝试的 `iterationLockBy` 是写入判定的一部分：读到有效 id 与代次的第二个标签页会在任何存储、写入或审计之前以 `LOCK_HELD` 被拒（§9.7.1）。`LOCK_LOST` 与 `ITERATION_STALE` 保持原有顺序与含义，因此过期的尝试 id 仍报告为过期，而不是报告为锁被他人持有。没有记录持有者的记录不匹配任何会话；它只能通过在其上开启新尝试才可写（W-44）。
 
-`saveIterationDraft(writer, id, { iterationId, generation, actorSession, baseVersion, summary?, evidence?, content? })` 把尝试的工作以 `<itemId>:<iterationId>` 存入 `iteration_drafts` 表，与同一尝试先前的草稿合并，并从条目链接它。尝试已不再有效——已暂停、已到期、已取消或被另一个标签页替换——时，写入会作为该失效尝试的草稿保存、标记为归档并可凭尝试 id 取回，而条目完全不被写入（W-57）。来自另一个标签页会话的写入以 `LOCK_HELD` 被拒且不存储任何内容。
+`saveIterationDraft(writer, id, { iterationId, generation, actorSession, baseVersion, summary?, evidence?, content? })` 把尝试的工作以 `<itemId>:<iterationId>` 存入 `iteration_drafts` 表，与同一尝试先前的草稿合并，并从条目链接它。尝试已不再有效——已暂停、已到期、已取消或被另一个标签页替换——时，写入会作为该失效尝试的草稿保存，而条目完全不被写入（W-57）。来自另一个标签页会话的写入以 `LOCK_HELD` 被拒且不存储任何内容。
 
 每次迭代写入都同时校验状态、`iterationId`、代次、标签页会话与基础版本，并以 `LOCK_LOST`、`ITERATION_STALE` 或 `LOCK_HELD` 无副作用地拒绝（W-43、W-57）。产物已越过其基础版本的尝试已过期，绝不会覆盖更新的内容。
 
 `pauseIteration(writer, id, { iterationId, generation, actorSession, reason })` 覆盖保存并退出、带到 SpaceLoom、未解决返回与 `lock-vencido`：释放锁、使尝试 id 失效、把条目返回 `PENDIENTE_CRITERIO`、保留与其基础版本绑定的草稿，并保持任何待处理候选不变（W-67、W-97）。`cancelIteration` 删除草稿且不改变版本，除非通过它在有候选时接受的 adopt 选择（W-41）；调用者省略该选择时以 `CANDIDATE_PENDING` 拒绝。二者都要求持有者的会话，因此来自另一个标签页的暂停或取消会被拒绝；任一出口之后，任何会话都可以开启新尝试。
 
-`resumeIteration(writer, id, { baseVersion, actorSession })` 在保留的草稿上开启新尝试，并把该会话记录为持有者。草稿是针对更旧版本写入的时，它把草稿标记为已过期，返回 `status: 'outdated'` 与差异字段，且不覆盖任何内容（W-68）。
+`resumeIteration(writer, id, { baseVersion, actorSession })` 在条目提供的草稿上开启新尝试，并把该会话记录为持有者：它链接的草稿，或条目从未链接的、由失效尝试留下的草稿，因此迟到的回答仍然可达，而不是被搁置（W-57）。草稿是针对更旧版本写入的时，它把草稿标记为已过期，返回 `status: 'outdated'` 与差异字段，且不覆盖任何内容（W-68）。被新尝试替换的草稿（`superseded`）与超出保留窗口的草稿不会被提供。开启尝试只写入状态与锁；草稿通过 `applyIteration` 才会到达产物。
+
+`recoverTransferredDraft(writer, id, { draftKey, actorSession })` 把 `transferredDrafts` 列出的一个草稿变为活跃尝试的草稿（§2.3、W-98）。它拒绝未转移到本条目的键（`NO_DRAFT`）以及超出保留窗口的键（`DRAFT_EXPIRED`）。草稿的基础版本仍是当前版本时，它把该行移到新尝试的键下、清除 `transferredFrom` 使提示不再提供它、记录带有来源条目的 `iteration.recovered`，并开启尝试；基础版本不再是当前版本时，它把草稿标记为已过期、返回差异字段，且不写入条目。恢复从不应用工作：版本只能通过带作用域的 `applyIteration` 前进。
 
 `applyIteration(writer, id, { iterationId, generation, actorSession, baseVersion, scope, summary?, evidence?, candidate? })` 依据草稿与调用者的覆盖写入下一个版本与哈希，把 `scope` 记录在审计事件中供学习侧使用，释放锁、删除草稿，并把条目返回 `PENDIENTE_CRITERIO`。待处理候选仍是条目的候选（W-40），必须在同一次调用中指定：`adopt` 使其成为生效版本，而且这是唯一的版本递增；`keep` 将其丢弃。只有当前尝试可以应用，且只能来自其持有者的会话（W-57）。
 

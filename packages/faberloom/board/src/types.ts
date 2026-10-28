@@ -820,7 +820,10 @@ export type BoardCorrectionScope = 'puntual' | 'cuenta' | 'espacio' | 'agente'
  * The working draft of one attempt: the work not yet applied, linked to the
  * artifact version it was written against (§9.7.1). `archived` is true when the
  * attempt that produced it is no longer live, which is how a late agent answer
- * is kept without touching the item or resurfacing in the panel (W-57).
+ * is kept without touching the item (W-57). An archived draft the item never
+ * linked stays offered, so its text is reachable through `resumeIteration`;
+ * `superseded` marks the one case that is not: a newer attempt over the item
+ * replaced it.
  */
 export interface BoardIterationDraft {
   /** Storage key of the draft, always `<itemId>:<iterationId>`. */
@@ -842,14 +845,18 @@ export interface BoardIterationDraft {
   readonly evidence: readonly string[]
   /** Draft artifact content, or null when the attempt only changed the summary. */
   readonly content: Readonly<Record<string, unknown>> | null
-  /** True once the base version is no longer the current one, or the attempt is dead. */
+  /** True when the attempt that produced the draft is no longer live (W-57). */
   readonly archived: boolean
+  /** True when a newer attempt over the item replaced this draft, so nothing offers it again. */
+  readonly superseded: boolean
   /** True when a resume found the draft written against an older version (W-68). */
   readonly outdated: boolean
   /** ISO-8601 instant of the last draft write. */
   readonly updatedAt: string
   /** ISO-8601 instant after which the draft is not offered again (D-09). */
   readonly retainUntil: string
+  /** Whether `retainUntil` is still ahead of the clock the draft was read at (D-09). */
+  readonly retained: boolean
 }
 
 /** What one item's iteration attempt looks like to the panel right now. */
@@ -874,8 +881,15 @@ export interface BoardIterationStatus {
   readonly roundLimit: number
   /** True once the item reached the round limit. It only suggests; nothing blocks (D-10). */
   readonly suggestRewrite: boolean
-  /** Retained draft of the attempt, or null. */
+  /**
+   * The latest draft the item offers: the linked one while it is retained, else
+   * the retained draft of an attempt the item no longer links, which is how a
+   * late answer for a dead attempt stays reachable (W-57). A draft a newer
+   * attempt replaced, and one past its retention window, are not offered.
+   */
   readonly draft: BoardIterationDraft | null
+  /** True when the item links `draft`; false means it is retained work of a dead attempt. */
+  readonly draftLinked: boolean
   /** True when the retained draft was written against an older version (W-68). */
   readonly draftOutdated: boolean
   /** True while a candidate artifact waits for an explicit choice. */
@@ -1014,3 +1028,19 @@ export type BoardResumeIterationResult =
     readonly status: 'outdated'
     readonly differences: readonly BoardIterationDifference[]
   }
+
+/** Input for `recoverTransferredDraft`: the draft a collision moved here and the tab opening the attempt. */
+export interface BoardRecoverDraftInput {
+  /** Key `transferredDrafts` listed for this item. */
+  readonly draftKey: string
+  /** Tab session opening the attempt; it becomes the attempt's holder. */
+  readonly actorSession: string
+}
+
+/**
+ * Result of `recoverTransferredDraft`, with the two outcomes `resumeIteration`
+ * has: `started` links the transferred draft as the live attempt's draft, and
+ * `outdated` returns the differences without writing the item (W-68, W-98).
+ * Neither outcome writes the artifact version; only `applyIteration` does.
+ */
+export type BoardRecoverDraftResult = BoardResumeIterationResult

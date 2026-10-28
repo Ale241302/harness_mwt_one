@@ -85,6 +85,8 @@ import type {
   BoardIterationResult,
   BoardIterationStatus,
   BoardPauseIterationInput,
+  BoardRecoverDraftInput,
+  BoardRecoverDraftResult,
   BoardResumeIterationInput,
   BoardResumeIterationResult,
   BoardReviewInput,
@@ -1695,7 +1697,7 @@ export class FaberLoomBoard extends Service {
       // draft offered; one the item no longer owns is archived (W-57).
       const stored = row(current.iterationDraftKey !== key)
       await drafts.put(key, stored)
-      return { draft: draftOf(key, stored), linked: false, code: rejection }
+      return { draft: draftOf(key, stored, now), linked: false, code: rejection }
     }
     requireAttemptBase(current, input.baseVersion)
     const stored = row(false)
@@ -1705,14 +1707,14 @@ export class FaberLoomBoard extends Service {
       requireAttemptBase(record, input.baseVersion)
       return { ...record, iterationDraftKey: key }
     }, { data: { iterationId: input.iterationId, generation: input.generation, draftKey: key } })
-    return { draft: draftOf(key, stored), linked: true, code: null }
+    return { draft: draftOf(key, stored, now), linked: true, code: null }
   }
 
   /**
-   * Read one attempt's draft, or the draft the item currently links.
+   * Read one attempt's draft, or the draft the item offers.
    * @param actor - the authenticated reader.
    * @param id - item id.
-   * @param iterationId - attempt to read; omitted reads the linked draft.
+   * @param iterationId - attempt to read; omitted reads the draft the item offers.
    * @returns the draft, or undefined when none is stored or retained.
    */
   async getIterationDraft(
@@ -1727,9 +1729,9 @@ export class FaberLoomBoard extends Service {
     if (iterationId !== undefined) {
       const key = iterationDraftKeyOf(id, iterationId)
       const storedRow = drafts.get(key)
-      return storedRow === undefined || !draftIsRetained(storedRow, now) ? undefined : draftOf(key, storedRow)
+      return storedRow === undefined || !draftIsRetained(storedRow, now) ? undefined : draftOf(key, storedRow, now)
     }
-    return (await this.linkedDraft(id, record)) ?? undefined
+    return (await this.offeredDraft(id, record, now)) ?? undefined
   }
 
   /**
@@ -1849,9 +1851,12 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Take a new attempt over the retained draft. When the draft was written
-   * against an older version, it is marked outdated and the differences are
-   * returned instead of overwriting the newer content (W-68).
+   * Take a new attempt over the draft the item offers: the linked one, or the
+   * retained draft of a dead attempt the item never linked, which is otherwise
+   * text no command reaches (W-57). When the draft was written against an older
+   * version, it is marked outdated and the differences are returned instead of
+   * overwriting the newer content (W-68). Starting an attempt never writes the
+   * artifact version, so the draft reaches the item only through `applyIteration`.
    * @param writer - the acting identity.
    * @param id - item id.
    * @param input - base version of the draft the caller saw and the tab session.
@@ -1866,19 +1871,16 @@ export class FaberLoomBoard extends Service {
     const record = await this.requireItem(id)
     this.authorizeWrite(record, writer)
     requirePending(stateOf(record))
-    const draftKey = record.iterationDraftKey
-    if (draftKey === null) throw new Error('faberloom: NO_DRAFT — the item has no retained iteration draft')
+    const offered = await this.offeredRow(id, record, now)
+    if (offered === null) throw new Error('faberloom: NO_DRAFT — the item has no retained iteration draft')
+    const draftKey = offered.key
     const drafts = await this.iterationDrafts()
-    const stored = drafts.get(draftKey)
-    if (stored === undefined || !draftIsRetained(stored, now)) {
-      throw new Error('faberloom: NO_DRAFT — the retained iteration draft expired or disappeared')
-    }
-    const draft = draftOf(draftKey, stored)
+    const draft = draftOf(draftKey, offered.row, now)
     if (draft.baseVersion !== input.baseVersion) {
       throw new Error('faberloom: STALE_REVISION — the draft was not written against the version the caller saw')
     }
     if (draft.baseVersion !== record.version) {
-      await drafts.put(draftKey, { ...stored, outdated: true, updatedAt: now.toISOString() })
+      await drafts.put(draftKey, { ...offered.row, outdated: true, updatedAt: now.toISOString() })
       return {
         item: toItem(id, record),
         status: 'outdated',
@@ -1888,17 +1890,19 @@ export class FaberLoomBoard extends Service {
     const iterationId = randomUUID()
     const nextKey = iterationDraftKeyOf(id, iterationId)
     await drafts.put(nextKey, {
-      ...stored,
+      ...offered.row,
       iterationId,
       outdated: false,
       archived: false,
+      superseded: false,
       updatedAt: now.toISOString(),
       retainUntil: retainUntil(this.iterationConfig, now),
     })
+    const linkedKey = record.iterationDraftKey
     const item = await this.mutate(writer, id, 'iteration.resumed', (current) => {
       requirePending(stateOf(current))
       requireBaseVersion(current, input.baseVersion)
-      if (current.iterationDraftKey !== draftKey) {
+      if (current.iterationDraftKey !== linkedKey) {
         throw new Error('faberloom: ITERATION_STALE — the retained draft is not the one the caller resumed')
       }
       return {
@@ -1919,6 +1923,91 @@ export class FaberLoomBoard extends Service {
       }),
     })
     await this.deleteIterationDraft(draftKey)
+    return { item, status: 'started' }
+  }
+
+  /**
+   * Take a new attempt over one draft a collision moved to this item (§2.3,
+   * W-98). The key must be a draft `transferredDrafts` listed here and inside its
+   * retention window, because a key of another item, or one already past D-09, is
+   * not work this item may turn into an attempt. When the draft's base version is
+   * still current the item links it under the new attempt's key and the attempt
+   * starts; otherwise the draft is marked outdated, the differing fields come
+   * back, and the item is not written (W-68). Neither outcome writes the artifact
+   * version, so the work reaches the item only through `applyIteration`.
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - the transferred draft key and the tab opening the attempt.
+   * @returns the item with `started`, or with `outdated` and the differences.
+   */
+  async recoverTransferredDraft(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    input: BoardRecoverDraftInput,
+  ): Promise<BoardRecoverDraftResult> {
+    const now = new Date()
+    const record = await this.requireItem(id)
+    this.authorizeWrite(record, writer)
+    requirePending(stateOf(record))
+    const drafts = await this.iterationDrafts()
+    const stored = drafts.get(input.draftKey)
+    if (stored === undefined || stored.itemId !== id || stored.transferredFrom === null) {
+      throw new Error('faberloom: NO_DRAFT — the draft is not transferred to this item')
+    }
+    if (!draftIsRetained(stored, now)) {
+      throw new Error('faberloom: DRAFT_EXPIRED — the transferred draft is past its retention window')
+    }
+    const draft = draftOf(input.draftKey, stored, now)
+    if (draft.baseVersion !== record.version) {
+      await drafts.put(input.draftKey, { ...stored, outdated: true, updatedAt: now.toISOString() })
+      return {
+        item: toItem(id, record),
+        status: 'outdated',
+        differences: draftDifferences(draft, this.contentOf(record)),
+      }
+    }
+    const iterationId = randomUUID()
+    const nextKey = iterationDraftKeyOf(id, iterationId)
+    // The recovered row stops being transferred work: it is the live attempt's
+    // draft from here on, and the audit event keeps the item it came from.
+    await drafts.put(nextKey, {
+      ...stored,
+      transferredFrom: null,
+      iterationId,
+      outdated: false,
+      archived: false,
+      superseded: false,
+      updatedAt: now.toISOString(),
+      retainUntil: retainUntil(this.iterationConfig, now),
+    })
+    const linkedKey = record.iterationDraftKey
+    const item = await this.mutate(writer, id, 'iteration.recovered', (current) => {
+      requirePending(stateOf(current))
+      requireBaseVersion(current, draft.baseVersion)
+      if (current.iterationDraftKey !== linkedKey) {
+        throw new Error('faberloom: ITERATION_STALE — the item draft changed while the transferred one was recovered')
+      }
+      return {
+        ...current,
+        ...attemptFields(current, this.iterationConfig, now, {
+          iterationId,
+          baseVersion: current.version,
+          session: input.actorSession,
+        }),
+        iterationDraftKey: nextKey,
+      }
+    }, {
+      data: (previous, next) => ({
+        iterationId: next.iterationId,
+        generation: next.iterationLockGeneration,
+        baseVersion: next.iterationBaseVersion,
+        session: input.actorSession,
+        transferredFrom: stored.transferredFrom,
+        transferredKey: input.draftKey,
+        previousIterationId: previous.iterationId,
+      }),
+    })
+    await this.deleteIterationDraft(input.draftKey)
     return { item, status: 'started' }
   }
 
@@ -1948,7 +2037,7 @@ export class FaberLoomBoard extends Service {
     const drafts = await this.iterationDrafts()
     const stored = draftKey === null ? undefined : drafts.get(draftKey)
     const draft = draftKey !== null && stored !== undefined && draftIsRetained(stored, now)
-      ? draftOf(draftKey, stored)
+      ? draftOf(draftKey, stored, now)
       : null
     const item = await this.mutate(writer, id, 'iteration.applied', (record) => {
       requireLiveAttempt(record, input, now)
@@ -2035,17 +2124,60 @@ export class FaberLoomBoard extends Service {
 
   /** The attempt status of one stored record. */
   private async statusOf(id: FaberLoomBoardItemId, record: BoardItemRecord): Promise<BoardIterationStatus> {
-    return iterationStatusOf(record, await this.linkedDraft(id, record), this.iterationConfig, new Date())
+    const now = new Date()
+    const offered = await this.offeredRow(id, record, now)
+    return iterationStatusOf(
+      record,
+      offered === null ? null : draftOf(offered.key, offered.row, now),
+      this.iterationConfig,
+      now,
+    )
   }
 
-  /** The retained draft the item links, or null. */
-  private async linkedDraft(id: FaberLoomBoardItemId, record: BoardItemRecord): Promise<BoardIterationDraft | null> {
-    const key = record.iterationDraftKey
-    if (key === null) return null
-    const now = new Date()
-    const stored = (await this.iterationDrafts()).get(key)
-    if (stored === undefined || stored.archived || stored.itemId !== id || !draftIsRetained(stored, now)) return null
-    return draftOf(key, stored)
+  /** The draft the item offers, projected for consumers, or null. */
+  private async offeredDraft(
+    id: FaberLoomBoardItemId,
+    record: BoardItemRecord,
+    now: Date,
+  ): Promise<BoardIterationDraft | null> {
+    const offered = await this.offeredRow(id, record, now)
+    return offered === null ? null : draftOf(offered.key, offered.row, now)
+  }
+
+  /**
+   * The stored row of the draft the item offers: the linked one while it is
+   * retained, else the most recently written retained draft of the item that no
+   * newer attempt replaced and no collision transferred. A draft the item never
+   * linked stays reachable this way, so a late answer for a dead attempt is not
+   * stranded (W-57); one past its retention window is not offered (D-09).
+   * @param id - item id.
+   * @param record - the stored item.
+   * @param now - the server clock.
+   * @returns the draft key and row, or null when the item offers none.
+   */
+  private async offeredRow(
+    id: FaberLoomBoardItemId,
+    record: BoardItemRecord,
+    now: Date,
+  ): Promise<{ readonly key: string; readonly row: BoardIterationDraftRecord } | null> {
+    const drafts = await this.iterationDrafts()
+    const linkedKey = record.iterationDraftKey
+    if (linkedKey !== null) {
+      const linked = drafts.get(linkedKey)
+      if (linked !== undefined && linked.itemId === id && draftIsRetained(linked, now)) {
+        return { key: linkedKey, row: linked }
+      }
+    }
+    let offered: { readonly key: string; readonly row: BoardIterationDraftRecord } | null = null
+    for (const [key, row] of drafts.entries()) {
+      if (row.itemId !== id || row.superseded || row.transferredFrom !== null) continue
+      if (!draftIsRetained(row, now)) continue
+      if (offered !== null && Date.parse(row.updatedAt) < Date.parse(offered.row.updatedAt)) continue
+      if (offered !== null && Date.parse(row.updatedAt) === Date.parse(offered.row.updatedAt)
+        && key.localeCompare(offered.key) >= 0) continue
+      offered = { key, row }
+    }
+    return offered
   }
 
   private async deleteIterationDraft(key: string | null): Promise<void> {
@@ -2054,16 +2186,20 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Mark the draft of an attempt the item no longer owns, so a fresh attempt
-   * does not resurface work written against another version (W-57).
+   * Mark the draft of an attempt the item no longer owns, so a fresh attempt does
+   * not resurface work written against another version (W-57). `superseded` is
+   * what keeps it out of the drafts the item offers; it stays stored for its own
+   * attempt id.
    * @param key - draft key the item used to link, or null.
    */
   private async archiveIterationDraft(key: string | null): Promise<void> {
     if (key === null) return
     const drafts = await this.iterationDrafts()
     const stored = drafts.get(key)
-    if (stored === undefined || stored.archived) return
-    await drafts.put(key, { ...stored, archived: true, updatedAt: new Date().toISOString() })
+    if (stored === undefined || stored.superseded) return
+    await drafts.put(key, {
+      ...stored, archived: true, superseded: true, updatedAt: new Date().toISOString(),
+    })
   }
 
   /**

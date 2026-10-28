@@ -140,6 +140,7 @@ describe('FaberLoomBoard assignment draft transfer (W-98)', () => {
       evidence: ['oc:1'],
       content: { total: 9 },
       archived: false,
+      superseded: false,
       outdated: false,
       updatedAt: '2026-10-01T00:00:00.000Z',
       retainUntil: '2099-01-01T00:00:00.000Z',
@@ -246,6 +247,148 @@ describe('FaberLoomBoard assignment draft transfer (W-98)', () => {
     expect(assigned.transferredDrafts).toEqual([])
     expect(await harness.board.transferredDrafts(ACTOR_A, peer)).toEqual([])
     expect(durableRows(pool, 'iteration_drafts').has('item-elsewhere:att-x')).toBe(true)
+  })
+})
+
+describe('FaberLoomBoard transferred draft recovery (W-68, W-98)', () => {
+  /**
+   * One pending item that received the iteration draft of the peer a collision
+   * closed. The draft is written on version 1; the item carries `liveVersion`,
+   * so a higher value proves the outdated branch.
+   */
+  async function received(options: {
+    liveVersion?: number
+    retainUntil?: string
+    foreignDrafts?: readonly { readonly itemId: string; readonly iterationId: string; readonly transferredFrom: string | null }[]
+  } = {}) {
+    const pool = new MemoryMediaPool()
+    const live = await seedRawItem(pool, rawBoardItem({
+      businessKey: 'k-recover', title: 'Vigente', version: options.liveVersion ?? 1,
+    }), 'item-live')
+    await seedRawItem(pool, rawBoardItem({
+      businessKey: 'k-recover', title: 'Cerrado', iterationDraftKey: 'item-peer:att-p', iterationBaseVersion: 1,
+    }), 'item-peer')
+    await seedRawIterationDraft(pool, {
+      itemId: 'item-peer',
+      iterationId: 'att-p',
+      baseVersion: 1,
+      summary: 'casi lista',
+      evidence: ['oc:1'],
+      content: { total: 9 },
+      archived: false,
+      superseded: false,
+      outdated: false,
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      retainUntil: options.retainUntil ?? '2099-01-01T00:00:00.000Z',
+      transferredFrom: null,
+    })
+    for (const draft of options.foreignDrafts ?? []) {
+      await seedRawIterationDraft(pool, {
+        itemId: draft.itemId,
+        iterationId: draft.iterationId,
+        baseVersion: 1,
+        summary: 'otro',
+        evidence: ['oc:2'],
+        content: { total: 1 },
+        archived: false,
+        superseded: false,
+        outdated: false,
+        updatedAt: '2026-10-01T00:00:00.000Z',
+        retainUntil: '2099-01-01T00:00:00.000Z',
+        transferredFrom: draft.transferredFrom,
+      })
+    }
+    const harness = await bootBoard({ pool })
+    const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    await harness.board.assignWorkspace(ACTOR_A, live, space)
+    const listed = await harness.board.transferredDrafts(ACTOR_A, live)
+    return { harness, live, listed }
+  }
+
+  it('W-98 · recovers a transferred draft as the live draft without applying it', async () => {
+    const { harness, live, listed } = await received()
+    const entry = listed.find(draft => draft.kind === 'iteration')
+    expect(entry).toMatchObject({ iterationId: 'att-p', baseVersion: 1, transferredFrom: 'item-peer' })
+    const before = await harness.board.get(ACTOR_A, live)
+
+    const recovered = await harness.board.recoverTransferredDraft(ACTOR_A, live, {
+      draftKey: entry?.key ?? '', actorSession: 'tab-r',
+    })
+
+    expect(recovered.status).toBe('started')
+    // The attempt starts and links the work; the artifact only moves on apply.
+    expect(recovered.item).toMatchObject({
+      state: 'ITERANDO', version: 1, iterationBaseVersion: 1, iterationLockBy: 'tab-r', iterationRoundCount: 0,
+    })
+    expect(recovered.item.iterationDraftKey).not.toBe(entry?.key)
+    expect(recovered.item.artifactHash).toBe(before.artifactHash)
+    expect(recovered.item.revisions).toHaveLength(before.revisions.length)
+    expect(recovered.item.events.at(-1)).toMatchObject({
+      command: 'iteration.recovered',
+      data: { transferredFrom: 'item-peer', transferredKey: entry?.key, session: 'tab-r' },
+    })
+    // The recovered row is the attempt's draft, not transferred work any more.
+    expect(await harness.board.transferredDrafts(ACTOR_A, live)).toEqual([])
+    expect(await harness.board.getIterationDraft(ACTOR_A, live)).toMatchObject({
+      content: { total: 9 }, transferredFrom: null, baseVersion: 1,
+    })
+
+    const applied = await harness.board.applyIteration(ACTOR_A, live, {
+      iterationId: recovered.item.iterationId ?? '',
+      generation: recovered.item.iterationLockGeneration,
+      actorSession: 'tab-r',
+      baseVersion: 1,
+      scope: 'puntual',
+    })
+    expect(applied.item).toMatchObject({ version: 2, content: { total: 9 }, iterationRoundCount: 1 })
+  })
+
+  it('refuses a key that is not transferred to this item', async () => {
+    const { harness, live } = await received({
+      foreignDrafts: [
+        { itemId: 'item-other', iterationId: 'att-x', transferredFrom: 'item-peer' },
+        { itemId: 'item-live', iterationId: 'att-local', transferredFrom: null },
+      ],
+    })
+
+    await expect(harness.board.recoverTransferredDraft(ACTOR_A, live, {
+      draftKey: 'item-other:att-x', actorSession: 'tab-r',
+    })).rejects.toThrow('NO_DRAFT')
+    await expect(harness.board.recoverTransferredDraft(ACTOR_A, live, {
+      draftKey: 'item-live:att-local', actorSession: 'tab-r',
+    })).rejects.toThrow('NO_DRAFT')
+    expect(await harness.board.get(ACTOR_A, live)).toMatchObject({ state: 'PENDIENTE_CRITERIO', version: 1 })
+  })
+
+  it('refuses a transferred draft past its retention window', async () => {
+    const { harness, live } = await received({ retainUntil: '2026-01-31T00:00:00.000Z' })
+
+    await expect(harness.board.recoverTransferredDraft(ACTOR_A, live, {
+      draftKey: 'item-live:att-p', actorSession: 'tab-r',
+    })).rejects.toThrow('DRAFT_EXPIRED')
+    expect(await harness.board.get(ACTOR_A, live)).toMatchObject({ state: 'PENDIENTE_CRITERIO', version: 1 })
+  })
+
+  it('W-68 · marks an outdated transferred draft and returns its differences without writing the item', async () => {
+    const { harness, live, listed } = await received({ liveVersion: 2 })
+    const entry = listed.find(draft => draft.kind === 'iteration')
+    const before = await harness.board.get(ACTOR_A, live)
+
+    const recovered = await harness.board.recoverTransferredDraft(ACTOR_A, live, {
+      draftKey: entry?.key ?? '', actorSession: 'tab-r',
+    })
+
+    expect(recovered.status).toBe('outdated')
+    if (recovered.status !== 'outdated') return
+    expect(recovered.differences).toEqual([
+      { field: 'summary', draftValue: undefined, currentValue: 'borrador' },
+      { field: 'total', draftValue: 9, currentValue: undefined },
+    ])
+    expect(await harness.board.get(ACTOR_A, live)).toMatchObject({
+      state: before.state, version: before.version, rowVersion: before.rowVersion, iterationDraftKey: before.iterationDraftKey,
+    })
+    expect((await harness.board.getIterationDraft(ACTOR_A, live, 'att-p'))?.outdated).toBe(true)
+    expect(await harness.board.transferredDrafts(ACTOR_A, live)).toHaveLength(1)
   })
 })
 

@@ -6,7 +6,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { stat, rename, rm, symlink } from 'node:fs/promises'
+import { stat, rename, rm, symlink, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -25,9 +25,12 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type {
-  BoardIterationDraft, BoardIterationStatus, FaberLoomBoardItem, FaberLoomBoardItemId,
+  BoardIterationDraft, BoardIterationStatus, BoardResumeIterationResult, FaberLoomBoardItem, FaberLoomBoardItemId,
 } from '@deepseek-ai/dsh-faberloom-board'
-import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
+import type {
+  FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineDefinition, RoutineInput, RoutineStepInput,
+  RoutineTrigger, RoutineTriggerInput,
+} from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 // Type-only: the correction payloads, identity, and classifications the view hands to the learning registry.
@@ -72,7 +75,8 @@ import type {
   FaberLoomBoardIterationContext, FaberLoomBoardIterationDifference, FaberLoomBoardIterationDraft,
   FaberLoomBoardIterationDraftRead, FaberLoomBoardIterationDraftRow, FaberLoomBoardIterationLockInput,
   FaberLoomBoardEditResult,
-  FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationResume, FaberLoomBoardIterationSaveInput,
+  FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationRecover, FaberLoomBoardIterationResume,
+  FaberLoomBoardIterationSaveInput,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
@@ -826,8 +830,10 @@ function mcpRegistryInput(input: FaberLoomMcpServerInput): McpServerInput {
 function iterationDisplayValue(value: unknown): string {
   if (value === undefined) return ''
   if (typeof value === 'string') return value
-  const json = JSON.stringify(value)
-  return json === undefined ? String(value) : json
+  // JSON is the only stable text for a number, a list, or an object the panel
+  // does not own; a value that serializes to nothing contributes no text.
+  const json = JSON.stringify(value) as string | undefined
+  return json ?? ''
 }
 
 /**
@@ -838,11 +844,14 @@ function iterationDisplayValue(value: unknown): string {
  */
 function iterationDraftOf(draft: BoardIterationDraft): FaberLoomBoardIterationDraft {
   return {
+    iterationId: draft.iterationId,
     baseVersion: draft.baseVersion,
     summary: draft.summary,
     evidence: [...draft.evidence],
     outdated: draft.outdated,
     archived: draft.archived,
+    superseded: draft.superseded,
+    retained: draft.retained,
     updatedAt: draft.updatedAt,
   }
 }
@@ -968,6 +977,52 @@ function iterationOf(status: BoardIterationStatus): FaberLoomBoardIteration {
     draftOutdated: status.draftOutdated,
     candidatePending: status.candidatePending,
     draft: status.draft === null ? null : iterationDraftOf(status.draft),
+    draftLinked: status.draftLinked,
+  }
+}
+
+/**
+ * The definition a stored routine carries, or undefined. A routine provisioned
+ * by an earlier deployment may hold no definition, so the caller compares the
+ * owned fields only when one is stored instead of failing the overview read.
+ * @param routine - the routine the store returned.
+ * @returns its definition, or undefined.
+ */
+function storedDefinition(routine: { readonly definition?: RoutineDefinition }): RoutineDefinition | undefined {
+  return routine.definition
+}
+
+/**
+ * The parent a Space names. A stored root answers null while the public type
+ * declares only absence, so both are normalised to the one absence the tree
+ * walks compare against.
+ * @param space - the Space the spaces service answered with.
+ * @returns its parent id, or null at the root of the tree.
+ */
+function parentOf(space: { readonly parentId: FaberLoomSpaceId | undefined }): FaberLoomSpaceId | null {
+  return space.parentId ?? null
+}
+
+/**
+ * Project one resume or recovery answer for the panel. Both board commands
+ * return the same union, and the panel shows the same two outcomes (W-68).
+ * @param iteration - the attempt state the board answered with.
+ * @param result - the board command's result.
+ * @returns the projected answer.
+ */
+function iterationResumeAnswer(
+  iteration: FaberLoomBoardIteration,
+  result: BoardResumeIterationResult,
+): FaberLoomBoardIterationResume {
+  if (result.status === 'started') return { status: 'started', iteration, differences: [] }
+  return {
+    status: 'outdated',
+    iteration,
+    differences: result.differences.map(difference => ({
+      field: difference.field,
+      draftValue: iterationDisplayValue(difference.draftValue),
+      currentValue: iterationDisplayValue(difference.currentValue),
+    })),
   }
 }
 
@@ -3647,7 +3702,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     for (const root of roots) {
       if (root === undefined) continue
       const file = join(root, clean, 'SKILL.md')
-      if (existsSync(file)) return readFileSync(file, 'utf8')
+      if (existsSync(file)) return await readFile(file, 'utf8')
     }
     throw new Error(`faberloom: skill ${clean} not found`)
   }
@@ -4026,8 +4081,10 @@ export class FaberLoomViewService extends TypertRemoteService {
       // Converge the deployment-owned definition so an improved prompt reaches
       // an owner provisioned by an earlier deployment. Compare the owned fields,
       // not the stored shape: the store materializes every optional step field,
-      // so a raw JSON comparison would rewrite a version on every pass.
-      if (found.definition === undefined || !routineDefinitionsMatch(found.definition, input.definition)) {
+      // so a raw JSON comparison would rewrite a version on every pass. A row
+      // provisioned before the field existed carries none, which converges too.
+      const definition = storedDefinition(found)
+      if (definition === undefined || !routineDefinitionsMatch(definition, input.definition)) {
         await routines.updateRoutine(ownerId, found.id, input)
       }
       if (found.status !== 'active') await routines.activateRoutine(ownerId, found.id)
@@ -5341,8 +5398,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     // A sub-space is a real folder inside its parent's folder: that physical
     // nesting is what lets the Workspaces sidebar show the same hierarchy.
     let base = join(this.dshHome(), 'spaces')
-    if (space.parentId !== undefined && space.parentId !== null && space.parentId !== space.id) {
-      const parent = await this.ctx.faberloomSpaces.get(actor, space.parentId)
+    const spaceParent = parentOf(space)
+    if (spaceParent !== null && spaceParent !== space.id) {
+      const parent = await this.ctx.faberloomSpaces.get(actor, spaceParent)
       const parentWorkspace = await this.ensureSpaceWorkspace(actor, parent)
       // A child is never placed at the spaces root: that is exactly the shape
       // that showed a sub-space as a separate sidebar folder. If the parent's
@@ -5375,8 +5433,9 @@ export class FaberLoomViewService extends TypertRemoteService {
       let cursor = await this.ctx.faberloomSpaces.get(actor, parentId)
       while (true) {
         if (cursor.id === space.id) throw new Error('faberloom: un espacio no puede moverse dentro de sí mismo')
-        if (cursor.parentId === undefined || cursor.parentId === null) break
-        cursor = await this.ctx.faberloomSpaces.get(actor, cursor.parentId)
+        const cursorParent = parentOf(cursor)
+        if (cursorParent === null) break
+        cursor = await this.ctx.faberloomSpaces.get(actor, cursorParent)
       }
     }
     const oldDir = await this.resolveSpaceDir(actor, space)
@@ -5574,7 +5633,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     const ids = new Set(spaces.map(space => String(space.id)))
     for (const space of spaces) dirs.set(String(space.id), await this.resolveSpaceDir(actor, space))
     for (const space of spaces) {
-      if (space.parentId !== undefined && space.parentId !== null && ids.has(String(space.parentId))) continue
+      const spaceParent = parentOf(space)
+      if (spaceParent !== null && ids.has(String(spaceParent))) continue
       const dir = dirs.get(String(space.id)) ?? ''
       if (dir.length === 0) continue
       let parent: FaberLoomSpace | undefined
@@ -5669,8 +5729,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     const dirs = new Map<string, string>()
     for (const space of spaces) dirs.set(String(space.id), await this.resolveSpaceDir(actor, space))
     for (const space of spaces) {
-      if (space.parentId === undefined || space.parentId === null || space.parentId === space.id) continue
-      const parent = byId.get(String(space.parentId))
+      const spaceParent = parentOf(space)
+      if (spaceParent === null || spaceParent === space.id) continue
+      const parent = byId.get(String(spaceParent))
       if (parent === undefined) continue
       const dir = dirs.get(String(space.id)) ?? ''
       const parentDir = dirs.get(String(parent.id)) ?? ''
@@ -6443,6 +6504,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       })),
       transferredDrafts: transferred.map(entry => ({
         kind: entry.kind,
+        key: entry.key,
         iterationId: entry.iterationId,
         baseVersion: entry.baseVersion,
         transferredFrom: String(entry.transferredFrom),
@@ -6833,16 +6895,34 @@ export class FaberLoomViewService extends TypertRemoteService {
       actorSession,
     })
     const iteration = iterationOf(await board.iterationStatus(this.actor(), id as FaberLoomBoardItemId))
-    if (result.status === 'started') return { status: 'started', iteration, differences: [] }
-    return {
-      status: 'outdated',
-      iteration,
-      differences: result.differences.map(difference => ({
-        field: difference.field,
-        draftValue: iterationDisplayValue(difference.draftValue),
-        currentValue: iterationDisplayValue(difference.currentValue),
-      })),
-    }
+    return iterationResumeAnswer(iteration, result)
+  }
+
+  /**
+   * Recover one draft a collision transferred to this item as the live draft of
+   * a new attempt (§2.3, W-98). The board refuses a key that is not transferred
+   * here or is past retention, and a draft written against an older version comes
+   * back with its differences and no item write (W-68). Recovery never applies
+   * the work: the panel still needs the normal Apply with a scope.
+   * @param id - board item id.
+   * @param draftKey - transferred draft key the detail listed.
+   * @param actorSession - tab opening the attempt, so the attempt belongs to it.
+   * @returns the new attempt, or the stale draft's differences.
+   */
+  @Remote('boardIterationRecover')
+  async boardIterationRecover(
+    id: string,
+    draftKey: string,
+    actorSession: string,
+  ): Promise<FaberLoomBoardIterationRecover> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const board = this.ctx.faberloomBoard
+    const result = await board.recoverTransferredDraft(this.actor(), id as FaberLoomBoardItemId, {
+      draftKey,
+      actorSession,
+    })
+    const iteration = iterationOf(await board.iterationStatus(this.actor(), id as FaberLoomBoardItemId))
+    return iterationResumeAnswer(iteration, result)
   }
 
   /**

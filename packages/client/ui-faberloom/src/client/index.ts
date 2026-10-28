@@ -269,6 +269,11 @@ export function apply(ctx: ClientContext): void {
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
+      boardIterationRecover: (id, draftKey, actorSession) => {
+        const run = ctx.remote.faberloomView.boardIterationRecover(id, draftKey, actorSession)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
       boardIterationDraft: (id, iterationId) => ctx.remote.faberloomView.boardIterationDraft(id, iterationId),
       createRoutine: (name, spaceId) => { write(() => ctx.remote.faberloomView.createRoutine(name, name, spaceId ?? undefined)) },
       setRoutineActive: (id, active) => { write(() => ctx.remote.faberloomView.setRoutineActive(id, active)) },

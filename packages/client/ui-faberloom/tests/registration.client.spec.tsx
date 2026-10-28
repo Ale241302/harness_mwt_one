@@ -57,15 +57,15 @@ const DETAIL = {
 const IDLE_ATTEMPT = {
   phase: 'idle', iterationId: null, generation: 0, baseVersion: null, lockUntil: null, lockBy: null,
   renewalSeconds: 30, rounds: 0, roundLimit: 5, suggestRewrite: false,
-  draftOutdated: false, candidatePending: false, draft: null,
+  draftOutdated: false, candidatePending: false, draft: null, draftLinked: false,
 }
 
 const LIVE_ATTEMPT = {
   ...IDLE_ATTEMPT, phase: 'active', iterationId: 'iter-1', generation: 4, baseVersion: 1,
-  lockUntil: new Date(Date.now() + 9 * 60_000).toISOString(),
+  lockUntil: new Date(Date.now() + 9 * 60_000).toISOString(), draftLinked: true,
   draft: {
-    baseVersion: 1, summary: 'Borrador', evidence: [], outdated: false, archived: false,
-    updatedAt: '2026-10-28T10:00:00Z',
+    iterationId: 'iter-1', baseVersion: 1, summary: 'Borrador', evidence: [], outdated: false, archived: false,
+    superseded: false, retained: true, updatedAt: '2026-10-28T10:00:00Z',
   },
 }
 
@@ -157,6 +157,9 @@ async function bench(
   const boardIterationPause = vi.fn(async (): Promise<unknown> => ({ ok: true, value: IDLE_ATTEMPT }))
   const boardIterationCancel = vi.fn(async (): Promise<unknown> => ({ ok: true, value: IDLE_ATTEMPT }))
   const boardIterationResume = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { status: 'started', iteration: LIVE_ATTEMPT, differences: [] },
+  }))
+  const boardIterationRecover = vi.fn(async (): Promise<unknown> => ({
     ok: true, value: { status: 'started', iteration: LIVE_ATTEMPT, differences: [] },
   }))
   const boardIterationDraft = vi.fn(async (): Promise<unknown> => ({
@@ -261,7 +264,8 @@ async function bench(
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
     boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
-    boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationDraft,
+    boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationRecover,
+    boardIterationDraft,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
@@ -361,7 +365,8 @@ async function bench(
     deleteBoardItem, boardDetail, boardSaveEdits, boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
     boardSaveDraft, boardAssignWorkspace,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
-    boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationDraft,
+    boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationRecover,
+    boardIterationDraft,
     emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
@@ -652,6 +657,80 @@ describe('faberloom surface', () => {
     expect(boardIterationResume).not.toHaveBeenCalled()
     fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iteration.transferredReview'] }))
     await waitFor(() => { expect(boardIterationDraft).toHaveBeenCalledWith('item-1', 'iter-0') })
+    expect(await view.findByText('1200')).toBeTruthy()
+  })
+
+  it('offers the retained work of a dead attempt the item never linked', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationResume } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, iterationDraftKey: null } } as never)
+    boardIteration.mockResolvedValue({
+      ok: true,
+      value: {
+        ...IDLE_ATTEMPT,
+        draft: {
+          ...LIVE_ATTEMPT.draft, iterationId: 'iter-0', summary: 'Residuo', archived: true,
+        },
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iterationDraft'])).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iterationOpen'] }))
+
+    await waitFor(() => {
+      expect(boardIterationResume).toHaveBeenCalledWith('item-1', 1, expect.stringMatching(/^tab-/))
+    })
+  })
+
+  it('recovers the transferred work as the live draft and never applies it', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationRecover, boardIterationApply } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        transferredDrafts: [
+          { kind: 'iteration', key: 'item-1:iter-0', iterationId: 'iter-0', baseVersion: 1, transferredFrom: 'item-0' },
+        ],
+      },
+    } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: IDLE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText(faberloomEn['mesa.iteration.transferredText'])
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iteration.transferredRecover'] }))
+
+    await waitFor(() => {
+      expect(boardIterationRecover).toHaveBeenCalledWith('item-1', 'item-1:iter-0', expect.stringMatching(/^tab-/))
+    })
+    // Recovery links the draft; the work only reaches the item through Apply.
+    expect(boardIterationApply).not.toHaveBeenCalled()
+  })
+
+  it('shows the differences of a transferred draft written on an older version', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationRecover } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        transferredDrafts: [
+          { kind: 'iteration', key: 'item-1:iter-0', iterationId: 'iter-0', baseVersion: 1, transferredFrom: 'item-0' },
+        ],
+      },
+    } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: IDLE_ATTEMPT } as never)
+    boardIterationRecover.mockResolvedValue({
+      ok: true,
+      value: {
+        status: 'outdated',
+        iteration: IDLE_ATTEMPT,
+        differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText(faberloomEn['mesa.iteration.transferredText'])
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iteration.transferredRecover'] }))
+
     expect(await view.findByText('1200')).toBeTruthy()
   })
 

@@ -49,7 +49,8 @@ import type {
   FaberLoomBoardIterationCancelInput,
   FaberLoomBoardIterationContext, FaberLoomBoardIterationDifference, FaberLoomBoardIterationDraftRead,
   FaberLoomBoardIterationDraftRow, FaberLoomBoardEditResult,
-  FaberLoomBoardIterationExit, FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationResume,
+  FaberLoomBoardIterationExit, FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationRecover,
+  FaberLoomBoardIterationResume, FaberLoomBoardTransferredDraft,
   FaberLoomBoardIterationLockInput,
   FaberLoomBoardIterationSaveInput, FaberLoomBoardIterationChoice, FaberLoomBoardCorrectionScope,
 } from '@deepseek-ai/dsh-faberloom-view/types'
@@ -204,6 +205,12 @@ export interface FaberloomPanelInjected {
   ) => Promise<Result<FaberLoomBoardIteration>>
   /** Reopen the retained draft, or receive its differences when stale. */
   boardIterationResume: (id: string, baseVersion: number, actorSession: string) => Promise<Result<FaberLoomBoardIterationResume>>
+  /** Recover a transferred draft as the live attempt's draft, or receive its differences when stale. */
+  boardIterationRecover: (
+    id: string,
+    draftKey: string,
+    actorSession: string,
+  ) => Promise<Result<FaberLoomBoardIterationRecover>>
   /** Read the retained draft and, when stale, where it disagrees. */
   boardIterationDraft: (id: string, iterationId?: string) => Promise<Result<FaberLoomBoardIterationDraftRead>>
   /** Create a draft routine, optionally scoped to a Space. */
@@ -2612,7 +2619,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       boardSaveDraft, openTaskChat, goToWorkspace,
       boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft,
       boardIterationApply, boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume,
-      boardIterationDraft,
+      boardIterationRecover, boardIterationDraft,
     } = props
     const { overview, error } = useOverview(props)
     const [view, setView] = useState<'foco' | 'kanban' | 'lista'>('foco')
@@ -2681,8 +2688,8 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const outdatedDraft = useLazy<FaberLoomBoardIterationDraftRead | undefined>(
       () => selected === null || attempt?.draftOutdated !== true
         ? Promise.resolve({ ok: true, value: undefined })
-        : boardIterationDraft(selected),
-      [selected, tick, attempt?.draftOutdated, attempt?.iterationId],
+        : boardIterationDraft(selected, attempt?.draft?.iterationId),
+      [selected, tick, attempt?.draftOutdated, attempt?.draft?.iterationId],
     )
 
     useEffect(() => {
@@ -3051,13 +3058,22 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     }
 
     /**
+     * The first iteration draft a collision moved to this item, which is the one
+     * Compare and Recover act on (§2.3, W-98). An edit draft has no attempt, so
+     * it is never this entry.
+     * @returns the transferred iteration draft, or undefined when none moved here.
+     */
+    const transferredIteration = (): FaberLoomBoardTransferredDraft | undefined =>
+      transferred.find(item => item.kind === 'iteration' && item.iterationId !== null)
+
+    /**
      * Show what a draft the assignment moved here changed against the current
      * version, so the reader decides over that work before anything is applied
      * (§2.3, W-98). The draft is read, never resumed or applied by this button.
      */
     const compareTransferred = (): void => {
       if (value === undefined) return
-      const entry = transferred.find(item => item.kind === 'iteration' && item.iterationId !== null)
+      const entry = transferredIteration()
       if (entry === undefined) {
         setMessage(t('mesa.iteration.transferredEdit'))
         return
@@ -3072,6 +3088,32 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
             : [{ field: 'summary', draftValue: draft.summary, currentValue: value.summary }]
         if (rows.length === 0) { setMessage(t('mesa.iteration.transferredSame')); return }
         setDifferences(rows)
+      })
+    }
+
+    /**
+     * Recover the work a collision moved here as the live draft of a new attempt
+     * (§2.3, W-98). The board links the draft and the attempt starts; it never
+     * applies the work, so the panel still needs the normal Apply with a scope.
+     * A draft written against an older version comes back with its differences
+     * and the item is not written (W-68).
+     */
+    const recoverTransferred = (): void => {
+      if (value === undefined) return
+      const entry = transferredIteration()
+      if (entry === undefined) {
+        setMessage(t('mesa.iteration.transferredEdit'))
+        return
+      }
+      void boardIterationRecover(value.id, entry.key, writerSession).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setTick(count => count + 1)
+        if (result.value.status === 'outdated') {
+          setDifferences(result.value.differences)
+          return
+        }
+        setDifferences([])
+        openIterationChat()
       })
     }
 
@@ -3274,16 +3316,25 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         })
       }
       // Work a collision moved here from the item it closed is offered for
-      // review, never applied by itself (§2.3, W-98). One notice covers every
-      // transferred draft; the rest of the notices fold behind the counter (E4).
+      // review or recovery, never applied by itself (§2.3, W-98). One notice
+      // covers every transferred draft; the rest of the notices fold behind the
+      // counter (E4). Recovering starts an attempt, so a live attempt leaves only
+      // the comparison.
       if (transferred.length > 0) {
         notices.push({
           title: t('mesa.iteration.diffTitle'),
           body: t('mesa.iteration.transferredText'),
           action: (
-            <button className={styles.secondary} type="button" onClick={compareTransferred}>
-              {t('mesa.iteration.transferredReview')}
-            </button>
+            <span className={styles.tools}>
+              {live ? null : (
+                <button className={styles.primary} type="button" onClick={recoverTransferred}>
+                  {t('mesa.iteration.transferredRecover')}
+                </button>
+              )}
+              <button className={styles.secondary} type="button" onClick={compareTransferred}>
+                {t('mesa.iteration.transferredReview')}
+              </button>
+            </span>
           ),
         })
       }

@@ -631,6 +631,8 @@ export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
 export interface FaberLoomBoardTransferredDraft {
   /** Table that holds the draft: an iteration draft or an inline edit. */
   readonly kind: 'iteration' | 'edit'
+  /** Storage key the recover command names. */
+  readonly key: string
   /** Attempt that produced an iteration draft, or null for an edit draft. */
   readonly iterationId: string | null
   /** Artifact version the draft was written on. */
@@ -724,8 +726,8 @@ export interface FaberLoomBoardDetail {
   readonly fieldOrigins: readonly FaberLoomBoardFieldOriginRow[]
   /**
    * Work a collision transferred here from the item it closed (§2.3, W-98). It
-   * is offered for review, never applied by itself and never consumed as the
-   * item's current attempt.
+   * is offered for review or recovery, never applied by itself and never consumed
+   * as the item's current attempt.
    */
   readonly transferredDrafts: readonly FaberLoomBoardTransferredDraft[]
 }
@@ -865,6 +867,8 @@ export type FaberLoomBoardCorrectionScope = 'puntual' | 'cuenta' | 'espacio' | '
 
 /** The working draft of one attempt, minimised to the fields the panel edits. */
 export interface FaberLoomBoardIterationDraft {
+  /** Attempt that produced the draft, linked or not. */
+  readonly iterationId: string
   /** Artifact version the draft was written against. */
   readonly baseVersion: number
   /** Draft summary, or null when the attempt only changed content. */
@@ -873,8 +877,12 @@ export interface FaberLoomBoardIterationDraft {
   readonly evidence: readonly string[]
   /** True when a resume found the draft written against an older version (W-68). */
   readonly outdated: boolean
-  /** True once the attempt that produced the draft is dead (W-57). */
+  /** True when the attempt that produced the draft is dead (W-57). */
   readonly archived: boolean
+  /** True when a newer attempt over the item replaced the draft, so nothing offers it again. */
+  readonly superseded: boolean
+  /** Whether the draft is still inside its retention window (D-09); the host never offers one that is not. */
+  readonly retained: boolean
   /** ISO-8601 instant of the last draft write. */
   readonly updatedAt: string
 }
@@ -909,8 +917,13 @@ export interface FaberLoomBoardIteration {
   readonly draftOutdated: boolean
   /** True while a candidate artifact waits for an explicit choice. */
   readonly candidatePending: boolean
-  /** Retained draft of the attempt, or null. */
+  /**
+   * Retained draft the item offers: the linked one, or the retained work of an
+   * attempt it no longer links, which the panel resumes the same way (W-44, W-57).
+   */
   readonly draft: FaberLoomBoardIterationDraft | null
+  /** True when the item links `draft`; false means it is retained work of a dead attempt. */
+  readonly draftLinked: boolean
 }
 
 /** One field where a retained draft and the current version disagree (W-68). */
@@ -1020,6 +1033,14 @@ export interface FaberLoomBoardIterationResume {
   /** Differences against the current version; empty when the attempt started. */
   readonly differences: readonly FaberLoomBoardIterationDifference[]
 }
+
+/**
+ * Answer of one transferred-draft recovery: the same two outcomes the resume
+ * has. `outdated` returns the differences without an item write, and neither
+ * outcome applies the work — applying still needs the normal Apply with a scope
+ * (W-68, W-98).
+ */
+export type FaberLoomBoardIterationRecover = FaberLoomBoardIterationResume
 
 /**
  * The pinned context the iteration chat starts from (§9.7, §8.5, W-48). It

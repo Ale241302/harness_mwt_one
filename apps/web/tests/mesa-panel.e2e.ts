@@ -21,6 +21,7 @@ const OVERLAY = fileURLToPath(new URL('./mesa-panel.overlay.yml', import.meta.ur
 const BUNDLE = fileURLToPath(new URL('../../../packages/bundle/faberloom-app/package.json', import.meta.url))
 const TITLE = 'PF 9001-2026 · Cuenta Demo'
 const ITERATION_TITLE = 'PF 9002-2026 · Cuenta Demo'
+const RESIDUE_TITLE = 'PF 9003-2026 · Cuenta Demo'
 const SPACE_TITLE = 'Marluvas'
 
 /**
@@ -76,6 +77,7 @@ describe('web e2e: WorkLoom Mesa', () => {
   const actor = { id: 'e2e@mwt.one', companyId: 'mwt' }
   let itemId: FaberLoomBoardItemId
   let iterationItemId: FaberLoomBoardItemId
+  let residueItemId: FaberLoomBoardItemId
   let iterationSpaceId: string | undefined
   let replayDir: string | undefined
 
@@ -121,6 +123,22 @@ describe('web e2e: WorkLoom Mesa', () => {
     iterationItemId = iterationItem.id
     await board.setSeverity(actor, iterationItem.id, 'HIGH', 'HUMAN')
     await board.assignWorkspace(actor, iterationItem.id, String(space.id))
+
+    // A third item whose only work is a late answer for an attempt that ended
+    // before it ever linked a draft: the case the panel must offer back.
+    const residueItem = await board.submit(actor, {
+      runId: 'run-pf-9003',
+      idempotencyKey: 'pf-9003-2026',
+      businessKey: 'PF 9003-2026',
+      title: RESIDUE_TITLE,
+      summary: 'Proforma DDP, 25 pares, USD 250,00.',
+      evidence: ['OC 9003', 'PF 9003-2026'],
+      artifactType: 'proforma',
+      accountRef: 'Cuenta Demo',
+    })
+    residueItemId = residueItem.id
+    await board.setSeverity(actor, residueItem.id, 'HIGH', 'HUMAN')
+    await board.assignWorkspace(actor, residueItem.id, String(space.id))
 
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -323,6 +341,59 @@ describe('web e2e: WorkLoom Mesa', () => {
       expect(await board.getIterationDraft(actor, iterationItemId)).toBeUndefined()
     }, { timeout: 20_000 })
     expect((await board.get(actor, iterationItemId)).version).toBe(2)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 240_000)
+
+  it('offers the residue of a dead attempt and resumes it', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-mesa-iteration-residue'))
+    // A late answer the item never linked: the attempt is paused with no draft,
+    // so the write is stored as the dead attempt's draft and the item keeps
+    // `iterationDraftKey` null. Before the board offered these rows, no command
+    // could reach that text.
+    const started = await board.iterate(actor, residueItemId, { baseVersion: 1, actorSession: 'spec-tab' })
+    const dead = {
+      iterationId: started.item.iterationId ?? '',
+      generation: started.item.iterationLockGeneration,
+      actorSession: 'spec-tab',
+    }
+    await board.pauseIteration(actor, residueItemId, { ...dead, reason: 'guardar-y-salir' })
+    const residue = await board.saveIterationDraft(actor, residueItemId, {
+      ...dead, baseVersion: 1, summary: 'Residuo de un intento muerto.',
+    })
+    expect(residue).toMatchObject({ linked: false, code: 'LOCK_LOST' })
+    expect(residue.draft).toMatchObject({ archived: true, superseded: false, retained: true })
+    expect((await board.get(actor, residueItemId)).iterationDraftKey).toBeNull()
+    expect((await board.get(actor, residueItemId)).version).toBe(1)
+
+    await openItem(RESIDUE_TITLE)
+    await page.getByText('Unfinished work').first().waitFor({ timeout: 20_000 })
+    await page.getByRole('button', { name: 'Resume the iteration' }).click()
+
+    // Resuming starts an attempt over the residue without writing the artifact.
+    await vi.waitFor(async () => {
+      const status = await board.iterationStatus(actor, residueItemId)
+      expect(status.phase).toBe('active')
+      expect(status.draftLinked).toBe(true)
+      expect(status.draft?.summary).toBe('Residuo de un intento muerto.')
+    }, { timeout: 20_000 })
+    expect((await board.get(actor, residueItemId)).version).toBe(1)
+    // Returning remounts the Mesa, which selects the first row; the scenario
+    // opens the residue item again to work its attempt.
+    await page.locator('[data-composer-input]').first().waitFor({ timeout: 20_000 })
+    await openItem(RESIDUE_TITLE)
+    await page.getByText(/Iteration in progress/u).first().waitFor({ timeout: 20_000 })
+
+    // The work reaches the item only through Apply.
+    await page.getByRole('button', { name: 'Apply', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('combobox').selectOption('puntual')
+    await dialog.getByRole('button', { name: 'Apply', exact: true }).click()
+    await vi.waitFor(async () => {
+      const stored = await board.get(actor, residueItemId)
+      expect(stored.version).toBe(2)
+      expect(stored.state).toBe('PENDIENTE_CRITERIO')
+      expect(stored.revisions.at(-1)?.summary).toBe('Residuo de un intento muerto.')
+    }, { timeout: 20_000 })
     expect(tripwire.pageErrors).toEqual([])
   }, 240_000)
 })

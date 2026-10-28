@@ -668,10 +668,10 @@ async iterateWithEdits( writer: BoardWriter, id: FaberLoomBoardItemId, input: Bo
 async saveIterationDraft( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationDraftInput, ): Promise<BoardIterationDraftOutcome>
 
 /**
- * Read one attempt's draft, or the draft the item currently links.
+ * Read one attempt's draft, or the draft the item offers.
  * @param actor - the authenticated reader.
  * @param id - item id.
- * @param iterationId - attempt to read; omitted reads the linked draft.
+ * @param iterationId - attempt to read; omitted reads the draft the item offers.
  * @returns the draft, or undefined when none is stored or retained.
  */
 async getIterationDraft( actor: BoardActor, id: FaberLoomBoardItemId, iterationId?: string, ): Promise<BoardIterationDraft | undefined>
@@ -711,15 +711,34 @@ async pauseIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: Boar
 async cancelIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardCancelIterationInput, ): Promise<BoardIterationResult>
 
 /**
- * Take a new attempt over the retained draft. When the draft was written
- * against an older version, it is marked outdated and the differences are
- * returned instead of overwriting the newer content (W-68).
+ * Take a new attempt over the draft the item offers: the linked one, or the
+ * retained draft of a dead attempt the item never linked, which is otherwise
+ * text no command reaches (W-57). When the draft was written against an older
+ * version, it is marked outdated and the differences are returned instead of
+ * overwriting the newer content (W-68). Starting an attempt never writes the
+ * artifact version, so the draft reaches the item only through `applyIteration`.
  * @param writer - the acting identity.
  * @param id - item id.
  * @param input - base version of the draft the caller saw and the tab session.
  * @returns the item with `started`, or with `outdated` and the differences.
  */
 async resumeIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardResumeIterationInput, ): Promise<BoardResumeIterationResult>
+
+/**
+ * Take a new attempt over one draft a collision moved to this item (§2.3,
+ * W-98). The key must be a draft `transferredDrafts` listed here and inside its
+ * retention window, because a key of another item, or one already past D-09, is
+ * not work this item may turn into an attempt. When the draft's base version is
+ * still current the item links it under the new attempt's key and the attempt
+ * starts; otherwise the draft is marked outdated, the differing fields come
+ * back, and the item is not written (W-68). Neither outcome writes the artifact
+ * version, so the work reaches the item only through `applyIteration`.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - the transferred draft key and the tab opening the attempt.
+ * @returns the item with `started`, or with `outdated` and the differences.
+ */
+async recoverTransferredDraft( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRecoverDraftInput, ): Promise<BoardRecoverDraftResult>
 
 /**
  * Apply the live attempt: write a new version and hash, count the round,
@@ -3917,10 +3936,13 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('boardResolveCandidate') async boardResolveCandidate( id: string, candidateId: string, candidateHash: string, decision: 'adopt' | 'keep', ): Promise<FaberLoomBoardDetail | undefined>
 
 /**
- * Assign a space to an item.
+ * Assign a space to an item. A collision can close the item the caller named
+ * and keep a peer live (§2.3), so the detail is read for the item the board
+ * answered with and not for the id the view had; the drafts the collision
+ * moved to it arrive in that detail (W-98).
  * @param id - board item id.
  * @param workspaceId - target space id.
- * @returns the refreshed detail.
+ * @returns the refreshed detail of the live item.
  */
 @Remote('boardAssignWorkspace') async boardAssignWorkspace(id: string, workspaceId: string): Promise<FaberLoomBoardDetail | undefined>
 
@@ -3944,11 +3966,16 @@ async mirrorSharedSpaces(): Promise<void>
  * Read the pinned context an iteration chat starts from (§8.5, §9.7). It is
  * minimised to the item: the board filters the item by owner and company, the
  * spaces service filters the title, and no account history or space memory
- * travels with it.
+ * travels with it. The summary and the working draft travel only while the
+ * item's data class is within the ceiling the deployment declared for the
+ * provider the session runs on (W-48); above it the context keeps metadata
+ * alone, so a model that may not receive the content receives none of it.
  * @param id - board item id.
+ * @param providerId - provider the session runs on; an empty string means the
+ * session names none, so the configured default is assumed.
  * @returns the context, or undefined when the reader holds no item with that id.
  */
-@Remote('boardIterationContext') async boardIterationContext(id: string): Promise<FaberLoomBoardIterationContext | undefined>
+@Remote('boardIterationContext') async boardIterationContext(id: string, providerId: string): Promise<FaberLoomBoardIterationContext | undefined>
 
 /**
  * Start an iteration attempt over the version the caller saw. Starting never
@@ -3963,9 +3990,10 @@ async mirrorSharedSpaces(): Promise<void>
 /**
  * Store one write of the attempt's work as its working draft. A write for an
  * attempt that already ended is archived and the item is left untouched
- * (W-57), which is what `linked: false` tells the panel.
+ * (W-57), which is what `linked: false` tells the panel. A write from another
+ * tab session is refused with `LOCK_HELD` and stores nothing (§9.7.1).
  * @param id - board item id.
- * @param input - attempt, base version, and the draft summary.
+ * @param input - attempt, generation, session, base version, and the draft summary.
  * @returns the stored draft and whether the item still links it.
  */
 @Remote('boardIterationSaveDraft') async boardIterationSaveDraft( id: string, input: FaberLoomBoardIterationSaveInput, ): Promise<FaberLoomBoardIterationDraftRow>
@@ -3976,18 +4004,19 @@ async mirrorSharedSpaces(): Promise<void>
  * after the commit and is best effort: it may be missing while the item is
  * committed, which is what `correctionError` reports.
  * @param id - board item id.
- * @param input - attempt, base version, scope, and the candidate choice when one is pending.
+ * @param input - attempt, generation, session, base version, scope, and the candidate choice when one is pending.
  * @returns the attempt after the commit and the correction failure, when any.
  */
 @Remote('boardIterationApply') async boardIterationApply( id: string, input: FaberLoomBoardIterationApplyInput, ): Promise<FaberLoomBoardIterationApplyResult>
 
 /**
  * Extend the live attempt's lock while this tab works it (D-09, §9.7.1). The
- * board refuses a stale attempt id, a stale generation, or an expired deadline
- * with `LOCK_LOST` or `ITERATION_STALE` and no effects (W-43), so a renewal
- * never touches the item's content or version.
+ * board refuses a stale attempt id, a stale generation, another tab session,
+ * or an expired deadline with `LOCK_LOST`, `ITERATION_STALE`, or `LOCK_HELD`
+ * and no effects (W-43), so a renewal never touches the item's content or
+ * version.
  * @param id - board item id.
- * @param input - attempt id and generation the panel has open.
+ * @param input - attempt id, generation, and the tab session holding it.
  * @returns the attempt after the renewal.
  */
 @Remote('boardIterationRenew') async boardIterationRenew(id: string, input: FaberLoomBoardIterationLockInput): Promise<FaberLoomBoardIteration>
@@ -3996,7 +4025,7 @@ async mirrorSharedSpaces(): Promise<void>
  * Save and exit, carry to SpaceLoom, or return without resolving: the attempt
  * releases the lock and keeps its draft (W-67, W-97).
  * @param id - board item id.
- * @param input - attempt and the exit the user chose.
+ * @param input - attempt, session, and the exit the user chose.
  * @returns the attempt after the commit.
  */
 @Remote('boardIterationPause') async boardIterationPause( id: string, input: FaberLoomBoardIterationPauseInput, ): Promise<FaberLoomBoardIteration>
@@ -4005,7 +4034,7 @@ async mirrorSharedSpaces(): Promise<void>
  * Discard the attempt's work and release the lock. The version does not
  * change except through an explicit candidate adoption (W-41).
  * @param id - board item id.
- * @param input - attempt and the candidate choice when one is pending.
+ * @param input - attempt, session, and the candidate choice when one is pending.
  * @returns the attempt after the commit.
  */
 @Remote('boardIterationCancel') async boardIterationCancel( id: string, input: FaberLoomBoardIterationCancelInput, ): Promise<FaberLoomBoardIteration>
@@ -4013,13 +4042,27 @@ async mirrorSharedSpaces(): Promise<void>
 /**
  * Take a new attempt over the retained draft. A draft written against an
  * older version is returned with its differences instead of overwriting the
- * newer content (W-68).
+ * newer content (W-68). The tab session is required: the resumed attempt
+ * belongs to the session that opened it (§9.7.1).
  * @param id - board item id.
  * @param baseVersion - base version of the draft the caller saw.
  * @param actorSession - tab opening the attempt, so a resumed attempt belongs to it.
  * @returns the new attempt, or the stale draft's differences.
  */
-@Remote('boardIterationResume') async boardIterationResume(id: string, baseVersion: number, actorSession?: string): Promise<FaberLoomBoardIterationResume>
+@Remote('boardIterationResume') async boardIterationResume(id: string, baseVersion: number, actorSession: string): Promise<FaberLoomBoardIterationResume>
+
+/**
+ * Recover one draft a collision transferred to this item as the live draft of
+ * a new attempt (§2.3, W-98). The board refuses a key that is not transferred
+ * here or is past retention, and a draft written against an older version comes
+ * back with its differences and no item write (W-68). Recovery never applies
+ * the work: the panel still needs the normal Apply with a scope.
+ * @param id - board item id.
+ * @param draftKey - transferred draft key the detail listed.
+ * @param actorSession - tab opening the attempt, so the attempt belongs to it.
+ * @returns the new attempt, or the stale draft's differences.
+ */
+@Remote('boardIterationRecover') async boardIterationRecover( id: string, draftKey: string, actorSession: string, ): Promise<FaberLoomBoardIterationRecover>
 
 /**
  * Read the item's retained draft and, when it was written against an older

@@ -11,6 +11,8 @@ function draft(overrides: Partial<{
   content: Record<string, unknown> | null
   outdated: boolean
   archived: boolean
+  superseded: boolean
+  retained: boolean
 }> = {}) {
   return {
     key: 'b1:iter-1',
@@ -21,7 +23,9 @@ function draft(overrides: Partial<{
     evidence: ['oc:505288'],
     content: overrides.content === undefined ? { total: 1200 } : overrides.content,
     archived: overrides.archived ?? false,
+    superseded: overrides.superseded ?? false,
     outdated: overrides.outdated ?? false,
+    retained: overrides.retained ?? true,
     updatedAt: '2026-10-28T10:00:00Z',
     retainUntil: '2026-11-27T10:00:00Z',
   }
@@ -34,6 +38,7 @@ function status(overrides: Partial<{
   baseVersion: number | null
   lockUntil: string | null
   draftValue: ReturnType<typeof draft> | null
+  draftLinked: boolean
   draftOutdated: boolean
   candidatePending: boolean
   rounds: number
@@ -50,6 +55,7 @@ function status(overrides: Partial<{
     roundLimit: 5,
     suggestRewrite: false,
     draft: overrides.draftValue === undefined ? draft() : overrides.draftValue,
+    draftLinked: overrides.draftLinked ?? true,
     draftOutdated: overrides.draftOutdated ?? false,
     candidatePending: overrides.candidatePending ?? false,
   }
@@ -124,6 +130,7 @@ function harness(options: {
     pauseIteration: vi.fn(async () => ({ item: item(), status: status({ phase: 'idle', iterationId: null }) })),
     cancelIteration: vi.fn(async () => ({ item: item(), status: status({ phase: 'idle', iterationId: null }) })),
     resumeIteration: vi.fn(async () => ({ item: item(), status: 'started' as const })),
+    recoverTransferredDraft: vi.fn(async () => ({ item: item(), status: 'started' as const })),
     getIterationDraft: vi.fn(async () => records.draft),
     transferredDrafts: vi.fn(async (): Promise<readonly unknown[]> => []),
     assignWorkspace: vi.fn(async (): Promise<unknown> => ({ item: item(), transferredDrafts: [] })),
@@ -163,13 +170,17 @@ describe('FaberLoomViewService board iteration', () => {
     expect(board.iterationStatus).toHaveBeenCalledWith(ACTOR, 'b1')
     expect(attempt).toMatchObject({ phase: 'active', iterationId: 'iter-1', generation: 4, baseVersion: 3, rounds: 2 })
     expect(attempt?.draft).toEqual({
+      iterationId: 'iter-1',
       baseVersion: 3,
       summary: 'Precio revisado',
       evidence: ['oc:505288'],
       outdated: false,
       archived: false,
+      superseded: false,
+      retained: true,
       updatedAt: '2026-10-28T10:00:00Z',
     })
+    expect(attempt?.draftLinked).toBe(true)
   })
 
   it('answers undefined for an item the actor does not hold', async () => {
@@ -324,6 +335,52 @@ describe('FaberLoomViewService board iteration', () => {
     })
   })
 
+  it('projects the retained work of a dead attempt the item never linked', async () => {
+    const { view, records } = harness()
+    records.iterationStatus = status({
+      phase: 'idle',
+      iterationId: null,
+      draftValue: draft({ archived: true }),
+      draftLinked: false,
+    })
+
+    const attempt = await view.boardIteration('b1')
+
+    expect(attempt).toMatchObject({ phase: 'idle', draftLinked: false })
+    expect(attempt?.draft).toMatchObject({
+      iterationId: 'iter-1', baseVersion: 3, archived: true, superseded: false, retained: true,
+    })
+  })
+
+  it('recovers a transferred draft and reports the same two outcomes as a resume', async () => {
+    const { view, board } = harness()
+
+    expect(await view.boardIterationRecover('b1', 'b1:iter-0', 'tab-9'))
+      .toMatchObject({ status: 'started', differences: [] })
+    expect(board.recoverTransferredDraft).toHaveBeenCalledWith(ACTOR, 'b1', {
+      draftKey: 'b1:iter-0', actorSession: 'tab-9',
+    })
+
+    board.recoverTransferredDraft.mockResolvedValue({
+      item: item(),
+      status: 'outdated' as never,
+      differences: [{ field: 'total', draftValue: 1200, currentValue: 1000 }],
+    } as never)
+    expect(await view.boardIterationRecover('b1', 'b1:iter-0', 'tab-9')).toEqual({
+      status: 'outdated',
+      iteration: expect.objectContaining({ phase: 'active' }),
+      differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
+    })
+    // Recovery links the work; applying it is a separate command.
+    expect(board.applyIteration).not.toHaveBeenCalled()
+  })
+
+  it('refuses a recovery from a read-only identity', async () => {
+    const { view, board } = harness({ readOnly: true })
+    await expect(view.boardIterationRecover('b1', 'b1:iter-0', 'tab-1')).rejects.toThrow('read-only')
+    expect(board.recoverTransferredDraft).not.toHaveBeenCalled()
+  })
+
   it('answers no draft when the attempt retains none', async () => {
     const { view, records } = harness()
     records.draft = undefined
@@ -418,8 +475,8 @@ describe('FaberLoomViewService board iteration', () => {
     ])
 
     expect((await view.boardDetail('b1'))?.transferredDrafts).toEqual([
-      { kind: 'iteration', iterationId: 'iter-0', baseVersion: 2, transferredFrom: 'b0' },
-      { kind: 'edit', iterationId: null, baseVersion: 1, transferredFrom: 'b0' },
+      { kind: 'iteration', key: 'b1:iter-0', iterationId: 'iter-0', baseVersion: 2, transferredFrom: 'b0' },
+      { kind: 'edit', key: 'b1:owner@muitowork.com', iterationId: null, baseVersion: 1, transferredFrom: 'b0' },
     ])
     expect(board.transferredDrafts).toHaveBeenCalledWith(ACTOR, 'b1')
   })
@@ -443,7 +500,7 @@ describe('FaberLoomViewService board iteration', () => {
     expect(detail).toMatchObject({
       id: 'b2',
       title: 'Vigente',
-      transferredDrafts: [{ iterationId: 'iter-0', baseVersion: 2, transferredFrom: 'b1' }],
+      transferredDrafts: [{ key: 'b2:iter-0', iterationId: 'iter-0', baseVersion: 2, transferredFrom: 'b1' }],
     })
   })
 
