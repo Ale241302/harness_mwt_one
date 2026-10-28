@@ -9,10 +9,29 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 import type { FaberLoomBoard, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
+import { DECLARED_CHECKS } from '@deepseek-ai/dsh-faberloom-board'
 
 const OVERLAY = fileURLToPath(new URL('./mesa-panel.overlay.yml', import.meta.url))
 const BUNDLE = fileURLToPath(new URL('../../../packages/bundle/faberloom-app/package.json', import.meta.url))
 const TITLE = 'PF 9001-2026 · Cuenta Demo'
+
+/**
+ * Mount the controls a deployment supplies. Without an adapter the board
+ * refuses every proforma approval with CHECK_UNAVAILABLE (ADR-003), so this
+ * scenario composes a passing source the way the shipped profile must.
+ */
+function mountChecks(board: FaberLoomBoard): void {
+  const passing = {
+    status: 'ok' as const,
+    source: 'e2e.source',
+    sourceVersion: '1',
+    checkedAt: new Date().toISOString(),
+    fields: [],
+  }
+  for (const definition of DECLARED_CHECKS['proforma'] ?? []) {
+    board.registerCheck('proforma', definition.id, async () => passing, { class: definition.class })
+  }
+}
 
 describe('web e2e: WorkLoom Mesa', () => {
   let scaffold: WebScaffold
@@ -26,6 +45,7 @@ describe('web e2e: WorkLoom Mesa', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, extraInstallAnchors: [BUNDLE] })
     board = (scaffold.ctx as unknown as { faberloomBoard: FaberLoomBoard }).faberloomBoard
+    mountChecks(board)
     const item = await board.submit(actor, {
       runId: 'run-pf-2520',
       idempotencyKey: 'pf-2520-2026',

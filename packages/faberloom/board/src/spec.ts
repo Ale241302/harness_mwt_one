@@ -13,6 +13,8 @@ const revisionRecord = z.object({
   version: z.number(),
   summary: z.string(),
   evidence: z.array(z.string()),
+  /** Editable artifact content; null in revisions written before the draft carried content. */
+  content: z.record(z.string(), z.unknown()).nullable().default(null),
   documentRef: z.string().nullable(),
   at: z.string(),
 })
@@ -56,6 +58,17 @@ const candidateRecord = z.object({
   at: z.string(),
 })
 
+/**
+ * Durable origin of one editable field: `source: null` means the field has no
+ * origin (a human wrote it), which is the explicit mark W-36 requires.
+ */
+const fieldOriginRecord = z.object({
+  field: z.string(),
+  source: z.string().nullable(),
+  ref: z.string().nullable(),
+  at: z.string().nullable(),
+})
+
 /** Durable board item record. */
 export const boardItemRecord = z.object({
   ownerId: z.string(),
@@ -89,6 +102,8 @@ export const boardItemRecord = z.object({
   artifactType: z.string().default(''),
   accountRef: z.string().nullable().default(null),
   artifactHash: z.string().nullable().default(null),
+  /** Origins the run declared for the fields of its content; the item projects one entry per field. */
+  fieldOrigins: z.array(fieldOriginRecord).default([]),
   pendingCandidate: candidateRecord.nullable().default(null),
   events: z.array(eventRecord).default([]),
   discardReason: z.string().nullable().default(null),

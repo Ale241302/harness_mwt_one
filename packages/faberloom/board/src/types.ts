@@ -118,6 +118,12 @@ export interface BoardRevision {
   readonly summary: string
   /** Real evidence references; a revision requires at least one. */
   readonly evidence: readonly string[]
+  /**
+   * Editable artifact content this revision fixed, or null for a revision
+   * written before the draft carried content. Immutable with the revision, so
+   * the hash binds the content the checks and the human reviewed.
+   */
+  readonly content: Readonly<Record<string, unknown>> | null
   /** Opaque document reference, or `null`. */
   readonly documentRef: string | null
   /** ISO-8601 instant. */
@@ -146,6 +152,22 @@ export interface BoardEffect {
   readonly authorization: string | null
   /** ISO-8601 instant. */
   readonly at: string
+}
+
+/**
+ * Where one editable field of the draft came from. `source: null` is the
+ * explicit "no origin" mark W-36 requires: a human wrote the value, so no
+ * commercial source backs it.
+ */
+export interface BoardFieldOriginEntry {
+  /** Field path inside the artifact content, e.g. `lines[0].unitPrice`. */
+  readonly field: string
+  /** Source identifier, e.g. `mwt.unit_price`, or null when the field has no origin. */
+  readonly source: string | null
+  /** Reference inside that source (document, key, selector), or null. */
+  readonly ref: string | null
+  /** ISO-8601 instant the source was read, or null. */
+  readonly at: string | null
 }
 
 /** One board item. */
@@ -204,6 +226,13 @@ export interface FaberLoomBoardItem {
   readonly accountRef: string | null
   /** Hash of the current artifact version, or null. */
   readonly artifactHash: string | null
+  /** Editable content of the current revision; `{}` when the artifact has none. */
+  readonly content: Readonly<Record<string, unknown>>
+  /**
+   * One entry per editable field of `content`: the source the value came from,
+   * or an explicit no-origin mark (W-36).
+   */
+  readonly fieldOrigins: readonly BoardFieldOriginEntry[]
   /** Candidate waiting for an explicit choice, or null. */
   readonly pendingCandidate: BoardCandidate | null
   /** Audit events, oldest first. */
@@ -248,6 +277,13 @@ export interface BoardSubmitInput {
   readonly evidence: readonly string[]
   /** Opaque document reference. */
   readonly documentRef?: string
+  /**
+   * Editable artifact content of this revision (a proforma carries `lines`,
+   * `total`, `orderRef`, and `separation`). Omitted keeps the previous content.
+   */
+  readonly content?: Record<string, unknown>
+  /** Where each content field came from; a field absent here is marked without origin. */
+  readonly fieldOrigins?: readonly BoardFieldOriginEntry[]
 }
 
 /** Create input for an item. */
@@ -347,6 +383,12 @@ export interface BoardApproveInput {
   readonly expectedArtifactVersion: number
   /** Expected artifact hash. */
   readonly expectedArtifactHash: string
+  /**
+   * Ids of the `confirmacion` controls whose failure the human explicitly
+   * accepted. A failed `confirmacion` control that is absent here rejects the
+   * approval (spec §9.6; D-02 never approves silently).
+   */
+  readonly confirmations?: readonly string[]
 }
 
 /** Input for discard. */
@@ -466,4 +508,227 @@ export interface BoardContentProjection {
   readonly classificationCache: boolean
   /** Whether the item may enter another item's context. */
   readonly sharedContext: boolean
+}
+
+/**
+ * Control class of one deterministic check (spec §9.6, signed by D-8). A
+ * `bloqueante` failure blocks approval and execution; a `confirmacion` failure
+ * requires an explicit confirmation; an `informativo` failure is shown only.
+ */
+export type BoardCheckClass = 'informativo' | 'confirmacion' | 'bloqueante'
+
+/** Outcome one check reports. */
+export type BoardCheckStatus = 'ok' | 'warning' | 'fail'
+
+/**
+ * What one check reports. Every result names the source it consulted, that
+ * source's version, and when it read it, because the spec requires each control
+ * to record which source answered and when.
+ */
+export interface BoardCheckResult {
+  /** Outcome of the control. A source that cannot answer reports `fail`. */
+  readonly status: BoardCheckStatus
+  /** Source consulted (`mwt.price`, `artifact`, `unavailable`), never empty. */
+  readonly source: string
+  /** Version or etag the source reported, or null when it reports none. */
+  readonly sourceVersion: string | null
+  /** ISO-8601 instant of the read. */
+  readonly checkedAt: string
+  /** Field paths the result applies to, so the panel can link the control to the draft. */
+  readonly fields: readonly string[]
+  /** Stable reason code when the status is not `ok`, or null. */
+  readonly reason?: string | null
+  /** Diagnostic detail for operators; never shown as product copy. */
+  readonly detail?: string | null
+}
+
+/** The exact artifact one check evaluates. */
+export interface BoardArtifact {
+  /** Artifact type of the item (`proforma`, `respuesta`, ...). */
+  readonly type: string
+  /** Revision number the content belongs to. */
+  readonly version: number
+  /** Editable content of that revision. */
+  readonly content: Readonly<Record<string, unknown>>
+}
+
+/**
+ * What one check receives. `source` is the port the registration supplied; a
+ * check that needs a source and receives none reports `fail`, never `ok`.
+ */
+export interface BoardCheckInput {
+  /** The item under review, as the panel sees it. */
+  readonly item: FaberLoomBoardItem
+  /** The exact artifact revision the check evaluates. */
+  readonly artifact: BoardArtifact
+  /** Source port of the registration, or undefined when it registered none. */
+  readonly source: BoardCheckSource | undefined
+}
+
+/** One check implementation: deterministic from the board's point of view. */
+export type BoardCheckFn = (input: BoardCheckInput) => BoardCheckResult | Promise<BoardCheckResult>
+
+/** One declared control: its stable id and the class D-8 signed. */
+export interface BoardCheckDefinition {
+  /** Stable id, e.g. `proforma.price`. */
+  readonly id: string
+  /** Class fixed by D-8; a registration with another class is refused. */
+  readonly class: BoardCheckClass
+}
+
+/** Registration options of one check. */
+export interface BoardCheckOptions {
+  /** Class fixed by D-8; must match the declaration. */
+  readonly class: BoardCheckClass
+  /** Source port the check reads; the registration forwards it into `BoardCheckInput.source`. */
+  readonly source?: BoardCheckSource
+}
+
+/** Registration state of one declared control. */
+export interface BoardCheckStatusEntry {
+  /** Declared check id. */
+  readonly id: string
+  /** Class the control runs under. */
+  readonly class: BoardCheckClass
+  /** Whether an adapter registered an implementation. */
+  readonly registered: boolean
+}
+
+/** The registrar a check adapter mounts against (`ctx.faberloomBoard`). */
+export interface BoardCheckRegistrar {
+  /**
+   * Register one check implementation.
+   * @param artifactType - artifact type the check applies to.
+   * @param checkId - declared check id.
+   * @param fn - the implementation.
+   * @param options - signed class and the source port the check reads.
+   * @returns the disposer that removes the registration.
+   */
+  registerCheck(
+    artifactType: string,
+    checkId: string,
+    fn: BoardCheckFn,
+    options: BoardCheckOptions,
+  ): () => void
+}
+
+/** One executed control with the class it ran under. */
+export interface BoardCheckOutcome {
+  /** Declared check id. */
+  readonly id: string
+  /** Class the control ran under. */
+  readonly class: BoardCheckClass
+  /** What the implementation reported. */
+  readonly result: BoardCheckResult
+}
+
+/**
+ * The control report of one item. `missing` lists declared controls with no
+ * registered adapter: approval refuses such an item with `CHECK_UNAVAILABLE`
+ * instead of treating the gap as a pass (ADR-003).
+ */
+export interface BoardCheckReport {
+  /** Executed controls, in declaration order. */
+  readonly checks: readonly BoardCheckOutcome[]
+  /** Declared check ids without a registration. */
+  readonly missing: readonly string[]
+}
+
+/** One answer from a commercial source, with the freshness record the spec requires. */
+export interface BoardSourceAnswer<T> {
+  /** The datum, or null when the source answered "no record". */
+  readonly value: T | null
+  /** Source identifier, e.g. `mwt.price`. */
+  readonly source: string
+  /** Version or etag the source reported, or null. */
+  readonly version: string | null
+  /** ISO-8601 instant of the read. */
+  readonly readAt: string
+}
+
+/** Catalog facts of one SKU. */
+export interface BoardSkuFacts {
+  /** Whether the catalog knows the SKU. */
+  readonly exists: boolean
+}
+
+/**
+ * The account's price condition for one SKU. `overcharge` is the account band
+ * already resolved by the adapter; the board never derives it (D-01).
+ */
+export interface BoardPriceFacts {
+  /** List price before the overcharge, MWT `unit_price_mwt`. */
+  readonly listPrice: number
+  /** Overcharge the account pays for this SKU, in the artifact currency. */
+  readonly overcharge: number
+}
+
+/** Stock facts of one SKU. */
+export interface BoardStockFacts {
+  /** Units the source reports as available. */
+  readonly available: number
+}
+
+/** One line of the original purchase order. */
+export interface BoardOrderLine {
+  /** Ordered SKU. */
+  readonly sku: string
+  /** Ordered quantity. */
+  readonly quantity: number
+}
+
+/** Whether the account needs a complement letter or a new proforma. */
+export interface BoardSeparationFacts {
+  /** The separation the account's rule requires for this document. */
+  readonly required: 'complement' | 'new'
+}
+
+/**
+ * The commercial source port a check adapter fills (ADR-003). The adapter owns
+ * the calls (`mcp__mwt__expediente_lineas`, `inventario_*`, ...) and the
+ * freshness rule; the board only consumes the answer.
+ *
+ * A source that cannot answer throws: the board converts that throw into a
+ * `fail` result, so an outage is never a skipped control. A source that can
+ * answer "no record" returns `value: null`; D-01 makes that a blocking failure
+ * and D-02 a confirmation.
+ */
+export interface BoardCheckSource {
+  /** Catalog existence of one SKU. */
+  sku(sku: string): Promise<BoardSourceAnswer<BoardSkuFacts>>
+  /** List price and account overcharge for one SKU. */
+  price(request: { readonly accountRef: string; readonly sku: string }): Promise<BoardSourceAnswer<BoardPriceFacts>>
+  /** Available stock for one SKU. */
+  stock(sku: string): Promise<BoardSourceAnswer<BoardStockFacts>>
+  /** Lines of the original purchase order the draft answers. */
+  orderLines(orderRef: string): Promise<BoardSourceAnswer<readonly BoardOrderLine[]>>
+  /** Separation the account rule requires for this document. */
+  separation(request: {
+    readonly accountRef: string
+    readonly businessKey: string | null
+  }): Promise<BoardSourceAnswer<BoardSeparationFacts>>
+}
+
+/** One line of a proforma draft. */
+export interface BoardProformaLine {
+  /** Catalog SKU. */
+  readonly sku: string
+  /** Optional description carried for display only. */
+  readonly description?: string
+  /** Quantity the draft bills. */
+  readonly quantity: number
+  /** Unit price the draft bills. */
+  readonly unitPrice: number
+}
+
+/** The editable content of a proforma draft, as the checks read it. */
+export interface BoardProformaContent {
+  /** Original purchase order the draft answers. */
+  readonly orderRef?: string
+  /** Billed lines. */
+  readonly lines?: readonly BoardProformaLine[]
+  /** Billed total, which must equal the sum of the lines. */
+  readonly total?: number
+  /** Whether the draft is a complement letter or a new proforma. */
+  readonly separation?: 'complement' | 'new'
 }

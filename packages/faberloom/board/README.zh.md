@@ -45,7 +45,7 @@ kind: "package-reference"
 
 - `setSeverity(writer, id, severity, source, confidence, expectedRowVersion?)`
 - `saveEdits(writer, id, { expectedRowVersion, baseVersion, changes })`
-- `approve(writer, id, { expectedRowVersion, expectedArtifactVersion, expectedArtifactHash })`
+- `approve(writer, id, { expectedRowVersion, expectedArtifactVersion, expectedArtifactHash, confirmations? })`
 - `approveWithEdits(writer, id, approval + edits)`
 - `discard(writer, id, { expectedRowVersion, reason, note? })`
 - `resolveCandidate(writer, id, candidateId, candidateHash, 'adopt' | 'keep')`
@@ -55,6 +55,31 @@ kind: "package-reference"
 `approve` 要求已确认严重性，并拒绝待处理候选、过期条目或与当前不一致的版本/哈希。试点中批准绝不发送外部效果。`saveEdits` 与 `discard` 拒绝处于 `ITERANDO` 或已关闭的条目，`discard` 还拒绝 `DESCONOCIDO`；面板隐藏这些控件，而由服务对 MCP 与智能体调用者强制实施。旧的 `review`、`submitRevision`、`reopen`、`requestData`、`fail` 与 `complete` 仍作为现有面板的别名保留；`review` 批准时必须提供产物哈希，因此调用者批准的正是它看到的内容，`fail(writer, id, 'DESCONOCIDO')` 记录未确认的效应。
 
 `assignWorkspace` 保留条目的业务键，要求目标空间位于 actor 的租户内（`NO_ACCESS`）且服务于条目的账户（`ACCOUNT_MISMATCH`），并返回活跃条目。与另一个同键活跃条目冲突时，可替代的对等条目被关闭；对 `ITERANDO`、`EJECUCION_PENDIENTE` 或 `DESCONOCIDO` 的对等条目则把产物作为候选转移过去，并打开该条目。
+
+### 校验（E12）
+
+校验是一个端口：board 声明某种产物类型需要哪些控件并负责调用，实现位于包外（ADR-003）。
+
+`registerCheck(artifactType, checkId, fn, { class, source })` 返回自己的释放器，因此适配器从 `ctx.effect` 挂载它，与 handlers 包挂载处理器的方式一致。`DECLARED_CHECKS` 持有控件 id 与 D-8 签署的类别；注册一个 board 未声明的 id 会以 `CHECK_UNKNOWN` 被拒，类别不一致会以 `CHECK_CLASS_MISMATCH` 被拒，因此拼写错误在加载时就失败，而不是悄悄永不执行。登记表默认为空：未声明任何控件的产物类型照旧可批准；一旦声明，只要有已声明的控件没有适配器，批准就以 `CHECK_UNAVAILABLE` 被拒。
+
+`fn` 收到 `{ item, artifact, source }` —— 投影后的条目、待审的修订（`type`、`version`、`content`），以及注册时携带的来源端口 —— 返回 `{ status: 'ok' | 'warning' | 'fail', source, sourceVersion, checkedAt, fields }`，另可带稳定的 `reason`。抛出的校验（来源超时、适配器损坏、注册没有端口）一律报为 `SOURCE_UNAVAILABLE` 的 `fail`：来源不可用是一枚失败的控件，绝不是被跳过的控件。
+
+`registerProformaChecks(board, source)` 注册 D-8 的六枚 proforma 控件并返回其释放器。适配器实现 `BoardCheckSource`；board 从不自行推导商务数值。无法回答的来源抛错，回答“没有记录”的来源返回 `value: null`。
+
+| 控件 | 类别 | 读取内容 |
+|---|---|---|
+| `proforma.price` | bloqueante | 计费单价等于目录价加该账户的加价（D-01）；缺少单价、目录价或价带即失败 |
+| `proforma.sku` | bloqueante | 目录认识每一条计费 SKU |
+| `proforma.quantity` | bloqueante | 计费数量等于 `orderRef` 所指采购订单 |
+| `proforma.total` | bloqueante | 行合计等于计费总额（只读产物） |
+| `proforma.stock` | confirmacion | 可用库存覆盖每条计费数量（D-02）；缺少库存数据需要确认 |
+| `proforma.separation` | confirmacion | 草稿的 `separation` 模式与账户规则一致 |
+
+`runChecks(actor, id)` 在当前修订上执行已声明的控件且不持久化任何结果，供面板的校验区读取。`approve` 与 `approveWithEdits` 在状态转换之前立即再跑同一条路径，不做缓存（W-49、W-50）；`approveWithEdits` 评估编辑后的内容，因为那才是被批准的版本。阻塞控件失败时以 `BLOCKING_CHECK` 拒绝批准；调用者未在 `confirmations` 中列出的、失败的需要确认控件以 `CHECK_CONFIRMATION_REQUIRED` 拒绝；批准事件记录每枚控件及其来源、版本、读取时刻，以及人工给出的确认。
+
+### 字段来源（W-36）
+
+每个修订携带自己的可编辑 `content`（proforma 为 `orderRef`、`lines`、`total`、`separation`），条目投影出 `fieldOrigins`：每个可编辑字段一条记录 —— 顶层键，加上对象值与数组元素的键，例如 `lines[0].unitPrice` —— 带运行声明的 `source`、`ref` 与读取时刻，或带 `{ source: null }` 表示该字段没有来源。`submit` 与 `submitRevision` 接受 `content` 与 `fieldOrigins`；`saveEdits` 与 `approveWithEdits` 重写内容，并丢弃被改动键之下的所有字段的来源，因为新值已不再来自原来的来源。
 
 -----
 
@@ -83,6 +108,10 @@ kind: "package-reference"
 - **单写入者唯一性** — `idempotency_key` 与 `business_key` 的认领在单个进程内串行化。若部署有多个产品写入者，需要真正的唯一约束或租约；项目的 ADR-001 记录了该决定与重新评估的触发条件。
 - **精简的引用登记** — 本包不持有运行、执行或账户登记，因此不透明引用的租户由第一个存储它的条目确定。从第二次使用起，其他租户会被拒绝；首次使用被信任，而所有者服务缺失的引用一律拒绝。
 - **不透明文档** — 文档以引用表示；二进制文档随 blob 存储加入。
+- **不随包提供校验适配器** — 本包只提供端口、已声明的控件与 proforma 实现。要批准 proforma 的部署需在自己包内挂载 `registerProformaChecks`，用 MCP 调用填充 `BoardCheckSource`；在此之前每次 proforma 批准都会以 `CHECK_UNAVAILABLE` 被拒，这是有意为之。
+- **尚未声明 `informativo` 控件** — D-8 只为 proforma 签署了阻塞与需确认两类控件，因此 `informativo` 类别没有已注册的示例，其分支没有被任何控件覆盖。
+- **校验结果不持久化** — 条目不保存校验快照。面板实时重读 `runChecks`，批准事件保留允许该决定的结果；按条目保存校验记录随持久化工作加入。
+- **外部效应前的重新校验属于 E15** — 控件在 `approve` 之前运行；发送之前必须再次运行它们的分发路径尚不存在。
 
 未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
 

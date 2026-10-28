@@ -21,11 +21,21 @@ import {
 } from './spec.ts'
 import { submittedSeverity } from './classify.ts'
 import { orderBoardItems } from './order.ts'
+import { CHECKS_VERSION, artifactOf, checkClass, checkKey, declaredChecks } from './checks.ts'
+import { fieldOriginsOf, mergeOrigins, revisionContent } from './projection.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   BoardActor,
   BoardApproveInput,
+  BoardArtifact,
   BoardCandidate,
+  BoardCheckFn,
+  BoardCheckOptions,
+  BoardCheckOutcome,
+  BoardCheckReport,
+  BoardCheckResult,
+  BoardCheckSource,
+  BoardCheckStatusEntry,
   BoardColumn,
   BoardCreateInput,
   BoardDataClass,
@@ -34,6 +44,7 @@ import type {
   BoardEditsInput,
   BoardEffectInput,
   BoardEvent,
+  BoardFieldOriginEntry,
   BoardReviewInput,
   BoardSeverity,
   BoardState,
@@ -46,6 +57,8 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export * from './checks.ts'
+export * from './projection.ts'
 export * from './classify.ts'
 export * from './order.ts'
 
@@ -111,6 +124,28 @@ interface BoardSpace {
 /** The `faberloomSpaces` surface the board reads through `ctx.get`. */
 interface BoardSpaces {
   get(actor: { id: string; companyId?: string | undefined; role: string; readOnly: boolean }, id: string): Promise<BoardSpace>
+}
+
+/** One registered check implementation and the source port it reads. */
+interface RegisteredCheck {
+  /** The implementation. */
+  readonly fn: BoardCheckFn
+  /** Source port the registration supplied, or undefined when it supplied none. */
+  readonly source: BoardCheckSource | undefined
+}
+
+/** The revision one edit produces, before it is appended to the item. */
+interface BoardEdit {
+  /** Version of the new revision. */
+  readonly version: number
+  /** The revision record to append. */
+  readonly revision: BoardItemRecord['revisions'][number]
+  /** Editable content the revision fixes. */
+  readonly content: Record<string, unknown>
+  /** Origins to persist with the revision. */
+  readonly fieldOrigins: BoardFieldOriginEntry[]
+  /** Hash that binds the content the caller reviewed. */
+  readonly artifactHash: string
 }
 
 const LEGACY_STATE: Record<BoardStatus, BoardState> = {
@@ -183,11 +218,14 @@ function opaqueReferences(refs: BoardReferences): [ReferenceKind, string][] {
 /** Map one durable record to the consumer-facing item. */
 function toItem(id: FaberLoomBoardItemId, record: BoardItemRecord): FaberLoomBoardItem {
   const state = stateOf(record)
+  const content = revisionContent(record.revisions[record.revisions.length - 1])
   return {
     id,
     ...record,
     state,
     column: columnOf(state),
+    content,
+    fieldOrigins: fieldOriginsOf(content, record.fieldOrigins),
     events: record.events.map(event => ({
       ...event,
       fromState: event.fromState as BoardState | null,
@@ -207,6 +245,13 @@ export class FaberLoomBoard extends Service {
   private readonly eventCap: number
   private readonly confidenceThreshold: number
   private readonly claims = new Map<string, Promise<unknown>>()
+  /**
+   * Registered check implementations, keyed by artifact type and check id. The
+   * map is empty until an adapter mounts its controls, so a deployment without
+   * adapters never runs a control it did not ask for; a declared control with
+   * no entry refuses approval with `CHECK_UNAVAILABLE`.
+   */
+  private readonly checks = new Map<string, RegisteredCheck>()
 
   /**
    * @param ctx - Cordis context owning the service fiber.
@@ -370,6 +415,211 @@ export class FaberLoomBoard extends Service {
     return run
   }
 
+  // ── Checks (E12) ────────────────────────────────────────────────────
+
+  /**
+   * Register one check implementation for a declared control. The registry is
+   * mounted from outside the board (ADR-003): an adapter calls this from
+   * `ctx.effect`, exactly like the handlers package mounts its handlers.
+   *
+   * A pair the board does not declare is refused, so a typo in an artifact type
+   * or a check id fails at load instead of silently never running. The class is
+   * signed by D-8, and a registration that disagrees is refused.
+   * @param artifactType - artifact type the check applies to.
+   * @param checkId - declared check id.
+   * @param fn - the implementation.
+   * @param options - signed class and the source port the check reads.
+   * @returns the disposer that removes this registration.
+   */
+  registerCheck(artifactType: string, checkId: string, fn: BoardCheckFn, options: BoardCheckOptions): () => void {
+    const signed = checkClass(artifactType, checkId)
+    if (signed === undefined) {
+      throw new Error(`faberloom: CHECK_UNKNOWN — ${checkId} is not a declared control of ${artifactType}`)
+    }
+    if (signed !== options.class) {
+      throw new Error(`faberloom: CHECK_CLASS_MISMATCH — ${checkId} is ${signed}, not ${options.class}`)
+    }
+    const key = checkKey(artifactType, checkId)
+    const registration: RegisteredCheck = { fn, source: options.source }
+    this.checks.set(key, registration)
+    return () => {
+      if (this.checks.get(key) === registration) this.checks.delete(key)
+    }
+  }
+
+  /**
+   * Which declared controls of one artifact type have an adapter.
+   * @param artifactType - artifact type to inspect.
+   * @returns the declared controls with their registration state.
+   */
+  checkStatus(artifactType: string): readonly BoardCheckStatusEntry[] {
+    return declaredChecks(artifactType).map(definition => ({
+      id: definition.id,
+      class: definition.class,
+      registered: this.checks.has(checkKey(artifactType, definition.id)),
+    }))
+  }
+
+  /**
+   * Run every declared control of one item without persisting anything. The
+   * panel reads this for its verification zone; approval calls the same path
+   * immediately before the transition, with no cache (W-50).
+   * @param actor - the authenticated reader.
+   * @param id - item id.
+   * @returns the executed controls and the declared ones with no adapter.
+   */
+  async runChecks(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardCheckReport> {
+    const record = await this.requireItem(id)
+    this.authorizeRead(record, actor)
+    return await this.evaluateChecks(record, id)
+  }
+
+  /**
+   * Execute the declared controls of one item against its current revision.
+   * @param record - the stored item.
+   * @param id - item id.
+   * @returns the results and the declared controls with no adapter.
+   */
+  private async evaluateChecks(record: BoardItemRecord, id: FaberLoomBoardItemId): Promise<BoardCheckReport> {
+    const item = toItem(id, record)
+    const artifact = artifactOf(item)
+    const outcomes: BoardCheckOutcome[] = []
+    const missing: string[] = []
+    for (const definition of declaredChecks(item.artifactType)) {
+      const registration = this.checks.get(checkKey(item.artifactType, definition.id))
+      if (registration === undefined) {
+        missing.push(definition.id)
+        continue
+      }
+      const result = await this.runCheck(registration, item, artifact)
+      outcomes.push({ id: definition.id, class: definition.class, result })
+    }
+    return { checks: outcomes, missing }
+  }
+
+  /**
+   * Run one check. A check that throws — a source timeout, a broken adapter, a
+   * registration with no source port — reports `fail`, because an unavailable
+   * source counts as a failed control and never as a skipped one (W-50, ADR-003).
+   * @param registration - the implementation and its source port.
+   * @param item - the item under review.
+   * @param artifact - the exact revision under review.
+   * @returns the control result.
+   */
+  private async runCheck(
+    registration: RegisteredCheck,
+    item: FaberLoomBoardItem,
+    artifact: BoardArtifact,
+  ): Promise<BoardCheckResult> {
+    try {
+      return await registration.fn({ item, artifact, source: registration.source })
+    } catch (error) {
+      return {
+        status: 'fail',
+        source: 'unavailable',
+        sourceVersion: null,
+        checkedAt: new Date().toISOString(),
+        fields: [],
+        reason: 'SOURCE_UNAVAILABLE',
+        detail: error instanceof Error ? error.message : null,
+      }
+    }
+  }
+
+  /**
+   * Refuse an approval the controls do not allow: a declared control with no
+   * adapter, a blocking control in failure, or a confirmation control in
+   * failure the caller did not confirm (D-01, D-02, W-49).
+   * @param report - the fresh control report of the item.
+   * @param confirmations - control ids the caller explicitly confirmed.
+   */
+  private requireChecksPassable(report: BoardCheckReport, confirmations: readonly string[]): void {
+    if (report.missing.length > 0) {
+      throw new Error(`faberloom: CHECK_UNAVAILABLE — no adapter registered for ${report.missing.join(', ')}`)
+    }
+    const blocked = report.checks.filter(outcome => outcome.class === 'bloqueante' && outcome.result.status === 'fail')
+    if (blocked.length > 0) {
+      const detail = blocked.map(outcome => `${outcome.id} ${outcome.result.reason ?? 'fail'}`).join(', ')
+      throw new Error(`faberloom: BLOCKING_CHECK — ${detail}`)
+    }
+    const confirmed = new Set(confirmations)
+    const pending = report.checks.filter(outcome => outcome.class === 'confirmacion'
+      && outcome.result.status === 'fail'
+      && !confirmed.has(outcome.id))
+    if (pending.length > 0) {
+      throw new Error(`faberloom: CHECK_CONFIRMATION_REQUIRED — confirm ${pending.map(outcome => outcome.id).join(', ')}`)
+    }
+  }
+
+  /**
+   * The audit detail of one approval: which controls ran, what they answered,
+   * from which source and when, and which failures the human confirmed.
+   * @param report - the control report the approval used.
+   * @param confirmations - control ids the caller confirmed.
+   * @returns the event detail, or null when the artifact type declares no control.
+   */
+  private checkEventData(report: BoardCheckReport, confirmations: readonly string[]): Record<string, unknown> | null {
+    if (report.checks.length === 0) return null
+    return {
+      checksVersion: CHECKS_VERSION,
+      checks: report.checks.map(outcome => ({
+        id: outcome.id,
+        class: outcome.class,
+        status: outcome.result.status,
+        reason: outcome.result.reason ?? null,
+        source: outcome.result.source,
+        sourceVersion: outcome.result.sourceVersion,
+        checkedAt: outcome.result.checkedAt,
+      })),
+      confirmed: [...confirmations],
+    }
+  }
+
+  /**
+   * Refuse a write whose row token is not the current one.
+   * @param current - the stored record.
+   * @param expected - the token the caller read, or undefined when the command carries none.
+   */
+  private requireRowVersion(current: BoardItemRecord, expected: number | undefined): void {
+    if (expected !== undefined && current.rowVersion !== expected) {
+      throw new Error('faberloom: STALE_ROW — the item changed since it was read')
+    }
+  }
+
+  /** The editable content of one record's current revision. */
+  private contentOf(record: BoardItemRecord): Record<string, unknown> {
+    return revisionContent(record.revisions[record.revisions.length - 1])
+  }
+
+  /**
+   * The revision one edit produces: content merged over the current revision,
+   * the hash that binds it, and the origins the edit invalidates.
+   * @param current - the stored record.
+   * @param changes - fields the caller wrote.
+   * @returns the version, revision record, content, origins, and hash.
+   */
+  private editRevision(current: BoardItemRecord, changes: Record<string, unknown>): BoardEdit {
+    const previous = current.revisions[current.revisions.length - 1]
+    const content: Record<string, unknown> = { ...this.contentOf(current), ...changes }
+    const summary = typeof content['summary'] === 'string' ? content['summary'] : previous?.summary ?? ''
+    const evidence = previous?.evidence ?? []
+    const version = current.version + 1
+    return {
+      version,
+      content,
+      fieldOrigins: mergeOrigins(current.fieldOrigins, Object.keys(changes)),
+      artifactHash: hashOf({ summary, evidence, content }),
+      revision: {
+        version,
+        summary,
+        evidence: [...evidence],
+        content,
+        documentRef: previous?.documentRef ?? null,
+        at: new Date().toISOString(),
+      },
+    }
+  }
+
   private async requireItem(id: FaberLoomBoardItemId): Promise<BoardItemRecord> {
     const record = (await this.items()).get(id)
     if (record === undefined) throw new Error(`faberloom: NOT_FOUND — board item ${id} not found`)
@@ -420,9 +670,7 @@ export class FaberLoomBoard extends Service {
     let next: BoardItemRecord | undefined
     await table.update(id, (current) => {
       this.authorizeWrite(current, writer)
-      if (options.expectedRowVersion !== undefined && current.rowVersion !== options.expectedRowVersion) {
-        throw new Error('faberloom: STALE_ROW — the item changed since it was read')
-      }
+      this.requireRowVersion(current, options.expectedRowVersion)
       const candidate = transform(current, actor)
       const fromState = stateOf(current)
       const toState = stateOf(candidate)
@@ -466,7 +714,9 @@ export class FaberLoomBoard extends Service {
   ): BoardItemRecord {
     const now = new Date().toISOString()
     const evidence = requireEvidence(input.evidence)
-    const artifactHash = hashOf({ summary: input.summary, evidence })
+    const content = input.content === undefined ? null : { ...input.content }
+    const fieldOrigins = input.fieldOrigins === undefined ? [] : [...input.fieldOrigins]
+    const artifactHash = hashOf({ summary: input.summary, evidence, content })
     const severity = submittedSeverity(
       input.severity,
       input.severityConfidence ?? null,
@@ -497,6 +747,7 @@ export class FaberLoomBoard extends Service {
       artifactType: input.artifactType ?? 'provisional',
       accountRef: input.accountRef ?? null,
       artifactHash,
+      fieldOrigins,
       pendingCandidate: null,
       events: [this.event({
         command: 'submit', actor: actor.id, fromState: null, toState: input.state ?? 'PENDIENTE_CRITERIO',
@@ -509,7 +760,7 @@ export class FaberLoomBoard extends Service {
       iterationLockUntil: null,
       iterationLockGeneration: 0,
       version: 1,
-      revisions: [{ version: 1, summary: input.summary, evidence, documentRef: input.documentRef ?? null, at: now }],
+      revisions: [{ version: 1, summary: input.summary, evidence, content, documentRef: input.documentRef ?? null, at: now }],
       approvedRevision: null,
       stale: false,
       staleReason: null,
@@ -698,20 +949,15 @@ export class FaberLoomBoard extends Service {
       if (current.version !== input.baseVersion) {
         throw new Error('faberloom: STALE_REVISION — the edits were made against an older version')
       }
-      const summary = typeof input.changes['summary'] === 'string' ? input.changes['summary'] : current.revisions[current.revisions.length - 1]?.summary ?? ''
-      const evidence = current.revisions[current.revisions.length - 1]?.evidence ?? []
-      const version = current.version + 1
-      const artifactHash = hashOf({ summary, evidence, changes: input.changes })
+      const edit = this.editRevision(current, input.changes)
       return {
         ...current,
-        version,
-        artifactHash,
+        version: edit.version,
+        artifactHash: edit.artifactHash,
+        fieldOrigins: edit.fieldOrigins,
         stale: false,
         staleReason: null,
-        revisions: [...current.revisions, {
-          version, summary, evidence, documentRef: current.revisions[current.revisions.length - 1]?.documentRef ?? null,
-          at: new Date().toISOString(),
-        }],
+        revisions: [...current.revisions, edit.revision],
       }
     }, { expectedRowVersion: input.expectedRowVersion })
     await this.clearEditDraft(this.actorOf(writer), id)
@@ -719,23 +965,33 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Approve the exact artifact version. It never sends anything.
+   * Approve the exact artifact version. It never sends anything, and the
+   * blocking and source-changing controls run again immediately before the
+   * transition, with no cache (W-49, W-50).
    * @param writer - the acting identity.
    * @param id - item id.
-   * @param input - expected row, artifact version, and hash.
+   * @param input - expected row, artifact version and hash, and confirmed controls.
    * @returns the approved item.
    */
   async approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem> {
-    const updated = await this.mutate(writer, id, 'approve', (current) => {
-      this.requireApprovable(current, input)
-      return { ...current, state: 'APROBADO', status: 'approved', approvedRevision: current.version, stale: false, staleReason: null }
-    }, { expectedRowVersion: input.expectedRowVersion })
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    this.requireRowVersion(current, input.expectedRowVersion)
+    this.requireApprovable(current, input)
+    const confirmations = input.confirmations ?? []
+    const report = await this.evaluateChecks(current, id)
+    this.requireChecksPassable(report, confirmations)
+    const updated = await this.mutate(writer, id, 'approve', (item) => {
+      this.requireApprovable(item, input)
+      return { ...item, state: 'APROBADO', status: 'approved', approvedRevision: item.version, stale: false, staleReason: null }
+    }, { expectedRowVersion: input.expectedRowVersion, data: this.checkEventData(report, confirmations) })
     await this.clearEditDraft(this.actorOf(writer), id)
     return updated
   }
 
   /**
-   * Save edits and approve the resulting version in one command.
+   * Save edits and approve the resulting version in one command. The controls
+   * run against the edited content, because that is the version being approved.
    * @param writer - the acting identity.
    * @param id - item id.
    * @param input - approval expectations plus the edits.
@@ -746,30 +1002,43 @@ export class FaberLoomBoard extends Service {
     id: FaberLoomBoardItemId,
     input: BoardApproveInput & BoardEditsInput,
   ): Promise<FaberLoomBoardItem> {
-    const updated = await this.mutate(writer, id, 'approve_with_edits', (current) => {
-      this.requireApprovable(current, input)
-      if (current.version !== input.baseVersion) {
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    this.requireRowVersion(current, input.expectedRowVersion)
+    this.requireApprovable(current, input)
+    if (current.version !== input.baseVersion) {
+      throw new Error('faberloom: STALE_REVISION — the edits were made against an older version')
+    }
+    const confirmations = input.confirmations ?? []
+    const preview = this.editRevision(current, input.changes)
+    const report = await this.evaluateChecks({
+      ...current,
+      version: preview.version,
+      artifactHash: preview.artifactHash,
+      fieldOrigins: preview.fieldOrigins,
+      revisions: [...current.revisions, preview.revision],
+    }, id)
+    this.requireChecksPassable(report, confirmations)
+
+    const updated = await this.mutate(writer, id, 'approve_with_edits', (item) => {
+      this.requireApprovable(item, input)
+      if (item.version !== input.baseVersion) {
         throw new Error('faberloom: STALE_REVISION — the edits were made against an older version')
       }
-      const summary = typeof input.changes['summary'] === 'string' ? input.changes['summary'] : current.revisions[current.revisions.length - 1]?.summary ?? ''
-      const evidence = current.revisions[current.revisions.length - 1]?.evidence ?? []
-      const version = current.version + 1
-      const artifactHash = hashOf({ summary, evidence, changes: input.changes })
+      const edit = this.editRevision(item, input.changes)
       return {
-        ...current,
-        version,
-        artifactHash,
+        ...item,
+        version: edit.version,
+        artifactHash: edit.artifactHash,
+        fieldOrigins: edit.fieldOrigins,
         state: 'APROBADO',
         status: 'approved',
-        approvedRevision: version,
+        approvedRevision: edit.version,
         stale: false,
         staleReason: null,
-        revisions: [...current.revisions, {
-          version, summary, evidence, documentRef: current.revisions[current.revisions.length - 1]?.documentRef ?? null,
-          at: new Date().toISOString(),
-        }],
+        revisions: [...item.revisions, edit.revision],
       }
-    }, { expectedRowVersion: input.expectedRowVersion })
+    }, { expectedRowVersion: input.expectedRowVersion, data: this.checkEventData(report, confirmations) })
     await this.clearEditDraft(this.actorOf(writer), id)
     return updated
   }
@@ -850,8 +1119,10 @@ export class FaberLoomBoard extends Service {
         version,
         artifactHash: candidate.hash,
         pendingCandidate: null,
+        fieldOrigins: [],
         revisions: [...current.revisions, {
-          version, summary: candidate.summary, evidence: candidate.evidence, documentRef: null, at: candidate.at,
+          version, summary: candidate.summary, evidence: candidate.evidence, content: null,
+          documentRef: null, at: candidate.at,
         }],
       }
     }, { data: { choice: decision } })
@@ -1059,10 +1330,12 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Submit a correction as the next revision, awaiting a fresh review.
+   * Submit a correction as the next revision, awaiting a fresh review. The
+   * revision carries the content the caller supplies, so the controls of the
+   * next approval evaluate the corrected artifact.
    * @param writer - the acting identity.
    * @param id - item id.
-   * @param input - summary, evidence, and optional document reference.
+   * @param input - summary, evidence, optional document reference, content, and origins.
    * @returns the updated item.
    */
   async submitRevision(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardSubmitInput): Promise<FaberLoomBoardItem> {
@@ -1074,16 +1347,21 @@ export class FaberLoomBoard extends Service {
       }
       const version = current.version + 1
       const evidence = requireEvidence(input.evidence)
+      const content = input.content === undefined ? this.contentOf(current) : { ...input.content }
+      const fieldOrigins = input.fieldOrigins === undefined
+        ? mergeOrigins(current.fieldOrigins, input.content === undefined ? [] : Object.keys(input.content))
+        : [...input.fieldOrigins]
       return {
         ...current,
         state: 'PENDIENTE_CRITERIO',
         status: 'waiting_approval',
         version,
-        artifactHash: hashOf({ summary: input.summary, evidence }),
+        artifactHash: hashOf({ summary: input.summary, evidence, content }),
+        fieldOrigins,
         stale: false,
         staleReason: null,
         revisions: [...current.revisions, {
-          version, summary: input.summary, evidence, documentRef: input.documentRef ?? null,
+          version, summary: input.summary, evidence, content, documentRef: input.documentRef ?? null,
           at: new Date().toISOString(),
         }],
       }

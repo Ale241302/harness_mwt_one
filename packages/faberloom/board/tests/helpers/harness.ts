@@ -15,8 +15,16 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomSpaces from '../../../spaces/src/index.ts'
 import FaberLoomBoard from '../../src/index.ts'
+import { declaredChecks, registerProformaChecks } from '../../src/checks.ts'
 import { boardDomainSpec, type BoardItemRecord } from '../../src/spec.ts'
-import type { BoardActor, Config as BoardConfig, FaberLoomBoardItem, FaberLoomBoardItemId } from '../../src/index.ts'
+import type {
+  BoardActor,
+  BoardCheckFn,
+  BoardCheckSource,
+  Config as BoardConfig,
+  FaberLoomBoardItem,
+  FaberLoomBoardItemId,
+} from '../../src/index.ts'
 
 /** Owner and company used by the isolation suites. */
 export const OWNER_A = 'compras2@sondelsa.com'
@@ -61,10 +69,16 @@ export interface BoardHarness {
 
 /**
  * Boot the storage/domain composition the board package runs on.
- * @param options - a shared media pool and the board configuration row.
+ * @param options - a shared media pool, the board configuration row, and how the
+ * harness mounts the proforma controls: `permissive` (the default) registers a
+ * passing stub for every declared control so the command suites can approve a
+ * proforma that carries no artifact content, and `none` leaves the registry
+ * empty so a suite can prove a missing adapter rejects the approval.
  * @returns the context, board, Spaces service, and media pool.
  */
-export async function bootBoard(options: { pool?: MemoryMediaPool; board?: BoardConfig } = {}): Promise<BoardHarness> {
+export async function bootBoard(
+  options: { pool?: MemoryMediaPool; board?: BoardConfig; checks?: 'permissive' | 'none' } = {},
+): Promise<BoardHarness> {
   const pool = options.pool ?? new MemoryMediaPool()
   const ctx = new Context()
   await ctx.plugin(Storage)
@@ -74,7 +88,30 @@ export async function bootBoard(options: { pool?: MemoryMediaPool; board?: Board
   ctx.provide('storageDomain', facility)
   await ctx.plugin(FaberLoomSpaces)
   await ctx.plugin(FaberLoomBoard, options.board)
+  if (options.checks !== 'none') {
+    for (const definition of declaredChecks('proforma')) {
+      ctx.effect(() => ctx.faberloomBoard.registerCheck('proforma', definition.id, passingCheck, {
+        class: definition.class,
+      }), `harness.checks.${definition.id}`)
+    }
+  }
   return { ctx, board: ctx.faberloomBoard, spaces: ctx.faberloomSpaces, pool }
+}
+
+/** A check stub that passes without reading any source. */
+const passingCheck: BoardCheckFn = () => ({
+  status: 'ok', source: 'harness', sourceVersion: null, checkedAt: new Date().toISOString(), fields: [],
+})
+
+/**
+ * Mount the real proforma controls against one source port, the way an E12
+ * adapter mounts them from `ctx.effect`.
+ * @param ctx - the booted context.
+ * @param harness - the booted board.
+ * @param source - source port the controls read.
+ */
+export function mountProformaChecks(ctx: Context, harness: BoardHarness, source: BoardCheckSource): void {
+  ctx.effect(() => registerProformaChecks(harness.board, source), 'harness.checks.real')
 }
 
 /** The Spaces identity matching one board actor. */
@@ -155,6 +192,7 @@ export function rawBoardItem(overrides: Partial<BoardItemRecord> = {}): BoardIte
     artifactType: 'proforma',
     accountRef: null,
     artifactHash: 'hash-heredado',
+    fieldOrigins: [],
     pendingCandidate: null,
     events: [],
     discardReason: null,
@@ -164,7 +202,7 @@ export function rawBoardItem(overrides: Partial<BoardItemRecord> = {}): BoardIte
     iterationLockUntil: null,
     iterationLockGeneration: 0,
     version: 1,
-    revisions: [{ version: 1, summary: 'borrador', evidence: ['oc:505288'], documentRef: null, at }],
+    revisions: [{ version: 1, summary: 'borrador', evidence: ['oc:505288'], content: null, documentRef: null, at }],
     approvedRevision: null,
     stale: false,
     staleReason: null,
