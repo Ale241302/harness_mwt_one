@@ -249,6 +249,15 @@ export interface FaberLoomBoardItem {
   readonly iterationLockUntil: string | null
   /** Iteration lock generation. */
   readonly iterationLockGeneration: number
+  /** Version the current attempt started from, or null outside an attempt. */
+  readonly iterationBaseVersion: number | null
+  /**
+   * Tab session that opened the current attempt, or null. The attempt, not the
+   * user, is the lock subject: two tabs of one user are two attempts (§9.7.1).
+   */
+  readonly iterationLockBy: string | null
+  /** Applied iteration rounds of this item; the panel suggests a rewrite at the limit (D-10). */
+  readonly iterationRoundCount: number
   /** Every revision, ascending. */
   readonly revisions: readonly BoardRevision[]
   /** The revision currently approved, or `null`. */
@@ -743,3 +752,214 @@ export interface BoardProformaContent {
   /** Whether the draft is a complement letter or a new proforma. */
   readonly separation?: 'complement' | 'new'
 }
+
+/**
+ * Lifecycle of the iteration attempt of one item (§9.7.1). `active` holds a
+ * lock with a future deadline; `expired` is an `ITERANDO` record whose deadline
+ * passed, which reads and behaves as "Guardar y salir" (W-44); `idle` carries
+ * no attempt.
+ */
+export type BoardIterationPhase = 'idle' | 'active' | 'expired'
+
+/**
+ * Why an attempt ended and returned the item to the pending column. All four
+ * keep the working draft and leave a pending candidate untouched (W-41, W-97);
+ * `lock-vencido` is the same exit the read path applies on expiry.
+ */
+export type BoardIterationExitReason =
+  | 'guardar-y-salir' | 'llevar-a-spaceloom' | 'volver-sin-resolver' | 'lock-vencido'
+
+/**
+ * Scope one applied iteration teaches (§6.3). `puntual` teaches nothing; the
+ * other three become learning candidates. The board records the choice and the
+ * learning registry consumes it; no promotion happens here (W-34, W-35).
+ */
+export type BoardCorrectionScope = 'puntual' | 'cuenta' | 'espacio' | 'agente'
+
+/**
+ * The working draft of one attempt: the work not yet applied, linked to the
+ * artifact version it was written against (§9.7.1). `archived` is true when the
+ * attempt that produced it is no longer live, which is how a late agent answer
+ * is kept without touching the item or resurfacing in the panel (W-57).
+ */
+export interface BoardIterationDraft {
+  /** Storage key of the draft, always `<itemId>:<iterationId>`. */
+  readonly key: string
+  /** Item the draft edits. */
+  readonly itemId: string
+  /** Attempt that produced the draft. */
+  readonly iterationId: string
+  /** Artifact version the draft was written against. */
+  readonly baseVersion: number
+  /** Draft summary, or null when the attempt only changed content. */
+  readonly summary: string | null
+  /** Evidence references the draft declares. */
+  readonly evidence: readonly string[]
+  /** Draft artifact content, or null when the attempt only changed the summary. */
+  readonly content: Readonly<Record<string, unknown>> | null
+  /** True once the base version is no longer the current one, or the attempt is dead. */
+  readonly archived: boolean
+  /** True when a resume found the draft written against an older version (W-68). */
+  readonly outdated: boolean
+  /** ISO-8601 instant of the last draft write. */
+  readonly updatedAt: string
+  /** ISO-8601 instant after which the draft is not offered again (D-09). */
+  readonly retainUntil: string
+}
+
+/** What one item's iteration attempt looks like to the panel right now. */
+export interface BoardIterationStatus {
+  /** Attempt lifecycle; an expired attempt already reads as paused. */
+  readonly phase: BoardIterationPhase
+  /** Attempt id, or null when the item carries none. */
+  readonly iterationId: string | null
+  /** Lock generation of the attempt; every acquisition bumps it. */
+  readonly generation: number
+  /** Artifact version the attempt started from, or null. */
+  readonly baseVersion: number | null
+  /** Lock deadline in UTC, or null. */
+  readonly lockUntil: string | null
+  /** Tab session holding the attempt, or null. */
+  readonly lockBy: string | null
+  /** Seconds a client waits between renewals (D-09). */
+  readonly renewalSeconds: number
+  /** Rounds applied to this item so far. */
+  readonly rounds: number
+  /** Rounds after which the panel suggests rewriting or discarding (D-10). */
+  readonly roundLimit: number
+  /** True once the item reached the round limit. It only suggests; nothing blocks (D-10). */
+  readonly suggestRewrite: boolean
+  /** Retained draft of the attempt, or null. */
+  readonly draft: BoardIterationDraft | null
+  /** True when the retained draft was written against an older version (W-68). */
+  readonly draftOutdated: boolean
+  /** True while a candidate artifact waits for an explicit choice. */
+  readonly candidatePending: boolean
+}
+
+/** One iteration command's answer: the item after the commit and its attempt. */
+export interface BoardIterationResult {
+  /** Item as the panel reads it after the command. */
+  readonly item: FaberLoomBoardItem
+  /** Attempt state after the command. */
+  readonly status: BoardIterationStatus
+}
+
+/** Input for `iterate`: the version the caller saw and the tab opening the attempt. */
+export interface BoardIterateInput {
+  /** Artifact version the attempt starts from. */
+  readonly baseVersion: number
+  /** Tab session that opens the attempt, so a second tab is a different attempt. */
+  readonly actorSession: string
+}
+
+/** Input for `iterateWithEdits`: the edits and the attempt that starts over them. */
+export interface BoardIterateWithEditsInput extends BoardEditsInput {
+  /** Tab session that opens the attempt. */
+  readonly actorSession: string
+}
+
+/** The attempt one iteration write targets. */
+export interface BoardIterationLockInput {
+  /** Attempt the caller believes is current. */
+  readonly iterationId: string
+  /** Lock generation the caller believes is current. */
+  readonly generation: number
+}
+
+/** Input for `pauseIteration`. */
+export interface BoardPauseIterationInput extends BoardIterationLockInput {
+  /** Exit the user chose, or `lock-vencido` for the expiry path. */
+  readonly reason: BoardIterationExitReason
+}
+
+/**
+ * The explicit choice over a pending candidate (§2.2). A candidate is never
+ * adopted implicitly: `keep` discards it and keeps the live version, `adopt`
+ * makes it the live version.
+ */
+export interface BoardCandidateChoice {
+  /** Candidate the user saw. */
+  readonly id: string
+  /** Hash the user saw; a changed candidate rejects the choice. */
+  readonly hash: string
+  /** Adopt the candidate or keep the current version. */
+  readonly decision: 'adopt' | 'keep'
+}
+
+/** Input for `cancelIteration`. */
+export interface BoardCancelIterationInput extends BoardIterationLockInput {
+  /** Required while a candidate is pending; its resolution commits with the cancel. */
+  readonly candidate?: BoardCandidateChoice
+}
+
+/** Input for `applyIteration`. */
+export interface BoardApplyIterationInput extends BoardIterationLockInput {
+  /** Artifact version the attempt started from. */
+  readonly baseVersion: number
+  /** Summary of the applied version; defaults to the draft, then the current revision. */
+  readonly summary?: string
+  /** Evidence of the applied version; defaults to the draft, then the current revision. */
+  readonly evidence?: readonly string[]
+  /** Scope the correction teaches; the board records it and learning consumes it (W-34). */
+  readonly scope: BoardCorrectionScope
+  /** Required while a candidate is pending. */
+  readonly candidate?: BoardCandidateChoice
+}
+
+/** Input for `resumeIteration`. */
+export interface BoardResumeIterationInput {
+  /** Base version of the retained draft the caller saw. */
+  readonly baseVersion: number
+  /** Tab session opening the new attempt; omitted leaves the attempt without a session. */
+  readonly actorSession?: string
+}
+
+/** Input for `saveIterationDraft`: one validated write of the attempt's work. */
+export interface BoardIterationDraftInput extends BoardIterationLockInput {
+  /** Artifact version the caller wrote against. */
+  readonly baseVersion: number
+  /** Draft summary. */
+  readonly summary?: string
+  /** Draft evidence references. */
+  readonly evidence?: readonly string[]
+  /** Draft artifact content, merged over the previous draft. */
+  readonly content?: Readonly<Record<string, unknown>>
+}
+
+/**
+ * Result of a draft write. `linked` is true when the attempt was live and the
+ * item now points at the draft; false means the draft belongs to a dead
+ * attempt, so it is archived and the item was not touched (W-57).
+ */
+export interface BoardIterationDraftOutcome {
+  /** The stored draft. */
+  readonly draft: BoardIterationDraft
+  /** Whether the item links this draft. */
+  readonly linked: boolean
+  /** Stable reason the draft was archived instead of linked, or null. */
+  readonly code: 'LOCK_LOST' | 'ITERATION_STALE' | null
+}
+
+/** One field where a retained draft and the current version disagree (W-68). */
+export interface BoardIterationDifference {
+  /** Top-level content key. */
+  readonly field: string
+  /** Value the draft holds. */
+  readonly draftValue: unknown
+  /** Value the current version holds. */
+  readonly currentValue: unknown
+}
+
+/**
+ * Result of `resumeIteration`. `started` means a new attempt holds the draft;
+ * `outdated` means the draft was written against an older version, so the
+ * differences are returned and nothing was overwritten (W-68).
+ */
+export type BoardResumeIterationResult =
+  | { readonly item: FaberLoomBoardItem; readonly status: 'started' }
+  | {
+    readonly item: FaberLoomBoardItem
+    readonly status: 'outdated'
+    readonly differences: readonly BoardIterationDifference[]
+  }

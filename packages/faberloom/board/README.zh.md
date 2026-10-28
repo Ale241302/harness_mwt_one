@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包承载工作台：带版本化修订的准备结果与例外，批准绑定到精确版本，变更后需重新校验，效应需要显式授权。它注册 `ctx.faberloomBoard` 主机服务；模型工具位于 `dsh-tool-faberloom`。
+此包承载工作台：带版本化修订的准备结果与例外，批准绑定到精确版本，变更后需重新校验，效应需要显式授权。它还按条目运行一次迭代尝试——锁、工作草稿，以及只给出建议的轮次计数器。它注册 `ctx.faberloomBoard` 主机服务；模型工具位于 `dsh-tool-faberloom`。
 
 ## 目录
 
@@ -81,6 +81,35 @@ kind: "package-reference"
 
 每个修订携带自己的可编辑 `content`（proforma 为 `orderRef`、`lines`、`total`、`separation`），条目投影出 `fieldOrigins`：每个可编辑字段一条记录 —— 顶层键，加上对象值与数组元素的键，例如 `lines[0].unitPrice` —— 带运行声明的 `source`、`ref` 与读取时刻，或带 `{ source: null }` 表示该字段没有来源。`submit` 与 `submitRevision` 接受 `content` 与 `fieldOrigins`；`saveEdits` 与 `approveWithEdits` 重写内容，并丢弃被改动键之下的所有字段的来源，因为新值已不再来自原来的来源。
 
+### 迭代（E14）
+
+`iterate(writer, id, { baseVersion, actorSession })` 在调用者看到的版本上开启一次尝试。它要求 `PENDIENTE_CRITERIO` 与一个空间（`NO_SPACE`），生成新的 `iterationId`，递增 `iterationLockGeneration`，记录 `iterationBaseVersion`，按已解析的策略写入锁的到期时刻，并且不改变产物版本（W-31、W-11）。同一用户的两个标签页是两次不同的尝试：锁的主体是尝试而不是用户，`actorSession` 记录开启它的标签页。
+
+`iterateWithEdits(writer, id, { expectedRowVersion, baseVersion, changes, actorSession })` 在同一次 `update` 中把编辑保存为下一个版本并在其上开启尝试，因此行、基础版本或状态冲突时不会创建版本、不会发生状态转换，调用者的编辑留在条目之外（W-69）。
+
+锁保存在条目上：`iterationId`、`iterationLockGeneration`、`iterationBaseVersion`、`iterationLockUntil`、`iterationLockBy` 与 `iterationDraftKey`。`renewIteration(writer, id, { iterationId, generation })` 延长到期时刻，并拒绝过期尝试。`iterationStatus(actor, id)` 报告阶段、锁、轮次与保留的草稿；已记录的到期时刻已过的 `ITERANDO` 记录报告 `expired`，并按 `PENDIENTE_CRITERIO` 读取，因此到期等价于“保存并退出”，且读取不会写入条目（W-44）。没有记录到期时刻的记录视为有效，因此本版本之前写入的行仍然拒绝编辑。
+
+`saveIterationDraft(writer, id, { iterationId, generation, baseVersion, summary?, evidence?, content? })` 把尝试的工作以 `<itemId>:<iterationId>` 存入 `iteration_drafts` 表，与同一尝试先前的草稿合并，并从条目链接它。尝试已不再有效——已暂停、已到期、已取消或被另一个标签页替换——时，写入会作为该失效尝试的草稿保存、标记为归档并可凭尝试 id 取回，而条目完全不被写入（W-57）。
+
+每次迭代写入都同时校验状态、`iterationId`、代次与基础版本，并以 `LOCK_LOST` 或 `ITERATION_STALE` 无副作用地拒绝（W-43、W-57）。产物已越过其基础版本的尝试已过期，绝不会覆盖更新的内容。
+
+`pauseIteration(writer, id, { iterationId, generation, reason })` 覆盖保存并退出、带到 SpaceLoom、未解决返回与 `lock-vencido`：释放锁、使尝试 id 失效、把条目返回 `PENDIENTE_CRITERIO`、保留与其基础版本绑定的草稿，并保持任何待处理候选不变（W-67、W-97）。`cancelIteration` 删除草稿且不改变版本，除非通过它在有候选时接受的 adopt 选择（W-41）；调用者省略该选择时以 `CANDIDATE_PENDING` 拒绝。
+
+`resumeIteration(writer, id, { baseVersion })` 在保留的草稿上开启新尝试。草稿是针对更旧版本写入的时，它把草稿标记为已过期，返回 `status: 'outdated'` 与差异字段，且不覆盖任何内容（W-68）。
+
+`applyIteration(writer, id, { iterationId, generation, baseVersion, scope, summary?, evidence?, candidate? })` 依据草稿与调用者的覆盖写入下一个版本与哈希，把 `scope` 记录在审计事件中供学习侧使用，释放锁、删除草稿，并把条目返回 `PENDIENTE_CRITERIO`。待处理候选仍是条目的候选（W-40），必须在同一次调用中指定：`adopt` 使其成为生效版本，而且这是唯一的版本递增；`keep` 将其丢弃。只有当前尝试可以应用（W-57）。
+
+`iterationRoundCount` 保存在条目上。达到 `iterationRoundLimit` 后 `iterationStatus().suggestRewrite` 变为 true；没有任何操作被阻塞，因为 D-10 只是建议重写或丢弃。
+
+| 配置字段 | 默认值 | 含义 |
+|---|---|---|
+| `iterationRenewalSeconds` | 30 | 客户端两次续期间隔的秒数（D-09） |
+| `iterationLockSeconds` | 900 | 尝试在无活动情况下存活的秒数（D-09） |
+| `iterationDraftRetentionDays` | 30 | 工作草稿保持可恢复的天数（D-09） |
+| `iterationRoundLimit` | 5 | 出现建议前已应用的轮次（D-10） |
+
+`iterationPolicy()` 返回解析后的值，因此面板按部署的数值调度，而不自带一份。
+
 -----
 
 <a id="model-experience"></a>
@@ -112,6 +141,12 @@ kind: "package-reference"
 - **尚未声明 `informativo` 控件** — D-8 只为 proforma 签署了阻塞与需确认两类控件，因此 `informativo` 类别没有已注册的示例，其分支没有被任何控件覆盖。
 - **校验结果不持久化** — 条目不保存校验快照。面板实时重读 `runChecks`，批准事件保留允许该决定的结果；按条目保存校验记录随持久化工作加入。
 - **外部效应前的重新校验属于 E15** — 控件在 `approve` 之前运行；发送之前必须再次运行它们的分发路径尚不存在。
+- **迭代锁是进程内的** — 尝试由每个条目一次 `KvTable.update` 串行化，而不是由租约串行化。不同进程中的两个写入者若作用于同一条目，需要真正的租约；目前只有在两者看到同一存储时，第二个才会被拒绝。
+- **已应用的范畴只被记录，不被学习** — `applyIteration` 把 `scope` 写入其审计事件后即止。修正记录、学习候选与晋升位于本包之外（T4.5–T4.7）。
+- **草稿不会被清扫** — 保留期在读取或恢复草稿时执行；没有任务删除过期行，因此 `iteration_drafts` 会增长，直到后续清扫器接手。
+- **过期的尝试是派生出来的，不会被重写** — 直到下一条写条目的命令之前，记录仍保留 `ITERANDO` 与其草稿键，因此直接读取原始行的读者看到的仍是服务已经报告为已暂停的锁。
+- **候选仍可在尝试之外被解决** — `resolveCandidate` 不检查迭代锁，因此在尝试期间采纳会移动版本，随后该尝试以 `ITERATION_STALE` 拒绝，而不是覆盖它。
+- **服务之外没有迭代表面** — 迭代的 MCP 工具与 Remote 方法不属于本包，因此面板只能通过主机服务调用这些命令。
 
 未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。
 

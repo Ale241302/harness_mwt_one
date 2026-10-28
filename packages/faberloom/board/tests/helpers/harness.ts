@@ -16,7 +16,7 @@ import { MemoryMediaPool, MemoryStorageBackend } from '../../../../storage/stora
 import FaberLoomSpaces from '../../../spaces/src/index.ts'
 import FaberLoomBoard from '../../src/index.ts'
 import { declaredChecks, registerProformaChecks } from '../../src/checks.ts'
-import { boardDomainSpec, type BoardItemRecord } from '../../src/spec.ts'
+import { boardDomainSpec, type BoardItemRecord, type BoardIterationDraftRecord } from '../../src/spec.ts'
 import type {
   BoardActor,
   BoardCheckFn,
@@ -201,6 +201,9 @@ export function rawBoardItem(overrides: Partial<BoardItemRecord> = {}): BoardIte
     iterationDraftKey: null,
     iterationLockUntil: null,
     iterationLockGeneration: 0,
+    iterationBaseVersion: null,
+    iterationLockBy: null,
+    iterationRoundCount: 0,
     version: 1,
     revisions: [{ version: 1, summary: 'borrador', evidence: ['oc:505288'], content: null, documentRef: null, at }],
     approvedRevision: null,
@@ -220,9 +223,14 @@ export function rawBoardItem(overrides: Partial<BoardItemRecord> = {}): BoardIte
  * before this version of the service looks: no key claim, no events.
  * @param pool - the media pool the board will boot against.
  * @param record - the record to store.
+ * @param id - item id to store it under; a fresh uuid by default.
  * @returns the stored item id.
  */
-export async function seedRawItem(pool: MemoryMediaPool, record: BoardItemRecord): Promise<FaberLoomBoardItemId> {
+export async function seedRawItem(
+  pool: MemoryMediaPool,
+  record: BoardItemRecord,
+  id: string = randomUUID(),
+): Promise<FaberLoomBoardItemId> {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
@@ -230,11 +238,36 @@ export async function seedRawItem(pool: MemoryMediaPool, record: BoardItemRecord
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
   const domain = await facility.open(boardDomainSpec)
-  const id = brandString<FaberLoomBoardItemId>(randomUUID())
-  await domain.table('items').put(id, record)
+  const itemId = brandString<FaberLoomBoardItemId>(id)
+  await domain.table('items').put(itemId, record)
   await domain.close()
   await ctx.fiber.dispose()
-  return id
+  return itemId
+}
+
+/**
+ * Write one iteration draft straight to a durable medium, so a suite can prove
+ * recovery and retention against a row the service did not write.
+ * @param pool - the media pool the board will boot against.
+ * @param record - the draft row to store.
+ * @returns the stored draft key.
+ */
+export async function seedRawIterationDraft(
+  pool: MemoryMediaPool,
+  record: BoardIterationDraftRecord,
+): Promise<string> {
+  const ctx = new Context()
+  await ctx.plugin(Storage)
+  ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
+  const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+  ctx.storage.mount('domain', facility)
+  ctx.provide('storageDomain', facility)
+  const domain = await facility.open(boardDomainSpec)
+  const key = `${record.itemId}:${record.iterationId}`
+  await domain.table('iteration_drafts').put(key, record)
+  await domain.close()
+  await ctx.fiber.dispose()
+  return key
 }
 
 /**

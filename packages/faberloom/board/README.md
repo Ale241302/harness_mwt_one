@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package carries the work table: prepared results and exceptions with versioned revisions, approval bound to the exact revision, revalidation after a change, and effects that require an explicit authorization. It registers the `ctx.faberloomBoard` host service; the model tools live in `dsh-tool-faberloom`.
+This package carries the work table: prepared results and exceptions with versioned revisions, approval bound to the exact revision, revalidation after a change, and effects that require an explicit authorization. It also runs one iteration attempt per item — lock, working draft, and a round counter that only suggests. It registers the `ctx.faberloomBoard` host service; the model tools live in `dsh-tool-faberloom`.
 
 ## Table of Contents
 
@@ -81,6 +81,35 @@ Checks are a port: the board declares which controls an artifact type requires a
 
 Each revision carries its editable `content` (a proforma: `orderRef`, `lines`, `total`, `separation`), and the item projects `fieldOrigins`: one entry per editable field — top-level keys plus the keys of object values and of array elements, e.g. `lines[0].unitPrice` — with the `source`, `ref`, and read instant the run declared, or `{ source: null }` for a field with no origin. `submit` and `submitRevision` accept `content` and `fieldOrigins`; `saveEdits` and `approveWithEdits` rewrite content and drop the origin of every field under a key the edit changed, because the new value no longer comes from the old source.
 
+### Iteration (E14)
+
+`iterate(writer, id, { baseVersion, actorSession })` opens one attempt over the version the caller saw. It requires `PENDIENTE_CRITERIO` and a space (`NO_SPACE`), mints a new `iterationId`, bumps `iterationLockGeneration`, records `iterationBaseVersion`, writes the lock deadline from the resolved policy, and leaves the artifact version untouched (W-31, W-11). Two tabs of one user are two attempts: the attempt, not the user, is the lock subject, and `actorSession` records the tab that opened it.
+
+`iterateWithEdits(writer, id, { expectedRowVersion, baseVersion, changes, actorSession })` saves the edits as the next version and starts the attempt over it in the same `update`, so a conflicting row, base version, or state creates no version, applies no transition, and leaves the caller's edits outside the item (W-69).
+
+The lock lives on the item, in `iterationId`, `iterationLockGeneration`, `iterationBaseVersion`, `iterationLockUntil`, `iterationLockBy`, and `iterationDraftKey`. `renewIteration(writer, id, { iterationId, generation })` extends the deadline and refuses a stale attempt. `iterationStatus(actor, id)` reports the phase, the lock, the rounds, and the retained draft; an `ITERANDO` record whose recorded deadline passed reports `expired` and reads as `PENDIENTE_CRITERIO`, so expiry behaves as Guardar y salir without any read writing the item (W-44). A record with no recorded deadline counts as live, so rows written before this version keep refusing edits.
+
+`saveIterationDraft(writer, id, { iterationId, generation, baseVersion, summary?, evidence?, content? })` stores the attempt's work in the `iteration_drafts` table under `<itemId>:<iterationId>`, merged over the previous draft of that attempt, and links it from the item. A write whose attempt is no longer live — paused, expired, cancelled, or replaced by another tab — is stored as a draft of that dead attempt, archived and retrievable by attempt id, and the item is not written at all (W-57).
+
+Every iteration write validates state, `iterationId`, generation, and base version together and refuses with `LOCK_LOST` or `ITERATION_STALE` without effects (W-43, W-57). An attempt whose artifact moved past its base version is stale: it is never applied over newer content.
+
+`pauseIteration(writer, id, { iterationId, generation, reason })` covers Guardar y salir, Llevar a SpaceLoom, Volver sin resolver, and `lock-vencido`: it releases the lock, invalidates the attempt id, returns the item to `PENDIENTE_CRITERIO`, keeps the draft linked to its base version, and leaves any pending candidate untouched (W-67, W-97). `cancelIteration` deletes the draft and does not change the version, except through the adopt choice it accepts while a candidate is pending (W-41); it refuses with `CANDIDATE_PENDING` when the caller leaves that choice out.
+
+`resumeIteration(writer, id, { baseVersion })` takes a new attempt over the retained draft. When the draft was written against an older version, it marks the draft outdated, returns `status: 'outdated'` with the differing fields, and overwrites nothing (W-68).
+
+`applyIteration(writer, id, { iterationId, generation, baseVersion, scope, summary?, evidence?, candidate? })` writes the next version and hash from the draft and the caller's overrides, records `scope` on the audit event for the learning side, releases the lock, deletes the draft, and returns the item to `PENDIENTE_CRITERIO`. A pending candidate stays a candidate of the item (W-40) and must be named in the same call: `adopt` makes it the live version and that is the only version bump, `keep` discards it. Only the current attempt applies (W-57).
+
+`iterationRoundCount` lives on the item. `iterationStatus().suggestRewrite` turns true once it reaches `iterationRoundLimit`; nothing blocks, because D-10 only suggests rewriting or discarding.
+
+| Config field | Default | Meaning |
+|---|---|---|
+| `iterationRenewalSeconds` | 30 | Seconds a client waits between renewals (D-09) |
+| `iterationLockSeconds` | 900 | Seconds an attempt lives without activity (D-09) |
+| `iterationDraftRetentionDays` | 30 | Days a working draft stays recoverable (D-09) |
+| `iterationRoundLimit` | 5 | Applied rounds before the suggestion (D-10) |
+
+`iterationPolicy()` returns the resolved values, so the panel schedules from the deployment's numbers instead of carrying its own.
+
 -----
 
 <a id="model-experience"></a>
@@ -112,6 +141,12 @@ Independent of live requests: the registration never touches a request prefix.
 - **No `informativo` control declared yet** — D-8 signed only blocking and confirmation controls for a proforma, so the `informativo` class has no registered example and its branch is exercised by no control.
 - **No check result is persisted** — the item stores no verification snapshot. The panel re-reads `runChecks`, and the approval event keeps the results that allowed the decision; a stored per-item verification record arrives with the persistence work.
 - **Revalidation before the external effect is E15** — the controls run before `approve`; the dispatch path that must run them again before sending does not exist yet.
+- **Iteration lock is in-process** — the attempt is serialized by one `KvTable.update` per item, not by a lease. Two writers on one item in different processes need a real lease; today the second one is refused only where both see the same store.
+- **Applied scope is recorded, not learned** — `applyIteration` writes `scope` on its audit event and stops there. Correction records, learning candidates, and promotion live outside this package (T4.5–T4.7).
+- **Drafts are not swept** — retention is enforced when a draft is read or resumed; no task deletes expired rows, so `iteration_drafts` grows until a later sweeper owns it.
+- **An expired attempt is derived, not rewritten** — the record keeps `ITERANDO` and its draft key until the next command writes the item, so a raw-row reader still sees `ITERANDO` for a lock the service already reports as paused.
+- **A candidate can still be resolved outside an attempt** — `resolveCandidate` does not check the iteration lock, so adopting during an attempt moves the version and the attempt then refuses with `ITERATION_STALE` instead of applying over it.
+- **No iteration surface outside the service** — MCP tools and Remote methods for iteration are not part of this package, so the panel reaches these commands through the host service only.
 
 
 No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.

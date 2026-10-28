@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-28-mesa-iteration-lock-and-draft.md
+2026-10-28-mesa-iteration-lock-and-draft.md: 9aae9e5e1712aaab3945dabf429aa26189518886
+2026-10-28-mesa-iteration-lock-and-draft.zh.md: 99fdf472b73f9d0cfd80c50409596029e1fd7d17

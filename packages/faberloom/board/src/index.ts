@@ -5,6 +5,11 @@
  * Reads and writes require a `BoardActor`; there is no unfiltered listing.
  * Commands mutate through `KvTable.update`, so state and audit commit in one
  * record. Records are durable through `ctx.storageDomain`.
+ *
+ * Iteration (§9.7.1) adds one attempt with its lock, its generation, its base
+ * version, and a working draft stored apart from the item, so an exit or an
+ * expiry ends the attempt without touching the artifact. `iteration.ts` holds
+ * the machine; this service authorizes the actor and commits each step.
  * @module @deepseek-ai/dsh-faberloom-board
  */
 
@@ -15,6 +20,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import {
   boardDomainSpec,
   type BoardDraftRecord,
+  type BoardIterationDraftRecord,
   type BoardItemRecord,
   type BoardKeyRecord,
   type BoardReferenceRecord,
@@ -23,12 +29,35 @@ import { submittedSeverity } from './classify.ts'
 import { orderBoardItems } from './order.ts'
 import { CHECKS_VERSION, artifactOf, checkClass, checkKey, declaredChecks } from './checks.ts'
 import { fieldOriginsOf, mergeOrigins, revisionContent } from './projection.ts'
+import {
+  attemptFields,
+  attemptRejection,
+  draftDifferences,
+  draftIsRetained,
+  draftOf,
+  draftRecordFor,
+  iterationDraftKeyOf,
+  iterationStatusOf,
+  lockDeadline,
+  releasedFields,
+  requireAttemptBase,
+  requireBaseVersion,
+  requireCandidateChoice,
+  requireLiveAttempt,
+  requirePausableAttempt,
+  requirePending,
+  retainUntil,
+  stateAfterExpiry,
+  type IterationPolicy,
+} from './iteration.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   BoardActor,
+  BoardApplyIterationInput,
   BoardApproveInput,
   BoardArtifact,
   BoardCandidate,
+  BoardCancelIterationInput,
   BoardCheckFn,
   BoardCheckOptions,
   BoardCheckOutcome,
@@ -45,6 +74,17 @@ import type {
   BoardEffectInput,
   BoardEvent,
   BoardFieldOriginEntry,
+  BoardIterateInput,
+  BoardIterateWithEditsInput,
+  BoardIterationDraft,
+  BoardIterationDraftInput,
+  BoardIterationDraftOutcome,
+  BoardIterationLockInput,
+  BoardIterationResult,
+  BoardIterationStatus,
+  BoardPauseIterationInput,
+  BoardResumeIterationInput,
+  BoardResumeIterationResult,
   BoardReviewInput,
   BoardSeverity,
   BoardState,
@@ -61,6 +101,7 @@ export * from './checks.ts'
 export * from './projection.ts'
 export * from './classify.ts'
 export * from './order.ts'
+export * from './iteration.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -77,12 +118,30 @@ export interface Config {
    * leaves the item unclassified; the signed pilot value is 0.80 (D-08).
    */
   readonly classifierConfidenceThreshold?: number
+  /**
+   * Seconds a client waits between iteration lock renewals. D-09 signs 30; the
+   * board exposes it so the panel schedules from one value.
+   */
+  readonly iterationRenewalSeconds?: number
+  /** Seconds an iteration attempt lives without activity. D-09 signs 15 minutes. */
+  readonly iterationLockSeconds?: number
+  /** Days an iteration draft stays recoverable. D-09 signs 30. */
+  readonly iterationDraftRetentionDays?: number
+  /**
+   * Applied iteration rounds after which the panel suggests rewriting or
+   * discarding. D-10 signs 5; the counter only suggests and never blocks.
+   */
+  readonly iterationRoundLimit?: number
 }
 
 /** Validated board configuration. */
 export const Config = z.object({
   eventCap: z.number().int().positive().default(200),
   classifierConfidenceThreshold: z.number().min(0).max(1).default(0.8),
+  iterationRenewalSeconds: z.number().int().positive().default(30),
+  iterationLockSeconds: z.number().int().positive().default(900),
+  iterationDraftRetentionDays: z.number().int().positive().default(30),
+  iterationRoundLimit: z.number().int().positive().default(5),
 })
 
 /** Discard reasons signed in the specification. */
@@ -148,6 +207,16 @@ interface BoardEdit {
   readonly artifactHash: string
 }
 
+/**
+ * Audit detail of one command: a literal record, nothing, or a callback over the
+ * record at its queue slot and the transformed one. The callback exists so an
+ * iteration event names the generation and draft the commit actually wrote.
+ */
+type MutateData =
+  | Record<string, unknown>
+  | null
+  | ((current: BoardItemRecord, next: BoardItemRecord) => Record<string, unknown> | null)
+
 const LEGACY_STATE: Record<BoardStatus, BoardState> = {
   in_progress: 'PENDIENTE_CRITERIO',
   waiting_data: 'PENDIENTE_CRITERIO',
@@ -159,9 +228,14 @@ const LEGACY_STATE: Record<BoardStatus, BoardState> = {
   needs_review: 'PENDIENTE_CRITERIO',
 }
 
-/** The persisted state, falling back to the legacy status for old records. */
+/**
+ * The persisted state, falling back to the legacy status for old records. An
+ * attempt whose lock deadline passed already ended, so the item reads as
+ * `PENDIENTE_CRITERIO` (W-44); the expiry is derived, never written by a read.
+ */
 function stateOf(record: BoardItemRecord): BoardState {
-  return (record.state as BoardState | null) ?? LEGACY_STATE[record.status]
+  const state = (record.state as BoardState | null) ?? LEGACY_STATE[record.status]
+  return stateAfterExpiry(state, record, new Date())
 }
 
 /** The visible column, derived from the state. */
@@ -244,6 +318,7 @@ export class FaberLoomBoard extends Service {
   private domainPromise: Promise<Domain<typeof boardDomainSpec>> | undefined
   private readonly eventCap: number
   private readonly confidenceThreshold: number
+  private readonly iterationConfig: IterationPolicy
   private readonly claims = new Map<string, Promise<unknown>>()
   /**
    * Registered check implementations, keyed by artifact type and check id. The
@@ -255,13 +330,19 @@ export class FaberLoomBoard extends Service {
 
   /**
    * @param ctx - Cordis context owning the service fiber.
-   * @param config - inline audit cap and classifier confidence threshold.
+   * @param config - inline audit cap, classifier threshold, and iteration policy.
    */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'faberloomBoard')
     const resolved = Config.parse(config)
     this.eventCap = resolved.eventCap
     this.confidenceThreshold = resolved.classifierConfidenceThreshold
+    this.iterationConfig = {
+      renewalSeconds: resolved.iterationRenewalSeconds,
+      lockSeconds: resolved.iterationLockSeconds,
+      retentionDays: resolved.iterationDraftRetentionDays,
+      roundLimit: resolved.iterationRoundLimit,
+    }
   }
 
   private domain(): Promise<Domain<typeof boardDomainSpec>> {
@@ -287,6 +368,10 @@ export class FaberLoomBoard extends Service {
 
   private async references(): Promise<KvTable<string, BoardReferenceRecord>> {
     return (await this.domain()).table('references')
+  }
+
+  private async iterationDrafts(): Promise<KvTable<string, BoardIterationDraftRecord>> {
+    return (await this.domain()).table('iteration_drafts')
   }
 
   private draftId(itemId: FaberLoomBoardItemId | string, userId: string): string {
@@ -652,7 +737,9 @@ export class FaberLoomBoard extends Service {
 
   /**
    * Apply one command inside a single `update` transform: authorization,
-   * optimistic check, state change, and appended event commit together.
+   * optimistic check, state change, and appended event commit together. A
+   * `data` callback receives the record at its queue slot and the transformed
+   * one, so an audit event names the values the command actually wrote.
    */
   private async mutate(
     writer: BoardWriter,
@@ -662,7 +749,7 @@ export class FaberLoomBoard extends Service {
     options: {
       expectedRowVersion?: number | undefined
       reason?: string | null | undefined
-      data?: Record<string, unknown> | null | undefined
+      data?: MutateData
     } = {},
   ): Promise<FaberLoomBoardItem> {
     const actor = this.actorOf(writer)
@@ -682,7 +769,7 @@ export class FaberLoomBoard extends Service {
         revision: candidate.version,
         artifactHash: candidate.artifactHash,
         reason: options.reason,
-        data: options.data,
+        data: typeof options.data === 'function' ? options.data(current, candidate) : options.data,
       })
       next = {
         ...candidate,
@@ -759,6 +846,9 @@ export class FaberLoomBoard extends Service {
       iterationDraftKey: null,
       iterationLockUntil: null,
       iterationLockGeneration: 0,
+      iterationBaseVersion: null,
+      iterationLockBy: null,
+      iterationRoundCount: 0,
       version: 1,
       revisions: [{ version: 1, summary: input.summary, evidence, content, documentRef: input.documentRef ?? null, at: now }],
       approvedRevision: null,
@@ -1311,6 +1401,539 @@ export class FaberLoomBoard extends Service {
 
   private async clearEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<void> {
     await (await this.drafts()).delete(this.draftId(id, actor.id))
+  }
+
+  // ── Iteration (E14) ─────────────────────────────────────────────────
+
+  /**
+   * The validated iteration policy this deployment runs with (D-09, D-10). The
+   * panel reads the renewal cadence and the round limit from here instead of
+   * carrying its own copy.
+   * @returns a copy of the resolved policy.
+   */
+  iterationPolicy(): IterationPolicy {
+    return { ...this.iterationConfig }
+  }
+
+  /**
+   * Iteration status of one item: attempt phase, lock, rounds, and the retained
+   * draft. An expired attempt already reports as paused, which is how the panel
+   * offers the draft for recovery (W-44).
+   * @param actor - the authenticated reader.
+   * @param id - item id.
+   * @returns the attempt projection.
+   */
+  async iterationStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardIterationStatus> {
+    const record = await this.requireItem(id)
+    this.authorizeRead(record, actor)
+    return await this.statusOf(id, record)
+  }
+
+  /**
+   * Start an iteration attempt over the current artifact version (§9.7.1). The
+   * attempt needs a space (W-31), mints a new `iterationId`, bumps the lock
+   * generation, records the base version and the deadline, and leaves the
+   * artifact version untouched (W-11).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - artifact version the caller saw and the tab session.
+   * @returns the item and the new attempt.
+   */
+  async iterate(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult> {
+    const now = new Date()
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    requirePending(stateOf(current))
+    requireBaseVersion(current, input.baseVersion)
+    this.requireIterationSpace(current)
+    const iterationId = randomUUID()
+    const previousDraftKey = current.iterationDraftKey
+    const item = await this.mutate(writer, id, 'iteration.started', (record) => {
+      requirePending(stateOf(record))
+      requireBaseVersion(record, input.baseVersion)
+      this.requireIterationSpace(record)
+      return {
+        ...record,
+        ...attemptFields(record, this.iterationConfig, now, {
+          iterationId,
+          baseVersion: record.version,
+          session: input.actorSession,
+        }),
+        iterationDraftKey: null,
+      }
+    }, {
+      data: (previous, next) => ({
+        iterationId: next.iterationId,
+        generation: next.iterationLockGeneration,
+        baseVersion: next.iterationBaseVersion,
+        session: input.actorSession,
+        lockUntil: next.iterationLockUntil,
+        previousIterationId: previous.iterationId,
+      }),
+    })
+    await this.archiveIterationDraft(previousDraftKey)
+    return { item, status: await this.statusOf(id, await this.requireItem(id)) }
+  }
+
+  /**
+   * Save the caller's edits as a new version and start the iteration over it.
+   * The edits, the version, and the attempt commit in one transform, so a
+   * conflict creates no version, applies no transition, and keeps the caller's
+   * edits outside the item (W-69).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - expected row and base version, the changes, and the tab session.
+   * @returns the item and the new attempt.
+   */
+  async iterateWithEdits(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    input: BoardIterateWithEditsInput,
+  ): Promise<BoardIterationResult> {
+    const now = new Date()
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    requirePending(stateOf(current))
+    requireBaseVersion(current, input.baseVersion)
+    this.requireIterationSpace(current)
+    const iterationId = randomUUID()
+    const previousDraftKey = current.iterationDraftKey
+    const item = await this.mutate(writer, id, 'iterate_with_edits', (record) => {
+      requirePending(stateOf(record))
+      requireBaseVersion(record, input.baseVersion)
+      this.requireIterationSpace(record)
+      const edit = this.editRevision(record, input.changes)
+      return {
+        ...record,
+        ...attemptFields(record, this.iterationConfig, now, {
+          iterationId,
+          baseVersion: edit.version,
+          session: input.actorSession,
+        }),
+        version: edit.version,
+        artifactHash: edit.artifactHash,
+        fieldOrigins: edit.fieldOrigins,
+        stale: false,
+        staleReason: null,
+        revisions: [...record.revisions, edit.revision],
+        iterationDraftKey: null,
+      }
+    }, {
+      expectedRowVersion: input.expectedRowVersion,
+      data: (previous, next) => ({
+        iterationId: next.iterationId,
+        generation: next.iterationLockGeneration,
+        baseVersion: next.iterationBaseVersion,
+        version: next.version,
+        previousVersion: previous.version,
+        session: input.actorSession,
+      }),
+    })
+    await this.archiveIterationDraft(previousDraftKey)
+    return { item, status: await this.statusOf(id, await this.requireItem(id)) }
+  }
+
+  /**
+   * Store one write of the attempt's work as its working draft. A write that no
+   * longer matches the live attempt stores the draft of that dead attempt and
+   * leaves the item untouched, which is how a late agent answer is kept without
+   * reaching the item (W-57).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - attempt, base version, and the fields the caller wrote.
+   * @returns the stored draft and whether the item links it.
+   */
+  async saveIterationDraft(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    input: BoardIterationDraftInput,
+  ): Promise<BoardIterationDraftOutcome> {
+    const now = new Date()
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    const drafts = await this.iterationDrafts()
+    const key = iterationDraftKeyOf(id, input.iterationId)
+    const rejection = attemptRejection(current, input, now)
+    const row = (archived: boolean) => draftRecordFor(drafts.get(key), {
+      itemId: id,
+      iterationId: input.iterationId,
+      baseVersion: input.baseVersion,
+      summary: input.summary,
+      evidence: input.evidence,
+      content: input.content,
+    }, now, this.iterationConfig, archived)
+    if (rejection !== null) {
+      // A dead attempt that the item still links (paused or expired) keeps its
+      // draft offered; one the item no longer owns is archived (W-57).
+      const stored = row(current.iterationDraftKey !== key)
+      await drafts.put(key, stored)
+      return { draft: draftOf(key, stored), linked: false, code: rejection }
+    }
+    requireAttemptBase(current, input.baseVersion)
+    const stored = row(false)
+    await drafts.put(key, stored)
+    await this.mutate(writer, id, 'iteration.draft', (record) => {
+      requireLiveAttempt(record, input, now)
+      requireAttemptBase(record, input.baseVersion)
+      return { ...record, iterationDraftKey: key }
+    }, { data: { iterationId: input.iterationId, generation: input.generation, draftKey: key } })
+    return { draft: draftOf(key, stored), linked: true, code: null }
+  }
+
+  /**
+   * Read one attempt's draft, or the draft the item currently links.
+   * @param actor - the authenticated reader.
+   * @param id - item id.
+   * @param iterationId - attempt to read; omitted reads the linked draft.
+   * @returns the draft, or undefined when none is stored or retained.
+   */
+  async getIterationDraft(
+    actor: BoardActor,
+    id: FaberLoomBoardItemId,
+    iterationId?: string,
+  ): Promise<BoardIterationDraft | undefined> {
+    const record = await this.requireItem(id)
+    this.authorizeRead(record, actor)
+    const now = new Date()
+    const drafts = await this.iterationDrafts()
+    if (iterationId !== undefined) {
+      const key = iterationDraftKeyOf(id, iterationId)
+      const storedRow = drafts.get(key)
+      return storedRow === undefined || !draftIsRetained(storedRow, now) ? undefined : draftOf(key, storedRow)
+    }
+    return (await this.linkedDraft(id, record)) ?? undefined
+  }
+
+  /**
+   * Extend the lock of the live attempt. A stale attempt id, a stale generation,
+   * or an expired deadline is refused without effects (W-43).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - attempt id and generation.
+   * @returns the item and the renewed attempt.
+   */
+  async renewIteration(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    input: BoardIterationLockInput,
+  ): Promise<BoardIterationResult> {
+    const now = new Date()
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    requireLiveAttempt(current, input, now)
+    const until = lockDeadline(this.iterationConfig, now)
+    const item = await this.mutate(writer, id, 'iteration.renewed', (record) => {
+      requireLiveAttempt(record, input, now)
+      return { ...record, iterationLockUntil: until }
+    }, {
+      data: { iterationId: input.iterationId, generation: input.generation, lockUntil: until },
+    })
+    return { item, status: await this.statusOf(id, await this.requireItem(id)) }
+  }
+
+  /**
+   * Save and exit, carry to SpaceLoom, return without resolving, or record the
+   * expiry: the attempt releases its lock and the item returns to the pending
+   * column with its draft and any pending candidate untouched (W-67, W-97).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - attempt, generation, and the exit the user chose.
+   * @returns the item and the released attempt.
+   */
+  async pauseIteration(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    input: BoardPauseIterationInput,
+  ): Promise<BoardIterationResult> {
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    requirePausableAttempt(current, input)
+    const item = await this.mutate(writer, id, 'iteration.paused', (record) => {
+      requirePausableAttempt(record, input)
+      return { ...record, ...releasedFields() }
+    }, {
+      reason: input.reason,
+      data: (previous, next) => ({
+        iterationId: previous.iterationId,
+        generation: previous.iterationLockGeneration,
+        draftKey: next.iterationDraftKey,
+        lockUntil: previous.iterationLockUntil,
+        candidatePending: next.pendingCandidate !== null,
+      }),
+    })
+    return { item, status: await this.statusOf(id, await this.requireItem(id)) }
+  }
+
+  /**
+   * Discard the attempt's work and release the lock. It requires no pending
+   * candidate, or the adopt/keep choice that resolves it in the same commit; it
+   * deletes the draft and never changes the version except through adoption
+   * (W-41).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - attempt, generation, and the optional candidate choice.
+   * @returns the item and the released attempt.
+   */
+  async cancelIteration(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    input: BoardCancelIterationInput,
+  ): Promise<BoardIterationResult> {
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    requirePausableAttempt(current, input)
+    requireCandidateChoice(current, input.candidate)
+    const draftKey = current.iterationDraftKey
+    const item = await this.mutate(writer, id, 'iteration.cancelled', (record) => {
+      requirePausableAttempt(record, input)
+      requireCandidateChoice(record, input.candidate)
+      const released: BoardItemRecord = { ...record, ...releasedFields(), iterationDraftKey: null }
+      const candidate = record.pendingCandidate
+      if (candidate !== null && input.candidate?.decision === 'adopt') {
+        const version = record.version + 1
+        return {
+          ...released,
+          version,
+          artifactHash: candidate.hash,
+          pendingCandidate: null,
+          fieldOrigins: [],
+          revisions: [...record.revisions, {
+            version, summary: candidate.summary, evidence: [...candidate.evidence], content: null,
+            documentRef: null, at: candidate.at,
+          }],
+        }
+      }
+      return { ...released, pendingCandidate: null }
+    }, {
+      data: (previous, next) => ({
+        iterationId: previous.iterationId,
+        generation: previous.iterationLockGeneration,
+        draftKey: previous.iterationDraftKey,
+        choice: input.candidate?.decision ?? null,
+        candidateId: previous.pendingCandidate?.id ?? null,
+        candidateHash: previous.pendingCandidate?.hash ?? null,
+        version: next.version,
+      }),
+    })
+    await this.deleteIterationDraft(draftKey)
+    return { item, status: await this.statusOf(id, await this.requireItem(id)) }
+  }
+
+  /**
+   * Take a new attempt over the retained draft. When the draft was written
+   * against an older version, it is marked outdated and the differences are
+   * returned instead of overwriting the newer content (W-68).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - base version of the draft the caller saw and the tab session.
+   * @returns the item with `started`, or with `outdated` and the differences.
+   */
+  async resumeIteration(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    input: BoardResumeIterationInput,
+  ): Promise<BoardResumeIterationResult> {
+    const now = new Date()
+    const record = await this.requireItem(id)
+    this.authorizeWrite(record, writer)
+    requirePending(stateOf(record))
+    const draftKey = record.iterationDraftKey
+    if (draftKey === null) throw new Error('faberloom: NO_DRAFT — the item has no retained iteration draft')
+    const drafts = await this.iterationDrafts()
+    const stored = drafts.get(draftKey)
+    if (stored === undefined || !draftIsRetained(stored, now)) {
+      throw new Error('faberloom: NO_DRAFT — the retained iteration draft expired or disappeared')
+    }
+    const draft = draftOf(draftKey, stored)
+    if (draft.baseVersion !== input.baseVersion) {
+      throw new Error('faberloom: STALE_REVISION — the draft was not written against the version the caller saw')
+    }
+    if (draft.baseVersion !== record.version) {
+      await drafts.put(draftKey, { ...stored, outdated: true, updatedAt: now.toISOString() })
+      return {
+        item: toItem(id, record),
+        status: 'outdated',
+        differences: draftDifferences(draft, this.contentOf(record)),
+      }
+    }
+    const iterationId = randomUUID()
+    const nextKey = iterationDraftKeyOf(id, iterationId)
+    await drafts.put(nextKey, {
+      ...stored,
+      iterationId,
+      outdated: false,
+      archived: false,
+      updatedAt: now.toISOString(),
+      retainUntil: retainUntil(this.iterationConfig, now),
+    })
+    const item = await this.mutate(writer, id, 'iteration.resumed', (current) => {
+      requirePending(stateOf(current))
+      requireBaseVersion(current, input.baseVersion)
+      if (current.iterationDraftKey !== draftKey) {
+        throw new Error('faberloom: ITERATION_STALE — the retained draft is not the one the caller resumed')
+      }
+      return {
+        ...current,
+        ...attemptFields(current, this.iterationConfig, now, {
+          iterationId,
+          baseVersion: current.version,
+          session: input.actorSession ?? null,
+        }),
+        iterationDraftKey: nextKey,
+      }
+    }, {
+      data: (previous, next) => ({
+        iterationId: next.iterationId,
+        generation: next.iterationLockGeneration,
+        baseVersion: next.iterationBaseVersion,
+        previousIterationId: previous.iterationId,
+      }),
+    })
+    await this.deleteIterationDraft(draftKey)
+    return { item, status: 'started' }
+  }
+
+  /**
+   * Apply the live attempt: write a new version and hash, count the round,
+   * record the learning scope, release the lock, and return to
+   * `PENDIENTE_CRITERIO`. A pending candidate must be resolved in the same call,
+   * and only the current attempt applies (W-40, W-57).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - attempt, base version, optional summary and evidence, the scope, and the choice.
+   * @returns the item and the released attempt.
+   */
+  async applyIteration(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    input: BoardApplyIterationInput,
+  ): Promise<BoardIterationResult> {
+    const now = new Date()
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    requireLiveAttempt(current, input, now)
+    requireAttemptBase(current, input.baseVersion)
+    requireCandidateChoice(current, input.candidate)
+    const draftKey = current.iterationDraftKey
+    const drafts = await this.iterationDrafts()
+    const stored = draftKey === null ? undefined : drafts.get(draftKey)
+    const draft = draftKey !== null && stored !== undefined && draftIsRetained(stored, now)
+      ? draftOf(draftKey, stored)
+      : null
+    const item = await this.mutate(writer, id, 'iteration.applied', (record) => {
+      requireLiveAttempt(record, input, now)
+      requireAttemptBase(record, input.baseVersion)
+      requireCandidateChoice(record, input.candidate)
+      if (record.iterationDraftKey !== draftKey) {
+        throw new Error('faberloom: ITERATION_STALE — the attempt draft changed since it was read')
+      }
+      const released: BoardItemRecord = {
+        ...record,
+        ...releasedFields(),
+        iterationDraftKey: null,
+        iterationRoundCount: record.iterationRoundCount + 1,
+      }
+      const candidate = record.pendingCandidate
+      if (candidate !== null && input.candidate?.decision === 'adopt') {
+        const adoptedVersion = record.version + 1
+        return {
+          ...released,
+          version: adoptedVersion,
+          artifactHash: candidate.hash,
+          pendingCandidate: null,
+          fieldOrigins: [],
+          revisions: [...record.revisions, {
+            version: adoptedVersion, summary: candidate.summary, evidence: [...candidate.evidence], content: null,
+            documentRef: null, at: candidate.at,
+          }],
+        }
+      }
+      const previous = record.revisions[record.revisions.length - 1]
+      const currentContent = this.contentOf(record)
+      const content = draft === null || draft.content === null ? currentContent : { ...draft.content }
+      const summary = input.summary ?? draft?.summary ?? previous?.summary ?? ''
+      const evidence = this.iterationEvidence(record, draft, input.evidence)
+      const changed = Object.keys(content).filter(key => JSON.stringify(content[key]) !== JSON.stringify(currentContent[key]))
+      const version = record.version + 1
+      return {
+        ...released,
+        version,
+        artifactHash: hashOf({ summary, evidence, content }),
+        pendingCandidate: null,
+        fieldOrigins: mergeOrigins(record.fieldOrigins, changed),
+        revisions: [...record.revisions, {
+          version, summary, evidence, content, documentRef: previous?.documentRef ?? null, at: now.toISOString(),
+        }],
+      }
+    }, {
+      data: (previous, next) => ({
+        iterationId: previous.iterationId,
+        generation: previous.iterationLockGeneration,
+        baseVersion: input.baseVersion,
+        scope: input.scope,
+        choice: input.candidate?.decision ?? null,
+        candidateId: previous.pendingCandidate?.id ?? null,
+        candidateHash: previous.pendingCandidate?.hash ?? null,
+        rounds: next.iterationRoundCount,
+        version: next.version,
+      }),
+    })
+    await this.deleteIterationDraft(draftKey)
+    return { item, status: await this.statusOf(id, await this.requireItem(id)) }
+  }
+
+  /** Refuse to open the chat of an item with no space: the space is assigned first (W-31). */
+  private requireIterationSpace(record: BoardItemRecord): void {
+    if (record.spaceId === null) {
+      throw new Error('faberloom: NO_SPACE — assign the item to a space before iterating')
+    }
+  }
+
+  /**
+   * The evidence one applied version carries: what the caller supplied, else the
+   * draft's, else the current revision's, which a version cannot go without.
+   */
+  private iterationEvidence(
+    record: BoardItemRecord,
+    draft: BoardIterationDraft | null,
+    submitted?: readonly string[],
+  ): string[] {
+    if (submitted !== undefined) return requireEvidence(submitted)
+    if (draft !== null && draft.evidence.length > 0) return [...draft.evidence]
+    return requireEvidence(record.revisions[record.revisions.length - 1]?.evidence)
+  }
+
+  /** The attempt status of one stored record. */
+  private async statusOf(id: FaberLoomBoardItemId, record: BoardItemRecord): Promise<BoardIterationStatus> {
+    return iterationStatusOf(record, await this.linkedDraft(id, record), this.iterationConfig, new Date())
+  }
+
+  /** The retained draft the item links, or null. */
+  private async linkedDraft(id: FaberLoomBoardItemId, record: BoardItemRecord): Promise<BoardIterationDraft | null> {
+    const key = record.iterationDraftKey
+    if (key === null) return null
+    const now = new Date()
+    const stored = (await this.iterationDrafts()).get(key)
+    if (stored === undefined || stored.archived || stored.itemId !== id || !draftIsRetained(stored, now)) return null
+    return draftOf(key, stored)
+  }
+
+  private async deleteIterationDraft(key: string | null): Promise<void> {
+    if (key === null) return
+    await (await this.iterationDrafts()).delete(key)
+  }
+
+  /**
+   * Mark the draft of an attempt the item no longer owns, so a fresh attempt
+   * does not resurface work written against another version (W-57).
+   * @param key - draft key the item used to link, or null.
+   */
+  private async archiveIterationDraft(key: string | null): Promise<void> {
+    if (key === null) return
+    const drafts = await this.iterationDrafts()
+    const stored = drafts.get(key)
+    if (stored === undefined || stored.archived) return
+    await drafts.put(key, { ...stored, archived: true, updatedAt: new Date().toISOString() })
   }
 
   /**

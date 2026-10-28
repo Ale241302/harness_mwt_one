@@ -112,6 +112,12 @@ export const boardItemRecord = z.object({
   iterationDraftKey: z.string().nullable().default(null),
   iterationLockUntil: z.string().nullable().default(null),
   iterationLockGeneration: z.number().default(0),
+  /** Artifact version the current attempt started from (§9.7.1). */
+  iterationBaseVersion: z.number().nullable().default(null),
+  /** Tab session holding the current attempt; the attempt, not the user, is the lock subject. */
+  iterationLockBy: z.string().nullable().default(null),
+  /** Applied iteration rounds; the panel suggests a rewrite at the configured limit (D-10). */
+  iterationRoundCount: z.number().default(0),
   version: z.number(),
   revisions: z.array(revisionRecord),
   approvedRevision: z.number().nullable(),
@@ -177,8 +183,40 @@ export const boardDraftRecord = z.object({
 export type BoardDraftRecord = z.infer<typeof boardDraftRecord>
 
 /**
- * The board domain spec: item aggregates, the key-claim table, the draft table,
- * and the tenant claims on opaque references.
+ * The working draft of one iteration attempt, keyed by `<itemId>:<iterationId>`
+ * (§9.7.1). It is stored apart from the item so a late answer for a dead attempt
+ * can be kept without writing the item, and so cancel can delete exactly one
+ * attempt's work.
+ */
+export const boardIterationDraftRecord = z.object({
+  /** Item the draft edits. */
+  itemId: z.string(),
+  /** Attempt that produced the draft. */
+  iterationId: z.string(),
+  /** Artifact version the draft was written against. */
+  baseVersion: z.number(),
+  /** Draft summary, or null. */
+  summary: z.string().nullable(),
+  /** Draft evidence references. */
+  evidence: z.array(z.string()),
+  /** Draft artifact content, or null. */
+  content: z.record(z.string(), z.unknown()).nullable(),
+  /** True when the attempt is no longer live, so the panel does not offer it. */
+  archived: z.boolean().default(false),
+  /** True once a resume found the draft written against an older version (W-68). */
+  outdated: z.boolean().default(false),
+  /** ISO-8601 instant of the last draft write. */
+  updatedAt: z.string(),
+  /** ISO-8601 instant after which the draft is not offered again (D-09). */
+  retainUntil: z.string(),
+})
+
+/** One stored iteration draft. */
+export type BoardIterationDraftRecord = z.infer<typeof boardIterationDraftRecord>
+
+/**
+ * The board domain spec: item aggregates, the key-claim table, the edit-draft
+ * table, the iteration-draft table, and the tenant claims on opaque references.
  */
 export const boardDomainSpec = defineDomain({
   name: 'faberloom_board',
@@ -187,6 +225,7 @@ export const boardDomainSpec = defineDomain({
     items: domainTable<FaberLoomBoardItemId, BoardItemRecord>(boardItemRecord),
     keys: domainTable<string, BoardKeyRecord>(boardKeyRecord),
     drafts: domainTable<string, BoardDraftRecord>(boardDraftRecord),
+    iteration_drafts: domainTable<string, BoardIterationDraftRecord>(boardIterationDraftRecord),
     references: domainTable<string, BoardReferenceRecord>(boardReferenceRecord),
   },
 })
