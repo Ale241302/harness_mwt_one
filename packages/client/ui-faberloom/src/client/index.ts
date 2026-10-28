@@ -251,6 +251,7 @@ export function apply(ctx: ClientContext): void {
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
+      boardIterationRenew: (id, input) => ctx.remote.faberloomView.boardIterationRenew(id, input),
       boardIterationPause: (id, input) => {
         const run = ctx.remote.faberloomView.boardIterationPause(id, input)
         void run.then((result) => { if (result.ok) refresh() })
@@ -261,8 +262,8 @@ export function apply(ctx: ClientContext): void {
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardIterationResume: (id, baseVersion) => {
-        const run = ctx.remote.faberloomView.boardIterationResume(id, baseVersion)
+      boardIterationResume: (id, baseVersion, actorSession) => {
+        const run = ctx.remote.faberloomView.boardIterationResume(id, baseVersion, actorSession)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },

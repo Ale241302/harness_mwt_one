@@ -323,6 +323,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FaberLoomBoardIterationDraftRow: 'faberloom.md',
   FaberLoomBoardIterationResume: 'faberloom.md',
   FaberLoomBoardIterationContext: 'faberloom.md',
+  FaberLoomBoardIterationApplyResult: 'faberloom.md',
+  FaberLoomBoardEditResult: 'faberloom.md',
   FaberLoomBoardCorrectionScope: 'faberloom.md',
   BoardIterationStatus: 'faberloom.md',
   BoardIterationDraft: 'faberloom.md',

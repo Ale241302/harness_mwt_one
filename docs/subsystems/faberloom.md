@@ -3857,12 +3857,16 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('boardSetSeverity') async boardSetSeverity( id: string, severity: FaberLoomBoardSeverity, rowVersion: number, source: 'RULE' | 'LLM' | 'HUMAN', confidence: number | null, ): Promise<FaberLoomBoardDetail | undefined>
 
 /**
- * Save inline edits as a new version.
+ * Save inline edits as a new version and record the correction they are
+ * (§6.3, W-34). The board commit happens first; the correction is written
+ * afterwards and is best effort, so it may be missing while the item is
+ * committed and `correctionError` then carries the message the panel shows on
+ * one line.
  * @param id - board item id.
  * @param input - base version, row version, and changes.
- * @returns the refreshed detail.
+ * @returns the refreshed detail and the correction failure, when any.
  */
-@Remote('boardSaveEdits') async boardSaveEdits(id: string, input: FaberLoomBoardEditsInput): Promise<FaberLoomBoardDetail | undefined>
+@Remote('boardSaveEdits') async boardSaveEdits(id: string, input: FaberLoomBoardEditsInput): Promise<FaberLoomBoardEditResult>
 
 /**
  * Approve the exact version and hash.
@@ -3954,12 +3958,25 @@ async mirrorSharedSpaces(): Promise<void>
 
 /**
  * Apply the live attempt with the scope its correction teaches, writing one
- * new version and releasing the lock (W-34, W-40).
+ * new version and releasing the lock (W-34, W-40). The correction is recorded
+ * after the commit and is best effort: it may be missing while the item is
+ * committed, which is what `correctionError` reports.
  * @param id - board item id.
  * @param input - attempt, base version, scope, and the candidate choice when one is pending.
- * @returns the attempt after the commit.
+ * @returns the attempt after the commit and the correction failure, when any.
  */
-@Remote('boardIterationApply') async boardIterationApply( id: string, input: FaberLoomBoardIterationApplyInput, ): Promise<FaberLoomBoardIteration>
+@Remote('boardIterationApply') async boardIterationApply( id: string, input: FaberLoomBoardIterationApplyInput, ): Promise<FaberLoomBoardIterationApplyResult>
+
+/**
+ * Extend the live attempt's lock while this tab works it (D-09, §9.7.1). The
+ * board refuses a stale attempt id, a stale generation, or an expired deadline
+ * with `LOCK_LOST` or `ITERATION_STALE` and no effects (W-43), so a renewal
+ * never touches the item's content or version.
+ * @param id - board item id.
+ * @param input - attempt id and generation the panel has open.
+ * @returns the attempt after the renewal.
+ */
+@Remote('boardIterationRenew') async boardIterationRenew(id: string, input: FaberLoomBoardIterationLockInput): Promise<FaberLoomBoardIteration>
 
 /**
  * Save and exit, carry to SpaceLoom, or return without resolving: the attempt
@@ -3985,9 +4002,10 @@ async mirrorSharedSpaces(): Promise<void>
  * newer content (W-68).
  * @param id - board item id.
  * @param baseVersion - base version of the draft the caller saw.
+ * @param actorSession - tab opening the attempt, so a resumed attempt belongs to it.
  * @returns the new attempt, or the stale draft's differences.
  */
-@Remote('boardIterationResume') async boardIterationResume(id: string, baseVersion: number): Promise<FaberLoomBoardIterationResume>
+@Remote('boardIterationResume') async boardIterationResume(id: string, baseVersion: number, actorSession?: string): Promise<FaberLoomBoardIterationResume>
 
 /**
  * Read the item's retained draft and, when it was written against an older

@@ -44,7 +44,7 @@ Three failure modes shape the machine the spec asks for in §9.7.1. First, a wri
 - A candidate resolved through `resolveCandidate` during an attempt still moves the version; the attempt then refuses with `ITERATION_STALE` rather than applying over it.
 - The lock is serialized in one process by `KvTable.update` per item, not by a lease; a second writer process needs a real lease.
 - Draft rows are never swept: retention is enforced when a draft is read or resumed, so the table grows until a sweeper owns it.
-- `applyIteration` records the learning scope and stops there; correction records, candidates, and promotion remain in the learning work (T4.5–T4.7) and no MCP tool or Remote method exposes iteration yet.
+- `applyIteration` records the learning scope and stops there; the correction record is written by the view after the commit, and candidate creation and promotion stay in the learning work (T4.5–T4.7). The iteration Remotes the Mesa reads it through are recorded in [the Mesa iteration surface](2026-10-28-mesa-iteration-surface.md).
 
 ## Verification
 

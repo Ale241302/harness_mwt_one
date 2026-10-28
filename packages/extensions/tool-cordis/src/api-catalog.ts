@@ -3496,10 +3496,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed detail.',
       },
       {
-        signature: '@Remote(\'boardSaveEdits\') async boardSaveEdits(id: string, input: FaberLoomBoardEditsInput): Promise<FaberLoomBoardDetail | undefined>',
-        description: 'Save inline edits as a new version.',
+        signature: '@Remote(\'boardSaveEdits\') async boardSaveEdits(id: string, input: FaberLoomBoardEditsInput): Promise<FaberLoomBoardEditResult>',
+        description: 'Save inline edits as a new version and record the correction they are (§6.3, W-34). The board commit happens first; the correction is written afterwards and is best effort, so it may be missing while the item is committed and `correctionError` then carries the message the panel shows on one line.',
         parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'base version, row version, and changes.' }],
-        returns: 'the refreshed detail.',
+        returns: 'the refreshed detail and the correction failure, when any.',
       },
       {
         signature: '@Remote(\'boardApprove\') async boardApprove(id: string, input: FaberLoomBoardApproveInput): Promise<FaberLoomBoardDetail | undefined>',
@@ -3562,10 +3562,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the stored draft and whether the item still links it.',
       },
       {
-        signature: '@Remote(\'boardIterationApply\') async boardIterationApply( id: string, input: FaberLoomBoardIterationApplyInput, ): Promise<FaberLoomBoardIteration>',
-        description: 'Apply the live attempt with the scope its correction teaches, writing one new version and releasing the lock (W-34, W-40).',
+        signature: '@Remote(\'boardIterationApply\') async boardIterationApply( id: string, input: FaberLoomBoardIterationApplyInput, ): Promise<FaberLoomBoardIterationApplyResult>',
+        description: 'Apply the live attempt with the scope its correction teaches, writing one new version and releasing the lock (W-34, W-40). The correction is recorded after the commit and is best effort: it may be missing while the item is committed, which is what `correctionError` reports.',
         parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt, base version, scope, and the candidate choice when one is pending.' }],
-        returns: 'the attempt after the commit.',
+        returns: 'the attempt after the commit and the correction failure, when any.',
+      },
+      {
+        signature: '@Remote(\'boardIterationRenew\') async boardIterationRenew(id: string, input: FaberLoomBoardIterationLockInput): Promise<FaberLoomBoardIteration>',
+        description: 'Extend the live attempt\'s lock while this tab works it (D-09, §9.7.1). The board refuses a stale attempt id, a stale generation, or an expired deadline with `LOCK_LOST` or `ITERATION_STALE` and no effects (W-43), so a renewal never touches the item\'s content or version.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt id and generation the panel has open.' }],
+        returns: 'the attempt after the renewal.',
       },
       {
         signature: '@Remote(\'boardIterationPause\') async boardIterationPause( id: string, input: FaberLoomBoardIterationPauseInput, ): Promise<FaberLoomBoardIteration>',
@@ -3580,9 +3586,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the attempt after the commit.',
       },
       {
-        signature: '@Remote(\'boardIterationResume\') async boardIterationResume(id: string, baseVersion: number): Promise<FaberLoomBoardIterationResume>',
+        signature: '@Remote(\'boardIterationResume\') async boardIterationResume(id: string, baseVersion: number, actorSession?: string): Promise<FaberLoomBoardIterationResume>',
         description: 'Take a new attempt over the retained draft. A draft written against an older version is returned with its differences instead of overwriting the newer content (W-68).',
-        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'baseVersion', description: 'base version of the draft the caller saw.' }],
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'baseVersion', description: 'base version of the draft the caller saw.' }, { name: 'actorSession', description: 'tab opening the attempt, so a resumed attempt belongs to it.' }],
         returns: 'the new attempt, or the stale draft\'s differences.',
       },
       {
@@ -8004,6 +8010,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomBoardDraftRow {\n    readonly revision: number;\n    readonly writerSession: string;\n    readonly changes: Record<string, string>;\n}',
   },
   {
+    name: 'FaberLoomBoardEditResult',
+    declaration: 'export interface FaberLoomBoardEditResult {\n    readonly detail: FaberLoomBoardDetail | null;\n    readonly correctionError: string | null;\n}',
+  },
+  {
     name: 'FaberLoomBoardEditsInput',
     declaration: 'export interface FaberLoomBoardEditsInput {\n    readonly expectedRowVersion: number;\n    readonly baseVersion: number;\n    readonly changes: Record<string, string>;\n}',
   },
@@ -8021,11 +8031,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomBoardIteration',
-    declaration: 'export interface FaberLoomBoardIteration {\n    readonly phase: FaberLoomBoardIterationPhase;\n    readonly iterationId: string | null;\n    readonly generation: number;\n    readonly baseVersion: number | null;\n    readonly lockUntil: string | null;\n    readonly renewalSeconds: number;\n    readonly rounds: number;\n    readonly roundLimit: number;\n    readonly suggestRewrite: boolean;\n    readonly draftOutdated: boolean;\n    readonly candidatePending: boolean;\n    readonly draft: FaberLoomBoardIterationDraft | null;\n}',
+    declaration: 'export interface FaberLoomBoardIteration {\n    readonly phase: FaberLoomBoardIterationPhase;\n    readonly iterationId: string | null;\n    readonly generation: number;\n    readonly baseVersion: number | null;\n    readonly lockUntil: string | null;\n    readonly lockBy: string | null;\n    readonly renewalSeconds: number;\n    readonly rounds: number;\n    readonly roundLimit: number;\n    readonly suggestRewrite: boolean;\n    readonly draftOutdated: boolean;\n    readonly candidatePending: boolean;\n    readonly draft: FaberLoomBoardIterationDraft | null;\n}',
   },
   {
     name: 'FaberLoomBoardIterationApplyInput',
     declaration: 'export interface FaberLoomBoardIterationApplyInput extends FaberLoomBoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly scope: FaberLoomBoardCorrectionScope;\n    readonly candidate?: FaberLoomBoardIterationChoice;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationApplyResult',
+    declaration: 'export interface FaberLoomBoardIterationApplyResult {\n    readonly iteration: FaberLoomBoardIteration;\n    readonly correctionError: string | null;\n}',
   },
   {
     name: 'FaberLoomBoardIterationCancelInput',

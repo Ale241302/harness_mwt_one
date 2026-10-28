@@ -778,6 +778,18 @@ export interface FaberLoomBoardEditsInput {
   readonly changes: Record<string, string>
 }
 
+/**
+ * Answer of one inline edit save. The edit is committed before the correction
+ * that describes it is recorded, so `correctionError` reports a correction that
+ * may be missing while the item is already committed (W-34).
+ */
+export interface FaberLoomBoardEditResult {
+  /** The refreshed detail, or null when the item is gone. */
+  readonly detail: FaberLoomBoardDetail | null
+  /** Message of the correction write that failed, or null when it was recorded. */
+  readonly correctionError: string | null
+}
+
 /** Approval expectations for the exact artifact. */
 export interface FaberLoomBoardApproveInput {
   /** Expected optimistic token. */
@@ -850,6 +862,12 @@ export interface FaberLoomBoardIteration {
   readonly baseVersion: number | null
   /** Lock deadline in UTC, or null. */
   readonly lockUntil: string | null
+  /**
+   * Tab session that opened the attempt, or null. The attempt, not the user, is
+   * the lock subject, so a panel compares this with its own session to see
+   * whether another tab is iterating the item (§9.7.1).
+   */
+  readonly lockBy: string | null
   /** Seconds a client waits between renewals (D-09). */
   readonly renewalSeconds: number
   /** Rounds applied to this item so far. */
@@ -918,6 +936,18 @@ export interface FaberLoomBoardIterationApplyInput extends FaberLoomBoardIterati
   readonly scope: FaberLoomBoardCorrectionScope
   /** Required while a candidate is pending. */
   readonly candidate?: FaberLoomBoardIterationChoice
+}
+
+/**
+ * Answer of one applied iteration. The version is committed before the
+ * correction that closes it is recorded, so `correctionError` reports a
+ * correction that may be missing while the item is already committed (W-34).
+ */
+export interface FaberLoomBoardIterationApplyResult {
+  /** Attempt state after the commit. */
+  readonly iteration: FaberLoomBoardIteration
+  /** Message of the correction write that failed, or null when it was recorded. */
+  readonly correctionError: string | null
 }
 
 /** One pause: the exit the user chose. */

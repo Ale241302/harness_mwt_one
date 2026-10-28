@@ -44,7 +44,7 @@ Status: implemented
 - 在尝试期间通过 `resolveCandidate` 解决的候选仍会移动版本；随后该尝试以 `ITERATION_STALE` 拒绝，而不是覆盖它。
 - 锁在单个进程内由每个条目的一次 `KvTable.update` 串行化，而不是由租约串行化；第二个写入进程需要真正的租约。
 - 草稿行不会被清扫：保留期在读取或恢复草稿时执行，因此该表会增长，直到有清扫器接手。
-- `applyIteration` 记录学习范畴后即止；修正记录、候选与晋升仍在学习工作中（T4.5–T4.7），且目前没有 MCP 工具或 Remote 方法暴露迭代。
+- `applyIteration` 记录学习范畴后即止；修正记录由视图在提交后写入，候选的创建与晋升仍在学习工作中（T4.5–T4.7）。Mesa 读取它所用的迭代 Remote 记录在 [Mesa 迭代界面](2026-10-28-mesa-iteration-surface.zh.md) 中。
 
 ## 验证
 

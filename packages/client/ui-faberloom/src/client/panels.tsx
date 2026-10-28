@@ -45,9 +45,10 @@ import type {
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
   FaberLoomSkillInstallDestination, FaberLoomSkillInstallRow, FaberLoomHarnessReport,
   FaberLoomSpaceTreeEntry,
-  FaberLoomBoardIteration, FaberLoomBoardIterationApplyInput, FaberLoomBoardIterationCancelInput,
+  FaberLoomBoardIteration, FaberLoomBoardIterationApplyInput, FaberLoomBoardIterationApplyResult,
+  FaberLoomBoardIterationCancelInput,
   FaberLoomBoardIterationContext, FaberLoomBoardIterationDifference, FaberLoomBoardIterationDraftRead,
-  FaberLoomBoardIterationDraftRow,
+  FaberLoomBoardIterationDraftRow, FaberLoomBoardEditResult,
   FaberLoomBoardIterationExit, FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationResume,
   FaberLoomBoardIterationSaveInput, FaberLoomBoardIterationChoice, FaberLoomBoardCorrectionScope,
 } from '@deepseek-ai/dsh-faberloom-view/types'
@@ -114,11 +115,11 @@ export interface FaberloomPanelInjected {
   boardException: (id: string, action: 'request_data' | 'fail' | 'complete') => Promise<Result<FaberLoomOverview>>
   /** Set or correct the human severity. */
   boardSetSeverity: (id: string, severity: string, rowVersion: number, source?: 'RULE' | 'LLM' | 'HUMAN', confidence?: number | null) => Promise<Result<FaberLoomBoardDetail | undefined>>
-  /** Save inline edits as a new version. */
+  /** Save inline edits as a new version and report a correction that could not be recorded. */
   boardSaveEdits: (
     id: string,
     input: { rowVersion: number; baseVersion: number; changes: Record<string, string> },
-  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  ) => Promise<Result<FaberLoomBoardEditResult>>
   /** Approve the exact version and hash. */
   boardApprove: (
     id: string,
@@ -180,6 +181,11 @@ export interface FaberloomPanelInjected {
   boardIterationApply: (
     id: string,
     input: FaberLoomBoardIterationApplyInput,
+  ) => Promise<Result<FaberLoomBoardIterationApplyResult>>
+  /** Extend the live attempt's lock while this tab works it. */
+  boardIterationRenew: (
+    id: string,
+    input: { iterationId: string; generation: number },
   ) => Promise<Result<FaberLoomBoardIteration>>
   /** Save and exit, carry to SpaceLoom, or return without resolving. */
   boardIterationPause: (
@@ -192,7 +198,7 @@ export interface FaberloomPanelInjected {
     input: FaberLoomBoardIterationCancelInput,
   ) => Promise<Result<FaberLoomBoardIteration>>
   /** Reopen the retained draft, or receive its differences when stale. */
-  boardIterationResume: (id: string, baseVersion: number) => Promise<Result<FaberLoomBoardIterationResume>>
+  boardIterationResume: (id: string, baseVersion: number, actorSession?: string) => Promise<Result<FaberLoomBoardIterationResume>>
   /** Read the retained draft and, when stale, where it disagrees. */
   boardIterationDraft: (id: string) => Promise<Result<FaberLoomBoardIterationDraftRead>>
   /** Create a draft routine, optionally scoped to a Space. */
@@ -2534,6 +2540,39 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
 }
 
+/** Storage key of this tab's session, so a remounted panel keeps the seat it took. */
+const TAB_SESSION_KEY = 'faberloom.mesa.tab'
+
+/**
+ * This browser tab's session. The Mesa remounts when the user visits the chat
+ * it opens, so the seat has to outlive the component: one value per tab keeps
+ * the attempt this tab opened its own (§9.7.1). A tab whose storage is
+ * unavailable takes a fresh seat for the mount.
+ * @returns the tab session.
+ */
+function tabSession(): string {
+  const created = `tab-${Math.random().toString(36).slice(2)}`
+  try {
+    const stored = window.sessionStorage.getItem(TAB_SESSION_KEY)
+    if (stored !== null && stored.length > 0) return stored
+    window.sessionStorage.setItem(TAB_SESSION_KEY, created)
+  } catch {
+    // A sandboxed frame can refuse storage; this mount keeps the seat it minted.
+  }
+  return created
+}
+
+/**
+ * Whether one refusal means the attempt this tab held is over: the lock expired
+ * or another attempt replaced it (W-43). The board writes the stable code into
+ * the message, and the transported error carries it as its code when it can.
+ * @param error - the refusal the Remote answered.
+ * @returns true when the panel must return to the paused state.
+ */
+function attemptIsOver(error: { readonly code: string; readonly message: string }): boolean {
+  return /LOCK_LOST|ITERATION_STALE/u.test(`${error.code} ${error.message}`)
+}
+
 /** The WorkLoom Mesa: Foco, Kanban, Lista, and the detail zones. */function mesaScreen() {
   const COLUMNS = [
     ['TU_CRITERIO', 'mesa.column.tu'],
@@ -2556,7 +2595,7 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
       boardDiscard, boardResolveCandidate, boardAssignWorkspace, boardTakeDraft, boardRevalidate,
       boardSaveDraft, openTaskChat, goToWorkspace,
       boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft,
-      boardIterationApply, boardIterationPause, boardIterationCancel, boardIterationResume,
+      boardIterationApply, boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume,
       boardIterationDraft,
     } = props
     const { overview, error } = useOverview(props)
@@ -2578,7 +2617,7 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
     const [exitMode, setExitMode] = useState<'apply' | 'discard' | null>(null)
     const [scope, setScope] = useState<FaberLoomBoardCorrectionScope>('puntual')
     const [candidateChoice, setCandidateChoice] = useState<'adopt' | 'keep' | null>(null)
-    const [writerSession] = useState(() => `tab-${Math.random().toString(36).slice(2)}`)
+    const [writerSession] = useState(tabSession)
     const hydrated = useRef<string | null>(null)
     const editRef = useRef<HTMLTextAreaElement>(null)
     const severityRef = useRef<HTMLSelectElement>(null)
@@ -2606,6 +2645,10 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
     const attempt = iteration.kind === 'ready' ? iteration.value : undefined
     // An expired attempt already reads as idle; its draft stays offered (W-44).
     const live = attempt?.phase === 'active'
+    // The attempt, not the user, is the lock subject: this tab owns the attempt
+    // only when the lock names the session it opened it with (§9.7.1).
+    const otherTabHolds = attempt !== undefined && attempt.phase === 'active'
+      && attempt.lockBy !== null && attempt.lockBy !== writerSession
     const retainedDraft = live ? null : attempt?.draft ?? null
     const candidateBlocked = attempt?.candidatePending === true && candidateChoice === null
     const remaining = attempt?.lockUntil === null || attempt?.lockUntil === undefined
@@ -2726,7 +2769,7 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
     // summary; the host stores it under the attempt and a write made after the
     // attempt ended is archived instead of reaching the item (W-57).
     useEffect(() => {
-      if (value === undefined || attempt === undefined || !live || iterationDraft === null) return
+      if (value === undefined || attempt === undefined || !live || otherTabHolds || iterationDraft === null) return
       if (attempt.iterationId === null) return
       if (iterationDraft === (attempt.draft?.summary ?? value.summary)) return
       const iterationId = attempt.iterationId
@@ -2740,7 +2783,38 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
           })
       }, 350)
       return () => clearTimeout(timer)
-    }, [iterationDraft, live, attempt?.iterationId, attempt?.generation, value?.id, value?.version])
+    }, [iterationDraft, live, otherTabHolds, attempt?.iterationId, attempt?.generation, value?.id, value?.version])
+
+    // D-09: a tab that holds the attempt renews it on the cadence the host
+    // projects, so work in progress never loses the lock. The timer stops with
+    // the attempt or the panel, and a refusal means the attempt ended elsewhere:
+    // the panel returns to the paused state with the stored draft, and the item
+    // is never written from here (W-43, W-44).
+    useEffect(() => {
+      if (value === undefined || attempt === undefined) return
+      if (!live || attempt.iterationId === null) return
+      if (attempt.lockBy !== null && attempt.lockBy !== writerSession) return
+      const itemId = value.id
+      const iterationId = attempt.iterationId
+      const generation = attempt.generation
+      // The board validates the cadence as a positive number of seconds, so the
+      // panel schedules it as given and carries no copy of the D-09 value.
+      const period = attempt.renewalSeconds * 1_000
+      const timer = setInterval(() => {
+        if (document.visibilityState !== 'visible') return
+        void boardIterationRenew(itemId, { iterationId, generation }).then((result) => {
+          if (result.ok) { setTick(count => count + 1); return }
+          if (!attemptIsOver(result.error)) { setMessage(result.error.message); return }
+          setMessage(t('mesa.iteration.lockLost'))
+          setIterationDraft(null)
+          setDifferences([])
+          setExitMode(null)
+          setCandidateChoice(null)
+          setTick(count => count + 1)
+        })
+      }, period)
+      return () => { clearInterval(timer) }
+    }, [live, attempt?.iterationId, attempt?.generation, attempt?.lockBy, attempt?.renewalSeconds, value?.id])
 
     const next = (): void => {
       const index = visible.findIndex(row => row.id === selected)
@@ -2777,7 +2851,7 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
         })
         return
       }
-      void boardIterationResume(value.id, retainedDraft.baseVersion).then((result) => {
+      void boardIterationResume(value.id, retainedDraft.baseVersion, writerSession).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         if (result.value.status === 'outdated') {
           setDifferences(result.value.differences)
@@ -2832,6 +2906,11 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
         setIterationDraft(null)
         setDifferences([])
         setTick(count => count + 1)
+        // The version is committed: a correction that could not be recorded is
+        // reported on one line instead of failing or undoing the apply (W-34).
+        if (result.value.correctionError !== null) {
+          setMessage(`${t('mesa.correctionMissing')} ${result.value.correctionError}`)
+        }
       })
     }
 
@@ -2855,11 +2934,19 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
 
     const save = (): void => {
       if (value === undefined || draft === null) return
-      apply(boardSaveEdits(value.id, {
+      void boardSaveEdits(value.id, {
         rowVersion: value.rowVersion,
         baseVersion: value.version,
         changes: { summary: draft },
-      }))
+      }).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setTick(count => count + 1)
+        // The version is committed: a correction that could not be recorded is
+        // reported on one line instead of failing or undoing the edit (W-34).
+        if (result.value.correctionError !== null) {
+          setMessage(`${t('mesa.correctionMissing')} ${result.value.correctionError}`)
+        }
+      })
     }
 
     const approve = (): void => {
@@ -2914,13 +3001,17 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
         // Every other shortcut stays inert inside a field, modifiers included,
         // so typing a draft never leaves the item.
         if (inField) return
+        // Another tab owns the attempt: its exits stay shut here, keyboard
+        // included, so this tab can never finish or save work it does not hold.
         if (command && event.key === 'Enter') {
           event.preventDefault()
+          if (otherTabHolds) return
           if (live) { setExitMode('apply'); setCandidateChoice(null) } else iterate()
           return
         }
         if (command && (event.key === 's' || event.key === 'S')) {
           event.preventDefault()
+          if (otherTabHolds) return
           if (live) leaveIteration('guardar-y-salir')
           else save()
           return
@@ -3016,34 +3107,40 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
 
     // One notice is visible; the rest fold behind a counter (spec E4).
     const notices: { title: string; body?: string; action?: ReactNode }[] = []
-    if (pending !== null) {
-      notices.push({
-        title: t('mesa.candidate'),
-        action: (
-          <span className={styles.tools}>
-            <button className={styles.primary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'adopt'))}>{t('mesa.adopt')}</button>
-            <button className={styles.secondary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'keep'))}>{t('mesa.keep')}</button>
-          </span>
-        ),
-      })
+    // Another tab holds the attempt: the item is read here, the draft area stays
+    // closed, and this tab offers no exit. One notice says why (§9.7.1).
+    if (otherTabHolds) {
+      notices.push({ title: t('mesa.iteration.otherTab'), body: t('mesa.iteration.otherTabText') })
+    } else {
+      if (pending !== null) {
+        notices.push({
+          title: t('mesa.candidate'),
+          action: (
+            <span className={styles.tools}>
+              <button className={styles.primary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'adopt'))}>{t('mesa.adopt')}</button>
+              <button className={styles.secondary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'keep'))}>{t('mesa.keep')}</button>
+            </span>
+          ),
+        })
+      }
+      if (retainedDraft !== null) {
+        notices.push({
+          title: t('mesa.iterationDraft'),
+          body: t('mesa.iterationDraftText'),
+          action: <button className={styles.secondary} type="button" onClick={iterate}>{t('mesa.iterationOpen')}</button>,
+        })
+      }
+      if (foreignDraft) {
+        notices.push({
+          title: t('mesa.foreignDraft'),
+          body: t('mesa.foreignDraftText'),
+          action: (
+            <button className={styles.secondary} type="button" onClick={() => apply(boardTakeDraft(value?.id ?? '', writerSession))}>{t('mesa.takeControl')}</button>
+          ),
+        })
+      }
+      if (value !== undefined && value.stale) notices.push({ title: value.staleReason ?? t('mesa.stale') })
     }
-    if (retainedDraft !== null) {
-      notices.push({
-        title: t('mesa.iterationDraft'),
-        body: t('mesa.iterationDraftText'),
-        action: <button className={styles.secondary} type="button" onClick={iterate}>{t('mesa.iterationOpen')}</button>,
-      })
-    }
-    if (foreignDraft) {
-      notices.push({
-        title: t('mesa.foreignDraft'),
-        body: t('mesa.foreignDraftText'),
-        action: (
-          <button className={styles.secondary} type="button" onClick={() => apply(boardTakeDraft(value?.id ?? '', writerSession))}>{t('mesa.takeControl')}</button>
-        ),
-      })
-    }
-    if (value !== undefined && value.stale) notices.push({ title: value.staleReason ?? t('mesa.stale') })
 
     const noticeBlock = notices.length === 0 ? null : (
       <div className={styles.mesaNotice} role="status">
@@ -3154,7 +3251,7 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
                       className={styles.mesaDraft}
                       aria-label={t('mesa.detail.draft')}
                       value={(live ? iterationDraft ?? attempt?.draft?.summary ?? value.summary : draft) ?? ''}
-                      disabled={!live && !editable}
+                      disabled={otherTabHolds || (!live && !editable)}
                       onChange={(event) => {
                         if (live) setIterationDraft(event.target.value)
                         else setDraft(event.target.value)
@@ -3226,7 +3323,9 @@ function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
 
               <footer className={styles.mesaActionBar}>
                 <div className={styles.mesaActions}>
-                  {live ? (
+                  {live && otherTabHolds ? (
+                    <button className={styles.ghost} type="button" onClick={next}>{t('mesa.skip')}</button>
+                  ) : live ? (
                     <>
                       <button
                         className={styles.primary}

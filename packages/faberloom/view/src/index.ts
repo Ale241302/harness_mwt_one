@@ -30,6 +30,8 @@ import type {
 import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
+// Type-only: the correction payloads, identity, and classifications the view hands to the learning registry.
+import type { CorrectionInput, LearningActor, LearningScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
@@ -64,9 +66,11 @@ import type {
   FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
   FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
   FaberLoomBoardSeverity, FaberLoomBoardEventRow, FaberLoomBoardDraftInput, FaberLoomBoardDraftRow,
-  FaberLoomBoardIteration, FaberLoomBoardIterationApplyInput, FaberLoomBoardIterationCancelInput,
+  FaberLoomBoardIteration, FaberLoomBoardIterationApplyInput,
+  FaberLoomBoardIterationApplyResult, FaberLoomBoardIterationCancelInput,
   FaberLoomBoardIterationContext, FaberLoomBoardIterationDifference, FaberLoomBoardIterationDraft,
-  FaberLoomBoardIterationDraftRead, FaberLoomBoardIterationDraftRow,
+  FaberLoomBoardIterationDraftRead, FaberLoomBoardIterationDraftRow, FaberLoomBoardIterationLockInput,
+  FaberLoomBoardEditResult,
   FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationResume, FaberLoomBoardIterationSaveInput,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
@@ -854,6 +858,78 @@ function iterationDifferences(
 }
 
 /**
+ * The lineage and classifications every correction of one board item carries
+ * (§6.3): the item, the actor, tenant, space, account, agent, and data classes.
+ */
+type CorrectionOriginFields = Pick<
+  CorrectionInput,
+  'itemId' | 'actor' | 'tenantId' | 'spaceId' | 'accountRef' | 'agentId' | 'dataClasses' | 'dataClassProvisional'
+>
+
+/**
+ * One field an applied attempt changed, with both values as text.
+ */
+interface AppliedChange {
+  /** Field path inside the artifact, or `summary`. */
+  readonly field: string
+  /** Value before the apply, formatted for the registry. */
+  readonly previous: string
+  /** Value the applied version carries. */
+  readonly next: string
+}
+
+/**
+ * The values an applied version is compared on: the artifact content plus the
+ * revision summary, which the board keeps beside the content but derives from
+ * the same fields. `summary` wins over a content key of the same name because
+ * that is the value the applied revision records.
+ * @param content - artifact content of the version.
+ * @param summary - summary of the version.
+ * @returns the values keyed by field.
+ */
+function correctionValues(
+  content: Readonly<Record<string, unknown>>,
+  summary: string,
+): Record<string, unknown> {
+  return { ...content, summary }
+}
+
+/**
+ * Fields one applied iteration changed (W-34): the applied version is compared
+ * with the item as the panel read it, so the correction names the work the
+ * attempt delivered instead of the whole artifact.
+ * @param before - values of the item before the apply.
+ * @param after - values of the applied version.
+ * @returns one entry per changed field, sorted by field.
+ */
+function appliedChanges(
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+): AppliedChange[] {
+  const fields = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()
+  const changes: AppliedChange[] = []
+  for (const field of fields) {
+    if (JSON.stringify(before[field]) === JSON.stringify(after[field])) continue
+    changes.push({
+      field,
+      previous: iterationDisplayValue(before[field]),
+      next: iterationDisplayValue(after[field]),
+    })
+  }
+  return changes
+}
+
+/**
+ * One field value as the correction registry keeps it: text, or null when the
+ * field carried nothing before or after the edit (§6.3).
+ * @param value - the field value.
+ * @returns the text, or null.
+ */
+function correctionValue(value: unknown): string | null {
+  return value === undefined || value === null ? null : iterationDisplayValue(value)
+}
+
+/**
  * Project one attempt for the panel.
  * @param status - the attempt state the board returned.
  * @returns the projected attempt.
@@ -865,6 +941,7 @@ function iterationOf(status: BoardIterationStatus): FaberLoomBoardIteration {
     generation: status.generation,
     baseVersion: status.baseVersion,
     lockUntil: status.lockUntil,
+    lockBy: status.lockBy,
     renewalSeconds: status.renewalSeconds,
     rounds: status.rounds,
     roundLimit: status.roundLimit,
@@ -6354,20 +6431,31 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Save inline edits as a new version.
+   * Save inline edits as a new version and record the correction they are
+   * (§6.3, W-34). The board commit happens first; the correction is written
+   * afterwards and is best effort, so it may be missing while the item is
+   * committed and `correctionError` then carries the message the panel shows on
+   * one line.
    * @param id - board item id.
    * @param input - base version, row version, and changes.
-   * @returns the refreshed detail.
+   * @returns the refreshed detail and the correction failure, when any.
    */
   @Remote('boardSaveEdits')
-  async boardSaveEdits(id: string, input: FaberLoomBoardEditsInput): Promise<FaberLoomBoardDetail | undefined> {
+  async boardSaveEdits(id: string, input: FaberLoomBoardEditsInput): Promise<FaberLoomBoardEditResult> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot edit board items')
-    await this.ctx.faberloomBoard.saveEdits(this.actor(), id as FaberLoomBoardItemId, {
+    const board = this.ctx.faberloomBoard
+    const actor = this.actor()
+    // The read only supplies the previous field values; a failure costs the
+    // correction's detail and must never stop the edit the human asked for.
+    const before = await board.get(actor, id as FaberLoomBoardItemId).catch(() => undefined)
+    const saved = await board.saveEdits(actor, id as FaberLoomBoardItemId, {
       expectedRowVersion: input.expectedRowVersion,
       baseVersion: input.baseVersion,
       changes: input.changes,
     })
-    return await this.boardDetail(id)
+    const detail = await this.boardDetail(id)
+    const correctionError = await this.recordEditCorrections(saved, before, input.changes)
+    return { detail: detail ?? null, correctionError }
   }
 
   /**
@@ -6557,23 +6645,51 @@ export class FaberLoomViewService extends TypertRemoteService {
 
   /**
    * Apply the live attempt with the scope its correction teaches, writing one
-   * new version and releasing the lock (W-34, W-40).
+   * new version and releasing the lock (W-34, W-40). The correction is recorded
+   * after the commit and is best effort: it may be missing while the item is
+   * committed, which is what `correctionError` reports.
    * @param id - board item id.
    * @param input - attempt, base version, scope, and the candidate choice when one is pending.
-   * @returns the attempt after the commit.
+   * @returns the attempt after the commit and the correction failure, when any.
    */
   @Remote('boardIterationApply')
   async boardIterationApply(
     id: string,
     input: FaberLoomBoardIterationApplyInput,
-  ): Promise<FaberLoomBoardIteration> {
+  ): Promise<FaberLoomBoardIterationApplyResult> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
-    const result = await this.ctx.faberloomBoard.applyIteration(this.actor(), id as FaberLoomBoardItemId, {
+    const board = this.ctx.faberloomBoard
+    const actor = this.actor()
+    // Both reads only feed the correction: the item as the panel saw it and the
+    // work the attempt stored. A failure costs the correction and never the apply.
+    const before = await board.get(actor, id as FaberLoomBoardItemId).catch(() => undefined)
+    const draft = await board.getIterationDraft(actor, id as FaberLoomBoardItemId).catch(() => undefined)
+    const result = await board.applyIteration(actor, id as FaberLoomBoardItemId, {
       iterationId: input.iterationId,
       generation: input.generation,
       baseVersion: input.baseVersion,
       scope: input.scope,
       ...input.candidate === undefined ? {} : { candidate: input.candidate },
+    })
+    const correctionError = await this.recordIterationCorrection(result.item, draft, before, input.scope)
+    return { iteration: iterationOf(result.status), correctionError }
+  }
+
+  /**
+   * Extend the live attempt's lock while this tab works it (D-09, §9.7.1). The
+   * board refuses a stale attempt id, a stale generation, or an expired deadline
+   * with `LOCK_LOST` or `ITERATION_STALE` and no effects (W-43), so a renewal
+   * never touches the item's content or version.
+   * @param id - board item id.
+   * @param input - attempt id and generation the panel has open.
+   * @returns the attempt after the renewal.
+   */
+  @Remote('boardIterationRenew')
+  async boardIterationRenew(id: string, input: FaberLoomBoardIterationLockInput): Promise<FaberLoomBoardIteration> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const result = await this.ctx.faberloomBoard.renewIteration(this.actor(), id as FaberLoomBoardItemId, {
+      iterationId: input.iterationId,
+      generation: input.generation,
     })
     return iterationOf(result.status)
   }
@@ -6626,13 +6742,17 @@ export class FaberLoomViewService extends TypertRemoteService {
    * newer content (W-68).
    * @param id - board item id.
    * @param baseVersion - base version of the draft the caller saw.
+   * @param actorSession - tab opening the attempt, so a resumed attempt belongs to it.
    * @returns the new attempt, or the stale draft's differences.
    */
   @Remote('boardIterationResume')
-  async boardIterationResume(id: string, baseVersion: number): Promise<FaberLoomBoardIterationResume> {
+  async boardIterationResume(id: string, baseVersion: number, actorSession?: string): Promise<FaberLoomBoardIterationResume> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
     const board = this.ctx.faberloomBoard
-    const result = await board.resumeIteration(this.actor(), id as FaberLoomBoardItemId, { baseVersion })
+    const result = await board.resumeIteration(this.actor(), id as FaberLoomBoardItemId, {
+      baseVersion,
+      ...actorSession === undefined ? {} : { actorSession },
+    })
     const iteration = iterationOf(await board.iterationStatus(this.actor(), id as FaberLoomBoardItemId))
     if (result.status === 'started') return { status: 'started', iteration, differences: [] }
     return {
@@ -6663,6 +6783,158 @@ export class FaberLoomViewService extends TypertRemoteService {
       draft: iterationDraftOf(draft),
       differences: draft.baseVersion === item.version ? [] : iterationDifferences(draft, item.content),
     }
+  }
+
+  /**
+   * Hand one correction to the learning registry (§6.3, W-34). The board command
+   * that produced it already committed, so this write is best effort: a failure
+   * is returned as a message for the panel's one-line notice and never thrown
+   * or reversed here. The correction may therefore be missing while the item is
+   * committed. The view creates no candidate; the learning package decides that
+   * from the chosen scope.
+   * @param input - origin payload, lineage, classifications, and chosen scope.
+   * @returns null when the registry recorded it, else the failure message.
+   */
+  private async writeCorrection(input: CorrectionInput): Promise<string | null> {
+    try {
+      await this.ctx.faberloomMemory.onCorrection(this.learningActor(input), input)
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  /**
+   * The learning identity this view records as. The board refused the command
+   * when the item is outside the owner's company, so the origin's own space,
+   * account, and agent are the scope the actor holds over it (§6.3).
+   * @param origin - the origin the correction names.
+   * @returns the identity and the scope lists the registry checks.
+   */
+  private learningActor(origin: CorrectionOriginFields): LearningActor {
+    const actor = this.actor()
+    return {
+      id: actor.id,
+      tenantId: actor.companyId ?? null,
+      ...origin.spaceId === undefined ? {} : { spaceIds: [origin.spaceId] },
+      ...origin.accountRef === undefined ? {} : { accountRefs: [origin.accountRef] },
+      ...origin.agentId === undefined ? {} : { agentIds: [origin.agentId] },
+    }
+  }
+
+  /**
+   * The agent one board item's corrections belong to: the agent in charge of
+   * its space, which is the agent the iteration chat runs as. An item without a
+   * space, or a space the actor may not read, contributes none.
+   * @param item - the board item.
+   * @returns the agent id, or undefined.
+   */
+  private async boardItemAgent(item: FaberLoomBoardItem): Promise<string | undefined> {
+    if (item.spaceId === null) return undefined
+    // A space outside the actor scope hides its agent the way it hides its title.
+    const space = await this.ctx.faberloomSpaces.get(this.actor(), item.spaceId as FaberLoomSpaceId).catch(() => undefined)
+    return space?.agentId
+  }
+
+  /**
+   * The lineage and classifications every correction of one board item carries:
+   * tenant, space, account, agent, the item id, its data class, and whether that
+   * class is still provisional (W-46, D-10).
+   * @param item - the item the correction is about.
+   * @returns the fields to spread into the correction input.
+   */
+  private async correctionOriginOf(item: FaberLoomBoardItem): Promise<CorrectionOriginFields> {
+    const actor = this.actor()
+    const agentId = await this.boardItemAgent(item)
+    return {
+      itemId: item.id,
+      actor: actor.id,
+      tenantId: actor.companyId ?? null,
+      ...item.spaceId === null ? {} : { spaceId: item.spaceId },
+      ...item.accountRef === null ? {} : { accountRef: item.accountRef },
+      ...agentId === undefined ? {} : { agentId },
+      dataClasses: [item.dataClass],
+      ...item.dataClassProvisional ? { dataClassProvisional: true } : {},
+    }
+  }
+
+  /**
+   * Record the correction one applied attempt is (§6.3, W-34): origin
+   * `iterate`, the chosen scope, the instructions the attempt's draft carried,
+   * the diffs the applied version made, and its rounds. `puntual` teaches
+   * nothing, so the other scopes carry the same instructions as the rule the
+   * candidate proposes.
+   * @param item - the item after the apply.
+   * @param draft - the attempt's stored draft, when it had one.
+   * @param before - the item before the apply, or undefined when it could not be read.
+   * @param scope - the scope the human chose for the correction.
+   * @returns null when the registry recorded it, else the failure message.
+   */
+  private async recordIterationCorrection(
+    item: FaberLoomBoardItem,
+    draft: BoardIterationDraft | undefined,
+    before: FaberLoomBoardItem | undefined,
+    scope: LearningScope,
+  ): Promise<string | null> {
+    const applied = item.revisions[item.revisions.length - 1]
+    const beforeRevision = before?.revisions[before.revisions.length - 1]
+    // Without the item as the panel read it there is nothing to diff against;
+    // the correction still records the instructions and the round it closed.
+    const changes = before === undefined
+      ? []
+      : appliedChanges(
+        correctionValues(before.content, beforeRevision?.summary ?? ''),
+        correctionValues(item.content, applied?.summary ?? ''),
+      )
+    const instructions = (draft?.summary ?? applied?.summary ?? '').trim()
+    return await this.writeCorrection({
+      ...await this.correctionOriginOf(item),
+      fieldsUsed: changes.map(change => change.field),
+      scope,
+      ...scope === 'puntual' ? {} : { text: instructions },
+      detail: {
+        origin: 'iterate',
+        instructions,
+        diffs: changes.map(change => `${change.field}: ${change.previous} → ${change.next}`),
+        rounds: item.iterationRoundCount,
+      },
+    })
+  }
+
+  /**
+   * Record the correction one inline edit save is (§6.3, W-34): origin `edit`,
+   * scope `puntual`, and one record per changed field with its previous and next
+   * value, which is what the maturity report counts as edited fields.
+   * @param item - the item after the save.
+   * @param before - the item before the save, or undefined when it could not be read.
+   * @param changes - the fields the caller wrote.
+   * @returns null when every correction was recorded, else the first failure message.
+   */
+  private async recordEditCorrections(
+    item: FaberLoomBoardItem,
+    before: FaberLoomBoardItem | undefined,
+    changes: Record<string, unknown>,
+  ): Promise<string | null> {
+    // An edit whose previous values are unknown cannot name what it changed, so
+    // it records nothing and says why instead of writing an invented `previous`.
+    if (before === undefined) {
+      return 'faberloom: CORRECTION_SKIPPED — the item could not be read before the edit'
+    }
+    const previous = correctionValues(before.content, before.revisions[before.revisions.length - 1]?.summary ?? '')
+    const origin = await this.correctionOriginOf(item)
+    let failure: string | null = null
+    for (const [field, next] of Object.entries(changes)) {
+      const previousValue = previous[field]
+      if (JSON.stringify(previousValue) === JSON.stringify(next)) continue
+      const message = await this.writeCorrection({
+        ...origin,
+        fieldsUsed: [field],
+        scope: 'puntual',
+        detail: { origin: 'edit', field, previous: correctionValue(previousValue), next: correctionValue(next) },
+      })
+      failure ??= message
+    }
+    return failure
   }
 
   /**

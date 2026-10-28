@@ -55,7 +55,7 @@ const DETAIL = {
 }
 
 const IDLE_ATTEMPT = {
-  phase: 'idle', iterationId: null, generation: 0, baseVersion: null, lockUntil: null,
+  phase: 'idle', iterationId: null, generation: 0, baseVersion: null, lockUntil: null, lockBy: null,
   renewalSeconds: 30, rounds: 0, roundLimit: 5, suggestRewrite: false,
   draftOutdated: false, candidatePending: false, draft: null,
 }
@@ -130,7 +130,9 @@ async function bench(
   }))
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
   const boardSetSeverity = vi.fn(async () => ({ ok: true, value: undefined }))
-  const boardSaveEdits = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardSaveEdits = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { detail: null, correctionError: null },
+  }))
   const boardApprove = vi.fn(async () => ({ ok: true, value: undefined }))
   const boardApproveWithEdits = vi.fn(async () => ({ ok: true, value: undefined }))
   const boardDiscard = vi.fn(async () => ({ ok: true, value: undefined }))
@@ -148,7 +150,10 @@ async function bench(
   const boardIterationSaveDraft = vi.fn(async (): Promise<unknown> => ({
     ok: true, value: { summary: 'Borrador', baseVersion: 1, linked: true },
   }))
-  const boardIterationApply = vi.fn(async (): Promise<unknown> => ({ ok: true, value: IDLE_ATTEMPT }))
+  const boardIterationApply = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { iteration: IDLE_ATTEMPT, correctionError: null },
+  }))
+  const boardIterationRenew = vi.fn(async (): Promise<unknown> => ({ ok: true, value: LIVE_ATTEMPT }))
   const boardIterationPause = vi.fn(async (): Promise<unknown> => ({ ok: true, value: IDLE_ATTEMPT }))
   const boardIterationCancel = vi.fn(async (): Promise<unknown> => ({ ok: true, value: IDLE_ATTEMPT }))
   const boardIterationResume = vi.fn(async (): Promise<unknown> => ({
@@ -256,7 +261,7 @@ async function bench(
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
     boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
-    boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationDraft,
+    boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationDraft,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
@@ -356,7 +361,7 @@ async function bench(
     deleteBoardItem, boardDetail, boardSaveEdits, boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
     boardSaveDraft,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
-    boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationDraft,
+    boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationDraft,
     emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
@@ -805,6 +810,86 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('Borrador') })
     expect(boardSaveEdits).not.toHaveBeenCalled()
     expect(view.getByRole('button', { name: faberloomEn['mesa.iterate'] })).toBeTruthy()
+  })
+
+  it('renews the attempt this tab holds on the cadence the host projects', async () => {
+    const { runtime, boardDetail, boardIteration, boardIterationRenew } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: { ...LIVE_ATTEMPT, renewalSeconds: 0.05 } })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await waitFor(() => {
+      expect(boardIterationRenew).toHaveBeenCalledWith('item-1', { iterationId: 'iter-1', generation: 4 })
+    }, { timeout: 3_000 })
+  })
+
+  it('returns to the paused state with its draft when the renewal loses the lock', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationRenew, boardSaveEdits } = await bench()
+    boardDetail
+      .mockResolvedValueOnce({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+      .mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardIteration
+      .mockResolvedValueOnce({ ok: true, value: { ...LIVE_ATTEMPT, renewalSeconds: 0.05 } })
+      .mockResolvedValue({ ok: true, value: { ...IDLE_ATTEMPT, draft: LIVE_ATTEMPT.draft } })
+    boardIterationRenew.mockResolvedValue({
+      ok: false,
+      error: { code: 'LOCK_LOST', message: 'faberloom: LOCK_LOST — the item is not iterating or its lock expired' },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.lockLost'], undefined, { timeout: 3_000 })).toBeTruthy()
+    expect(await view.findByText(faberloomEn['mesa.iterationDraft'])).toBeTruthy()
+    expect(view.queryByRole('button', { name: faberloomEn['mesa.iteration.saveExit'] })).toBeNull()
+    expect(boardSaveEdits).not.toHaveBeenCalled()
+  })
+
+  it('reads the item and offers no exit while another tab iterates it', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationRenew, boardIterationApply, boardSaveEdits } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({
+      ok: true, value: { ...LIVE_ATTEMPT, lockBy: 'tab-other', renewalSeconds: 0.05 },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.otherTab'])).toBeTruthy()
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true)
+    const exits = ['mesa.iteration.apply', 'mesa.iteration.discardChanges', 'mesa.iteration.saveExit', 'mesa.iteration.toSpaceloom'] as const
+    for (const key of exits) expect(view.queryByRole('button', { name: faberloomEn[key] })).toBeNull()
+    // The exits stay shut for the keyboard too: neither the apply dialog nor a
+    // save may start from a tab that does not hold the attempt.
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    expect(view.queryByRole('dialog')).toBeNull()
+    await new Promise(resolve => setTimeout(resolve, 200))
+    expect(boardIterationRenew).not.toHaveBeenCalled()
+    expect(boardIterationApply).not.toHaveBeenCalled()
+    expect(boardSaveEdits).not.toHaveBeenCalled()
+  })
+
+  it('reports a correction that could not be recorded after the apply commits', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationApply } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT })
+    boardIterationApply.mockResolvedValue({
+      ok: true,
+      value: { iteration: IDLE_ATTEMPT, correctionError: 'faberloom: NO_DATA_CLASS — a correction carries the data classes' },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.apply'] }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.click(within(dialog).getAllByRole('button', { name: faberloomEn['mesa.iteration.apply'] })[0] as HTMLElement)
+    expect(await view.findByText(/NO_DATA_CLASS/u)).toBeTruthy()
+  })
+
+  it('reports a correction that could not be recorded after the edit is saved', async () => {
+    const { runtime, view, boardDetail, boardSaveEdits } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardSaveEdits.mockResolvedValue({
+      ok: true,
+      value: { detail: DETAIL, correctionError: 'faberloom: NO_ACCESS — the correction origin is outside the actor scope' },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    expect(await view.findByText(/NO_ACCESS/u)).toBeTruthy()
   })
 
   it('saves with Ctrl+S, toggles Lista with V, and refuses R when not stale', async () => {

@@ -14,6 +14,7 @@ import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 import type { FaberLoomBoard, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type { FaberLoomSpaces } from '@deepseek-ai/dsh-faberloom-spaces'
+import type { FaberLoomCorrection, FaberLoomMemory } from '@deepseek-ai/dsh-faberloom-learning'
 import { DECLARED_CHECKS } from '@deepseek-ai/dsh-faberloom-board'
 
 const OVERLAY = fileURLToPath(new URL('./mesa-panel.overlay.yml', import.meta.url))
@@ -75,6 +76,7 @@ describe('web e2e: WorkLoom Mesa', () => {
   const actor = { id: 'e2e@mwt.one', companyId: 'mwt' }
   let itemId: FaberLoomBoardItemId
   let iterationItemId: FaberLoomBoardItemId
+  let iterationSpaceId: string | undefined
   let replayDir: string | undefined
 
   beforeAll(async () => {
@@ -105,6 +107,7 @@ describe('web e2e: WorkLoom Mesa', () => {
     // creates a real space through the shipped service instead of a fixture.
     const spaces = (scaffold.ctx as unknown as { faberloomSpaces: FaberLoomSpaces }).faberloomSpaces
     const space = await spaces.create({ ...actor, role: 'admin', readOnly: false }, { title: SPACE_TITLE })
+    iterationSpaceId = String(space.id)
     const iterationItem = await board.submit(actor, {
       runId: 'run-pf-9002',
       idempotencyKey: 'pf-9002-2026',
@@ -139,6 +142,29 @@ describe('web e2e: WorkLoom Mesa', () => {
     await page.getByText(title, { exact: false }).first().waitFor({ timeout: 20_000 })
     await page.getByText(title, { exact: false }).first().click()
     await page.getByText('③ Draft').waitFor({ timeout: 20_000 })
+  }
+
+  /** One item's recorded corrections, as the learning registry holds them (§6.3). */
+  async function correctionsOf(item: FaberLoomBoardItemId): Promise<readonly FaberLoomCorrection[]> {
+    const memory = (scaffold.ctx as unknown as { faberloomMemory: FaberLoomMemory }).faberloomMemory
+    return await memory.listCorrections(
+      {
+        id: 'e2e@mwt.one',
+        tenantId: 'mwt',
+        ...iterationSpaceId === undefined ? {} : { spaceIds: [iterationSpaceId] },
+        accountRefs: ['Cuenta Demo'],
+      },
+      { itemId: String(item) },
+    )
+  }
+
+  /** Wait for the single correction one board command records; the write follows its commit. */
+  async function singleCorrection(item: FaberLoomBoardItemId): Promise<FaberLoomCorrection> {
+    return await vi.waitFor(async () => {
+      const rows = await correctionsOf(item)
+      expect(rows).toHaveLength(1)
+      return rows[0] as FaberLoomCorrection
+    }, { timeout: 20_000 })
   }
 
   /** Start an iteration from the panel and come back to the item. */
@@ -190,6 +216,26 @@ describe('web e2e: WorkLoom Mesa', () => {
 
     const stored = await board.get(actor, itemId)
     expect(stored.state).toBe('APROBADO')
+    // W-34: saving inline edits records the correction they are, without a step.
+    const correction = await singleCorrection(itemId)
+    expect(correction).toMatchObject({
+      itemId: String(itemId),
+      actor: 'e2e@mwt.one',
+      tenantId: 'mwt',
+      spaceId: null,
+      accountRef: 'Cuenta Demo',
+      agentId: null,
+      scope: 'puntual',
+      dataClasses: ['N2'],
+      fieldsUsed: ['summary'],
+      origin: 'edit',
+      detail: {
+        origin: 'edit',
+        field: 'summary',
+        previous: 'Proforma DDP, 100 pares, USD 1.000,00, crédito 30 días.',
+        next: 'Revisado: precio DDP y crédito a 120 días confirmados.',
+      },
+    })
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
 
@@ -218,6 +264,26 @@ describe('web e2e: WorkLoom Mesa', () => {
     expect(await board.iterationStatus(actor, iterationItemId)).toMatchObject({ phase: 'idle', draft: null, rounds: 1 })
     // Every exit leaves the user on the same item with the applied version.
     await page.getByRole('button', { name: 'Approve' }).waitFor({ timeout: 20_000 })
+    // W-34: the applied iteration closes with the scope the user chose, the work
+    // it carried, and the lineage of the item it corrected.
+    const correction = await singleCorrection(iterationItemId)
+    expect(correction).toMatchObject({
+      itemId: String(iterationItemId),
+      actor: 'e2e@mwt.one',
+      tenantId: 'mwt',
+      spaceId: iterationSpaceId,
+      accountRef: 'Cuenta Demo',
+      scope: 'cuenta',
+      dataClasses: ['N2'],
+      fieldsUsed: ['summary'],
+      origin: 'iterate',
+      detail: {
+        origin: 'iterate',
+        instructions: 'Ajustado: 50 pares DDP a 60 días.',
+        diffs: ['summary: Proforma DDP, 50 pares, USD 500,00. → Ajustado: 50 pares DDP a 60 días.'],
+        rounds: 1,
+      },
+    })
     expect(tripwire.pageErrors).toEqual([])
   }, 240_000)
 

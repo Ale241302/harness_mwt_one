@@ -56,7 +56,13 @@ function status(overrides: Partial<{
 }
 
 /** The item the view reads; content is what the difference comparison needs. */
-function item(overrides: Partial<{ spaceId: string | null; version: number }> = {}) {
+function item(overrides: Partial<{
+  spaceId: string | null
+  version: number
+  content: Record<string, unknown>
+  summary: string
+  rounds: number
+}> = {}) {
   return {
     id: 'b1',
     ownerId: ACTOR.id,
@@ -69,6 +75,8 @@ function item(overrides: Partial<{ spaceId: string | null; version: number }> = 
     rowVersion: 7,
     artifactType: 'proforma',
     accountRef: 'Cuenta Demo',
+    dataClass: 'N2',
+    dataClassProvisional: false,
     spaceId: overrides.spaceId === undefined ? 'sp-1' : overrides.spaceId,
     iterationId: 'iter-1',
     iterationDraftKey: 'b1:iter-1',
@@ -76,13 +84,17 @@ function item(overrides: Partial<{ spaceId: string | null; version: number }> = 
     iterationLockGeneration: 4,
     iterationBaseVersion: 3,
     iterationLockBy: 'tab-1',
-    iterationRoundCount: 2,
-    content: { total: 1000, currency: 'USD' },
+    iterationRoundCount: overrides.rounds ?? 2,
+    content: overrides.content ?? { total: 1000, currency: 'USD' },
     guardrails: [],
     revisions: [
       {
-        version: 3, summary: 'Proforma DDP 100 pares', evidence: ['oc:505288'], content: null,
-        documentRef: null, at: '2026-10-28T09:00:00Z',
+        version: overrides.version ?? 3,
+        summary: overrides.summary ?? 'Proforma DDP 100 pares',
+        evidence: ['oc:505288'],
+        content: null,
+        documentRef: null,
+        at: '2026-10-28T09:00:00Z',
       },
     ],
     events: [],
@@ -100,19 +112,24 @@ function harness(options: { readOnly?: boolean } = {}) {
     get: vi.fn(async () => item()),
     iterationStatus: vi.fn(async () => records.iterationStatus),
     iterate: vi.fn(async () => ({ item: item(), status: records.iterationStatus })),
+    saveEdits: vi.fn(async () => item({ version: 4, summary: 'Corregido' })),
     saveIterationDraft: vi.fn(async () => ({ draft: records.draft, linked: true, code: null })),
+    getEditDraft: vi.fn(async () => undefined),
     applyIteration: vi.fn(async () => ({ item: item(), status: status({ phase: 'idle', iterationId: null }) })),
+    renewIteration: vi.fn(async () => ({ item: item(), status: records.iterationStatus })),
     pauseIteration: vi.fn(async () => ({ item: item(), status: status({ phase: 'idle', iterationId: null }) })),
     cancelIteration: vi.fn(async () => ({ item: item(), status: status({ phase: 'idle', iterationId: null }) })),
     resumeIteration: vi.fn(async () => ({ item: item(), status: 'started' as const })),
     getIterationDraft: vi.fn(async () => records.draft),
   }
   const spaces = {
-    get: vi.fn(async () => ({ id: 'sp-1', title: 'Marluvas', parentId: null })),
+    get: vi.fn(async () => ({ id: 'sp-1', title: 'Marluvas', parentId: null, agentId: 'agent-1' })),
   }
+  const onCorrection = vi.fn(async () => ({ correction: { id: 'c1' }, candidate: undefined }))
   const ctx = {
     faberloomSpaces: spaces,
     faberloomBoard: board,
+    faberloomMemory: { onCorrection },
     provide: () => {},
     reflect: { provide: () => {} },
     effect: (run: () => unknown) => { run(); return () => {} },
@@ -126,7 +143,7 @@ function harness(options: { readOnly?: boolean } = {}) {
     companyId: ACTOR.companyId,
     readOnly: options.readOnly === true,
   })
-  return { view, board, spaces, records }
+  return { view, board, spaces, records, onCorrection }
 }
 
 describe('FaberLoomViewService board iteration', () => {
@@ -248,7 +265,8 @@ describe('FaberLoomViewService board iteration', () => {
 
   it('reports a resumed attempt and a stale draft with its differences', async () => {
     const { view, board } = harness()
-    expect(await view.boardIterationResume('b1', 3)).toMatchObject({ status: 'started', differences: [] })
+    expect(await view.boardIterationResume('b1', 3, 'tab-9')).toMatchObject({ status: 'started', differences: [] })
+    expect(board.resumeIteration).toHaveBeenCalledWith(ACTOR, 'b1', { baseVersion: 3, actorSession: 'tab-9' })
 
     board.resumeIteration.mockResolvedValue({
       item: item(),
@@ -306,5 +324,172 @@ describe('FaberLoomViewService board iteration', () => {
 
     board.list.mockResolvedValue([])
     expect(await view.boardIterationContext('other')).toBeUndefined()
+  })
+
+  it('projects the tab session that holds the attempt', async () => {
+    const { view } = harness()
+    expect((await view.boardIteration('b1'))?.lockBy).toBe('tab-1')
+  })
+
+  it('renews the live attempt with the attempt id and generation it was given', async () => {
+    const { view, board } = harness()
+    const attempt = await view.boardIterationRenew('b1', { iterationId: 'iter-1', generation: 4 })
+    expect(board.renewIteration).toHaveBeenCalledWith(ACTOR, 'b1', { iterationId: 'iter-1', generation: 4 })
+    expect(attempt).toMatchObject({ phase: 'active', iterationId: 'iter-1', generation: 4 })
+  })
+
+  it('refuses a renewal from a read-only identity', async () => {
+    const { view, board } = harness({ readOnly: true })
+    await expect(view.boardIterationRenew('b1', { iterationId: 'iter-1', generation: 4 })).rejects.toThrow('read-only')
+    expect(board.renewIteration).not.toHaveBeenCalled()
+  })
+
+  it('records one iterate correction with the scope, the work, and the item lineage', async () => {
+    const { view, board, onCorrection } = harness()
+    board.applyIteration.mockResolvedValue({
+      item: item({ version: 4, rounds: 3, content: { total: 1200, currency: 'USD' }, summary: 'Precio revisado' }),
+      status: status({ phase: 'idle', iterationId: null }),
+    })
+
+    const answer = await view.boardIterationApply('b1', {
+      iterationId: 'iter-1',
+      generation: 4,
+      baseVersion: 3,
+      scope: 'cuenta',
+    })
+
+    expect(answer.correctionError).toBeNull()
+    expect(answer.iteration).toMatchObject({ phase: 'idle' })
+    expect(onCorrection).toHaveBeenCalledWith(
+      {
+        id: ACTOR.id,
+        tenantId: 'mwt',
+        spaceIds: ['sp-1'],
+        accountRefs: ['Cuenta Demo'],
+        agentIds: ['agent-1'],
+      },
+      {
+        itemId: 'b1',
+        actor: ACTOR.id,
+        tenantId: 'mwt',
+        spaceId: 'sp-1',
+        accountRef: 'Cuenta Demo',
+        agentId: 'agent-1',
+        dataClasses: ['N2'],
+        fieldsUsed: ['summary', 'total'],
+        scope: 'cuenta',
+        text: 'Precio revisado',
+        detail: {
+          origin: 'iterate',
+          instructions: 'Precio revisado',
+          diffs: ['summary: Proforma DDP 100 pares → Precio revisado', 'total: 1000 → 1200'],
+          rounds: 3,
+        },
+      },
+    )
+  })
+
+  it('keeps a provisional class out of the learning products of the applied correction', async () => {
+    const { view, board, onCorrection } = harness()
+    board.applyIteration.mockResolvedValue({
+      item: { ...item({ version: 4, rounds: 3 }), dataClassProvisional: true },
+      status: status({ phase: 'idle', iterationId: null }),
+    })
+
+    await view.boardIterationApply('b1', { iterationId: 'iter-1', generation: 4, baseVersion: 3, scope: 'puntual' })
+
+    expect(onCorrection).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      dataClassProvisional: true,
+      scope: 'puntual',
+    }))
+  })
+
+  it('records one edit correction per changed field with its previous and next value', async () => {
+    const { view, onCorrection } = harness()
+
+    const answer = await view.boardSaveEdits('b1', {
+      expectedRowVersion: 7,
+      baseVersion: 3,
+      changes: { summary: 'Corregido', currency: 'USD' },
+    })
+
+    expect(answer.detail?.id).toBe('b1')
+    expect(answer.correctionError).toBeNull()
+    // `currency` was written with the value the item already carried, so it records no correction.
+    expect(onCorrection).toHaveBeenCalledTimes(1)
+    expect(onCorrection).toHaveBeenCalledWith(expect.anything(), {
+      itemId: 'b1',
+      actor: ACTOR.id,
+      tenantId: 'mwt',
+      spaceId: 'sp-1',
+      accountRef: 'Cuenta Demo',
+      agentId: 'agent-1',
+      dataClasses: ['N2'],
+      fieldsUsed: ['summary'],
+      scope: 'puntual',
+      detail: { origin: 'edit', field: 'summary', previous: 'Proforma DDP 100 pares', next: 'Corregido' },
+    })
+  })
+
+  it('commits the apply and reports the correction it could not record', async () => {
+    const { view, board, onCorrection } = harness()
+    onCorrection.mockRejectedValue(new Error('faberloom: NO_ACCESS — the correction origin is outside the actor scope'))
+
+    const answer = await view.boardIterationApply('b1', {
+      iterationId: 'iter-1',
+      generation: 4,
+      baseVersion: 3,
+      scope: 'puntual',
+    })
+
+    expect(board.applyIteration).toHaveBeenCalled()
+    expect(answer.correctionError).toBe('faberloom: NO_ACCESS — the correction origin is outside the actor scope')
+    expect(answer.iteration).toMatchObject({ phase: 'idle' })
+  })
+
+  it('commits the edit and reports the correction it could not record', async () => {
+    const { view, onCorrection } = harness()
+    onCorrection.mockRejectedValue(new Error('faberloom: NO_DATA_CLASS — a correction carries its data classes'))
+
+    const answer = await view.boardSaveEdits('b1', {
+      expectedRowVersion: 7,
+      baseVersion: 3,
+      changes: { summary: 'Corregido' },
+    })
+
+    expect(answer.detail).not.toBeNull()
+    expect(answer.correctionError).toBe('faberloom: NO_DATA_CLASS — a correction carries its data classes')
+  })
+
+  it('records the applied correction without diffs when the earlier item could not be read', async () => {
+    const { view, board, onCorrection } = harness()
+    board.get.mockRejectedValue(new Error('faberloom: NOT_FOUND — board item b1 not found'))
+
+    const answer = await view.boardIterationApply('b1', {
+      iterationId: 'iter-1',
+      generation: 4,
+      baseVersion: 3,
+      scope: 'puntual',
+    })
+
+    expect(answer.correctionError).toBeNull()
+    expect(onCorrection).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      fieldsUsed: [],
+      detail: { origin: 'iterate', instructions: 'Precio revisado', diffs: [], rounds: 2 },
+    }))
+  })
+
+  it('records nothing when the earlier item of an edit could not be read', async () => {
+    const { view, board, onCorrection } = harness()
+    board.get.mockRejectedValue(new Error('faberloom: NOT_FOUND — board item b1 not found'))
+
+    const answer = await view.boardSaveEdits('b1', {
+      expectedRowVersion: 7,
+      baseVersion: 3,
+      changes: { summary: 'Corregido' },
+    })
+
+    expect(onCorrection).not.toHaveBeenCalled()
+    expect(answer.correctionError).toBe('faberloom: CORRECTION_SKIPPED — the item could not be read before the edit')
   })
 })
