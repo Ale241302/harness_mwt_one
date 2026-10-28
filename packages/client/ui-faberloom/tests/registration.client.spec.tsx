@@ -1181,6 +1181,21 @@ describe('faberloom surface', () => {
     expect(view.queryByText(faberloomEn['mesa.column.delegado'])).toBeNull()
   })
 
+  it('routes a candidate through the attempt instead of adopting it standalone', async () => {
+    const { runtime, view, boardDetail, boardIteration } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, pendingCandidate: { id: 'cand-1', hash: 'h2', summary: 'nueva', at: '2026-10-28T10:00:00Z' } },
+    } as never)
+    boardIteration.mockResolvedValue({
+      ok: true,
+      value: { ...LIVE_ATTEMPT, candidatePending: true, lockBy: null },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.candidateInAttempt'])).toBeTruthy()
+    expect(view.queryByRole('button', { name: faberloomEn['mesa.adopt'] })).toBeNull()
+  })
+
   it('opens the selected task in the Foco detail', async () => {
     const { runtime, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })

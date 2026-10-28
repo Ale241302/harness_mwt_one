@@ -3298,14 +3298,20 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       notices.push({ title: t('mesa.iteration.otherTab'), body: t('mesa.iteration.otherTabText') })
     } else {
       if (pending !== null) {
+        // During an attempt the choice belongs to Aplicar or Descartar, which
+        // resolve the candidate and the attempt in one command; a standalone
+        // adoption would move the version out from under the attempt.
         notices.push({
           title: t('mesa.candidate'),
-          action: (
-            <span className={styles.tools}>
-              <button className={styles.primary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'adopt'))}>{t('mesa.adopt')}</button>
-              <button className={styles.secondary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'keep'))}>{t('mesa.keep')}</button>
-            </span>
-          ),
+          ...live ? { body: t('mesa.iteration.candidateInAttempt') } : {},
+          ...live ? {} : {
+            action: (
+              <span className={styles.tools}>
+                <button className={styles.primary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'adopt'))}>{t('mesa.adopt')}</button>
+                <button className={styles.secondary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'keep'))}>{t('mesa.keep')}</button>
+              </span>
+            ),
+          },
         })
       }
       if (retainedDraft !== null) {
