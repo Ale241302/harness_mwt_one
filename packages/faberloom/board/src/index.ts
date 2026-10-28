@@ -41,6 +41,7 @@ import {
   lockDeadline,
   releasedFields,
   requireAttemptBase,
+  requireAttemptHolder,
   requireBaseVersion,
   requireCandidateChoice,
   requireLiveAttempt,
@@ -56,6 +57,7 @@ import type {
   BoardApplyIterationInput,
   BoardApproveInput,
   BoardArtifact,
+  BoardAssignment,
   BoardCandidate,
   BoardCancelIterationInput,
   BoardCheckFn,
@@ -91,6 +93,7 @@ import type {
   BoardStatus,
   BoardSubmitInput,
   BoardSubmitRequest,
+  BoardTransferredDraft,
   BoardWriter,
   FaberLoomBoardItem,
   FaberLoomBoardItemId,
@@ -1222,14 +1225,18 @@ export class FaberLoomBoard extends Service {
    * Assign a space (and its root workspace) to an item. A collision with
    * another live item on the same business key resolves by the §2.3 rule: a
    * substitutable item closes, a non-substitutable one receives the artifact as
-   * a candidate and stays open.
+   * a candidate and stays open. The drafts of the item that closes move to the
+   * live one, marked with their base version and origin (W-98).
    * @param writer - the acting identity.
    * @param id - item id.
    * @param workspaceId - target space/workspace id.
-   * @returns the live item: the assigned one, or the item that received the
-   * transferred candidate.
+   * @returns the live item and the drafts the collision moved to it.
    */
-  async assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<FaberLoomBoardItem> {
+  async assignWorkspace(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    workspaceId: string,
+  ): Promise<BoardAssignment> {
     const actor = this.actorOf(writer)
     const record = await this.requireItem(id)
     this.authorizeWrite(record, writer)
@@ -1250,10 +1257,12 @@ export class FaberLoomBoard extends Service {
       // never rewrites it, so the key keeps deduping the pair.
       const key = current.businessKey
       if (key === null) {
-        return await this.mutate(writer, id, 'assign_workspace', item => ({ ...item, spaceId: workspaceId }))
+        const item = await this.mutate(writer, id, 'assign_workspace', entry => ({ ...entry, spaceId: workspaceId }))
+        return { item, transferredDrafts: [] }
       }
       const other = await this.findNonTerminal(companyId, key, id)
       let superseded: string | null = null
+      let transferredDrafts: readonly BoardTransferredDraft[] = []
       if (other !== undefined && other.id !== id) {
         if (other.record.ownerId !== current.ownerId) {
           throw new Error('faberloom: DUPLICATE — the business key already owns a non-terminal item')
@@ -1264,24 +1273,136 @@ export class FaberLoomBoard extends Service {
             ...item, pendingCandidate: candidate,
           }))
           await this.mutate(writer, id, 'superseded', item => ({
-            ...item, state: 'SUSTITUIDO', status: 'completed',
+            ...item, state: 'SUSTITUIDO', status: 'completed', iterationDraftKey: null,
           }), { reason: 'transferred-as-candidate' })
+          transferredDrafts = await this.transferDrafts(current, id, other.id)
           await this.claimKey(companyId, 'bkey', key, other.id)
-          return toItem(other.id, await this.requireItem(other.id))
+          return { item: toItem(other.id, await this.requireItem(other.id)), transferredDrafts }
         }
         await this.mutate(writer, other.id, 'superseded', item => ({
-          ...item, state: 'SUSTITUIDO', status: 'completed',
+          ...item, state: 'SUSTITUIDO', status: 'completed', iterationDraftKey: null,
         }), { reason: 'workspace-collision' })
+        transferredDrafts = await this.transferDrafts(other.record, other.id, id)
         await this.release(companyId, 'bkey', key)
         superseded = other.id
       }
       await this.claimKey(companyId, 'bkey', key, id)
-      return await this.mutate(writer, id, 'assign_workspace', item => ({
-        ...item,
+      const item = await this.mutate(writer, id, 'assign_workspace', entry => ({
+        ...entry,
         spaceId: workspaceId,
-        supersedesItemId: superseded ?? item.supersedesItemId,
+        supersedesItemId: superseded ?? entry.supersedesItemId,
       }))
+      return { item, transferredDrafts }
     })
+  }
+
+  /**
+   * Move the drafts of the item a collision closed to the item that stays live,
+   * marked with the version they were written on and the item they came from
+   * (§2.3, W-98). A row the source key does not attribute to that item, and a
+   * destination key already taken, stay where they are instead of being
+   * guessed. The source links no draft afterwards.
+   * @param source - record of the item that closed.
+   * @param sourceId - its id.
+   * @param receivingId - live item that lists the drafts.
+   * @returns one reference per moved draft.
+   */
+  private async transferDrafts(
+    source: BoardItemRecord,
+    sourceId: FaberLoomBoardItemId,
+    receivingId: FaberLoomBoardItemId,
+  ): Promise<BoardTransferredDraft[]> {
+    const moved: BoardTransferredDraft[] = []
+    const iterationDrafts = await this.iterationDrafts()
+    const iterationKey = source.iterationDraftKey
+    const prefix = `${sourceId}:`
+    if (iterationKey !== null && iterationKey.startsWith(prefix)) {
+      const iterationId = iterationKey.slice(prefix.length)
+      const row = iterationDrafts.get(iterationKey)
+      const targetKey = iterationDraftKeyOf(receivingId, iterationId)
+      if (row !== undefined && iterationId.length > 0 && row.itemId === sourceId
+        && row.iterationId === iterationId && iterationDrafts.get(targetKey) === undefined) {
+        const origin = row.transferredFrom === null
+          ? sourceId
+          : brandString<FaberLoomBoardItemId>(row.transferredFrom)
+        await iterationDrafts.put(targetKey, { ...row, itemId: receivingId, transferredFrom: origin })
+        await iterationDrafts.delete(iterationKey)
+        moved.push({
+          kind: 'iteration',
+          itemId: receivingId,
+          key: targetKey,
+          iterationId,
+          userId: null,
+          baseVersion: row.baseVersion,
+          transferredFrom: origin,
+        })
+      }
+    }
+    const edits = await this.drafts()
+    for (const [key, row] of [...edits.entries()]) {
+      if (!key.startsWith(prefix)) continue
+      const userId = key.slice(prefix.length)
+      const targetKey = this.draftId(receivingId, userId)
+      if (userId.length === 0 || row.itemId !== sourceId || row.userId !== userId
+        || edits.get(targetKey) !== undefined) continue
+      const origin = row.transferredFrom === null
+        ? sourceId
+        : brandString<FaberLoomBoardItemId>(row.transferredFrom)
+      await edits.put(targetKey, { ...row, itemId: receivingId, transferredFrom: origin })
+      await edits.delete(key)
+      moved.push({
+        kind: 'edit',
+        itemId: receivingId,
+        key: targetKey,
+        iterationId: null,
+        userId,
+        baseVersion: row.baseVersion,
+        transferredFrom: origin,
+      })
+    }
+    return moved
+  }
+
+  /**
+   * Drafts a collision moved to one item from the item it closed (§2.3, W-98).
+   * Iteration drafts are listed for every reader of the item; edit drafts only
+   * for the caller's own seat, because another user's edits are not theirs to
+   * read. Each entry carries the version the draft was written on.
+   * @param actor - the authenticated reader.
+   * @param id - item id.
+   * @returns the transferred draft references, empty when none moved here.
+   */
+  async transferredDrafts(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardTransferredDraft[]> {
+    const record = await this.requireItem(id)
+    this.authorizeRead(record, actor)
+    const now = new Date()
+    const drafts = await this.iterationDrafts()
+    const listed: BoardTransferredDraft[] = []
+    for (const [key, row] of [...drafts.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+      if (row.itemId !== id || row.transferredFrom === null || !draftIsRetained(row, now)) continue
+      listed.push({
+        kind: 'iteration',
+        itemId: id,
+        key,
+        iterationId: row.iterationId,
+        userId: null,
+        baseVersion: row.baseVersion,
+        transferredFrom: brandString<FaberLoomBoardItemId>(row.transferredFrom),
+      })
+    }
+    const own = (await this.drafts()).get(this.draftId(id, actor.id))
+    if (own !== undefined && own.transferredFrom !== null) {
+      listed.push({
+        kind: 'edit',
+        itemId: id,
+        key: this.draftId(id, actor.id),
+        iterationId: null,
+        userId: own.userId,
+        baseVersion: own.baseVersion,
+        transferredFrom: brandString<FaberLoomBoardItemId>(own.transferredFrom),
+      })
+    }
+    return listed
   }
 
   /** The candidate one item transfers when it cannot replace another (§2.2). */
@@ -1350,6 +1471,7 @@ export class FaberLoomBoard extends Service {
     }
     const next: BoardDraftRecord = {
       itemId: id,
+      transferredFrom: existing?.transferredFrom ?? null,
       userId: actor.id,
       baseVersion: input.baseVersion,
       revision: (existing?.revision ?? 0) + 1,
@@ -1377,6 +1499,7 @@ export class FaberLoomBoard extends Service {
     const existing = table.get(key)
     const next: BoardDraftRecord = {
       itemId: id,
+      transferredFrom: existing?.transferredFrom ?? null,
       userId: actor.id,
       baseVersion: existing?.baseVersion ?? record.version,
       revision: (existing?.revision ?? 0) + 1,
@@ -1537,10 +1660,11 @@ export class FaberLoomBoard extends Service {
    * Store one write of the attempt's work as its working draft. A write that no
    * longer matches the live attempt stores the draft of that dead attempt and
    * leaves the item untouched, which is how a late agent answer is kept without
-   * reaching the item (W-57).
+   * reaching the item (W-57). A write from another tab session is refused with
+   * `LOCK_HELD` before anything is stored.
    * @param writer - the acting identity.
    * @param id - item id.
-   * @param input - attempt, base version, and the fields the caller wrote.
+   * @param input - attempt, session, base version, and the fields the caller wrote.
    * @returns the stored draft and whether the item links it.
    */
   async saveIterationDraft(
@@ -1562,7 +1686,11 @@ export class FaberLoomBoard extends Service {
       evidence: input.evidence,
       content: input.content,
     }, now, this.iterationConfig, archived)
-    if (rejection !== null) {
+    if (rejection === 'LOCK_HELD') {
+      // Another tab session has no effect: it neither stores a draft nor writes
+      // the item, so only the holder's attempt progresses.
+      requireAttemptHolder(current, input)
+    } else if (rejection !== null) {
       // A dead attempt that the item still links (paused or expired) keeps its
       // draft offered; one the item no longer owns is archived (W-57).
       const stored = row(current.iterationDraftKey !== key)
@@ -1606,10 +1734,11 @@ export class FaberLoomBoard extends Service {
 
   /**
    * Extend the lock of the live attempt. A stale attempt id, a stale generation,
-   * or an expired deadline is refused without effects (W-43).
+   * an expired deadline, or another tab session is refused without effects
+   * (W-43).
    * @param writer - the acting identity.
    * @param id - item id.
-   * @param input - attempt id and generation.
+   * @param input - attempt id, generation, and tab session.
    * @returns the item and the renewed attempt.
    */
   async renewIteration(
@@ -1637,7 +1766,7 @@ export class FaberLoomBoard extends Service {
    * column with its draft and any pending candidate untouched (W-67, W-97).
    * @param writer - the acting identity.
    * @param id - item id.
-   * @param input - attempt, generation, and the exit the user chose.
+   * @param input - attempt, generation, session, and the exit the user chose.
    * @returns the item and the released attempt.
    */
   async pauseIteration(
@@ -1671,7 +1800,7 @@ export class FaberLoomBoard extends Service {
    * (W-41).
    * @param writer - the acting identity.
    * @param id - item id.
-   * @param input - attempt, generation, and the optional candidate choice.
+   * @param input - attempt, generation, session, and the optional candidate choice.
    * @returns the item and the released attempt.
    */
   async cancelIteration(
@@ -1777,7 +1906,7 @@ export class FaberLoomBoard extends Service {
         ...attemptFields(current, this.iterationConfig, now, {
           iterationId,
           baseVersion: current.version,
-          session: input.actorSession ?? null,
+          session: input.actorSession,
         }),
         iterationDraftKey: nextKey,
       }
@@ -1800,7 +1929,8 @@ export class FaberLoomBoard extends Service {
    * and only the current attempt applies (W-40, W-57).
    * @param writer - the acting identity.
    * @param id - item id.
-   * @param input - attempt, base version, optional summary and evidence, the scope, and the choice.
+   * @param input - attempt, generation, session, base version, optional summary and
+   * evidence, the scope, and the choice.
    * @returns the item and the released attempt.
    */
   async applyIteration(

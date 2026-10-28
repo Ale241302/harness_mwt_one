@@ -171,6 +171,8 @@ export type BoardReferenceRecord = z.infer<typeof boardReferenceRecord>
 /** One inline edit draft, keyed by `itemId:userId`. */
 export const boardDraftRecord = z.object({
   itemId: z.string(),
+  /** Item the draft was made on when a collision transferred it, or null (§2.3, W-98). */
+  transferredFrom: z.string().nullable().default(null),
   userId: z.string(),
   baseVersion: z.number(),
   revision: z.number(),
@@ -191,6 +193,8 @@ export type BoardDraftRecord = z.infer<typeof boardDraftRecord>
 export const boardIterationDraftRecord = z.object({
   /** Item the draft edits. */
   itemId: z.string(),
+  /** Item the draft was made on when a collision transferred it, or null (§2.3, W-98). */
+  transferredFrom: z.string().nullable().default(null),
   /** Attempt that produced the draft. */
   iterationId: z.string(),
   /** Artifact version the draft was written against. */

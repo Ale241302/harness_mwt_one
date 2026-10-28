@@ -558,14 +558,25 @@ async resolveCandidate( writer: BoardWriter, id: FaberLoomBoardItemId, candidate
  * Assign a space (and its root workspace) to an item. A collision with
  * another live item on the same business key resolves by the §2.3 rule: a
  * substitutable item closes, a non-substitutable one receives the artifact as
- * a candidate and stays open.
+ * a candidate and stays open. The drafts of the item that closes move to the
+ * live one, marked with their base version and origin (W-98).
  * @param writer - the acting identity.
  * @param id - item id.
  * @param workspaceId - target space/workspace id.
- * @returns the live item: the assigned one, or the item that received the
- * transferred candidate.
+ * @returns the live item and the drafts the collision moved to it.
  */
-async assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<FaberLoomBoardItem>
+async assignWorkspace( writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string, ): Promise<BoardAssignment>
+
+/**
+ * Drafts a collision moved to one item from the item it closed (§2.3, W-98).
+ * Iteration drafts are listed for every reader of the item; edit drafts only
+ * for the caller's own seat, because another user's edits are not theirs to
+ * read. Each entry carries the version the draft was written on.
+ * @param actor - the authenticated reader.
+ * @param id - item id.
+ * @returns the transferred draft references, empty when none moved here.
+ */
+async transferredDrafts(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardTransferredDraft[]>
 
 /**
  * Read the caller's inline-edit draft for one item.
@@ -647,10 +658,11 @@ async iterateWithEdits( writer: BoardWriter, id: FaberLoomBoardItemId, input: Bo
  * Store one write of the attempt's work as its working draft. A write that no
  * longer matches the live attempt stores the draft of that dead attempt and
  * leaves the item untouched, which is how a late agent answer is kept without
- * reaching the item (W-57).
+ * reaching the item (W-57). A write from another tab session is refused with
+ * `LOCK_HELD` before anything is stored.
  * @param writer - the acting identity.
  * @param id - item id.
- * @param input - attempt, base version, and the fields the caller wrote.
+ * @param input - attempt, session, base version, and the fields the caller wrote.
  * @returns the stored draft and whether the item links it.
  */
 async saveIterationDraft( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationDraftInput, ): Promise<BoardIterationDraftOutcome>
@@ -666,10 +678,11 @@ async getIterationDraft( actor: BoardActor, id: FaberLoomBoardItemId, iterationI
 
 /**
  * Extend the lock of the live attempt. A stale attempt id, a stale generation,
- * or an expired deadline is refused without effects (W-43).
+ * an expired deadline, or another tab session is refused without effects
+ * (W-43).
  * @param writer - the acting identity.
  * @param id - item id.
- * @param input - attempt id and generation.
+ * @param input - attempt id, generation, and tab session.
  * @returns the item and the renewed attempt.
  */
 async renewIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationLockInput, ): Promise<BoardIterationResult>
@@ -680,7 +693,7 @@ async renewIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: Boar
  * column with its draft and any pending candidate untouched (W-67, W-97).
  * @param writer - the acting identity.
  * @param id - item id.
- * @param input - attempt, generation, and the exit the user chose.
+ * @param input - attempt, generation, session, and the exit the user chose.
  * @returns the item and the released attempt.
  */
 async pauseIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardPauseIterationInput, ): Promise<BoardIterationResult>
@@ -692,7 +705,7 @@ async pauseIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: Boar
  * (W-41).
  * @param writer - the acting identity.
  * @param id - item id.
- * @param input - attempt, generation, and the optional candidate choice.
+ * @param input - attempt, generation, session, and the optional candidate choice.
  * @returns the item and the released attempt.
  */
 async cancelIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardCancelIterationInput, ): Promise<BoardIterationResult>
@@ -715,7 +728,8 @@ async resumeIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: Boa
  * and only the current attempt applies (W-40, W-57).
  * @param writer - the acting identity.
  * @param id - item id.
- * @param input - attempt, base version, optional summary and evidence, the scope, and the choice.
+ * @param input - attempt, generation, session, base version, optional summary and
+ * evidence, the scope, and the choice.
  * @returns the item and the released attempt.
  */
 async applyIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApplyIterationInput, ): Promise<BoardIterationResult>

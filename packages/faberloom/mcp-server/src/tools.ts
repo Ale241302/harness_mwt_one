@@ -1297,11 +1297,12 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       },
     },
     run: async (context, ownerId, args, companyId) => {
-      const item = await context.faberloomBoard.assignWorkspace(
+      const assigned = await context.faberloomBoard.assignWorkspace(
         boardActor(ownerId, companyId),
         required(args, 'id') as FaberLoomBoardItemId,
         required(args, 'workspaceId'),
       )
+      const item = assigned.item
       return { id: String(item.id), state: item.state, spaceId: item.spaceId, rowVersion: item.rowVersion }
     },
   },

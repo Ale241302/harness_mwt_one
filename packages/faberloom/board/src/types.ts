@@ -92,10 +92,50 @@ export interface BoardCandidate {
   readonly at: string
 }
 
+/**
+ * One draft an assignment moved from the item a collision closed to the live
+ * item (§2.3, W-98). The receiving item lists it so the panel can offer the
+ * work with "Esto se hizo sobre una versión anterior"; `baseVersion` is the
+ * version the draft was written on.
+ */
+export interface BoardTransferredDraft {
+  /** Table that holds the draft: `iteration_drafts` or `drafts`. */
+  readonly kind: 'iteration' | 'edit'
+  /** The live item that now holds the draft. */
+  readonly itemId: FaberLoomBoardItemId
+  /** Storage key inside that table. */
+  readonly key: string
+  /** Attempt that produced an iteration draft, or null for an edit draft. */
+  readonly iterationId: string | null
+  /** Owner of an edit draft, or null for an iteration draft. */
+  readonly userId: string | null
+  /** Artifact version the draft was written on. */
+  readonly baseVersion: number
+  /** Item the draft was made on, which the collision closed. */
+  readonly transferredFrom: FaberLoomBoardItemId
+}
+
+/**
+ * Result of `assignWorkspace`: the item a reader opens and the drafts a
+ * collision moved to it. `transferredDrafts` is empty when no collision closed
+ * a peer; a draft that cannot be attributed stays on the closed item.
+ */
+export interface BoardAssignment {
+  /** The live item: the assigned one, or the peer that received the candidate. */
+  readonly item: FaberLoomBoardItem
+  /** Drafts moved from the closed item, with their base version and origin. */
+  readonly transferredDrafts: readonly BoardTransferredDraft[]
+}
+
 /** One in-progress inline edit, owned by one browser tab. */
 export interface BoardEditDraft {
   /** Item the draft edits. */
   readonly itemId: string
+  /**
+   * Item the draft was made on when a collision transferred it here (§2.3,
+   * W-98), or null for a draft made on `itemId` itself.
+   */
+  readonly transferredFrom: string | null
   /** Owner of the draft. */
   readonly userId: string
   /** Version the edit started from. */
@@ -787,6 +827,11 @@ export interface BoardIterationDraft {
   readonly key: string
   /** Item the draft edits. */
   readonly itemId: string
+  /**
+   * Item the draft was made on when a collision transferred it here (§2.3,
+   * W-98), or null for a draft made on `itemId` itself.
+   */
+  readonly transferredFrom: string | null
   /** Attempt that produced the draft. */
   readonly iterationId: string
   /** Artifact version the draft was written against. */
@@ -865,6 +910,12 @@ export interface BoardIterationLockInput {
   readonly iterationId: string
   /** Lock generation the caller believes is current. */
   readonly generation: number
+  /**
+   * Tab session issuing the write. It must equal the live attempt's
+   * `iterationLockBy`; another session is refused with `LOCK_HELD` and no
+   * effect (§9.7.1).
+   */
+  readonly actorSession: string
 }
 
 /** Input for `pauseIteration`. */
@@ -911,8 +962,8 @@ export interface BoardApplyIterationInput extends BoardIterationLockInput {
 export interface BoardResumeIterationInput {
   /** Base version of the retained draft the caller saw. */
   readonly baseVersion: number
-  /** Tab session opening the new attempt; omitted leaves the attempt without a session. */
-  readonly actorSession?: string
+  /** Tab session opening the new attempt; it becomes the attempt's holder. */
+  readonly actorSession: string
 }
 
 /** Input for `saveIterationDraft`: one validated write of the attempt's work. */

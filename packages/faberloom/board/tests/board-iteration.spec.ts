@@ -45,9 +45,15 @@ async function submitInSpace(
   })
 }
 
-/** The attempt one item carries, or an empty id when it carries none. */
-function attemptOf(item: { iterationId: string | null; iterationLockGeneration: number }) {
-  return { iterationId: item.iterationId ?? '', generation: item.iterationLockGeneration }
+/**
+ * The attempt one item carries, or an empty id when it carries none. The
+ * session defaults to the tab the fixtures open attempts from.
+ */
+function attemptOf(
+  item: { iterationId: string | null; iterationLockGeneration: number },
+  actorSession = 'tab-a',
+) {
+  return { iterationId: item.iterationId ?? '', generation: item.iterationLockGeneration, actorSession }
 }
 
 describe('FaberLoomBoard iteration start (W-10, W-31, W-43)', () => {
@@ -120,12 +126,83 @@ describe('FaberLoomBoard iteration start (W-10, W-31, W-43)', () => {
     await expect(harness.board.renewIteration(ACTOR_A, seeded.id, attemptOf(started.item)))
       .rejects.toThrow('ITERATION_STALE')
     await expect(harness.board.applyIteration(ACTOR_A, seeded.id, {
-      iterationId: second.status.iterationId ?? '', generation: first.generation, baseVersion: 1, scope: 'puntual',
+      iterationId: second.status.iterationId ?? '', generation: first.generation, baseVersion: 1,
+      scope: 'puntual', actorSession: 'tab-b',
     })).rejects.toThrow('ITERATION_STALE')
 
     expect(await harness.board.get(ACTOR_A, seeded.id)).toMatchObject({
       state: 'ITERANDO', version: before.version, rowVersion: before.rowVersion,
     })
+  })
+})
+
+describe('FaberLoomBoard iteration lease holder (§9.7.1)', () => {
+  it('refuses save, renew, pause, cancel, and apply from a second session without effects', async () => {
+    const { harness, seeded, started } = await bootIterating()
+    const attempt = attemptOf(started.item)
+    const before = await harness.board.get(ACTOR_A, seeded.id)
+    const other = { ...attempt, actorSession: 'tab-b' }
+
+    await expect(harness.board.saveIterationDraft(ACTOR_A, seeded.id, {
+      ...other, baseVersion: 1, content: { total: 1 },
+    })).rejects.toThrow('LOCK_HELD')
+    await expect(harness.board.renewIteration(ACTOR_A, seeded.id, other)).rejects.toThrow('LOCK_HELD')
+    await expect(harness.board.pauseIteration(ACTOR_A, seeded.id, {
+      ...other, reason: 'guardar-y-salir',
+    })).rejects.toThrow('LOCK_HELD')
+    await expect(harness.board.cancelIteration(ACTOR_A, seeded.id, other)).rejects.toThrow('LOCK_HELD')
+    await expect(harness.board.applyIteration(ACTOR_A, seeded.id, {
+      ...other, baseVersion: 1, scope: 'puntual',
+    })).rejects.toThrow('LOCK_HELD')
+
+    const after = await harness.board.get(ACTOR_A, seeded.id)
+    expect(after).toMatchObject({
+      state: 'ITERANDO',
+      version: before.version,
+      rowVersion: before.rowVersion,
+      iterationId: before.iterationId,
+      iterationLockBy: 'tab-a',
+      iterationDraftKey: null,
+    })
+    expect(after.events).toHaveLength(before.events.length)
+    expect(await harness.board.getIterationDraft(ACTOR_A, seeded.id, attempt.iterationId)).toBeUndefined()
+  })
+
+  it('lets the holder save, renew, and apply the attempt', async () => {
+    const { harness, seeded, started } = await bootIterating()
+    const attempt = attemptOf(started.item)
+
+    const saved = await harness.board.saveIterationDraft(ACTOR_A, seeded.id, {
+      ...attempt, baseVersion: 1, content: { total: 12 },
+    })
+    expect(saved.linked).toBe(true)
+    const renewed = await harness.board.renewIteration(ACTOR_A, seeded.id, attempt)
+    expect(Date.parse(renewed.item.iterationLockUntil ?? '')).toBeGreaterThan(
+      Date.parse(started.item.iterationLockUntil ?? ''),
+    )
+    const applied = await harness.board.applyIteration(ACTOR_A, seeded.id, {
+      ...attempt, baseVersion: 1, scope: 'puntual',
+    })
+
+    expect(applied.item).toMatchObject({ state: 'PENDIENTE_CRITERIO', version: 2, content: { total: 12 } })
+  })
+
+  it('lets any session start a fresh attempt after a pause, and holds it from there', async () => {
+    const { harness, seeded, started } = await bootIterating()
+    await harness.board.pauseIteration(ACTOR_A, seeded.id, {
+      ...attemptOf(started.item), reason: 'guardar-y-salir',
+    })
+
+    const second = await harness.board.iterate(ACTOR_A, seeded.id, { baseVersion: 1, actorSession: 'tab-b' })
+
+    expect(second.item).toMatchObject({ state: 'ITERANDO', iterationLockBy: 'tab-b' })
+    await expect(harness.board.saveIterationDraft(ACTOR_A, seeded.id, {
+      ...attemptOf(second.item, 'tab-a'), baseVersion: 1, content: { total: 2 },
+    })).rejects.toThrow('LOCK_HELD')
+    const saved = await harness.board.saveIterationDraft(ACTOR_A, seeded.id, {
+      ...attemptOf(second.item, 'tab-b'), baseVersion: 1, content: { total: 2 },
+    })
+    expect(saved.linked).toBe(true)
   })
 })
 
@@ -231,7 +308,7 @@ describe('FaberLoomBoard iteration exits (W-41, W-44, W-67, W-97)', () => {
     await seedRawIterationDraft(pool, {
       itemId: expired, iterationId: 'att-old', baseVersion: 1, summary: 'casi lista', evidence: ['oc:1'],
       content: { total: 5 }, archived: false, outdated: false, updatedAt: EXPIRED,
-      retainUntil: '2099-01-01T00:00:00.000Z',
+      retainUntil: '2099-01-01T00:00:00.000Z', transferredFrom: null,
     })
     const harness = await bootBoard({ pool })
 
@@ -247,7 +324,7 @@ describe('FaberLoomBoard iteration exits (W-41, W-44, W-67, W-97)', () => {
     expect(resumed.item.iterationId).not.toBe('att-old')
     expect((await harness.board.getIterationDraft(ACTOR_A, expired))?.content).toEqual({ total: 5 })
 
-    const discarded = await harness.board.cancelIteration(ACTOR_A, expired, attemptOf(resumed.item))
+    const discarded = await harness.board.cancelIteration(ACTOR_A, expired, attemptOf(resumed.item, 'tab-b'))
     expect(discarded.item.iterationDraftKey).toBeNull()
     expect(await harness.board.getIterationDraft(ACTOR_A, expired)).toBeUndefined()
   })
@@ -264,7 +341,7 @@ describe('FaberLoomBoard iteration exits (W-41, W-44, W-67, W-97)', () => {
       changes: { total: 20 },
     })
 
-    const resumed = await harness.board.resumeIteration(ACTOR_A, seeded.id, { baseVersion: 1 })
+    const resumed = await harness.board.resumeIteration(ACTOR_A, seeded.id, { baseVersion: 1, actorSession: 'tab-a' })
 
     expect(resumed.status).toBe('outdated')
     if (resumed.status !== 'outdated') return
@@ -441,7 +518,7 @@ describe('FaberLoomBoard iteration apply and rounds (W-40, W-69, D-10)', () => {
         baseVersion: current.version, actorSession: `tab-${round}`,
       })
       const applied = await harness.board.applyIteration(ACTOR_A, seeded.id, {
-        ...attemptOf(attempt.item), baseVersion: current.version, scope: 'puntual',
+        ...attemptOf(attempt.item, `tab-${round}`), baseVersion: current.version, scope: 'puntual',
       })
       suggestions.push(applied.status.suggestRewrite)
       expect(applied.item.state).toBe('PENDIENTE_CRITERIO')
@@ -460,6 +537,7 @@ describe('FaberLoomBoard iteration apply and rounds (W-40, W-69, D-10)', () => {
       iterationBaseVersion: 1,
       iterationLockGeneration: 3,
       iterationLockUntil: soon,
+      iterationLockBy: 'tab-a',
     }))
     const stopped = await seedRawItem(pool, rawBoardItem({
       state: 'ITERANDO',
@@ -470,12 +548,15 @@ describe('FaberLoomBoard iteration apply and rounds (W-40, W-69, D-10)', () => {
     }))
     const harness = await bootBoard({ pool })
 
-    const renewed = await harness.board.renewIteration(ACTOR_A, live, { iterationId: 'att-live', generation: 3 })
+    const renewed = await harness.board.renewIteration(ACTOR_A, live, {
+      iterationId: 'att-live', generation: 3, actorSession: 'tab-a',
+    })
     expect(Date.parse(renewed.item.iterationLockUntil ?? '')).toBeGreaterThan(Date.parse(soon))
     expect(renewed.item.events.at(-1)?.command).toBe('iteration.renewed')
 
-    await expect(harness.board.renewIteration(ACTOR_A, stopped, { iterationId: 'att-dead', generation: 4 }))
-      .rejects.toThrow('LOCK_LOST')
+    await expect(harness.board.renewIteration(ACTOR_A, stopped, {
+      iterationId: 'att-dead', generation: 4, actorSession: 'tab-a',
+    })).rejects.toThrow('LOCK_LOST')
     expect(await harness.board.get(ACTOR_A, stopped)).toMatchObject({ state: 'PENDIENTE_CRITERIO', version: 1 })
   })
 
@@ -507,13 +588,14 @@ describe('FaberLoomBoard iteration apply and rounds (W-40, W-69, D-10)', () => {
     await seedRawIterationDraft(pool, {
       itemId: pending, iterationId: 'att-old', baseVersion: 1, summary: 'viejo', evidence: ['oc:1'],
       content: { total: 1 }, archived: false, outdated: false, updatedAt: '2026-01-01T00:00:00.000Z',
-      retainUntil: '2026-01-31T00:00:00.000Z',
+      retainUntil: '2026-01-31T00:00:00.000Z', transferredFrom: null,
     })
     const harness = await bootBoard({ pool })
 
     expect(await harness.board.getIterationDraft(ACTOR_A, pending, 'att-old')).toBeUndefined()
     expect(await harness.board.getIterationDraft(ACTOR_A, pending)).toBeUndefined()
-    await expect(harness.board.resumeIteration(ACTOR_A, pending, { baseVersion: 1 })).rejects.toThrow('NO_DRAFT')
+    await expect(harness.board.resumeIteration(ACTOR_A, pending, { baseVersion: 1, actorSession: 'tab-a' }))
+      .rejects.toThrow('NO_DRAFT')
   })
 
   it('refuses an apply or resume whose base version is not the current one', async () => {
@@ -522,7 +604,8 @@ describe('FaberLoomBoard iteration apply and rounds (W-40, W-69, D-10)', () => {
     await expect(harness.board.applyIteration(ACTOR_A, seeded.id, {
       ...attemptOf(started.item), baseVersion: 2, scope: 'puntual',
     })).rejects.toThrow('ITERATION_STALE')
-    await expect(harness.board.resumeIteration(ACTOR_A, seeded.id, { baseVersion: 1 })).rejects.toThrow('LOCK_LOST')
+    await expect(harness.board.resumeIteration(ACTOR_A, seeded.id, { baseVersion: 1, actorSession: 'tab-a' }))
+      .rejects.toThrow('LOCK_LOST')
     expect(await harness.board.get(ACTOR_A, seeded.id)).toMatchObject({ state: 'ITERANDO', version: 1 })
   })
 })

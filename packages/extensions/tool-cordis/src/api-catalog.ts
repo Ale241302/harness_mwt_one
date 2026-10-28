@@ -1252,10 +1252,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated item.',
       },
       {
-        signature: 'async assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<FaberLoomBoardItem>',
-        description: 'Assign a space (and its root workspace) to an item. A collision with another live item on the same business key resolves by the §2.3 rule: a substitutable item closes, a non-substitutable one receives the artifact as a candidate and stays open.',
+        signature: 'async assignWorkspace( writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string, ): Promise<BoardAssignment>',
+        description: 'Assign a space (and its root workspace) to an item. A collision with another live item on the same business key resolves by the §2.3 rule: a substitutable item closes, a non-substitutable one receives the artifact as a candidate and stays open. The drafts of the item that closes move to the live one, marked with their base version and origin (W-98).',
         parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'workspaceId', description: 'target space/workspace id.' }],
-        returns: 'the live item: the assigned one, or the item that received the transferred candidate.',
+        returns: 'the live item and the drafts the collision moved to it.',
+      },
+      {
+        signature: 'async transferredDrafts(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardTransferredDraft[]>',
+        description: 'Drafts a collision moved to one item from the item it closed (§2.3, W-98). Iteration drafts are listed for every reader of the item; edit drafts only for the caller\'s own seat, because another user\'s edits are not theirs to read. Each entry carries the version the draft was written on.',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the transferred draft references, empty when none moved here.',
       },
       {
         signature: 'async getEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEditDraft | undefined>',
@@ -1306,8 +1312,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async saveIterationDraft( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationDraftInput, ): Promise<BoardIterationDraftOutcome>',
-        description: 'Store one write of the attempt\'s work as its working draft. A write that no longer matches the live attempt stores the draft of that dead attempt and leaves the item untouched, which is how a late agent answer is kept without reaching the item (W-57).',
-        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, base version, and the fields the caller wrote.' }],
+        description: 'Store one write of the attempt\'s work as its working draft. A write that no longer matches the live attempt stores the draft of that dead attempt and leaves the item untouched, which is how a late agent answer is kept without reaching the item (W-57). A write from another tab session is refused with `LOCK_HELD` before anything is stored.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, session, base version, and the fields the caller wrote.' }],
         returns: 'the stored draft and whether the item links it.',
       },
       {
@@ -1318,20 +1324,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async renewIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationLockInput, ): Promise<BoardIterationResult>',
-        description: 'Extend the lock of the live attempt. A stale attempt id, a stale generation, or an expired deadline is refused without effects (W-43).',
-        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt id and generation.' }],
+        description: 'Extend the lock of the live attempt. A stale attempt id, a stale generation, an expired deadline, or another tab session is refused without effects (W-43).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt id, generation, and tab session.' }],
         returns: 'the item and the renewed attempt.',
       },
       {
         signature: 'async pauseIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardPauseIterationInput, ): Promise<BoardIterationResult>',
         description: 'Save and exit, carry to SpaceLoom, return without resolving, or record the expiry: the attempt releases its lock and the item returns to the pending column with its draft and any pending candidate untouched (W-67, W-97).',
-        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, generation, and the exit the user chose.' }],
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, generation, session, and the exit the user chose.' }],
         returns: 'the item and the released attempt.',
       },
       {
         signature: 'async cancelIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardCancelIterationInput, ): Promise<BoardIterationResult>',
         description: 'Discard the attempt\'s work and release the lock. It requires no pending candidate, or the adopt/keep choice that resolves it in the same commit; it deletes the draft and never changes the version except through adoption (W-41).',
-        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, generation, and the optional candidate choice.' }],
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, generation, session, and the optional candidate choice.' }],
         returns: 'the item and the released attempt.',
       },
       {
@@ -1343,7 +1349,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'async applyIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApplyIterationInput, ): Promise<BoardIterationResult>',
         description: 'Apply the live attempt: write a new version and hash, count the round, record the learning scope, release the lock, and return to `PENDIENTE_CRITERIO`. A pending candidate must be resolved in the same call, and only the current attempt applies (W-40, W-57).',
-        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, base version, optional summary and evidence, the scope, and the choice.' }],
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, generation, session, base version, optional summary and evidence, the scope, and the choice.' }],
         returns: 'the item and the released attempt.',
       },
       {
@@ -7178,6 +7184,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoardArtifact {\n    readonly type: string;\n    readonly version: number;\n    readonly content: Readonly<Record<string, unknown>>;\n}',
   },
   {
+    name: 'BoardAssignment',
+    declaration: 'export interface BoardAssignment {\n    readonly item: FaberLoomBoardItem;\n    readonly transferredDrafts: readonly BoardTransferredDraft[];\n}',
+  },
+  {
     name: 'BoardCancelIterationInput',
     declaration: 'export interface BoardCancelIterationInput extends BoardIterationLockInput {\n    readonly candidate?: BoardCandidateChoice;\n}',
   },
@@ -7251,7 +7261,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardEditDraft',
-    declaration: 'export interface BoardEditDraft {\n    readonly itemId: string;\n    readonly userId: string;\n    readonly baseVersion: number;\n    readonly revision: number;\n    readonly writerSession: string;\n    readonly changes: Record<string, string>;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface BoardEditDraft {\n    readonly itemId: string;\n    readonly transferredFrom: string | null;\n    readonly userId: string;\n    readonly baseVersion: number;\n    readonly revision: number;\n    readonly writerSession: string;\n    readonly changes: Record<string, string>;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'BoardEditsInput',
@@ -7283,7 +7293,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardIterationDraft',
-    declaration: 'export interface BoardIterationDraft {\n    readonly key: string;\n    readonly itemId: string;\n    readonly iterationId: string;\n    readonly baseVersion: number;\n    readonly summary: string | null;\n    readonly evidence: readonly string[];\n    readonly content: Readonly<Record<string, unknown>> | null;\n    readonly archived: boolean;\n    readonly outdated: boolean;\n    readonly updatedAt: string;\n    readonly retainUntil: string;\n}',
+    declaration: 'export interface BoardIterationDraft {\n    readonly key: string;\n    readonly itemId: string;\n    readonly transferredFrom: string | null;\n    readonly iterationId: string;\n    readonly baseVersion: number;\n    readonly summary: string | null;\n    readonly evidence: readonly string[];\n    readonly content: Readonly<Record<string, unknown>> | null;\n    readonly archived: boolean;\n    readonly outdated: boolean;\n    readonly updatedAt: string;\n    readonly retainUntil: string;\n}',
   },
   {
     name: 'BoardIterationDraftInput',
@@ -7299,7 +7309,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardIterationLockInput',
-    declaration: 'export interface BoardIterationLockInput {\n    readonly iterationId: string;\n    readonly generation: number;\n}',
+    declaration: 'export interface BoardIterationLockInput {\n    readonly iterationId: string;\n    readonly generation: number;\n    readonly actorSession: string;\n}',
   },
   {
     name: 'BoardIterationPhase',
@@ -7327,7 +7337,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardResumeIterationInput',
-    declaration: 'export interface BoardResumeIterationInput {\n    readonly baseVersion: number;\n    readonly actorSession?: string;\n}',
+    declaration: 'export interface BoardResumeIterationInput {\n    readonly baseVersion: number;\n    readonly actorSession: string;\n}',
   },
   {
     name: 'BoardResumeIterationResult',
@@ -7376,6 +7386,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BoardSubmitRequest',
     declaration: 'export interface BoardSubmitRequest extends BoardSubmitInput {\n    readonly runId: string;\n    readonly idempotencyKey: string;\n    readonly businessKey: string;\n    readonly artifactType?: string;\n    readonly accountRef?: string;\n    readonly valueAmount?: number;\n    readonly valueCurrency?: string;\n    readonly dueAt?: string;\n    readonly dataClass?: BoardDataClass;\n    readonly severity?: BoardSeverity;\n    readonly severityConfidence?: number;\n    readonly spaceId?: string;\n    readonly companyId?: string;\n    readonly executionId?: string;\n    readonly title?: string;\n}',
+  },
+  {
+    name: 'BoardTransferredDraft',
+    declaration: 'export interface BoardTransferredDraft {\n    readonly kind: \'iteration\' | \'edit\';\n    readonly itemId: FaberLoomBoardItemId;\n    readonly key: string;\n    readonly iterationId: string | null;\n    readonly userId: string | null;\n    readonly baseVersion: number;\n    readonly transferredFrom: FaberLoomBoardItemId;\n}',
   },
   {
     name: 'BoardWriter',

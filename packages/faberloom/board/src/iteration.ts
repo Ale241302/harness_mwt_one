@@ -4,9 +4,11 @@
  *
  * Every helper is pure over one record plus an explicit clock, so the service
  * keeps authorization and the single `KvTable.update` commit, and a reader
- * resolves the same phase the next write enforces. An `ITERANDO` record whose
- * deadline passed has already ended: it reads and behaves as "Guardar y salir"
- * (W-44), and no helper here revives it.
+ * resolves the same phase the next write enforces. The attempt's
+ * `iterationLockBy` is part of the write predicate, so only the tab session that
+ * opened it may write. An `ITERANDO` record whose deadline passed has already
+ * ended: it reads and behaves as "Guardar y salir" (W-44), and no helper here
+ * revives it.
  * @module @deepseek-ai/dsh-faberloom-board/src/iteration
  */
 
@@ -139,6 +141,7 @@ export function draftOf(key: string, record: BoardIterationDraftRecord): BoardIt
   return {
     key,
     itemId: record.itemId,
+    transferredFrom: record.transferredFrom,
     iterationId: record.iterationId,
     baseVersion: record.baseVersion,
     summary: record.summary,
@@ -176,10 +179,11 @@ export function requirePending(state: BoardState): void {
 /**
  * Why a write does not target the live attempt, or null when it does. `LOCK_LOST`
  * means the item is not iterating or the lock expired; `ITERATION_STALE` means
- * the caller names another attempt (W-43). Every iteration write consults this,
- * so a stale state, id, or generation has no effect (W-57).
+ * the caller names another attempt (W-43); `LOCK_HELD` means the caller's tab
+ * session is not the attempt's holder (§9.7.1). Every iteration write consults
+ * this, so a stale state, id, generation, or session has no effect (W-57).
  * @param record - the stored item.
- * @param input - attempt id and generation the caller believes current.
+ * @param input - attempt id, generation, and session the caller believes current.
  * @param now - the server clock.
  * @returns the stable rejection code, or null.
  */
@@ -187,18 +191,20 @@ export function attemptRejection(
   record: IterationFields,
   input: BoardIterationLockInput,
   now: Date,
-): 'LOCK_LOST' | 'ITERATION_STALE' | null {
+): 'LOCK_LOST' | 'ITERATION_STALE' | 'LOCK_HELD' | null {
   if (record.state !== 'ITERANDO' || iterationPhase(record, now) === 'expired') return 'LOCK_LOST'
   if (record.iterationId !== input.iterationId) return 'ITERATION_STALE'
   if (record.iterationLockGeneration !== input.generation) return 'ITERATION_STALE'
+  if (record.iterationLockBy !== input.actorSession) return 'LOCK_HELD'
   return null
 }
 
 /**
  * Refuse a write that names an attempt which is not live: the item left
- * `ITERANDO`, the lock expired, or another attempt replaced this one.
+ * `ITERANDO`, the lock expired, another attempt replaced this one, or another
+ * tab session holds it.
  * @param record - the stored item.
- * @param input - attempt id and generation the caller believes current.
+ * @param input - attempt id, generation, and session the caller believes current.
  * @param now - the server clock.
  */
 export function requireLiveAttempt(record: IterationFields, input: BoardIterationLockInput, now: Date): void {
@@ -209,13 +215,15 @@ export function requireLiveAttempt(record: IterationFields, input: BoardIteratio
   if (code === 'ITERATION_STALE') {
     throw new Error('faberloom: ITERATION_STALE — the iteration id or lock generation is not current')
   }
+  if (code === 'LOCK_HELD') requireAttemptHolder(record, input)
 }
 
 /**
- * Refuse a pause that names another attempt. A pause accepts an expired
- * deadline because expiry is one of the exits it persists (`lock-vencido`).
+ * Refuse a pause or a cancel that names another attempt. Both accept an expired
+ * deadline because expiry is one of the exits they persist (`lock-vencido`),
+ * and both require the caller's tab session to hold the attempt.
  * @param record - the stored item.
- * @param input - attempt id and generation the caller believes current.
+ * @param input - attempt id, generation, and session the caller believes current.
  */
 export function requirePausableAttempt(record: IterationFields, input: BoardIterationLockInput): void {
   if (record.state !== 'ITERANDO' || record.iterationId === null) {
@@ -226,6 +234,20 @@ export function requirePausableAttempt(record: IterationFields, input: BoardIter
   }
   if (record.iterationLockGeneration !== input.generation) {
     throw new Error('faberloom: ITERATION_STALE — the lock generation is not the current one')
+  }
+  requireAttemptHolder(record, input)
+}
+
+/**
+ * Refuse a write issued from a tab session that is not the attempt's holder
+ * (§9.7.1). A record with no recorded holder matches no session, so it keeps
+ * refusing holder-bound writes until it expires or a new attempt replaces it.
+ * @param record - the stored item.
+ * @param input - the caller's attempt and tab session.
+ */
+export function requireAttemptHolder(record: IterationFields, input: BoardIterationLockInput): void {
+  if (record.iterationLockBy !== input.actorSession) {
+    throw new Error('faberloom: LOCK_HELD — another tab session holds the attempt')
   }
 }
 
@@ -416,6 +438,7 @@ export function draftRecordFor(
 ): BoardIterationDraftRecord {
   return {
     itemId: input.itemId,
+    transferredFrom: previous?.transferredFrom ?? null,
     iterationId: input.iterationId,
     baseVersion: input.baseVersion,
     summary: input.summary ?? previous?.summary ?? null,

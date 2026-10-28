@@ -330,6 +330,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   BoardIterationDraft: 'faberloom.md',
   BoardIterationResult: 'faberloom.md',
   BoardIterationLockInput: 'faberloom.md',
+  BoardAssignment: 'faberloom.md',
+  BoardTransferredDraft: 'faberloom.md',
   BoardIterationDraftInput: 'faberloom.md',
   BoardIterationDraftOutcome: 'faberloom.md',
   BoardIterateInput: 'faberloom.md',
