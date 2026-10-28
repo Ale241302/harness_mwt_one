@@ -68,7 +68,7 @@ Checks are a port: the board declares which controls an artifact type requires a
 
 | Control | Class | Reads |
 |---|---|---|
-| `proforma.price` | bloqueante | billed unit price equals list price plus the account overcharge (D-01); a missing price, list price, or band fails |
+| `proforma.price` | bloqueante | the billed total equals the client total the expediente records, and both order-total sides (`total_client`, `total_mwt`) are readable (D-01 at order level); a missing reference, billed price, or side fails |
 | `proforma.sku` | bloqueante | the catalog knows every billed SKU |
 | `proforma.quantity` | bloqueante | billed quantities equal the purchase order `orderRef` names |
 | `proforma.total` | bloqueante | the line sum equals the billed total (artifact only) |

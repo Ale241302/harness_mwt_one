@@ -26,7 +26,7 @@ export const CHECKS_VERSION = '2026-10-28.1'
 /** Artifact type the proforma controls apply to. */
 export const PROFORMA_ARTIFACT = 'proforma'
 
-/** Price equals list price plus the account overcharge (D-01). */
+/** The billed total equals the client total the expediente records (D-01). */
 const PRICE_CHECK: BoardCheckDefinition = { id: 'proforma.price', class: 'bloqueante' }
 /** The catalog knows every billed SKU. */
 const SKU_CHECK: BoardCheckDefinition = { id: 'proforma.sku', class: 'bloqueante' }
@@ -235,8 +235,10 @@ function freshnessOf(answer: { readonly source: string; readonly version: string
 }
 
 /**
- * Price control: every billed unit price equals its list price plus the account
- * overcharge (D-01). A missing billed price, list price, or account band fails:
+ * Price control: the billed total equals the client total the expediente
+ * records, and the expediente states both sides of its order total so the
+ * overcharge `total_client - total_mwt` is readable (D-01 at order level). A
+ * missing order reference, billed price, billed total, or recorded side fails:
  * D-01 does not allow an approval on absent price data.
  * @param input - item, artifact, and source port.
  * @returns the control result.
@@ -244,22 +246,22 @@ function freshnessOf(answer: { readonly source: string; readonly version: string
 async function priceCheck(input: BoardCheckInput): Promise<BoardCheckResult> {
   const lines = draftLines(input.artifact.content)
   if (lines === undefined || lines.length === 0) return artifactFailure(['lines'], 'LINES_MISSING')
-  const accountRef = input.item.accountRef
-  if (accountRef === null) return artifactFailure(['accountRef'], 'ACCOUNT_MISSING')
-  const source = requireSource(input)
-  const fields: string[] = []
-  let freshness: Freshness | undefined
   for (const line of lines) {
-    const field = lineField(line, 'unitPrice')
-    fields.push(field)
-    if (line.unitPrice === undefined) return artifactFailure([field], 'PRICE_MISSING')
-    if (line.sku.length === 0) return artifactFailure([field], 'SKU_MISSING')
-    const answer = await source.price({ accountRef, sku: line.sku })
-    freshness = freshnessOf(answer)
-    if (answer.value === null) return sourceFailure(freshness, [field], 'PRICE_SOURCE_MISSING')
-    if (round2(line.unitPrice) !== round2(answer.value.listPrice + answer.value.overcharge)) {
-      return sourceFailure(freshness, [field], 'PRICE_MISMATCH')
-    }
+    if (line.unitPrice === undefined) return artifactFailure([lineField(line, 'unitPrice')], 'PRICE_MISSING')
+  }
+  const orderRef = input.artifact.content['orderRef']
+  if (typeof orderRef !== 'string' || orderRef.length === 0) return artifactFailure(['orderRef'], 'ORDER_REF_MISSING')
+  const total = finiteNumber(input.artifact.content['total'])
+  if (total === undefined) return artifactFailure(['total'], 'TOTAL_MISSING')
+  const source = requireSource(input)
+  const answer = await source.orderTotals(orderRef)
+  const freshness = freshnessOf(answer)
+  const fields = ['orderRef', 'total']
+  // A missing side is a missing source read: the overcharge cannot be stated,
+  // so the control fails instead of comparing the total it does have.
+  if (answer.value === null) return sourceFailure(freshness, fields, 'PRICE_SOURCE_MISSING')
+  if (round2(total) !== round2(answer.value.totalClient)) {
+    return sourceFailure(freshness, fields, 'PRICE_MISMATCH')
   }
   return passed(freshness, fields)
 }

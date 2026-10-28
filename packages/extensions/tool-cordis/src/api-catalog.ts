@@ -7027,7 +7027,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardCheckSource',
-    declaration: 'export interface BoardCheckSource {\n    sku(sku: string): Promise<BoardSourceAnswer<BoardSkuFacts>>;\n    price(request: {\n        readonly accountRef: string;\n        readonly sku: string;\n    }): Promise<BoardSourceAnswer<BoardPriceFacts>>;\n    stock(sku: string): Promise<BoardSourceAnswer<BoardStockFacts>>;\n    orderLines(orderRef: string): Promise<BoardSourceAnswer<readonly BoardOrderLine[]>>;\n    separation(request: {\n        readonly accountRef: string;\n        readonly businessKey: string | null;\n    }): Promise<BoardSourceAnswer<BoardSeparationFacts>>;\n}',
+    declaration: 'export interface BoardCheckSource {\n    sku(sku: string): Promise<BoardSourceAnswer<BoardSkuFacts>>;\n    stock(sku: string): Promise<BoardSourceAnswer<BoardStockFacts>>;\n    orderLines(orderRef: string): Promise<BoardSourceAnswer<readonly BoardOrderLine[]>>;\n    orderTotals(orderRef: string): Promise<BoardSourceAnswer<BoardOrderTotals>>;\n    separation(request: {\n        readonly accountRef: string;\n        readonly businessKey: string | null;\n    }): Promise<BoardSourceAnswer<BoardSeparationFacts>>;\n}',
   },
   {
     name: 'BoardCheckStatus',
@@ -7078,8 +7078,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoardOrderLine {\n    readonly sku: string;\n    readonly quantity: number;\n}',
   },
   {
-    name: 'BoardPriceFacts',
-    declaration: 'export interface BoardPriceFacts {\n    readonly listPrice: number;\n    readonly overcharge: number;\n}',
+    name: 'BoardOrderTotals',
+    declaration: 'export interface BoardOrderTotals {\n    readonly totalClient: number;\n    readonly totalMwt: number;\n}',
   },
   {
     name: 'BoardReviewInput',

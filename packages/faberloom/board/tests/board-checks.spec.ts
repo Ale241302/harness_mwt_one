@@ -16,12 +16,6 @@ const NOW = '2026-10-28T10:00:00.000Z'
 
 const fixture = proformaFixture()
 
-/** Overcharge the fake account pays on each fixture SKU. */
-const OVERCHARGE: Readonly<Record<string, number>> = {
-  'ART-04-271897': 20,
-  'ART-04-271898': 5,
-}
-
 /** The proforma draft the controls evaluate, built from the golden fixture. */
 function draft(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -44,23 +38,16 @@ function fakeSource(overrides: Partial<BoardCheckSource> = {}): BoardCheckSource
     sku: async sku => ({
       value: { exists: sku.startsWith('ART-') }, source: 'fake.catalog', version: 'v1', readAt: NOW,
     }),
-    price: async ({ sku }) => {
-      const line = fixture.lines.find(entry => entry.sku === sku)
-      const overcharge = OVERCHARGE[sku]
-      if (line === undefined || overcharge === undefined) {
-        return { value: null, source: 'fake.price', version: 'v1', readAt: NOW }
-      }
-      return {
-        value: { listPrice: line.unitPrice - overcharge, overcharge },
-        source: 'fake.price',
-        version: 'v1',
-        readAt: NOW,
-      }
-    },
     stock: async () => ({ value: { available: 10 }, source: 'fake.stock', version: 'v1', readAt: NOW }),
     orderLines: async () => ({
       value: fixture.lines.map(line => ({ sku: line.sku, quantity: line.quantity })),
       source: 'fake.order',
+      version: 'v1',
+      readAt: NOW,
+    }),
+    orderTotals: async () => ({
+      value: { totalClient: fixture.total, totalMwt: fixture.total - 30 },
+      source: 'fake.price',
       version: 'v1',
       readAt: NOW,
     }),
@@ -123,7 +110,9 @@ async function boardWithChecks(source: BoardCheckSource = fakeSource()): Promise
 describe('proforma controls (W-49, D-01, D-02)', () => {
   it('W-49 · a blocking control in failure rejects the approval and changes nothing', async () => {
     const harness = await boardWithChecks(fakeSource({
-      price: async () => ({ value: { listPrice: 1, overcharge: 0 }, source: 'fake.price', version: 'v1', readAt: NOW }),
+      orderTotals: async () => ({
+        value: { totalClient: 1, totalMwt: 1 }, source: 'fake.price', version: 'v1', readAt: NOW,
+      }),
     }))
     const item = await preparedDraft(harness.board)
 
@@ -131,7 +120,14 @@ describe('proforma controls (W-49, D-01, D-02)', () => {
     expect(report.missing).toEqual([])
     expect(report.checks.find(check => check.id === 'proforma.price')).toMatchObject({
       class: 'bloqueante',
-      result: { status: 'fail', reason: 'PRICE_MISMATCH', source: 'fake.price', sourceVersion: 'v1', checkedAt: NOW },
+      result: {
+        status: 'fail',
+        reason: 'PRICE_MISMATCH',
+        source: 'fake.price',
+        sourceVersion: 'v1',
+        checkedAt: NOW,
+        fields: ['orderRef', 'total'],
+      },
     })
 
     await expect(harness.board.approve(ACTOR_A, item.id, approval(item))).rejects.toThrow('BLOCKING_CHECK')
@@ -152,9 +148,9 @@ describe('proforma controls (W-49, D-01, D-02)', () => {
     await expect(harness.board.approve(ACTOR_A, item.id, approval(item))).rejects.toThrow('BLOCKING_CHECK')
   })
 
-  it('D-01 · a source without the list price or the band fails the price control', async () => {
+  it('D-01 · a source without both expediente totals fails the price control', async () => {
     const harness = await boardWithChecks(fakeSource({
-      price: async () => ({ value: null, source: 'fake.price', version: 'v1', readAt: NOW }),
+      orderTotals: async () => ({ value: null, source: 'fake.price', version: 'v1', readAt: NOW }),
     }))
     const item = await preparedDraft(harness.board)
 
@@ -245,7 +241,7 @@ describe('proforma controls (W-49, D-01, D-02)', () => {
 describe('live revalidation at approval (W-49, W-50, W-58)', () => {
   it('W-50 · a source that cannot answer counts as a failure, not as a pass', async () => {
     const harness = await boardWithChecks(fakeSource({
-      price: async () => {
+      orderTotals: async () => {
         throw new Error('mwt timeout')
       },
     }))

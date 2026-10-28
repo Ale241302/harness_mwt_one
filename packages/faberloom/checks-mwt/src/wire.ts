@@ -3,13 +3,36 @@
  *
  * A bridged MCP tool answers with `{ content, structuredContent? }`: the
  * structured value when the server declares one, otherwise text blocks that
- * carry JSON. MWT.ONE field names are not covered by a shipped response
- * contract, so every reader here accepts the documented aliases and returns
- * `null` when none is present. A null is what makes a control fail or require
- * confirmation; no reader supplies a default (D-01, D-02).
+ * carry JSON. The readers below accept only the response fields recorded from
+ * the live server (`mwt-one 1.30.0`, `.artifacts/mwt-shapes.md`): `matches`,
+ * `results`, `productos`, `banda_vigente`, and the flat stock record. A field
+ * the server omits is `null`; no reader supplies a default (D-01, D-02).
  *
  * @module @deepseek-ai/dsh-faberloom-checks-mwt/wire
  */
+
+/** One row of an MWT.ONE list answer. */
+export type WireRow = Record<string, unknown>
+
+/** One page of a list answer that reports `{ count, limit, offset, results }`. */
+export interface WirePage {
+  /** Rows the page carries. */
+  readonly rows: readonly WireRow[]
+  /** Total rows the query matches, or null when the answer omits `count`. */
+  readonly count: number | null
+  /** Page size the server applied, or null when the answer omits `limit`. */
+  readonly limit: number | null
+  /** Offset the server applied, or null when the answer omits `offset`. */
+  readonly offset: number | null
+}
+
+/** The answer of a search that reports `{ existe, total, matches }`. */
+export interface WireMatches {
+  /** What the server reported for `existe`, or null when the answer omits it. */
+  readonly exists: boolean | null
+  /** Rows the search matched. */
+  readonly rows: readonly WireRow[]
+}
 
 /**
  * Whether one JSON value is a string-keyed object.
@@ -41,75 +64,79 @@ export function jsonPayload(value: unknown): unknown {
 }
 
 /**
- * The object one payload carries under one of the given keys, or the payload
- * itself when it carries no list under any of them. A `data` or `result`
- * wrapper is read through once.
+ * One page of an `expediente_listar` answer: `{ count, limit, offset, results }`.
  * @param payload - parsed tool payload.
- * @param keys - wrapper keys to look through, in order.
- * @returns the record, or null when the payload is not a readable object.
+ * @returns the page, or null when the answer carries no `results` array.
  */
-export function pickRecord(payload: unknown, keys: readonly string[]): Record<string, unknown> | null {
+export function pageRows(payload: unknown): WirePage | null {
   if (!isRecord(payload)) return null
-  if (keys.some(key => Array.isArray(payload[key]))) return null
-  for (const key of keys) {
-    const candidate = payload[key]
-    if (isRecord(candidate)) return candidate
+  const results = payload['results']
+  if (!Array.isArray(results) || !results.every(isRecord)) return null
+  return {
+    rows: results,
+    count: numberField(payload, ['count']),
+    limit: numberField(payload, ['limit']),
+    offset: numberField(payload, ['offset']),
   }
-  for (const wrapper of ['data', 'result']) {
-    const candidate = payload[wrapper]
-    if (!isRecord(candidate)) continue
-    for (const key of keys) {
-      const inner = candidate[key]
-      if (isRecord(inner)) return inner
-    }
-    return candidate
-  }
-  return payload
 }
 
-/** Keys an MWT.ONE list response wraps its rows in. */
-const ROW_KEYS = ['data', 'result', 'results', 'items', 'rows', 'records'] as const
-
 /**
- * The row array one payload carries, looking through the named wrappers and
- * then the generic list wrappers.
+ * The answer of an `expediente_buscar` call: `{ existe, total, matches }`.
  * @param payload - parsed tool payload.
- * @param keys - domain wrapper keys to try first.
- * @returns the rows, or null when the payload carries no readable array.
+ * @returns the existence flag and the matched rows, or null when the answer
+ * carries no `matches` array.
  */
-export function pickRows(payload: unknown, keys: readonly string[]): readonly Record<string, unknown>[] | null {
-  return rowsAt(payload, keys, 0)
+export function searchMatches(payload: unknown): WireMatches | null {
+  if (!isRecord(payload)) return null
+  const matches = payload['matches']
+  if (!Array.isArray(matches) || !matches.every(isRecord)) return null
+  const exists = payload['existe']
+  return { exists: typeof exists === 'boolean' ? exists : null, rows: matches }
 }
 
 /**
- * Read an array of records at one nesting depth.
- * @param payload - candidate payload.
- * @param keys - domain wrapper keys.
- * @param depth - nesting depth already consumed.
- * @returns the rows, or null.
+ * The rows of a `producto_buscar` answer: `{ productos, total }`.
+ * @param payload - parsed tool payload.
+ * @returns the product rows, or null when the answer carries no `productos` array.
  */
-function rowsAt(
-  payload: unknown,
-  keys: readonly string[],
-  depth: number,
-): readonly Record<string, unknown>[] | null {
+export function productRows(payload: unknown): readonly WireRow[] | null {
+  if (!isRecord(payload)) return null
+  const products = payload['productos']
+  return Array.isArray(products) && products.every(isRecord) ? products : null
+}
+
+/** Fields that identify a flat `stock_listar` record. */
+const STOCK_RECORD_FIELDS = ['producto_sku', 'producto_id', 'nodo_codigo', 'cantidad_disponible'] as const
+
+/**
+ * The stock records a `stock_listar` answer carries. The server answers one
+ * flat record for a single row and a `results` array when it lists several.
+ * @param payload - parsed tool payload.
+ * @returns the records, or null when the answer is neither form.
+ */
+export function stockRecords(payload: unknown): readonly WireRow[] | null {
   if (Array.isArray(payload)) return payload.every(isRecord) ? payload : null
-  if (!isRecord(payload) || depth > 1) return null
-  for (const key of [...keys, ...ROW_KEYS]) {
-    const candidate = payload[key]
-    if (Array.isArray(candidate)) return candidate.every(isRecord) ? candidate : null
-  }
-  for (const key of [...keys, 'data', 'result']) {
-    const candidate = payload[key]
-    if (isRecord(candidate)) return rowsAt(candidate, keys, depth + 1)
-  }
-  return null
+  if (!isRecord(payload)) return null
+  const results = payload['results']
+  if (Array.isArray(results)) return results.every(isRecord) ? results : null
+  return STOCK_RECORD_FIELDS.some(name => name in payload) ? [payload] : null
+}
+
+/**
+ * The `banda_vigente` object of a `producto_precio_cliente` answer.
+ * @param payload - parsed tool payload.
+ * @returns the band record, or null when the answer carries no band object.
+ */
+export function bandRecord(payload: unknown): Record<string, unknown> | null {
+  if (!isRecord(payload)) return null
+  const band = payload['banda_vigente']
+  return isRecord(band) ? band : null
 }
 
 /**
  * The finite number one record carries under one of the given fields. A
- * decimal serialized as a string is read as its number; anything else is
- * absent.
+ * decimal serialized as a string (`"200.000"`, `"13.2700"`) is read as its
+ * number; a zero is a value, and anything unreadable is absent.
  * @param record - row or object.
  * @param names - field names to try, in order.
  * @returns the number, or null.
@@ -158,17 +185,17 @@ export function idField(record: Record<string, unknown>, names: readonly string[
 }
 
 /**
- * Whether one record names the value the caller searched for, compared
- * case-insensitively over the given fields.
- * @param record - client row.
- * @param names - identity fields to compare.
- * @param expected - value the caller supplied.
- * @returns true for one exact, case-insensitive match.
+ * The non-empty strings one record carries in the first array field of the
+ * given names. A non-string entry is ignored, so it can never name a match.
+ * @param record - row or object.
+ * @param names - field names to try, in order.
+ * @returns the strings, or null when no listed field holds an array.
  */
-export function fieldEquals(record: Record<string, unknown>, names: readonly string[], expected: string): boolean {
-  const wanted = expected.trim().toUpperCase()
-  return names.some((name) => {
-    const value = stringField(record, [name])
-    return value !== null && value.trim().toUpperCase() === wanted
-  })
+export function stringListField(record: Record<string, unknown>, names: readonly string[]): readonly string[] | null {
+  for (const name of names) {
+    const value = record[name]
+    if (!Array.isArray(value)) continue
+    return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+  }
+  return null
 }

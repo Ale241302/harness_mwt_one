@@ -68,7 +68,7 @@ kind: "package-reference"
 
 | 控件 | 类别 | 读取内容 |
 |---|---|---|
-| `proforma.price` | bloqueante | 计费单价等于目录价加该账户的加价（D-01）；缺少单价、目录价或价带即失败 |
+| `proforma.price` | bloqueante | 计费总额等于 expediente 记录的客户总额，且订单总额两侧（`total_client`、`total_mwt`）都可读（订单层面的 D-01）；缺少引用、计费价格或任一侧即失败 |
 | `proforma.sku` | bloqueante | 目录认识每一条计费 SKU |
 | `proforma.quantity` | bloqueante | 计费数量等于 `orderRef` 所指采购订单 |
 | `proforma.total` | bloqueante | 行合计等于计费总额（只读产物） |

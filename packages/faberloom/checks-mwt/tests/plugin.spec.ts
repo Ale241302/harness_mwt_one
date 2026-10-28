@@ -1,6 +1,7 @@
 /**
- * The plugin row against a real board: it registers all six controls, a missing
- * stock figure demands an explicit confirmation instead of a silent approval,
+ * The plugin row against a real board: it registers all six controls, the price
+ * control compares the billing against the expediente totals the server
+ * returns, a quantity read the server cannot answer keeps the approval blocked,
  * and a timed-out MWT call counts as a failed control. Disposing the fiber
  * removes every registration.
  */
@@ -22,24 +23,37 @@ import type { ToolExecutionInput, ToolExecutionResult, ToolRuntime } from '@deep
 /** The board identity every test acts as. */
 const ACTOR: BoardActor = { id: 'owner@example.com' }
 
-/** Expediente the fake order search resolves. */
-const EXPEDIENTE_ID = '0f0e8f1e-0000-4000-8000-00000000000a'
+/** The purchase-order code the draft answers and the listing names. */
+const ORDER_REF = 'PO 110024463'
 
 /** The proforma draft the controls evaluate. */
 const DRAFT: Record<string, unknown> = {
-  orderRef: 'OC-505288',
-  lines: [
-    { sku: 'ART-1', quantity: 2, unitPrice: 120.5 },
-    { sku: 'ART-2', quantity: 1, unitPrice: 45 },
-  ],
+  orderRef: ORDER_REF,
+  lines: [{ sku: '700844', quantity: 2, unitPrice: 143 }],
   total: 286,
   separation: 'new',
 }
 
-/** Catalog prices the fake `producto_precio_cliente` answers. */
-const PRICES: Readonly<Record<string, { precio_mwt: number; precio_cliente: number }>> = {
-  'ART-1': { precio_mwt: 100.5, precio_cliente: 120.5 },
-  'ART-2': { precio_mwt: 40, precio_cliente: 45 },
+/** The expediente row the fake `expediente_listar` returns. */
+const EXPEDIENTE: Record<string, unknown> = {
+  moneda: 'USD',
+  total_client: 286,
+  total_mwt: 246,
+  credit_days_cliente: 90,
+  credit_band: null,
+  proforma_codigo: 'PF 2521-2026',
+  proforma_codigos: ['PF 2521-2026'],
+  oc_codigos: [ORDER_REF],
+  client_name: 'CLIENTE DEMO S.A.S.',
+  estado: 'REGISTRO',
+}
+
+/** The stock record the fake `stock_listar` returns. */
+const STOCK: Record<string, unknown> = {
+  producto_id: '00000000-0000-4000-8000-000000000003',
+  producto_sku: '700844',
+  nodo_codigo: 'NODO-DEMO',
+  cantidad_disponible: '200.000',
 }
 
 /** What one fake MWT tool answers. */
@@ -53,7 +67,7 @@ afterEach(async () => {
 })
 
 /**
- * Answer one MWT tool the way the MCP server would.
+ * Answer one MWT tool the way the MCP server does.
  * @param tool - raw tool name without the server namespace.
  * @param args - arguments the row sent.
  * @returns the JSON payload.
@@ -61,27 +75,33 @@ afterEach(async () => {
 function mwtAnswer(tool: string, args: Record<string, unknown>): unknown {
   switch (tool) {
     case 'expediente_buscar':
-      return { existe: true, expediente_id: EXPEDIENTE_ID }
-    case 'expediente_lineas':
-      return { lineas: [{ sku: 'ART-1', qty: 2 }, { sku: 'ART-2', qty: 1 }] }
+      return { existe: true, total: 1, matches: [EXPEDIENTE] }
+    case 'expediente_listar':
+      return { count: 1, limit: 50, offset: 0, results: [EXPEDIENTE] }
     case 'producto_buscar': {
       const sku = String(args['q'])
-      return { productos: PRICES[sku] === undefined ? [] : [{ producto_id: `p-${sku}`, sku }] }
+      return {
+        productos: sku === '700844' ? [{ id: 'p-700844', sku, moneda: 'USD', precio_venta: 0 }] : [],
+        total: sku === '700844' ? 1 : 0,
+      }
     }
-    case 'producto_precio_cliente': {
-      const sku = String(args['sku'])
-      return { precio: PRICES[sku] ?? {} }
-    }
-    case 'cliente_listar':
-      return { clientes: [{ cliente_id: 'c-1', razon_social: 'Eguisa' }] }
-    case 'cliente_obtener':
-      return { cliente: { banda_id: 2, plazo_dias: 30 } }
+    case 'producto_precio_cliente':
+      return { sku: String(args['sku']), banda_vigente: { id: 7 }, plazo_dias: 90, clientes: [] }
     case 'stock_listar':
-      // A row without a readable quantity: the source cannot state availability.
-      return { stock: [{ producto_id: String(args['producto']) }] }
+      return STOCK
     default:
       throw new Error(`unexpected MWT tool ${tool}`)
   }
+}
+
+/**
+ * The default backend with one tool answered differently.
+ * @param tool - raw tool name to replace.
+ * @param answer - payload the replacement returns.
+ * @returns the backend.
+ */
+function withAnswer(tool: string, answer: unknown): Backend {
+  return (called, args) => called === tool ? answer : mwtAnswer(called, args)
 }
 
 /**
@@ -142,12 +162,12 @@ async function submitProforma(board: FaberLoomBoard): Promise<FaberLoomBoardItem
   const item = await board.submit(ACTOR, {
     runId: 'run-1',
     idempotencyKey: 'idem-1',
-    businessKey: 'PF 2520-2026',
-    title: 'PF 2520-2026 · Eguisa',
+    businessKey: 'PF 2521-2026',
+    title: 'PF 2521-2026 · CLIENTE DEMO S.A.S.',
     summary: 'Proforma DDP con precios verificados.',
-    evidence: ['oc:OC-505288'],
+    evidence: [`oc:${ORDER_REF}`],
     artifactType: 'proforma',
-    accountRef: 'eguisa',
+    accountRef: 'CLIENTE DEMO S.A.S.',
     content: DRAFT,
   })
   return await board.setSeverity(ACTOR, item.id, 'HIGH', 'HUMAN')
@@ -174,17 +194,45 @@ describe('faberloom-checks-mwt plugin', () => {
     expect(board.checkStatus('proforma').some(entry => entry.registered)).toBe(false)
   })
 
-  it('refuses the approval while stock is missing and accepts the explicit confirmation', async () => {
+  it('passes the price, SKU, total, and stock controls on the recorded answers', async () => {
     const { board, seen } = await mount(mwtAnswer)
     const item = await submitProforma(board)
-    await expect(board.approve(ACTOR, item.id, approvalOf(item))).rejects.toThrow('CHECK_CONFIRMATION_REQUIRED')
-    const current = await board.get(ACTOR, item.id)
-    const approved = await board.approve(ACTOR, item.id, {
-      ...approvalOf(current),
-      confirmations: ['proforma.stock', 'proforma.separation'],
-    })
-    expect(approved.state).toBe('APROBADO')
+    const report = await board.runChecks(ACTOR, item.id)
+    expect(report.missing).toEqual([])
+    for (const id of ['proforma.price', 'proforma.sku', 'proforma.total', 'proforma.stock']) {
+      expect(report.checks.find(outcome => outcome.id === id)?.result, id).toMatchObject({ status: 'ok' })
+    }
     expect(seen.every(name => name.startsWith('mcp__mwt__'))).toBe(true)
+    expect(seen).not.toContain('mcp__mwt__expediente_lineas')
+  })
+
+  it('blocks the approval when the expediente client total differs from the billed total', async () => {
+    const { board } = await mount(withAnswer('expediente_listar', {
+      count: 1, limit: 50, offset: 0, results: [{ ...EXPEDIENTE, total_client: 300 }],
+    }))
+    const item = await submitProforma(board)
+    const report = await board.runChecks(ACTOR, item.id)
+    expect(report.checks.find(outcome => outcome.id === 'proforma.price')).toMatchObject({
+      class: 'bloqueante',
+      result: { status: 'fail', reason: 'PRICE_MISMATCH', source: 'mwt.price' },
+    })
+    await expect(board.approve(ACTOR, item.id, approvalOf(item))).rejects.toThrow('BLOCKING_CHECK')
+  })
+
+  it('keeps the approval blocked because no read returns the expediente lines', async () => {
+    const { board } = await mount(mwtAnswer)
+    const item = await submitProforma(board)
+    const report = await board.runChecks(ACTOR, item.id)
+    expect(report.checks.find(outcome => outcome.id === 'proforma.quantity')).toMatchObject({
+      class: 'bloqueante',
+      result: { status: 'fail', reason: 'ORDER_SOURCE_MISSING', source: 'mwt.order' },
+    })
+    expect(report.checks.find(outcome => outcome.id === 'proforma.stock')).toMatchObject({
+      class: 'confirmacion',
+      result: { status: 'ok' },
+    })
+    await expect(board.approve(ACTOR, item.id, approvalOf(item))).rejects.toThrow('BLOCKING_CHECK')
+    expect((await board.get(ACTOR, item.id)).state).toBe('PENDIENTE_CRITERIO')
   })
 
   it('counts a timed-out MWT call as a failed control', async () => {

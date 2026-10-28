@@ -653,14 +653,15 @@ export interface BoardSkuFacts {
 }
 
 /**
- * The account's price condition for one SKU. `overcharge` is the account band
- * already resolved by the adapter; the board never derives it (D-01).
+ * The order total an expediente records, both sides stated. `overcharge` is
+ * the difference `totalClient - totalMwt`; the adapter reads both sides so the
+ * board never compares against a half-read total (D-01).
  */
-export interface BoardPriceFacts {
-  /** List price before the overcharge, MWT `unit_price_mwt`. */
-  readonly listPrice: number
-  /** Overcharge the account pays for this SKU, in the artifact currency. */
-  readonly overcharge: number
+export interface BoardOrderTotals {
+  /** Amount the client is billed for the order (`total_client`). */
+  readonly totalClient: number
+  /** Amount the source charges for the order (`total_mwt`). */
+  readonly totalMwt: number
 }
 
 /** Stock facts of one SKU. */
@@ -685,8 +686,8 @@ export interface BoardSeparationFacts {
 
 /**
  * The commercial source port a check adapter fills (ADR-003). The adapter owns
- * the calls (`mcp__mwt__expediente_lineas`, `inventario_*`, ...) and the
- * freshness rule; the board only consumes the answer.
+ * the calls (`mcp__mwt__expediente_listar`, `mcp__mwt__stock_listar`, ...) and
+ * the freshness rule; the board only consumes the answer.
  *
  * A source that cannot answer throws: the board converts that throw into a
  * `fail` result, so an outage is never a skipped control. A source that can
@@ -696,12 +697,12 @@ export interface BoardSeparationFacts {
 export interface BoardCheckSource {
   /** Catalog existence of one SKU. */
   sku(sku: string): Promise<BoardSourceAnswer<BoardSkuFacts>>
-  /** List price and account overcharge for one SKU. */
-  price(request: { readonly accountRef: string; readonly sku: string }): Promise<BoardSourceAnswer<BoardPriceFacts>>
   /** Available stock for one SKU. */
   stock(sku: string): Promise<BoardSourceAnswer<BoardStockFacts>>
   /** Lines of the original purchase order the draft answers. */
   orderLines(orderRef: string): Promise<BoardSourceAnswer<readonly BoardOrderLine[]>>
+  /** Both sides of the order total the draft answers. */
+  orderTotals(orderRef: string): Promise<BoardSourceAnswer<BoardOrderTotals>>
   /** Separation the account rule requires for this document. */
   separation(request: {
     readonly accountRef: string
