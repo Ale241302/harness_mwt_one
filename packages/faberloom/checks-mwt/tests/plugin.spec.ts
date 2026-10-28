@@ -1,9 +1,9 @@
 /**
  * The plugin row against a real board: it registers all six controls, the price
- * control compares the billing against the expediente totals the server
- * returns, a quantity read the server cannot answer keeps the approval blocked,
- * and a timed-out MWT call counts as a failed control. Disposing the fiber
- * removes every registration.
+ * control compares each billed overcharge with the line the expediente states,
+ * the quantity control sums that line's quantity, a line read the server cannot
+ * answer keeps the approval blocked, and a timed-out MWT call counts as a failed
+ * control. Disposing the fiber removes every registration.
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -56,6 +56,20 @@ const STOCK: Record<string, unknown> = {
   cantidad_disponible: '200.000',
 }
 
+/** The line the fake `expediente_lineas` returns: 20 over the MWT cost per unit. */
+const LINE: Record<string, unknown> = {
+  sku: '700844',
+  size: null,
+  qty: '2.00',
+  unit_cost: '0.0000',
+  unit_price: '143.0000',
+  unit_price_mwt: '123.0000',
+  unit_price_client: '143.0000',
+  total_price: '286.00',
+  estado: 'PENDIENTE',
+  is_active: true,
+}
+
 /** What one fake MWT tool answers. */
 type Backend = (tool: string, args: Record<string, unknown>, signal: AbortSignal) => unknown
 
@@ -78,6 +92,8 @@ function mwtAnswer(tool: string, args: Record<string, unknown>): unknown {
       return { existe: true, total: 1, matches: [EXPEDIENTE] }
     case 'expediente_listar':
       return { count: 1, limit: 50, offset: 0, results: [EXPEDIENTE] }
+    case 'expediente_lineas':
+      return LINE
     case 'producto_buscar': {
       const sku = String(args['q'])
       return {
@@ -194,16 +210,51 @@ describe('faberloom-checks-mwt plugin', () => {
     expect(board.checkStatus('proforma').some(entry => entry.registered)).toBe(false)
   })
 
-  it('passes the price, SKU, total, and stock controls on the recorded answers', async () => {
+  it('passes price, SKU, quantity, total, and stock on the recorded answers', async () => {
     const { board, seen } = await mount(mwtAnswer)
     const item = await submitProforma(board)
     const report = await board.runChecks(ACTOR, item.id)
     expect(report.missing).toEqual([])
-    for (const id of ['proforma.price', 'proforma.sku', 'proforma.total', 'proforma.stock']) {
+    for (const id of ['proforma.price', 'proforma.sku', 'proforma.quantity', 'proforma.total', 'proforma.stock']) {
       expect(report.checks.find(outcome => outcome.id === id)?.result, id).toMatchObject({ status: 'ok' })
     }
     expect(seen.every(name => name.startsWith('mcp__mwt__'))).toBe(true)
-    expect(seen).not.toContain('mcp__mwt__expediente_lineas')
+    expect(seen).toContain('mcp__mwt__expediente_lineas')
+
+    // The separation rule has no MWT source, so only its confirmation stands
+    // between this item and approval.
+    const approved = await board.approve(ACTOR, item.id, {
+      ...approvalOf(item),
+      confirmations: ['proforma.separation'],
+    })
+    expect(approved.state).toBe('APROBADO')
+  })
+
+  it('blocks the approval when a line overcharges more than the order records', async () => {
+    const { board } = await mount(withAnswer('expediente_lineas', { ...LINE, unit_price_client: '153.0000' }))
+    const item = await submitProforma(board)
+    const report = await board.runChecks(ACTOR, item.id)
+    expect(report.checks.find(outcome => outcome.id === 'proforma.price')).toMatchObject({
+      class: 'bloqueante',
+      result: { status: 'fail', reason: 'PRICE_MISMATCH', source: 'mwt.order' },
+    })
+    await expect(board.approve(ACTOR, item.id, approvalOf(item))).rejects.toThrow('BLOCKING_CHECK')
+  })
+
+  it('keeps the approval blocked when the order answers no line', async () => {
+    const { board } = await mount(withAnswer('expediente_lineas', { results: [] }))
+    const item = await submitProforma(board)
+    const report = await board.runChecks(ACTOR, item.id)
+    expect(report.checks.find(outcome => outcome.id === 'proforma.quantity')).toMatchObject({
+      class: 'bloqueante',
+      result: { status: 'fail', reason: 'ORDER_SOURCE_MISSING', source: 'mwt.order' },
+    })
+    expect(report.checks.find(outcome => outcome.id === 'proforma.stock')).toMatchObject({
+      class: 'confirmacion',
+      result: { status: 'ok' },
+    })
+    await expect(board.approve(ACTOR, item.id, approvalOf(item))).rejects.toThrow('BLOCKING_CHECK')
+    expect((await board.get(ACTOR, item.id)).state).toBe('PENDIENTE_CRITERIO')
   })
 
   it('blocks the approval when the expediente client total differs from the billed total', async () => {
@@ -217,22 +268,6 @@ describe('faberloom-checks-mwt plugin', () => {
       result: { status: 'fail', reason: 'PRICE_MISMATCH', source: 'mwt.price' },
     })
     await expect(board.approve(ACTOR, item.id, approvalOf(item))).rejects.toThrow('BLOCKING_CHECK')
-  })
-
-  it('keeps the approval blocked because no read returns the expediente lines', async () => {
-    const { board } = await mount(mwtAnswer)
-    const item = await submitProforma(board)
-    const report = await board.runChecks(ACTOR, item.id)
-    expect(report.checks.find(outcome => outcome.id === 'proforma.quantity')).toMatchObject({
-      class: 'bloqueante',
-      result: { status: 'fail', reason: 'ORDER_SOURCE_MISSING', source: 'mwt.order' },
-    })
-    expect(report.checks.find(outcome => outcome.id === 'proforma.stock')).toMatchObject({
-      class: 'confirmacion',
-      result: { status: 'ok' },
-    })
-    await expect(board.approve(ACTOR, item.id, approvalOf(item))).rejects.toThrow('BLOCKING_CHECK')
-    expect((await board.get(ACTOR, item.id)).state).toBe('PENDIENTE_CRITERIO')
   })
 
   it('counts a timed-out MWT call as a failed control', async () => {

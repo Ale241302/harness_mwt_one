@@ -8,9 +8,9 @@
  * failed control, and a missing datum is returned as `null` so no caller can
  * substitute a default for a price, a stock figure, or a band (D-01, D-02).
  *
- * `expediente`, `skuExists`, and `stockAvailable` feed the proforma controls.
- * `priceBand` and `catalogPrice` expose the per-SKU price facts the catalog
- * states; no control consumes them until a read returns expediente lines.
+ * `expediente`, `orderLines`, `skuExists`, and `stockAvailable` feed the
+ * proforma controls. `priceBand` and `catalogPrice` expose the per-SKU price
+ * facts the catalog states; no control consumes them.
  *
  * @module @deepseek-ai/dsh-faberloom-checks-mwt/types
  */
@@ -18,11 +18,13 @@
 /**
  * MWT.ONE MCP tools this package calls, by the raw names the `mwt` server
  * exposes (the model-facing name is `mcp__mwt__<tool>`). `expediente_lineas`
- * is absent because it requires an expediente id that no read returns.
+ * takes the proforma, purchase-order, SAP, or `EXP-` reference: the server
+ * resolves it to its internal id.
  */
 export type MwtToolName =
   | 'expediente_buscar'
   | 'expediente_listar'
+  | 'expediente_lineas'
   | 'producto_buscar'
   | 'producto_precio_cliente'
   | 'stock_listar'
@@ -46,6 +48,24 @@ export interface MwtExpedienteFacts {
   readonly creditDays: number | null
   /** Client credit band (`credit_band`), or null when the row states none. */
   readonly creditBand: string | number | null
+}
+
+/**
+ * One line of one expediente: the unit D-01's per-line overcharge and the
+ * quantity comparison read. The answer states one line per SKU and size, so a
+ * SKU may own several lines.
+ */
+export interface MwtOrderLine {
+  /** Billed SKU (`sku`). */
+  readonly sku: string
+  /** Size the line states (`size`), or null when the answer states none. */
+  readonly size: string | null
+  /** Units the line bills (`qty`). */
+  readonly quantity: number
+  /** Price per unit MWT.ONE charges (`unit_price_mwt`), or null when unreadable. */
+  readonly unitPriceMwt: number | null
+  /** Price per unit the client is billed (`unit_price_client`), or null when unreadable. */
+  readonly unitPriceClient: number | null
 }
 
 /**
@@ -80,6 +100,13 @@ export interface MwtCheckClient {
    * @returns the totals, or null when no expediente matches the reference.
    */
   expediente(reference: string): Promise<MwtExpedienteFacts | null>
+  /**
+   * The lines of the expediente one reference names, one per SKU and size.
+   * @param reference - proforma code or purchase-order code the draft answers.
+   * @returns the lines, or null when the reference resolves to no line the
+   * reader can attribute; a line with an unreadable price keeps its null side.
+   */
+  orderLines(reference: string): Promise<readonly MwtOrderLine[] | null>
   /**
    * Whether the catalog holds the SKU.
    * @param sku - billed SKU.

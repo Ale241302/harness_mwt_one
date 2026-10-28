@@ -1,11 +1,12 @@
 /**
  * The six proforma controls registered against the MCP-backed client over the
- * answers the live server gave: the classes the board declares, the comparison
- * the price control can prove from an expediente total, and the failure each
- * missing datum produces.
+ * answers the live server gave: the classes the board declares, the per-line
+ * overcharge D-01 signs, the quantity comparison the line read supports, and
+ * the failure each missing datum produces.
  *
- * The answers live in `tests/fixtures/mwt-answers.json`; `expediente_lineas`
- * has none because the server requires an id no read returns.
+ * The captured answers live in `tests/fixtures/mwt-answers.json`. A test that
+ * needs a different order states its reply where it is used, so no captured
+ * value is overwritten by a guess.
  */
 
 import { readFileSync } from 'node:fs'
@@ -36,11 +37,24 @@ if (ROW === undefined) throw new Error('the fixture must carry one expediente ro
 /** The flat stock record the captured inventory answer carries. */
 const STOCK = ANSWERS['stock_listar'] as Record<string, unknown>
 
-/** The draft the controls evaluate; its total equals the client total below. */
+/** The lines the captured answer carries, one block each. */
+const LINES = ANSWERS['expediente_lineas'] as readonly Record<string, unknown>[]
+const LINE = LINES[0]
+if (LINE === undefined) throw new Error('the fixture must carry one line')
+
+/** The draft the catalog, stock, and separation cases evaluate. */
 const DRAFT: Record<string, unknown> = {
   orderRef: 'PO 110024463',
   lines: [{ sku: '700844', quantity: 2, unitPrice: 143 }],
   total: 286,
+  separation: 'new',
+}
+
+/** The draft that bills the captured line: 5 units at 16.73, total 83.65. */
+const LINE_DRAFT: Record<string, unknown> = {
+  orderRef: 'PF 2521-2026',
+  lines: [{ sku: '700010', quantity: 5, unitPrice: 16.73 }],
+  total: 83.65,
   separation: 'new',
 }
 
@@ -76,13 +90,14 @@ function recordingBoard(): { board: BoardCheckRegistrar; entries: Map<string, Re
 /**
  * The check input for one source port.
  * @param source - source port the registration carried.
+ * @param content - artifact content the control evaluates.
  * @returns item, artifact, and source.
  */
-function checkInput(source: BoardCheckSource): BoardCheckInput {
+function checkInput(source: BoardCheckSource, content: Record<string, unknown> = DRAFT): BoardCheckInput {
   return {
     // The controls read only these two item fields; a full item fixture adds nothing.
     item: { accountRef: 'CLIENTE DEMO S.A.S.', businessKey: 'PF 2521-2026' } as FaberLoomBoardItem,
-    artifact: { type: 'proforma', version: 1, content: DRAFT },
+    artifact: { type: 'proforma', version: 1, content },
     source,
   }
 }
@@ -107,30 +122,43 @@ function fixtureCall(replies: Partial<Record<MwtToolName, unknown>> = {}): { cal
     calls.push({ tool, args })
     const reply = Object.hasOwn(replies, tool) ? replies[tool] : ANSWERS[tool]
     if (reply === undefined || reply === null) throw new Error(`the fake MWT server has no answer for ${tool}`)
-    return { content: [{ type: 'text', text: JSON.stringify(reply) }] }
+    // The line read answers one text block per line; every other tool answers a
+    // single block carrying its whole payload.
+    const rows = Array.isArray(reply) ? reply : [reply]
+    return { content: rows.map(row => ({ type: 'text', text: JSON.stringify(row) })) }
   }
   return { call, calls }
 }
 
-/** The client the price cases read: the captured listing with the totals the test states. */
+/** The client a price case reads: the captured listing with the totals the test states. */
 function clientWithTotals(totalClient: number | null, totalMwt: number | null): MwtCheckClient {
   return mcpMwtCheckClient(fixtureCall({
     expediente_listar: listing({ total_client: totalClient, total_mwt: totalMwt }),
   }).call)
 }
 
+/** The line the captured answer carries, with the fields a test replaces. */
+function line(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return { ...LINE, ...overrides }
+}
+
 /**
  * Register the controls and run one of them.
  * @param client - the MWT.ONE client under test.
  * @param checkId - declared control to run.
+ * @param content - artifact content the control evaluates.
  * @returns the result the control reported.
  */
-async function runCheck(client: MwtCheckClient, checkId: string): Promise<Awaited<ReturnType<BoardCheckFn>>> {
+async function runCheck(
+  client: MwtCheckClient,
+  checkId: string,
+  content: Record<string, unknown> = DRAFT,
+): Promise<Awaited<ReturnType<BoardCheckFn>>> {
   const { board, entries } = recordingBoard()
   registerProformaChecks(board, client)
   const registration = entries.get(checkId)
   if (registration === undefined) throw new Error(`${checkId} was not registered`)
-  return await registration.fn(checkInput(mwtCheckSource(client)))
+  return await registration.fn(checkInput(mwtCheckSource(client), content))
 }
 
 describe('MWT proforma checks', () => {
@@ -144,8 +172,54 @@ describe('MWT proforma checks', () => {
     expect(entries.size).toBe(0)
   })
 
-  it('fails the blocking price control when the expediente totals differ', async () => {
-    const result = await runCheck(clientWithTotals(300, 286), 'proforma.price')
+  it('passes the blocking price control when every billed overcharge matches the order', async () => {
+    const result = await runCheck(clientWithTotals(83.65, 63.65), 'proforma.price', LINE_DRAFT)
+    expect(result).toMatchObject({
+      status: 'ok',
+      reason: null,
+      // The answer the control compared is the line read, so it names that source.
+      source: 'mwt.order',
+      fields: ['orderRef', 'lines[0].unitPrice'],
+    })
+  })
+
+  it('fails the blocking price control when a billed line overcharges more than the order records', async () => {
+    const billed = { ...LINE_DRAFT, lines: [{ sku: '700010', quantity: 5, unitPrice: 17.73 }], total: 88.65 }
+    const result = await runCheck(clientWithTotals(88.65, 63.65), 'proforma.price', billed)
+    expect(result).toMatchObject({
+      status: 'fail',
+      reason: 'PRICE_MISMATCH',
+      source: 'mwt.order',
+      fields: ['lines[0].unitPrice'],
+    })
+  })
+
+  it('fails the price control when the order line states no unit_price_mwt', async () => {
+    const client = mcpMwtCheckClient(fixtureCall({ expediente_lineas: line({ unit_price_mwt: null }) }).call)
+    const result = await runCheck(client, 'proforma.price', LINE_DRAFT)
+    expect(result).toMatchObject({
+      status: 'fail',
+      reason: 'PRICE_SOURCE_MISSING',
+      source: 'mwt.order',
+      fields: ['lines[0].unitPrice'],
+    })
+  })
+
+  it('fails the price control when the order carries no line for a billed SKU', async () => {
+    const other = {
+      ...LINE_DRAFT,
+      lines: [
+        { sku: '700010', quantity: 5, unitPrice: 16.73 },
+        { sku: '999999', quantity: 1, unitPrice: 10 },
+      ],
+      total: 93.65,
+    }
+    const result = await runCheck(clientWithTotals(93.65, 63.65), 'proforma.price', other)
+    expect(result).toMatchObject({ status: 'fail', reason: 'PRICE_SOURCE_MISSING' })
+  })
+
+  it('fails the price control when the order total contradicts the billed total', async () => {
+    const result = await runCheck(clientWithTotals(100, 63.65), 'proforma.price', LINE_DRAFT)
     expect(result).toMatchObject({
       status: 'fail',
       reason: 'PRICE_MISMATCH',
@@ -154,23 +228,85 @@ describe('MWT proforma checks', () => {
     })
   })
 
-  it('passes the blocking price control when the billed total equals the client total', async () => {
-    const client = clientWithTotals(286, 246)
-    const result = await runCheck(client, 'proforma.price')
-    expect(result).toMatchObject({ status: 'ok', reason: null, source: 'mwt.price', fields: ['orderRef', 'total'] })
+  it('leaves the line comparison authoritative when the expediente states no order totals', async () => {
+    const result = await runCheck(clientWithTotals(null, null), 'proforma.price', LINE_DRAFT)
+    expect(result).toMatchObject({ status: 'ok', reason: null })
   })
 
-  it('fails the price control when the reference resolves to no expediente', async () => {
-    const client = mcpMwtCheckClient(fixtureCall({
-      expediente_buscar: { existe: false, total: 0, matches: [] },
+  it('passes the blocking quantity control when the order quantities match the draft', async () => {
+    const result = await runCheck(mcpMwtCheckClient(fixtureCall().call), 'proforma.quantity', LINE_DRAFT)
+    expect(result).toMatchObject({
+      status: 'ok',
+      reason: null,
+      source: 'mwt.order',
+      fields: ['lines[0].quantity'],
+    })
+  })
+
+  it('fails the blocking quantity control when a billed quantity differs', async () => {
+    const billed = { ...LINE_DRAFT, lines: [{ sku: '700010', quantity: 6, unitPrice: 16.73 }], total: 100.38 }
+    const result = await runCheck(mcpMwtCheckClient(fixtureCall().call), 'proforma.quantity', billed)
+    expect(result).toMatchObject({
+      status: 'fail',
+      reason: 'QUANTITY_MISMATCH',
+      source: 'mwt.order',
+      fields: ['lines[0].quantity'],
+    })
+  })
+
+  it('sums the order quantities of one SKU and size before comparing', async () => {
+    const twoSizes = mcpMwtCheckClient(fixtureCall({
+      expediente_lineas: { results: [line(), line({ size: '37', qty: '2.00' })] },
     }).call)
-    const result = await runCheck(client, 'proforma.price')
-    expect(result).toMatchObject({ status: 'fail', reason: 'PRICE_SOURCE_MISSING', source: 'mwt.price' })
+    const seven = { ...LINE_DRAFT, lines: [{ sku: '700010', quantity: 7, unitPrice: 16.73 }], total: 117.11 }
+    expect(await runCheck(twoSizes, 'proforma.quantity', seven)).toMatchObject({ status: 'ok' })
+    expect(await runCheck(twoSizes, 'proforma.quantity', LINE_DRAFT)).toMatchObject({
+      status: 'fail',
+      reason: 'QUANTITY_MISMATCH',
+    })
   })
 
-  it('fails the price control when the expediente states no total_mwt', async () => {
-    const result = await runCheck(clientWithTotals(286, null), 'proforma.price')
-    expect(result).toMatchObject({ status: 'fail', reason: 'PRICE_SOURCE_MISSING', source: 'mwt.price' })
+  it('fails the quantity control when a SKU appears on only one side', async () => {
+    const twoSkus = mcpMwtCheckClient(fixtureCall({
+      expediente_lineas: { results: [line(), line({ sku: '999999', qty: '1.00' })] },
+    }).call)
+    expect(await runCheck(twoSkus, 'proforma.quantity', LINE_DRAFT)).toMatchObject({
+      status: 'fail',
+      reason: 'ORDER_LINE_MISSING',
+    })
+
+    const missing = { ...LINE_DRAFT, lines: [{ sku: '999999', quantity: 5, unitPrice: 16.73 }] }
+    const captured = mcpMwtCheckClient(fixtureCall().call)
+    expect(await runCheck(captured, 'proforma.quantity', missing)).toMatchObject({
+      status: 'fail',
+      reason: 'ORDER_LINE_MISSING',
+    })
+  })
+
+  it('fails the quantity control when the order answers no line at all', async () => {
+    const client = mcpMwtCheckClient(fixtureCall({ expediente_lineas: { results: [] } }).call)
+    const result = await runCheck(client, 'proforma.quantity', LINE_DRAFT)
+    expect(result).toMatchObject({ status: 'fail', reason: 'ORDER_SOURCE_MISSING', source: 'mwt.order' })
+  })
+
+  it('reads a single object, a results page, and one block per line as the same answer', async () => {
+    const shapes: unknown[] = [LINE, { count: 1, limit: 50, offset: 0, results: [LINE] }, [LINE]]
+    const observed: unknown[] = []
+    for (const shape of shapes) {
+      const priceClient = mcpMwtCheckClient(fixtureCall({
+        expediente_lineas: shape,
+        expediente_listar: listing({ total_client: 83.65, total_mwt: 63.65 }),
+      }).call)
+      const lineClient = mcpMwtCheckClient(fixtureCall({ expediente_lineas: shape }).call)
+      const price = await runCheck(priceClient, 'proforma.price', LINE_DRAFT)
+      const quantity = await runCheck(lineClient, 'proforma.quantity', LINE_DRAFT)
+      observed.push([
+        { status: price.status, reason: price.reason, source: price.source },
+        { status: quantity.status, reason: quantity.reason, source: quantity.source },
+      ])
+    }
+    expect(observed[1]).toEqual(observed[0])
+    expect(observed[2]).toEqual(observed[0])
   })
 
   it('fails the blocking SKU control when the catalog does not know a billed SKU', async () => {
@@ -202,11 +338,17 @@ describe('MWT proforma checks', () => {
     expect(result).toMatchObject({ status: 'ok', source: 'mwt.stock' })
   })
 
-  it('never passes the quantity control: no read returns the expediente lines', async () => {
-    const { call, calls } = fixtureCall({ expediente_listar: listing({ total_client: 286, total_mwt: 286 }) })
-    const result = await runCheck(mcpMwtCheckClient(call), 'proforma.quantity')
-    expect(result).toMatchObject({ status: 'fail', reason: 'ORDER_SOURCE_MISSING', source: 'mwt.order' })
-    expect(calls.map(entry => entry.tool)).not.toContain('expediente_lineas')
+  it('treats an empty stock answer as zero units and leaves it at confirmation', async () => {
+    const call: MwtToolCall = async tool => tool === 'stock_listar'
+      ? { content: [] }
+      : { content: [{ type: 'text', text: JSON.stringify(ANSWERS[tool]) }] }
+    const client = mcpMwtCheckClient(call)
+    const { board, entries } = recordingBoard()
+    registerProformaChecks(board, client)
+    const stock = entries.get('proforma.stock')
+    expect(stock?.class).toBe('confirmacion')
+    const result = await stock?.fn(checkInput(mwtCheckSource(client)))
+    expect(result).toMatchObject({ status: 'fail', reason: 'STOCK_INSUFFICIENT', source: 'mwt.stock' })
   })
 
   it('never passes the separation control silently: no MWT read states the split rule', async () => {
@@ -219,10 +361,10 @@ describe('MWT proforma checks', () => {
     expect(result).toMatchObject({ status: 'fail', reason: 'SEPARATION_SOURCE_MISSING' })
   })
 
-  it('passes price, SKU, total, and stock on a complete answer', async () => {
-    const client = clientWithTotals(286, 246)
-    for (const checkId of ['proforma.price', 'proforma.sku', 'proforma.total', 'proforma.stock']) {
-      const result = await runCheck(client, checkId)
+  it('passes price, quantity, and total on the captured line', async () => {
+    const client = clientWithTotals(83.65, 63.65)
+    for (const checkId of ['proforma.price', 'proforma.quantity', 'proforma.total']) {
+      const result = await runCheck(client, checkId, LINE_DRAFT)
       expect(result, checkId).toMatchObject({ status: 'ok', reason: null })
     }
   })

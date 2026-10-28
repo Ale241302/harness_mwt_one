@@ -4,11 +4,11 @@
  * (ADR-003).
  *
  * Tool names and response fields follow the answers recorded from the live
- * server (`mwt-one 1.30.0`, `.artifacts/mwt-shapes.md`). No read returns an
- * expediente id, so `expediente_lineas` is never called and no per-line fact is
- * invented. A read returns `null` rather than a default when the server omits
- * the datum: that is what keeps D-01's blocking failure and D-02's required
- * confirmation honest.
+ * server (`mwt-one 1.30.0`, `.artifacts/mwt-shapes.md`). `expediente_lineas`
+ * takes the reference itself: the server resolves the proforma, OC, SAP, or
+ * `EXP-` code to its internal id and answers the lines. A read returns `null`
+ * rather than a default when the server omits the datum: that is what keeps
+ * D-01's blocking failure and D-02's required confirmation honest.
  *
  * @module @deepseek-ai/dsh-faberloom-checks-mwt/client
  */
@@ -16,8 +16,10 @@
 import {
   bandRecord,
   idField,
+  isEmptyAnswer,
   isRecord,
   jsonPayload,
+  lineRecords,
   numberField,
   pageRows,
   productRows,
@@ -26,7 +28,7 @@ import {
   stringField,
   stringListField,
 } from './wire.ts'
-import type { MwtCheckClient, MwtExpedienteFacts, MwtToolCall, MwtToolName } from './types.ts'
+import type { MwtCheckClient, MwtExpedienteFacts, MwtOrderLine, MwtToolCall, MwtToolName } from './types.ts'
 import type { WirePage, WireRow } from './wire.ts'
 
 /** Product fields carrying the catalog SKU. */
@@ -49,6 +51,16 @@ const STOCK_FIELDS = ['cantidad_disponible'] as const
 const BAND_ID_FIELDS = ['id'] as const
 /** Band answer field carrying the payment term. */
 const PAYMENT_DAYS_FIELDS = ['plazo_dias'] as const
+/** Line fields carrying the SKU. */
+const LINE_SKU_FIELDS = ['sku'] as const
+/** Line fields carrying the size. */
+const LINE_SIZE_FIELDS = ['size'] as const
+/** Line fields carrying the billed quantity. */
+const LINE_QTY_FIELDS = ['qty'] as const
+/** Line fields carrying the price MWT.ONE charges. */
+const LINE_MWT_PRICE_FIELDS = ['unit_price_mwt'] as const
+/** Line fields carrying the price the client is billed. */
+const LINE_CLIENT_PRICE_FIELDS = ['unit_price_client'] as const
 
 /** Rows requested per `expediente_listar` page. */
 const EXPEDIENTE_PAGE_LIMIT = 50
@@ -183,6 +195,26 @@ function expedienteFacts(reference: string, row: WireRow): MwtExpedienteFacts {
   }
 }
 
+/**
+ * The facts of one `expediente_lineas` row.
+ * @param row - line row.
+ * @returns the line, or null when the row states no SKU or no readable quantity.
+ */
+function orderLineFacts(row: WireRow): MwtOrderLine | null {
+  const sku = stringField(row, LINE_SKU_FIELDS)
+  const quantity = numberField(row, LINE_QTY_FIELDS)
+  // A row without a SKU or a quantity cannot be attributed to a billed line, so
+  // it is unusable instead of being skipped.
+  if (sku === null || quantity === null) return null
+  return {
+    sku,
+    size: stringField(row, LINE_SIZE_FIELDS),
+    quantity,
+    unitPriceMwt: numberField(row, LINE_MWT_PRICE_FIELDS),
+    unitPriceClient: numberField(row, LINE_CLIENT_PRICE_FIELDS),
+  }
+}
+
 /** The facts of one exact catalog row. */
 interface ProductFacts {
   /** Product identity the row carries, or null. */
@@ -229,6 +261,21 @@ export function mcpMwtCheckClient(call: MwtToolCall): MwtCheckClient {
       return row === null ? null : expedienteFacts(reference, row)
     },
 
+    async orderLines(reference) {
+      const rows = lineRecords(await call('expediente_lineas', { expediente_id: reference }))
+      if (rows === null) return null
+      const lines: MwtOrderLine[] = []
+      for (const row of rows) {
+        const line = orderLineFacts(row)
+        // One unattributable row leaves the answer unusable: comparing against
+        // the rows that happen to parse would price a partial order.
+        if (line === null) return null
+        lines.push(line)
+      }
+      // An answer that carries no line states no quantity and no price at all.
+      return lines.length === 0 ? null : lines
+    },
+
     async skuExists(sku) {
       return (await findProduct(call, sku)) !== null
     },
@@ -238,12 +285,14 @@ export function mcpMwtCheckClient(call: MwtToolCall): MwtCheckClient {
       // An unknown SKU has no inventory record; the stock control treats that as
       // missing data and asks for confirmation (D-02).
       if (product === null) return null
-      const payload = await read(call, 'stock_listar', {
+      const value = await call('stock_listar', {
         producto: product.id ?? sku,
         solo_disponible: true,
         limit: STOCK_PAGE_LIMIT,
       })
-      const records = stockRecords(payload)
+      // A query restricted to available stock that carries no record states zero
+      // available units, not a failed read.
+      const records = isEmptyAnswer(value) ? [] : stockRecords(jsonPayload(value))
       if (records === null) return null
       const wanted = normalise(sku)
       const own = records.filter((row) => {

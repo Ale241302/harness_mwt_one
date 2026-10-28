@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-10-28-mesa-check-source-real-shapes.md) | 中文
 
+> 部分被[按行价格控制](2026-10-28-mesa-per-line-price-checks.zh.md)取代：`expediente_lineas` 接受引用，因此 `proforma.price` 逐行比较，订单总额成为第二个断言。
+
 ## 问题
 
 当已声明的阻断性验证没有适配器时，工作台会拒绝批准形式发票；而缺少数据源的已声明验证按设计就是失败（ADR-003、D-01）。第一个适配器按猜测的字段别名注册了六个验证：`lines`、`qty`、`precio_mwt`、`precio_lista`、`cantidad`。对 `mwt-one` 1.30.0 的实机探测表明这些字段都不存在，因此在看似已配置的情况下，一旦启用适配器，所有验证都会失败关闭。
@@ -30,10 +32,10 @@ Status: implemented
 
 ## 后果
 
-- 适配器现在与实机数据源一致，配置行仍默认关闭（`FABERLOOM_CHECKS_MWT=1` 启用）。
-- 启用后仍会阻断所有基于 MWT 的形式发票批准，因为 `proforma.quantity` 是阻断性的，且没有读取会返回卷宗 id。这是数据源限制，记录在两个包的 README 中，而不是验证的缺陷。
-- 按行的加价，即 D-01 的 `unit_price_client - unit_price_mwt`，在 MWT 提供卷宗 id 或行读取之前仍不可达。把 `quantity` 从阻断改为确认属于 D-8 修订，需要业务签署，而不是代码默认值。
-- `catalogPrice` 与 `priceBand` 已修正，但在出现行数据源之前没有验证消费者。
+- 适配器与实机数据源一致，配置行默认启用（`FABERLOOM_CHECKS_MWT=0` 可让离线部署关闭）。
+- 后续探测发现 `expediente_lineas` 无需 id 即可解析形式发票引用，因此订单总额比较已被按行验证取代，配置行现在默认启用（[按行价格与数量验证](2026-10-28-mesa-per-line-price-checks.zh.md)）。
+- 按行加价，即 D-01 的 `unit_price_client - unit_price_mwt`，现在通过 `expediente_lineas` 可达；`quantity` 仍为阻断性，并按 SKU 与尺码求和。
+- `catalogPrice` 服务于 SKU 验证；`priceBand` 仍没有验证消费者。
 
 ## 验证
 

@@ -48,7 +48,29 @@
       }
     ]
   },
-  "expediente_lineas": null,
+  "expediente_lineas": [
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "oc_id": "00000000-0000-4000-8000-000000000006",
+      "expediente_id": "00000000-0000-4000-8000-000000000007",
+      "producto_id": "00000000-0000-4000-8000-000000000008",
+      "sku": "700010",
+      "size": "36",
+      "qty": "5.00",
+      "unit_cost": "0.0000",
+      "unit_price": "16.7300",
+      "unit_price_mwt": "16.7300",
+      "unit_price_client": "16.7300",
+      "total_price": "83.65",
+      "estado": "PENDIENTE",
+      "deferred_qty": "0.00",
+      "deferred_unit_price": "0.0000",
+      "show_deferred_to_client": false,
+      "is_active": true,
+      "producto_nombre": "PRODUCTO DEMO",
+      "marca_nombre": "Marca Demo"
+    }
+  ],
   "stock_listar": {
     "id": "00000000-0000-4000-8000-000000000001",
     "nodo_id": "00000000-0000-4000-8000-000000000002",

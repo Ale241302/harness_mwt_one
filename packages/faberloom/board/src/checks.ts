@@ -26,7 +26,7 @@ export const CHECKS_VERSION = '2026-10-28.1'
 /** Artifact type the proforma controls apply to. */
 export const PROFORMA_ARTIFACT = 'proforma'
 
-/** The billed total equals the client total the expediente records (D-01). */
+/** D-01: the per-line overcharge the draft bills equals the one the order records. */
 const PRICE_CHECK: BoardCheckDefinition = { id: 'proforma.price', class: 'bloqueante' }
 /** The catalog knows every billed SKU. */
 const SKU_CHECK: BoardCheckDefinition = { id: 'proforma.sku', class: 'bloqueante' }
@@ -235,35 +235,61 @@ function freshnessOf(answer: { readonly source: string; readonly version: string
 }
 
 /**
- * Price control: the billed total equals the client total the expediente
- * records, and the expediente states both sides of its order total so the
- * overcharge `total_client - total_mwt` is readable (D-01 at order level). A
- * missing order reference, billed price, billed total, or recorded side fails:
- * D-01 does not allow an approval on absent price data.
+ * Price control: D-01's per-line overcharge. For every billed line, the price
+ * the client is billed minus the price MWT.ONE charges (`unit_price_client -
+ * unit_price_mwt`) must equal the overcharge the draft bills for that line
+ * (`unitPrice - unit_price_mwt`) at cent precision. When the expediente also
+ * states both order-total sides, the billed total must equal `total_client` as
+ * a second, independent assertion.
+ *
+ * A billed line the order does not carry, a line whose price side is missing,
+ * or an unreadable billed price fails: D-01 does not allow an approval on
+ * absent price data.
  * @param input - item, artifact, and source port.
  * @returns the control result.
  */
 async function priceCheck(input: BoardCheckInput): Promise<BoardCheckResult> {
   const lines = draftLines(input.artifact.content)
   if (lines === undefined || lines.length === 0) return artifactFailure(['lines'], 'LINES_MISSING')
+  const priced: { readonly line: DraftLine; readonly unitPrice: number }[] = []
   for (const line of lines) {
+    if (line.sku.length === 0) return artifactFailure([lineField(line, 'sku')], 'SKU_MISSING')
     if (line.unitPrice === undefined) return artifactFailure([lineField(line, 'unitPrice')], 'PRICE_MISSING')
+    priced.push({ line, unitPrice: line.unitPrice })
   }
   const orderRef = input.artifact.content['orderRef']
   if (typeof orderRef !== 'string' || orderRef.length === 0) return artifactFailure(['orderRef'], 'ORDER_REF_MISSING')
   const total = finiteNumber(input.artifact.content['total'])
   if (total === undefined) return artifactFailure(['total'], 'TOTAL_MISSING')
   const source = requireSource(input)
-  const answer = await source.orderTotals(orderRef)
+  const answer = await source.orderLines(orderRef)
   const freshness = freshnessOf(answer)
-  const fields = ['orderRef', 'total']
-  // A missing side is a missing source read: the overcharge cannot be stated,
-  // so the control fails instead of comparing the total it does have.
-  if (answer.value === null) return sourceFailure(freshness, fields, 'PRICE_SOURCE_MISSING')
-  if (round2(total) !== round2(answer.value.totalClient)) {
-    return sourceFailure(freshness, fields, 'PRICE_MISMATCH')
+  const priceFields = priced.map(entry => lineField(entry.line, 'unitPrice'))
+  // No readable line leaves the per-line overcharge unprovable, so the control
+  // fails instead of comparing the order totals it does have.
+  if (answer.value === null) return sourceFailure(freshness, priceFields, 'PRICE_SOURCE_MISSING')
+
+  for (const { line, unitPrice } of priced) {
+    const field = lineField(line, 'unitPrice')
+    const candidates = answer.value.filter(candidate => candidate.sku === line.sku)
+    // A billed line the order does not carry leaves this price unprovable.
+    if (candidates.length === 0) return sourceFailure(freshness, [field], 'PRICE_SOURCE_MISSING')
+    for (const candidate of candidates) {
+      // Every line the order states for the SKU must carry both price sides.
+      if (candidate.unitPriceMwt === null || candidate.unitPriceClient === null) {
+        return sourceFailure(freshness, [field], 'PRICE_SOURCE_MISSING')
+      }
+      const recorded = round2(candidate.unitPriceClient - candidate.unitPriceMwt)
+      const billed = round2(unitPrice - candidate.unitPriceMwt)
+      if (recorded !== billed) return sourceFailure(freshness, [field], 'PRICE_MISMATCH')
+    }
   }
-  return passed(freshness, fields)
+
+  const totals = await source.orderTotals(orderRef)
+  if (totals.value !== null && round2(total) !== round2(totals.value.totalClient)) {
+    return sourceFailure(freshnessOf(totals), ['orderRef', 'total'], 'PRICE_MISMATCH')
+  }
+  return passed(freshness, ['orderRef', ...priceFields])
 }
 
 /**
@@ -286,17 +312,13 @@ async function skuCheck(input: BoardCheckInput): Promise<BoardCheckResult> {
   return passed(freshness, lines.map(line => lineField(line, 'sku')))
 }
 
-/** Sum one keyed value per SKU, so a repeated SKU compares by its total. */
-function bySku(lines: readonly { readonly sku: string; readonly quantity: number }[]): Map<string, number> {
-  const totals = new Map<string, number>()
-  for (const line of lines) totals.set(line.sku, (totals.get(line.sku) ?? 0) + line.quantity)
-  return totals
-}
-
 /**
  * Quantity control: the draft bills exactly the quantities of the purchase
- * order it answers (spec §9.6). A missing order reference or an order the
- * source does not hold fails, because the control cannot prove equality.
+ * order it answers (spec §9.6). The source states one line per SKU and size, so
+ * its quantities are summed per SKU; the artifact states no size, so the
+ * comparison is the per-SKU total. A missing order reference, an order the
+ * source does not hold, a SKU present on only one side, or a differing quantity
+ * fails, because the control cannot prove equality.
  * @param input - item, artifact, and source port.
  * @returns the control result.
  */
@@ -316,13 +338,18 @@ async function quantityCheck(input: BoardCheckInput): Promise<BoardCheckResult> 
     if (line.quantity === undefined) return artifactFailure([lineField(line, 'quantity')], 'QUANTITY_MISSING')
     billed.set(line.sku, (billed.get(line.sku) ?? 0) + line.quantity)
   }
-  const ordered = bySku(answer.value)
+  // One line per SKU and size: summing them per SKU is what the draft bills,
+  // because the artifact carries no size dimension.
+  const ordered = new Map<string, number>()
+  for (const line of answer.value) ordered.set(line.sku, (ordered.get(line.sku) ?? 0) + line.quantity)
   const fields = lines.map(line => lineField(line, 'quantity'))
   for (const [sku, quantity] of billed) {
-    if (ordered.get(sku) !== quantity) return sourceFailure(freshness, fields, 'QUANTITY_MISMATCH')
+    const recorded = ordered.get(sku)
+    if (recorded === undefined) return sourceFailure(freshness, fields, 'ORDER_LINE_MISSING')
+    if (recorded !== quantity) return sourceFailure(freshness, fields, 'QUANTITY_MISMATCH')
   }
   for (const sku of ordered.keys()) {
-    if (!billed.has(sku)) return sourceFailure(freshness, fields, 'QUANTITY_MISMATCH')
+    if (!billed.has(sku)) return sourceFailure(freshness, fields, 'ORDER_LINE_MISSING')
   }
   return passed(freshness, fields)
 }

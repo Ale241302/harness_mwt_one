@@ -7,7 +7,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 摘要
+## 概述
 
 看板声明了六项 proforma 控制，并且在适配器注册它们之前以 `CHECK_UNAVAILABLE` 拒绝每一次 proforma 批准。本包就是面向 MWT.ONE 的适配器：它用 MWT MCP 的读取填充看板的 `BoardCheckSource`，并从 `ctx.effect` 挂载注册，因此释放该行的 fiber 会移除全部六项控制。控制的实现、id 与类别留在 `dsh-faberloom-board`；本包从不复述它们。
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-把该行挂在看板与 MWT MCP 服务器旁边。它随 bundle 默认关闭；当 `mwt` 服务器以该名称挂载后，部署才开启它。
+把该行挂在看板与 MWT MCP 服务器旁边。它随 bundle 默认挂载；没有 `mwt` 服务器的部署用 `FABERLOOM_CHECKS_MWT=0` 把它取下。
 
 ```yaml
 - id: faberloom-checks-mwt
@@ -39,17 +39,20 @@ kind: "package-reference"
 
 ### 读取
 
-`MwtCheckClient` 是校验逻辑与传输之间的窄端口：五个方法，每个返回事实或抛错，因此 MCP 的词汇不会进入控制逻辑。
+`MwtCheckClient` 是校验逻辑与传输之间的窄端口：六个方法，每个返回事实或抛错，因此 MCP 的词汇不会进入控制逻辑。
 
 | 读取 | MWT.ONE 工具 | 返回 |
 |---|---|---|
 | `expediente(reference)` | `expediente_buscar` 作为存在性探测，`expediente_listar` 分页匹配 | `total_client`、`total_mwt`、`moneda`、`client_name`、`credit_days_cliente`、`credit_band` |
+| `orderLines(reference)` | `expediente_lineas` | 每个 SKU 与尺码一行：`sku`、`size`、`qty`、`unit_price_mwt`、`unit_price_client`；答案省略的价格侧保持 null |
 | `skuExists(sku)` | `producto_buscar` | 仅当目录 SKU 精确匹配时为 true |
-| `stockAvailable(sku)` | `producto_buscar`、`stock_listar` | 在答案携带的记录上求和 `cantidad_disponible`；十进制字符串按其数值读取 |
+| `stockAvailable(sku)` | `producto_buscar`、`stock_listar` | 在答案携带的记录上求和 `cantidad_disponible`；十进制字符串按其数值读取，没有记录的答案表示零可用量 |
 | `priceBand(sku)` | `producto_precio_cliente` | `banda_vigente.id` 与 `plazo_dias` |
 | `catalogPrice(sku)` | `producto_buscar` | `precio_venta`；零是已声明的价格，不是缺失 |
 
-`expediente(reference)` 从不请求 UUID：没有任何读取返回 expediente id。搜索工具只证明引用存在，因此该行通过分页 `expediente_listar` 并匹配 `proforma_codigos` 与 `oc_codigos` 来找到。两行命名同一引用时保持未解析，而不是任选一行；不可读的分页同样如此。`expediente_lineas` 从不调用，也不在 `MwtToolName` 中。
+`expediente(reference)` 从不请求 UUID：没有任何读取返回 expediente id。搜索工具只证明引用存在，因此该行通过分页 `expediente_listar` 并匹配 `proforma_codigos` 与 `oc_codigos` 来找到。两行命名同一引用时保持未解析，而不是任选一行；不可读的分页同样如此。
+
+`orderLines(reference)` 直接发送引用：服务器把 proforma、采购订单、SAP 或 `EXP-` 代码解析成内部 id，因此调用方不需要 UUID。`mwt-one 1.30.0` 每行回答一个文本块，共用的 JSON 读取器会把它们拼成多个文档；`lineRecords` 读取这种形式，也读取列表、`{ results }` 分页和单个行对象，因为不同部署可能给出这四种中的任意一种。不是 JSON 的块，或缺少 SKU 或可读 `qty` 的行，会让整份答案不可用，而不是把订单悄悄变短。
 
 `mcpMwtCheckClient(call)` 在一次工具调用之上实现该端口，而该行在既有的工具接缝上构造这次调用：`ctx.tools.execute({ name: 'mcp__mwt__<tool>' })`。这里没有 JSON-RPC 客户端，也没有硬编码的端点、凭证或租户 id。
 
@@ -61,9 +64,9 @@ kind: "package-reference"
 
 | 控制 | 类别 | 该行报告的来源 |
 |---|---|---|
-| `proforma.price` | bloqueante | `mwt.price`；计费总额必须等于 expediente 的 `total_client`，且订单总额两侧都必须可读 |
+| `proforma.price` | bloqueante | `mwt.order`：每条计费行的加价（`unitPrice - unit_price_mwt`）以分精度等于订单的加价（`unit_price_client - unit_price_mwt`）；当 expediente 同时给出订单总额两侧时，另有 `mwt.price`，其必须与计费总额一致 |
 | `proforma.sku` | bloqueante | `mwt.catalog`；未知 SKU 即失败 |
-| `proforma.quantity` | bloqueante | `mwt.order`；没有任何读取返回 expediente 行，因此始终失败 |
+| `proforma.quantity` | bloqueante | `mwt.order`：订单的 `qty` 按 SKU 与尺码求和后，等于草稿为该 SKU 计费的数量 |
 | `proforma.total` | bloqueante | 只读工件，不读来源 |
 | `proforma.stock` | confirmacion | `mwt.stock`；缺库存要求显式确认 |
 | `proforma.separation` | confirmacion | `mwt.separation`；没有 MWT 读取能给出拆分规则，因此始终要求确认 |
@@ -93,21 +96,23 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **没有可读的 expediente id，因此数量控制无法通过** — `expediente_lineas` 需要 `expediente_id`，而 `mwt-one 1.30.0` 没有任何读取返回它。因此 `orderLines` 回答无记录，阻断性的 `proforma.quantity` 控制对每份 MWT 草稿都失败。在服务器给出按行读取（或 id）之前，每一次 MWT 背书的 proforma 批准都会被阻断。
-- **价格控制比较订单总额，而非行价格** — D-01 指明按行的 `unit_price_client - unit_price_mwt`。没有按行读取就没有每行的一对价格，而 `producto_precio_cliente` 既不返回目录价也不返回客户价（无客户时 `clientes` 为空）。控制把草稿总额与 expediente 的 `total_client` 比较，并要求 `total_mwt` 可读，使订单加价可被证明。存在按行读取时，D-01 的确切比较才会恢复。
-- **`catalogPrice` 与 `priceBand` 没有控制消费方** — 它们暴露目录为某 SKU 声明的内容（`precio_venta`、`banda_vigente.id`、`plazo_dias`），留给未来的按行价格控制。当前没有任何控制读取它们。
+- **工件不带尺码，因此数量按 SKU 比较** — 订单每个 SKU 与尺码一行，该行把它们汇总成草稿所计费的 SKU 合计。把同一 SKU 的两个尺码作为两行计费的草稿，在 SKU 合计正确时通过，因为工件没有可比较的尺码维度。
+- **按行价格比较的是加价，不是目录价** — D-01 写的是 `price = lista + sobreprecio`，但 `producto_precio_cliente` 既不返回目录价也不返回客户价（无客户时 `clientes` 为空），因此该行证明的是加价一侧：通过 `unitPrice - unit_price_mwt = unit_price_client - unit_price_mwt`，计费单价必须等于订单的 `unit_price_client`。订单没有的行，或缺少 `unit_price_mwt` 或 `unit_price_client` 的行，都阻断失败。
+- **`expediente_lineas` 是唯一能解析引用的行读取** — `expediente_obtener` 不返回 `lineas`，而 `expediente_edit_full_get` 对 proforma 代码返回 500 校验错误，因此两者都需要服务器从不返回的内部 UUID。
+- **`catalogPrice` 与 `priceBand` 没有控制消费方** — 它们暴露目录为某 SKU 声明的内容（`precio_venta`、`banda_vigente.id`、`plazo_dias`），留给需要目录价的价格规则。当前没有任何控制读取它们。
 - **没有可调用的价格历史读取** — D-01 提到 `historial_precios_*`，但 `skills-catalog` 中的 `historial-precios` 模块没有记录任何直接的 MCP 工具，因此只读取当前目录价。
 - **`separation` 没有 MWT 来源** — 没有任何 MWT.ONE 读取说明账户需要补充函还是新 proforma。控制报告无记录，`confirmacion` 类别要求显式确认；它绝不会静默通过。
 - **存在性探测按代码前缀选择参数** — 以 `PF` 开头的引用作为 `proforma` 发送；其他引用去掉 `PO`/`OC` 前缀后作为 `oc_number` 发送。服务器拒绝该参数会让引用未解析，从而使阻断控制失败，而不是通过。
 - **只有 proforma 或采购订单代码会被解析** — `expediente_buscar` 会列出 SAP 代码，但适配器不搜索它们；SAP 引用以缺少来源数据失败。
 - **只读一页库存** — `stock_listar` 以 `limit: 200` 只读一次；记录数超过一页的 SKU 会被少算。分页等待真实案例。
 - **库存在身份可列出的所有节点上求和** — 未配置节点过滤，因为 D-02 没有指定节点，而按部署选择节点没有已签署的决定。
+- **空的库存答案表示零** — 只列可用量的 `stock_listar` 查询在没有匹配时不返回任何内容块，该行将其读作零可用量；随后需要确认的控制报告 `STOCK_INSUFFICIENT`，而不是来源故障。
 - **列表分页在短页或报告的总数处结束** — 两者都不报告的分页只读一次，其后的引用保持未解析（阻断失败，绝不是通过）。
 
 不发布 invariant 伴随包，因为本包只注册看板控制，不暴露其规格尚未断言的独立观测。
 
 <a id="dev-note"></a>
-### 开发者说明
+### 开发备注
 
 <details>
 <summary>维护者工作上下文——点击展开</summary>

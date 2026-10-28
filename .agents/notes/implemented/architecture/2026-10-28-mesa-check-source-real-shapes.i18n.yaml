@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-28-mesa-check-source-real-shapes.md
-2026-10-28-mesa-check-source-real-shapes.md: 275ac0dfbdca3bdbadc3cdb7cdeb72a09ffa2f1b
-2026-10-28-mesa-check-source-real-shapes.zh.md: c253270b8b1f99c122bac7e10c03a723451746cb
+2026-10-28-mesa-check-source-real-shapes.md: 6bab577996da589660d06a5e629e9f24386c6edd
+2026-10-28-mesa-check-source-real-shapes.zh.md: 0903788682fa36d572486e3b987b13b333009090

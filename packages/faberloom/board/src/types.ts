@@ -670,12 +670,22 @@ export interface BoardStockFacts {
   readonly available: number
 }
 
-/** One line of the original purchase order. */
+/**
+ * One line of the original purchase order: the unit D-01's per-line overcharge
+ * compares. A source answers one line per SKU and size, so a SKU may own
+ * several lines.
+ */
 export interface BoardOrderLine {
   /** Ordered SKU. */
   readonly sku: string
+  /** Size the source states for the line, or null when it states none. */
+  readonly size: string | null
   /** Ordered quantity. */
   readonly quantity: number
+  /** Price per unit the source charges for the line, or null when unreadable. */
+  readonly unitPriceMwt: number | null
+  /** Price per unit the client is billed for the line, or null when unreadable. */
+  readonly unitPriceClient: number | null
 }
 
 /** Whether the account needs a complement letter or a new proforma. */

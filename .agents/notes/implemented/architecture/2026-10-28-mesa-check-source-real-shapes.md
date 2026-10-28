@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-10-28-mesa-check-source-real-shapes.zh.md)
 
+> Superseded in part by [the per-line price control](2026-10-28-mesa-per-line-price-checks.md): `expediente_lineas` accepts the reference, so `proforma.price` compares every line and the order total is a second assertion.
+
 ## Problem
 
 The Mesa refuses a proforma approval while a declared blocking control has no adapter, and a declared control with no source is a failure by design (ADR-003, D-01). The first adapter registered all six controls against guessed response aliases: `lines`, `qty`, `precio_mwt`, `precio_lista`, `cantidad`. A live probe of `mwt-one` 1.30.0 showed none of them exist, so enabling the adapter would have failed every check closed while looking configured.
@@ -30,10 +32,10 @@ The probe also settled what the source can and cannot answer:
 
 ## Consequences
 
-- The adapter now matches the live source, and the profile row stays disabled by default (`FABERLOOM_CHECKS_MWT=1` enables it).
-- Enabling it still blocks every MWT-backed proforma approval, because `proforma.quantity` is blocking and no read returns an expediente id. That is a source limitation, recorded in both package READMEs, not a defect in the control.
-- Per-line overcharge, D-01's `unit_price_client - unit_price_mwt`, stays unreachable until MWT exposes an expediente id or a line read. Reworking `quantity` from blocking to confirmation would be a D-8 amendment, so it needs a business signature rather than a code default.
-- `catalogPrice` and `priceBand` are corrected but have no control consumer until a line source exists.
+- The adapter matches the live source, and the profile row is enabled by default (`FABERLOOM_CHECKS_MWT=0` opts an offline deployment out).
+- A later probe found that `expediente_lineas` resolves a proforma reference without an id, so the order-total comparison was superseded by the per-line check and the row is now enabled by default ([per-line price and quantity checks](2026-10-28-mesa-per-line-price-checks.md)).
+- Per-line overcharge, D-01's `unit_price_client - unit_price_mwt`, is now reachable through `expediente_lineas`; `quantity` stays blocking and sums the order per SKU and size.
+- `catalogPrice` serves the SKU control; `priceBand` still has no control consumer.
 
 ## Verification
 

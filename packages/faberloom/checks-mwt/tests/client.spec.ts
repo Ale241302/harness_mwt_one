@@ -1,12 +1,11 @@
 /**
  * Wire behavior of the MCP-backed client: which tools each read calls, how the
  * real MWT.ONE answers are unwrapped, that a missing field is null instead of a
- * substituted default, and that no read asks for an expediente line.
+ * substituted default, and that the line read accepts every recorded container.
  *
- * The six answers in `tests/fixtures/mwt-answers.json` are sanitized copies of
- * the ones recorded from `mwt-one 1.30.0` (`.artifacts/mwt-shapes.md`).
- * `expediente_lineas` has no answer there because the server requires an
- * expediente id no read returns.
+ * The answers in `tests/fixtures/mwt-answers.json` are sanitized copies of the
+ * ones recorded from `mwt-one 1.30.0` (`.artifacts/mwt-shapes.md`), including
+ * the one line object `expediente_lineas` answers for `PF 2521-2026`.
  */
 
 import { readFileSync } from 'node:fs'
@@ -27,6 +26,11 @@ if (ROW === undefined) throw new Error('the fixture must carry one expediente ro
 /** The flat stock record the captured inventory answer carries. */
 const STOCK = ANSWERS['stock_listar'] as Record<string, unknown>
 
+/** The lines the captured `expediente_lineas` answer carries, one block each. */
+const LINES = ANSWERS['expediente_lineas'] as readonly Record<string, unknown>[]
+const LINE = LINES[0]
+if (LINE === undefined) throw new Error('the fixture must carry one line')
+
 /** One recorded call the fake server received. */
 interface Call {
   readonly tool: MwtToolName
@@ -36,6 +40,18 @@ interface Call {
 /** The canonical MCP result a bridged tool returns for one JSON payload. */
 function mcpText(payload: unknown): unknown {
   return { content: [{ type: 'text', text: JSON.stringify(payload) }] }
+}
+
+/**
+ * The canonical MCP result for one captured answer. `expediente_lineas` answers
+ * one text block per line, so an array reply becomes one block per entry; every
+ * other tool answers one block.
+ * @param payload - captured answer.
+ * @returns the MCP result value.
+ */
+function mcpAnswer(payload: unknown): unknown {
+  if (!Array.isArray(payload)) return mcpText(payload)
+  return { content: payload.map(entry => ({ type: 'text', text: JSON.stringify(entry) })) }
 }
 
 /**
@@ -49,7 +65,7 @@ function fakeServer(replies: Partial<Record<MwtToolName, unknown>> = {}): { call
     calls.push({ tool, args })
     const reply = Object.hasOwn(replies, tool) ? replies[tool] : ANSWERS[tool]
     if (reply === undefined || reply === null) throw new Error(`the fake MWT server has no answer for ${tool}`)
-    return mcpText(reply)
+    return mcpAnswer(reply)
   }
   return { call, calls }
 }
@@ -130,6 +146,75 @@ describe('MCP-backed MWT client', () => {
     expect(facts).toMatchObject({ totalClient: 22336.35, totalMwt: null })
   })
 
+  it('reads the expediente lines with the reference, not an id', async () => {
+    const { call, calls } = fakeServer()
+    const lines = await mcpMwtCheckClient(call).orderLines('PF 2521-2026')
+    expect(calls.map(entry => entry.tool)).toEqual(['expediente_lineas'])
+    expect(calls[0]?.args).toEqual({ expediente_id: 'PF 2521-2026' })
+    expect(lines).toEqual([{
+      sku: '700010',
+      size: '36',
+      quantity: 5,
+      unitPriceMwt: 16.73,
+      unitPriceClient: 16.73,
+    }])
+  })
+
+  it('reads one block holding a list, a results page, or a single object the same way', async () => {
+    const shapes: unknown[] = [
+      [LINE],
+      { count: 1, limit: 50, offset: 0, results: [LINE] },
+      LINE,
+    ]
+    for (const shape of shapes) {
+      const call: MwtToolCall = async () => mcpText(shape)
+      expect(await mcpMwtCheckClient(call).orderLines('PF 2521-2026'), JSON.stringify(shape).slice(0, 40))
+        .toEqual([{ sku: '700010', size: '36', quantity: 5, unitPriceMwt: 16.73, unitPriceClient: 16.73 }])
+    }
+  })
+
+  it('reads one text block per line, the form the deployed server answers', async () => {
+    const rows = [LINE, { ...LINE, size: '37', qty: '10.00' }]
+    const call: MwtToolCall = async () => ({
+      content: rows.map(row => ({ type: 'text', text: JSON.stringify(row) })),
+    })
+    const lines = await mcpMwtCheckClient(call).orderLines('PF 2521-2026')
+    expect(lines?.map(line => [line.sku, line.size, line.quantity])).toEqual([
+      ['700010', '36', 5],
+      ['700010', '37', 10],
+    ])
+  })
+
+  it('rejects a line block that carries no JSON', async () => {
+    const call: MwtToolCall = async () => ({ content: [{ type: 'text', text: 'no disponible' }] })
+    await expect(mcpMwtCheckClient(call).orderLines('PF 2521-2026')).rejects.toThrow('carries no JSON')
+  })
+
+  it('keeps a price side the line omits null instead of substituting one', async () => {
+    const withoutMwt = { ...LINE }
+    delete withoutMwt['unit_price_mwt']
+    const { call } = fakeServer({ expediente_lineas: withoutMwt })
+    const lines = await mcpMwtCheckClient(call).orderLines('PF 2521-2026')
+    expect(lines).toEqual([{
+      sku: '700010',
+      size: '36',
+      quantity: 5,
+      unitPriceMwt: null,
+      unitPriceClient: 16.73,
+    }])
+  })
+
+  it('reports no lines when the order answers an empty list or a row it cannot attribute', async () => {
+    const empty = fakeServer({ expediente_lineas: { results: [] } })
+    expect(await mcpMwtCheckClient(empty.call).orderLines('PF 2521-2026')).toBeNull()
+
+    const noQuantity = fakeServer({ expediente_lineas: { ...LINE, qty: '' } })
+    expect(await mcpMwtCheckClient(noQuantity.call).orderLines('PF 2521-2026')).toBeNull()
+
+    const notLines = fakeServer({ expediente_lineas: { detail: 'no disponible' } })
+    expect(await mcpMwtCheckClient(notLines.call).orderLines('PF 2521-2026')).toBeNull()
+  })
+
   it('requires an exact SKU match, not a fuzzy search hit', async () => {
     const { call } = fakeServer({
       producto_buscar: { productos: [{ id: 'p-1', sku: '7008440', precio_venta: 1 }], total: 1 },
@@ -164,6 +249,13 @@ describe('MCP-backed MWT client', () => {
       stock_listar: { results: [{ ...STOCK, producto_sku: 'OTHER-1' }] },
     })
     expect(await mcpMwtCheckClient(call).stockAvailable('700844')).toBeNull()
+  })
+
+  it('reads an empty stock answer as zero available units, not as a failed read', async () => {
+    const call: MwtToolCall = async tool => tool === 'stock_listar'
+      ? { content: [] }
+      : mcpAnswer(ANSWERS[tool as MwtToolName])
+    expect(await mcpMwtCheckClient(call).stockAvailable('700844')).toBe(0)
   })
 
   it('reports no stock when the catalog holds no such SKU', async () => {

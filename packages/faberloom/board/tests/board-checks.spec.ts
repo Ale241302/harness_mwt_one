@@ -40,7 +40,13 @@ function fakeSource(overrides: Partial<BoardCheckSource> = {}): BoardCheckSource
     }),
     stock: async () => ({ value: { available: 10 }, source: 'fake.stock', version: 'v1', readAt: NOW }),
     orderLines: async () => ({
-      value: fixture.lines.map(line => ({ sku: line.sku, quantity: line.quantity })),
+      value: fixture.lines.map(line => ({
+        sku: line.sku,
+        size: null,
+        quantity: line.quantity,
+        unitPriceMwt: line.unitPrice - 5,
+        unitPriceClient: line.unitPrice,
+      })),
       source: 'fake.order',
       version: 'v1',
       readAt: NOW,
@@ -148,7 +154,7 @@ describe('proforma controls (W-49, D-01, D-02)', () => {
     await expect(harness.board.approve(ACTOR_A, item.id, approval(item))).rejects.toThrow('BLOCKING_CHECK')
   })
 
-  it('D-01 · a source without both expediente totals fails the price control', async () => {
+  it('D-01 · an absent order total leaves the per-line comparison authoritative', async () => {
     const harness = await boardWithChecks(fakeSource({
       orderTotals: async () => ({ value: null, source: 'fake.price', version: 'v1', readAt: NOW }),
     }))
@@ -156,9 +162,87 @@ describe('proforma controls (W-49, D-01, D-02)', () => {
 
     const report = await harness.board.runChecks(ACTOR_A, item.id)
     expect(report.checks.find(check => check.id === 'proforma.price')).toMatchObject({
-      result: { status: 'fail', reason: 'PRICE_SOURCE_MISSING' },
+      result: { status: 'ok', reason: null, source: 'fake.order' },
+    })
+  })
+
+  it('D-01 · a billed line the order does not carry fails the price control', async () => {
+    const harness = await boardWithChecks(fakeSource({
+      orderLines: async () => ({ value: [], source: 'fake.order', version: 'v1', readAt: NOW }),
+    }))
+    const item = await preparedDraft(harness.board)
+
+    const report = await harness.board.runChecks(ACTOR_A, item.id)
+    expect(report.checks.find(check => check.id === 'proforma.price')).toMatchObject({
+      class: 'bloqueante',
+      result: { status: 'fail', reason: 'PRICE_SOURCE_MISSING', fields: ['lines[0].unitPrice'] },
     })
     await expect(harness.board.approve(ACTOR_A, item.id, approval(item))).rejects.toThrow('BLOCKING_CHECK')
+  })
+
+  it('D-01 · an order line without unit_price_mwt fails the price control', async () => {
+    const harness = await boardWithChecks(fakeSource({
+      orderLines: async () => ({
+        value: [{ sku: fixture.lines[0]?.sku ?? '', size: null, quantity: 2, unitPriceMwt: null, unitPriceClient: 120.5 }],
+        source: 'fake.order',
+        version: 'v1',
+        readAt: NOW,
+      }),
+    }))
+    const item = await preparedDraft(harness.board)
+
+    const report = await harness.board.runChecks(ACTOR_A, item.id)
+    expect(report.checks.find(check => check.id === 'proforma.price')).toMatchObject({
+      result: { status: 'fail', reason: 'PRICE_SOURCE_MISSING', fields: ['lines[0].unitPrice'] },
+    })
+  })
+
+  it('D-01 · a per-line overcharge the order contradicts fails the price control', async () => {
+    const harness = await boardWithChecks(fakeSource({
+      orderLines: async () => ({
+        value: fixture.lines.map(line => ({
+          sku: line.sku,
+          size: null,
+          quantity: line.quantity,
+          unitPriceMwt: line.unitPrice - 5,
+          unitPriceClient: line.unitPrice + 1,
+        })),
+        source: 'fake.order',
+        version: 'v1',
+        readAt: NOW,
+      }),
+    }))
+    const item = await preparedDraft(harness.board)
+
+    const report = await harness.board.runChecks(ACTOR_A, item.id)
+    expect(report.checks.find(check => check.id === 'proforma.price')).toMatchObject({
+      class: 'bloqueante',
+      result: { status: 'fail', reason: 'PRICE_MISMATCH', fields: ['lines[0].unitPrice'] },
+    })
+  })
+
+  it('D-01 · the order lines are summed per SKU and size before comparing', async () => {
+    const first = fixture.lines[0]
+    const second = fixture.lines[1]
+    if (first === undefined || second === undefined) throw new Error('the fixture must carry two lines')
+    const harness = await boardWithChecks(fakeSource({
+      orderLines: async () => ({
+        value: [
+          { sku: first.sku, size: '38', quantity: 1, unitPriceMwt: first.unitPrice - 5, unitPriceClient: first.unitPrice },
+          { sku: first.sku, size: '39', quantity: 1, unitPriceMwt: first.unitPrice - 5, unitPriceClient: first.unitPrice },
+          { sku: second.sku, size: null, quantity: second.quantity, unitPriceMwt: second.unitPrice - 5, unitPriceClient: second.unitPrice },
+        ],
+        source: 'fake.order',
+        version: 'v1',
+        readAt: NOW,
+      }),
+    }))
+    const item = await preparedDraft(harness.board)
+
+    const report = await harness.board.runChecks(ACTOR_A, item.id)
+    expect(report.checks.find(check => check.id === 'proforma.quantity')).toMatchObject({
+      result: { status: 'ok', reason: null },
+    })
   })
 
   it('T2.13 · an unknown SKU fails the catalog control', async () => {

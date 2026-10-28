@@ -68,9 +68,9 @@ Checks are a port: the board declares which controls an artifact type requires a
 
 | Control | Class | Reads |
 |---|---|---|
-| `proforma.price` | bloqueante | the billed total equals the client total the expediente records, and both order-total sides (`total_client`, `total_mwt`) are readable (D-01 at order level); a missing reference, billed price, or side fails |
+| `proforma.price` | bloqueante | every billed line's overcharge (the billed unit price minus `unit_price_mwt`) equals the order's `unit_price_client - unit_price_mwt` at cent precision, and the billed total equals `total_client` when the order states both sides (D-01); a missing line, price side, or reference fails |
 | `proforma.sku` | bloqueante | the catalog knows every billed SKU |
-| `proforma.quantity` | bloqueante | billed quantities equal the purchase order `orderRef` names |
+| `proforma.quantity` | bloqueante | billed quantities equal the purchase order `orderRef` names, whose lines are summed per SKU and size; a SKU only one side carries fails |
 | `proforma.total` | bloqueante | the line sum equals the billed total (artifact only) |
 | `proforma.stock` | confirmacion | available stock covers every billed quantity (D-02); missing stock data requires confirmation |
 | `proforma.separation` | confirmacion | the draft's `separation` mode agrees with the account rule |

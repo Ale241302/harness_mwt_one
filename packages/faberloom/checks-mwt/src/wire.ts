@@ -5,8 +5,9 @@
  * structured value when the server declares one, otherwise text blocks that
  * carry JSON. The readers below accept only the response fields recorded from
  * the live server (`mwt-one 1.30.0`, `.artifacts/mwt-shapes.md`): `matches`,
- * `results`, `productos`, `banda_vigente`, and the flat stock record. A field
- * the server omits is `null`; no reader supplies a default (D-01, D-02).
+ * `results`, `productos`, `banda_vigente`, the flat stock record, and the line
+ * records of `expediente_lineas`. A field the server omits is `null`; no reader
+ * supplies a default (D-01, D-02).
  *
  * @module @deepseek-ai/dsh-faberloom-checks-mwt/wire
  */
@@ -64,6 +65,24 @@ export function jsonPayload(value: unknown): unknown {
 }
 
 /**
+ * Whether a tool value carries no payload at all: no structured content and no
+ * text block with content. A listing that matches nothing answers this way; for
+ * a stock query restricted to available units it states zero, not a failed read.
+ * @param value - canonical MCP tool value.
+ * @returns true when the value carries no payload.
+ */
+export function isEmptyAnswer(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  if (isRecord(value['structuredContent'])) return false
+  const content = value['content']
+  if (!Array.isArray(content)) return true
+  return content.every(block => !isRecord(block)
+    || block['type'] !== 'text'
+    || typeof block['text'] !== 'string'
+    || block['text'].trim().length === 0)
+}
+
+/**
  * One page of an `expediente_listar` answer: `{ count, limit, offset, results }`.
  * @param payload - parsed tool payload.
  * @returns the page, or null when the answer carries no `results` array.
@@ -108,6 +127,9 @@ export function productRows(payload: unknown): readonly WireRow[] | null {
 /** Fields that identify a flat `stock_listar` record. */
 const STOCK_RECORD_FIELDS = ['producto_sku', 'producto_id', 'nodo_codigo', 'cantidad_disponible'] as const
 
+/** Fields that identify one line of an `expediente_lineas` answer. */
+const LINE_RECORD_FIELDS = ['sku', 'qty'] as const
+
 /**
  * The stock records a `stock_listar` answer carries. The server answers one
  * flat record for a single row and a `results` array when it lists several.
@@ -120,6 +142,57 @@ export function stockRecords(payload: unknown): readonly WireRow[] | null {
   const results = payload['results']
   if (Array.isArray(results)) return results.every(isRecord) ? results : null
   return STOCK_RECORD_FIELDS.some(name => name in payload) ? [payload] : null
+}
+
+/**
+ * The lines an `expediente_lineas` answer carries. The same endpoint answers a
+ * list, a `{ results }` page, or one line object depending on the deployment,
+ * so a reader that accepts only one form drops the order silently.
+ * @param payload - parsed tool payload.
+ * @returns the line rows, or null when the answer is none of the three forms.
+ */
+export function lineRows(payload: unknown): readonly WireRow[] | null {
+  if (Array.isArray(payload)) return payload.every(isRecord) ? payload : null
+  if (!isRecord(payload)) return null
+  const results = payload['results']
+  if (Array.isArray(results)) return results.every(isRecord) ? results : null
+  return LINE_RECORD_FIELDS.some(name => name in payload) ? [payload] : null
+}
+
+/**
+ * The line records one `expediente_lineas` tool value carries.
+ *
+ * The deployed server answers one text block per line (`mwt-one 1.30.0`), so the
+ * joined text that every other read parses holds several JSON documents at
+ * once. A container may instead answer a single block holding a list, a
+ * `{ results }` page, or one line object; all four forms are read here.
+ * @param value - canonical MCP tool value.
+ * @returns the line rows, or null when the value carries no readable line.
+ */
+export function lineRecords(value: unknown): readonly WireRow[] | null {
+  if (!isRecord(value)) return null
+  const structured = value['structuredContent']
+  if (isRecord(structured)) return lineRows(structured)
+  const content = value['content']
+  if (!Array.isArray(content)) return null
+  const rows: WireRow[] = []
+  let blocks = 0
+  for (const block of content) {
+    if (!isRecord(block) || block['type'] !== 'text' || typeof block['text'] !== 'string') continue
+    blocks += 1
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(block['text'])
+    } catch (cause) {
+      // A block that is not JSON cannot name a line, so the answer is unusable
+      // instead of quietly shorter than the order.
+      throw new Error(`mwt: a line block carries no JSON: ${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+    const page = lineRows(parsed)
+    if (page === null) return null
+    rows.push(...page)
+  }
+  return blocks === 0 ? null : rows
 }
 
 /**

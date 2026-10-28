@@ -68,9 +68,9 @@ kind: "package-reference"
 
 | 控件 | 类别 | 读取内容 |
 |---|---|---|
-| `proforma.price` | bloqueante | 计费总额等于 expediente 记录的客户总额，且订单总额两侧（`total_client`、`total_mwt`）都可读（订单层面的 D-01）；缺少引用、计费价格或任一侧即失败 |
+| `proforma.price` | bloqueante | 每条计费行的加价（计费单价减 `unit_price_mwt`）以分精度等于订单的 `unit_price_client - unit_price_mwt`；当订单给出两侧时，计费总额还等于 `total_client`（D-01）；缺少行、价格侧或引用即失败 |
 | `proforma.sku` | bloqueante | 目录认识每一条计费 SKU |
-| `proforma.quantity` | bloqueante | 计费数量等于 `orderRef` 所指采购订单 |
+| `proforma.quantity` | bloqueante | 计费数量等于 `orderRef` 所指采购订单，其行按 SKU 与尺码求和；只有一侧携带的 SKU 即失败 |
 | `proforma.total` | bloqueante | 行合计等于计费总额（只读产物） |
 | `proforma.stock` | confirmacion | 可用库存覆盖每条计费数量（D-02）；缺少库存数据需要确认 |
 | `proforma.separation` | confirmacion | 草稿的 `separation` 模式与账户规则一致 |

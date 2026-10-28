@@ -50,15 +50,15 @@
     - id: faberloom-routines
       name: '@deepseek-ai/dsh-faberloom-routines'
 
-    # Controles de proforma sobre el MCP de MWT.ONE (`mcp__mwt__*`): precio,
-    # SKU, cantidades, suma, stock y separación (D-01, D-02). Apagado por
-    # defecto: sin esta fila el board rechaza toda aprobación de proforma con
-    # CHECK_UNAVAILABLE, así que el despliegue la enciende solo cuando el
-    # servidor MCP `mwt` está montado e identificado. `serverName` nombra ese
-    # servidor; su endpoint y su credencial viven en la fila del registro MCP.
+    # Controles de proforma sobre el MCP de MWT.ONE (`mcp__mwt__*`): precio por
+    # línea, SKU, cantidades, suma, stock y separación (D-01, D-02). Encendido
+    # por defecto; sin esta fila el board rechaza toda aprobación de proforma con
+    # CHECK_UNAVAILABLE. `serverName` nombra el servidor MCP montado; su endpoint
+    # y su credencial viven en la fila del registro MCP. Un despliegue sin el
+    # servidor MWT (o sin conexión) la apaga con FABERLOOM_CHECKS_MWT=0.
     - id: faberloom-checks-mwt
       name: '@deepseek-ai/dsh-faberloom-checks-mwt'
-      disabled: !!js process.env.FABERLOOM_CHECKS_MWT !== '1'
+      disabled: !!js process.env.FABERLOOM_CHECKS_MWT === '0'
       config:
         serverName: mwt
 

@@ -25,7 +25,7 @@ The response fields are the ones recorded from the live server (`mwt-one 1.30.0`
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the row beside the board and the MWT MCP server. The bundle ships it disabled; a deployment turns it on when the `mwt` server is mounted under that name.
+Mount the row beside the board and the MWT MCP server. The bundle ships it mounted; a deployment that has no `mwt` server sets `FABERLOOM_CHECKS_MWT=0` to take it back out.
 
 ```yaml
 - id: faberloom-checks-mwt
@@ -39,17 +39,20 @@ Mount the row beside the board and the MWT MCP server. The bundle ships it disab
 
 ### Reads
 
-`MwtCheckClient` is the narrow port between the check logic and the transport: five methods, each returning a fact or throwing, so no MCP vocabulary reaches the controls.
+`MwtCheckClient` is the narrow port between the check logic and the transport: six methods, each returning a fact or throwing, so no MCP vocabulary reaches the controls.
 
 | Read | MWT.ONE tools | Answers |
 |---|---|---|
 | `expediente(reference)` | `expediente_buscar` as an existence probe, `expediente_listar` paged and matched | `total_client`, `total_mwt`, `moneda`, `client_name`, `credit_days_cliente`, `credit_band` |
+| `orderLines(reference)` | `expediente_lineas` | one line per SKU and size: `sku`, `size`, `qty`, `unit_price_mwt`, `unit_price_client`; a price side the answer omits stays null |
 | `skuExists(sku)` | `producto_buscar` | true only for an exact catalog SKU match |
-| `stockAvailable(sku)` | `producto_buscar`, `stock_listar` | `cantidad_disponible` summed over the records the answer carries; a decimal string is read as its number |
+| `stockAvailable(sku)` | `producto_buscar`, `stock_listar` | `cantidad_disponible` summed over the records the answer carries; a decimal string is read as its number, and an answer with no record states zero available units |
 | `priceBand(sku)` | `producto_precio_cliente` | `banda_vigente.id` and `plazo_dias` |
 | `catalogPrice(sku)` | `producto_buscar` | `precio_venta`; zero is a stated price, not absence |
 
-`expediente(reference)` never asks for a UUID: no read returns an expediente id. The search tool only proves the reference exists, so the row is found by paging `expediente_listar` and matching `proforma_codigos` and `oc_codigos`. Two rows naming the same reference leave it unresolved rather than choosing one, and so does an unreadable page. `expediente_lineas` is never called and is not in `MwtToolName`.
+`expediente(reference)` never asks for a UUID: no read returns an expediente id. The search tool only proves the reference exists, so the row is found by paging `expediente_listar` and matching `proforma_codigos` and `oc_codigos`. Two rows naming the same reference leave it unresolved rather than choosing one, and so does an unreadable page.
+
+`orderLines(reference)` sends the reference itself: the server resolves a proforma, purchase-order, SAP, or `EXP-` code to its internal id, so no caller needs the UUID. `mwt-one 1.30.0` answers one text block per line, which the shared JSON reader would concatenate into several documents; `lineRecords` reads that form and also a list, a `{ results }` page, and one lone line object, because a deployment may answer any of the four. A block that is not JSON, or a line without a SKU or a readable `qty`, leaves the whole answer unusable instead of shortening the order.
 
 `mcpMwtCheckClient(call)` implements the port over one tool call, and the row builds that call on the existing tools seam: `ctx.tools.execute({ name: 'mcp__mwt__<tool>' })`. No JSON-RPC client lives here, and no endpoint, credential, or tenant id is hardcoded.
 
@@ -61,9 +64,9 @@ A read returns `null` when the payload does not carry the datum. It never return
 
 | Control | Class | Source the row reports |
 |---|---|---|
-| `proforma.price` | bloqueante | `mwt.price`; the billed total must equal the expediente's `total_client`, and both order-total sides must be readable |
+| `proforma.price` | bloqueante | `mwt.order`: every billed line's overcharge (`unitPrice - unit_price_mwt`) equals the order's (`unit_price_client - unit_price_mwt`) at cent precision; and `mwt.price` when the expediente states both order totals, which must agree with the billed total |
 | `proforma.sku` | bloqueante | `mwt.catalog`; an unknown SKU fails |
-| `proforma.quantity` | bloqueante | `mwt.order`; no read returns the expediente lines, so it always fails |
+| `proforma.quantity` | bloqueante | `mwt.order`: the order's `qty`, summed per SKU and size, equals the quantity the draft bills for that SKU |
 | `proforma.total` | bloqueante | artifact only, no source read |
 | `proforma.stock` | confirmacion | `mwt.stock`; missing stock requires an explicit confirmation |
 | `proforma.separation` | confirmacion | `mwt.separation`; no MWT read states the split rule, so it always requires confirmation |
@@ -93,15 +96,17 @@ Independent of live requests: the registration never touches a request prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **No expediente id is readable, so the quantity control cannot pass** — `expediente_lineas` requires an `expediente_id`, and no `mwt-one 1.30.0` read returns one. `orderLines` therefore answers no record, and the blocking `proforma.quantity` control fails on every MWT-backed draft. Until the server exposes a line read (or an id), every MWT-backed proforma approval is blocked.
-- **The price control compares order totals, not line prices** — D-01 names `unit_price_client - unit_price_mwt` per line. Without a line read there is no per-line pair, and `producto_precio_cliente` returns neither a list price nor a client price (`clientes` is empty without a client). The control compares the draft total with the expediente's `total_client`, and requires `total_mwt` so the order overcharge is provable. D-01's exact per-line comparison returns when a line read exists.
-- **`catalogPrice` and `priceBand` have no control consumer** — they expose what the catalog states for a SKU (`precio_venta`, `banda_vigente.id`, `plazo_dias`) and stay available for a per-line price control. No current control reads them.
+- **The artifact states no size, so quantities compare per SKU** — the order answers one line per SKU and size, and the row sums them into the SKU total the draft bills. A draft that bills two sizes of one SKU as separate lines passes on the correct per-SKU total, because the artifact carries no size dimension to compare.
+- **The per-line price compares overcharges, not a list price** — D-01 writes `price = lista + sobreprecio`, but `producto_precio_cliente` returns neither a list price nor a client price (`clientes` is empty without a client), so the row proves the overcharge side: the billed unit price must equal the order's `unit_price_client` through `unitPrice - unit_price_mwt = unit_price_client - unit_price_mwt`. A line the order does not carry, or a line whose `unit_price_mwt` or `unit_price_client` is missing, fails blocking.
+- **`expediente_lineas` is the only line read that resolves a reference** — `expediente_obtener` answers no `lineas`, and `expediente_edit_full_get` rejects a proforma code with a 500 validation error, so both need the internal UUID the server never returns.
+- **`catalogPrice` and `priceBand` have no control consumer** — they expose what the catalog states for a SKU (`precio_venta`, `banda_vigente.id`, `plazo_dias`) and stay available for a price rule that needs the list price. No current control reads them.
 - **No price-history read exists to call** — D-01 names `historial_precios_*`, but the `historial-precios` module in `skills-catalog` records no direct MCP tool, so only the current catalog price is read.
 - **`separation` has no MWT source** — no MWT.ONE read states whether the account needs a complement letter or a new proforma. The control reports no record and the `confirmacion` class requires an explicit confirmation; it never passes silently.
 - **The existence probe picks its argument from the code prefix** — a reference starting with `PF` is sent as `proforma`; anything else is sent as `oc_number` without its `PO`/`OC` prefix. A server that rejects the argument makes the reference unresolved, which fails the blocking control rather than passing it.
 - **Only a proforma or purchase-order code resolves** — SAP codes are listed by `expediente_buscar` but the adapter does not search them; a SAP reference fails as missing source data.
 - **One stock page** — `stock_listar` is read once with `limit: 200`; a SKU whose records exceed one page is undercounted. Pagination waits for an observed case.
 - **Stock is summed over every node the identity can list** — no node filter is configured, because D-02 names no node and a per-deployment choice has no signed decision.
+- **An empty stock answer states zero** — a `stock_listar` query restricted to available units answers no content block when nothing matches, which the row reads as zero available units; the confirmation control then reports `STOCK_INSUFFICIENT`, not a source outage.
 - **Listing pagination ends on a short page or the reported count** — a page that reports neither is read once, and a reference beyond it stays unresolved (a blocking failure, never a pass).
 
 No invariant companion is published because the package registers board controls and exposes no independent observation its specs do not already assert.

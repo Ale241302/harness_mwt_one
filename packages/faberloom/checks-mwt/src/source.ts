@@ -46,15 +46,15 @@ function noRecord<T>(source: string, readAt: string): BoardSourceAnswer<T> {
 /**
  * Fill the board's source port from the MWT.ONE client.
  *
- * `orderTotals` reads both sides of the expediente total the reference names:
- * that is the comparison the live source supports, because no read returns an
- * expediente id and therefore none returns its lines. A reference that does not
- * resolve, or an expediente that states only one side, answers no record, which
- * D-01 turns into a blocking failure.
+ * `orderLines` reads the expediente the reference names: one line per SKU and
+ * size with both price sides, which is what D-01's per-line overcharge and the
+ * quantity comparison consume. A reference that resolves to no line, or a line
+ * whose price or quantity the source cannot state, answers no record, which the
+ * blocking controls turn into a failure.
  *
- * `orderLines` answers no record for the same reason: without an expediente id
- * there is no line read, and the quantity control must fail rather than compare
- * against invented quantities.
+ * `orderTotals` reads both sides of the expediente total; the price control
+ * asserts it as a second, independent comparison when the expediente states
+ * both sides.
  *
  * `separation` returns no record because no MWT.ONE read states the account's
  * split rule; the control's `confirmacion` class turns that into a required
@@ -68,6 +68,18 @@ export function mwtCheckSource(client: MwtCheckClient): BoardCheckSource {
     async sku(sku) {
       const exists = await client.skuExists(sku)
       return answer('mwt.catalog', { exists }, readInstant())
+    },
+
+    async orderLines(orderRef) {
+      const lines = await client.orderLines(orderRef)
+      if (lines === null) return noRecord('mwt.order', readInstant())
+      return answer('mwt.order', lines.map(line => ({
+        sku: line.sku,
+        size: line.size,
+        quantity: line.quantity,
+        unitPriceMwt: line.unitPriceMwt,
+        unitPriceClient: line.unitPriceClient,
+      })), readInstant())
     },
 
     async orderTotals(orderRef) {
@@ -87,10 +99,6 @@ export function mwtCheckSource(client: MwtCheckClient): BoardCheckSource {
       if (available === null) return noRecord('mwt.stock', readInstant())
       return answer('mwt.stock', { available }, readInstant())
     },
-
-    // No MWT.ONE 1.30.0 read returns the lines of an expediente: every line read
-    // requires an expediente id, and no read returns one.
-    orderLines: () => Promise.resolve(noRecord('mwt.order', readInstant())),
 
     // No MWT.ONE read states the account's split rule, so this answer is a
     // constant: the control's confirmation class turns it into a required
