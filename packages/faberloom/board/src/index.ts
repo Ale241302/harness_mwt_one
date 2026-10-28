@@ -12,7 +12,13 @@ import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { boardDomainSpec, type BoardDraftRecord, type BoardItemRecord, type BoardKeyRecord } from './spec.ts'
+import {
+  boardDomainSpec,
+  type BoardDraftRecord,
+  type BoardItemRecord,
+  type BoardKeyRecord,
+  type BoardReferenceRecord,
+} from './spec.ts'
 import { submittedSeverity } from './classify.ts'
 import { orderBoardItems } from './order.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
@@ -72,7 +78,40 @@ export const DISCARD_REASONS = [
 ] as const
 
 const TERMINAL: readonly BoardState[] = ['APROBADO', 'EJECUTADO', 'DESCARTADO', 'SUSTITUIDO']
-const CANDIDATE_STATES: readonly BoardState[] = ['ITERANDO', 'EJECUCION_PENDIENTE']
+/**
+ * States that accept a new artifact as a candidate instead of being replaced
+ * (W-03, W-40, W-55, W-76). `DESCONOCIDO` belongs here: the effect may already
+ * have happened, so the item must stay traceable.
+ */
+const NOT_SUBSTITUTABLE: readonly BoardState[] = ['ITERANDO', 'EJECUCION_PENDIENTE', 'DESCONOCIDO']
+
+/** Reference kinds the board records a tenant claim for. */
+type ReferenceKind = 'run' | 'execution' | 'account'
+
+/** References one create or submit carries, as the caller supplied them. */
+interface BoardReferences {
+  readonly spaceId?: string | undefined
+  readonly runId?: string | undefined
+  readonly executionId?: string | undefined
+  readonly accountRef?: string | undefined
+}
+
+/** One commercial source a Space declares. */
+interface BoardSpaceSource {
+  readonly kind: string
+  readonly id: string
+}
+
+/** The Space fields the board reads to verify a tenant reference. */
+interface BoardSpace {
+  readonly companyId?: string | undefined
+  readonly sources?: readonly BoardSpaceSource[] | undefined
+}
+
+/** The `faberloomSpaces` surface the board reads through `ctx.get`. */
+interface BoardSpaces {
+  get(actor: { id: string; companyId?: string | undefined; role: string; readOnly: boolean }, id: string): Promise<BoardSpace>
+}
 
 const LEGACY_STATE: Record<BoardStatus, BoardState> = {
   in_progress: 'PENDIENTE_CRITERIO',
@@ -103,6 +142,7 @@ function columnOf(state: BoardState): BoardColumn {
       return 'DELEGADO'
     case 'ERROR_RECUPERABLE':
     case 'ERROR_SIN_SALIDA':
+    case 'DESCONOCIDO':
       return 'ERROR_ACCIONABLE'
     case 'APROBADO':
     case 'EJECUTADO':
@@ -124,6 +164,20 @@ function requireEvidence(evidence: readonly string[] | undefined): string[] {
   const list = evidence !== undefined ? [...evidence].filter(entry => entry.trim().length > 0) : []
   if (list.length === 0) throw new Error('faberloom: NO_EVIDENCE — a prepared result requires real evidence')
   return list
+}
+
+/**
+ * The opaque references one command carries, skipping empty values.
+ * @param refs - the references the caller supplied.
+ * @returns kind and value pairs.
+ */
+function opaqueReferences(refs: BoardReferences): [ReferenceKind, string][] {
+  const pairs: [ReferenceKind, string | undefined][] = [
+    ['run', refs.runId],
+    ['execution', refs.executionId],
+    ['account', refs.accountRef],
+  ]
+  return pairs.filter((pair): pair is [ReferenceKind, string] => pair[1] !== undefined && pair[1].trim().length > 0)
 }
 
 /** Map one durable record to the consumer-facing item. */
@@ -186,6 +240,10 @@ export class FaberLoomBoard extends Service {
     return (await this.domain()).table('drafts')
   }
 
+  private async references(): Promise<KvTable<string, BoardReferenceRecord>> {
+    return (await this.domain()).table('references')
+  }
+
   private draftId(itemId: FaberLoomBoardItemId | string, userId: string): string {
     return `${itemId}:${userId}`
   }
@@ -194,7 +252,27 @@ export class FaberLoomBoard extends Service {
     return `${companyId ?? 'sin-empresa'}:${kind}:${key}`
   }
 
-  private async claim(companyId: string | null, kind: string, key: string, itemId: string): Promise<void> {
+  private referenceKey(companyId: string | null, kind: ReferenceKind, value: string): string {
+    return `${companyId ?? 'sin-empresa'}:${kind}:${value}`
+  }
+
+  /**
+   * Claim one key for an item before its record exists, so a crash leaves a
+   * claim without an item rather than two live items on the same key. A claim
+   * held by another non-terminal item is a duplicate.
+   * @param companyId - the tenant that owns the key space.
+   * @param kind - `idem` or `bkey`.
+   * @param key - the caller's key.
+   * @param itemId - the item the claim names.
+   */
+  private async claimKey(companyId: string | null, kind: string, key: string, itemId: string): Promise<void> {
+    const claimed = (await this.keys()).get(this.keyId(companyId, kind, key))
+    if (claimed !== undefined && claimed.itemId !== itemId) {
+      const holder = (await this.items()).get(claimed.itemId as FaberLoomBoardItemId)
+      if (holder !== undefined && !TERMINAL.includes(stateOf(holder))) {
+        throw new Error('faberloom: DUPLICATE — the key already owns a non-terminal item')
+      }
+    }
     await (await this.keys()).put(this.keyId(companyId, kind, key), { itemId, kind, at: new Date().toISOString() })
   }
 
@@ -206,6 +284,82 @@ export class FaberLoomBoard extends Service {
   private async claimedItem(companyId: string | null, kind: string, key: string): Promise<FaberLoomBoardItemId | undefined> {
     const claim = (await this.keys()).get(this.keyId(companyId, kind, key))
     return claim === undefined ? undefined : claim.itemId as FaberLoomBoardItemId
+  }
+
+  /**
+   * Refuse an item that names an object of another tenant (W-24). A Space is
+   * resolved through the mounted Spaces service, which owns its tenant. The
+   * board owns no run, execution, or account registry, so an opaque reference
+   * is compared with the tenant that already stored it; a reference whose
+   * tenant cannot be established is refused rather than stored.
+   * @param actor - the acting identity.
+   * @param companyId - the tenant the item will carry.
+   * @param refs - the references the caller supplied.
+   */
+  private async verifyReferences(actor: BoardActor, companyId: string | null, refs: BoardReferences): Promise<void> {
+    if (refs.spaceId !== undefined) await this.requireTenantSpace(actor, companyId, refs.spaceId, 'CROSS_TENANT_REFERENCE')
+    for (const [kind, value] of opaqueReferences(refs)) {
+      const claim = await this.referenceClaim(kind, value)
+      if (claim !== undefined && claim.companyId !== companyId) {
+        throw new Error(`faberloom: CROSS_TENANT_REFERENCE — the ${kind} reference belongs to another tenant`)
+      }
+    }
+  }
+
+  /** The claim already stored for one opaque reference, when any. */
+  private async referenceClaim(kind: ReferenceKind, value: string): Promise<BoardReferenceRecord | undefined> {
+    for (const [, record] of (await this.references()).entries()) {
+      if (record.kind === kind && record.value === value) return record
+    }
+    return undefined
+  }
+
+  /**
+   * Record the tenant of every opaque reference the item now stores.
+   * @param companyId - the tenant the item carries.
+   * @param itemId - the item that stored the references.
+   * @param refs - the references the caller supplied.
+   */
+  private async claimReferences(companyId: string | null, itemId: string, refs: BoardReferences): Promise<void> {
+    const table = await this.references()
+    const at = new Date().toISOString()
+    for (const [kind, value] of opaqueReferences(refs)) {
+      const key = this.referenceKey(companyId, kind, value)
+      if (table.get(key) !== undefined) continue
+      await table.put(key, { companyId, kind, value, itemId, at })
+    }
+  }
+
+  /**
+   * Resolve one Space inside the actor's tenant. Without a mounted Spaces
+   * service the reference cannot be verified, so it is refused.
+   * @param actor - the acting identity.
+   * @param companyId - the tenant the item carries.
+   * @param spaceId - the referenced Space.
+   * @param code - contract error code: a stored reference crosses tenants, a destination space is out of scope.
+   * @returns the resolved Space.
+   */
+  private async requireTenantSpace(
+    actor: BoardActor,
+    companyId: string | null,
+    spaceId: string,
+    code: 'CROSS_TENANT_REFERENCE' | 'NO_ACCESS',
+  ): Promise<BoardSpace> {
+    const spaces = this.ctx.get('faberloomSpaces') as BoardSpaces | undefined
+    if (spaces === undefined) {
+      throw new Error(`faberloom: ${code} — no Spaces service can verify the space ${spaceId}`)
+    }
+    let space: BoardSpace
+    try {
+      space = await spaces.get({ id: actor.id, companyId: actor.companyId, role: 'client_b2b', readOnly: false }, spaceId)
+    } catch (error) {
+      throw new Error(`faberloom: ${code} — the space ${spaceId} is not readable by the actor`, { cause: error })
+    }
+    const spaceCompany = space.companyId ?? null
+    if (spaceCompany !== null && spaceCompany !== companyId) {
+      throw new Error(`faberloom: ${code} — the space ${spaceId} belongs to another tenant`)
+    }
+    return space
   }
 
   private async serial<T>(companyId: string | null, task: () => Promise<T>): Promise<T> {
@@ -378,9 +532,16 @@ export class FaberLoomBoard extends Service {
     if (input.companyId !== undefined && input.companyId !== actor.companyId) {
       throw new Error('faberloom: NO_ACCESS — the item company is not the actor company')
     }
+    const companyId = input.companyId ?? actor.companyId ?? null
+    await this.verifyReferences(actor, companyId, {
+      spaceId: input.spaceId,
+      executionId: input.executionId,
+      accountRef: input.accountRef,
+    })
     const id = brandString<FaberLoomBoardItemId>(randomUUID())
     const record = this.buildRecord(actor, input)
     await (await this.items()).put(id, record)
+    await this.claimReferences(companyId, id, { executionId: input.executionId, accountRef: input.accountRef })
     return toItem(id, record)
   }
 
@@ -400,16 +561,28 @@ export class FaberLoomBoard extends Service {
       throw new Error('faberloom: NO_ACCESS — the item company is not the actor company')
     }
     const companyId = input.companyId ?? actor.companyId ?? null
+    const references: BoardReferences = {
+      spaceId: input.spaceId,
+      runId: input.runId,
+      executionId: input.executionId,
+      accountRef: input.accountRef,
+    }
+    await this.verifyReferences(actor, companyId, references)
 
     return await this.serial(companyId, async () => {
       const existingId = await this.claimedItem(companyId, 'idem', input.idempotencyKey)
       if (existingId !== undefined) return toItem(existingId, await this.requireItem(existingId))
 
-      const existing = await this.findNonTerminal(companyId, input.businessKey, actor.id)
+      const existing = await this.findNonTerminal(companyId, input.businessKey)
       let supersedes: string | null = null
       if (existing !== undefined) {
+        // Uniqueness is per tenant, not per owner: another owner's live item on
+        // the same key cannot be superseded by this actor.
+        if (existing.record.ownerId !== actor.id) {
+          throw new Error('faberloom: DUPLICATE — the business key already owns a non-terminal item')
+        }
         const existingState = stateOf(existing.record)
-        if (CANDIDATE_STATES.includes(existingState) || existingState === 'ERROR_RECUPERABLE') {
+        if (NOT_SUBSTITUTABLE.includes(existingState) || existingState === 'ERROR_RECUPERABLE') {
           const candidate: BoardCandidate = {
             id: randomUUID(),
             hash: hashOf({ summary: input.summary, evidence: input.evidence }),
@@ -418,6 +591,7 @@ export class FaberLoomBoard extends Service {
             at: new Date().toISOString(),
           }
           await this.mutate(actor, existing.id, 'candidate_arrived', current => ({ ...current, pendingCandidate: candidate }))
+          await this.claimKey(companyId, 'idem', input.idempotencyKey, existing.id)
           return toItem(existing.id, await this.requireItem(existing.id))
         }
         await this.mutate(actor, existing.id, 'superseded', current => ({
@@ -434,20 +608,36 @@ export class FaberLoomBoard extends Service {
         companyId: companyId ?? undefined,
         supersedesItemId: supersedes,
       })
-      await (await this.items()).put(id, record)
-      await this.claim(companyId, 'idem', input.idempotencyKey, id)
-      await this.claim(companyId, 'bkey', input.businessKey, id)
+      // Both keys are claimed before the record exists: a crash between the
+      // claim and the put leaves a claim, never a second live item.
+      await this.claimKey(companyId, 'idem', input.idempotencyKey, id)
+      try {
+        await this.claimKey(companyId, 'bkey', input.businessKey, id)
+        await (await this.items()).put(id, record)
+      } catch (error) {
+        await this.release(companyId, 'idem', input.idempotencyKey)
+        await this.release(companyId, 'bkey', input.businessKey)
+        throw error
+      }
+      await this.claimReferences(companyId, id, references)
       return toItem(id, record)
     })
   }
 
+  /**
+   * The non-terminal item of this tenant holding one business key (W-39).
+   * @param companyId - the tenant that owns the key space.
+   * @param businessKey - the business identity.
+   * @param excludeId - an item to skip, typically the one the caller is acting on.
+   * @returns the item and its record, or undefined.
+   */
   private async findNonTerminal(
     companyId: string | null,
     businessKey: string,
-    ownerId: string,
+    excludeId?: FaberLoomBoardItemId,
   ): Promise<{ id: FaberLoomBoardItemId; record: BoardItemRecord } | undefined> {
     for (const [id, record] of (await this.items()).entries()) {
-      if (record.ownerId !== ownerId) continue
+      if (id === excludeId) continue
       if (record.companyId !== companyId) continue
       if (record.businessKey !== businessKey) continue
       if (TERMINAL.includes(stateOf(record))) continue
@@ -484,6 +674,18 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
+   * Refuse an edit while the item is iterating or already closed (W-10). The
+   * panel hides the controls; the service is the enforcement point for MCP and
+   * agent callers.
+   * @param current - the stored record.
+   */
+  private requireEditable(current: BoardItemRecord): void {
+    const state = stateOf(current)
+    if (state === 'ITERANDO') throw new Error('faberloom: NO_ACCESS — the item is iterating and cannot be edited')
+    if (TERMINAL.includes(state)) throw new Error('faberloom: NO_ACCESS — the item is closed and cannot be edited')
+  }
+
+  /**
    * Save inline edits as a new revision and hash.
    * @param writer - the acting identity.
    * @param id - item id.
@@ -492,6 +694,7 @@ export class FaberLoomBoard extends Service {
    */
   async saveEdits(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEditsInput): Promise<FaberLoomBoardItem> {
     const updated = await this.mutate(writer, id, 'save_edits', (current) => {
+      this.requireEditable(current)
       if (current.version !== input.baseVersion) {
         throw new Error('faberloom: STALE_REVISION — the edits were made against an older version')
       }
@@ -601,6 +804,10 @@ export class FaberLoomBoard extends Service {
       throw new Error('faberloom: REASON_REQUIRED — OTRA requires a note')
     }
     const updated = await this.mutate(writer, id, 'discard', (current) => {
+      const state = stateOf(current)
+      if (state === 'ITERANDO') throw new Error('faberloom: NO_ACCESS — the item is iterating and cannot be discarded')
+      if (state === 'DESCONOCIDO') throw new Error('faberloom: NO_ACCESS — the item result is unknown and cannot be discarded')
+      if (TERMINAL.includes(state)) throw new Error('faberloom: NO_ACCESS — the item is closed and cannot be discarded')
       if (current.severity === null) throw new Error('faberloom: SEVERITY_REQUIRED — confirm the severity first')
       if (current.pendingCandidate !== null) throw new Error('faberloom: CANDIDATE_PENDING — resolve the new version first')
       return {
@@ -651,46 +858,94 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Assign a space (and its root workspace) to an item, resolving collisions.
+   * Assign a space (and its root workspace) to an item. A collision with
+   * another live item on the same business key resolves by the §2.3 rule: a
+   * substitutable item closes, a non-substitutable one receives the artifact as
+   * a candidate and stays open.
    * @param writer - the acting identity.
    * @param id - item id.
    * @param workspaceId - target space/workspace id.
-   * @returns the visible item after the assignment.
+   * @returns the live item: the assigned one, or the item that received the
+   * transferred candidate.
    */
   async assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<FaberLoomBoardItem> {
+    const actor = this.actorOf(writer)
     const record = await this.requireItem(id)
     this.authorizeWrite(record, writer)
-    const companyId = record.companyId
-    const nextKey = record.businessKey === null
-      ? null
-      : hashOf({ base: record.businessKey, workspaceId })
-    const other = nextKey === null
-      ? undefined
-      : await this.findNonTerminal(companyId, nextKey, record.ownerId)
-    if (other !== undefined && other.id !== id) {
-      if (CANDIDATE_STATES.includes(stateOf(other.record))) {
-        const candidate: BoardCandidate = {
-          id: randomUUID(),
-          hash: record.artifactHash ?? hashOf({ title: record.title }),
-          summary: record.revisions[record.revisions.length - 1]?.summary ?? record.title,
-          evidence: record.revisions[record.revisions.length - 1]?.evidence ?? [],
-          at: new Date().toISOString(),
-        }
-        await this.mutate(writer, other.id, 'candidate_arrived', current => ({ ...current, pendingCandidate: candidate }))
-        return await this.mutate(writer, id, 'superseded', current => ({
-          ...current, state: 'SUSTITUIDO', status: 'completed',
-        }), { reason: 'transferred-as-candidate' })
-      }
-      await this.mutate(writer, other.id, 'superseded', current => ({
-        ...current, state: 'SUSTITUIDO', status: 'completed',
-      }), { reason: 'workspace-collision' })
-      await this.release(companyId, 'bkey', other.record.businessKey)
+    if (TERMINAL.includes(stateOf(record))) {
+      throw new Error('faberloom: NO_ACCESS — a closed item cannot be assigned to a space')
     }
-    return await this.mutate(writer, id, 'assign_workspace', current => ({
-      ...current,
-      spaceId: workspaceId,
-      businessKey: nextKey ?? current.businessKey,
-    }))
+    const companyId = record.companyId
+    const space = await this.requireTenantSpace(actor, companyId, workspaceId, 'NO_ACCESS')
+    this.requireCompatibleAccount(record, space)
+
+    return await this.serial(companyId, async () => {
+      const current = await this.requireItem(id)
+      this.authorizeWrite(current, writer)
+      if (TERMINAL.includes(stateOf(current))) {
+        throw new Error('faberloom: NO_ACCESS — a closed item cannot be assigned to a space')
+      }
+      // The business key is the item's own identity (§2.1); assigning a space
+      // never rewrites it, so the key keeps deduping the pair.
+      const key = current.businessKey
+      if (key === null) {
+        return await this.mutate(writer, id, 'assign_workspace', item => ({ ...item, spaceId: workspaceId }))
+      }
+      const other = await this.findNonTerminal(companyId, key, id)
+      let superseded: string | null = null
+      if (other !== undefined && other.id !== id) {
+        if (other.record.ownerId !== current.ownerId) {
+          throw new Error('faberloom: DUPLICATE — the business key already owns a non-terminal item')
+        }
+        if (NOT_SUBSTITUTABLE.includes(stateOf(other.record))) {
+          const candidate = this.candidateOf(current)
+          await this.mutate(writer, other.id, 'candidate_arrived', item => ({
+            ...item, pendingCandidate: candidate,
+          }))
+          await this.mutate(writer, id, 'superseded', item => ({
+            ...item, state: 'SUSTITUIDO', status: 'completed',
+          }), { reason: 'transferred-as-candidate' })
+          await this.claimKey(companyId, 'bkey', key, other.id)
+          return toItem(other.id, await this.requireItem(other.id))
+        }
+        await this.mutate(writer, other.id, 'superseded', item => ({
+          ...item, state: 'SUSTITUIDO', status: 'completed',
+        }), { reason: 'workspace-collision' })
+        await this.release(companyId, 'bkey', key)
+        superseded = other.id
+      }
+      await this.claimKey(companyId, 'bkey', key, id)
+      return await this.mutate(writer, id, 'assign_workspace', item => ({
+        ...item,
+        spaceId: workspaceId,
+        supersedesItemId: superseded ?? item.supersedesItemId,
+      }))
+    })
+  }
+
+  /** The candidate one item transfers when it cannot replace another (§2.2). */
+  private candidateOf(record: BoardItemRecord): BoardCandidate {
+    const revision = record.revisions[record.revisions.length - 1]
+    return {
+      id: randomUUID(),
+      hash: record.artifactHash ?? hashOf({ title: record.title }),
+      summary: revision?.summary ?? record.title,
+      evidence: revision !== undefined ? [...revision.evidence] : [],
+      at: new Date().toISOString(),
+    }
+  }
+
+  /**
+   * Refuse an assignment when the destination Space names the accounts it
+   * serves and the item belongs to another one (W-59).
+   * @param record - the item being assigned.
+   * @param space - the resolved destination Space.
+   */
+  private requireCompatibleAccount(record: BoardItemRecord, space: BoardSpace): void {
+    const clients = (space.sources ?? []).filter(source => source.kind === 'mwt-client').map(source => source.id)
+    if (clients.length === 0) return
+    if (record.accountRef !== null && clients.includes(record.accountRef)) return
+    throw new Error('faberloom: ACCOUNT_MISMATCH — the item account is not served by the destination space')
   }
 
   /**
@@ -812,6 +1067,11 @@ export class FaberLoomBoard extends Service {
    */
   async submitRevision(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardSubmitInput): Promise<FaberLoomBoardItem> {
     return await this.mutate(writer, id, 'submit_revision', (current) => {
+      // W-76: an unconfirmed effect keeps its item traceable; reconciling it,
+      // not correcting the artifact, is what resolves DESCONOCIDO.
+      if (stateOf(current) === 'DESCONOCIDO') {
+        throw new Error('faberloom: NO_ACCESS — the item result is unknown and cannot be corrected')
+      }
       const version = current.version + 1
       const evidence = requireEvidence(input.evidence)
       return {
@@ -843,15 +1103,24 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Mark the item failed.
+   * Mark the item failed. `DESCONOCIDO` records an effect that may or may not
+   * have happened: the item stays recoverable and verifiable, and it is never
+   * `EJECUTADO` without confirmation (W-22).
    * @param writer - the acting identity.
    * @param id - item id.
+   * @param outcome - `FALLIDO` when the destination refused the effect, `DESCONOCIDO` when it did not answer.
    * @returns the updated item.
    */
-  async fail(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem> {
+  async fail(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    outcome: 'FALLIDO' | 'DESCONOCIDO' = 'FALLIDO',
+  ): Promise<FaberLoomBoardItem> {
     return await this.mutate(writer, id, 'fail', current => ({
-      ...current, state: 'ERROR_RECUPERABLE', status: 'failed',
-    }))
+      ...current,
+      state: outcome === 'DESCONOCIDO' ? 'DESCONOCIDO' : 'ERROR_RECUPERABLE',
+      status: 'failed',
+    }), { data: { outcome } })
   }
 
   /**
@@ -889,6 +1158,7 @@ export class FaberLoomBoard extends Service {
     const record = await this.requireItem(id)
     this.authorizeWrite(record, writer)
     await this.release(record.companyId, 'bkey', record.businessKey)
+    await this.release(record.companyId, 'idem', record.idempotencyKey)
     return await (await this.items()).delete(id)
   }
 
@@ -905,18 +1175,24 @@ export class FaberLoomBoard extends Service {
 
   /**
    * Approve or reject the exact revision. A reject returns the item to the
-   * pending column; an approve follows the WorkLoom preconditions.
+   * pending column; an approve follows the WorkLoom preconditions and binds to
+   * the hash the caller names, never to whatever is current (W-09).
    * @param writer - the acting identity.
    * @param id - item id.
-   * @param input - decision, exact revision, and optional note.
+   * @param input - decision, exact revision, artifact hash, and optional note.
    * @returns the updated item.
    */
   async review(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem> {
+    const record = await this.requireItem(id)
+    this.authorizeWrite(record, writer)
     if (input.decision === 'approve') {
+      if (input.hash === undefined || input.hash.trim().length === 0) {
+        throw new Error('faberloom: STALE_REVISION — an approval must name the artifact hash it reviewed')
+      }
       return await this.approve(writer, id, {
-        expectedRowVersion: (await this.requireItem(id)).rowVersion,
+        expectedRowVersion: record.rowVersion,
         expectedArtifactVersion: input.version,
-        expectedArtifactHash: (await this.requireItem(id)).artifactHash ?? '',
+        expectedArtifactHash: input.hash,
       })
     }
     return await this.mutate(writer, id, 'reject', (current) => {

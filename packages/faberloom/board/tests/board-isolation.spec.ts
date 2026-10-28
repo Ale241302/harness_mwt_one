@@ -9,6 +9,7 @@ import {
   bootBoard,
   proformaFixture,
   seedProforma,
+  seedSpace,
 } from './helpers/harness.ts'
 
 describe('FaberLoomBoard isolation', () => {
@@ -85,11 +86,14 @@ describe('FaberLoomBoard isolation', () => {
   })
 
   it('filters the list by status and space inside the actor scope', async () => {
-    const { board } = await bootBoard()
-    const first = await seedProforma(board, OWNER_A, COMPANY_A, 'sp-1')
-    await seedProforma(board, OWNER_A, COMPANY_A, 'sp-2')
+    const harness = await bootBoard()
+    const { board } = harness
+    const firstSpace = await seedSpace(harness, ACTOR_A, 'Proveedores')
+    const secondSpace = await seedSpace(harness, ACTOR_A, 'Clientes')
+    const first = await seedProforma(board, OWNER_A, COMPANY_A, firstSpace)
+    await seedProforma(board, OWNER_A, COMPANY_A, secondSpace)
 
-    expect((await board.list(ACTOR_A, { spaceId: 'sp-1' })).map(row => row.id)).toEqual([first.id])
+    expect((await board.list(ACTOR_A, { spaceId: firstSpace })).map(row => row.id)).toEqual([first.id])
     expect((await board.list(ACTOR_A, { status: 'approved' }))).toEqual([])
   })
 

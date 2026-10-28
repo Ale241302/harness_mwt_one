@@ -2771,11 +2771,12 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_board_review',
-    description: 'Approve or reject the exact revision. Approval never sends anything.',
+    description: 'Approve or reject the exact revision. Approval requires the artifact hash the caller saw and never sends anything.',
     parameters: {
       id: ID_PARAM,
       decision: { type: 'string', required: true, enum: ['approve', 'reject'], description: 'Decision.' },
       version: { type: 'integer', required: true, description: 'The exact revision reviewed.' },
+      hash: { type: 'string', description: 'Artifact hash of that revision; required to approve.' },
       note: { type: 'string', description: 'Review note.' },
     },
     /* jscpd:ignore-start -- the board id/status output repeats across tools; each owns its execute and render text */
@@ -2789,6 +2790,7 @@ export function apply(ctx: Context, config: Config): void {
       const item = await board(ctx).review(actor(config), args.id as FaberLoomBoardItemId, {
         decision: args.decision,
         version: args.version,
+        ...args.hash === undefined ? {} : { hash: args.hash },
         ...args.note === undefined ? {} : { note: args.note },
       })
       return { id: item.id, status: item.status }

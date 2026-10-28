@@ -943,7 +943,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_board_review',
-      description: 'Aprueba o rechaza una revisión exacta. Aprobar no envía ni concede autonomía.',
+      description: 'Aprueba o rechaza una revisión exacta. Aprobar exige el hash visto y no envía ni concede autonomía.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -952,15 +952,18 @@ const CATALOGUE: readonly CatalogueEntry[] = [
           id: { type: 'string' },
           decision: { type: 'string', description: 'approve o reject.' },
           version: { type: 'number', description: 'Revisión exacta revisada.' },
+          hash: { type: 'string', description: 'Hash del artefacto revisado; obligatorio al aprobar.' },
           note: { type: 'string' },
         },
       },
     },
     run: async (context, ownerId, args, companyId) => {
       const note = optional(args, 'note')
+      const hash = optional(args, 'hash')
       const item = await context.faberloomBoard.review(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
         decision: required(args, 'decision') === 'approve' ? 'approve' : 'reject',
         version: num(args, 'version') ?? 0,
+        ...hash === undefined ? {} : { hash },
         ...note === undefined ? {} : { note },
       })
       return { id: String(item.id), status: item.status, approvedRevision: item.approvedRevision, version: item.version }
@@ -1285,7 +1288,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_board_assign_workspace',
-      description: 'Asigna un espacio a un elemento y resuelve colisiones de identidad.',
+      description: 'Asigna un espacio a un elemento, resuelve colisiones de identidad y devuelve el elemento vigente.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,

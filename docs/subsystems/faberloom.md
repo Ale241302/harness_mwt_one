@@ -519,11 +519,15 @@ async discard(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardDiscard
 async resolveCandidate( writer: BoardWriter, id: FaberLoomBoardItemId, candidateId: string, candidateHash: string, decision: 'adopt' | 'keep', ): Promise<FaberLoomBoardItem>
 
 /**
- * Assign a space (and its root workspace) to an item, resolving collisions.
+ * Assign a space (and its root workspace) to an item. A collision with
+ * another live item on the same business key resolves by the §2.3 rule: a
+ * substitutable item closes, a non-substitutable one receives the artifact as
+ * a candidate and stays open.
  * @param writer - the acting identity.
  * @param id - item id.
  * @param workspaceId - target space/workspace id.
- * @returns the visible item after the assignment.
+ * @returns the live item: the assigned one, or the item that received the
+ * transferred candidate.
  */
 async assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<FaberLoomBoardItem>
 
@@ -587,12 +591,15 @@ async submitRevision(writer: BoardWriter, id: FaberLoomBoardItemId, input: Board
 async requestData(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
 
 /**
- * Mark the item failed.
+ * Mark the item failed. `DESCONOCIDO` records an effect that may or may not
+ * have happened: the item stays recoverable and verifiable, and it is never
+ * `EJECUTADO` without confirmation (W-22).
  * @param writer - the acting identity.
  * @param id - item id.
+ * @param outcome - `FALLIDO` when the destination refused the effect, `DESCONOCIDO` when it did not answer.
  * @returns the updated item.
  */
-async fail(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
+async fail( writer: BoardWriter, id: FaberLoomBoardItemId, outcome: 'FALLIDO' | 'DESCONOCIDO' = 'FALLIDO', ): Promise<FaberLoomBoardItem>
 
 /**
  * Reopen the item for another attempt.
@@ -629,10 +636,11 @@ async setRoutine(writer: BoardWriter, id: FaberLoomBoardItemId, routineId: strin
 
 /**
  * Approve or reject the exact revision. A reject returns the item to the
- * pending column; an approve follows the WorkLoom preconditions.
+ * pending column; an approve follows the WorkLoom preconditions and binds to
+ * the hash the caller names, never to whatever is current (W-09).
  * @param writer - the acting identity.
  * @param id - item id.
- * @param input - decision, exact revision, and optional note.
+ * @param input - decision, exact revision, artifact hash, and optional note.
  * @returns the updated item.
  */
 async review(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem>
@@ -679,7 +687,8 @@ async get(actor: BoardActor, id: FaberLoomBoardItemId): Promise<FaberLoomBoardIt
  * scoped to one identity and, when the deployment knows it, one company.
  * @param actor - the authenticated reader.
  * @param filter - optional state, status, and space filters.
- * @returns items oldest first.
+ * @returns items in the canonical queue order (§4): unclassified and
+ * space-less first, then the severity, due date, value, creation, and id tuple.
  */
 async list( actor: BoardActor, filter: { status?: BoardStatus; state?: BoardState; spaceId?: string } = {}, ): Promise<FaberLoomBoardItem[]>
 ```

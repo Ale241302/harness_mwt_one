@@ -125,6 +125,28 @@ export const boardKeyRecord = z.object({
 /** One stored key claim. */
 export type BoardKeyRecord = z.infer<typeof boardKeyRecord>
 
+/**
+ * One tenant claim on an opaque reference (`runId`, `executionId`, or
+ * `accountRef`). The board cannot ask another service who owns an opaque id, so
+ * the first item that stores it records the tenant that may keep using it; a
+ * later item of another tenant is rejected with `CROSS_TENANT_REFERENCE`.
+ */
+export const boardReferenceRecord = z.object({
+  /** Tenant that claimed the reference; null is the single-tenant deployment. */
+  companyId: z.string().nullable(),
+  /** Reference kind: `run`, `execution`, or `account`. */
+  kind: z.string(),
+  /** The referenced value. */
+  value: z.string(),
+  /** Item that first stored the reference. */
+  itemId: z.string(),
+  /** ISO-8601 claim instant. */
+  at: z.string(),
+})
+
+/** One stored reference claim. */
+export type BoardReferenceRecord = z.infer<typeof boardReferenceRecord>
+
 /** One inline edit draft, keyed by `itemId:userId`. */
 export const boardDraftRecord = z.object({
   itemId: z.string(),
@@ -140,7 +162,8 @@ export const boardDraftRecord = z.object({
 export type BoardDraftRecord = z.infer<typeof boardDraftRecord>
 
 /**
- * The board domain spec: item aggregates plus the key-claim table.
+ * The board domain spec: item aggregates, the key-claim table, the draft table,
+ * and the tenant claims on opaque references.
  */
 export const boardDomainSpec = defineDomain({
   name: 'faberloom_board',
@@ -149,5 +172,6 @@ export const boardDomainSpec = defineDomain({
     items: domainTable<FaberLoomBoardItemId, BoardItemRecord>(boardItemRecord),
     keys: domainTable<string, BoardKeyRecord>(boardKeyRecord),
     drafts: domainTable<string, BoardDraftRecord>(boardDraftRecord),
+    references: domainTable<string, BoardReferenceRecord>(boardReferenceRecord),
   },
 })

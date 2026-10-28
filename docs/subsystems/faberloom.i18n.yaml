@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/faberloom.md
-faberloom.md: 230896d28e10036c86b93dde8af4330dd718a97d
-faberloom.zh.md: 3837ba7a0d7f408bee907b74c672b3eb701f2f09
+faberloom.md: bb0618220d638deec1f4f4077b67a2cbf2a330ec
+faberloom.zh.md: 1b15be7fc8905ac4719f9ce90b3aedf1dfcfb2a0

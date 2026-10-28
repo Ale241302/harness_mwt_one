@@ -7,7 +7,7 @@ import {
   priorityRank,
 } from '../src/order.ts'
 import type { BoardOrderFields, BoardSeverity } from '../src/types.ts'
-import { ACTOR_A, bootBoard } from './helpers/harness.ts'
+import { ACTOR_A, bootBoard, seedSpace } from './helpers/harness.ts'
 
 interface RowFields {
   readonly severity?: BoardSeverity | null
@@ -154,10 +154,12 @@ describe('canonical queue order', () => {
   })
 
   it('W-04 · list returns the canonical order for the actor', async () => {
-    const { board } = await bootBoard()
+    const harness = await bootBoard()
+    const { board } = harness
     // A space keeps every item on the severity leg of the tuple; without one all
     // items rank 5 by design (W-05).
-    const submitted = { runId: 'run-order', evidence: ['oc:505288'], artifactType: 'proforma', spaceId: 'sp-eguisa' }
+    const spaceId = await seedSpace(harness, ACTOR_A, 'Eguisa')
+    const submitted = { runId: 'run-order', evidence: ['oc:505288'], artifactType: 'proforma', spaceId }
     const critical = await board.submit(ACTOR_A, {
       ...submitted, idempotencyKey: 'idem-c', businessKey: 'bkey-c', summary: 'crítico', severity: 'CRITICAL',
     })

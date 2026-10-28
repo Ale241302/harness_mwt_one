@@ -34,10 +34,15 @@ export type BoardStatus =
   | 'in_progress' | 'waiting_data' | 'waiting_approval' | 'approved'
   | 'completed' | 'failed' | 'reopened' | 'needs_review'
 
-/** Persisted WorkLoom state (§3.1). */
+/**
+ * Persisted WorkLoom state (§3.1). `DESCONOCIDO` is the state of an item whose
+ * external effect may or may not have happened (W-22): it is recoverable and
+ * verifiable, never `EJECUTADO`, and it accepts a candidate but not a
+ * substitution, a correction, or a discard (W-76).
+ */
 export type BoardState =
   | 'PENDIENTE_CRITERIO' | 'ITERANDO' | 'ESPERANDO_OTRO' | 'DELEGADO_EN_VENTANA'
-  | 'EJECUCION_PENDIENTE' | 'ERROR_RECUPERABLE' | 'ERROR_SIN_SALIDA'
+  | 'EJECUCION_PENDIENTE' | 'ERROR_RECUPERABLE' | 'ERROR_SIN_SALIDA' | 'DESCONOCIDO'
   | 'APROBADO' | 'EJECUTADO' | 'DESCARTADO' | 'SUSTITUIDO'
 
 /** Visible column, derived from the state and never written by a caller. */
@@ -271,6 +276,11 @@ export interface BoardReviewInput {
   readonly decision: 'approve' | 'reject'
   /** The exact revision reviewed. */
   readonly version: number
+  /**
+   * The artifact hash the caller saw. Required for `approve`, so an approval
+   * names its content instead of accepting whatever is current (W-09).
+   */
+  readonly hash?: string
   /** Optional note. */
   readonly note?: string
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ACTOR_A, COMPANY_A, OWNER_A, bootBoard } from './helpers/harness.ts'
+import { MemoryMediaPool } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
+import { ACTOR_A, COMPANY_A, OWNER_A, bootBoard, rawBoardItem, seedRawItem } from './helpers/harness.ts'
 
 /** Submit one run-created item and return the current row. */
 async function submitOne(board: Awaited<ReturnType<typeof bootBoard>>['board'], overrides: Record<string, string> = {}) {
@@ -109,8 +110,7 @@ describe('FaberLoomBoard E10 commands', () => {
     expect(discarded.events.at(-1)?.reason).toBe('DUPLICADO')
   })
 
-  it('keeps the concrete artifact identity on submit', async () => {
-    const { board } = await bootBoard()
+  it('keeps the concrete artifact identity on submit', async () => {    const { board } = await bootBoard()
     const item = await board.submit(ACTOR_A, {
       runId: 'run-pf',
       idempotencyKey: 'idem-pf',
@@ -196,5 +196,117 @@ describe('FaberLoomBoard E10 commands', () => {
     expect(item.runId).toBe('run-1')
     expect(item.idempotencyKey).toBe('idem-1')
     expect(item.businessKey).toBe('bkey-1')
+  })
+
+  it('W-10 · rejects edits and discard on an iterating or closed item', async () => {
+    const pool = new MemoryMediaPool()
+    const iterating = await seedRawItem(pool, rawBoardItem({ state: 'ITERANDO' }))
+    const closed = await seedRawItem(pool, rawBoardItem({ state: 'APROBADO', status: 'approved' }))
+    const { board } = await bootBoard({ pool })
+
+    await expect(board.saveEdits(ACTOR_A, iterating, {
+      expectedRowVersion: 1, baseVersion: 1, changes: { summary: 'tarde' },
+    })).rejects.toThrow('NO_ACCESS')
+    await expect(board.discard(ACTOR_A, iterating, {
+      expectedRowVersion: 1, reason: 'DUPLICADO',
+    })).rejects.toThrow('NO_ACCESS')
+    await expect(board.saveEdits(ACTOR_A, closed, {
+      expectedRowVersion: 1, baseVersion: 1, changes: { summary: 'tarde' },
+    })).rejects.toThrow('NO_ACCESS')
+    await expect(board.discard(ACTOR_A, closed, {
+      expectedRowVersion: 1, reason: 'DUPLICADO',
+    })).rejects.toThrow('NO_ACCESS')
+
+    expect((await board.get(ACTOR_A, iterating)).state).toBe('ITERANDO')
+    expect((await board.get(ACTOR_A, closed)).state).toBe('APROBADO')
+  })
+
+  it('W-07 · rejects discard while the severity is null', async () => {
+    const { board } = await bootBoard()
+    const item = await submitOne(board)
+
+    await expect(board.discard(ACTOR_A, item.id, {
+      expectedRowVersion: item.rowVersion, reason: 'DUPLICADO',
+    })).rejects.toThrow('SEVERITY_REQUIRED')
+    expect((await board.get(ACTOR_A, item.id)).state).toBe('PENDIENTE_CRITERIO')
+  })
+
+  it('W-09 · binds a review approval to the hash the caller supplied', async () => {
+    const { board } = await bootBoard()
+    const item = await submitOne(board)
+    const withSeverity = await board.setSeverity(ACTOR_A, item.id, 'MEDIUM', 'HUMAN')
+
+    await expect(board.review(ACTOR_A, item.id, { decision: 'approve', version: 1 }))
+      .rejects.toThrow('STALE_REVISION')
+    await expect(board.review(ACTOR_A, item.id, { decision: 'approve', version: 1, hash: 'hash-que-nadie-vio' }))
+      .rejects.toThrow('STALE_REVISION')
+    expect((await board.get(ACTOR_A, item.id)).state).toBe('PENDIENTE_CRITERIO')
+
+    const edited = await board.saveEdits(ACTOR_A, item.id, {
+      expectedRowVersion: withSeverity.rowVersion, baseVersion: 1, changes: { summary: 'v2' },
+    })
+    await expect(board.review(ACTOR_A, item.id, {
+      decision: 'approve', version: 2, hash: item.artifactHash ?? '',
+    })).rejects.toThrow('STALE_REVISION')
+
+    const approved = await board.review(ACTOR_A, item.id, {
+      decision: 'approve', version: 2, hash: edited.artifactHash ?? '',
+    })
+    expect(approved).toMatchObject({ state: 'APROBADO', approvedRevision: 2 })
+  })
+
+  it('W-69 · a conflicting approveWithEdits applies nothing and keeps the edits', async () => {
+    const { board } = await bootBoard()
+    const item = await submitOne(board)
+    const withSeverity = await board.setSeverity(ACTOR_A, item.id, 'MEDIUM', 'HUMAN')
+    const edited = await board.saveEdits(ACTOR_A, item.id, {
+      expectedRowVersion: withSeverity.rowVersion, baseVersion: 1, changes: { summary: 'v2' },
+    })
+    await board.saveEditDraft(ACTOR_A, item.id, {
+      baseVersion: 2, revision: 0, writerSession: 'tab-a', changes: { summary: 'mío' },
+    })
+
+    await expect(board.approveWithEdits(ACTOR_A, item.id, {
+      expectedRowVersion: edited.rowVersion,
+      expectedArtifactVersion: 2,
+      expectedArtifactHash: edited.artifactHash ?? '',
+      baseVersion: 1,
+      changes: { summary: 'a medias' },
+    })).rejects.toThrow('STALE_REVISION')
+
+    expect(await board.get(ACTOR_A, item.id)).toMatchObject({
+      state: 'PENDIENTE_CRITERIO', version: 2, rowVersion: edited.rowVersion,
+    })
+    expect((await board.getEditDraft(ACTOR_A, item.id))?.changes['summary']).toBe('mío')
+  })
+
+  it('W-82 · rejects approveWithEdits when a precondition of approve is missing', async () => {
+    const { board } = await bootBoard()
+    const item = await submitOne(board)
+
+    await expect(board.approveWithEdits(ACTOR_A, item.id, {
+      expectedRowVersion: item.rowVersion,
+      expectedArtifactVersion: 1,
+      expectedArtifactHash: item.artifactHash ?? '',
+      baseVersion: 1,
+      changes: { summary: 'lista para enviar' },
+    })).rejects.toThrow('SEVERITY_REQUIRED')
+
+    expect(await board.get(ACTOR_A, item.id)).toMatchObject({
+      state: 'PENDIENTE_CRITERIO', version: 1, rowVersion: item.rowVersion,
+    })
+  })
+
+  it('trims the inline audit log to the configured event cap', async () => {
+    const { board } = await bootBoard({ board: { eventCap: 2 } })
+    const item = await submitOne(board)
+    await board.setSeverity(ACTOR_A, item.id, 'LOW', 'HUMAN')
+    await board.setSeverity(ACTOR_A, item.id, 'MEDIUM', 'HUMAN')
+    await board.setSeverity(ACTOR_A, item.id, 'HIGH', 'HUMAN')
+
+    const current = await board.get(ACTOR_A, item.id)
+    expect(current.events).toHaveLength(2)
+    expect(current.events.map(event => event.command)).toEqual(['set_severity', 'set_severity'])
+    expect(current.events.at(-1)?.data).toMatchObject({ previous: 'MEDIUM' })
   })
 })

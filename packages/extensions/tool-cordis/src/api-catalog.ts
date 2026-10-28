@@ -1235,9 +1235,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<FaberLoomBoardItem>',
-        description: 'Assign a space (and its root workspace) to an item, resolving collisions.',
+        description: 'Assign a space (and its root workspace) to an item. A collision with another live item on the same business key resolves by the §2.3 rule: a substitutable item closes, a non-substitutable one receives the artifact as a candidate and stays open.',
         parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'workspaceId', description: 'target space/workspace id.' }],
-        returns: 'the visible item after the assignment.',
+        returns: 'the live item: the assigned one, or the item that received the transferred candidate.',
       },
       {
         signature: 'async getEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEditDraft | undefined>',
@@ -1281,9 +1281,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated item.',
       },
       {
-        signature: 'async fail(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
-        description: 'Mark the item failed.',
-        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        signature: 'async fail( writer: BoardWriter, id: FaberLoomBoardItemId, outcome: \'FALLIDO\' | \'DESCONOCIDO\' = \'FALLIDO\', ): Promise<FaberLoomBoardItem>',
+        description: 'Mark the item failed. `DESCONOCIDO` records an effect that may or may not have happened: the item stays recoverable and verifiable, and it is never `EJECUTADO` without confirmation (W-22).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'outcome', description: '`FALLIDO` when the destination refused the effect, `DESCONOCIDO` when it did not answer.' }],
         returns: 'the updated item.',
       },
       {
@@ -1312,8 +1312,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async review(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem>',
-        description: 'Approve or reject the exact revision. A reject returns the item to the pending column; an approve follows the WorkLoom preconditions.',
-        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'decision, exact revision, and optional note.' }],
+        description: 'Approve or reject the exact revision. A reject returns the item to the pending column; an approve follows the WorkLoom preconditions and binds to the hash the caller names, never to whatever is current (W-09).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'decision, exact revision, artifact hash, and optional note.' }],
         returns: 'the updated item.',
       },
       {
@@ -1344,7 +1344,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'async list( actor: BoardActor, filter: { status?: BoardStatus; state?: BoardState; spaceId?: string } = {}, ): Promise<FaberLoomBoardItem[]>',
         description: 'List the actor\'s items. There is no unfiltered listing: every read is scoped to one identity and, when the deployment knows it, one company.',
         parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'filter', description: 'optional state, status, and space filters.' }],
-        returns: 'items oldest first.',
+        returns: 'items in the canonical queue order (§4): unclassified and space-less first, then the severity, due date, value, creation, and id tuple.',
       },
     ],
   },
@@ -7009,7 +7009,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardReviewInput',
-    declaration: 'export interface BoardReviewInput {\n    readonly decision: \'approve\' | \'reject\';\n    readonly version: number;\n    readonly note?: string;\n}',
+    declaration: 'export interface BoardReviewInput {\n    readonly decision: \'approve\' | \'reject\';\n    readonly version: number;\n    readonly hash?: string;\n    readonly note?: string;\n}',
   },
   {
     name: 'BoardRevisionInput',
@@ -7021,7 +7021,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardState',
-    declaration: 'export type BoardState = \'PENDIENTE_CRITERIO\' | \'ITERANDO\' | \'ESPERANDO_OTRO\' | \'DELEGADO_EN_VENTANA\' | \'EJECUCION_PENDIENTE\' | \'ERROR_RECUPERABLE\' | \'ERROR_SIN_SALIDA\' | \'APROBADO\' | \'EJECUTADO\' | \'DESCARTADO\' | \'SUSTITUIDO\';',
+    declaration: 'export type BoardState = \'PENDIENTE_CRITERIO\' | \'ITERANDO\' | \'ESPERANDO_OTRO\' | \'DELEGADO_EN_VENTANA\' | \'EJECUCION_PENDIENTE\' | \'ERROR_RECUPERABLE\' | \'ERROR_SIN_SALIDA\' | \'DESCONOCIDO\' | \'APROBADO\' | \'EJECUTADO\' | \'DESCARTADO\' | \'SUSTITUIDO\';',
   },
   {
     name: 'BoardStatus',

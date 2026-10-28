@@ -6464,6 +6464,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     await this.ctx.faberloomBoard.review(this.actor(), item.id, {
       decision: approve ? 'approve' : 'reject',
       version: item.version,
+      // The approval names the artifact this read returned, so a concurrent
+      // version cannot be approved on the caller's behalf.
+      ...item.artifactHash === null ? {} : { hash: item.artifactHash },
       ...note === undefined || note.trim().length === 0 ? {} : { note: note.trim() },
     })
     return await this.overview()

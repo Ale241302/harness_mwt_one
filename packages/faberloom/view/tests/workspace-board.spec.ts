@@ -24,7 +24,7 @@ function harness(options: {
 } = {}) {
   const board = {
     list: vi.fn(async () => []),
-    get: vi.fn(async () => ({ id: 'b1', version: 3 })),
+    get: vi.fn(async () => ({ id: 'b1', version: 3, artifactHash: 'h1' })),
     create: vi.fn(),
     submitRevision: vi.fn(async () => ({})),
     requestData: vi.fn(async () => ({})),
@@ -907,9 +907,9 @@ describe('FaberLoomViewService board actions', () => {
     expect(board.complete).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1')
 
     await view.reviewBoardItem('b1', true, 'revisado contra MWT')
-    expect(board.review).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { decision: 'approve', version: 3, note: 'revisado contra MWT' })
+    expect(board.review).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { decision: 'approve', version: 3, hash: 'h1', note: 'revisado contra MWT' })
     await view.reviewBoardItem('b1', false)
-    expect(board.review).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { decision: 'reject', version: 3 })
+    expect(board.review).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { decision: 'reject', version: 3, hash: 'h1' })
   })
 
   it('refuses every board write for a read-only identity', async () => {
