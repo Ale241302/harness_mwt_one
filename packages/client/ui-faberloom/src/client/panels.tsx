@@ -99,8 +99,6 @@ export interface FaberloomPanelInjected {
   deactivateAgent: (id: string) => void
   /** Remove one agent from the catalog permanently. */
   purgeAgent: (id: string) => void
-  /** Create a board item awaiting review. */
-  createBoardItem: (title: string) => void
   /** Approve or reject the current board revision, with an optional review note. */
   reviewBoardItem: (id: string, approve: boolean, note?: string) => Promise<Result<FaberLoomOverview>>
   /** Reopen one reviewed board item for correction. */
@@ -327,8 +325,6 @@ export interface FaberloomPanelInjected {
   deleteBackup: (id: string) => Promise<Result<readonly FaberLoomBackupRow[]>>
   /** Build an editable proposal from a fresh request. */
   proposeWork: (text: string) => Promise<Result<FaberLoomWorkProposal>>
-  /** Create a board task from a proposal, preserving the conversation. */
-  createTaskFromWork: (text: string, spaceId: string | null) => Promise<Result<FaberLoomOverview>>
   /** Create a specialist from a proposal, preserving its origin. */
   createAgentFromWork: (text: string, name: string, spaceId: string | null) => Promise<Result<FaberLoomOverview>>
   /** Create a routine draft from a proposal. */
@@ -2637,7 +2633,7 @@ function mesaScreen() {
       : detail.kind === 'error'
         ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
         : value === undefined
-          ? <StateBlock kind="empty" title={t('mesa.empty')} text={t('mesa.noSelection')} />
+          ? <StateBlock kind="empty" title={t('mesa.empty')} text={rows.length === 0 ? t('mesa.emptyHint') : t('mesa.noSelection')} />
           : (
             <div className={styles.mesaDetail}>
               {pending === null ? null : (
@@ -3718,7 +3714,6 @@ const MCP_TOOL_NAMES = [
   'faberloom_agent_record_outcome',
   'faberloom_board',
   'faberloom_board_get',
-  'faberloom_board_create',
   'faberloom_board_submit',
   'faberloom_board_review',
   'faberloom_board_reopen',
@@ -3961,7 +3956,7 @@ function GrantsBlock(props: {
 function conversarPanel() {
   return function FaberloomConversar(props: ScreenProps) {
     const {
-      t, startConversation, proposeWork, createTaskFromWork, createAgentFromWork, createRoutineFromWork, linkPreview,
+      t, startConversation, proposeWork, createAgentFromWork, createRoutineFromWork, linkPreview,
     } = props
     const { overview } = useOverview(props)
     const [text, setText] = useState('')
@@ -4030,11 +4025,6 @@ function conversarPanel() {
                 <input type="text" value={routineName} onChange={(event) => { setRoutineName(event.target.value) }} />
               </Field>
               <span className={styles.tools}>
-                <button className={styles.primary} type="button" onClick={() => {
-                  void createTaskFromWork(text, spaceId === '' ? null : spaceId)
-                    .then((result) => { if (result.ok) setMessage(t('propose.taskCreated')); else fail(result.error.message) })
-                    .catch(fail)
-                }}>{t('propose.createTask')}</button>
                 <button className={styles.secondary} type="button" onClick={() => {
                   const name = agentName.trim().length === 0 ? proposal.suggestedAgents[0]?.name ?? proposal.title : agentName.trim()
                   void createAgentFromWork(text, name, spaceId === '' ? null : spaceId)
@@ -4048,6 +4038,7 @@ function conversarPanel() {
                     .catch(fail)
                 }}>{t('propose.createRoutine')}</button>
               </span>
+              <span className={styles.cellMuted}>{t('propose.mesaHint')}</span>
             </>
           )}
         </Inspector>

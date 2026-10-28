@@ -3093,12 +3093,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the proposal the panel renders.',
       },
       {
-        signature: '@Remote(\'createTaskFromWork\') async createTaskFromWork(text: string, spaceId: string | null): Promise<FaberLoomOverview>',
-        description: 'Create a board item from a proposal, preserving the conversation as evidence.',
-        parameters: [{ name: 'text', description: 'the request that originated the task.' }, { name: 'spaceId', description: 'space the work belongs to, or null for the personal scope.' }],
-        returns: 'the refreshed overview.',
-      },
-      {
         signature: '@Remote(\'createAgentFromWork\') async createAgentFromWork(text: string, name: string, spaceId: string | null): Promise<FaberLoomOverview>',
         description: 'Create a specialist from a proposal, preserving the conversation as its origin and never copying another client\'s context (plan §6.5, F33–F35).',
         parameters: [{ name: 'text', description: 'the responsibility the conversation described.' }, { name: 'name', description: 'display name for the specialist.' }, { name: 'spaceId', description: 'space it belongs to, or null for the personal scope.' }],
@@ -3444,12 +3438,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: '@Remote(\'setAgentResponsibility\') async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview>',
         description: 'Replace one catalog agent\'s responsibility.',
         parameters: [{ name: 'id', description: 'agent id.' }, { name: 'responsibility', description: 'the new responsibility statement.' }],
-        returns: 'the refreshed overview.',
-      },
-      {
-        signature: '@Remote(\'createBoardItem\') async createBoardItem(title: string): Promise<FaberLoomOverview>',
-        description: 'Create one board item awaiting review.',
-        parameters: [{ name: 'title', description: 'display title; it also carries the prepared result summary.' }],
         returns: 'the refreshed overview.',
       },
       {
@@ -7045,7 +7033,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardSubmitRequest',
-    declaration: 'export interface BoardSubmitRequest extends BoardSubmitInput {\n    readonly runId: string;\n    readonly idempotencyKey: string;\n    readonly businessKey: string;\n    readonly artifactType?: string;\n    readonly accountRef?: string;\n    readonly spaceId?: string;\n    readonly companyId?: string;\n    readonly executionId?: string;\n    readonly title?: string;\n}',
+    declaration: 'export interface BoardSubmitRequest extends BoardSubmitInput {\n    readonly runId: string;\n    readonly idempotencyKey: string;\n    readonly businessKey: string;\n    readonly artifactType?: string;\n    readonly accountRef?: string;\n    readonly valueAmount?: number;\n    readonly valueCurrency?: string;\n    readonly dueAt?: string;\n    readonly dataClass?: BoardDataClass;\n    readonly severity?: BoardSeverity;\n    readonly severityConfidence?: number;\n    readonly spaceId?: string;\n    readonly companyId?: string;\n    readonly executionId?: string;\n    readonly title?: string;\n}',
   },
   {
     name: 'BoardWriter',

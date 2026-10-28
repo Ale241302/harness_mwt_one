@@ -109,6 +109,36 @@ describe('FaberLoomBoard E10 commands', () => {
     expect(discarded.events.at(-1)?.reason).toBe('DUPLICADO')
   })
 
+  it('keeps the concrete artifact identity on submit', async () => {
+    const { board } = await bootBoard()
+    const item = await board.submit(ACTOR_A, {
+      runId: 'run-pf',
+      idempotencyKey: 'idem-pf',
+      businessKey: 'PF 2520-2026',
+      title: 'PF 2520-2026 · Eguisa',
+      summary: 'Proforma DDP con precios verificados.',
+      evidence: ['expediente:PF 2520-2026', 'oc:505288'],
+      artifactType: 'proforma',
+      accountRef: 'Eguisa',
+      valueAmount: 17528.55,
+      valueCurrency: 'USD',
+      dueAt: '2026-10-28T17:00:00.000Z',
+      severity: 'HIGH',
+      severityConfidence: 0.93,
+    })
+    expect(item).toMatchObject({
+      businessKey: 'PF 2520-2026',
+      accountRef: 'Eguisa',
+      artifactType: 'proforma',
+      valueAmount: 17528.55,
+      valueUsd: 17528.55,
+      dueAt: '2026-10-28T17:00:00.000Z',
+      severity: 'HIGH',
+      severitySource: 'LLM',
+      severityConfidence: 0.93,
+    })
+  })
+
   it('keeps one writer tab and rejects a stale draft revision', async () => {
     const { board } = await bootBoard()
     const item = await submitOne(board)

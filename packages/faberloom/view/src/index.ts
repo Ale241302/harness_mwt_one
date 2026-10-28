@@ -24,7 +24,7 @@ import type {} from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
-import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
+import type { FaberLoomBoardItem, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
@@ -120,6 +120,12 @@ export type * from './types.ts'
  * @param json - the JSON text.
  * @returns the parsed object.
  */
+/** A conversation prompt filed before the Mesa required a run is not a work item. */
+function isConversationOnlyItem(item: FaberLoomBoardItem): boolean {
+  if (item.runId !== null || item.executionId !== null) return false
+  return item.revisions.some(revision => revision.evidence.some(entry => entry.startsWith('conversacion:')))
+}
+
 function parseConfigJson(json: string): Record<string, unknown> {
   if (json.trim().length === 0) return {}
   const parsed = JSON.parse(json) as unknown
@@ -1172,13 +1178,16 @@ export class FaberLoomViewService extends TypertRemoteService {
     await this.repairSpaceParents(actor)
     await this.repairNestedSpaceFolders(actor)
     await this.mergeDuplicateSpaces(actor)
-    const [spaces, agents, board, routines, memory] = await Promise.all([
+    const [spaces, agents, boardItems, routines, memory] = await Promise.all([
       this.ctx.faberloomSpaces.list(actor),
       this.ctx.faberloomAgents.listAgents(),
       this.ctx.faberloomBoard.list(actor),
       this.ctx.faberloomRoutines.listRoutines(actor.id),
       this.readMemory(),
     ])
+    // Conversation prompts filed before the Mesa required a run are not work
+    // items: the Mesa shows prepared results and concrete missing-data tasks.
+    const board = boardItems.filter(item => !isConversationOnlyItem(item))
     // Keep archived Spaces available to the sidebar and the move dialog: an
     // archived Space still mirrors a visible Workspace, and hiding it made the
     // move dialog claim the Workspace had no Space.
@@ -4813,26 +4822,6 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Create a board item from a proposal, preserving the conversation as evidence.
-   * @param text - the request that originated the task.
-   * @param spaceId - space the work belongs to, or null for the personal scope.
-   * @returns the refreshed overview.
-   */
-  @Remote('createTaskFromWork')
-  async createTaskFromWork(text: string, spaceId: string | null): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create tasks')
-    const trimmed = text.trim()
-    const title = (trimmed.split('\n')[0] ?? trimmed).slice(0, 120)
-    await this.ctx.faberloomBoard.create(this.actor(), {
-      title,
-      summary: trimmed,
-      evidence: [`conversacion:${title}`],
-      ...(spaceId === null ? {} : { spaceId }),
-    })
-    return await this.overview()
-  }
-
-  /**
    * Create a specialist from a proposal, preserving the conversation as its
    * origin and never copying another client's context (plan §6.5, F33–F35).
    * @param text - the responsibility the conversation described.
@@ -6458,17 +6447,6 @@ export class FaberLoomViewService extends TypertRemoteService {
   async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview> {
     await this.requireManageableAgent(id)
     await this.ctx.faberloomAgents.updateAgent(id as FaberLoomAgentId, { responsibility })
-    return await this.overview()
-  }
-
-  /**
-   * Create one board item awaiting review.
-   * @param title - display title; it also carries the prepared result summary.
-   * @returns the refreshed overview.
-   */
-  @Remote('createBoardItem')
-  async createBoardItem(title: string): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomBoard.create(this.actor(), { title, summary: title, evidence: [title] })
     return await this.overview()
   }
 

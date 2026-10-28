@@ -297,6 +297,18 @@ export interface BoardSubmitRequest extends BoardSubmitInput {
   readonly artifactType?: string
   /** Account/client reference. */
   readonly accountRef?: string
+  /** Amount in the original currency. */
+  readonly valueAmount?: number
+  /** Original currency. */
+  readonly valueCurrency?: string
+  /** Deadline in UTC. */
+  readonly dueAt?: string
+  /** Data classification. */
+  readonly dataClass?: BoardDataClass
+  /** Classifier severity. */
+  readonly severity?: BoardSeverity
+  /** Classifier confidence. */
+  readonly severityConfidence?: number
   /** Owning space. */
   readonly spaceId?: string
   /** Company scope. */

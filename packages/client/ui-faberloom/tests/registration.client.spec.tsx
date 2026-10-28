@@ -81,7 +81,6 @@ async function bench(
   const createAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const renameAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const deactivateAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
-  const createBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const reviewBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const deleteBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const createRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
@@ -217,7 +216,7 @@ async function bench(
   const probeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { ok: true, tools: [] } }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
-    deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
+    deactivateAgent, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, setBoardRoutine, prepareHarness,
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
     boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,

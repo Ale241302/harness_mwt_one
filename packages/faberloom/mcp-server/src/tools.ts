@@ -916,37 +916,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   },
   {
     definition: {
-      name: 'faberloom_board_create',
-      description: 'Crea un elemento en la mesa con una primera revisión y evidencia real.',
-      inputSchema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['title', 'summary', 'evidence'],
-        properties: {
-          title: { type: 'string' },
-          summary: { type: 'string' },
-          evidence: { type: 'array', items: { type: 'string' } },
-          spaceId: { type: 'string' },
-          documentRef: { type: 'string' },
-        },
-      },
-    },
-    run: async (context, ownerId, args, companyId) => {
-      const spaceId = optional(args, 'spaceId')
-      const documentRef = optional(args, 'documentRef')
-      const item = await context.faberloomBoard.create(boardActor(ownerId, companyId), {
-        title: required(args, 'title'),
-        summary: required(args, 'summary'),
-        evidence: strings(args, 'evidence') ?? [],
-        ...spaceId === undefined ? {} : { spaceId },
-        ...documentRef === undefined ? {} : { documentRef },
-      })
-      return { id: String(item.id), status: item.status, version: item.version }
-    },
-  },
-  {
-    definition: {
-      name: 'faberloom_board_submit',
+      name: 'faberloom_board_submit_revision',
       description: 'Presenta una nueva revisión de un elemento para revisión humana.',
       inputSchema: {
         type: 'object',
@@ -1093,6 +1063,12 @@ const CATALOGUE: readonly CatalogueEntry[] = [
           spaceId: { type: 'string' },
           accountRef: { type: 'string' },
           artifactType: { type: 'string' },
+          valueAmount: { type: 'number' },
+          valueCurrency: { type: 'string' },
+          dueAt: { type: 'string' },
+          dataClass: { type: 'string' },
+          severity: { type: 'string' },
+          severityConfidence: { type: 'number' },
         },
       },
     },
@@ -1101,6 +1077,12 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       const accountRef = optional(args, 'accountRef')
       const artifactType = optional(args, 'artifactType')
       const title = optional(args, 'title')
+      const valueAmount = num(args, 'valueAmount')
+      const valueCurrency = optional(args, 'valueCurrency')
+      const dueAt = optional(args, 'dueAt')
+      const dataClass = optional(args, 'dataClass')
+      const severity = optional(args, 'severity')
+      const severityConfidence = num(args, 'severityConfidence')
       const item = await context.faberloomBoard.submit(boardActor(ownerId, companyId), {
         runId: required(args, 'runId'),
         idempotencyKey: required(args, 'idempotencyKey'),
@@ -1111,6 +1093,12 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         ...spaceId === undefined ? {} : { spaceId },
         ...accountRef === undefined ? {} : { accountRef },
         ...artifactType === undefined ? {} : { artifactType },
+        ...valueAmount === undefined ? {} : { valueAmount },
+        ...valueCurrency === undefined ? {} : { valueCurrency },
+        ...dueAt === undefined ? {} : { dueAt },
+        ...dataClass === undefined ? {} : { dataClass: dataClass as never },
+        ...severity === undefined ? {} : { severity: severity as never },
+        ...severityConfidence === undefined ? {} : { severityConfidence },
       })
       return { id: String(item.id), state: item.state, column: item.column, version: item.version, rowVersion: item.rowVersion }
     },

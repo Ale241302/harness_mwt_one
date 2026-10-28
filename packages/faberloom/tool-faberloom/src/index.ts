@@ -2702,30 +2702,47 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'faberloom_board_create',
-    description: 'Create a prepared board item awaiting review; evidence is required.',
+    name: 'faberloom_board_submit',
+    description: 'Submit one prepared result or one concrete missing-data task to the Mesa. Requires the business key (PF/OC/SAP), the account, real evidence, and a summary; a conversation prompt is not an item.',
     parameters: {
-      title: { type: 'string', required: true, description: 'Item title.' },
-      summary: { type: 'string', required: true, description: 'What the prepared result contains.' },
-      evidence: { type: 'array', required: true, description: 'Real evidence references.', items: { type: 'string' } },
+      businessKey: { type: 'string', required: true, description: 'Business identity: PF, OC, or SAP code.' },
+      accountRef: { type: 'string', required: true, description: 'Customer or account the item belongs to.' },
+      title: { type: 'string', required: true, description: 'Concrete title: artifact or missing data plus the PF/OC/SAP.' },
+      summary: { type: 'string', required: true, description: 'What the prepared result contains, or what is missing and why.' },
+      evidence: { type: 'array', required: true, description: 'Readable evidence references; never raw tool dumps or UUIDs.', items: { type: 'string' } },
+      artifactType: { type: 'string', description: 'proforma, respuesta, tarea, ...' },
       spaceId: { type: 'string', description: 'Owning space id.' },
-      documentRef: { type: 'string', description: 'Opaque document reference.' },
+      valueAmount: { type: 'number', description: 'Amount in the original currency.' },
+      valueCurrency: { type: 'string', description: 'ISO currency, for example USD.' },
+      dueAt: { type: 'string', description: 'Deadline in UTC.' },
+      severity: { type: 'string', description: 'LOW, MEDIUM, HIGH, or CRITICAL.' },
+      severityConfidence: { type: 'number', description: 'Classifier confidence from 0 to 1.' },
     },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, status: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} ${value.status} v${String(value.version)}.` }],
+      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, state: { type: 'string', required: true }, column: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Mesa item ${value.id} ${value.state} (${value.column}) v${String(value.version)}.` }],
     },
-    execute: async (args) => {
-      const item = await board(ctx).create(actor(config), {
+    execute: async (args, exec) => {
+      const sessionId = String((exec.agent as { session?: { id?: unknown } } | undefined)?.session?.id ?? 'agent')
+      const item = await board(ctx).submit(actor(config), {
+        runId: sessionId,
+        idempotencyKey: String(exec.callId),
+        businessKey: args.businessKey,
+        accountRef: args.accountRef,
         title: args.title,
         summary: args.summary,
         evidence: args.evidence,
+        artifactType: args.artifactType ?? 'tarea',
         ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
-        ...args.documentRef === undefined ? {} : { documentRef: args.documentRef },
+        ...args.valueAmount === undefined ? {} : { valueAmount: args.valueAmount },
+        ...args.valueCurrency === undefined ? {} : { valueCurrency: args.valueCurrency },
+        ...args.dueAt === undefined ? {} : { dueAt: args.dueAt },
+        ...args.severity === undefined ? {} : { severity: args.severity as never },
+        ...args.severityConfidence === undefined ? {} : { severityConfidence: args.severityConfidence },
       })
-      return { id: item.id, status: item.status, version: item.version }
+      return { id: item.id, state: item.state, column: item.column, version: item.version }
     },
-    presentCall: args => ({ card: 'generic', title: 'Create board item', kind: 'other', rawInput: args }),
+    presentCall: args => ({ card: 'generic', title: 'Submit Mesa item', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({

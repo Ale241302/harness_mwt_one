@@ -163,7 +163,6 @@ export function apply(ctx: ClientContext): void {
       },
       deactivateAgent: (id) => { write(() => ctx.remote.faberloomView.deleteAgent(id)) },
       purgeAgent: (id) => { write(() => ctx.remote.faberloomView.purgeAgent(id)) },
-      createBoardItem: (title) => { write(() => ctx.remote.faberloomView.createBoardItem(title)) },
       reviewBoardItem: (id, approve, note) => {
         const run = ctx.remote.faberloomView.reviewBoardItem(id, approve, note)
         write(() => run)
@@ -321,7 +320,6 @@ export function apply(ctx: ClientContext): void {
       restoreBackup: (id, dryRun) => ctx.remote.faberloomView.restoreBackup(id, dryRun),
       deleteBackup: id => ctx.remote.faberloomView.deleteBackup(id),
       proposeWork: text => ctx.remote.faberloomView.proposeWork(text),
-      createTaskFromWork: (text, spaceId) => ctx.remote.faberloomView.createTaskFromWork(text, spaceId),
       createAgentFromWork: (text, name, spaceId) => ctx.remote.faberloomView.createAgentFromWork(text, name, spaceId),
       createRoutineFromWork: (text, name) => ctx.remote.faberloomView.createRoutineFromWork(text, name),
       linkPreview: spaceId => ctx.remote.faberloomView.linkPreview(spaceId),

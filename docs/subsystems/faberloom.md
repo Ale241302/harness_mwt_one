@@ -3234,14 +3234,6 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('proposeWork') async proposeWork(text: string): Promise<FaberLoomWorkProposal>
 
 /**
- * Create a board item from a proposal, preserving the conversation as evidence.
- * @param text - the request that originated the task.
- * @param spaceId - space the work belongs to, or null for the personal scope.
- * @returns the refreshed overview.
- */
-@Remote('createTaskFromWork') async createTaskFromWork(text: string, spaceId: string | null): Promise<FaberLoomOverview>
-
-/**
  * Create a specialist from a proposal, preserving the conversation as its
  * origin and never copying another client's context (plan §6.5, F33–F35).
  * @param text - the responsibility the conversation described.
@@ -3712,13 +3704,6 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the refreshed overview.
  */
 @Remote('setAgentResponsibility') async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview>
-
-/**
- * Create one board item awaiting review.
- * @param title - display title; it also carries the prepared result summary.
- * @returns the refreshed overview.
- */
-@Remote('createBoardItem') async createBoardItem(title: string): Promise<FaberLoomOverview>
 
 /**
  * Approve or reject the current revision of one board item.

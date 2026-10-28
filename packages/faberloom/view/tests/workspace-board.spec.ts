@@ -543,6 +543,27 @@ describe('FaberLoomViewService space lifecycle', () => {
     expect(overview.agents).toEqual([{ id: 'a1', name: 'Recepción', spaceIds: ['sp1'], detached: false, active: true, editable: true }])
   })
 
+  it('hides conversation prompts filed before the Mesa required a run', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-mesa-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, board } = harness()
+    spaces.list.mockResolvedValue([])
+    const row = (id: string, runId: string | null, evidence: string[]) => ({
+      id, title: id, status: 'waiting_approval', state: 'PENDIENTE_CRITERIO', column: 'TU_CRITERIO',
+      severity: null, routineId: null, spaceId: null, accountRef: 'Eguisa', artifactType: 'proforma',
+      dueAt: null, valueUsd: null, pendingCandidate: null, runId, executionId: null,
+      revisions: [{ evidence }],
+    })
+    board.list.mockResolvedValue([
+      row('legacy', null, ['conversacion:Preparar la proforma']),
+      row('real', 'run-1', ['PF 2520-2026']),
+    ] as never)
+
+    const overview = await view.overview()
+    expect(overview.board.map(item => item.id)).toEqual(['real'])
+  })
+
   it('toggles memory, work flow, and routine visibility for the owner', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-vis-'))
     homes.push(home)

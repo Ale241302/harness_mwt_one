@@ -20,6 +20,7 @@ import type {
   BoardCandidate,
   BoardColumn,
   BoardCreateInput,
+  BoardDataClass,
   BoardDiscardInput,
   BoardEditDraft,
   BoardEditsInput,
@@ -288,6 +289,12 @@ export class FaberLoomBoard extends Service {
       businessKey?: string
       state?: BoardState
       supersedesItemId?: string | null
+      valueAmount?: number
+      valueCurrency?: string
+      dueAt?: string
+      dataClass?: BoardDataClass
+      severity?: BoardSeverity
+      severityConfidence?: number
     },
   ): BoardItemRecord {
     const now = new Date().toISOString()
@@ -302,15 +309,15 @@ export class FaberLoomBoard extends Service {
       status: 'waiting_approval',
       state: input.state ?? 'PENDIENTE_CRITERIO',
       rowVersion: 1,
-      severity: null,
-      severitySource: null,
-      severityConfidence: null,
-      dueAt: null,
-      valueAmount: null,
-      valueCurrency: null,
-      valueUsd: null,
-      dataClass: 'N2',
-      dataClassProvisional: true,
+      severity: input.severity ?? null,
+      severitySource: input.severity === undefined ? null : 'LLM',
+      severityConfidence: input.severityConfidence ?? null,
+      dueAt: input.dueAt ?? null,
+      valueAmount: input.valueAmount ?? null,
+      valueCurrency: input.valueCurrency ?? null,
+      valueUsd: input.valueCurrency === 'USD' ? input.valueAmount ?? null : null,
+      dataClass: input.dataClass ?? 'N2',
+      dataClassProvisional: input.dataClass === undefined,
       runId: input.runId ?? null,
       idempotencyKey: input.idempotencyKey ?? null,
       businessKey: input.businessKey ?? null,
