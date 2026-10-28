@@ -59,7 +59,7 @@ import type {
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
-  FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
+  FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
   FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
   FaberLoomBoardSeverity, FaberLoomBoardEventRow, FaberLoomBoardDraftInput, FaberLoomBoardDraftRow,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
@@ -6165,6 +6165,30 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (item === undefined) return undefined
     const revision = item.revisions[item.revisions.length - 1]
     const draft = await this.ctx.faberloomBoard.getEditDraft(this.actor(), item.id)
+    // The verification zone reads the same live path approval will run, so the
+    // panel never shows a cached verdict (W-50). A source that cannot answer is
+    // reported here instead of hiding the zone.
+    let checks: readonly FaberLoomBoardCheckRow[] = []
+    let missingChecks: readonly string[] = []
+    let checksError: string | null = null
+    try {
+      const report = await this.ctx.faberloomBoard.runChecks(this.actor(), item.id)
+      checks = report.checks.map(outcome => ({
+        id: outcome.id,
+        class: outcome.class,
+        status: outcome.result.status,
+        source: outcome.result.source,
+        sourceVersion: outcome.result.sourceVersion,
+        checkedAt: outcome.result.checkedAt,
+        fields: [...outcome.result.fields],
+        reason: outcome.result.reason ?? null,
+      }))
+      missingChecks = [...report.missing]
+    } catch (cause: unknown) {
+      // A board without an adapter may still refuse a row outright; the detail
+      // renders that refusal rather than an empty zone that looks verified.
+      checksError = cause instanceof Error ? cause.message : String(cause)
+    }
     return {
       id: item.id,
       title: item.title,
@@ -6207,6 +6231,15 @@ export class FaberLoomViewService extends TypertRemoteService {
       events: item.events.map(event => ({ command: event.command, at: event.at, reason: event.reason })),
       effects: item.effects.map(effect => ({ ref: effect.ref, detail: effect.detail, at: effect.at })),
       routineId: item.routineId,
+      checks,
+      missingChecks,
+      checksError,
+      fieldOrigins: item.fieldOrigins.map(origin => ({
+        field: origin.field,
+        source: origin.source,
+        ref: origin.ref,
+        at: origin.at,
+      })),
     }
   }
 

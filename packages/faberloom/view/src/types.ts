@@ -691,6 +691,46 @@ export interface FaberLoomBoardDetail {
   readonly effects: readonly { readonly ref: string; readonly detail: string | null; readonly at: string }[]
   /** Routine this task feeds, or null when it is standalone. */
   readonly routineId: string | null
+  /** Controls executed for this revision, the way zone ④ renders them. */
+  readonly checks: readonly FaberLoomBoardCheckRow[]
+  /** Declared controls with no adapter: approval refuses while any remain. */
+  readonly missingChecks: readonly string[]
+  /** Why the controls could not run, or null when the report is complete. */
+  readonly checksError: string | null
+  /** Source each editable field came from, or the mark that it has none. */
+  readonly fieldOrigins: readonly FaberLoomBoardFieldOriginRow[]
+}
+
+/** One executed verification control, as the detail projects it. */
+export interface FaberLoomBoardCheckRow {
+  /** Declared control id. */
+  readonly id: string
+  /** Signed class: informative, requires confirmation, or blocking. */
+  readonly class: 'informativo' | 'confirmacion' | 'bloqueante'
+  /** Outcome of the control. */
+  readonly status: 'ok' | 'warning' | 'fail'
+  /** Source consulted, never empty. */
+  readonly source: string
+  /** Version or etag the source reported, or null. */
+  readonly sourceVersion: string | null
+  /** ISO-8601 instant of the read. */
+  readonly checkedAt: string
+  /** Field paths the result applies to. */
+  readonly fields: readonly string[]
+  /** Stable reason code when the status is not `ok`, or null. */
+  readonly reason: string | null
+}
+
+/** Origin of one editable field, or the fact that it has none. */
+export interface FaberLoomBoardFieldOriginRow {
+  /** Field path inside the artifact content. */
+  readonly field: string
+  /** Source identifier, or null when the field has no origin. */
+  readonly source: string | null
+  /** Reference inside that source, or null. */
+  readonly ref: string | null
+  /** ISO-8601 instant the source was read, or null. */
+  readonly at: string | null
 }
 
 /** One audit row as the Mesa renders it. */
@@ -746,6 +786,8 @@ export interface FaberLoomBoardApproveInput {
   readonly expectedArtifactVersion: number
   /** Expected artifact hash. */
   readonly expectedArtifactHash: string
+  /** Ids of failed confirmation controls the human explicitly accepted. */
+  readonly confirmations?: readonly string[]
 }
 
 /** Discard input. */

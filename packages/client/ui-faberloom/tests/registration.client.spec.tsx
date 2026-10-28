@@ -51,6 +51,7 @@ const DETAIL = {
   artifactType: 'proforma', accountRef: 'eguisa', artifactHash: 'h1', runId: 'run-1', supersedesItemId: null,
   pendingCandidate: null, spaceId: null, iterationId: null, iterationDraftKey: null, editDraft: null,
   events: [], effects: [], routineId: null,
+  checks: [], missingChecks: [], checksError: null, fieldOrigins: [],
 }
 
 const runtimes = new Set<SlotTestRuntime>()
@@ -320,7 +321,7 @@ async function bench(
   const view = runtime.renderRoot()
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
-    deleteBoardItem, boardDetail, boardSaveEdits, boardTakeDraft, boardRevalidate,
+    deleteBoardItem, boardDetail, boardSaveEdits, boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
     emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
@@ -636,8 +637,70 @@ describe('faberloom surface', () => {
     expect(view.getByRole('button', { name: faberloomEn['mesa.adopt'] })).toBeTruthy()
   })
 
-  it('hides a Kanban column with no cards', async () => {
-    const { runtime, view } = await bench()
+  it('blocks approval and explains why when a blocking control failed', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        checks: [{
+          id: 'proforma.price', class: 'bloqueante', status: 'fail', source: 'mwt.price',
+          sourceVersion: '7', checkedAt: '2026-10-28T10:00:00Z', fields: ['lines[0].unitPrice'], reason: 'PRICE_MISSING',
+        }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.check.price'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.status.fail'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.checks.blocked'])).toBeTruthy()
+    expect((view.getByRole('button', { name: faberloomEn['action.approve'] }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('requires accepting a failing confirmation control before approving', async () => {
+    const { runtime, view, boardDetail, boardApprove } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        checks: [{
+          id: 'proforma.stock', class: 'confirmacion', status: 'warning', source: 'mwt.stock',
+          sourceVersion: '3', checkedAt: '2026-10-28T10:00:00Z', fields: [], reason: null,
+        }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
+    const confirm = view.getByRole('button', { name: faberloomEn['action.confirm'] }) as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+    fireEvent.click(view.getByRole('checkbox'))
+    expect((view.getByRole('button', { name: faberloomEn['action.confirm'] }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.confirm'] }))
+    await waitFor(() => {
+      expect(boardApprove).toHaveBeenCalledWith('item-1', expect.objectContaining({ confirmations: ['proforma.stock'] }))
+    })
+  })
+
+  it('closes the approval dialog with Escape while focus is inside it', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        checks: [{
+          id: 'proforma.stock', class: 'confirmacion', status: 'warning', source: 'mwt.stock',
+          sourceVersion: '3', checkedAt: '2026-10-28T10:00:00Z', fields: [], reason: null,
+        }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
+    const checkbox = view.getByRole('checkbox')
+    checkbox.focus()
+    fireEvent.keyDown(checkbox, { key: 'Escape' })
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+  })
+
+  it('hides a Kanban column with no cards', async () => {    const { runtime, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
     expect(await view.findByText(faberloomEn['mesa.column.tu'])).toBeTruthy()

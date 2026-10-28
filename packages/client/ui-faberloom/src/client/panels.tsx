@@ -117,7 +117,7 @@ export interface FaberloomPanelInjected {
   /** Approve the exact version and hash. */
   boardApprove: (
     id: string,
-    input: { rowVersion: number; artifactVersion: number; artifactHash: string },
+    input: { rowVersion: number; artifactVersion: number; artifactHash: string; confirmations?: readonly string[] },
   ) => Promise<Result<FaberLoomBoardDetail | undefined>>
   /** Save edits and approve the resulting version atomically. */
   boardApproveWithEdits: (
@@ -128,6 +128,7 @@ export interface FaberloomPanelInjected {
       artifactVersion: number
       artifactHash: string
       changes: Record<string, string>
+      confirmations?: readonly string[]
     },
   ) => Promise<Result<FaberLoomBoardDetail | undefined>>
   /** Discard with a closed-list reason. */
@@ -2451,8 +2452,33 @@ function dayOf(iso: string): string {
 /** Two-decimal money with grouping, shared by the detail and the List. */
 const money = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-/** The WorkLoom Mesa: Foco, Kanban, Lista, and the detail zones. */
-function mesaScreen() {
+/** Locale key of one verification status. */
+function checkStatusKey(status: 'ok' | 'warning' | 'fail'): FaberloomKey {
+  return status === 'ok' ? 'mesa.status.ok' : status === 'warning' ? 'mesa.status.warning' : 'mesa.status.fail'
+}
+
+/** Human name of a declared control; an unknown id stays readable as is. */
+const CHECK_NAMES: Readonly<Record<string, FaberloomKey>> = {
+  'proforma.price': 'mesa.check.price',
+  'proforma.sku': 'mesa.check.sku',
+  'proforma.quantity': 'mesa.check.quantity',
+  'proforma.total': 'mesa.check.total',
+  'proforma.stock': 'mesa.check.stock',
+  'proforma.separation': 'mesa.check.separation',
+}
+
+/**
+ * Readable name of one control.
+ * @param t - locale seat.
+ * @param id - declared control id.
+ * @returns the localized name, or the id when this build does not know it.
+ */
+function checkName(t: ScreenProps['t'], id: string): string {
+  const key = CHECK_NAMES[id]
+  return key === undefined ? id : t(key)
+}
+
+/** The WorkLoom Mesa: Foco, Kanban, Lista, and the detail zones. */function mesaScreen() {
   const COLUMNS = [
     ['TU_CRITERIO', 'mesa.column.tu'],
     ['ESPERANDO_CRITERIO', 'mesa.column.esperando'],
@@ -2484,10 +2510,13 @@ function mesaScreen() {
     const [discardReason, setDiscardReason] = useState<string>('DUPLICADO')
     const [discardNote, setDiscardNote] = useState('')
     const [showApprove, setShowApprove] = useState(false)
+    const [confirmations, setConfirmations] = useState<readonly string[]>([])
     const [writerSession] = useState(() => `tab-${Math.random().toString(36).slice(2)}`)
     const hydrated = useRef<string | null>(null)
     const editRef = useRef<HTMLTextAreaElement>(null)
     const severityRef = useRef<HTMLSelectElement>(null)
+    const approvePanelRef = useRef<HTMLElement>(null)
+    const approveButtonRef = useRef<HTMLButtonElement>(null)
 
     const rows = (overview?.board ?? []).filter(row => row.column !== 'CERRADO')
     const visible = rows.filter(row =>
@@ -2504,6 +2533,15 @@ function mesaScreen() {
     const draftChanged = draft !== null && value !== undefined && draft !== value.summary
     const restricted = value !== undefined && (value.dataClass === 'N3' || value.dataClass === 'N4')
     const iterationDraft = value !== undefined && (value.iterationDraftKey !== null || value.iterationId !== null)
+
+    // Zone ④ reads the same live report approval runs, so a blocking verdict
+    // here is the verdict the command will apply.
+    const checks = value?.checks ?? []
+    const checksError = value?.checksError ?? null
+    const missingChecks = value?.missingChecks ?? []
+    const blockingFail = checks.find(check => check.class === 'bloqueante' && check.status === 'fail')
+    const pendingConfirmations = checks.filter(check => check.class === 'confirmacion' && check.status !== 'ok')
+    const confirmedAll = pendingConfirmations.every(check => confirmations.includes(check.id))
 
     /** Resolve a space id to its readable title; the queue never shows an id. */
     const spaceName = (id: string | null): string =>
@@ -2527,7 +2565,9 @@ function mesaScreen() {
       : pending !== null ? t('mesa.blocked.candidate')
         : value.stale ? t('mesa.blocked.stale')
           : value.severity === null ? t('mesa.blocked.severity')
-            : null
+            : missingChecks.length > 0 ? t('mesa.checks.missing')
+              : blockingFail !== undefined ? t('mesa.checks.blocked')
+                : null
 
     /** Report a write and refresh the detail and the queue. */
     function apply<T>(result: Result<T> | Promise<Result<T>>): void {
@@ -2554,7 +2594,16 @@ function mesaScreen() {
       setDraftRevision(value.editDraft?.revision ?? 0)
       setShowApprove(false)
       setShowDiscard(false)
+      setConfirmations([])
     }, [value?.id, value?.version, value?.editDraft?.writerSession])
+
+    // The approval panel is a dialog: it takes focus when it opens and hands it
+    // back to the button that opened it, so keyboard users never lose their place.
+    useEffect(() => {
+      if (!showApprove) return
+      approvePanelRef.current?.focus()
+      return () => { approveButtonRef.current?.focus() }
+    }, [showApprove])
 
     useEffect(() => {
       if (draft === null || value === undefined || !editable || restricted) return
@@ -2596,6 +2645,8 @@ function mesaScreen() {
     const approve = (): void => {
       if (value === undefined || restricted) return
       if (value.artifactHash === null) { setMessage(t('mesa.error')); return }
+      if (!confirmedAll) return
+      const accepted = pendingConfirmations.length === 0 ? {} : { confirmations: pendingConfirmations.map(check => check.id) }
       apply(draftChanged
         ? boardApproveWithEdits(value.id, {
           rowVersion: value.rowVersion,
@@ -2603,11 +2654,13 @@ function mesaScreen() {
           artifactVersion: value.version,
           artifactHash: value.artifactHash,
           changes: { summary: draft ?? '' },
+          ...accepted,
         })
         : boardApprove(value.id, {
           rowVersion: value.rowVersion,
           artifactVersion: value.version,
           artifactHash: value.artifactHash,
+          ...accepted,
         }))
       setShowApprove(false)
     }
@@ -2630,16 +2683,20 @@ function mesaScreen() {
         const command = event.ctrlKey || event.metaKey
         if (command && event.key === 'Enter') { event.preventDefault(); iterate(); return }
         if (command && (event.key === 's' || event.key === 'S')) { event.preventDefault(); save(); return }
-        if (inField) return
+        // Escape closes the innermost control even when focus sits inside it;
+        // that is the only shortcut that must reach a focused checkbox or field.
         if (event.key === 'Escape') {
           if (showApprove) { setShowApprove(false); return }
           if (showDiscard) { setShowDiscard(false); return }
+          if (inField) { (event.target as HTMLElement).blur(); return }
           setSelected(null)
           return
         }
+        if (inField) return
         if (event.key === 'ArrowRight') { event.preventDefault(); next(); return }
         if (event.key === 'a' || event.key === 'A') {
-          if (pending !== null || value.stale) { setShowApprove(true); return }
+          if (pending !== null || value.stale || pendingConfirmations.length > 0) { setShowApprove(true); return }
+          if (blockedReason !== null) { setMessage(blockedReason); return }
           approve()
           return
         }
@@ -2837,7 +2894,7 @@ function mesaScreen() {
               <section className={styles.mesaDraftZone}>
                 <div className={styles.mesaZoneHead}>
                   <h3>{t('mesa.detail.draft')}</h3>
-                  {value.editDraft !== null && !foreignDraft ? <span className={styles.mesaHintLine}>{t('mesa.draftSaved')}</span> : null}
+                  {value.editDraft !== null && !foreignDraft ? <span className={styles.mesaHintLine} role="status">{t('mesa.draftSaved')}</span> : null}
                 </div>
                 {restricted
                   ? <StateBlock kind="empty" title={t('mesa.restricted')} text={t('mesa.restrictedText')} />
@@ -2853,11 +2910,22 @@ function mesaScreen() {
                   )}
               </section>
 
+              <section className={styles.mesaChecksZone}>
+                <h3>{t('mesa.detail.checks')}</h3>
+                {checksError === null ? null : <p className={styles.mesaHintLine}>{`${t('mesa.checks.error')} ${checksError}`}</p>}
+                {missingChecks.length === 0 ? null : <p className={styles.mesaBlocked}>{t('mesa.checks.missing')}</p>}
+                {checks.length === 0 && missingChecks.length === 0 && checksError === null
+                  ? <p className={styles.mesaHintLine}>{t('mesa.noChecks')}</p>
+                  : checks.map(check => (
+                    <div className={styles.mesaCheck} data-status={check.status} key={check.id}>
+                      <span className={styles.mesaCheckStatus}>{t(checkStatusKey(check.status))}</span>
+                      <span className={styles.mesaCheckName}>{checkName(t, check.id)}</span>
+                      <span className={styles.mesaCheckSource}>{`${check.source} · ${dayOf(check.checkedAt)}`}</span>
+                    </div>
+                  ))}
+              </section>
+
               <dl className={styles.mesaFacts}>
-                <div>
-                  <dt>{t('mesa.detail.checks')}</dt>
-                  <dd>{t('mesa.noChecks')}</dd>
-                </div>
                 <div>
                   <dt>{t('mesa.detail.doubts')}</dt>
                   <dd>{t('mesa.noDoubts')}</dd>
@@ -2873,12 +2941,20 @@ function mesaScreen() {
                     <div><dt>{t('mesa.evidence')}</dt><dd>{value.evidence.length === 0 ? t('cell.none') : value.evidence.join(', ')}</dd></div>
                     <div><dt>{t('mesa.detail.context')}</dt><dd>{value.events.length === 0 ? t('cell.none') : value.events.slice(-3).map(event => `${event.command} · ${event.at}`).join(' · ')}</dd></div>
                   </dl>
+                  {value.fieldOrigins.length === 0 ? null : (
+                    <dl className={styles.mesaFacts}>
+                      <div>
+                        <dt>{t('mesa.detail.origins')}</dt>
+                        <dd>{value.fieldOrigins.map(origin => `${origin.field} ${origin.source === null ? t('mesa.origins.none') : `← ${origin.source}`}`).join(' · ')}</dd>
+                      </div>
+                    </dl>
+                  )}
                 </div>
               </details>
 
               <footer className={styles.mesaActionBar}>
                 <div className={styles.mesaActions}>
-                  <button className={styles.primary} type="button" disabled={!editable || pending !== null || value.stale || value.severity === null} onClick={() => setShowApprove(true)}>{t('action.approve')}</button>
+                  <button ref={approveButtonRef} className={styles.primary} type="button" disabled={!editable || pending !== null || value.stale || value.severity === null || missingChecks.length > 0 || blockingFail !== undefined} onClick={() => setShowApprove(true)}>{t('action.approve')}</button>
                   <button className={styles.secondary} type="button" disabled={!editable || draft === null || draft === value.summary} onClick={save}>{t('action.save')}</button>
                   <button className={styles.secondary} type="button" disabled={!editable} onClick={iterate}>{t('mesa.iterate')}</button>
                   <button className={styles.ghost} type="button" onClick={next}>{t('mesa.skip')}</button>
@@ -2892,11 +2968,47 @@ function mesaScreen() {
               {blockedReason === null ? null : <p className={styles.mesaBlocked}>{blockedReason}</p>}
 
               {showApprove ? (
-                <section className={styles.mesaNotice}>
-                  <strong>{t('mesa.confirmApprove')}</strong>
+                <section
+                  className={`${styles.mesaNotice} ${styles.mesaDialog}`}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="mesa-approve-title"
+                  tabIndex={-1}
+                  ref={approvePanelRef}
+                  onKeyDown={(event) => {
+                    // The dialog is modal: Tab cycles inside it until it closes.
+                    if (event.key !== 'Tab') return
+                    const focusables = event.currentTarget.querySelectorAll<HTMLElement>('button, input, select, textarea')
+                    if (focusables.length === 0) return
+                    const first = focusables[0] as HTMLElement
+                    const last = focusables[focusables.length - 1] as HTMLElement
+                    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+                    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+                  }}
+                >
+                  <strong id="mesa-approve-title">{t('mesa.confirmApprove')}</strong>
                   <span>{t('mesa.approvePanel')}</span>
+                  {pendingConfirmations.length === 0 ? null : (
+                    <fieldset className={styles.mesaConfirmations}>
+                      <legend>{t('mesa.checks.confirmTitle')}</legend>
+                      {pendingConfirmations.map(check => (
+                        <label className={styles.mesaConfirmation} key={check.id}>
+                          <input
+                            type="checkbox"
+                            checked={confirmations.includes(check.id)}
+                            onChange={(event) => {
+                              setConfirmations(current => event.target.checked
+                                ? [...current, check.id]
+                                : current.filter(id => id !== check.id))
+                            }}
+                          />
+                          <span>{`${checkName(t, check.id)}: ${t(checkStatusKey(check.status))}`}</span>
+                        </label>
+                      ))}
+                    </fieldset>
+                  )}
                   <span className={styles.tools}>
-                    <button className={styles.primary} type="button" onClick={approve}>{t('action.confirm')}</button>
+                    <button className={styles.primary} type="button" disabled={!confirmedAll} onClick={approve}>{t('action.confirm')}</button>
                     <button className={styles.ghost} type="button" onClick={() => setShowApprove(false)}>{t('action.cancel')}</button>
                   </span>
                 </section>

@@ -2253,6 +2253,91 @@
   color: var(--dsw-alias-state-warn-primary);
 }
 
+.mesaChecksZone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mesaChecksZone h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+.mesaCheck {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  font: var(--dsw-font-caption);
+}
+
+.mesaCheckStatus {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.mesaCheck[data-status='ok'] .mesaCheckStatus {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.mesaCheck[data-status='warning'] .mesaCheckStatus {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.mesaCheck[data-status='fail'] .mesaCheckStatus {
+  color: var(--dsw-alias-state-error-primary);
+  font-weight: 600;
+}
+
+.mesaCheckName {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+}
+
+.mesaCheckSource {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+  white-space: nowrap;
+}
+
+.mesaConfirmations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mesaConfirmations legend {
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaDialog {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+.mesaDialog:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-accent);
+  outline-offset: 2px;
+}
+
+.mesaConfirmation {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+  font: var(--dsw-font-ui-body);
+}
+
 .mesaDraftZone {
   display: flex;
   flex-direction: column;
@@ -2454,5 +2539,18 @@
 
   .mesaColumns {
     grid-template-columns: 1fr;
+  }
+
+  .mesaCheck {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .mesaCheckSource {
+    grid-column: 2;
+    white-space: normal;
+  }
+
+  .mesaActionBar {
+    position: static;
   }
 }

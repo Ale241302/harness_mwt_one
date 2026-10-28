@@ -21,15 +21,17 @@ const TITLE = 'PF 9001-2026 · Cuenta Demo'
  * scenario composes a passing source the way the shipped profile must.
  */
 function mountChecks(board: FaberLoomBoard): void {
-  const passing = {
-    status: 'ok' as const,
-    source: 'e2e.source',
-    sourceVersion: '1',
-    checkedAt: new Date().toISOString(),
-    fields: [],
-  }
   for (const definition of DECLARED_CHECKS['proforma'] ?? []) {
-    board.registerCheck('proforma', definition.id, async () => passing, { class: definition.class })
+    // Confirmation controls report a difference so the scenario proves the
+    // acceptance step instead of approving everything silently.
+    const status = definition.class === 'confirmacion' ? 'warning' as const : 'ok' as const
+    board.registerCheck('proforma', definition.id, async () => ({
+      status,
+      source: 'e2e.source',
+      sourceVersion: '1',
+      checkedAt: new Date().toISOString(),
+      fields: [],
+    }), { class: definition.class })
   }
 }
 
@@ -90,7 +92,15 @@ describe('web e2e: WorkLoom Mesa', () => {
     }, undefined, { timeout: 20_000 })
 
     await page.getByRole('button', { name: 'Approve' }).click()
-    await page.getByRole('button', { name: 'Confirm' }).click()
+    // A confirmation control reported a difference: the approval needs the
+    // human to accept it before Confirm enables.
+    const confirm = page.getByRole('button', { name: 'Confirm' })
+    expect(await confirm.isDisabled()).toBe(true)
+    const boxes = page.getByRole('checkbox')
+    const differences = await boxes.count()
+    expect(differences).toBeGreaterThan(0)
+    for (let index = 0; index < differences; index += 1) await boxes.nth(index).check()
+    await confirm.click()
     await page.waitForFunction(title => !document.body.innerText.includes(title), TITLE, { timeout: 20_000 })
 
     const stored = await board.get(actor, itemId)

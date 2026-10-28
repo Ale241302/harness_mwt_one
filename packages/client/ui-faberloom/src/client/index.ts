@@ -192,6 +192,7 @@ export function apply(ctx: ClientContext): void {
           expectedRowVersion: input.rowVersion,
           expectedArtifactVersion: input.artifactVersion,
           expectedArtifactHash: input.artifactHash,
+          ...input.confirmations === undefined ? {} : { confirmations: input.confirmations },
         })
         void run.then((result) => { if (result.ok) refresh() })
         return run
@@ -203,6 +204,7 @@ export function apply(ctx: ClientContext): void {
           expectedArtifactHash: input.artifactHash,
           baseVersion: input.baseVersion,
           changes: input.changes,
+          ...input.confirmations === undefined ? {} : { confirmations: input.confirmations },
         })
         void run.then((result) => { if (result.ok) refresh() })
         return run
