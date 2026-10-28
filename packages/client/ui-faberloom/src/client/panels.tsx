@@ -2422,6 +2422,35 @@ function skillsScreen() {
   }
 }
 
+/** Locale key of one severity token; `null` and unknown tokens read as unclassified. */
+function severityKey(severity: string | null): FaberloomKey {
+  switch ((severity ?? '').toUpperCase()) {
+    case 'LOW': return 'mesa.severity.low'
+    case 'MEDIUM': return 'mesa.severity.medium'
+    case 'HIGH': return 'mesa.severity.high'
+    case 'CRITICAL': return 'mesa.severity.critical'
+    default: return 'mesa.unclassified'
+  }
+}
+
+/** Locale key of one visible Mesa column, so the screen never prints a state token. */
+function columnKey(column: string): FaberloomKey {
+  switch (column) {
+    case 'TU_CRITERIO': return 'mesa.column.tu'
+    case 'ESPERANDO_CRITERIO': return 'mesa.column.esperando'
+    case 'DELEGADO': return 'mesa.column.delegado'
+    default: return 'mesa.column.error'
+  }
+}
+
+/** Calendar day of an ISO instant; the queue never prints a raw timestamp. */
+function dayOf(iso: string): string {
+  return iso.slice(0, 10)
+}
+
+/** Two-decimal money with grouping, shared by the detail and the List. */
+const money = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
 /** The WorkLoom Mesa: Foco, Kanban, Lista, and the detail zones. */
 function mesaScreen() {
   const COLUMNS = [
@@ -2432,6 +2461,9 @@ function mesaScreen() {
   ] as const
   const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const
   const REASONS = ['CLIENTE_CANCELO', 'DUPLICADO', 'ERROR_ORIGEN', 'NO_CORRESPONDE', 'RESUELTO_FUERA', 'OTRA'] as const
+  // The queue rail shows one window of the queue so a long backlog does not
+  // build hundreds of rows; the List keeps the complete set.
+  const RAIL_LIMIT = 60
 
   return function FaberloomMesa(props: ScreenProps) {
     const {
@@ -2466,13 +2498,36 @@ function mesaScreen() {
       [selected, tick],
     )
     const value = detail.kind === 'ready' ? detail.value : undefined
-    const current = selected === null ? undefined : visible.find(row => row.id === selected) ?? rows.find(row => row.id === selected)
     const pending = value?.pendingCandidate ?? null
     const foreignDraft = value?.editDraft !== null && value?.editDraft !== undefined && value.editDraft.writerSession !== writerSession
     const editable = value?.state === 'PENDIENTE_CRITERIO' && !foreignDraft
     const draftChanged = draft !== null && value !== undefined && draft !== value.summary
     const restricted = value !== undefined && (value.dataClass === 'N3' || value.dataClass === 'N4')
     const iterationDraft = value !== undefined && (value.iterationDraftKey !== null || value.iterationId !== null)
+
+    /** Resolve a space id to its readable title; the queue never shows an id. */
+    const spaceName = (id: string | null): string =>
+      id === null ? t('mesa.noSpace') : overview?.spaces.find(space => space.id === id)?.title ?? t('mesa.noSpace')
+
+    /** Account and space as one line; an absent space is dropped instead of printed. */
+    const kickerOf = (account: string | null, space: string | null): string =>
+      [account ?? t('mesa.noAccount'), space === null ? null : spaceName(space)].filter(part => part !== null).join(' · ')
+
+    const selectedIndex = visible.findIndex(row => row.id === selected)
+    const railStart = selectedIndex < RAIL_LIMIT ? 0 : Math.max(0, selectedIndex - 10)
+    const railRows = visible.slice(railStart, railStart + RAIL_LIMIT)
+    const position = selectedIndex < 0 ? 0 : selectedIndex + 1
+    const unclassifiedCount = visible.filter(row => row.severity === null).length
+    const criticalCount = visible.filter(row => row.severity === 'CRITICAL').length
+    const overdueCount = visible.filter(row => row.dueAt !== null && Date.parse(row.dueAt) < Date.now()).length
+    const outsideCount = rows.length - visible.length
+
+    /** The first condition that stops a decision, in the order the spec lists it. */
+    const blockedReason = value === undefined ? null
+      : pending !== null ? t('mesa.blocked.candidate')
+        : value.stale ? t('mesa.blocked.stale')
+          : value.severity === null ? t('mesa.blocked.severity')
+            : null
 
     /** Report a write and refresh the detail and the queue. */
     function apply<T>(result: Result<T> | Promise<Result<T>>): void {
@@ -2622,10 +2677,102 @@ function mesaScreen() {
         </select>
         <select value={severityFilter} aria-label={t('mesa.severity')} onChange={event => setSeverityFilter(event.target.value)}>
           <option value="">{t('mesa.allSeverities')}</option>
-          {SEVERITIES.map(severity => <option key={severity} value={severity}>{severity}</option>)}
+          {SEVERITIES.map(severity => <option key={severity} value={severity}>{t(severityKey(severity))}</option>)}
         </select>
-        <Chip>{`${String(visible.length)} / ${String(rows.length)}`}</Chip>
       </span>
+    )
+
+    // The scope bar replaces a bare count: it says what the queue is made of
+    // and how much a filter is hiding, which is what decides whether to clear it.
+    const scopeBar = (
+      <div className={styles.mesaScope}>
+        <span>{`${t('mesa.column.tu')}: ${String(visible.filter(row => row.column === 'TU_CRITERIO').length)}`}</span>
+        <span className={unclassifiedCount > 0 ? styles.mesaScopeAlert : undefined}>{`${t('mesa.unclassified')}: ${String(unclassifiedCount)}`}</span>
+        <span className={criticalCount > 0 ? styles.mesaScopeAlert : undefined}>{`${t('mesa.scope.critical')}: ${String(criticalCount)}`}</span>
+        {overdueCount === 0 ? null : <span className={styles.mesaScopeAlert}>{`${t('mesa.scope.overdue')}: ${String(overdueCount)}`}</span>}
+        {outsideCount === 0 ? null : <span>{`${t('mesa.scope.outside')}: ${String(outsideCount)}`}</span>}
+      </div>
+    )
+
+    const queue = (
+      <nav className={styles.mesaQueue} aria-label={t('mesa.queue')}>
+        <div className={styles.mesaQueueHead}>
+          <span>{t('mesa.queue')}</span>
+          <span>{String(visible.length)}</span>
+        </div>
+        <ol className={styles.mesaQueueList}>
+          {railRows.map(row => (
+            <li key={row.id}>
+              <button
+                type="button"
+                className={styles.mesaQueueRow}
+                aria-current={row.id === selected ? 'true' : undefined}
+                onClick={() => setSelected(row.id)}
+              >
+                <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span>
+                <span className={styles.mesaQueueTitle}>{row.title}</span>
+                <span className={styles.mesaQueueMeta}>{kickerOf(row.accountRef, row.spaceId)}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
+        {railRows.length < visible.length ? <p className={styles.mesaHintLine}>{t('mesa.railMore')}</p> : null}
+      </nav>
+    )
+
+    // One notice is visible; the rest fold behind a counter (spec E4).
+    const notices: { title: string; body?: string; action?: ReactNode }[] = []
+    if (pending !== null) {
+      notices.push({
+        title: t('mesa.candidate'),
+        action: (
+          <span className={styles.tools}>
+            <button className={styles.primary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'adopt'))}>{t('mesa.adopt')}</button>
+            <button className={styles.secondary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'keep'))}>{t('mesa.keep')}</button>
+          </span>
+        ),
+      })
+    }
+    if (iterationDraft) {
+      notices.push({
+        title: t('mesa.iterationDraft'),
+        body: t('mesa.iterationDraftText'),
+        action: <button className={styles.secondary} type="button" onClick={iterate}>{t('mesa.iterationOpen')}</button>,
+      })
+    }
+    if (foreignDraft) {
+      notices.push({
+        title: t('mesa.foreignDraft'),
+        body: t('mesa.foreignDraftText'),
+        action: (
+          <button className={styles.secondary} type="button" onClick={() => apply(boardTakeDraft(value?.id ?? '', writerSession))}>{t('mesa.takeControl')}</button>
+        ),
+      })
+    }
+    if (value !== undefined && value.stale) notices.push({ title: value.staleReason ?? t('mesa.stale') })
+
+    const noticeBlock = notices.length === 0 ? null : (
+      <div className={styles.mesaNotice} role="status">
+        <div className={styles.mesaNoticeHead}>
+          <strong>{notices[0]?.title}</strong>
+          {notices[0]?.body === undefined ? null : <span>{notices[0].body}</span>}
+        </div>
+        {notices[0]?.action}
+        {notices.length === 1 ? null : (
+          <details className={styles.mesaCollapse}>
+            <summary>{`${String(notices.length - 1)} ${notices.length === 2 ? t('mesa.moreNotices') : t('mesa.moreNoticesPlural')}`}</summary>
+            <div className={styles.mesaCollapseBody}>
+              {notices.slice(1).map((notice, index) => (
+                <div key={`${notice.title}-${String(index)}`}>
+                  <strong>{notice.title}</strong>
+                  {notice.body === undefined ? null : <p className={styles.mesaHintLine}>{notice.body}</p>}
+                  {notice.action}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
     )
 
     const detailBody = detail.kind === 'loading'
@@ -2635,103 +2782,114 @@ function mesaScreen() {
         : value === undefined
           ? <StateBlock kind="empty" title={t('mesa.empty')} text={rows.length === 0 ? t('mesa.emptyHint') : t('mesa.noSelection')} />
           : (
-            <div className={styles.mesaDetail}>
-              {pending === null ? null : (
-                <div className={styles.mesaNotice}>
-                  <strong>{t('mesa.candidate')}</strong>
-                  <span className={styles.tools}>
-                    <button className={styles.primary} type="button" onClick={() => apply(boardResolveCandidate(value.id, pending.id, pending.hash, 'adopt'))}>{t('mesa.adopt')}</button>
-                    <button className={styles.secondary} type="button" onClick={() => apply(boardResolveCandidate(value.id, pending.id, pending.hash, 'keep'))}>{t('mesa.keep')}</button>
-                  </span>
+            <article className={styles.mesaMain}>
+              <header className={styles.mesaIdentity}>
+                <div className={styles.mesaKicker}>
+                  <span>{value.artifactType.length === 0 ? t('mesa.detail.draft') : value.artifactType}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{value.accountRef ?? t('mesa.noAccount')}</span>
                 </div>
-              )}
-              {value.stale ? <div className={styles.mesaNotice}>{value.staleReason ?? t('mesa.stale')}</div> : null}
-              {foreignDraft ? (
-                <div className={styles.mesaNotice}>
-                  <strong>{t('mesa.foreignDraft')}</strong>
-                  <span>{t('mesa.foreignDraftText')}</span>
-                  <span className={styles.tools}>
-                    <button className={styles.secondary} type="button" onClick={() => apply(boardTakeDraft(value.id, writerSession))}>{t('mesa.takeControl')}</button>
-                  </span>
+                <h2 className={styles.mesaTitle}>{value.title}</h2>
+                <div className={styles.mesaMeta}>
+                  {value.column === 'TU_CRITERIO' ? null : <span>{t(columnKey(value.column))}</span>}
+                  <span>{value.dueAt === null ? t('mesa.noDue') : dayOf(value.dueAt)}</span>
+                  {restricted || value.valueUsd === null ? null : <span>{`${money.format(value.valueUsd)} ${t('mesa.usd')}`}</span>}
+                  <span>{`${String(position)} ${t('mesa.of')} ${String(visible.length)}`}</span>
                 </div>
-              ) : null}
-              {iterationDraft ? (
-                <div className={styles.mesaNotice}>
-                  <strong>{t('mesa.iterationDraft')}</strong>
-                  <span>{t('mesa.iterationDraftText')}</span>
-                  <span className={styles.tools}>
-                    <button className={styles.secondary} type="button" onClick={iterate}>{t('mesa.iterationOpen')}</button>
-                  </span>
-                </div>
-              ) : null}
-
-              <section className={styles.mesaSection}>
-                <h3>{t('mesa.detail.why')}</h3>
-                <div className={styles.grid2}>
-                  <Field label={t('mesa.column')}><Chip>{t(`mesa.column.${value.column === 'TU_CRITERIO' ? 'tu' : value.column === 'ESPERANDO_CRITERIO' ? 'esperando' : value.column === 'DELEGADO' ? 'delegado' : 'error'}` as FaberloomKey)}</Chip></Field>
-                  <Field label={t('mesa.severity')}>
-                    <select ref={severityRef} value={value.severity ?? ''} disabled={!editable} onChange={(event) => {
-                      const nextSeverity = event.target.value
-                      if (nextSeverity.length === 0) return
-                      apply(boardSetSeverity(value.id, nextSeverity, value.rowVersion))
-                    }}>
+                <div className={styles.mesaProperties}>
+                  <label className={styles.mesaProperty}>
+                    <span>{t('mesa.severity')}</span>
+                    <select
+                      ref={severityRef}
+                      value={value.severity ?? ''}
+                      data-severity={value.severity ?? 'none'}
+                      disabled={!editable}
+                      aria-label={t('mesa.severity')}
+                      onChange={(event) => {
+                        if (event.target.value.length === 0) return
+                        apply(boardSetSeverity(value.id, event.target.value, value.rowVersion))
+                      }}
+                    >
                       <option value="">{t('mesa.unclassified')}</option>
-                      {SEVERITIES.map(severity => <option key={severity} value={severity}>{severity}</option>)}
+                      {SEVERITIES.map(severity => <option key={severity} value={severity}>{t(severityKey(severity))}</option>)}
                     </select>
-                  </Field>
-                  <Field label={t('mesa.space')}>
-                    <select value={value.spaceId ?? ''} disabled={!editable} onChange={(event) => {
-                      if (event.target.value.length === 0) return
-                      apply(boardAssignWorkspace(value.id, event.target.value))
-                    }}>
+                  </label>
+                  <label className={styles.mesaProperty}>
+                    <span>{t('mesa.space')}</span>
+                    <select
+                      value={value.spaceId ?? ''}
+                      disabled={!editable}
+                      aria-label={t('mesa.space')}
+                      onChange={(event) => {
+                        if (event.target.value.length === 0) return
+                        apply(boardAssignWorkspace(value.id, event.target.value))
+                      }}
+                    >
                       <option value="">{t('mesa.noSpace')}</option>
                       {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
                     </select>
-                  </Field>
-                  <Field label={t('mesa.due')}><span className={styles.cellMuted}>{value.dueAt ?? t('cell.none')}</span></Field>
-                  <Field label={t('mesa.amount')}><span className={styles.cellMuted}>{restricted ? t('mesa.restricted') : value.valueUsd === null ? t('cell.none') : `${value.valueUsd.toFixed(2)} ${t('mesa.usd')}`}</span></Field>
+                  </label>
                 </div>
-              </section>
+              </header>
 
-              <section className={styles.mesaSection}>
-                <h3>{t('mesa.detail.origin')}</h3>
-                <span className={styles.cellMuted}>{value.accountRef ?? t('mesa.noAccount')} · {value.artifactType} · {value.runId ?? t('mesa.noRun')}</span>
-              </section>
+              {noticeBlock}
 
-              <section className={styles.mesaSection}>
-                <h3>{t('mesa.detail.draft')}</h3>
+              <section className={styles.mesaDraftZone}>
+                <div className={styles.mesaZoneHead}>
+                  <h3>{t('mesa.detail.draft')}</h3>
+                  {value.editDraft !== null && !foreignDraft ? <span className={styles.mesaHintLine}>{t('mesa.draftSaved')}</span> : null}
+                </div>
                 {restricted
                   ? <StateBlock kind="empty" title={t('mesa.restricted')} text={t('mesa.restrictedText')} />
-                  : <textarea ref={editRef} value={draft ?? ''} disabled={!editable} onChange={event => setDraft(event.target.value)} />}
-                {value.editDraft !== null && !foreignDraft
-                  ? <span className={styles.cellMuted}>{t('mesa.draftSaved')}</span>
-                  : null}
-                {value.evidence.length === 0 ? null : <span className={styles.chips}>{value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry}</Chip>)}</span>}
+                  : (
+                    <textarea
+                      ref={editRef}
+                      className={styles.mesaDraft}
+                      aria-label={t('mesa.detail.draft')}
+                      value={draft ?? ''}
+                      disabled={!editable}
+                      onChange={event => setDraft(event.target.value)}
+                    />
+                  )}
               </section>
 
-              <section className={styles.mesaSection}>
-                <h3>{t('mesa.detail.checks')}</h3>
-                <span className={styles.cellMuted}>{t('mesa.noChecks')}</span>
-              </section>
+              <dl className={styles.mesaFacts}>
+                <div>
+                  <dt>{t('mesa.detail.checks')}</dt>
+                  <dd>{t('mesa.noChecks')}</dd>
+                </div>
+                <div>
+                  <dt>{t('mesa.detail.doubts')}</dt>
+                  <dd>{t('mesa.noDoubts')}</dd>
+                </div>
+              </dl>
 
-              <section className={styles.mesaSection}>
-                <h3>{t('mesa.detail.doubts')}</h3>
-                <span className={styles.cellMuted}>{t('mesa.noDoubts')}</span>
-              </section>
+              <details className={styles.mesaCollapse}>
+                <summary>{t('mesa.originContext')}</summary>
+                <div className={styles.mesaCollapseBody}>
+                  <dl className={styles.mesaFacts}>
+                    <div><dt>{t('mesa.account')}</dt><dd>{value.accountRef ?? t('mesa.noAccount')}</dd></div>
+                    <div><dt>{t('mesa.space')}</dt><dd>{spaceName(value.spaceId)}</dd></div>
+                    <div><dt>{t('mesa.evidence')}</dt><dd>{value.evidence.length === 0 ? t('cell.none') : value.evidence.join(', ')}</dd></div>
+                    <div><dt>{t('mesa.detail.context')}</dt><dd>{value.events.length === 0 ? t('cell.none') : value.events.slice(-3).map(event => `${event.command} · ${event.at}`).join(' · ')}</dd></div>
+                  </dl>
+                </div>
+              </details>
 
-              <section className={styles.mesaSection}>
-                <h3>{t('mesa.detail.context')}</h3>
-                <span className={styles.cellMuted}>{value.events.length === 0 ? t('cell.none') : value.events.slice(-3).map(event => `${event.command} · ${event.at}`).join(' · ')}</span>
-              </section>
-
-              <section className={styles.mesaActions}>
-                <button className={styles.primary} type="button" disabled={!editable || pending !== null || value.stale} onClick={() => setShowApprove(true)}>{t('action.approve')}</button>
-                <button className={styles.secondary} type="button" disabled={!editable || draft === null || draft === value.summary} onClick={save}>{t('action.save')}</button>
-                <button className={styles.secondary} type="button" disabled={!editable} onClick={iterate}>{t('mesa.iterate')}</button>
-                <button className={styles.danger} type="button" disabled={!editable || pending !== null} onClick={() => setShowDiscard(true)}>{t('action.discard')}</button>
-                <button className={styles.ghost} type="button" onClick={next}>{t('mesa.skip')}</button>
-              </section>
-              <span className={styles.cellMuted}>{t('mesa.shortcuts')}</span>
+              <footer className={styles.mesaActionBar}>
+                <div className={styles.mesaActions}>
+                  <button className={styles.primary} type="button" disabled={!editable || pending !== null || value.stale || value.severity === null} onClick={() => setShowApprove(true)}>{t('action.approve')}</button>
+                  <button className={styles.secondary} type="button" disabled={!editable || draft === null || draft === value.summary} onClick={save}>{t('action.save')}</button>
+                  <button className={styles.secondary} type="button" disabled={!editable} onClick={iterate}>{t('mesa.iterate')}</button>
+                  <button className={styles.ghost} type="button" onClick={next}>{t('mesa.skip')}</button>
+                  <button className={styles.danger} type="button" disabled={!editable || pending !== null} onClick={() => setShowDiscard(true)}>{t('action.discard')}</button>
+                </div>
+                <details className={styles.mesaCollapse}>
+                  <summary>{t('mesa.shortcutsTitle')}</summary>
+                  <p className={styles.mesaHintLine}>{t('mesa.shortcuts')}</p>
+                </details>
+              </footer>
+              {blockedReason === null ? null : <p className={styles.mesaBlocked}>{blockedReason}</p>}
 
               {showApprove ? (
                 <section className={styles.mesaNotice}>
@@ -2758,28 +2916,37 @@ function mesaScreen() {
                   </span>
                 </section>
               ) : null}
-            </div>
+            </article>
           )
 
-    const kanban = (
-      <div className={styles.mesaColumns}>
-        {COLUMNS.map(([column, key]) => {
-          const cards = visible.filter(row => row.column === column)
-          return (
-            <section className={styles.mesaColumn} key={column}>
-              <h3>{t(key)} <Chip>{String(cards.length)}</Chip></h3>
-              {cards.map(row => (
-                <button className={styles.mesaCard} key={row.id} type="button"
-                  onClick={() => { setSelected(row.id); setView('foco') }}>
-                  <strong>{row.title}</strong>
-                  <span className={styles.cellMuted}>{row.severity ?? t('mesa.unclassified')} · {row.dueAt ?? t('mesa.noDue')}</span>
-                </button>
-              ))}
-            </section>
-          )
-        })}
-      </div>
-    )
+    // An empty column hides instead of leaving a blank gutter (spec 9.2).
+    const kanbanEmpty = !COLUMNS.some(([column]) => visible.some(row => row.column === column))
+    const kanban = kanbanEmpty
+      ? <StateBlock kind="empty" title={t('mesa.empty')} text={rows.length === 0 ? t('mesa.emptyHint') : t('mesa.noSelection')} />
+      : (
+        <div className={styles.mesaColumns}>
+          {COLUMNS.map(([column, key]) => {
+            const cards = visible.filter(row => row.column === column)
+            if (cards.length === 0) return null
+            return (
+              <section className={styles.mesaColumn} key={column}>
+                <h3>{t(key)} <span className={styles.mesaQueueMeta}>{String(cards.length)}</span></h3>
+                {cards.map(row => (
+                  <button className={styles.mesaCard} key={row.id} type="button"
+                    onClick={() => { setSelected(row.id); setView('foco') }}>
+                    <span className={styles.mesaKicker}>{kickerOf(row.accountRef, row.spaceId)}</span>
+                    <strong>{row.title}</strong>
+                    <span className={styles.mesaCardFoot}>
+                      <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span>
+                      <span className={styles.mesaQueueMeta}>{row.dueAt === null ? t('mesa.noDue') : dayOf(row.dueAt)}</span>
+                    </span>
+                  </button>
+                ))}
+              </section>
+            )
+          })}
+        </div>
+      )
 
     const columns: readonly Column<{
       id: string
@@ -2791,26 +2958,33 @@ function mesaScreen() {
       valueUsd: number | null
       column: string
     }>[] = [
-      { key: 'title', header: t('col.title'), cell: row => <span className={styles.cellName}>{row.title}</span> },
-      { key: 'space', header: t('mesa.space'), cell: row => <span className={styles.cellMuted}>{row.spaceId ?? t('mesa.noSpace')}</span> },
-      { key: 'account', header: t('mesa.account'), cell: row => <span className={styles.cellMuted}>{row.accountRef ?? t('cell.none')}</span> },
-      { key: 'severity', header: t('mesa.severity'), cell: row => <Chip>{row.severity ?? t('mesa.unclassified')}</Chip> },
-      { key: 'due', header: t('mesa.due'), cell: row => <span className={styles.cellMuted}>{row.dueAt ?? t('cell.none')}</span> },
-      { key: 'amount', header: t('mesa.amount'), cell: row => <span className={styles.cellMuted}>{row.valueUsd === null || row.valueUsd === undefined ? t('cell.none') : row.valueUsd.toFixed(2)}</span> },
-      { key: 'column', header: t('mesa.column'), cell: row => <Chip>{row.column}</Chip> },
+      {
+        key: 'title',
+        header: t('col.title'),
+        cell: row => <span className={styles.cellName}>{row.title}</span>,
+      },
+      { key: 'account', header: t('mesa.account'), cell: row => <span className={styles.cellMuted}>{row.accountRef ?? t('mesa.none')}</span> },
+      { key: 'space', header: t('mesa.space'), cell: row => <span className={styles.cellMuted}>{row.spaceId === null ? t('mesa.none') : spaceName(row.spaceId)}</span> },
+      { key: 'severity', header: t('mesa.severity'), cell: row => <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span> },
+      { key: 'due', header: t('mesa.due'), cell: row => <span className={styles.cellMuted}>{row.dueAt === null ? t('mesa.none') : dayOf(row.dueAt)}</span> },
+      { key: 'amount', header: t('mesa.amount'), align: 'end', cell: row => <span className={styles.cellMuted}>{row.valueUsd === null || row.valueUsd === undefined ? t('mesa.none') : money.format(row.valueUsd)}</span> },
+      { key: 'column', header: t('mesa.column'), cell: row => <span className={styles.cellMuted}>{t(columnKey(row.column))}</span> },
     ]
 
     return (
       <Screen title={t('panel.board.title')} subtitle={t('panel.board.intro')} trailing={tabs}>
         <Feedback t={t} message={error ?? message} />
         {filters}
+        {scopeBar}
         {view === 'foco'
-          ? (
-            <>
-              {current === undefined ? null : <h2 className={styles.cellName}>{current.title}</h2>}
-              {detailBody}
-            </>
-          )
+          ? (visible.length === 0
+            ? <StateBlock kind="empty" title={t('mesa.empty')} text={rows.length === 0 ? t('mesa.emptyHint') : t('mesa.noSelection')} />
+            : (
+              <div className={styles.mesaFoco}>
+                {queue}
+                {detailBody}
+              </div>
+            ))
           : view === 'kanban'
             ? kanban
             : <DataTable columns={columns} rows={visible} selectedId={selected ?? ''} onSelect={(id) => { setSelected(id); setView('foco') }} emptyTitle={t('mesa.empty')} emptyText={t('mesa.noSelection')} labels={tableLabels(t)} />}

@@ -2031,48 +2031,366 @@
   transition: width 120ms linear;
 }
 
-/* WorkLoom Mesa: Foco, Kanban, Lista, and the ①–⑦ detail. */
-.mesaDetail {
+/* WorkLoom Mesa: a decision queue, not a form. Foco pairs the queue with the
+   artifact; Kanban and Lista reuse the same severity and meta vocabulary. */
+.mesaScope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.mesaScopeAlert {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.mesaFoco {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 24px;
+  align-items: stretch;
+  min-height: calc(100vh - 300px);
+}
+
+.mesaQueue {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.mesaQueueHead {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+  font-variant-numeric: tabular-nums;
+}
+
+.mesaQueueList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mesaQueueRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mesaQueueRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.mesaQueueRow[aria-current='true'] {
+  border-left-color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mesaQueueTitle {
+  display: -webkit-box;
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mesaQueueMeta {
+  grid-column: 1 / -1;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaMain {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 980px;
+  min-width: 0;
+  max-width: 78ch;
 }
 
-.mesaSection {
+.mesaIdentity {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-bottom: 12px;
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  gap: 6px;
 }
 
-.mesaSection h3 {
+.mesaKicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.mesaMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.mesaSeverity {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  white-space: nowrap;
+}
+
+.mesaSeverity::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.45;
+}
+
+.mesaSeverity[data-severity='HIGH'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.mesaSeverity[data-severity='HIGH']::before {
+  opacity: 0.85;
+}
+
+.mesaSeverity[data-severity='CRITICAL'] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.mesaSeverity[data-severity='CRITICAL']::before {
+  opacity: 1;
+}
+
+.mesaSeverity[data-severity='none'] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.mesaProperties {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  align-items: baseline;
+  font: var(--dsw-font-caption);
+}
+
+.mesaProperty {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.mesaProperty select {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mesaProperty select:disabled {
+  cursor: default;
+}
+
+.mesaProperty select[data-severity='HIGH'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.mesaProperty select[data-severity='CRITICAL'] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.mesaProperty select[data-severity='none'] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.mesaDraftZone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mesaZoneHead {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.mesaZoneHead h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+.mesaDraft {
+  width: 100%;
+  min-height: 180px;
+  padding: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.mesaDraft:focus-visible {
+  border-color: var(--dsw-alias-border-accent);
+  outline: 2px solid var(--dsw-alias-border-accent);
+  outline-offset: 1px;
+}
+
+.mesaFacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px 20px;
+  margin: 0;
+}
+
+.mesaFacts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mesaFacts dt {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+.mesaFacts dd {
   margin: 0;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-panel-label);
+  font: var(--dsw-font-ui-body);
+}
+
+.mesaCollapse {
+  padding-top: 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.mesaCollapse > summary {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  cursor: pointer;
+}
+
+.mesaCollapse > summary:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.mesaCollapseBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
 }
 
 .mesaNotice {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
+  padding: 10px 12px;
   border: 0.5px solid var(--dsw-alias-border-accent);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
+}
+
+.mesaNoticeHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.mesaActionBar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding: 10px 0 4px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
 }
 
 .mesaActions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+}
+
+.mesaBlocked,
+.mesaHintLine {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
 }
 
 .mesaColumns {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
   align-items: start;
 }
 
@@ -2081,13 +2399,16 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  max-width: 420px;
 }
 
 .mesaColumn h3 {
   display: flex;
-  gap: 6px;
-  align-items: center;
+  gap: 8px;
+  align-items: baseline;
   margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-panel-label);
 }
@@ -2096,9 +2417,9 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px;
+  padding: 10px 12px;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
   color: inherit;
   text-align: left;
@@ -2110,7 +2431,27 @@
   border-color: var(--dsw-alias-border-accent);
 }
 
+.mesaCardFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+}
+
 @media (max-width: 900px) {
+  .mesaFoco {
+    grid-template-columns: 1fr;
+  }
+
+  .mesaQueue {
+    position: static;
+    max-height: none;
+  }
+
+  .mesaMain {
+    max-width: none;
+  }
+
   .mesaColumns {
     grid-template-columns: 1fr;
   }

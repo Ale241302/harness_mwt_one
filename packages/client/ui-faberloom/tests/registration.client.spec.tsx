@@ -31,7 +31,11 @@ const CONTEXT = 'faberloom-context' as MainPanelId
 const OVERVIEW = {
   spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null, agentId: 'agent-1', agentName: 'Proformas', workspaceId: 'ws-1' }],
   agents: [{ id: 'agent-1', name: 'Proformas', spaceIds: ['space-1'], detached: false, active: true }],
-  board: [{ id: 'item-1', title: 'Preparar proforma', status: 'needs_review' }],
+  board: [{
+    id: 'item-1', title: 'Preparar proforma', status: 'waiting_approval', state: 'PENDIENTE_CRITERIO',
+    column: 'TU_CRITERIO', severity: 'MEDIUM', routineId: null, spaceId: null, accountRef: 'eguisa',
+    artifactType: 'proforma', dueAt: null, valueUsd: null, hasCandidate: false, hasDraft: false,
+  }],
   routines: [{ id: 'routine-1', name: 'Pedido a proforma', status: 'active' }],
   memory: [{ id: 'mem-1', kind: 'episodic', text: 'El precio de Eguisa se consulta antes de cotizar.', at: '2026-09-16T00:00:00Z' }],
   canWrite: true,
@@ -600,6 +604,45 @@ describe('faberloom surface', () => {
 
     fireEvent.keyDown(window, { key: 'r' })
     expect(await view.findByText(faberloomEn['mesa.notStale'])).toBeTruthy()
+  })
+
+  it('queues the visible items with a localized severity and a position', async () => {
+    const row = OVERVIEW.board[0]
+    const overview = {
+      ...OVERVIEW,
+      board: [
+        { ...row, id: 'item-a', title: 'PF 2520-2026', severity: 'CRITICAL' },
+        { ...row, id: 'item-b', title: 'PF 2487-2026', severity: 'HIGH' },
+      ],
+    }
+    const { runtime, view, boardDetail } = await bench({ ok: true, value: overview })
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, id: 'item-a', title: 'PF 2520-2026' } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect((await view.findAllByText('PF 2520-2026')).length).toBeGreaterThan(0)
+    expect(view.getAllByText(faberloomEn['mesa.severity.critical']).length).toBeGreaterThan(0)
+    expect(await view.findByText('1 of 2')).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.queue'])).toBeTruthy()
+  })
+
+  it('shows one notice and folds the rest behind a counter', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, stale: true, staleReason: 'El pedido cambio', pendingCandidate: { id: 'cand-1', hash: 'h2' } },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.candidate'])).toBeTruthy()
+    expect(view.getByText('1 more notice')).toBeTruthy()
+    expect(view.getByRole('button', { name: faberloomEn['mesa.adopt'] })).toBeTruthy()
+  })
+
+  it('hides a Kanban column with no cards', async () => {
+    const { runtime, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+    expect(await view.findByText(faberloomEn['mesa.column.tu'])).toBeTruthy()
+    expect(view.queryByText(faberloomEn['mesa.column.esperando'])).toBeNull()
+    expect(view.queryByText(faberloomEn['mesa.column.delegado'])).toBeNull()
   })
 
   it('opens the selected task in the Foco detail', async () => {
