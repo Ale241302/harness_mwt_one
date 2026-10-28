@@ -11,10 +11,99 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 /** Identifies one board item. */
 export type FaberLoomBoardItemId = Branded<'FaberLoomBoardItemId'>
 
+/**
+ * The identity reading the board. `companyId` is the tenant scope the
+ * deployment resolved for the caller; it is optional because a single-tenant
+ * desktop deployment may not configure one.
+ */
+export interface BoardActor {
+  /** Authenticated identity. */
+  readonly id: string
+  /** Company scope, when the deployment knows it. */
+  readonly companyId?: string | undefined
+}
+
+/**
+ * A write identity. A bare id is a legacy single-tenant actor with no company;
+ * it can mutate only items that carry no company scope.
+ */
+export type BoardWriter = BoardActor | string
+
 /** Board item lifecycle. */
 export type BoardStatus =
   | 'in_progress' | 'waiting_data' | 'waiting_approval' | 'approved'
   | 'completed' | 'failed' | 'reopened' | 'needs_review'
+
+/** Persisted WorkLoom state (§3.1). */
+export type BoardState =
+  | 'PENDIENTE_CRITERIO' | 'ITERANDO' | 'ESPERANDO_OTRO' | 'DELEGADO_EN_VENTANA'
+  | 'EJECUCION_PENDIENTE' | 'ERROR_RECUPERABLE' | 'ERROR_SIN_SALIDA'
+  | 'APROBADO' | 'EJECUTADO' | 'DESCARTADO' | 'SUSTITUIDO'
+
+/** Visible column, derived from the state and never written by a caller. */
+export type BoardColumn = 'TU_CRITERIO' | 'ESPERANDO_CRITERIO' | 'DELEGADO' | 'ERROR_ACCIONABLE' | 'CERRADO'
+
+/** Severity a rule, a model, or a human assigned. */
+export type BoardSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+
+/** Data classification of the artifact. */
+export type BoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
+
+/** One immutable audit event, stored inside the item aggregate. */
+export interface BoardEvent {
+  /** Stable event id. */
+  readonly id: string
+  /** Command that produced it. */
+  readonly command: string
+  /** Actor identity. */
+  readonly actor: string
+  /** State before the command, or null on creation. */
+  readonly fromState: BoardState | null
+  /** State after the command. */
+  readonly toState: BoardState
+  /** Artifact revision at the event. */
+  readonly revision: number | null
+  /** Artifact hash at the event. */
+  readonly artifactHash: string | null
+  /** Optional reason (discard, stale, migration). */
+  readonly reason: string | null
+  /** ISO-8601 instant. */
+  readonly at: string
+  /** Extra structured detail. */
+  readonly data: Record<string, unknown> | null
+}
+
+/** One candidate artifact that arrived while the item could not be replaced. */
+export interface BoardCandidate {
+  /** Candidate id. */
+  readonly id: string
+  /** Hash of the candidate content. */
+  readonly hash: string
+  /** Candidate summary. */
+  readonly summary: string
+  /** Evidence references. */
+  readonly evidence: string[]
+  /** ISO-8601 instant. */
+  readonly at: string
+}
+
+/** One in-progress inline edit, owned by one browser tab. */
+export interface BoardEditDraft {
+  /** Item the draft edits. */
+  readonly itemId: string
+  /** Owner of the draft. */
+  readonly userId: string
+  /** Version the edit started from. */
+  readonly baseVersion: number
+  /** Monotonic revision; a stale write is rejected. */
+  readonly revision: number
+  /** Tab that currently holds the writer seat. */
+  readonly writerSession: string
+  /** Changed fields. */
+  readonly changes: Record<string, string>
+  /** ISO-8601 instant. */
+  readonly updatedAt: string
+}
 
 /** One immutable revision of an item. */
 export interface BoardRevision {
@@ -60,6 +149,8 @@ export interface FaberLoomBoardItem {
   readonly id: FaberLoomBoardItemId
   /** Owning identity. */
   readonly ownerId: string
+  /** Company scope that owns the item, or null when the deployment has none. */
+  readonly companyId: string | null
   /** Optional owning space id. */
   readonly spaceId: string | null
   /** Routine this task feeds, or null when it is standalone. */
@@ -68,8 +159,62 @@ export interface FaberLoomBoardItem {
   readonly title: string
   /** Current status. */
   readonly status: BoardStatus
+  /** Persisted WorkLoom state; `status` remains for records written before E10. */
+  readonly state: BoardState
+  /** Visible column, derived from `state`. */
+  readonly column: BoardColumn
   /** Current revision number. */
   readonly version: number
+  /** Optimistic concurrency token. */
+  readonly rowVersion: number
+  /** Severity, or null while unclassified. */
+  readonly severity: BoardSeverity | null
+  /** Who assigned the severity. */
+  readonly severitySource: 'RULE' | 'LLM' | 'HUMAN' | null
+  /** Classifier confidence, or null. */
+  readonly severityConfidence: number | null
+  /** Deadline in UTC, or null. */
+  readonly dueAt: string | null
+  /** Amount in the original currency, or null. */
+  readonly valueAmount: number | null
+  /** Original currency, or null. */
+  readonly valueCurrency: string | null
+  /** Amount in USD at creation, or null. */
+  readonly valueUsd: number | null
+  /** Data classification. */
+  readonly dataClass: BoardDataClass
+  /** True while the classification is provisional (N2 by default). */
+  readonly dataClassProvisional: boolean
+  /** Action Engine run that created the item, or null. */
+  readonly runId: string | null
+  /** Idempotency key of the run step, or null. */
+  readonly idempotencyKey: string | null
+  /** Business identity, or null. */
+  readonly businessKey: string | null
+  /** Item this one replaces, or null. */
+  readonly supersedesItemId: string | null
+  /** Artifact type (`proforma`, `respuesta`, ...). */
+  readonly artifactType: string
+  /** Account/client reference, or null. */
+  readonly accountRef: string | null
+  /** Hash of the current artifact version, or null. */
+  readonly artifactHash: string | null
+  /** Candidate waiting for an explicit choice, or null. */
+  readonly pendingCandidate: BoardCandidate | null
+  /** Audit events, oldest first. */
+  readonly events: readonly BoardEvent[]
+  /** Discard reason, or null. */
+  readonly discardReason: string | null
+  /** Discard note, or null. */
+  readonly discardNote: string | null
+  /** Current iteration id, or null. */
+  readonly iterationId: string | null
+  /** Saved iteration draft key, or null. */
+  readonly iterationDraftKey: string | null
+  /** Iteration lock expiry, or null. */
+  readonly iterationLockUntil: string | null
+  /** Iteration lock generation. */
+  readonly iterationLockGeneration: number
   /** Every revision, ascending. */
   readonly revisions: readonly BoardRevision[]
   /** The revision currently approved, or `null`. */
@@ -104,12 +249,20 @@ export interface BoardSubmitInput {
 export interface BoardCreateInput extends BoardSubmitInput {
   /** Display title. */
   readonly title: string
+  /** Company scope, when the deployment resolved one. */
+  readonly companyId?: string | undefined
   /** Optional owning space id. */
   readonly spaceId?: string
   /** Optional routine this task feeds. */
   readonly routineId?: string
   /** Originating execution id. */
   readonly executionId?: string
+  /** Artifact type. */
+  readonly artifactType?: string
+  /** Business identity. */
+  readonly businessKey?: string
+  /** Account/client reference. */
+  readonly accountRef?: string
 }
 
 /** Review input. */
@@ -130,4 +283,56 @@ export interface BoardEffectInput {
   readonly authorization?: string
   /** Detail for the effect. */
   readonly detail?: string
+}
+
+/** Input for a new item created by an Action Engine run. */
+export interface BoardSubmitRequest extends BoardSubmitInput {
+  /** Action Engine run id. */
+  readonly runId: string
+  /** Unique per run step. */
+  readonly idempotencyKey: string
+  /** Business identity of the artifact. */
+  readonly businessKey: string
+  /** Artifact type. */
+  readonly artifactType?: string
+  /** Account/client reference. */
+  readonly accountRef?: string
+  /** Owning space. */
+  readonly spaceId?: string
+  /** Company scope. */
+  readonly companyId?: string
+  /** Originating execution id. */
+  readonly executionId?: string
+  /** Human-readable title. */
+  readonly title?: string
+}
+
+/** Input for inline edits saved as a new version. */
+export interface BoardEditsInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion: number
+  /** Version the edits were made against. */
+  readonly baseVersion: number
+  /** Changed fields, as a JSON-compatible record. */
+  readonly changes: Record<string, unknown>
+}
+
+/** Input for an approval. */
+export interface BoardApproveInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion: number
+  /** Expected artifact version. */
+  readonly expectedArtifactVersion: number
+  /** Expected artifact hash. */
+  readonly expectedArtifactHash: string
+}
+
+/** Input for discard. */
+export interface BoardDiscardInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion: number
+  /** Closed-list reason. */
+  readonly reason: string
+  /** Note; required only for `OTRA`. */
+  readonly note?: string
 }

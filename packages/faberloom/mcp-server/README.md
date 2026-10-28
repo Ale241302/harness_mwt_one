@@ -37,7 +37,7 @@ The endpoint listens on a **unix socket** by default, so several owners served b
 
 ### Clients and tokens
 
-The owner mints a token in **Conexiones → Servidor MCP** and hands it to the other agent. A request authenticates with `Authorization: Bearer <token>`; an unknown or revoked token is refused with 401, and a token belonging to another owner is refused even if this process could read it. Tokens live in the product's own domain, so revoking one stops that client without touching the harness.
+The owner mints a token in **Conexiones → Servidor MCP** and hands it to the other agent. A request authenticates with `Authorization: Bearer <token>`; an unknown or revoked token is refused with 401, and a token belonging to another owner is refused even if this process could read it. A token records the company the panel was acting for at mint time, so an external agent reads and writes only that company's items; a token minted with no company reads only company-less items. Switching the active company requires a new token. Tokens live in the product's own domain, so revoking one stops that client without touching the harness.
 
 ### What the endpoint answers
 

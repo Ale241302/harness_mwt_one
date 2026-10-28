@@ -876,19 +876,19 @@ describe('FaberLoomViewService board actions', () => {
   it('submits a revision, moves exceptions, and reviews with a note', async () => {
     const { view, board } = harness()
     await view.submitBoardRevision('b1', { summary: 'proforma lista', evidence: ['doc-1'] })
-    expect(board.submitRevision).toHaveBeenCalledWith('owner@muitowork.com', 'b1', { summary: 'proforma lista', evidence: ['doc-1'] })
+    expect(board.submitRevision).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { summary: 'proforma lista', evidence: ['doc-1'] })
 
     await view.boardException('b1', 'request_data')
-    expect(board.requestData).toHaveBeenCalledWith('owner@muitowork.com', 'b1')
+    expect(board.requestData).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1')
     await view.boardException('b1', 'fail')
-    expect(board.fail).toHaveBeenCalledWith('owner@muitowork.com', 'b1')
+    expect(board.fail).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1')
     await view.boardException('b1', 'complete')
-    expect(board.complete).toHaveBeenCalledWith('owner@muitowork.com', 'b1')
+    expect(board.complete).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1')
 
     await view.reviewBoardItem('b1', true, 'revisado contra MWT')
-    expect(board.review).toHaveBeenCalledWith('owner@muitowork.com', 'b1', { decision: 'approve', version: 3, note: 'revisado contra MWT' })
+    expect(board.review).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { decision: 'approve', version: 3, note: 'revisado contra MWT' })
     await view.reviewBoardItem('b1', false)
-    expect(board.review).toHaveBeenLastCalledWith('owner@muitowork.com', 'b1', { decision: 'reject', version: 3 })
+    expect(board.review).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { decision: 'reject', version: 3 })
   })
 
   it('refuses every board write for a read-only identity', async () => {

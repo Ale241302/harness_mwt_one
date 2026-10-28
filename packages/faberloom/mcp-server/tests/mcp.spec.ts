@@ -216,8 +216,10 @@ describe('FaberLoomMcpServer', () => {
     expect(document.document.version).toBe(1)
     expect(document.document.platform).toBe('desktop')
     // The document names the product domains this process holds open; a domain
-    // that is not open is reported as skipped rather than read as empty.
-    expect(Object.keys(document.document.domains)).toContain('faberloom_mcp')
+    // that is not open is reported as skipped rather than read as empty. The MCP
+    // token table is deliberately absent: tokens never travel through the mirror.
+    expect(Object.keys(document.document.domains)).toContain('faberloom_agents')
+    expect(Object.keys(document.document.domains)).not.toContain('faberloom_mcp')
 
     const refused = await post(endpoint.port, {
       jsonrpc: '2.0',
@@ -286,6 +288,56 @@ describe('FaberLoomMcpServer', () => {
     expect(full.scopes).toBeNull()
     const all = await post(endpoint.port, { jsonrpc: '2.0', id: 4, method: 'tools/list' }, full.token)
     expect((JSON.parse(all.text) as { result: { tools: unknown[] } }).result.tools.length).toBeGreaterThan(1)
+  })
+
+  it('carries the company scope on the token', async () => {
+    const { server } = await harness()
+    const token = await server.mintToken('Empresa', null, 'co-sondel')
+    expect(token.companyId).toBe('co-sondel')
+    const rows = await server.listTokens()
+    expect(rows.find(row => row.token === token.token)?.companyId).toBe('co-sondel')
+  })
+
+  it('refuses the mirror to a company-scoped token', async () => {
+    const { server, endpoint } = await harness()
+    await waitForServer(endpoint.port)
+    const token = (await server.mintToken('Empresa', null, 'co-sondel')).token
+    const answer = await post(endpoint.port, {
+      jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'faberloom_mirror_export', arguments: {} },
+    }, token)
+    const result = (JSON.parse(answer.text) as { result: { isError?: boolean; content: { text: string }[] } }).result
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('owner-scoped')
+  })
+
+  it('scopes board reads and writes to the token company', async () => {
+    const { ctx, server, endpoint } = await harness()
+    await waitForServer(endpoint.port)
+    const item = await ctx.faberloomBoard.create({ id: OWNER, companyId: 'co-sondel' }, {
+      title: 'Proforma', summary: 's', evidence: ['e'],
+    })
+    const own = (await server.mintToken('Propia', null, 'co-sondel')).token
+    const foreign = (await server.mintToken('Ajena', null, 'co-sonepar')).token
+    const noCompany = (await server.mintToken('Sin empresa')).token
+
+    const read = async (token: string): Promise<{ isError?: boolean; content: { text: string }[] }> => {
+      const answer = await post(endpoint.port, {
+        jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'faberloom_board_get', arguments: { id: String(item.id) } },
+      }, token)
+      return (JSON.parse(answer.text) as { result: { isError?: boolean; content: { text: string }[] } }).result
+    }
+
+    expect((await read(own)).isError).toBeUndefined()
+    expect((await read(foreign)).isError).toBe(true)
+    expect((await read(foreign)).content[0]!.text).toContain('NO_ACCESS')
+    expect((await read(noCompany)).isError).toBe(true)
+
+    const denied = await post(endpoint.port, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'faberloom_board_review', arguments: { id: String(item.id), decision: 'approve', version: 1 } },
+    }, foreign)
+    expect((JSON.parse(denied.text) as { result: { isError?: boolean; content: { text: string }[] } }).result.content[0]!.text)
+      .toContain('NO_ACCESS')
   })
 
   it('F04 — a client asking for events receives SSE frames it can parse', async () => {

@@ -2716,7 +2716,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} ${value.status} v${String(value.version)}.` }],
     },
     execute: async (args) => {
-      const item = await board(ctx).create(actor(config).id, {
+      const item = await board(ctx).create(actor(config), {
         title: args.title,
         summary: args.summary,
         evidence: args.evidence,
@@ -2742,7 +2742,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} now v${String(value.version)}.` }],
     },
     execute: async (args) => {
-      const item = await board(ctx).submitRevision(actor(config).id, args.id as FaberLoomBoardItemId, {
+      const item = await board(ctx).submitRevision(actor(config), args.id as FaberLoomBoardItemId, {
         summary: args.summary,
         evidence: args.evidence,
         ...args.documentRef === undefined ? {} : { documentRef: args.documentRef },
@@ -2769,7 +2769,7 @@ export function apply(ctx: Context, config: Config): void {
     /* jscpd:ignore-end */
     execute: async (args) => {
       await authorize(ctx, config, 'faberloom.board.review', args.id)
-      const item = await board(ctx).review(actor(config).id, args.id as FaberLoomBoardItemId, {
+      const item = await board(ctx).review(actor(config), args.id as FaberLoomBoardItemId, {
         decision: args.decision,
         version: args.version,
         ...args.note === undefined ? {} : { note: args.note },
@@ -2791,7 +2791,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} stale=${String(value.stale)}.` }],
     },
     execute: async (args) => {
-      const item = await board(ctx).markStale(actor(config).id, args.id as FaberLoomBoardItemId, args.reason)
+      const item = await board(ctx).markStale(actor(config), args.id as FaberLoomBoardItemId, args.reason)
       return { id: item.id, stale: item.stale }
     },
     presentCall: args => ({ card: 'generic', title: 'Mark board item stale', kind: 'other', rawInput: args }),
@@ -2811,7 +2811,7 @@ export function apply(ctx: Context, config: Config): void {
     },
     /* jscpd:ignore-end */
     execute: async (args) => {
-      const item = await board(ctx).revalidate(actor(config).id, args.id as FaberLoomBoardItemId, args.changed)
+      const item = await board(ctx).revalidate(actor(config), args.id as FaberLoomBoardItemId, args.changed)
       return { id: item.id, status: item.status }
     },
     presentCall: args => ({ card: 'generic', title: 'Revalidate board item', kind: 'other', rawInput: args }),
@@ -2831,7 +2831,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} effects=${String(value.effects)}.` }],
     },
     execute: async (args) => {
-      const item = await board(ctx).recordEffect(actor(config).id, args.id as FaberLoomBoardItemId, {
+      const item = await board(ctx).recordEffect(actor(config), args.id as FaberLoomBoardItemId, {
         ref: args.ref,
         authorization: args.authorization,
         ...args.detail === undefined ? {} : { detail: args.detail },
@@ -2855,7 +2855,7 @@ export function apply(ctx: Context, config: Config): void {
     execute: async (args) => {
       const service = board(ctx)
       const id = args.id as FaberLoomBoardItemId
-      const owner = actor(config).id
+      const owner = actor(config)
       const item = args.action === 'request_data'
         ? await service.requestData(owner, id)
         : args.action === 'fail'
@@ -2886,7 +2886,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Board item ${value.status} v${String(value.version)}.` }],
     },
     execute: async (args) => {
-      const item = await board(ctx).get(args.id as FaberLoomBoardItemId)
+      const item = await board(ctx).get(actor(config), args.id as FaberLoomBoardItemId)
       return {
         status: item.status,
         version: item.version,
@@ -2927,8 +2927,7 @@ export function apply(ctx: Context, config: Config): void {
       }],
     },
     execute: async (args) => {
-      const items = await board(ctx).list({
-        ownerId: actor(config).id,
+      const items = await board(ctx).list(actor(config), {
         ...args.status === undefined ? {} : { status: args.status as BoardStatus },
       })
       return { items: items.map(item => ({ id: item.id, title: item.title, status: item.status })) }

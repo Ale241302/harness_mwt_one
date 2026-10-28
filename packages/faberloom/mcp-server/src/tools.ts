@@ -28,7 +28,7 @@ const MAX_ROWS = 50
 /** One tool of the catalogue. */
 interface CatalogueEntry {
   readonly definition: McpToolDefinition
-  readonly run: (context: Context, ownerId: string, args: Record<string, unknown>) => Promise<unknown>
+  readonly run: (context: Context, ownerId: string, args: Record<string, unknown>, companyId?: string) => Promise<unknown>
 }
 
 /** Read one required string argument. */
@@ -99,9 +99,21 @@ function num(args: Record<string, unknown>, name: string): number | undefined {
   return raw
 }
 
-/** The acting identity every MCP call uses; the deployment injects the owner. */
-function actor(id: string): SpaceActor {
-  return { id, role: 'client_b2b', companyId: undefined, readOnly: false }
+/** The acting product identity; the deployment injects the owner and, when known, the company. */
+function actor(id: string, companyId?: string): SpaceActor {
+  return { id, role: 'client_b2b', companyId, readOnly: false }
+}
+
+/** The board identity: owner plus the company the token was minted for. */
+function boardActor(ownerId: string, companyId?: string): { id: string; companyId?: string | undefined } {
+  return companyId === undefined ? { id: ownerId } : { id: ownerId, companyId }
+}
+
+/** The mirror moves raw rows; a company-scoped token must not cross that boundary. */
+function requireOwnerScoped(companyId?: string): void {
+  if (companyId !== undefined) {
+    throw new Error('faberloom: the mirror is owner-scoped; a company-scoped token cannot export or apply it')
+  }
 }
 
 /** Resolve the mirror service, refusing a call when the row is not mounted. */
@@ -249,12 +261,12 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       description: 'Resumen del espacio de trabajo del propietario: espacios, agentes, rutinas, mesa y las últimas ejecuciones.',
       inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     },
-    run: async (context, ownerId) => {
+    run: async (context, ownerId, _args, companyId) => {
       const [spaces, agents, routines, board, executions] = await Promise.all([
         context.faberloomSpaces.list(actor(ownerId)),
         context.faberloomAgents.listAgents(),
         context.faberloomRoutines.listRoutines(ownerId),
-        context.faberloomBoard.list({ ownerId }),
+        context.faberloomBoard.list(boardActor(ownerId, companyId)),
         context.faberloomRoutines.listExecutions(),
       ])
       return {
@@ -279,9 +291,9 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { includeArchived: { type: 'boolean', description: 'Incluye espacios archivados.' } },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const includeArchived = boolean(args, 'includeArchived') ?? false
-      return (await context.faberloomSpaces.list(actor(ownerId)))
+      return (await context.faberloomSpaces.list(actor(ownerId, companyId)))
         .filter(space => includeArchived || !space.archived)
         .map(space => ({
           id: String(space.id),
@@ -304,8 +316,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string', description: 'Identificador del espacio.' } },
       },
     },
-    run: async (context, ownerId, args) => {
-      const space = await context.faberloomSpaces.get(actor(ownerId), required(args, 'id') as FaberLoomSpaceId)
+    run: async (context, ownerId, args, companyId) => {
+      const space = await context.faberloomSpaces.get(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId)
       return {
         id: String(space.id),
         title: space.title,
@@ -334,9 +346,9 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const parentId = optional(args, 'parentId')
-      const space = await context.faberloomSpaces.create(actor(ownerId), {
+      const space = await context.faberloomSpaces.create(actor(ownerId, companyId), {
         title: required(args, 'title'),
         ...parentId === undefined ? {} : { parentId: parentId as FaberLoomSpaceId },
       })
@@ -371,7 +383,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const patch: {
         title?: string
         parentId?: FaberLoomSpaceId
@@ -409,7 +421,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         if (!Array.isArray(sources)) throw new Error('sources must be an array')
         patch.sources = sources as SpaceSource[]
       }
-      const space = await context.faberloomSpaces.update(actor(ownerId), required(args, 'id') as FaberLoomSpaceId, patch)
+      const space = await context.faberloomSpaces.update(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId, patch)
       return { id: String(space.id), version: space.version }
     },
   },
@@ -424,8 +436,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args) => {
-      const space = await context.faberloomSpaces.archive(actor(ownerId), required(args, 'id') as FaberLoomSpaceId)
+    run: async (context, ownerId, args, companyId) => {
+      const space = await context.faberloomSpaces.archive(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId)
       return { id: String(space.id), archived: space.archived, version: space.version }
     },
   },
@@ -440,8 +452,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args) =>
-      context.faberloomSpaces.effectiveContext(actor(ownerId), required(args, 'id') as FaberLoomSpaceId),
+    run: async (context, ownerId, args, companyId) =>
+      context.faberloomSpaces.effectiveContext(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId),
   },
   {
     definition: {
@@ -454,8 +466,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args) =>
-      context.faberloomSpaces.previewLink(actor(ownerId), required(args, 'id') as FaberLoomSpaceId),
+    run: async (context, ownerId, args, companyId) =>
+      context.faberloomSpaces.previewLink(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId),
   },
   // ── Agents and the model pool ──────────────────────────────────────
   {
@@ -870,9 +882,12 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const status = optional(args, 'status')
-      const rows = await context.faberloomBoard.list(status === undefined ? { ownerId } : { ownerId, status: status as BoardStatus })
+      const rows = await context.faberloomBoard.list(
+        boardActor(ownerId, companyId),
+        status === undefined ? {} : { status: status as BoardStatus },
+      )
       return rows.slice(-limit(args)).map(item => ({
         id: String(item.id),
         title: item.title,
@@ -894,7 +909,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, _ownerId, args) => context.faberloomBoard.get(required(args, 'id') as FaberLoomBoardItemId),
+    run: async (context, ownerId, args, companyId) => context.faberloomBoard.get(
+      boardActor(ownerId, companyId),
+      required(args, 'id') as FaberLoomBoardItemId,
+    ),
   },
   {
     definition: {
@@ -913,10 +931,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const spaceId = optional(args, 'spaceId')
       const documentRef = optional(args, 'documentRef')
-      const item = await context.faberloomBoard.create(ownerId, {
+      const item = await context.faberloomBoard.create(boardActor(ownerId, companyId), {
         title: required(args, 'title'),
         summary: required(args, 'summary'),
         evidence: strings(args, 'evidence') ?? [],
@@ -942,9 +960,9 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const documentRef = optional(args, 'documentRef')
-      const item = await context.faberloomBoard.submitRevision(ownerId, required(args, 'id') as FaberLoomBoardItemId, {
+      const item = await context.faberloomBoard.submitRevision(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
         summary: required(args, 'summary'),
         evidence: strings(args, 'evidence') ?? [],
         ...documentRef === undefined ? {} : { documentRef },
@@ -968,9 +986,9 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const note = optional(args, 'note')
-      const item = await context.faberloomBoard.review(ownerId, required(args, 'id') as FaberLoomBoardItemId, {
+      const item = await context.faberloomBoard.review(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
         decision: required(args, 'decision') === 'approve' ? 'approve' : 'reject',
         version: num(args, 'version') ?? 0,
         ...note === undefined ? {} : { note },
@@ -989,8 +1007,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args) => {
-      const item = await context.faberloomBoard.reopen(ownerId, required(args, 'id') as FaberLoomBoardItemId)
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.reopen(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId)
       return { id: String(item.id), status: item.status, version: item.version }
     },
   },
@@ -1010,10 +1028,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const authorization = optional(args, 'authorization')
       const detail = optional(args, 'detail')
-      const item = await context.faberloomBoard.recordEffect(ownerId, required(args, 'id') as FaberLoomBoardItemId, {
+      const item = await context.faberloomBoard.recordEffect(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
         ref: required(args, 'ref'),
         ...authorization === undefined ? {} : { authorization },
         ...detail === undefined ? {} : { detail },
@@ -1032,8 +1050,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' }, reason: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args) => {
-      const item = await context.faberloomBoard.markStale(ownerId, required(args, 'id') as FaberLoomBoardItemId, required(args, 'reason'))
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.markStale(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, required(args, 'reason'))
       return { id: String(item.id), stale: item.stale, version: item.version }
     },
   },
@@ -1048,14 +1066,267 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' }, changed: { type: 'boolean' } },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const item = await context.faberloomBoard.revalidate(
-        ownerId,
+        boardActor(ownerId, companyId),
         required(args, 'id') as FaberLoomBoardItemId,
         boolean(args, 'changed') ?? false,
       )
       return { id: String(item.id), stale: item.stale, version: item.version }
     },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_submit',
+      description: 'Crea un elemento desde una corrida: exige runId, idempotencyKey y businessKey; una clave repetida devuelve el existente.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['runId', 'idempotencyKey', 'businessKey', 'summary', 'evidence'],
+        properties: {
+          runId: { type: 'string' },
+          idempotencyKey: { type: 'string' },
+          businessKey: { type: 'string' },
+          title: { type: 'string' },
+          summary: { type: 'string' },
+          evidence: { type: 'array', items: { type: 'string' } },
+          spaceId: { type: 'string' },
+          accountRef: { type: 'string' },
+          artifactType: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const spaceId = optional(args, 'spaceId')
+      const accountRef = optional(args, 'accountRef')
+      const artifactType = optional(args, 'artifactType')
+      const title = optional(args, 'title')
+      const item = await context.faberloomBoard.submit(boardActor(ownerId, companyId), {
+        runId: required(args, 'runId'),
+        idempotencyKey: required(args, 'idempotencyKey'),
+        businessKey: required(args, 'businessKey'),
+        summary: required(args, 'summary'),
+        evidence: strings(args, 'evidence') ?? [],
+        ...title === undefined ? {} : { title },
+        ...spaceId === undefined ? {} : { spaceId },
+        ...accountRef === undefined ? {} : { accountRef },
+        ...artifactType === undefined ? {} : { artifactType },
+      })
+      return { id: String(item.id), state: item.state, column: item.column, version: item.version, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_set_severity',
+      description: 'Confirma o corrige la severidad de un elemento.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'severity'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          severity: { type: 'string' },
+          source: { type: 'string' },
+          confidence: { type: 'number' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const source = optional(args, 'source')
+      const confidence = num(args, 'confidence')
+      const item = await context.faberloomBoard.setSeverity(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        required(args, 'severity') as never,
+        source === 'RULE' || source === 'LLM' ? source : 'HUMAN',
+        confidence ?? null,
+        num(args, 'rowVersion'),
+      )
+      return { id: String(item.id), severity: item.severity, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_save_edits',
+      description: 'Guarda ediciones en línea como una versión nueva.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'baseVersion', 'changes'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          baseVersion: { type: 'number' },
+          changes: { type: 'object' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.saveEdits(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        {
+          expectedRowVersion: num(args, 'rowVersion') ?? 0,
+          baseVersion: num(args, 'baseVersion') ?? 0,
+          changes: object(args, 'changes') ?? {},
+        },
+      )
+      return { id: String(item.id), version: item.version, rowVersion: item.rowVersion, artifactHash: item.artifactHash }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_approve',
+      description: 'Aprueba la versión y el hash exactos. Aprobar no envía nada.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'artifactVersion', 'artifactHash'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          artifactVersion: { type: 'number' },
+          artifactHash: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.approve(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        {
+          expectedRowVersion: num(args, 'rowVersion') ?? 0,
+          expectedArtifactVersion: num(args, 'artifactVersion') ?? 0,
+          expectedArtifactHash: required(args, 'artifactHash'),
+        },
+      )
+      return { id: String(item.id), state: item.state, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_approve_with_edits',
+      description: 'Guarda ediciones y aprueba exactamente esa versión en una sola operación.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'baseVersion', 'artifactVersion', 'artifactHash', 'changes'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          baseVersion: { type: 'number' },
+          artifactVersion: { type: 'number' },
+          artifactHash: { type: 'string' },
+          changes: { type: 'object' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.approveWithEdits(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        {
+          expectedRowVersion: num(args, 'rowVersion') ?? 0,
+          expectedArtifactVersion: num(args, 'artifactVersion') ?? 0,
+          expectedArtifactHash: required(args, 'artifactHash'),
+          baseVersion: num(args, 'baseVersion') ?? 0,
+          changes: object(args, 'changes') ?? {},
+        },
+      )
+      return { id: String(item.id), state: item.state, version: item.version, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_discard',
+      description: 'Descarta un elemento con una razón de la lista cerrada.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'reason'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          reason: { type: 'string' },
+          note: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const note = optional(args, 'note')
+      const item = await context.faberloomBoard.discard(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        {
+          expectedRowVersion: num(args, 'rowVersion') ?? 0,
+          reason: required(args, 'reason'),
+          ...note === undefined ? {} : { note },
+        },
+      )
+      return { id: String(item.id), state: item.state, discardReason: item.discardReason }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_resolve_candidate',
+      description: 'Adopta o mantiene la versión vigente frente a un candidato.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'candidateId', 'candidateHash', 'decision'],
+        properties: {
+          id: { type: 'string' },
+          candidateId: { type: 'string' },
+          candidateHash: { type: 'string' },
+          decision: { type: 'string', description: 'adopt o keep.' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.resolveCandidate(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        required(args, 'candidateId'),
+        required(args, 'candidateHash'),
+        required(args, 'decision') === 'adopt' ? 'adopt' : 'keep',
+      )
+      return { id: String(item.id), state: item.state, version: item.version, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_assign_workspace',
+      description: 'Asigna un espacio a un elemento y resuelve colisiones de identidad.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'workspaceId'],
+        properties: { id: { type: 'string' }, workspaceId: { type: 'string' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.assignWorkspace(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        required(args, 'workspaceId'),
+      )
+      return { id: String(item.id), state: item.state, spaceId: item.spaceId, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_events',
+      description: 'Lee el historial de auditoría de un elemento.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) =>
+      context.faberloomBoard.events(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId),
   },
   // ── Grants (autonomía) ─────────────────────────────────────────────
   {
@@ -1195,7 +1466,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       description: 'Lee los datos de producto de este equipo como un documento de espejo versionado: agentes, espacios, rutinas, mesa, memoria, contexto, flujos, conexiones, concesiones y skills.',
       inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     },
-    run: async (context, _ownerId) => {
+    run: async (context, _ownerId, _args, companyId) => {
+      requireOwnerScoped(companyId)
       const local = await requireMirror(context).exportDocument()
       return { document: local.document, skipped: local.skipped }
     },
@@ -1216,7 +1488,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, _ownerId, args) => requireMirror(context).importDocument(args['document']),
+    run: async (context, _ownerId, args, companyId) => {
+      requireOwnerScoped(companyId)
+      return requireMirror(context).importDocument(args['document'])
+    },
   },
   // ── Connections ────────────────────────────────────────────────────
   {
@@ -2197,6 +2472,7 @@ export class FaberLoomToolHost implements ToolHost {
     private readonly context: Context,
     private readonly ownerId: string,
     private readonly scopes: readonly string[] | null = null,
+    private readonly companyId: string | undefined = undefined,
   ) {}
 
   /** @returns the advertised tools the client's scopes allow. */
@@ -2218,7 +2494,7 @@ export class FaberLoomToolHost implements ToolHost {
     }
     const entry = CATALOGUE.find(candidate => candidate.definition.name === name)
     if (entry === undefined) throw new Error(`unknown tool: ${name}`)
-    return value(await entry.run(this.context, this.ownerId, args))
+    return value(await entry.run(this.context, this.ownerId, args, this.companyId))
   }
 }
 

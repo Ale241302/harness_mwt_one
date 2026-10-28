@@ -19,12 +19,15 @@ async function harness() {
 }
 
 const OWNER = 'compras2@sondelsa.com'
+const ACTOR = { id: OWNER }
+const OTHER = { id: 'otro@sonepar.com' }
 
 describe('FaberLoomBoard', () => {
   it('F16 · approving prepares nothing; an effect needs an explicit authorization', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'Proforma Eguisa', summary: 'borrador', evidence: ['mw:price:701414'] })
     expect(item).toMatchObject({ status: 'waiting_approval', version: 1 })
+    await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
     const approved = await board.review(OWNER, item.id, { decision: 'approve', version: 1 })
     expect(approved.status).toBe('approved')
     expect(approved.approvedRevision).toBe(1)
@@ -48,6 +51,7 @@ describe('FaberLoomBoard', () => {
   it('F05 · approval binds to the exact revision and survives a correction as history', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'x', summary: 'v1', evidence: ['ev'] })
+    await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
     await board.review(OWNER, item.id, { decision: 'approve', version: 1 })
     const corrected = await board.submitRevision(OWNER, item.id, { summary: 'v2', evidence: ['ev2'] })
     expect(corrected).toMatchObject({ version: 2, status: 'waiting_approval', approvedRevision: 1 })
@@ -59,6 +63,7 @@ describe('FaberLoomBoard', () => {
   it('F09 · a change after approval goes stale and blocks approval and effects until revalidated', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'x', summary: 'v1', evidence: ['ev'] })
+    await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
     await board.review(OWNER, item.id, { decision: 'approve', version: 1 })
     const stale = await board.markStale(OWNER, item.id, 'price changed')
     expect(stale).toMatchObject({ stale: true, status: 'needs_review', approvedRevision: null })
@@ -78,39 +83,40 @@ describe('FaberLoomBoard', () => {
     expect((await board.reopen(OWNER, item.id)).status).toBe('reopened')
     expect((await board.review(OWNER, item.id, { decision: 'reject', version: 1 })).status).toBe('reopened')
 
-    await expect(board.review('otro', item.id, { decision: 'approve', version: 1 })).rejects.toThrow('only the owner')
-    await expect(board.submitRevision('otro', item.id, { summary: 's', evidence: ['e'] })).rejects.toThrow('only the owner')
-    await expect(board.recordEffect('otro', item.id, { ref: 'r', authorization: 'a' })).rejects.toThrow('only the owner')
-    await expect(board.markStale('otro', item.id, 'x')).rejects.toThrow('only the owner')
-    await expect(board.revalidate('otro', item.id, false)).rejects.toThrow('only the owner')
-    await expect(board.requestData('otro', item.id)).rejects.toThrow('only the owner')
+    await expect(board.review('otro', item.id, { decision: 'approve', version: 1 })).rejects.toThrow('NO_ACCESS')
+    await expect(board.submitRevision('otro', item.id, { summary: 's', evidence: ['e'] })).rejects.toThrow('NO_ACCESS')
+    await expect(board.recordEffect('otro', item.id, { ref: 'r', authorization: 'a' })).rejects.toThrow('NO_ACCESS')
+    await expect(board.markStale('otro', item.id, 'x')).rejects.toThrow('NO_ACCESS')
+    await expect(board.revalidate('otro', item.id, false)).rejects.toThrow('NO_ACCESS')
+    await expect(board.requestData('otro', item.id)).rejects.toThrow('NO_ACCESS')
     await expect(board.complete(OWNER, item.id)).rejects.toThrow('not approved')
-    await expect(board.get('missing' as FaberLoomBoardItemId)).rejects.toThrow('not found')
+    await expect(board.get(ACTOR, 'missing' as FaberLoomBoardItemId)).rejects.toThrow('not found')
   })
 
   it('lists items by owner and status', async () => {
     const { board } = await harness()
     const first = await board.create(OWNER, { title: 'a', summary: 's', evidence: ['e'] })
-    await board.create('otro', { title: 'b', summary: 's', evidence: ['e'] })
-    expect((await board.list({ ownerId: OWNER })).map(item => item.id)).toEqual([first.id])
-    expect(await board.list({ status: 'waiting_approval' })).toHaveLength(2)
-    expect(await board.list({ ownerId: OWNER, status: 'approved' })).toEqual([])
+    await board.create(OTHER.id, { title: 'b', summary: 's', evidence: ['e'] })
+    expect((await board.list(ACTOR)).map(item => item.id)).toEqual([first.id])
+    expect(await board.list(OTHER)).toHaveLength(1)
+    expect(await board.list(ACTOR, { status: 'waiting_approval' })).toHaveLength(1)
+    expect(await board.list(ACTOR, { status: 'approved' })).toEqual([])
   })
 
   it('permanently removes one item, owner-only', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'x', summary: 's', evidence: ['e'] })
-    await expect(board.remove('otro', item.id)).rejects.toThrow('only the owner')
+    await expect(board.remove('otro', item.id)).rejects.toThrow('NO_ACCESS')
     expect(await board.remove(OWNER, item.id)).toBe(true)
-    await expect(board.get(item.id)).rejects.toThrow('not found')
-    expect(await board.list({ ownerId: OWNER })).toEqual([])
+    await expect(board.get(ACTOR, item.id)).rejects.toThrow('not found')
+    expect(await board.list(ACTOR)).toEqual([])
   })
 
   it('links a task to a routine, owner-only, and creates with one', async () => {
     const { board } = await harness()
     const linked = await board.create(OWNER, { title: 'x', summary: 's', evidence: ['e'], routineId: 'routine-1' })
     expect(linked.routineId).toBe('routine-1')
-    await expect(board.setRoutine('otro', linked.id, 'routine-2')).rejects.toThrow('only the owner')
+    await expect(board.setRoutine('otro', linked.id, 'routine-2')).rejects.toThrow('NO_ACCESS')
     expect((await board.setRoutine(OWNER, linked.id, 'routine-2')).routineId).toBe('routine-2')
     expect((await board.setRoutine(OWNER, linked.id, null)).routineId).toBeNull()
   })

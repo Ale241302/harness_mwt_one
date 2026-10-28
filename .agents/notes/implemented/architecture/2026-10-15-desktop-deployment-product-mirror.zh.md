@@ -16,7 +16,9 @@ Status: implemented
 
 **一份带版本的传输文档同时承载行与技能。** `FABERLOOM_MIRROR_FORMAT_VERSION` 在任何位置被检查之前校验，因此本构建不理解的文档会被拒绝且不产生写入。行以 `{domain: {table: {key: {deleted, value}}}}` 传输，这正是产品备份所执行的同一种通用元组遍历，另加活跃镜像需要而快照不需要的墓碑规则；技能以 `{name: SKILL.md 文本 | null}` 传输。
 
-**镜像范围是自己的列表。** `packages/faberloom/mirror/src/domains.ts` 中的 `FABERLOOM_MIRROR_DOMAINS` 重述了备份的域，并补上快照省略的那些：工作流、上下文、Space 共享、会话共享、Space 记忆表与工作区实体。快照范围与镜像范围是彼此独立的产品决定，因此镜像声明自己的范围，而不是继承备份的。进程未挂载的域会被报告为跳过，绝不读作空，因为两个 home 保有不同行，缺失的域并不是删除。
+**镜像范围是自己的列表。** `packages/faberloom/mirror/src/domains.ts` 中的 `FABERLOOM_MIRROR_DOMAINS` 重述了备份的域，并补上快照省略的那些：工作流、上下文、Space 共享、会话共享与 Space 记忆表。快照范围与镜像范围是彼此独立的产品决定，因此镜像声明自己的范围，而不是继承备份的。进程未挂载的域会被报告为跳过，绝不读作空，因为两个 home 保有不同行，缺失的域并不是删除。
+
+**Workspace 注册表条目不在该范围内。** 它的记录命名绝对文件夹与创建它们的机器上的 Session 身份，注册表服务在打开时构建一次有序视图，从不采纳写在其旁的行（Workspace feed 会丢弃它从未见过的 id），因此携带的行会在另一台机器上指向不存在的文件夹，而注册表会忽略它——第一版实现携带了它，桌面端的 Workspace 侧边栏保持空白，而本地文件却持有两个服务器文件夹。Space 是产品中可移动的工作区域，整块携带，包含记忆与上下文；存储只为范围声明的域作答，因此仍发送范围外记录的对端无法到达本进程的服务。
 
 **网关路由是一个新模块，而不是 `server.mjs` 的一片。** `gateway/mirror-route.mjs` 导出 `installMirrorRoute(app, options)`；调用方用一行挂载。该路由默认对照网关自己的每用户状态文件校验 Bearer 控制台令牌（使用其他存储的调用方传入 `resolveOwner`），拒绝声称的 owner 与令牌不符的请求，解析内部凭据，自行解析 JSON 正文因此无需已挂载的解析器，并把一次 JSON-RPC `tools/call` 转发到 `<home>/faberloom-mcp.sock`。模块本身不读取任何产品数据。
 

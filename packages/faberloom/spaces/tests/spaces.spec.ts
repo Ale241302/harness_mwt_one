@@ -359,4 +359,29 @@ describe('FaberLoomSpaces', () => {
     expect((await spaces.list(owner)).map(space => space.id)).toContain('sp-remote')
     await expect(spaces.get(SONEPAR, 'sp-remote' as FaberLoomSpaceId)).rejects.toThrow('access denied')
   })
+
+  it('denies a company-scoped Space to a member with no company scope', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'Eguisa' })
+    await spaces.update(SONDEL, space.id, { members: ['sinempresa@example.com'] })
+    const noCompany: SpaceActor = { id: 'sinempresa@example.com', role: 'client_b2b', companyId: undefined, readOnly: false }
+
+    await expect(spaces.get(noCompany, space.id)).rejects.toThrow('access denied')
+    expect(await spaces.list(noCompany)).toEqual([])
+    // An admin without a company keeps the support path.
+    expect((await spaces.get(ADMIN, space.id)).id).toBe(space.id)
+  })
+
+  it('does not inherit context from a parent in another company', async () => {
+    const { ctx, spaces } = await harness()
+    const parent = await spaces.create(SONDEL, { title: 'Parent' })
+    await spaces.update(SONDEL, parent.id, { context: { secret: 'sondel-only' } })
+    const child = await spaces.create(SONEPAR, { title: 'Child' })
+    // Forge a cross-company parent link; the service's own update refuses it.
+    const table = ctx.storageDomain.get('faberloom_spaces')?.table('spaces')
+    await table?.update(child.id, record => ({ ...(record as Record<string, unknown>), parentId: parent.id, inheritContext: true }))
+
+    const effective = await spaces.effectiveContext(SONEPAR, child.id)
+    expect(effective.resolved['secret']).toBeUndefined()
+  })
 })

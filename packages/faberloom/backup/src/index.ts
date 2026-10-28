@@ -40,12 +40,57 @@ declare module '@deepseek-ai/cordis' {
 export const FABERLOOM_BACKUP_FORMAT_VERSION = 1
 
 /**
- * The product's declarative data-migration registry. It stays empty while the
- * pilot has no shipped schema to move on from; each future incompatible record
+ * The product's declarative data-migration registry. Each incompatible record
  * change adds one idempotent entry here instead of an ad-hoc script, and the
  * runner applies it exactly once per owner and records that fact.
  */
-export const FABERLOOM_DATA_MIGRATIONS: readonly FaberLoomDataMigration[] = []
+const BOARD_LEGACY_STATE: Readonly<Record<string, string>> = {
+  in_progress: 'PENDIENTE_CRITERIO',
+  waiting_data: 'PENDIENTE_CRITERIO',
+  waiting_approval: 'PENDIENTE_CRITERIO',
+  approved: 'APROBADO',
+  completed: 'EJECUTADO',
+  failed: 'ERROR_RECUPERABLE',
+  reopened: 'PENDIENTE_CRITERIO',
+  needs_review: 'PENDIENTE_CRITERIO',
+}
+
+export const FABERLOOM_DATA_MIGRATIONS: readonly FaberLoomDataMigration[] = [
+  {
+    id: '2026-10-27-board-state-v1',
+    domain: 'faberloom_board',
+    table: 'items',
+    describe: 'Migra el estado legado de la Mesa al estado WorkLoom y agrega rowVersion/events.',
+    apply: (record) => {
+      if (typeof record['state'] === 'string') return record
+      const status = typeof record['status'] === 'string' ? record['status'] : 'waiting_approval'
+      const state = BOARD_LEGACY_STATE[status]
+      if (state === undefined) throw new Error(`unknown legacy board status: ${status}`)
+      const at = new Date().toISOString()
+      const events = Array.isArray(record['events']) ? record['events'] : []
+      return {
+        ...record,
+        state,
+        rowVersion: typeof record['rowVersion'] === 'number' ? record['rowVersion'] : 1,
+        events: [
+          ...events,
+          {
+            id: `migrate:${status}:${String(record['updatedAt'] ?? at)}`,
+            command: 'migrate_state',
+            actor: 'migration',
+            fromState: status,
+            toState: state,
+            revision: typeof record['version'] === 'number' ? record['version'] : null,
+            artifactHash: null,
+            reason: 'legacy-status',
+            at,
+            data: null,
+          },
+        ],
+      }
+    },
+  },
+]
 
 /** Canonical payload shape: domain name to table name to record key to value. */
 type BackupPayload = Record<string, Record<string, Record<string, unknown>>>

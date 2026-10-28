@@ -176,6 +176,67 @@ export function apply(ctx: ClientContext): void {
         return run
       },
       boardException: (id, action) => { const run = ctx.remote.faberloomView.boardException(id, action); write(() => run); return run },
+      boardSetSeverity: (id, severity, rowVersion, source, confidence) => {
+        const run = ctx.remote.faberloomView.boardSetSeverity(id, severity as never, rowVersion, source ?? 'HUMAN', confidence ?? null)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardSaveEdits: (id, input) => {
+        const run = ctx.remote.faberloomView.boardSaveEdits(id, {
+          expectedRowVersion: input.rowVersion, baseVersion: input.baseVersion, changes: input.changes,
+        })
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardApprove: (id, input) => {
+        const run = ctx.remote.faberloomView.boardApprove(id, {
+          expectedRowVersion: input.rowVersion,
+          expectedArtifactVersion: input.artifactVersion,
+          expectedArtifactHash: input.artifactHash,
+        })
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardApproveWithEdits: (id, input) => {
+        const run = ctx.remote.faberloomView.boardApproveWithEdits(id, {
+          expectedRowVersion: input.rowVersion,
+          expectedArtifactVersion: input.artifactVersion,
+          expectedArtifactHash: input.artifactHash,
+          baseVersion: input.baseVersion,
+          changes: input.changes,
+        })
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardDiscard: (id, input) => {
+        const run = ctx.remote.faberloomView.boardDiscard(id, {
+          expectedRowVersion: input.rowVersion,
+          reason: input.reason,
+          ...input.note === undefined ? {} : { note: input.note },
+        })
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardResolveCandidate: (id, candidateId, candidateHash, decision) => {
+        const run = ctx.remote.faberloomView.boardResolveCandidate(id, candidateId, candidateHash, decision)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardAssignWorkspace: (id, workspaceId) => {
+        const run = ctx.remote.faberloomView.boardAssignWorkspace(id, workspaceId)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardEvents: id => ctx.remote.faberloomView.boardEvents(id),
+      boardGetDraft: id => ctx.remote.faberloomView.boardGetDraft(id),
+      boardSaveDraft: (id, input) => ctx.remote.faberloomView.boardSaveDraft(id, input),
+      boardTakeDraft: (id, writerSession) => ctx.remote.faberloomView.boardTakeDraft(id, writerSession),
+      boardDiscardDraft: id => ctx.remote.faberloomView.boardDiscardDraft(id),
+      boardRevalidate: (id, changed) => {
+        const run = ctx.remote.faberloomView.boardRevalidate(id, changed)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
       createRoutine: (name, spaceId) => { write(() => ctx.remote.faberloomView.createRoutine(name, name, spaceId ?? undefined)) },
       setRoutineActive: (id, active) => { write(() => ctx.remote.faberloomView.setRoutineActive(id, active)) },
       remember: (text, spaceId) => { write(() => ctx.remote.faberloomView.remember(text, spaceId ?? undefined)) },

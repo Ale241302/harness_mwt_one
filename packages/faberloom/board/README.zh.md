@@ -25,6 +25,27 @@ kind: "package-reference"
 
 在组合中挂载此行即可暴露 `ctx.faberloomBoard`。该服务是调用插件 fiber 上的副作用，释放该 fiber 即移除。
 
+### 读取与隔离
+
+`get(actor, id)` 与 `list(actor, filter)` 都要求 `BoardActor`，不存在无过滤的列举。只有所有者能读取，且当条目带有 `companyId` 时，actor 必须携带相同的公司；没有公司的 actor 只能读取没有公司的条目。`companyId: null` 表示单租户部署，而不是通配符。MCP 令牌携带公司，view 传递部署解析出的 actor，因此浏览器、API 与外部智能体共用同一条读写规则。
+
+### WorkLoom 命令
+
+`submit(writer, request)` 要求 `runId`、`idempotencyKey` 与 `businessKey`；重复的幂等键返回现有条目。条目携带持久化的 `state`（`PENDIENTE_CRITERIO`、`APROBADO`、`DESCARTADO` 等）、派生的 `column`、带来源与置信度的 `severity`、`rowVersion`、`artifactHash`、`events[]` 与 `pendingCandidate`。
+
+命令通过一次 `KvTable.update` 变换修改，因此状态变更与审计事件在同一条记录中提交：
+
+- `setSeverity(writer, id, severity, source, confidence, expectedRowVersion?)`
+- `saveEdits(writer, id, { expectedRowVersion, baseVersion, changes })`
+- `approve(writer, id, { expectedRowVersion, expectedArtifactVersion, expectedArtifactHash })`
+- `approveWithEdits(writer, id, approval + edits)`
+- `discard(writer, id, { expectedRowVersion, reason, note? })`
+- `resolveCandidate(writer, id, candidateId, candidateHash, 'adopt' | 'keep')`
+- `assignWorkspace(writer, id, workspaceId)`
+- `events(actor, id)`
+
+`approve` 要求已确认严重性，并拒绝待处理候选、过期条目或与当前不一致的版本/哈希。试点中批准绝不发送外部效果。旧的 `review`、`submitRevision`、`reopen`、`requestData`、`fail` 与 `complete` 仍作为现有面板的别名保留。
+
 -----
 
 <a id="model-experience"></a>
@@ -49,6 +70,7 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **仅限所有者审阅** — 变更需要工单所有者；基于成员的审阅需要访问层。
+- **单写入者唯一性** — `idempotency_key` 与 `business_key` 的认领在单个进程内串行化。若部署有多个产品写入者，需要真正的唯一约束或租约；项目的 ADR-001 记录了该决定与重新评估的触发条件。
 - **不透明文档** — 文档以引用表示；二进制文档随 blob 存储加入。
 
 未发布 invariant companion，因为该服务不暴露其单元测试尚未断言的独立观测。

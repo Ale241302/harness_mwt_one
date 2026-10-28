@@ -2030,3 +2030,88 @@
   background: var(--dsw-alias-label-primary);
   transition: width 120ms linear;
 }
+
+/* WorkLoom Mesa: Foco, Kanban, Lista, and the ①–⑦ detail. */
+.mesaDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 980px;
+}
+
+.mesaSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.mesaSection h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-panel-label);
+}
+
+.mesaNotice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 0.5px solid var(--dsw-alias-border-accent);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.mesaActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mesaColumns {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.mesaColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mesaColumn h3 {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-panel-label);
+}
+
+.mesaCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mesaCard:hover,
+.mesaCard:focus-visible {
+  border-color: var(--dsw-alias-border-accent);
+}
+
+@media (max-width: 900px) {
+  .mesaColumns {
+    grid-template-columns: 1fr;
+  }
+}

@@ -27,7 +27,7 @@ import { BrandWordmark, Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-pr
 import { FileTypeIcon, IconCheckOutline16, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, IconTrashOutline16, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
-  AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomConnection, FaberLoomExecutionRow,
+  AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomBoardDraftRow, FaberLoomConnection, FaberLoomExecutionRow,
   FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomModelCatalog, FaberLoomOverview,
   FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
   FaberLoomCostSummary,
@@ -109,6 +109,58 @@ export interface FaberloomPanelInjected {
   submitBoardRevision: (id: string, input: { summary: string; evidence: readonly string[] }) => Promise<Result<FaberLoomOverview>>
   /** Move a board item into an exception state: request_data, fail, or complete. */
   boardException: (id: string, action: 'request_data' | 'fail' | 'complete') => Promise<Result<FaberLoomOverview>>
+  /** Set or correct the human severity. */
+  boardSetSeverity: (id: string, severity: string, rowVersion: number, source?: 'RULE' | 'LLM' | 'HUMAN', confidence?: number | null) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Save inline edits as a new version. */
+  boardSaveEdits: (
+    id: string,
+    input: { rowVersion: number; baseVersion: number; changes: Record<string, string> },
+  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Approve the exact version and hash. */
+  boardApprove: (
+    id: string,
+    input: { rowVersion: number; artifactVersion: number; artifactHash: string },
+  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Save edits and approve the resulting version atomically. */
+  boardApproveWithEdits: (
+    id: string,
+    input: {
+      rowVersion: number
+      baseVersion: number
+      artifactVersion: number
+      artifactHash: string
+      changes: Record<string, string>
+    },
+  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Discard with a closed-list reason. */
+  boardDiscard: (
+    id: string,
+    input: { rowVersion: number; reason: string; note?: string },
+  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Adopt or keep the pending candidate. */
+  boardResolveCandidate: (
+    id: string,
+    candidateId: string,
+    candidateHash: string,
+    decision: 'adopt' | 'keep',
+  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Assign a space to an item. */
+  boardAssignWorkspace: (id: string, workspaceId: string) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Read the audit history. */
+  boardEvents: (id: string) => Promise<Result<readonly { command: string; at: string; reason: string | null }[]>>
+  /** Read the caller's inline draft. */
+  boardGetDraft: (id: string) => Promise<Result<FaberLoomBoardDraftRow | null>>
+  /** Save one inline draft write. */
+  boardSaveDraft: (
+    id: string,
+    input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, string> },
+  ) => Promise<Result<FaberLoomBoardDraftRow>>
+  /** Take the writer seat for this tab. */
+  boardTakeDraft: (id: string, writerSession: string) => Promise<Result<FaberLoomBoardDraftRow>>
+  /** Discard the caller's draft. */
+  boardDiscardDraft: (id: string) => Promise<Result<void>>
+  /** Clear staleness after checking the changed condition. */
+  boardRevalidate: (id: string, changed: boolean) => Promise<Result<FaberLoomBoardDetail | undefined>>
   /** Create a draft routine, optionally scoped to a Space. */
   createRoutine: (name: string, spaceId: string | null) => void
   /** Activate or pause one routine. */
@@ -2374,328 +2426,398 @@ function skillsScreen() {
   }
 }
 
-/** Mesa de trabajo: board tasks, email drafts, unread mail, and the MWT scan. */
-type WorkbenchSource = 'board' | 'draft' | 'inbox' | 'mwt'
+/** The WorkLoom Mesa: Foco, Kanban, Lista, and the detail zones. */
+function mesaScreen() {
+  const COLUMNS = [
+    ['TU_CRITERIO', 'mesa.column.tu'],
+    ['ESPERANDO_CRITERIO', 'mesa.column.esperando'],
+    ['DELEGADO', 'mesa.column.delegado'],
+    ['ERROR_ACCIONABLE', 'mesa.column.error'],
+  ] as const
+  const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const
+  const REASONS = ['CLIENTE_CANCELO', 'DUPLICADO', 'ERROR_ORIGEN', 'NO_CORRESPONDE', 'RESUELTO_FUERA', 'OTRA'] as const
 
-/** Locale key for each work-bench source's chip label. */
-const WORKBENCH_SOURCE_KEY: Record<WorkbenchSource, FaberloomKey> = {
-  board: 'workbench.source.board',
-  draft: 'workbench.source.draft',
-  inbox: 'workbench.source.inbox',
-  mwt: 'workbench.source.mwt',
-}
-
-/** One unified work-bench row, whatever its source. */
-interface WorkbenchRow {
-  readonly id: string
-  readonly source: WorkbenchSource
-  readonly title: string
-  readonly status: string
-}
-
-function boardScreen() {
-  return function FaberloomBoard(props: ScreenProps) {
+  return function FaberloomMesa(props: ScreenProps) {
     const {
-      t, createBoardItem, reviewBoardItem, reopenBoardItem, submitBoardRevision, boardException,
-      deleteBoardItem, setBoardRoutine, boardDetail, emailDrafts, sendEmailDraft, deleteEmailDraft,
-      emailInbox, emailMarkSeen, emailTrash, openTaskChat,
+      t, boardDetail, boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits,
+      boardDiscard, boardResolveCandidate, boardAssignWorkspace, boardTakeDraft, boardRevalidate,
+      boardSaveDraft, openTaskChat,
     } = props
     const { overview, error } = useOverview(props)
-    const [title, setTitle] = useState('')
+    const [view, setView] = useState<'foco' | 'kanban' | 'lista'>('foco')
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
-    const [drafting, setDrafting] = useState(false)
     const [tick, setTick] = useState(0)
-    const [summary, setSummary] = useState('')
-    const [evidence, setEvidence] = useState('')
-    const [note, setNote] = useState('')
-    const [drafts, setDrafts] = useState<readonly FaberLoomEmailDraftRow[]>([])
-    const [inbox, setInbox] = useState<readonly FaberLoomInboxRow[]>([])
-    const [assignedAgent, setAssignedAgent] = useState('')
+    const [spaceFilter, setSpaceFilter] = useState('')
+    const [severityFilter, setSeverityFilter] = useState('')
+    const [draft, setDraft] = useState<string | null>(null)
+    const [draftRevision, setDraftRevision] = useState(0)
+    const [showDiscard, setShowDiscard] = useState(false)
+    const [discardReason, setDiscardReason] = useState<string>('DUPLICADO')
+    const [discardNote, setDiscardNote] = useState('')
+    const [showApprove, setShowApprove] = useState(false)
+    const [writerSession] = useState(() => `tab-${Math.random().toString(36).slice(2)}`)
+    const hydrated = useRef<string | null>(null)
+    const editRef = useRef<HTMLTextAreaElement>(null)
+    const severityRef = useRef<HTMLSelectElement>(null)
 
-    // The email sources reload on every board write (tick) so a send, discard,
-    // trash, or read repaints the whole queue without a manual refresh.
-    useEffect(() => {
-      let live = true
-      void emailDrafts().then((result) => { if (live && result.ok) setDrafts(result.value) }).catch(() => {})
-      return () => { live = false }
-    }, [tick])
-    useEffect(() => {
-      let live = true
-      void emailInbox().then((result) => { if (live && result.ok) setInbox(result.value) }).catch(() => {})
-      return () => { live = false }
-    }, [tick])
-
-    const boardItems = overview?.board ?? []
-    const [pickedSource, ...pickedRest] = selected === null ? [null, ''] : selected.split(':')
-    const pickedId = pickedRest.join(':')
-    const boardId = pickedSource === 'board' ? pickedId : null
-    const chosenBoard = boardId === null ? null : boardItems.find(row => row.id === boardId) ?? null
-    const chosenDraft = pickedSource === 'draft' ? drafts.find(entry => entry.id === pickedId) ?? null : null
-    const chosenInbox = pickedSource === 'inbox' ? inbox.find(entry => entry.id === pickedId) ?? null : null
+    const rows = (overview?.board ?? []).filter(row => row.column !== 'CERRADO')
+    const visible = rows.filter(row =>
+      (spaceFilter.length === 0 || row.spaceId === spaceFilter)
+      && (severityFilter.length === 0 || row.severity === severityFilter))
     const detail = useLazy<FaberLoomBoardDetail | undefined>(
-      () => boardId === null ? Promise.resolve({ ok: true, value: undefined }) : boardDetail(boardId),
-      [boardId, tick],
+      () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : boardDetail(selected),
+      [selected, tick],
     )
-
-    /** Report one write's failure or refresh the queue on success. */
-    const apply = (result: Result<unknown>): void => {
-      if (result.ok) setTick(tick + 1)
-      else setMessage(result.error.message)
-    }
-
-    const rows: readonly WorkbenchRow[] = [
-      ...boardItems.filter(item => item.status !== 'completed' && item.status !== 'failed').map(item => ({ id: `board:${item.id}`, source: 'board' as const, title: item.title, status: item.status })),
-      ...drafts.filter(entry => entry.status === 'draft').map(entry => ({
-        id: `draft:${entry.id}`, source: 'draft' as const,
-        title: entry.subject.length === 0 ? t('workbench.untitled') : entry.subject, status: entry.status,
-      })),
-      ...inbox.map(entry => ({
-        id: `inbox:${entry.id}`, source: 'inbox' as const,
-        title: entry.subject ?? t('workbench.untitled'), status: t('workbench.source.inbox'),
-      })),
-    ]
-
-    const columns: readonly Column<WorkbenchRow>[] = [
-      { key: 'title', header: t('col.title'), cell: row => <span className={styles.cellName}>{row.title}</span> },
-      { key: 'source', header: t('col.source'), cell: row => <Chip>{t(WORKBENCH_SOURCE_KEY[row.source])}</Chip> },
-      { key: 'status', header: t('col.status'), cell: row => <Chip>{row.status}</Chip> },
-    ]
-
     const value = detail.kind === 'ready' ? detail.value : undefined
-    const reviewable = value !== undefined && value.status !== 'completed' && value.status !== 'failed'
+    const current = selected === null ? undefined : visible.find(row => row.id === selected) ?? rows.find(row => row.id === selected)
+    const pending = value?.pendingCandidate ?? null
+    const foreignDraft = value?.editDraft !== null && value?.editDraft !== undefined && value.editDraft.writerSession !== writerSession
+    const editable = value?.state === 'PENDIENTE_CRITERIO' && !foreignDraft
+    const draftChanged = draft !== null && value !== undefined && draft !== value.summary
+    const restricted = value !== undefined && (value.dataClass === 'N3' || value.dataClass === 'N4')
+    const iterationDraft = value !== undefined && (value.iterationDraftKey !== null || value.iterationId !== null)
 
-    /** Open the inspector in create mode with an editable title. */
-    const openDraft = (): void => {
-      setDrafting(true)
-      setSelected(null)
-      setTitle('')
-      setMessage(null)
+    /** Report a write and refresh the detail and the queue. */
+    function apply<T>(result: Result<T> | Promise<Result<T>>): void {
+      void Promise.resolve(result).then((resolved) => {
+        if (resolved.ok) setTick(count => count + 1)
+        else setMessage(resolved.error.message)
+      })
     }
 
-    const create = (): void => {
-      setMessage(null)
-      createBoardItem(title.trim().length === 0 ? t('board.untitled') : title.trim())
-      setDrafting(false)
-    }
+    useEffect(() => {
+      if (view !== 'foco') return
+      if (selected !== null && visible.some(row => row.id === selected)) return
+      setSelected(visible[0]?.id ?? null)
+    }, [view, spaceFilter, severityFilter, overview])
 
-    /** Approve the current revision and close the task, so it leaves the queue. */
-    const resolve = (): void => {
-      if (chosenBoard === null) return
-      setMessage(null)
-      void reviewBoardItem(chosenBoard.id, true, note).then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
-        return boardException(chosenBoard.id, 'complete').then((done) => {
-          if (done.ok) setSelected(null)
-          apply(done)
+    useEffect(() => {
+      if (value === undefined) return
+      const key = `${value.id}:${String(value.version)}:${value.editDraft?.writerSession ?? ''}`
+      if (hydrated.current === key) return
+      hydrated.current = key
+      setDraft(value.editDraft !== null && value.editDraft.writerSession === writerSession
+        ? value.editDraft.changes['summary'] ?? value.summary
+        : value.summary)
+      setDraftRevision(value.editDraft?.revision ?? 0)
+      setShowApprove(false)
+      setShowDiscard(false)
+    }, [value?.id, value?.version, value?.editDraft?.writerSession])
+
+    useEffect(() => {
+      if (draft === null || value === undefined || !editable || restricted) return
+      if (draft === value.summary) return
+      const timer = setTimeout(() => {
+        void boardSaveDraft(value.id, {
+          baseVersion: value.version,
+          revision: draftRevision,
+          writerSession,
+          changes: { summary: draft },
+        }).then((result) => {
+          if (result.ok) setDraftRevision(result.value.revision)
+          else setMessage(result.error.message)
         })
-      }).catch((cause: unknown) => { setMessage(String(cause)) })
+      }, 350)
+      return () => clearTimeout(timer)
+    }, [draft, value?.id, value?.version, editable, restricted])
+
+    const next = (): void => {
+      const index = visible.findIndex(row => row.id === selected)
+      setSelected(visible[index + 1]?.id ?? visible[0]?.id ?? null)
+      setTick(count => count + 1)
     }
 
-    const inspectorTitle = (): string => {
-      if (drafting) return t('board.newTitle')
-      if (chosenBoard !== null) return chosenBoard.title
-      if (chosenDraft !== null) return t('workbench.draftDetail')
-      if (chosenInbox !== null) return t('workbench.inboxDetail')
-      return t('board.detail')
+    const iterate = (): void => {
+      if (value === undefined) return
+      openTaskChat('board', value.title, `${value.state} · ${value.spaceId ?? t('mesa.noSpace')}`, '')
     }
 
-    /** The assigned agent's name, or an empty string for the live agent alone. */
-    const agentName = (): string => (overview?.agents ?? []).find(agent => agent.id === assignedAgent)?.name ?? ''
+    const save = (): void => {
+      if (value === undefined || draft === null) return
+      apply(boardSaveEdits(value.id, {
+        rowVersion: value.rowVersion,
+        baseVersion: value.version,
+        changes: { summary: draft },
+      }))
+    }
 
-    const boardFooter = chosenBoard === null ? null : (
+    const approve = (): void => {
+      if (value === undefined || restricted) return
+      if (value.artifactHash === null) { setMessage(t('mesa.error')); return }
+      apply(draftChanged
+        ? boardApproveWithEdits(value.id, {
+          rowVersion: value.rowVersion,
+          baseVersion: value.version,
+          artifactVersion: value.version,
+          artifactHash: value.artifactHash,
+          changes: { summary: draft ?? '' },
+        })
+        : boardApprove(value.id, {
+          rowVersion: value.rowVersion,
+          artifactVersion: value.version,
+          artifactHash: value.artifactHash,
+        }))
+      setShowApprove(false)
+    }
+
+    const discard = (): void => {
+      if (value === undefined) return
+      apply(boardDiscard(value.id, {
+        rowVersion: value.rowVersion,
+        reason: discardReason,
+        ...discardReason === 'OTRA' ? { note: discardNote } : {},
+      }))
+      setShowDiscard(false)
+    }
+
+    useEffect(() => {
+      const onKey = (event: KeyboardEvent): void => {
+        if (value === undefined) return
+        const target = event.target as HTMLElement | null
+        const inField = target !== null && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+        const command = event.ctrlKey || event.metaKey
+        if (command && event.key === 'Enter') { event.preventDefault(); iterate(); return }
+        if (command && (event.key === 's' || event.key === 'S')) { event.preventDefault(); save(); return }
+        if (inField) return
+        if (event.key === 'Escape') {
+          if (showApprove) { setShowApprove(false); return }
+          if (showDiscard) { setShowDiscard(false); return }
+          setSelected(null)
+          return
+        }
+        if (event.key === 'ArrowRight') { event.preventDefault(); next(); return }
+        if (event.key === 'a' || event.key === 'A') {
+          if (pending !== null || value.stale) { setShowApprove(true); return }
+          approve()
+          return
+        }
+        if (event.key === 'g' || event.key === 'G') { event.preventDefault(); save(); return }
+        if (event.key === 'e' || event.key === 'E') { event.preventDefault(); editRef.current?.focus(); return }
+        if (event.key === 's' || event.key === 'S') { event.preventDefault(); severityRef.current?.focus(); return }
+        if (event.key === 'd' || event.key === 'D') { event.preventDefault(); setShowDiscard(true); return }
+        if (event.key === 'i' || event.key === 'I') { iterate(); return }
+        if (event.key === 'v' || event.key === 'V') { event.preventDefault(); setView(view === 'lista' ? 'foco' : 'lista'); return }
+        if (event.key === 'r' || event.key === 'R') {
+          event.preventDefault()
+          if (!value.stale) { setMessage(t('mesa.notStale')); return }
+          apply(boardRevalidate(value.id, true))
+          return
+        }
+        if (event.key === 'c' || event.key === 'C') { event.preventDefault(); setSelected(null); return }
+      }
+      window.addEventListener('keydown', onKey)
+      return () => window.removeEventListener('keydown', onKey)
+    })
+
+    const tabs = (
       <span className={styles.tools}>
-        {reviewable
-          ? (
-            <>
-              <button className={styles.primary} type="button" onClick={() => { void reviewBoardItem(chosenBoard.id, true, note).then(apply) }}>{t('action.approve')}</button>
-              <button className={styles.secondary} type="button" onClick={() => { void reviewBoardItem(chosenBoard.id, false, note).then(apply) }}>{t('action.reject')}</button>
-              <button className={styles.ghost} type="button" onClick={() => { void reopenBoardItem(chosenBoard.id).then(() => { setTick(tick + 1) }) }}>{t('action.reopen')}</button>
-              <button className={styles.ghost} type="button" onClick={() => { void boardException(chosenBoard.id, 'request_data').then(apply) }}>{t('board.requestData')}</button>
-              <button className={styles.danger} type="button" onClick={() => { void boardException(chosenBoard.id, 'fail').then(apply) }}>{t('board.fail')}</button>
-            </>
-          )
-          : null}
-        {reviewable
-          ? <button className={styles.primary} type="button" onClick={resolve}>{t('workbench.resolve')}</button>
-          : null}
-        <button className={styles.secondary} type="button"
-          onClick={() => { openTaskChat('board', chosenBoard.title, `${chosenBoard.status} · ${chosenBoard.routineId ?? t('workbench.noRoutine')}`, agentName()) }}>
-          {t('workbench.chat')}
-        </button>
-        <button className={styles.danger} type="button" onClick={() => { void deleteBoardItem(chosenBoard.id).then(apply) }}>{t('action.delete')}</button>
+        <button className={view === 'foco' ? styles.primary : styles.secondary} type="button" onClick={() => setView('foco')}>{t('mesa.tab.foco')}</button>
+        <button className={view === 'kanban' ? styles.primary : styles.secondary} type="button" onClick={() => setView('kanban')}>{t('mesa.tab.kanban')}</button>
+        <button className={view === 'lista' ? styles.primary : styles.secondary} type="button" onClick={() => setView('lista')}>{t('mesa.tab.lista')}</button>
       </span>
     )
 
-    const draftFooter = chosenDraft === null ? null : (
+    const filters = (
       <span className={styles.tools}>
-        <button className={styles.primary} type="button" onClick={() => { void sendEmailDraft(chosenDraft.id).then(apply) }}>{t('email.send')}</button>
-        <button className={styles.ghost} type="button"
-          onClick={() => { openTaskChat('draft', chosenDraft.subject, `Para: ${chosenDraft.to.join(', ')}`, agentName()) }}>{t('workbench.chat')}</button>
-        <button className={styles.danger} type="button" onClick={() => { void deleteEmailDraft(chosenDraft.id).then(apply) }}>{t('action.delete')}</button>
+        <select value={spaceFilter} aria-label={t('mesa.space')} onChange={event => setSpaceFilter(event.target.value)}>
+          <option value="">{t('mesa.allSpaces')}</option>
+          {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+        </select>
+        <select value={severityFilter} aria-label={t('mesa.severity')} onChange={event => setSeverityFilter(event.target.value)}>
+          <option value="">{t('mesa.allSeverities')}</option>
+          {SEVERITIES.map(severity => <option key={severity} value={severity}>{severity}</option>)}
+        </select>
+        <Chip>{`${String(visible.length)} / ${String(rows.length)}`}</Chip>
       </span>
     )
 
-    const inboxFooter = chosenInbox === null ? null : (
-      <span className={styles.tools}>
-        <button className={styles.primary} type="button"
-          onClick={() => { openTaskChat('inbox', chosenInbox.subject ?? t('workbench.untitled'), `De: ${chosenInbox.from ?? ''} · ${chosenInbox.date ?? ''}`, agentName()) }}>{t('email.reply')}</button>
-        <button className={styles.secondary} type="button"
-          onClick={() => { openTaskChat('inbox', chosenInbox.subject ?? t('workbench.untitled'), `De: ${chosenInbox.from ?? ''} · ${chosenInbox.date ?? ''}`, agentName()) }}>{t('workbench.chat')}</button>
-        <button className={styles.ghost} type="button" onClick={() => { void emailMarkSeen(chosenInbox.id).then(apply) }}>{t('email.markRead')}</button>
-        <button className={styles.danger} type="button"
-          onClick={() => { void emailTrash(chosenInbox.id, chosenInbox.from ?? undefined, chosenInbox.subject ?? undefined).then(apply) }}>{t('email.trash')}</button>
-      </span>
-    )
-
-    const footer = drafting
-      ? (
-        <span className={styles.tools}>
-          <button className={styles.ghost} type="button" onClick={() => { setDrafting(false) }}>{t('action.cancel')}</button>
-          <button className={styles.primary} type="button" onClick={create}>{t('action.create')}</button>
-        </span>
-      )
-      : chosenBoard !== null
-        ? boardFooter
-        : chosenDraft !== null
-          ? draftFooter
-          : chosenInbox !== null
-            ? inboxFooter
-            : null
-
-    const boardBody = value === undefined
-      ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.text')} />
-      : (
-        <>
-          <Field label={t('field.revision')}>
-            <span className={styles.cellMuted}>{String(value.version)}{value.approvedRevision === null ? '' : ` · ${t('board.approved')} ${String(value.approvedRevision)}`}</span>
-          </Field>
-          <Field label={t('field.summary')}><span className={styles.summary}>{value.summary.length === 0 ? t('cell.none') : value.summary}</span></Field>
-          <Field label={t('field.evidence')}>
-            {value.evidence.length === 0
-              ? <span className={styles.cellMuted}>{t('board.noEvidence')}</span>
-              : <span className={styles.evidenceGrid}>{value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry}</Chip>)}</span>}
-          </Field>
-          <Field label={t('workbench.routine')}>
-            <select value={value.routineId ?? ''} onChange={(event) => {
-              if (chosenBoard === null) return
-              const next = event.target.value
-              void setBoardRoutine(chosenBoard.id, next.length === 0 ? null : next).then(apply)
-            }}>
-              <option value="">{t('workbench.noRoutine')}</option>
-              {(overview?.routines ?? []).map(routine => <option key={routine.id} value={routine.id}>{routine.name}</option>)}
-            </select>
-          </Field>
-          <Field label={t('field.stale')}>
-            <StatusDot on={!value.stale} label={value.stale ? (value.staleReason ?? t('board.stale')) : t('board.fresh')} />
-          </Field>
-          <Field label={t('field.effects')}>
-            {value.effects.length === 0
-              ? <span className={styles.cellMuted}>{t('board.noEffects')}</span>
-              : (
-                <div className={styles.steps}>
-                  {value.effects.map(effect => (
-                    <span className={styles.cellMuted} key={`${effect.ref}-${effect.at}`}>{`${effect.ref}${effect.detail === null ? '' : ` · ${effect.detail}`} · ${effect.at}`}</span>
-                  ))}
+    const detailBody = detail.kind === 'loading'
+      ? <StateBlock kind="loading" title={t('state.loading')} />
+      : detail.kind === 'error'
+        ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+        : value === undefined
+          ? <StateBlock kind="empty" title={t('mesa.empty')} text={t('mesa.noSelection')} />
+          : (
+            <div className={styles.mesaDetail}>
+              {pending === null ? null : (
+                <div className={styles.mesaNotice}>
+                  <strong>{t('mesa.candidate')}</strong>
+                  <span className={styles.tools}>
+                    <button className={styles.primary} type="button" onClick={() => apply(boardResolveCandidate(value.id, pending.id, pending.hash, 'adopt'))}>{t('mesa.adopt')}</button>
+                    <button className={styles.secondary} type="button" onClick={() => apply(boardResolveCandidate(value.id, pending.id, pending.hash, 'keep'))}>{t('mesa.keep')}</button>
+                  </span>
                 </div>
               )}
-          </Field>
-          {value.status === 'approved'
-            ? (
-              <Field label={t('board.completeHint')}>
-                <button className={styles.primary} type="button" onClick={() => { if (chosenBoard !== null) void boardException(chosenBoard.id, 'complete').then(apply) }}>{t('board.complete')}</button>
-              </Field>
-            )
-            : null}
-          {reviewable
-            ? (
-              <>
-                <Field label={t('board.submitRevision')} hint={t('board.revisionHint')}>
-                  <textarea value={summary} placeholder={t('board.summaryPlaceholder')} onChange={(event) => { setSummary(event.target.value) }} />
-                  <input type="text" value={evidence} placeholder={t('board.evidencePlaceholder')} onChange={(event) => { setEvidence(event.target.value) }} />
+              {value.stale ? <div className={styles.mesaNotice}>{value.staleReason ?? t('mesa.stale')}</div> : null}
+              {foreignDraft ? (
+                <div className={styles.mesaNotice}>
+                  <strong>{t('mesa.foreignDraft')}</strong>
+                  <span>{t('mesa.foreignDraftText')}</span>
                   <span className={styles.tools}>
-                    <button className={styles.secondary} type="button"
-                      disabled={summary.trim().length === 0 || evidence.trim().length === 0}
-                      onClick={() => {
-                        if (chosenBoard === null) return
-                        setMessage(null)
-                        void submitBoardRevision(chosenBoard.id, {
-                          summary: summary.trim(),
-                          evidence: evidence.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
-                        }).then((result) => {
-                          apply(result)
-                          if (result.ok) { setSummary(''); setEvidence('') }
-                        })
-                      }}>{t('board.submitRevision')}</button>
+                    <button className={styles.secondary} type="button" onClick={() => apply(boardTakeDraft(value.id, writerSession))}>{t('mesa.takeControl')}</button>
                   </span>
-                </Field>
-                <Field label={t('board.reviewNote')}>
-                  <input type="text" value={note} placeholder={t('board.notePlaceholder')} onChange={(event) => { setNote(event.target.value) }} />
-                </Field>
-              </>
-            )
-            : null}
-        </>
-      )
+                </div>
+              ) : null}
+              {iterationDraft ? (
+                <div className={styles.mesaNotice}>
+                  <strong>{t('mesa.iterationDraft')}</strong>
+                  <span>{t('mesa.iterationDraftText')}</span>
+                  <span className={styles.tools}>
+                    <button className={styles.secondary} type="button" onClick={iterate}>{t('mesa.iterationOpen')}</button>
+                  </span>
+                </div>
+              ) : null}
 
-    const draftBody = chosenDraft === null ? null : (
-      <>
-        <Field label={t('field.to')}><span className={styles.cellMuted}>{chosenDraft.to.join(', ')}</span></Field>
-        <Field label={t('col.subject')}><span className={styles.cellMuted}>{chosenDraft.subject}</span></Field>
-        <Field label={t('field.body')}><span className={styles.cellMuted}>{chosenDraft.text.slice(0, 400)}</span></Field>
-      </>
+              <section className={styles.mesaSection}>
+                <h3>{t('mesa.detail.why')}</h3>
+                <div className={styles.grid2}>
+                  <Field label={t('mesa.column')}><Chip>{t(`mesa.column.${value.column === 'TU_CRITERIO' ? 'tu' : value.column === 'ESPERANDO_CRITERIO' ? 'esperando' : value.column === 'DELEGADO' ? 'delegado' : 'error'}` as FaberloomKey)}</Chip></Field>
+                  <Field label={t('mesa.severity')}>
+                    <select ref={severityRef} value={value.severity ?? ''} disabled={!editable} onChange={(event) => {
+                      const nextSeverity = event.target.value
+                      if (nextSeverity.length === 0) return
+                      apply(boardSetSeverity(value.id, nextSeverity, value.rowVersion))
+                    }}>
+                      <option value="">{t('mesa.unclassified')}</option>
+                      {SEVERITIES.map(severity => <option key={severity} value={severity}>{severity}</option>)}
+                    </select>
+                  </Field>
+                  <Field label={t('mesa.space')}>
+                    <select value={value.spaceId ?? ''} disabled={!editable} onChange={(event) => {
+                      if (event.target.value.length === 0) return
+                      apply(boardAssignWorkspace(value.id, event.target.value))
+                    }}>
+                      <option value="">{t('mesa.noSpace')}</option>
+                      {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+                    </select>
+                  </Field>
+                  <Field label={t('mesa.due')}><span className={styles.cellMuted}>{value.dueAt ?? t('cell.none')}</span></Field>
+                  <Field label={t('mesa.amount')}><span className={styles.cellMuted}>{restricted ? t('mesa.restricted') : value.valueUsd === null ? t('cell.none') : `${value.valueUsd.toFixed(2)} ${t('mesa.usd')}`}</span></Field>
+                </div>
+              </section>
+
+              <section className={styles.mesaSection}>
+                <h3>{t('mesa.detail.origin')}</h3>
+                <span className={styles.cellMuted}>{value.accountRef ?? t('mesa.noAccount')} · {value.artifactType} · {value.runId ?? t('mesa.noRun')}</span>
+              </section>
+
+              <section className={styles.mesaSection}>
+                <h3>{t('mesa.detail.draft')}</h3>
+                {restricted
+                  ? <StateBlock kind="empty" title={t('mesa.restricted')} text={t('mesa.restrictedText')} />
+                  : <textarea ref={editRef} value={draft ?? ''} disabled={!editable} onChange={event => setDraft(event.target.value)} />}
+                {value.editDraft !== null && !foreignDraft
+                  ? <span className={styles.cellMuted}>{t('mesa.draftSaved')}</span>
+                  : null}
+                {value.evidence.length === 0 ? null : <span className={styles.chips}>{value.evidence.map((entry, index) => <Chip key={`${entry}-${String(index)}`}>{entry}</Chip>)}</span>}
+              </section>
+
+              <section className={styles.mesaSection}>
+                <h3>{t('mesa.detail.checks')}</h3>
+                <span className={styles.cellMuted}>{t('mesa.noChecks')}</span>
+              </section>
+
+              <section className={styles.mesaSection}>
+                <h3>{t('mesa.detail.doubts')}</h3>
+                <span className={styles.cellMuted}>{t('mesa.noDoubts')}</span>
+              </section>
+
+              <section className={styles.mesaSection}>
+                <h3>{t('mesa.detail.context')}</h3>
+                <span className={styles.cellMuted}>{value.events.length === 0 ? t('cell.none') : value.events.slice(-3).map(event => `${event.command} · ${event.at}`).join(' · ')}</span>
+              </section>
+
+              <section className={styles.mesaActions}>
+                <button className={styles.primary} type="button" disabled={!editable || pending !== null || value.stale} onClick={() => setShowApprove(true)}>{t('action.approve')}</button>
+                <button className={styles.secondary} type="button" disabled={!editable || draft === null || draft === value.summary} onClick={save}>{t('action.save')}</button>
+                <button className={styles.secondary} type="button" disabled={!editable} onClick={iterate}>{t('mesa.iterate')}</button>
+                <button className={styles.danger} type="button" disabled={!editable || pending !== null} onClick={() => setShowDiscard(true)}>{t('action.discard')}</button>
+                <button className={styles.ghost} type="button" onClick={next}>{t('mesa.skip')}</button>
+              </section>
+              <span className={styles.cellMuted}>{t('mesa.shortcuts')}</span>
+
+              {showApprove ? (
+                <section className={styles.mesaNotice}>
+                  <strong>{t('mesa.confirmApprove')}</strong>
+                  <span>{t('mesa.approvePanel')}</span>
+                  <span className={styles.tools}>
+                    <button className={styles.primary} type="button" onClick={approve}>{t('action.confirm')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => setShowApprove(false)}>{t('action.cancel')}</button>
+                  </span>
+                </section>
+              ) : null}
+
+              {showDiscard ? (
+                <section className={styles.mesaNotice}>
+                  <Field label={t('mesa.discardReason')}>
+                    <select value={discardReason} onChange={event => setDiscardReason(event.target.value)}>
+                      {REASONS.map(reason => <option key={reason} value={reason}>{t(`mesa.reason.${reason.toLowerCase()}` as FaberloomKey)}</option>)}
+                    </select>
+                  </Field>
+                  {discardReason === 'OTRA' ? <Field label={t('mesa.discardNote')}><input type="text" value={discardNote} onChange={event => setDiscardNote(event.target.value)} /></Field> : null}
+                  <span className={styles.tools}>
+                    <button className={styles.danger} type="button" onClick={discard}>{t('action.discard')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => setShowDiscard(false)}>{t('action.cancel')}</button>
+                  </span>
+                </section>
+              ) : null}
+            </div>
+          )
+
+    const kanban = (
+      <div className={styles.mesaColumns}>
+        {COLUMNS.map(([column, key]) => {
+          const cards = visible.filter(row => row.column === column)
+          return (
+            <section className={styles.mesaColumn} key={column}>
+              <h3>{t(key)} <Chip>{String(cards.length)}</Chip></h3>
+              {cards.map(row => (
+                <button className={styles.mesaCard} key={row.id} type="button"
+                  onClick={() => { setSelected(row.id); setView('foco') }}>
+                  <strong>{row.title}</strong>
+                  <span className={styles.cellMuted}>{row.severity ?? t('mesa.unclassified')} · {row.dueAt ?? t('mesa.noDue')}</span>
+                </button>
+              ))}
+            </section>
+          )
+        })}
+      </div>
     )
 
-    const inboxBody = chosenInbox === null ? null : (
-      <>
-        <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenInbox.from ?? t('cell.none')}</span></Field>
-        <Field label={t('col.subject')}><span className={styles.cellMuted}>{chosenInbox.subject ?? t('workbench.untitled')}</span></Field>
-        <Field label={t('col.date')}><span className={styles.cellMuted}>{chosenInbox.date ?? t('cell.none')}</span></Field>
-      </>
-    )
+    const columns: readonly Column<{
+      id: string
+      title: string
+      spaceId: string | null
+      accountRef: string | null
+      severity: string | null
+      dueAt: string | null
+      valueUsd: number | null
+      column: string
+    }>[] = [
+      { key: 'title', header: t('col.title'), cell: row => <span className={styles.cellName}>{row.title}</span> },
+      { key: 'space', header: t('mesa.space'), cell: row => <span className={styles.cellMuted}>{row.spaceId ?? t('mesa.noSpace')}</span> },
+      { key: 'account', header: t('mesa.account'), cell: row => <span className={styles.cellMuted}>{row.accountRef ?? t('cell.none')}</span> },
+      { key: 'severity', header: t('mesa.severity'), cell: row => <Chip>{row.severity ?? t('mesa.unclassified')}</Chip> },
+      { key: 'due', header: t('mesa.due'), cell: row => <span className={styles.cellMuted}>{row.dueAt ?? t('cell.none')}</span> },
+      { key: 'amount', header: t('mesa.amount'), cell: row => <span className={styles.cellMuted}>{row.valueUsd === null || row.valueUsd === undefined ? t('cell.none') : row.valueUsd.toFixed(2)}</span> },
+      { key: 'column', header: t('mesa.column'), cell: row => <Chip>{row.column}</Chip> },
+    ]
 
     return (
-      <Screen title={t('panel.board.title')} subtitle={t('panel.board.intro')}
-        trailing={(
-          <>
-            <button className={styles.primary} type="button" onClick={openDraft}>{t('board.newTitle')}</button>
-          </>
-        )}>
+      <Screen title={t('panel.board.title')} subtitle={t('panel.board.intro')} trailing={tabs}>
         <Feedback t={t} message={error ?? message} />
-        <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => { setDrafting(false); setSelected(id); setNote('') }}
-          emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />
-        <Modal
-          open={drafting || selected !== null}
-          onClose={() => { setDrafting(false); setSelected(null) }}
-          title={inspectorTitle()}
-          closeLabel={t('action.close')}
-          className={styles.panelDialog ?? ''}
-          footer={footer ?? undefined}
-        >
-          {drafting
-            ? <Field label={t('col.title')}><input type="text" autoComplete="off" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
-            : (
-              <>
-                <Field label={t('workbench.agent')} hint={t('workbench.agentHint')}>
-                  <select value={assignedAgent} aria-label={t('workbench.agent')} onChange={(event) => { setAssignedAgent(event.target.value) }}>
-                    <option value="">{t('workbench.liveAgent')}</option>
-                    {(overview?.agents ?? [])
-                      .filter(agent => agent.active)
-                      .map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-                  </select>
-                </Field>
-                {chosenDraft !== null
-                  ? draftBody
-                  : chosenInbox !== null
-                    ? inboxBody
-                    : detail.kind === 'loading'
-                      ? <StateBlock kind="loading" title={t('state.loading')} />
-                      : detail.kind === 'error'
-                        ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
-                        : boardBody}
-              </>
-            )}
-        </Modal>
+        {filters}
+        {view === 'foco'
+          ? (
+            <>
+              {current === undefined ? null : <h2 className={styles.cellName}>{current.title}</h2>}
+              {detailBody}
+            </>
+          )
+          : view === 'kanban'
+            ? kanban
+            : <DataTable columns={columns} rows={visible} selectedId={selected ?? ''} onSelect={(id) => { setSelected(id); setView('foco') }} emptyTitle={t('mesa.empty')} emptyText={t('mesa.noSelection')} labels={tableLabels(t)} />}
       </Screen>
     )
   }
@@ -5835,7 +5957,7 @@ export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   // The Chat landing keeps its route but no sidebar row (the New Session button
   // and the conversation cover it).
   { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', Icon: panelIcon(FlIconSpaceloom), Page: conversarPanel(), sidebar: false },
-  { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.board.length, Icon: panelIcon(FlIconWorkloom), Page: boardScreen() },
+  { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.board.length, Icon: panelIcon(FlIconWorkloom), Page: mesaScreen() },
   { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.spaces.length, Icon: panelIcon(FlIconWorkspace), Page: spacesScreen() },
   // The files panel reads the same Spaces the platform sidebar groups, so the
   // harness projection and the operator's documents are visible without opening

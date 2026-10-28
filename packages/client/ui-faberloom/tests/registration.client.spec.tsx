@@ -39,6 +39,16 @@ const OVERVIEW = {
 
 const EMPTY = { spaces: [], agents: [], board: [], routines: [], memory: [], canWrite: true }
 
+const DETAIL = {
+  id: 'item-1', title: 'Preparar proforma', status: 'waiting_approval', state: 'PENDIENTE_CRITERIO',
+  column: 'TU_CRITERIO', version: 1, rowVersion: 2, summary: 'Borrador', evidence: ['oc:505288'],
+  approvedRevision: null, stale: false, staleReason: null, severity: 'MEDIUM', severitySource: 'HUMAN',
+  severityConfidence: null, dueAt: null, valueUsd: 1200, dataClass: 'N2', dataClassProvisional: true,
+  artifactType: 'proforma', accountRef: 'eguisa', artifactHash: 'h1', runId: 'run-1', supersedesItemId: null,
+  pendingCandidate: null, spaceId: null, iterationId: null, iterationDraftKey: null, editDraft: null,
+  events: [], effects: [], routineId: null,
+}
+
 const runtimes = new Set<SlotTestRuntime>()
 
 afterEach(async () => {
@@ -100,8 +110,25 @@ async function bench(
     },
   }))
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardSetSeverity = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardSaveEdits = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardApprove = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardApproveWithEdits = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardDiscard = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardResolveCandidate = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardAssignWorkspace = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardEvents = vi.fn(async () => ({ ok: true, value: [] }))
+  const boardGetDraft = vi.fn(async (): Promise<unknown> => ({ ok: true, value: null }))
+  const boardSaveDraft = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { revision: 1, writerSession: 'tab', changes: {} } }))
+  const boardTakeDraft = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { revision: 2, writerSession: 'tab', changes: {} } }))
+  const boardDiscardDraft = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const boardRevalidate = vi.fn(async () => ({ ok: true, value: undefined }))
   const setBoardRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
+  const saveEmailDraft = vi.fn(async () => ({
+    ok: true,
+    value: { id: 'draft-1', to: [], cc: [], subject: 'Propuesta', text: 'cuerpo', status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z' },
+  }))
   const emailInbox = vi.fn(async () => ({ ok: true, value: email.inbox ?? [] }))
   const emailRead = vi.fn(async () => ({ ok: true, value: { account: 'alejandro@muitowork.com', text: 'cuerpo', html: null, attachments: [] } }))
   const emailMarkSeen = vi.fn(async () => ({ ok: true, value: true }))
@@ -192,8 +219,10 @@ async function bench(
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, setBoardRoutine, prepareHarness,
+    boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
+    boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
-    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, mwtStatus,
+    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
     skills,
@@ -288,7 +317,8 @@ async function bench(
   const view = runtime.renderRoot()
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
-    deleteBoardItem, emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
+    deleteBoardItem, boardDetail, boardSaveEdits, boardTakeDraft, boardRevalidate,
+    emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
@@ -531,47 +561,86 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(deleteSpace).toHaveBeenCalledWith('space-1') })
   })
 
-  it('deletes the selected work-bench task from the inspector', async () => {
-    const { runtime, deleteBoardItem, view } = await bench()
+  it('locks the editor to one tab and hands over control', async () => {
+    const detail = {
+      ...DETAIL,
+      editDraft: { revision: 3, writerSession: 'other-tab', changes: { summary: 'borrador ajeno' } },
+    }
+    const { runtime, view, boardDetail, boardTakeDraft } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: detail } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
-    const rows = await view.findAllByRole('row')
-    fireEvent.click(rows[1] as HTMLTableRowElement)
-    fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
-    await waitFor(() => { expect(deleteBoardItem).toHaveBeenCalledWith('item-1') })
+    expect(await view.findByText(faberloomEn['mesa.foreignDraft'])).toBeTruthy()
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true)
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.takeControl'] }))
+    await waitFor(() => { expect(boardTakeDraft).toHaveBeenCalledWith('item-1', expect.stringMatching(/^tab-/)) })
   })
 
-  it('sends and discards an email draft from the work bench', async () => {
+  it('announces the iteration draft and opens the iteration', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, iterationDraftKey: 'iter-1' } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iterationDraft'])).toBeTruthy()
+    expect(view.getByRole('button', { name: faberloomEn['mesa.iterationOpen'] })).toBeTruthy()
+  })
+
+  it('saves with Ctrl+S, toggles Lista with V, and refuses R when not stale', async () => {
+    const { runtime, view, boardDetail, boardSaveEdits } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    await waitFor(() => {
+      expect(boardSaveEdits).toHaveBeenCalledWith('item-1', expect.objectContaining({ changes: { summary: 'Corregido' } }))
+    })
+
+    fireEvent.keyDown(window, { key: 'v' })
+    expect(await view.findByText(faberloomEn['mesa.account'])).toBeTruthy()
+
+    fireEvent.keyDown(window, { key: 'r' })
+    expect(await view.findByText(faberloomEn['mesa.notStale'])).toBeTruthy()
+  })
+
+  it('opens the selected task in the Foco detail', async () => {
+    const { runtime, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText('Preparar proforma')).toBeTruthy()
+    expect(view.getByRole('button', { name: faberloomEn['mesa.tab.kanban'] })).toBeTruthy()
+    expect(view.getByRole('button', { name: faberloomEn['mesa.tab.lista'] })).toBeTruthy()
+  })
+
+  it('sends an email draft from the Correo panel', async () => {
     const draft = {
       id: 'draft-1', to: ['cliente@mwt.one'], cc: [], subject: 'Propuesta', text: 'cuerpo',
       status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
     }
-    const { runtime, sendEmailDraft, deleteEmailDraft, view } = await bench(
+    const { runtime, sendEmailDraft, view } = await bench(
       { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
     )
-    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    fireEvent.change(await view.findByRole('combobox', { name: faberloomEn['email.mode'] }), { target: { value: 'drafts' } })
     await view.findByText('Propuesta')
     const draftRows = view.getAllByRole('row')
     fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)
-    fireEvent.click(await view.findByRole('button', { name: 'Send' }))
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.send'] }))
     await waitFor(() => { expect(sendEmailDraft).toHaveBeenCalledWith('draft-1') })
-    fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
-    await waitFor(() => { expect(deleteEmailDraft).toHaveBeenCalledWith('draft-1') })
   })
 
-  it('offers reply, chat, mark-read and trash on an unread email task', async () => {
+  it('offers reply, mark-read and trash on an unread email in Correo', async () => {
     const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
     const { runtime, emailMarkSeen, emailTrash, view } = await bench(
       { ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] },
     )
-    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     await view.findByText('OC 505433')
     const inboxRows = view.getAllByRole('row')
     fireEvent.click(inboxRows[inboxRows.length - 1] as HTMLTableRowElement)
-    expect(await view.findByRole('button', { name: 'Reply' })).toBeTruthy()
-    expect(view.getByRole('button', { name: 'Open chat' })).toBeTruthy()
-    fireEvent.click(view.getByRole('button', { name: 'Mark as read' }))
+    expect(await view.findByRole('button', { name: faberloomEn['email.reply'] })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: `${faberloomEn['email.markRead']} proveedor@mwt.one` }))
     await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith('42') })
-    fireEvent.click(view.getByRole('button', { name: 'Trash' }))
+    fireEvent.click(view.getByRole('button', { name: `${faberloomEn['email.trash']} proveedor@mwt.one` }))
     await waitFor(() => { expect(emailTrash).toHaveBeenCalledWith('42', 'proveedor@mwt.one', 'OC 505433') })
   })
 
@@ -1195,10 +1264,8 @@ describe('faberloom panel editors', () => {
     const { runtime, view } = await bench(undefined, undefined, {}, [], { context: [CONTEXT_ROW] })
 
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
-    fireEvent.click(await view.findByText('Preparar proforma'))
-    expect((await view.findByRole('dialog')).getAttribute('aria-label')).toBe('Preparar proforma')
-    fireEvent.click(view.getAllByRole('button', { name: faberloomEn['action.close'] })[0] as HTMLButtonElement)
-    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+    expect(await view.findByText('Preparar proforma')).toBeTruthy()
+    expect(view.queryByRole('dialog')).toBeNull()
 
     act(() => { runtime.panelInfo.set({ activePanelId: CONTEXT }) })
     fireEvent.click(await view.findByText(CONTEXT_ROW.title))

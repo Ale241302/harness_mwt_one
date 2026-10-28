@@ -236,7 +236,12 @@ function assertSourcesAllowed(actor: SpaceActor, sources: readonly SpaceSource[]
 
 /** Whether the actor's company scope admits the record's company. */
 function tenantAdmits(record: SpaceRecord, actor: SpaceActor): boolean {
-  if (record.companyId === null || actor.companyId === undefined || actor.role === 'admin') return true
+  if (record.companyId === null) return true
+  if (actor.role === 'admin') return true
+  // A caller with no company scope cannot prove it belongs to a company-scoped
+  // Space. Single-tenant deployments create their Spaces with `companyId: null`,
+  // so this denies only a record that was explicitly scoped to another company.
+  if (actor.companyId === undefined) return false
   return record.companyId === actor.companyId
 }
 
@@ -308,15 +313,17 @@ export class FaberLoomSpaces extends Service {
     return { table, record }
   }
 
-  /** Whether the actor may read a space: owner/member/admin, or an active `view` grant. */
+  /** Whether the actor may read a space: tenant scope first, then owner/member/admin or a `view` grant. */
   private async mayRead(id: FaberLoomSpaceId, record: SpaceRecord, actor: SpaceActor): Promise<boolean> {
+    if (!tenantAdmits(record, actor)) return false
     if (canRead(record, actor)) return true
     const shares = this.ctx.get('faberloomShares')
     return shares !== undefined && await shares.can(actor.id, record.ownerId, { kind: 'space', id }, 'view')
   }
 
-  /** Whether the actor may manage a space: owner/admin, or an active `manage-members` grant. */
+  /** Whether the actor may manage a space: tenant scope first, then owner/admin or a `manage-members` grant. */
   private async mayManage(id: FaberLoomSpaceId, record: SpaceRecord, actor: SpaceActor): Promise<boolean> {
+    if (!tenantAdmits(record, actor)) return false
     if (canManage(record, actor)) return true
     const shares = this.ctx.get('faberloomShares')
     return shares !== undefined && await shares.can(actor.id, record.ownerId, { kind: 'space', id }, 'manage-members')
@@ -329,6 +336,7 @@ export class FaberLoomSpaces extends Service {
     actor: SpaceActor,
     permission: 'create-subspace' | 'move-space',
   ): Promise<boolean> {
+    if (!tenantAdmits(record, actor)) return false
     const shares = this.ctx.get('faberloomShares')
     return shares !== undefined && await shares.can(actor.id, record.ownerId, { kind: 'space', id }, permission)
   }
@@ -870,8 +878,12 @@ export class FaberLoomSpaces extends Service {
       if (!current.inheritContext) break
       const parentId = current.parentId
       if (parentId === null) break
+      const parent = table.get(parentId)
+      // A parent in another company never contributes context, even when the
+      // caller can read the child through a grant.
+      if (parent === undefined || !tenantAdmits(parent, actor)) break
       currentId = parentId
-      current = table.get(parentId)
+      current = parent
     }
 
     const resolved: SpaceContext = {}

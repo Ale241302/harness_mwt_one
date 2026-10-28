@@ -60,6 +60,8 @@ import type {
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
   FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
+  FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
+  FaberLoomBoardSeverity, FaberLoomBoardEventRow, FaberLoomBoardDraftInput, FaberLoomBoardDraftRow,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
@@ -1173,7 +1175,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const [spaces, agents, board, routines, memory] = await Promise.all([
       this.ctx.faberloomSpaces.list(actor),
       this.ctx.faberloomAgents.listAgents(),
-      this.ctx.faberloomBoard.list({ ownerId: actor.id }),
+      this.ctx.faberloomBoard.list(actor),
       this.ctx.faberloomRoutines.listRoutines(actor.id),
       this.readMemory(),
     ])
@@ -1228,7 +1230,22 @@ export class FaberLoomViewService extends TypertRemoteService {
           ...ref.startsWith('share:') ? { sharedBy: ref.slice('share:'.length) } : {},
         }
       }),
-      board: board.map(item => ({ id: item.id, title: item.title, status: item.status, routineId: item.routineId })),
+      board: board.map(item => ({
+        id: item.id,
+        title: item.title,
+        status: item.status,
+        state: item.state,
+        column: item.column,
+        severity: item.severity,
+        routineId: item.routineId,
+        spaceId: item.spaceId,
+        accountRef: item.accountRef,
+        artifactType: item.artifactType,
+        dueAt: item.dueAt,
+        valueUsd: item.valueUsd,
+        hasCandidate: item.pendingCandidate !== null,
+        hasDraft: false,
+      })),
       routines: routines.map(routine => ({
         id: routine.id, name: routine.name, status: routine.status, visibility: routine.visibility, spaceId: routine.spaceId,
         cloud: classifyRoutine(routine.definition),
@@ -4806,7 +4823,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create tasks')
     const trimmed = text.trim()
     const title = (trimmed.split('\n')[0] ?? trimmed).slice(0, 120)
-    await this.ctx.faberloomBoard.create(this.actor().id, {
+    await this.ctx.faberloomBoard.create(this.actor(), {
       title,
       summary: trimmed,
       evidence: [`conversacion:${title}`],
@@ -5710,6 +5727,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       createdAt: token.createdAt,
       revokedAt: token.revokedAt,
       scopes: token.scopes,
+      companyId: token.companyId,
     }))
   }
 
@@ -5722,7 +5740,12 @@ export class FaberLoomViewService extends TypertRemoteService {
   async mintMcpToken(input: McpTokenInput): Promise<readonly FaberLoomMcpTokenRow[]> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot mint MCP tokens')
     const scopes = input.scopes
-    await this.ctx.faberloomMcpServer.mintToken(input.label.trim().length === 0 ? 'cliente' : input.label.trim(), scopes === undefined || scopes.length === 0 ? null : [...scopes])
+    const companyId = this.actor().companyId
+    await this.ctx.faberloomMcpServer.mintToken(
+      input.label.trim().length === 0 ? 'cliente' : input.label.trim(),
+      scopes === undefined || scopes.length === 0 ? null : [...scopes],
+      companyId ?? null,
+    )
     return await this.mcpTokens()
   }
 
@@ -6149,22 +6172,244 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('boardDetail')
   async boardDetail(id: string): Promise<FaberLoomBoardDetail | undefined> {
-    const item = (await this.ctx.faberloomBoard.list({ ownerId: this.actor().id })).find(entry => entry.id === id)
+    const item = (await this.ctx.faberloomBoard.list(this.actor())).find(entry => entry.id === id)
     if (item === undefined) return undefined
     const revision = item.revisions[item.revisions.length - 1]
+    const draft = await this.ctx.faberloomBoard.getEditDraft(this.actor(), item.id)
     return {
       id: item.id,
       title: item.title,
       status: item.status,
+      state: item.state,
+      column: item.column,
       version: item.version,
+      rowVersion: item.rowVersion,
       summary: revision?.summary ?? '',
       evidence: revision === undefined ? [] : [...revision.evidence],
       approvedRevision: item.approvedRevision,
       stale: item.stale,
       staleReason: item.staleReason,
+      severity: item.severity,
+      severitySource: item.severitySource,
+      severityConfidence: item.severityConfidence,
+      dueAt: item.dueAt,
+      valueUsd: item.valueUsd,
+      dataClass: item.dataClass,
+      dataClassProvisional: item.dataClassProvisional,
+      artifactType: item.artifactType,
+      accountRef: item.accountRef,
+      artifactHash: item.artifactHash,
+      runId: item.runId,
+      supersedesItemId: item.supersedesItemId,
+      pendingCandidate: item.pendingCandidate === null
+        ? null
+        : {
+          id: item.pendingCandidate.id,
+          hash: item.pendingCandidate.hash,
+          summary: item.pendingCandidate.summary,
+          at: item.pendingCandidate.at,
+        },
+      spaceId: item.spaceId,
+      iterationId: item.iterationId,
+      iterationDraftKey: item.iterationDraftKey,
+      editDraft: draft === undefined
+        ? null
+        : { revision: draft.revision, writerSession: draft.writerSession, changes: draft.changes },
+      events: item.events.map(event => ({ command: event.command, at: event.at, reason: event.reason })),
       effects: item.effects.map(effect => ({ ref: effect.ref, detail: effect.detail, at: effect.at })),
       routineId: item.routineId,
     }
+  }
+
+  /**
+   * Assign or correct the human severity.
+   * @param id - board item id.
+   * @param severity - LOW, MEDIUM, HIGH, or CRITICAL.
+   * @param rowVersion - expected optimistic token.
+   * @param source - who assigned it.
+   * @param confidence - original classifier confidence.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardSetSeverity')
+  async boardSetSeverity(
+    id: string,
+    severity: FaberLoomBoardSeverity,
+    rowVersion: number,
+    source: 'RULE' | 'LLM' | 'HUMAN',
+    confidence: number | null,
+  ): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot set severity')
+    await this.ctx.faberloomBoard.setSeverity(this.actor(), id as FaberLoomBoardItemId, severity, source, confidence, rowVersion)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Save inline edits as a new version.
+   * @param id - board item id.
+   * @param input - base version, row version, and changes.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardSaveEdits')
+  async boardSaveEdits(id: string, input: FaberLoomBoardEditsInput): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot edit board items')
+    await this.ctx.faberloomBoard.saveEdits(this.actor(), id as FaberLoomBoardItemId, {
+      expectedRowVersion: input.expectedRowVersion,
+      baseVersion: input.baseVersion,
+      changes: input.changes,
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Approve the exact version and hash.
+   * @param id - board item id.
+   * @param input - expected row, artifact version, and hash.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardApprove')
+  async boardApprove(id: string, input: FaberLoomBoardApproveInput): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot approve board items')
+    await this.ctx.faberloomBoard.approve(this.actor(), id as FaberLoomBoardItemId, input)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Save edits and approve the resulting version atomically.
+   * @param id - board item id.
+   * @param input - approval expectations plus the edits.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardApproveWithEdits')
+  async boardApproveWithEdits(
+    id: string,
+    input: FaberLoomBoardApproveInput & FaberLoomBoardEditsInput,
+  ): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot approve board items')
+    await this.ctx.faberloomBoard.approveWithEdits(this.actor(), id as FaberLoomBoardItemId, input)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Discard an item with a signed reason.
+   * @param id - board item id.
+   * @param input - expected row, reason, and optional note.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardDiscard')
+  async boardDiscard(id: string, input: FaberLoomBoardDiscardInput): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot discard board items')
+    await this.ctx.faberloomBoard.discard(this.actor(), id as FaberLoomBoardItemId, {
+      expectedRowVersion: input.expectedRowVersion,
+      reason: input.reason,
+      ...input.note === undefined ? {} : { note: input.note },
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Adopt or keep the pending candidate.
+   * @param id - board item id.
+   * @param candidateId - candidate the user saw.
+   * @param candidateHash - hash the user saw.
+   * @param decision - adopt or keep.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardResolveCandidate')
+  async boardResolveCandidate(
+    id: string,
+    candidateId: string,
+    candidateHash: string,
+    decision: 'adopt' | 'keep',
+  ): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot resolve candidates')
+    await this.ctx.faberloomBoard.resolveCandidate(this.actor(), id as FaberLoomBoardItemId, candidateId, candidateHash, decision)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Assign a space to an item.
+   * @param id - board item id.
+   * @param workspaceId - target space id.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardAssignWorkspace')
+  async boardAssignWorkspace(id: string, workspaceId: string): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot assign spaces')
+    await this.ctx.faberloomBoard.assignWorkspace(this.actor(), id as FaberLoomBoardItemId, workspaceId)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Read the audit history of one item.
+   * @param id - board item id.
+   * @returns the events, oldest first.
+   */
+  @Remote('boardEvents')
+  async boardEvents(id: string): Promise<readonly FaberLoomBoardEventRow[]> {
+    const events = await this.ctx.faberloomBoard.events(this.actor(), id as FaberLoomBoardItemId)
+    return events.map(event => ({ command: event.command, at: event.at, reason: event.reason }))
+  }
+
+  /**
+   * Clear staleness after checking whether the underlying condition changed.
+   * @param id - board item id.
+   * @param changed - whether the artifact actually changed.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardRevalidate')
+  async boardRevalidate(id: string, changed: boolean): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revalidate board items')
+    await this.ctx.faberloomBoard.revalidate(this.actor(), id as FaberLoomBoardItemId, changed)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Read the caller's edit draft.
+   * @param id - board item id.
+   * @returns the draft, or null.
+   */
+  @Remote('boardGetDraft')
+  async boardGetDraft(id: string): Promise<FaberLoomBoardDraftRow | null> {
+    const draft = await this.ctx.faberloomBoard.getEditDraft(this.actor(), id as FaberLoomBoardItemId)
+    return draft === undefined
+      ? null
+      : { revision: draft.revision, writerSession: draft.writerSession, changes: draft.changes }
+  }
+
+  /**
+   * Save one draft write, conditional on its revision and writer tab.
+   * @param id - board item id.
+   * @param input - base version, revision, tab, and changes.
+   * @returns the stored draft.
+   */
+  @Remote('boardSaveDraft')
+  async boardSaveDraft(id: string, input: FaberLoomBoardDraftInput): Promise<FaberLoomBoardDraftRow> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot edit board items')
+    const draft = await this.ctx.faberloomBoard.saveEditDraft(this.actor(), id as FaberLoomBoardItemId, input)
+    return { revision: draft.revision, writerSession: draft.writerSession, changes: draft.changes }
+  }
+
+  /**
+   * Take the writer seat for one tab.
+   * @param id - board item id.
+   * @param writerSession - the requesting tab.
+   * @returns the draft with this tab as writer.
+   */
+  @Remote('boardTakeDraft')
+  async boardTakeDraft(id: string, writerSession: string): Promise<FaberLoomBoardDraftRow> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot edit board items')
+    const draft = await this.ctx.faberloomBoard.takeEditDraft(this.actor(), id as FaberLoomBoardItemId, writerSession)
+    return { revision: draft.revision, writerSession: draft.writerSession, changes: draft.changes }
+  }
+
+  /**
+   * Discard the caller's edit draft.
+   * @param id - board item id.
+   */
+  @Remote('boardDiscardDraft')
+  async boardDiscardDraft(id: string): Promise<void> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot edit board items')
+    await this.ctx.faberloomBoard.discardEditDraft(this.actor(), id as FaberLoomBoardItemId)
   }
 
   /**
@@ -6176,7 +6421,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('setBoardRoutine')
   async setBoardRoutine(id: string, routineId: string | null): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot link board items')
-    await this.ctx.faberloomBoard.setRoutine(this.actor().id, id as FaberLoomBoardItemId, routineId)
+    await this.ctx.faberloomBoard.setRoutine(this.actor(), id as FaberLoomBoardItemId, routineId)
     return await this.overview()
   }
 
@@ -6223,7 +6468,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('createBoardItem')
   async createBoardItem(title: string): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomBoard.create(this.actor().id, { title, summary: title, evidence: [title] })
+    await this.ctx.faberloomBoard.create(this.actor(), { title, summary: title, evidence: [title] })
     return await this.overview()
   }
 
@@ -6237,8 +6482,8 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('reviewBoardItem')
   async reviewBoardItem(id: string, approve: boolean, note?: string): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot review board items')
-    const item = await this.ctx.faberloomBoard.get(id as FaberLoomBoardItemId)
-    await this.ctx.faberloomBoard.review(this.actor().id, item.id, {
+    const item = await this.ctx.faberloomBoard.get(this.actor(), id as FaberLoomBoardItemId)
+    await this.ctx.faberloomBoard.review(this.actor(), item.id, {
       decision: approve ? 'approve' : 'reject',
       version: item.version,
       ...note === undefined || note.trim().length === 0 ? {} : { note: note.trim() },
@@ -6254,7 +6499,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('reopenBoardItem')
   async reopenBoardItem(id: string): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot reopen board items')
-    await this.ctx.faberloomBoard.reopen(this.actor().id, id as FaberLoomBoardItemId)
+    await this.ctx.faberloomBoard.reopen(this.actor(), id as FaberLoomBoardItemId)
     return await this.overview()
   }
 
@@ -6267,7 +6512,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('submitBoardRevision')
   async submitBoardRevision(id: string, input: BoardRevisionInput): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot submit revisions')
-    await this.ctx.faberloomBoard.submitRevision(this.actor().id, id as FaberLoomBoardItemId, {
+    await this.ctx.faberloomBoard.submitRevision(this.actor(), id as FaberLoomBoardItemId, {
       summary: input.summary,
       evidence: [...input.evidence],
     })
@@ -6284,11 +6529,11 @@ export class FaberLoomViewService extends TypertRemoteService {
   async boardException(id: string, action: 'request_data' | 'fail' | 'complete'): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot move board items')
     const service = this.ctx.faberloomBoard
-    const owner = this.actor().id
+    const actor = this.actor()
     const itemId = id as FaberLoomBoardItemId
-    if (action === 'request_data') await service.requestData(owner, itemId)
-    else if (action === 'fail') await service.fail(owner, itemId)
-    else await service.complete(owner, itemId)
+    if (action === 'request_data') await service.requestData(actor, itemId)
+    else if (action === 'fail') await service.fail(actor, itemId)
+    else await service.complete(actor, itemId)
     return await this.overview()
   }
 
@@ -6300,7 +6545,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('deleteBoardItem')
   async deleteBoardItem(id: string): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot delete board items')
-    await this.ctx.faberloomBoard.remove(this.actor().id, id as FaberLoomBoardItemId)
+    await this.ctx.faberloomBoard.remove(this.actor(), id as FaberLoomBoardItemId)
     return await this.overview()
   }
 

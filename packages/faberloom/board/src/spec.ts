@@ -1,6 +1,6 @@
 /**
- * The board domain declaration: the item record schema and the `defineDomain`
- * spec the service opens.
+ * The board domain declaration: the item record schema, the key-claim table,
+ * and the `defineDomain` spec the service opens.
  * @module @deepseek-ai/dsh-faberloom-board/src/spec
  */
 
@@ -33,9 +33,34 @@ const effectRecord = z.object({
   at: z.string(),
 })
 
+/** Durable audit event. */
+const eventRecord = z.object({
+  id: z.string(),
+  command: z.string(),
+  actor: z.string(),
+  fromState: z.string().nullable(),
+  toState: z.string(),
+  revision: z.number().nullable(),
+  artifactHash: z.string().nullable(),
+  reason: z.string().nullable(),
+  at: z.string(),
+  data: z.record(z.string(), z.unknown()).nullable(),
+})
+
+/** Durable candidate. */
+const candidateRecord = z.object({
+  id: z.string(),
+  hash: z.string(),
+  summary: z.string(),
+  evidence: z.array(z.string()),
+  at: z.string(),
+})
+
 /** Durable board item record. */
 export const boardItemRecord = z.object({
   ownerId: z.string(),
+  /** Company scope; absent in records written before tenant scoping, and in single-tenant deployments. */
+  companyId: z.string().nullable().default(null),
   spaceId: z.string().nullable(),
   /** Routine this task feeds, or null when it is standalone. */
   routineId: z.string().nullable().default(null),
@@ -44,6 +69,34 @@ export const boardItemRecord = z.object({
     z.literal('in_progress'), z.literal('waiting_data'), z.literal('waiting_approval'), z.literal('approved'),
     z.literal('completed'), z.literal('failed'), z.literal('reopened'), z.literal('needs_review'),
   ]),
+  /** Persisted WorkLoom state; null only in records written before E10. */
+  state: z.string().nullable().default(null),
+  /** Optimistic concurrency token. */
+  rowVersion: z.number().default(1),
+  severity: z.union([z.literal('LOW'), z.literal('MEDIUM'), z.literal('HIGH'), z.literal('CRITICAL')]).nullable().default(null),
+  severitySource: z.union([z.literal('RULE'), z.literal('LLM'), z.literal('HUMAN')]).nullable().default(null),
+  severityConfidence: z.number().nullable().default(null),
+  dueAt: z.string().nullable().default(null),
+  valueAmount: z.number().nullable().default(null),
+  valueCurrency: z.string().nullable().default(null),
+  valueUsd: z.number().nullable().default(null),
+  dataClass: z.union([z.literal('N0'), z.literal('N1'), z.literal('N2'), z.literal('N3'), z.literal('N4')]).default('N2'),
+  dataClassProvisional: z.boolean().default(true),
+  runId: z.string().nullable().default(null),
+  idempotencyKey: z.string().nullable().default(null),
+  businessKey: z.string().nullable().default(null),
+  supersedesItemId: z.string().nullable().default(null),
+  artifactType: z.string().default(''),
+  accountRef: z.string().nullable().default(null),
+  artifactHash: z.string().nullable().default(null),
+  pendingCandidate: candidateRecord.nullable().default(null),
+  events: z.array(eventRecord).default([]),
+  discardReason: z.string().nullable().default(null),
+  discardNote: z.string().nullable().default(null),
+  iterationId: z.string().nullable().default(null),
+  iterationDraftKey: z.string().nullable().default(null),
+  iterationLockUntil: z.string().nullable().default(null),
+  iterationLockGeneration: z.number().default(0),
   version: z.number(),
   revisions: z.array(revisionRecord),
   approvedRevision: z.number().nullable(),
@@ -59,11 +112,42 @@ export const boardItemRecord = z.object({
 /** One stored board item, inferred from {@link boardItemRecord}. */
 export type BoardItemRecord = z.infer<typeof boardItemRecord>
 
+/** One claimed idempotency or business key. */
+export const boardKeyRecord = z.object({
+  /** Item that owns the claim. */
+  itemId: z.string(),
+  /** Claim kind: `idem` or `bkey`. */
+  kind: z.string(),
+  /** ISO-8601 claim instant. */
+  at: z.string(),
+})
+
+/** One stored key claim. */
+export type BoardKeyRecord = z.infer<typeof boardKeyRecord>
+
+/** One inline edit draft, keyed by `itemId:userId`. */
+export const boardDraftRecord = z.object({
+  itemId: z.string(),
+  userId: z.string(),
+  baseVersion: z.number(),
+  revision: z.number(),
+  writerSession: z.string(),
+  changes: z.record(z.string(), z.string()),
+  updatedAt: z.string(),
+})
+
+/** One stored edit draft. */
+export type BoardDraftRecord = z.infer<typeof boardDraftRecord>
+
 /**
- * The board domain spec: one `items` table keyed by {@link FaberLoomBoardItemId}.
+ * The board domain spec: item aggregates plus the key-claim table.
  */
 export const boardDomainSpec = defineDomain({
   name: 'faberloom_board',
   version: 1,
-  tables: { items: domainTable<FaberLoomBoardItemId, BoardItemRecord>(boardItemRecord) },
+  tables: {
+    items: domainTable<FaberLoomBoardItemId, BoardItemRecord>(boardItemRecord),
+    keys: domainTable<string, BoardKeyRecord>(boardKeyRecord),
+    drafts: domainTable<string, BoardDraftRecord>(boardDraftRecord),
+  },
 })

@@ -439,127 +439,249 @@ Source: [`packages/faberloom/backup/src/index.ts`](../../packages/faberloom/back
 
 ### `ctx.faberloomBoard` — `FaberLoomBoard`
 
-The product board service: versioned items, evidence-gated submits, version-bound approvals, revalidation, and authorization-gated effects.
+The product board service: WorkLoom states, commands, audit, candidates, and optimistic concurrency over one key-value aggregate per item.
 
 ```ts cordis-catalog
 /**
  * Create one prepared item awaiting review; evidence is mandatory.
- * @param ownerId - the owning identity.
+ * @param writer - the owning identity; a bare id is a legacy single-tenant actor.
  * @param input - title, summary, evidence, optional space, document, execution.
  * @returns the created item.
  */
-async create(ownerId: string, input: BoardCreateInput): Promise<FaberLoomBoardItem>
+async create(writer: BoardWriter, input: BoardCreateInput): Promise<FaberLoomBoardItem>
+
+/**
+ * Create one item from an Action Engine run. `runId`, `idempotencyKey`, and
+ * `businessKey` are mandatory; a repeated key returns the existing item.
+ * @param writer - the acting identity.
+ * @param input - run identity, artifact identity, title, summary, and evidence.
+ * @returns the created or deduplicated item.
+ */
+async submit(writer: BoardWriter, input: BoardSubmitRequest): Promise<FaberLoomBoardItem>
+
+/**
+ * Record the human severity and its provenance.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param severity - the chosen severity.
+ * @param source - who assigned it.
+ * @param confidence - original classifier confidence, when known.
+ * @param expectedRowVersion - optimistic token.
+ * @returns the updated item.
+ */
+async setSeverity( writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source: 'RULE' | 'LLM' | 'HUMAN' = 'HUMAN', confidence: number | null = null, expectedRowVersion?: number, ): Promise<FaberLoomBoardItem>
+
+/**
+ * Save inline edits as a new revision and hash.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - base version, expected row version, and changes.
+ * @returns the updated item.
+ */
+async saveEdits(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEditsInput): Promise<FaberLoomBoardItem>
+
+/**
+ * Approve the exact artifact version. It never sends anything.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - expected row, artifact version, and hash.
+ * @returns the approved item.
+ */
+async approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem>
+
+/**
+ * Save edits and approve the resulting version in one command.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - approval expectations plus the edits.
+ * @returns the approved item.
+ */
+async approveWithEdits( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput & BoardEditsInput, ): Promise<FaberLoomBoardItem>
+
+/**
+ * Discard an item with a signed reason.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - expected row, reason, and optional note.
+ * @returns the discarded item.
+ */
+async discard(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardDiscardInput): Promise<FaberLoomBoardItem>
+
+/**
+ * Adopt or keep the pending candidate.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param candidateId - candidate the user saw.
+ * @param candidateHash - hash the user saw.
+ * @param decision - adopt or keep.
+ * @returns the updated item.
+ */
+async resolveCandidate( writer: BoardWriter, id: FaberLoomBoardItemId, candidateId: string, candidateHash: string, decision: 'adopt' | 'keep', ): Promise<FaberLoomBoardItem>
+
+/**
+ * Assign a space (and its root workspace) to an item, resolving collisions.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param workspaceId - target space/workspace id.
+ * @returns the visible item after the assignment.
+ */
+async assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<FaberLoomBoardItem>
+
+/**
+ * Read the caller's inline-edit draft for one item.
+ * @param actor - the authenticated editor.
+ * @param id - item id.
+ * @returns the draft, or undefined.
+ */
+async getEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEditDraft | undefined>
+
+/**
+ * Save one draft write, conditional on its revision and writer tab.
+ * @param actor - the authenticated editor.
+ * @param id - item id.
+ * @param input - base version, revision, tab, and changes.
+ * @returns the stored draft.
+ */
+async saveEditDraft( actor: BoardActor, id: FaberLoomBoardItemId, input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, string> }, ): Promise<BoardEditDraft>
+
+/**
+ * Take the writer seat for one item. A second tab becomes read-only until
+ * this call succeeds.
+ * @param actor - the authenticated editor.
+ * @param id - item id.
+ * @param writerSession - the requesting tab.
+ * @returns the draft with this tab as writer.
+ */
+async takeEditDraft(actor: BoardActor, id: FaberLoomBoardItemId, writerSession: string): Promise<BoardEditDraft>
+
+/**
+ * Drop the caller's draft.
+ * @param actor - the authenticated editor.
+ * @param id - item id.
+ */
+async discardEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<void>
+
+/**
+ * Read the audit history of one item.
+ * @param actor - the authenticated reader.
+ * @param id - item id.
+ * @returns the events, oldest first.
+ */
+async events(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardEvent[]>
 
 /**
  * Submit a correction as the next revision, awaiting a fresh review.
- * @param ownerId - the acting identity.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @param input - summary, evidence, and optional document reference.
  * @returns the updated item.
  */
-async submitRevision(ownerId: string, id: FaberLoomBoardItemId, input: BoardSubmitInput): Promise<FaberLoomBoardItem>
+async submitRevision(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardSubmitInput): Promise<FaberLoomBoardItem>
 
 /**
  * Record that the item waits for data.
- * @param ownerId - the acting identity.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @returns the updated item.
  */
-async requestData(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
+async requestData(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
 
 /**
  * Mark the item failed.
- * @param ownerId - the acting identity.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @returns the updated item.
  */
-async fail(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
+async fail(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
 
 /**
  * Reopen the item for another attempt.
- * @param ownerId - the acting identity.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @returns the updated item.
  */
-async reopen(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
+async reopen(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
 
 /**
  * Complete an approved item.
- * @param ownerId - the acting identity.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @returns the updated item.
  */
-async complete(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
+async complete(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
 
 /**
- * Permanently remove one item from the work table, regardless of status.
- * @param ownerId - the acting identity.
+ * Permanently remove one item from the work table, regardless of state.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @returns whether the item existed and was removed.
  */
-async remove(ownerId: string, id: FaberLoomBoardItemId): Promise<boolean>
+async remove(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<boolean>
 
 /**
  * Link the item to the routine that will run it, or unlink it with `null`.
- * @param ownerId - the acting identity.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @param routineId - routine id to attach, or null to detach.
  * @returns the updated item.
  */
-async setRoutine(ownerId: string, id: FaberLoomBoardItemId, routineId: string | null): Promise<FaberLoomBoardItem>
+async setRoutine(writer: BoardWriter, id: FaberLoomBoardItemId, routineId: string | null): Promise<FaberLoomBoardItem>
 
 /**
- * Approve or reject the exact revision. A stale item refuses; a revision that
- * is not current refuses with `STALE_REVISION`.
- * @param ownerId - the acting identity.
+ * Approve or reject the exact revision. A reject returns the item to the
+ * pending column; an approve follows the WorkLoom preconditions.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @param input - decision, exact revision, and optional note.
  * @returns the updated item.
  */
-async review(ownerId: string, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem>
+async review(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem>
 
 /**
  * Invalidate a current approval: the item must be revalidated before approval
  * or effects.
- * @param ownerId - the acting identity.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @param reason - why the item went stale.
  * @returns the updated item.
  */
-async markStale(ownerId: string, id: FaberLoomBoardItemId, reason: string): Promise<FaberLoomBoardItem>
+async markStale(writer: BoardWriter, id: FaberLoomBoardItemId, reason: string): Promise<FaberLoomBoardItem>
 
 /**
  * Clear staleness after checking the changed condition.
- * @param ownerId - the acting identity.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @param changed - whether the underlying condition actually changed.
  * @returns the updated item.
  */
-async revalidate(ownerId: string, id: FaberLoomBoardItemId, changed: boolean): Promise<FaberLoomBoardItem>
+async revalidate(writer: BoardWriter, id: FaberLoomBoardItemId, changed: boolean): Promise<FaberLoomBoardItem>
 
 /**
- * Record an effect. Approval never sends: an explicit non-empty authorization
- * is required, and a stale or unapproved item refuses.
- * @param ownerId - the acting identity.
+ * Record an effect. Approval never sends: an explicit authorization is
+ * required, and a stale or unapproved item refuses.
+ * @param writer - the acting identity.
  * @param id - item id.
  * @param input - external reference, authorization, and optional detail.
  * @returns the updated item.
  */
-async recordEffect(ownerId: string, id: FaberLoomBoardItemId, input: BoardEffectInput): Promise<FaberLoomBoardItem>
+async recordEffect(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEffectInput): Promise<FaberLoomBoardItem>
 
 /**
- * Read one item.
+ * Read one item the actor is allowed to see.
+ * @param actor - the authenticated reader.
  * @param id - item id.
  * @returns the item.
  */
-async get(id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
+async get(actor: BoardActor, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
 
 /**
- * List items, optionally filtered by owner and status.
- * @param filter - optional owner and status filters.
+ * List the actor's items. There is no unfiltered listing: every read is
+ * scoped to one identity and, when the deployment knows it, one company.
+ * @param actor - the authenticated reader.
+ * @param filter - optional state, status, and space filters.
  * @returns items oldest first.
  */
-async list(filter: { ownerId?: string; status?: BoardStatus } = {}): Promise<FaberLoomBoardItem[]>
+async list( actor: BoardActor, filter: { status?: BoardStatus; state?: BoardState; spaceId?: string } = {}, ): Promise<FaberLoomBoardItem[]>
 ```
 
 Source: [`packages/faberloom/board/src/index.ts`](../../packages/faberloom/board/src/index.ts)
@@ -1096,9 +1218,10 @@ async request(body: string, token: string, accept: string = 'application/json'):
  * Mint one bearer token for a client the owner names.
  * @param label - who the token is for.
  * @param scopes - tool names the client may call, or null for the full surface.
+ * @param companyId - company scope the token acts for, or null for the deployment's none.
  * @returns the token, which is only shown here.
  */
-async mintToken(label: string, scopes: readonly string[] | null = null): Promise<FaberLoomMcpToken>
+async mintToken( label: string, scopes: readonly string[] | null = null, companyId: string | null = null, ): Promise<FaberLoomMcpToken>
 
 /**
  * List the tokens this owner minted, revoked ones included.
@@ -1594,9 +1717,11 @@ async removeSource(ownerId: string, id: string): Promise<boolean>
  * dedupes to its case.
  * @param ownerId - the owning identity the event belongs to.
  * @param event - the event.
+ * @param options - `skipCloudReady` leaves the routines that can run on the VPS
+ *   to the VPS, for a desktop that mirrors to one and reads the same mailbox.
  * @returns the executions started or deduped.
  */
-async ingest(ownerId: string, event: IngestEvent): Promise<StartExecutionResult[]>
+async ingest( ownerId: string, event: IngestEvent, options: { readonly skipCloudReady?: boolean } = {}, ): Promise<StartExecutionResult[]>
 
 /**
  * Ingest one event through a source token.
@@ -3466,6 +3591,111 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the board detail, or undefined when it is gone.
  */
 @Remote('boardDetail') async boardDetail(id: string): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Assign or correct the human severity.
+ * @param id - board item id.
+ * @param severity - LOW, MEDIUM, HIGH, or CRITICAL.
+ * @param rowVersion - expected optimistic token.
+ * @param source - who assigned it.
+ * @param confidence - original classifier confidence.
+ * @returns the refreshed detail.
+ */
+@Remote('boardSetSeverity') async boardSetSeverity( id: string, severity: FaberLoomBoardSeverity, rowVersion: number, source: 'RULE' | 'LLM' | 'HUMAN', confidence: number | null, ): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Save inline edits as a new version.
+ * @param id - board item id.
+ * @param input - base version, row version, and changes.
+ * @returns the refreshed detail.
+ */
+@Remote('boardSaveEdits') async boardSaveEdits(id: string, input: FaberLoomBoardEditsInput): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Approve the exact version and hash.
+ * @param id - board item id.
+ * @param input - expected row, artifact version, and hash.
+ * @returns the refreshed detail.
+ */
+@Remote('boardApprove') async boardApprove(id: string, input: FaberLoomBoardApproveInput): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Save edits and approve the resulting version atomically.
+ * @param id - board item id.
+ * @param input - approval expectations plus the edits.
+ * @returns the refreshed detail.
+ */
+@Remote('boardApproveWithEdits') async boardApproveWithEdits( id: string, input: FaberLoomBoardApproveInput & FaberLoomBoardEditsInput, ): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Discard an item with a signed reason.
+ * @param id - board item id.
+ * @param input - expected row, reason, and optional note.
+ * @returns the refreshed detail.
+ */
+@Remote('boardDiscard') async boardDiscard(id: string, input: FaberLoomBoardDiscardInput): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Adopt or keep the pending candidate.
+ * @param id - board item id.
+ * @param candidateId - candidate the user saw.
+ * @param candidateHash - hash the user saw.
+ * @param decision - adopt or keep.
+ * @returns the refreshed detail.
+ */
+@Remote('boardResolveCandidate') async boardResolveCandidate( id: string, candidateId: string, candidateHash: string, decision: 'adopt' | 'keep', ): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Assign a space to an item.
+ * @param id - board item id.
+ * @param workspaceId - target space id.
+ * @returns the refreshed detail.
+ */
+@Remote('boardAssignWorkspace') async boardAssignWorkspace(id: string, workspaceId: string): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Read the audit history of one item.
+ * @param id - board item id.
+ * @returns the events, oldest first.
+ */
+@Remote('boardEvents') async boardEvents(id: string): Promise<readonly FaberLoomBoardEventRow[]>
+
+/**
+ * Clear staleness after checking whether the underlying condition changed.
+ * @param id - board item id.
+ * @param changed - whether the artifact actually changed.
+ * @returns the refreshed detail.
+ */
+@Remote('boardRevalidate') async boardRevalidate(id: string, changed: boolean): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Read the caller's edit draft.
+ * @param id - board item id.
+ * @returns the draft, or null.
+ */
+@Remote('boardGetDraft') async boardGetDraft(id: string): Promise<FaberLoomBoardDraftRow | null>
+
+/**
+ * Save one draft write, conditional on its revision and writer tab.
+ * @param id - board item id.
+ * @param input - base version, revision, tab, and changes.
+ * @returns the stored draft.
+ */
+@Remote('boardSaveDraft') async boardSaveDraft(id: string, input: FaberLoomBoardDraftInput): Promise<FaberLoomBoardDraftRow>
+
+/**
+ * Take the writer seat for one tab.
+ * @param id - board item id.
+ * @param writerSession - the requesting tab.
+ * @returns the draft with this tab as writer.
+ */
+@Remote('boardTakeDraft') async boardTakeDraft(id: string, writerSession: string): Promise<FaberLoomBoardDraftRow>
+
+/**
+ * Discard the caller's edit draft.
+ * @param id - board item id.
+ */
+@Remote('boardDiscardDraft') async boardDiscardDraft(id: string): Promise<void>
 
 /**
  * Link one board item to the routine that runs it, or unlink it.

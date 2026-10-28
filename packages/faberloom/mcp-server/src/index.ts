@@ -115,6 +115,8 @@ export interface FaberLoomMcpToken {
   readonly revokedAt: string | null
   /** Tool names the client may call, or null for the owner's full surface. */
   readonly scopes: readonly string[] | null
+  /** Company scope the token acts for, or null when the deployment has none. */
+  readonly companyId: string | null
 }
 
 /** One MCP answer, independent of the transport that will carry it. */
@@ -229,7 +231,7 @@ export class FaberLoomMcpServer extends Service {
       this.respond(response, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } })
       return
     }
-    const host = new FaberLoomToolHost(this.ctx, caller.ownerId, caller.scopes)
+    const host = new FaberLoomToolHost(this.ctx, caller.ownerId, caller.scopes, caller.companyId)
     const answer = await this.execute(parsed, host, (request.headers.accept ?? '').includes('text/event-stream'), caller.sessionId)
     response.writeHead(answer.status, {
       'content-type': answer.contentType,
@@ -317,7 +319,7 @@ export class FaberLoomMcpServer extends Service {
       return this.answer(400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }, 'fbl-bridge')
     }
     const sessionId = `fbl-${createHash('sha256').update(token).digest('hex').slice(0, 16)}`
-    const host = new FaberLoomToolHost(this.ctx, record.ownerId, record.scopes ?? null)
+    const host = new FaberLoomToolHost(this.ctx, record.ownerId, record.scopes ?? null, record.companyId ?? undefined)
     return await this.execute(parsed, host, accept.includes('text/event-stream'), sessionId)
   }
 
@@ -335,10 +337,10 @@ export class FaberLoomMcpServer extends Service {
     return Buffer.concat(chunks).toString('utf8')
   }
 
-  /** Resolve the owner and scopes a bearer token carries, or undefined when it may not act. */
+  /** Resolve the owner, scopes, and company a bearer token carries, or undefined when it may not act. */
   private async authenticate(
     request: IncomingMessage,
-  ): Promise<{ ownerId: string; scopes: readonly string[] | null; sessionId: string } | undefined> {
+  ): Promise<{ ownerId: string; scopes: readonly string[] | null; companyId: string | undefined; sessionId: string } | undefined> {
     // The deployment's gateway calls on the owner's behalf with the internal
     // credential, which is not a minted token: it never reaches the token store.
     const mirrorKey = this.config.mirrorKey ?? ''
@@ -347,7 +349,7 @@ export class FaberLoomMcpServer extends Service {
       && timingSafeEqual(Buffer.from(presentedKey), Buffer.from(mirrorKey))) {
       const mirrorOwner = this.config.ownerId ?? ''
       if (mirrorOwner.length === 0) return undefined
-      return { ownerId: mirrorOwner, scopes: null, sessionId: 'fbl-mirror' }
+      return { ownerId: mirrorOwner, scopes: null, companyId: undefined, sessionId: 'fbl-mirror' }
     }
     const header = request.headers.authorization
     if (typeof header !== 'string' || !header.toLowerCase().startsWith('bearer ')) return undefined
@@ -360,7 +362,7 @@ export class FaberLoomMcpServer extends Service {
     if (owner.length > 0 && record.ownerId !== owner) return undefined
     // Opaque, stable session id: never the token itself, but constant per token.
     const sessionId = `fbl-${createHash('sha256').update(token).digest('hex').slice(0, 16)}`
-    return { ownerId: record.ownerId, scopes: record.scopes ?? null, sessionId }
+    return { ownerId: record.ownerId, scopes: record.scopes ?? null, companyId: record.companyId ?? undefined, sessionId }
   }
 
   /** Write one JSON response. */
@@ -387,9 +389,14 @@ export class FaberLoomMcpServer extends Service {
    * Mint one bearer token for a client the owner names.
    * @param label - who the token is for.
    * @param scopes - tool names the client may call, or null for the full surface.
+   * @param companyId - company scope the token acts for, or null for the deployment's none.
    * @returns the token, which is only shown here.
    */
-  async mintToken(label: string, scopes: readonly string[] | null = null): Promise<FaberLoomMcpToken> {
+  async mintToken(
+    label: string,
+    scopes: readonly string[] | null = null,
+    companyId: string | null = null,
+  ): Promise<FaberLoomMcpToken> {
     const ownerId = this.config.ownerId ?? ''
     if (ownerId.length === 0) throw new Error('faberloom: the MCP server has no owner configured')
     const token = `fbl_${randomUUID().replaceAll('-', '')}`
@@ -399,6 +406,7 @@ export class FaberLoomMcpServer extends Service {
       createdAt: new Date().toISOString(),
       revokedAt: null,
       scopes: scopes === null ? null : [...scopes],
+      companyId,
     }
     await (await this.tokens()).put(token, record)
     void this.bridgeRegister()

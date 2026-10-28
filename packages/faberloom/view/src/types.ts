@@ -161,8 +161,28 @@ export interface FaberLoomBoardRow {
   readonly title: string
   /** Current status token. */
   readonly status: string
+  /** Persisted WorkLoom state. */
+  readonly state: string
+  /** Visible column. */
+  readonly column: string
+  /** Severity, or null while unclassified. */
+  readonly severity: string | null
   /** Routine this task feeds, or null when it is standalone. */
   readonly routineId: string | null
+  /** Owning space, or null. */
+  readonly spaceId: string | null
+  /** Account/client reference, or null. */
+  readonly accountRef: string | null
+  /** Artifact type. */
+  readonly artifactType: string
+  /** Deadline in UTC, or null. */
+  readonly dueAt: string | null
+  /** Amount in USD, or null. */
+  readonly valueUsd: number | null
+  /** Whether a candidate is waiting for a choice. */
+  readonly hasCandidate: boolean
+  /** Whether an unapplied edit draft exists. */
+  readonly hasDraft: boolean
 }
 
 /** Where a routine or Work Flow can run, as the panel and the chat report it. */
@@ -604,8 +624,14 @@ export interface FaberLoomBoardDetail {
   readonly title: string
   /** Current status token. */
   readonly status: string
+  /** Persisted WorkLoom state. */
+  readonly state: string
+  /** Visible column. */
+  readonly column: string
   /** Revision number being reviewed. */
   readonly version: number
+  /** Optimistic token. */
+  readonly rowVersion: number
   /** Summary of the prepared result. */
   readonly summary: string
   /** Evidence references. */
@@ -616,10 +642,120 @@ export interface FaberLoomBoardDetail {
   readonly stale: boolean
   /** Why it went stale, or null. */
   readonly staleReason: string | null
+  /** Severity, or null. */
+  readonly severity: string | null
+  /** Who assigned the severity. */
+  readonly severitySource: string | null
+  /** Classifier confidence, or null. */
+  readonly severityConfidence: number | null
+  /** Deadline, or null. */
+  readonly dueAt: string | null
+  /** Amount in USD, or null. */
+  readonly valueUsd: number | null
+  /** Data classification. */
+  readonly dataClass: string
+  /** Whether the classification is provisional. */
+  readonly dataClassProvisional: boolean
+  /** Artifact type. */
+  readonly artifactType: string
+  /** Account/client reference, or null. */
+  readonly accountRef: string | null
+  /** Artifact hash, or null. */
+  readonly artifactHash: string | null
+  /** Run that created the item, or null. */
+  readonly runId: string | null
+  /** Item this one replaces, or null. */
+  readonly supersedesItemId: string | null
+  /** Candidate waiting for an explicit choice, or null. */
+  readonly pendingCandidate: {
+    readonly id: string
+    readonly hash: string
+    readonly summary: string
+    readonly at: string
+  } | null
+  /** Owning space, or null. */
+  readonly spaceId: string | null
+  /** Audit events, oldest first. */
+  readonly events: readonly { readonly command: string; readonly at: string; readonly reason: string | null }[]
+  /** Current iteration id, or null. */
+  readonly iterationId: string | null
+  /** Saved iteration draft key, or null. */
+  readonly iterationDraftKey: string | null
+  /** Inline edit draft, or null. */
+  readonly editDraft: {
+    readonly revision: number
+    readonly writerSession: string
+    readonly changes: Record<string, string>
+  } | null
   /** Recorded external effects. */
   readonly effects: readonly { readonly ref: string; readonly detail: string | null; readonly at: string }[]
   /** Routine this task feeds, or null when it is standalone. */
   readonly routineId: string | null
+}
+
+/** One audit row as the Mesa renders it. */
+export interface FaberLoomBoardEventRow {
+  /** Command that produced the event. */
+  readonly command: string
+  /** ISO-8601 instant. */
+  readonly at: string
+  /** Optional reason. */
+  readonly reason: string | null
+}
+
+/** Severity a human, rule, or model assigned to a board item. */
+export type FaberLoomBoardSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+
+/** Editable fields of one board revision. */
+export interface FaberLoomBoardDraftInput {
+  /** Version the edit started from. */
+  readonly baseVersion: number
+  /** Draft revision the writer saw. */
+  readonly revision: number
+  /** Browser tab holding the writer seat. */
+  readonly writerSession: string
+  /** Changed fields. */
+  readonly changes: Record<string, string>
+}
+
+/** One inline edit draft as the browser reads it. */
+export interface FaberLoomBoardDraftRow {
+  /** Monotonic revision. */
+  readonly revision: number
+  /** Tab holding the writer seat. */
+  readonly writerSession: string
+  /** Changed fields. */
+  readonly changes: Record<string, string>
+}
+
+/** Editable fields of one board revision. */
+export interface FaberLoomBoardEditsInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion: number
+  /** Version the edits were made against. */
+  readonly baseVersion: number
+  /** Changed fields. */
+  readonly changes: Record<string, string>
+}
+
+/** Approval expectations for the exact artifact. */
+export interface FaberLoomBoardApproveInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion: number
+  /** Expected artifact version. */
+  readonly expectedArtifactVersion: number
+  /** Expected artifact hash. */
+  readonly expectedArtifactHash: string
+}
+
+/** Discard input. */
+export interface FaberLoomBoardDiscardInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion: number
+  /** Closed-list reason. */
+  readonly reason: string
+  /** Note; required for OTRA. */
+  readonly note?: string
 }
 
 /** Editable fields of a new teaching; the author is the signed-in owner. */
@@ -676,6 +812,8 @@ export interface FaberLoomMcpTokenRow {
   readonly revokedAt: string | null
   /** Tool names the client may call, or null for the full surface. */
   readonly scopes: readonly string[] | null
+  /** Company scope the token acts for, or null when the deployment has none. */
+  readonly companyId: string | null
 }
 
 /** One external MCP server the harness is connected to as a client. */
