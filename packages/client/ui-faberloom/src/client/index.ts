@@ -238,6 +238,35 @@ export function apply(ctx: ClientContext): void {
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
+      boardIteration: id => ctx.remote.faberloomView.boardIteration(id),
+      boardIterationContext: id => ctx.remote.faberloomView.boardIterationContext(id),
+      boardIterationStart: (id, baseVersion, actorSession) => {
+        const run = ctx.remote.faberloomView.boardIterationStart(id, baseVersion, actorSession)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardIterationSaveDraft: (id, input) => ctx.remote.faberloomView.boardIterationSaveDraft(id, input),
+      boardIterationApply: (id, input) => {
+        const run = ctx.remote.faberloomView.boardIterationApply(id, input)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardIterationPause: (id, input) => {
+        const run = ctx.remote.faberloomView.boardIterationPause(id, input)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardIterationCancel: (id, input) => {
+        const run = ctx.remote.faberloomView.boardIterationCancel(id, input)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardIterationResume: (id, baseVersion) => {
+        const run = ctx.remote.faberloomView.boardIterationResume(id, baseVersion)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardIterationDraft: id => ctx.remote.faberloomView.boardIterationDraft(id),
       createRoutine: (name, spaceId) => { write(() => ctx.remote.faberloomView.createRoutine(name, name, spaceId ?? undefined)) },
       setRoutineActive: (id, active) => { write(() => ctx.remote.faberloomView.setRoutineActive(id, active)) },
       remember: (text, spaceId) => { write(() => ctx.remote.faberloomView.remember(text, spaceId ?? undefined)) },
@@ -363,8 +392,14 @@ export function apply(ctx: ClientContext): void {
         write(() => run)
         return run
       },
-      openTaskChat: (kind, title, detail, agentName) => {
-        runTaskChat(ctx, bound, { kind, title, detail, ...agentName === undefined ? {} : { agentName } })
+      openTaskChat: (kind, title, detail, agentName, iteration) => {
+        runTaskChat(ctx, bound, {
+          kind,
+          title,
+          detail,
+          ...agentName === undefined ? {} : { agentName },
+          ...iteration === undefined ? {} : { iteration },
+        })
       },
       executions: routineId => ctx.remote.faberloomView.executions(routineId),
       startRoutine: routineId => ctx.remote.faberloomView.startRoutine(routineId),

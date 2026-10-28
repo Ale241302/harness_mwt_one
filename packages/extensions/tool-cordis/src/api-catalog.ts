@@ -1281,6 +1281,72 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'actor', description: 'the authenticated editor.' }, { name: 'id', description: 'item id.' }],
       },
       {
+        signature: 'iterationPolicy(): IterationPolicy',
+        description: 'The validated iteration policy this deployment runs with (D-09, D-10). The panel reads the renewal cadence and the round limit from here instead of carrying its own copy.',
+        parameters: [],
+        returns: 'a copy of the resolved policy.',
+      },
+      {
+        signature: 'async iterationStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardIterationStatus>',
+        description: 'Iteration status of one item: attempt phase, lock, rounds, and the retained draft. An expired attempt already reports as paused, which is how the panel offers the draft for recovery (W-44).',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the attempt projection.',
+      },
+      {
+        signature: 'async iterate(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult>',
+        description: 'Start an iteration attempt over the current artifact version (§9.7.1). The attempt needs a space (W-31), mints a new `iterationId`, bumps the lock generation, records the base version and the deadline, and leaves the artifact version untouched (W-11).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'artifact version the caller saw and the tab session.' }],
+        returns: 'the item and the new attempt.',
+      },
+      {
+        signature: 'async iterateWithEdits( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateWithEditsInput, ): Promise<BoardIterationResult>',
+        description: 'Save the caller\'s edits as a new version and start the iteration over it. The edits, the version, and the attempt commit in one transform, so a conflict creates no version, applies no transition, and keeps the caller\'s edits outside the item (W-69).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'expected row and base version, the changes, and the tab session.' }],
+        returns: 'the item and the new attempt.',
+      },
+      {
+        signature: 'async saveIterationDraft( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationDraftInput, ): Promise<BoardIterationDraftOutcome>',
+        description: 'Store one write of the attempt\'s work as its working draft. A write that no longer matches the live attempt stores the draft of that dead attempt and leaves the item untouched, which is how a late agent answer is kept without reaching the item (W-57).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, base version, and the fields the caller wrote.' }],
+        returns: 'the stored draft and whether the item links it.',
+      },
+      {
+        signature: 'async getIterationDraft( actor: BoardActor, id: FaberLoomBoardItemId, iterationId?: string, ): Promise<BoardIterationDraft | undefined>',
+        description: 'Read one attempt\'s draft, or the draft the item currently links.',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }, { name: 'iterationId', description: 'attempt to read; omitted reads the linked draft.' }],
+        returns: 'the draft, or undefined when none is stored or retained.',
+      },
+      {
+        signature: 'async renewIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationLockInput, ): Promise<BoardIterationResult>',
+        description: 'Extend the lock of the live attempt. A stale attempt id, a stale generation, or an expired deadline is refused without effects (W-43).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt id and generation.' }],
+        returns: 'the item and the renewed attempt.',
+      },
+      {
+        signature: 'async pauseIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardPauseIterationInput, ): Promise<BoardIterationResult>',
+        description: 'Save and exit, carry to SpaceLoom, return without resolving, or record the expiry: the attempt releases its lock and the item returns to the pending column with its draft and any pending candidate untouched (W-67, W-97).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, generation, and the exit the user chose.' }],
+        returns: 'the item and the released attempt.',
+      },
+      {
+        signature: 'async cancelIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardCancelIterationInput, ): Promise<BoardIterationResult>',
+        description: 'Discard the attempt\'s work and release the lock. It requires no pending candidate, or the adopt/keep choice that resolves it in the same commit; it deletes the draft and never changes the version except through adoption (W-41).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, generation, and the optional candidate choice.' }],
+        returns: 'the item and the released attempt.',
+      },
+      {
+        signature: 'async resumeIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardResumeIterationInput, ): Promise<BoardResumeIterationResult>',
+        description: 'Take a new attempt over the retained draft. When the draft was written against an older version, it is marked outdated and the differences are returned instead of overwriting the newer content (W-68).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'base version of the draft the caller saw and the tab session.' }],
+        returns: 'the item with `started`, or with `outdated` and the differences.',
+      },
+      {
+        signature: 'async applyIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApplyIterationInput, ): Promise<BoardIterationResult>',
+        description: 'Apply the live attempt: write a new version and hash, count the round, record the learning scope, release the lock, and return to `PENDIENTE_CRITERIO`. A pending candidate must be resolved in the same call, and only the current attempt applies (W-40, W-57).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, base version, optional summary and evidence, the scope, and the choice.' }],
+        returns: 'the item and the released attempt.',
+      },
+      {
         signature: 'async events(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardEvent[]>',
         description: 'Read the audit history of one item.',
         parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
@@ -1734,8 +1800,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'faberloomMemory',
-    summary: 'The product memory service: versioned teachings, contextual performance, late errors, and portable knowledge.',
-    description: 'The product memory service: versioned teachings, contextual performance, late errors, and portable knowledge.',
+    summary: 'The product memory service: versioned teachings, contextual performance, the correction registry, learning candidates, maturity metrics, late errors, and portable knowledge.',
+    description: 'The product memory service: versioned teachings, contextual performance, the correction registry, learning candidates, maturity metrics, late errors, and portable knowledge.',
     methods: [
       {
         signature: 'async createTeaching(ownerId: string, input: TeachingInput): Promise<FaberLoomTeaching>',
@@ -1790,6 +1856,60 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Aggregate contextual performance. Correction causes are separated so a requirement change is never counted as an agent failure.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'filter', description: 'optional agent, task, and space filters.' }],
         returns: 'the summary.',
+      },
+      {
+        signature: 'async onCorrection(actor: LearningActor, input: CorrectionInput): Promise<CorrectionOutcome>',
+        description: 'Entry point for every human correction: an inline edit, an answered doubt, or an applied iteration. The record is durable and identical in structure for all three origins. A candidate is created only when the chosen scope is not `puntual`; nothing is promoted here (W-34, W-35).\n\nBoth writes land on the domain write chain in order: the correction first, because it is the fact, and the candidate second. A candidate write that fails rejects the call and leaves the correction recorded.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'input', description: 'origin payload, lineage, classifications, and chosen scope.' }],
+        returns: 'the correction and the candidate it produced, when it produced one.',
+      },
+      {
+        signature: 'async getCorrection(actor: LearningActor, id: FaberLoomCorrectionId): Promise<FaberLoomCorrection>',
+        description: 'Read one correction. Only an identity holding scope over its origin sees it.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'id', description: 'correction id.' }],
+        returns: 'the correction.',
+      },
+      {
+        signature: 'async listCorrections(actor: LearningActor, filter: CorrectionFilter = {}): Promise<FaberLoomCorrection[]>',
+        description: 'List the corrections the actor holds scope over.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'filter', description: 'optional item, space, account, and agent filters.' }],
+        returns: 'the corrections, oldest first.',
+      },
+      {
+        signature: 'async getCandidate(actor: LearningActor, id: FaberLoomCandidateId): Promise<FaberLoomCandidate>',
+        description: 'Read one candidate. Reading is limited to whoever holds scope over its origin (§6.3).',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'id', description: 'candidate id.' }],
+        returns: 'the candidate.',
+      },
+      {
+        signature: 'async listCandidates(actor: LearningActor, filter: CandidateFilter = {}): Promise<FaberLoomCandidate[]>',
+        description: 'List the candidates the actor holds scope over.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'filter', description: 'optional item, space, account, agent, and status filters.' }],
+        returns: 'the candidates, oldest first.',
+      },
+      {
+        signature: 'async promoteCandidate( actor: LearningActor, id: FaberLoomCandidateId, input: CandidatePromotionInput, ): Promise<FaberLoomCandidate>',
+        description: 'Promote one candidate to its allowed destination. This is the only path that activates learning, and it revalidates tenant, account, space, classification, and provenance against that destination before committing (W-35, W-47, W-60). A destination wider than the allowed one is rejected; widening goes through widenCandidate.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'id', description: 'candidate id.' }, { name: 'input', description: 'destination and the classifications it accepts.' }],
+        returns: 'the promoted candidate.',
+      },
+      {
+        signature: 'async widenCandidate( actor: LearningActor, id: FaberLoomCandidateId, input: CandidateWideningInput, ): Promise<FaberLoomCandidate>',
+        description: 'Widen a candidate to a wider destination. Widening never moves the original candidate: it produces a new candidate with reviewed content, which still needs its own promotion (W-47). The new candidate revalidates tenant, space, account, classification, and provenance against the wider destination.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'id', description: 'candidate to widen.' }, { name: 'input', description: 'wider destination, reviewed content, and accepted classifications.' }],
+        returns: 'the new candidate.',
+      },
+      {
+        signature: 'async recordOutcome(actor: LearningActor, input: LearningOutcomeInput): Promise<void>',
+        description: 'Record what happened to one item, for the maturity metrics. Calls append: the latest outcome of an item decides how the item is counted.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'input', description: 'item, task type, and result.' }],
+        returns: 'nothing.',
+      },
+      {
+        signature: 'async maturity(actor: LearningActor, filter: MaturityFilter = {}): Promise<readonly MaturityTaskTypeMetrics[]>',
+        description: 'Maturity metrics per task type `(space, artifactType, actionType)`. Each metric is reported on its own: there is no composite index, no cohort rule, and no threshold, because the cohort definition and the alert threshold are unsigned (§10.2). Success is an approval with no correction of any origin, so an answered doubt disqualifies it (W-80).',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'filter', description: 'optional task-type and period filters.' }],
+        returns: 'one entry per task type, sorted by its three fields.',
       },
       {
         signature: 'async recordLateError(ownerId: string, input: LateErrorInput): Promise<FaberLoomTeaching | undefined>',
@@ -3416,6 +3536,60 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read the audit history of one item.',
         parameters: [{ name: 'id', description: 'board item id.' }],
         returns: 'the events, oldest first.',
+      },
+      {
+        signature: '@Remote(\'boardIteration\') async boardIteration(id: string): Promise<FaberLoomBoardIteration | undefined>',
+        description: 'Read one item\'s iteration attempt (§9.7.1). The board applies the owner and company rule before answering, so the panel never re-derives who may see the attempt (W-31).',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the attempt, or undefined when the reader holds no item with that id.',
+      },
+      {
+        signature: '@Remote(\'boardIterationContext\') async boardIterationContext(id: string): Promise<FaberLoomBoardIterationContext | undefined>',
+        description: 'Read the pinned context an iteration chat starts from (§8.5, §9.7). It is minimised to the item: the board filters the item by owner and company, the spaces service filters the title, and no account history or space memory travels with it.',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the context, or undefined when the reader holds no item with that id.',
+      },
+      {
+        signature: '@Remote(\'boardIterationStart\') async boardIterationStart( id: string, baseVersion: number, actorSession: string, ): Promise<FaberLoomBoardIteration>',
+        description: 'Start an iteration attempt over the version the caller saw. Starting never changes the artifact version (W-11).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'baseVersion', description: 'artifact version the panel shows.' }, { name: 'actorSession', description: 'tab opening the attempt, so two tabs are two attempts.' }],
+        returns: 'the attempt after the commit.',
+      },
+      {
+        signature: '@Remote(\'boardIterationSaveDraft\') async boardIterationSaveDraft( id: string, input: FaberLoomBoardIterationSaveInput, ): Promise<FaberLoomBoardIterationDraftRow>',
+        description: 'Store one write of the attempt\'s work as its working draft. A write for an attempt that already ended is archived and the item is left untouched (W-57), which is what `linked: false` tells the panel.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt, base version, and the draft summary.' }],
+        returns: 'the stored draft and whether the item still links it.',
+      },
+      {
+        signature: '@Remote(\'boardIterationApply\') async boardIterationApply( id: string, input: FaberLoomBoardIterationApplyInput, ): Promise<FaberLoomBoardIteration>',
+        description: 'Apply the live attempt with the scope its correction teaches, writing one new version and releasing the lock (W-34, W-40).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt, base version, scope, and the candidate choice when one is pending.' }],
+        returns: 'the attempt after the commit.',
+      },
+      {
+        signature: '@Remote(\'boardIterationPause\') async boardIterationPause( id: string, input: FaberLoomBoardIterationPauseInput, ): Promise<FaberLoomBoardIteration>',
+        description: 'Save and exit, carry to SpaceLoom, or return without resolving: the attempt releases the lock and keeps its draft (W-67, W-97).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt and the exit the user chose.' }],
+        returns: 'the attempt after the commit.',
+      },
+      {
+        signature: '@Remote(\'boardIterationCancel\') async boardIterationCancel( id: string, input: FaberLoomBoardIterationCancelInput, ): Promise<FaberLoomBoardIteration>',
+        description: 'Discard the attempt\'s work and release the lock. The version does not change except through an explicit candidate adoption (W-41).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt and the candidate choice when one is pending.' }],
+        returns: 'the attempt after the commit.',
+      },
+      {
+        signature: '@Remote(\'boardIterationResume\') async boardIterationResume(id: string, baseVersion: number): Promise<FaberLoomBoardIterationResume>',
+        description: 'Take a new attempt over the retained draft. A draft written against an older version is returned with its differences instead of overwriting the newer content (W-68).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'baseVersion', description: 'base version of the draft the caller saw.' }],
+        returns: 'the new attempt, or the stale draft\'s differences.',
+      },
+      {
+        signature: '@Remote(\'boardIterationDraft\') async boardIterationDraft(id: string, iterationId?: string): Promise<FaberLoomBoardIterationDraftRead>',
+        description: 'Read the item\'s retained draft and, when it was written against an older version, the fields where it disagrees. Reading never changes the version.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'iterationId', description: 'attempt to read; omitted reads the draft the item links.' }],
+        returns: 'the projected draft and its differences.',
       },
       {
         signature: '@Remote(\'boardRevalidate\') async boardRevalidate(id: string, changed: boolean): Promise<FaberLoomBoardDetail | undefined>',
@@ -6986,6 +7160,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoardActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n}',
   },
   {
+    name: 'BoardApplyIterationInput',
+    declaration: 'export interface BoardApplyIterationInput extends BoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly summary?: string;\n    readonly evidence?: readonly string[];\n    readonly scope: BoardCorrectionScope;\n    readonly candidate?: BoardCandidateChoice;\n}',
+  },
+  {
     name: 'BoardApproveInput',
     declaration: 'export interface BoardApproveInput {\n    readonly expectedRowVersion: number;\n    readonly expectedArtifactVersion: number;\n    readonly expectedArtifactHash: string;\n    readonly confirmations?: readonly string[];\n}',
   },
@@ -6994,8 +7172,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoardArtifact {\n    readonly type: string;\n    readonly version: number;\n    readonly content: Readonly<Record<string, unknown>>;\n}',
   },
   {
+    name: 'BoardCancelIterationInput',
+    declaration: 'export interface BoardCancelIterationInput extends BoardIterationLockInput {\n    readonly candidate?: BoardCandidateChoice;\n}',
+  },
+  {
     name: 'BoardCandidate',
     declaration: 'export interface BoardCandidate {\n    readonly id: string;\n    readonly hash: string;\n    readonly summary: string;\n    readonly evidence: string[];\n    readonly at: string;\n}',
+  },
+  {
+    name: 'BoardCandidateChoice',
+    declaration: 'export interface BoardCandidateChoice {\n    readonly id: string;\n    readonly hash: string;\n    readonly decision: \'adopt\' | \'keep\';\n}',
   },
   {
     name: 'BoardCheckClass',
@@ -7042,6 +7228,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BoardColumn = \'TU_CRITERIO\' | \'ESPERANDO_CRITERIO\' | \'DELEGADO\' | \'ERROR_ACCIONABLE\' | \'CERRADO\';',
   },
   {
+    name: 'BoardCorrectionScope',
+    declaration: 'export type BoardCorrectionScope = \'puntual\' | \'cuenta\' | \'espacio\' | \'agente\';',
+  },
+  {
     name: 'BoardCreateInput',
     declaration: 'export interface BoardCreateInput extends BoardSubmitInput {\n    readonly title: string;\n    readonly companyId?: string | undefined;\n    readonly spaceId?: string;\n    readonly routineId?: string;\n    readonly executionId?: string;\n    readonly artifactType?: string;\n    readonly businessKey?: string;\n    readonly accountRef?: string;\n}',
   },
@@ -7074,12 +7264,68 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoardFieldOriginEntry {\n    readonly field: string;\n    readonly source: string | null;\n    readonly ref: string | null;\n    readonly at: string | null;\n}',
   },
   {
+    name: 'BoardIterateInput',
+    declaration: 'export interface BoardIterateInput {\n    readonly baseVersion: number;\n    readonly actorSession: string;\n}',
+  },
+  {
+    name: 'BoardIterateWithEditsInput',
+    declaration: 'export interface BoardIterateWithEditsInput extends BoardEditsInput {\n    readonly actorSession: string;\n}',
+  },
+  {
+    name: 'BoardIterationDifference',
+    declaration: 'export interface BoardIterationDifference {\n    readonly field: string;\n    readonly draftValue: unknown;\n    readonly currentValue: unknown;\n}',
+  },
+  {
+    name: 'BoardIterationDraft',
+    declaration: 'export interface BoardIterationDraft {\n    readonly key: string;\n    readonly itemId: string;\n    readonly iterationId: string;\n    readonly baseVersion: number;\n    readonly summary: string | null;\n    readonly evidence: readonly string[];\n    readonly content: Readonly<Record<string, unknown>> | null;\n    readonly archived: boolean;\n    readonly outdated: boolean;\n    readonly updatedAt: string;\n    readonly retainUntil: string;\n}',
+  },
+  {
+    name: 'BoardIterationDraftInput',
+    declaration: 'export interface BoardIterationDraftInput extends BoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly summary?: string;\n    readonly evidence?: readonly string[];\n    readonly content?: Readonly<Record<string, unknown>>;\n}',
+  },
+  {
+    name: 'BoardIterationDraftOutcome',
+    declaration: 'export interface BoardIterationDraftOutcome {\n    readonly draft: BoardIterationDraft;\n    readonly linked: boolean;\n    readonly code: \'LOCK_LOST\' | \'ITERATION_STALE\' | null;\n}',
+  },
+  {
+    name: 'BoardIterationExitReason',
+    declaration: 'export type BoardIterationExitReason = \'guardar-y-salir\' | \'llevar-a-spaceloom\' | \'volver-sin-resolver\' | \'lock-vencido\';',
+  },
+  {
+    name: 'BoardIterationLockInput',
+    declaration: 'export interface BoardIterationLockInput {\n    readonly iterationId: string;\n    readonly generation: number;\n}',
+  },
+  {
+    name: 'BoardIterationPhase',
+    declaration: 'export type BoardIterationPhase = \'idle\' | \'active\' | \'expired\';',
+  },
+  {
+    name: 'BoardIterationResult',
+    declaration: 'export interface BoardIterationResult {\n    readonly item: FaberLoomBoardItem;\n    readonly status: BoardIterationStatus;\n}',
+  },
+  {
+    name: 'BoardIterationStatus',
+    declaration: 'export interface BoardIterationStatus {\n    readonly phase: BoardIterationPhase;\n    readonly iterationId: string | null;\n    readonly generation: number;\n    readonly baseVersion: number | null;\n    readonly lockUntil: string | null;\n    readonly lockBy: string | null;\n    readonly renewalSeconds: number;\n    readonly rounds: number;\n    readonly roundLimit: number;\n    readonly suggestRewrite: boolean;\n    readonly draft: BoardIterationDraft | null;\n    readonly draftOutdated: boolean;\n    readonly candidatePending: boolean;\n}',
+  },
+  {
     name: 'BoardOrderLine',
-    declaration: 'export interface BoardOrderLine {\n    readonly sku: string;\n    readonly quantity: number;\n}',
+    declaration: 'export interface BoardOrderLine {\n    readonly sku: string;\n    readonly size: string | null;\n    readonly quantity: number;\n    readonly unitPriceMwt: number | null;\n    readonly unitPriceClient: number | null;\n}',
   },
   {
     name: 'BoardOrderTotals',
     declaration: 'export interface BoardOrderTotals {\n    readonly totalClient: number;\n    readonly totalMwt: number;\n}',
+  },
+  {
+    name: 'BoardPauseIterationInput',
+    declaration: 'export interface BoardPauseIterationInput extends BoardIterationLockInput {\n    readonly reason: BoardIterationExitReason;\n}',
+  },
+  {
+    name: 'BoardResumeIterationInput',
+    declaration: 'export interface BoardResumeIterationInput {\n    readonly baseVersion: number;\n    readonly actorSession?: string;\n}',
+  },
+  {
+    name: 'BoardResumeIterationResult',
+    declaration: 'export type BoardResumeIterationResult = {\n    readonly item: FaberLoomBoardItem;\n    readonly status: \'started\';\n} | {\n    readonly item: FaberLoomBoardItem;\n    readonly status: \'outdated\';\n    readonly differences: readonly BoardIterationDifference[];\n};',
   },
   {
     name: 'BoardReviewInput',
@@ -7144,6 +7390,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BudgetPolicy',
     declaration: 'export interface BudgetPolicy {\n    readonly perExecution: number;\n    readonly currency: string;\n    readonly maxAttempts: number;\n    readonly maxEscalations: number;\n}',
+  },
+  {
+    name: 'CandidateFilter',
+    declaration: 'export interface CandidateFilter extends CorrectionFilter {\n    readonly status?: CandidateStatus;\n}',
+  },
+  {
+    name: 'CandidatePromotionInput',
+    declaration: 'export interface CandidatePromotionInput {\n    readonly destination: LearningDestination;\n    readonly acceptedDataClasses: readonly LearningDataClass[];\n}',
+  },
+  {
+    name: 'CandidateStatus',
+    declaration: 'export type CandidateStatus = \'candidate\' | \'promoted\';',
+  },
+  {
+    name: 'CandidateWideningInput',
+    declaration: 'export interface CandidateWideningInput extends CandidatePromotionInput {\n    readonly text: string;\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -7340,6 +7602,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CordisRuntimeTreeReader',
     declaration: 'export interface CordisRuntimeTreeReader {\n    getTree(): Promise<CordisRuntimeTree>;\n}',
+  },
+  {
+    name: 'CorrectionDetail',
+    declaration: 'export type CorrectionDetail = CorrectionEditDetail | CorrectionDoubtDetail | CorrectionIterationDetail;',
+  },
+  {
+    name: 'CorrectionDoubtDetail',
+    declaration: 'export interface CorrectionDoubtDetail {\n    readonly origin: \'answer_doubt\';\n    readonly question: string;\n    readonly answer: string;\n}',
+  },
+  {
+    name: 'CorrectionEditDetail',
+    declaration: 'export interface CorrectionEditDetail {\n    readonly origin: \'edit\';\n    readonly field: string;\n    readonly previous: string | null;\n    readonly next: string | null;\n}',
+  },
+  {
+    name: 'CorrectionFilter',
+    declaration: 'export interface CorrectionFilter {\n    readonly itemId?: string;\n    readonly spaceId?: string;\n    readonly accountRef?: string;\n    readonly agentId?: string;\n}',
+  },
+  {
+    name: 'CorrectionInput',
+    declaration: 'export interface CorrectionInput {\n    readonly detail: CorrectionDetail;\n    readonly itemId: string;\n    readonly actor: string;\n    readonly tenantId?: string | null;\n    readonly spaceId?: string;\n    readonly accountRef?: string;\n    readonly agentId?: string;\n    readonly dataClasses: readonly LearningDataClass[];\n    readonly fieldsUsed?: readonly string[];\n    readonly dataClassProvisional?: boolean;\n    readonly scope?: LearningScope;\n    readonly text?: string;\n}',
+  },
+  {
+    name: 'CorrectionIterationDetail',
+    declaration: 'export interface CorrectionIterationDetail {\n    readonly origin: \'iterate\';\n    readonly instructions: string;\n    readonly diffs: readonly string[];\n    readonly rounds: number;\n}',
+  },
+  {
+    name: 'CorrectionOrigin',
+    declaration: 'export type CorrectionOrigin = \'edit\' | \'answer_doubt\' | \'iterate\';',
+  },
+  {
+    name: 'CorrectionOutcome',
+    declaration: 'export interface CorrectionOutcome {\n    readonly correction: FaberLoomCorrection;\n    readonly candidate: FaberLoomCandidate | undefined;\n}',
   },
   {
     name: 'CostBucket',
@@ -7690,6 +7984,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomBoardApproveInput {\n    readonly expectedRowVersion: number;\n    readonly expectedArtifactVersion: number;\n    readonly expectedArtifactHash: string;\n    readonly confirmations?: readonly string[];\n}',
   },
   {
+    name: 'FaberLoomBoardCorrectionScope',
+    declaration: 'export type FaberLoomBoardCorrectionScope = \'puntual\' | \'cuenta\' | \'espacio\' | \'agente\';',
+  },
+  {
     name: 'FaberLoomBoardDetail',
     declaration: 'export interface FaberLoomBoardDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly state: string;\n    readonly column: string;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly severity: string | null;\n    readonly severitySource: string | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: string;\n    readonly dataClassProvisional: boolean;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly artifactHash: string | null;\n    readonly runId: string | null;\n    readonly supersedesItemId: string | null;\n    readonly pendingCandidate: {\n        readonly id: string;\n        readonly hash: string;\n        readonly summary: string;\n        readonly at: string;\n    } | null;\n    readonly spaceId: string | null;\n    readonly events: readonly {\n        readonly command: string;\n        readonly at: string;\n        readonly reason: string | null;\n    }[];\n    readonly iterationId: string | null;\n    readonly iterationDraftKey: string | null;\n    readonly editDraft: {\n        readonly revision: number;\n        readonly writerSession: string;\n        readonly changes: Record<string, string>;\n    /* …truncated — full shape in source */',
   },
@@ -7722,12 +8020,80 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type FaberLoomBoardItemId = Branded<\'FaberLoomBoardItemId\'>;',
   },
   {
+    name: 'FaberLoomBoardIteration',
+    declaration: 'export interface FaberLoomBoardIteration {\n    readonly phase: FaberLoomBoardIterationPhase;\n    readonly iterationId: string | null;\n    readonly generation: number;\n    readonly baseVersion: number | null;\n    readonly lockUntil: string | null;\n    readonly renewalSeconds: number;\n    readonly rounds: number;\n    readonly roundLimit: number;\n    readonly suggestRewrite: boolean;\n    readonly draftOutdated: boolean;\n    readonly candidatePending: boolean;\n    readonly draft: FaberLoomBoardIterationDraft | null;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationApplyInput',
+    declaration: 'export interface FaberLoomBoardIterationApplyInput extends FaberLoomBoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly scope: FaberLoomBoardCorrectionScope;\n    readonly candidate?: FaberLoomBoardIterationChoice;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationCancelInput',
+    declaration: 'export interface FaberLoomBoardIterationCancelInput extends FaberLoomBoardIterationLockInput {\n    readonly candidate?: FaberLoomBoardIterationChoice;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationChoice',
+    declaration: 'export interface FaberLoomBoardIterationChoice {\n    readonly id: string;\n    readonly hash: string;\n    readonly decision: \'adopt\' | \'keep\';\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationContext',
+    declaration: 'export interface FaberLoomBoardIterationContext {\n    readonly itemId: string;\n    readonly title: string;\n    readonly accountRef: string | null;\n    readonly spaceId: string | null;\n    readonly spaceTitle: string | null;\n    readonly version: number;\n    readonly summary: string;\n    readonly draftSummary: string | null;\n    readonly rounds: number;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationDifference',
+    declaration: 'export interface FaberLoomBoardIterationDifference {\n    readonly field: string;\n    readonly draftValue: string;\n    readonly currentValue: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationDraft',
+    declaration: 'export interface FaberLoomBoardIterationDraft {\n    readonly baseVersion: number;\n    readonly summary: string | null;\n    readonly evidence: readonly string[];\n    readonly outdated: boolean;\n    readonly archived: boolean;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationDraftRead',
+    declaration: 'export interface FaberLoomBoardIterationDraftRead {\n    readonly draft: FaberLoomBoardIterationDraft | null;\n    readonly differences: readonly FaberLoomBoardIterationDifference[];\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationDraftRow',
+    declaration: 'export interface FaberLoomBoardIterationDraftRow {\n    readonly summary: string | null;\n    readonly baseVersion: number;\n    readonly linked: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationExit',
+    declaration: 'export type FaberLoomBoardIterationExit = \'guardar-y-salir\' | \'llevar-a-spaceloom\' | \'volver-sin-resolver\' | \'lock-vencido\';',
+  },
+  {
+    name: 'FaberLoomBoardIterationLockInput',
+    declaration: 'export interface FaberLoomBoardIterationLockInput {\n    readonly iterationId: string;\n    readonly generation: number;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationPauseInput',
+    declaration: 'export interface FaberLoomBoardIterationPauseInput extends FaberLoomBoardIterationLockInput {\n    readonly reason: FaberLoomBoardIterationExit;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationPhase',
+    declaration: 'export type FaberLoomBoardIterationPhase = \'idle\' | \'active\' | \'expired\';',
+  },
+  {
+    name: 'FaberLoomBoardIterationResume',
+    declaration: 'export interface FaberLoomBoardIterationResume {\n    readonly status: \'started\' | \'outdated\';\n    readonly iteration: FaberLoomBoardIteration;\n    readonly differences: readonly FaberLoomBoardIterationDifference[];\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationSaveInput',
+    declaration: 'export interface FaberLoomBoardIterationSaveInput extends FaberLoomBoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly summary: string;\n}',
+  },
+  {
     name: 'FaberLoomBoardRow',
     declaration: 'export interface FaberLoomBoardRow {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly state: string;\n    readonly column: string;\n    readonly severity: string | null;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly accountRef: string | null;\n    readonly artifactType: string;\n    readonly dueAt: string | null;\n    readonly valueUsd: number | null;\n    readonly hasCandidate: boolean;\n    readonly hasDraft: boolean;\n}',
   },
   {
     name: 'FaberLoomBoardSeverity',
     declaration: 'export type FaberLoomBoardSeverity = \'LOW\' | \'MEDIUM\' | \'HIGH\' | \'CRITICAL\';',
+  },
+  {
+    name: 'FaberLoomCandidate',
+    declaration: 'export interface FaberLoomCandidate extends LearningOrigin {\n    readonly id: FaberLoomCandidateId;\n    readonly itemId: string;\n    readonly correctionId: FaberLoomCorrectionId;\n    readonly dataClass: LearningDataClass;\n    readonly originDataClasses: readonly LearningDataClass[];\n    readonly fieldsUsed: readonly string[];\n    readonly scope: LearningDestination;\n    readonly allowedDestination: LearningDestination;\n    readonly text: string;\n    readonly status: CandidateStatus;\n    readonly derivedFrom: FaberLoomCandidateId | null;\n    readonly createdBy: string;\n    readonly createdAt: string;\n    readonly promotedBy: string | null;\n    readonly promotedAt: string | null;\n    readonly promotionDataClasses: readonly LearningDataClass[] | null;\n}',
+  },
+  {
+    name: 'FaberLoomCandidateId',
+    declaration: 'export type FaberLoomCandidateId = Branded<\'FaberLoomCandidateId\'>;',
   },
   {
     name: 'FaberLoomCloudProfile',
@@ -7792,6 +8158,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomContextVisibility',
     declaration: 'export type FaberLoomContextVisibility = \'local\' | \'pending\' | \'shared\';',
+  },
+  {
+    name: 'FaberLoomCorrection',
+    declaration: 'export interface FaberLoomCorrection extends LearningOrigin {\n    readonly id: FaberLoomCorrectionId;\n    readonly itemId: string;\n    readonly actor: string;\n    readonly scope: LearningScope;\n    readonly dataClasses: readonly LearningDataClass[];\n    readonly fieldsUsed: readonly string[];\n    readonly origin: CorrectionOrigin;\n    readonly detail: CorrectionDetail;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'FaberLoomCorrectionId',
+    declaration: 'export type FaberLoomCorrectionId = Branded<\'FaberLoomCorrectionId\'>;',
   },
   {
     name: 'FaberLoomCostRow',
@@ -8618,6 +8992,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface InvokeRemoteRequest {\n    readonly namespace: string;\n    readonly method: string;\n    readonly args: Readonly<Record<string, unknown>>;\n    readonly signal?: AbortSignal;\n}',
   },
   {
+    name: 'IterationPolicy',
+    declaration: 'export interface IterationPolicy {\n    readonly renewalSeconds: number;\n    readonly lockSeconds: number;\n    readonly retentionDays: number;\n    readonly roundLimit: number;\n}',
+  },
+  {
     name: 'JobDoneListener',
     declaration: 'export type JobDoneListener = (snapshot: JobSnapshot, owner: Agent | undefined) => void | PromiseLike<void>;',
   },
@@ -8700,6 +9078,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LateErrorInput',
     declaration: 'export interface LateErrorInput {\n    readonly caseRef: string;\n    readonly detail: string;\n    readonly teachingId?: FaberLoomTeachingId;\n    readonly author: string;\n}',
+  },
+  {
+    name: 'LearningActor',
+    declaration: 'export interface LearningActor {\n    readonly id: string;\n    readonly tenantId: string | null;\n    readonly spaceIds?: readonly string[];\n    readonly accountRefs?: readonly string[];\n    readonly agentIds?: readonly string[];\n}',
+  },
+  {
+    name: 'LearningDataClass',
+    declaration: 'export type LearningDataClass = \'N0\' | \'N1\' | \'N2\' | \'N3\' | \'N4\';',
+  },
+  {
+    name: 'LearningDestination',
+    declaration: 'export type LearningDestination = \'cuenta\' | \'espacio\' | \'agente\';',
+  },
+  {
+    name: 'LearningOrigin',
+    declaration: 'export interface LearningOrigin {\n    readonly tenantId: string | null;\n    readonly spaceId: string | null;\n    readonly accountRef: string | null;\n    readonly agentId: string | null;\n}',
+  },
+  {
+    name: 'LearningOutcomeInput',
+    declaration: 'export interface LearningOutcomeInput {\n    readonly itemId: string;\n    readonly artifactType: string;\n    readonly actionType: string;\n    readonly result: LearningOutcomeResult;\n    readonly tenantId?: string | null;\n    readonly spaceId?: string;\n}',
+  },
+  {
+    name: 'LearningOutcomeResult',
+    declaration: 'export type LearningOutcomeResult = \'approved\' | \'discarded\' | \'skipped\' | \'delegated\' | \'delegated-reversed\';',
+  },
+  {
+    name: 'LearningScope',
+    declaration: 'export type LearningScope = \'puntual\' | LearningDestination;',
   },
   {
     name: 'LinkPreview',
@@ -8816,6 +9222,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MaturityCorrectionLoad',
+    declaration: 'export interface MaturityCorrectionLoad {\n    readonly iterations: number;\n    readonly editedFields: number;\n    readonly answeredDoubts: number;\n    readonly total: number;\n    readonly perItem: number | undefined;\n}',
+  },
+  {
+    name: 'MaturityDelegation',
+    declaration: 'export interface MaturityDelegation {\n    readonly count: number;\n    readonly reversals: number;\n    readonly reversalRate: number | undefined;\n}',
+  },
+  {
+    name: 'MaturityFilter',
+    declaration: 'export interface MaturityFilter {\n    readonly spaceId?: string;\n    readonly artifactType?: string;\n    readonly actionType?: string;\n    readonly from?: string;\n    readonly until?: string;\n}',
+  },
+  {
+    name: 'MaturityShare',
+    declaration: 'export interface MaturityShare {\n    readonly count: number;\n    readonly rate: number | undefined;\n}',
+  },
+  {
+    name: 'MaturityTaskType',
+    declaration: 'export interface MaturityTaskType {\n    readonly spaceId: string | null;\n    readonly artifactType: string;\n    readonly actionType: string;\n}',
+  },
+  {
+    name: 'MaturityTaskTypeMetrics',
+    declaration: 'export interface MaturityTaskTypeMetrics extends MaturityTaskType {\n    readonly volume: number;\n    readonly closed: number;\n    readonly correctionLoad: MaturityCorrectionLoad;\n    readonly resolvedWithoutIntervention: MaturityShare;\n    readonly discarded: MaturityShare;\n    readonly skipped: MaturityShare;\n    readonly delegated: MaturityDelegation;\n}',
   },
   {
     name: 'McpHttpTransportInput',

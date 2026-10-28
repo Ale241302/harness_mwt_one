@@ -2378,6 +2378,77 @@
   outline-offset: 1px;
 }
 
+.mesaAttempt {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaAttemptDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-button-primary-fill);
+}
+
+.mesaDiff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.mesaDiff h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+.mesaDiffList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.mesaDiffList > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.mesaDiffList dt {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaDiffList dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-ui-body);
+}
+
+.mesaDiffOld {
+  text-decoration: line-through;
+}
+
+.mesaDiffNew {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
 .mesaFacts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

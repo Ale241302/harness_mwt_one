@@ -800,6 +800,188 @@ export interface FaberLoomBoardDiscardInput {
   readonly note?: string
 }
 
+/**
+ * Lifecycle of one item's iteration attempt, as the Mesa reads it (§9.7.1).
+ * `active` holds the lock; `idle` also covers a paused attempt whose working
+ * draft is still offered; an expired attempt already reads as idle (W-44).
+ */
+export type FaberLoomBoardIterationPhase = 'idle' | 'active' | 'expired'
+
+/**
+ * Why an attempt ended and returned the item to the pending column. Every
+ * reason keeps the working draft and leaves a pending candidate untouched
+ * (W-41, W-97); `lock-vencido` is the exit the server applies on expiry.
+ */
+export type FaberLoomBoardIterationExit =
+  | 'guardar-y-salir' | 'llevar-a-spaceloom' | 'volver-sin-resolver' | 'lock-vencido'
+
+/**
+ * Scope one applied iteration teaches. `puntual` teaches nothing; the other
+ * three become learning candidates (W-34, W-35), so the panel sends the same
+ * vocabulary the learning lane consumes.
+ */
+export type FaberLoomBoardCorrectionScope = 'puntual' | 'cuenta' | 'espacio' | 'agente'
+
+/** The working draft of one attempt, minimised to the fields the panel edits. */
+export interface FaberLoomBoardIterationDraft {
+  /** Artifact version the draft was written against. */
+  readonly baseVersion: number
+  /** Draft summary, or null when the attempt only changed content. */
+  readonly summary: string | null
+  /** Evidence references the draft declares. */
+  readonly evidence: readonly string[]
+  /** True when a resume found the draft written against an older version (W-68). */
+  readonly outdated: boolean
+  /** True once the attempt that produced the draft is dead (W-57). */
+  readonly archived: boolean
+  /** ISO-8601 instant of the last draft write. */
+  readonly updatedAt: string
+}
+
+/** What one item's iteration attempt looks like to the panel right now. */
+export interface FaberLoomBoardIteration {
+  /** Attempt lifecycle; an expired attempt already reads as paused. */
+  readonly phase: FaberLoomBoardIterationPhase
+  /** Attempt id, or null when the item carries none. */
+  readonly iterationId: string | null
+  /** Lock generation; every acquisition bumps it. */
+  readonly generation: number
+  /** Artifact version the attempt started from, or null. */
+  readonly baseVersion: number | null
+  /** Lock deadline in UTC, or null. */
+  readonly lockUntil: string | null
+  /** Seconds a client waits between renewals (D-09). */
+  readonly renewalSeconds: number
+  /** Rounds applied to this item so far. */
+  readonly rounds: number
+  /** Rounds after which the panel suggests rewriting or discarding (D-10). */
+  readonly roundLimit: number
+  /** True once the item reached the round limit; nothing blocks on it. */
+  readonly suggestRewrite: boolean
+  /** True when the retained draft was written against an older version (W-68). */
+  readonly draftOutdated: boolean
+  /** True while a candidate artifact waits for an explicit choice. */
+  readonly candidatePending: boolean
+  /** Retained draft of the attempt, or null. */
+  readonly draft: FaberLoomBoardIterationDraft | null
+}
+
+/** One field where a retained draft and the current version disagree (W-68). */
+export interface FaberLoomBoardIterationDifference {
+  /** Top-level content key. */
+  readonly field: string
+  /** Value the draft holds, formatted for display. */
+  readonly draftValue: string
+  /** Value the current version holds, formatted for display. */
+  readonly currentValue: string
+}
+
+/** One draft read: the retained draft and, when stale, where it disagrees. */
+export interface FaberLoomBoardIterationDraftRead {
+  /** The retained draft, or null when the item links none. */
+  readonly draft: FaberLoomBoardIterationDraft | null
+  /** Differences against the current version; empty while the draft is current. */
+  readonly differences: readonly FaberLoomBoardIterationDifference[]
+}
+
+/** The explicit choice over a pending candidate (§2.2); never adopted implicitly. */
+export interface FaberLoomBoardIterationChoice {
+  /** Candidate the user saw. */
+  readonly id: string
+  /** Hash the user saw; a changed candidate rejects the choice. */
+  readonly hash: string
+  /** Adopt the candidate or keep the current version. */
+  readonly decision: 'adopt' | 'keep'
+}
+
+/** Attempt id and lock generation the caller believes current. */
+export interface FaberLoomBoardIterationLockInput {
+  /** Attempt the panel has open. */
+  readonly iterationId: string
+  /** Lock generation the panel has open. */
+  readonly generation: number
+}
+
+/** One draft write from the panel; it edits the summary the draft area shows. */
+export interface FaberLoomBoardIterationSaveInput extends FaberLoomBoardIterationLockInput {
+  /** Artifact version the caller wrote against. */
+  readonly baseVersion: number
+  /** Draft summary. */
+  readonly summary: string
+}
+
+/** One apply, with the scope the correction teaches. */
+export interface FaberLoomBoardIterationApplyInput extends FaberLoomBoardIterationLockInput {
+  /** Artifact version the attempt started from. */
+  readonly baseVersion: number
+  /** Scope the correction teaches; every apply names one. */
+  readonly scope: FaberLoomBoardCorrectionScope
+  /** Required while a candidate is pending. */
+  readonly candidate?: FaberLoomBoardIterationChoice
+}
+
+/** One pause: the exit the user chose. */
+export interface FaberLoomBoardIterationPauseInput extends FaberLoomBoardIterationLockInput {
+  /** Exit the user chose. */
+  readonly reason: FaberLoomBoardIterationExit
+}
+
+/** One cancel: the attempt's work is discarded. */
+export interface FaberLoomBoardIterationCancelInput extends FaberLoomBoardIterationLockInput {
+  /** Required while a candidate is pending. */
+  readonly candidate?: FaberLoomBoardIterationChoice
+}
+
+/** One draft save's answer: whether the item still links the draft. */
+export interface FaberLoomBoardIterationDraftRow {
+  /** Draft summary, or null when the attempt only changed content. */
+  readonly summary: string | null
+  /** Artifact version the draft was written against. */
+  readonly baseVersion: number
+  /** Whether the live attempt links this draft; false means it was archived (W-57). */
+  readonly linked: boolean
+}
+
+/**
+ * Reopening a retained draft: `started` means a new attempt holds it;
+ * `outdated` means it was written against an older version, so nothing was
+ * overwritten and the differences are returned (W-68).
+ */
+export interface FaberLoomBoardIterationResume {
+  /** Whether the new attempt started or the draft is stale. */
+  readonly status: 'started' | 'outdated'
+  /** Attempt state after the resume. */
+  readonly iteration: FaberLoomBoardIteration
+  /** Differences against the current version; empty when the attempt started. */
+  readonly differences: readonly FaberLoomBoardIterationDifference[]
+}
+
+/**
+ * The pinned context the iteration chat starts from (§9.7, §8.5). It carries
+ * only the item and the space title the actor may see: no account history, no
+ * space memory, no other item.
+ */
+export interface FaberLoomBoardIterationContext {
+  /** Board item id. */
+  readonly itemId: string
+  /** Item title. */
+  readonly title: string
+  /** Account/client reference, or null. */
+  readonly accountRef: string | null
+  /** Owning space, or null before assignment. */
+  readonly spaceId: string | null
+  /** Readable space title, or null when the actor may not see it. */
+  readonly spaceTitle: string | null
+  /** Current artifact version. */
+  readonly version: number
+  /** Summary of the current revision. */
+  readonly summary: string
+  /** Working draft still to be applied, or null. */
+  readonly draftSummary: string | null
+  /** Rounds applied to this item so far. */
+  readonly rounds: number
+}
+
 /** Editable fields of a new teaching; the author is the signed-in owner. */
 export interface TeachingSaveInput {
   /** Application scope. */

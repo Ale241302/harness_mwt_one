@@ -602,6 +602,125 @@ async takeEditDraft(actor: BoardActor, id: FaberLoomBoardItemId, writerSession: 
 async discardEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<void>
 
 /**
+ * The validated iteration policy this deployment runs with (D-09, D-10). The
+ * panel reads the renewal cadence and the round limit from here instead of
+ * carrying its own copy.
+ * @returns a copy of the resolved policy.
+ */
+iterationPolicy(): IterationPolicy
+
+/**
+ * Iteration status of one item: attempt phase, lock, rounds, and the retained
+ * draft. An expired attempt already reports as paused, which is how the panel
+ * offers the draft for recovery (W-44).
+ * @param actor - the authenticated reader.
+ * @param id - item id.
+ * @returns the attempt projection.
+ */
+async iterationStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardIterationStatus>
+
+/**
+ * Start an iteration attempt over the current artifact version (§9.7.1). The
+ * attempt needs a space (W-31), mints a new `iterationId`, bumps the lock
+ * generation, records the base version and the deadline, and leaves the
+ * artifact version untouched (W-11).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - artifact version the caller saw and the tab session.
+ * @returns the item and the new attempt.
+ */
+async iterate(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult>
+
+/**
+ * Save the caller's edits as a new version and start the iteration over it.
+ * The edits, the version, and the attempt commit in one transform, so a
+ * conflict creates no version, applies no transition, and keeps the caller's
+ * edits outside the item (W-69).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - expected row and base version, the changes, and the tab session.
+ * @returns the item and the new attempt.
+ */
+async iterateWithEdits( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateWithEditsInput, ): Promise<BoardIterationResult>
+
+/**
+ * Store one write of the attempt's work as its working draft. A write that no
+ * longer matches the live attempt stores the draft of that dead attempt and
+ * leaves the item untouched, which is how a late agent answer is kept without
+ * reaching the item (W-57).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - attempt, base version, and the fields the caller wrote.
+ * @returns the stored draft and whether the item links it.
+ */
+async saveIterationDraft( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationDraftInput, ): Promise<BoardIterationDraftOutcome>
+
+/**
+ * Read one attempt's draft, or the draft the item currently links.
+ * @param actor - the authenticated reader.
+ * @param id - item id.
+ * @param iterationId - attempt to read; omitted reads the linked draft.
+ * @returns the draft, or undefined when none is stored or retained.
+ */
+async getIterationDraft( actor: BoardActor, id: FaberLoomBoardItemId, iterationId?: string, ): Promise<BoardIterationDraft | undefined>
+
+/**
+ * Extend the lock of the live attempt. A stale attempt id, a stale generation,
+ * or an expired deadline is refused without effects (W-43).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - attempt id and generation.
+ * @returns the item and the renewed attempt.
+ */
+async renewIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationLockInput, ): Promise<BoardIterationResult>
+
+/**
+ * Save and exit, carry to SpaceLoom, return without resolving, or record the
+ * expiry: the attempt releases its lock and the item returns to the pending
+ * column with its draft and any pending candidate untouched (W-67, W-97).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - attempt, generation, and the exit the user chose.
+ * @returns the item and the released attempt.
+ */
+async pauseIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardPauseIterationInput, ): Promise<BoardIterationResult>
+
+/**
+ * Discard the attempt's work and release the lock. It requires no pending
+ * candidate, or the adopt/keep choice that resolves it in the same commit; it
+ * deletes the draft and never changes the version except through adoption
+ * (W-41).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - attempt, generation, and the optional candidate choice.
+ * @returns the item and the released attempt.
+ */
+async cancelIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardCancelIterationInput, ): Promise<BoardIterationResult>
+
+/**
+ * Take a new attempt over the retained draft. When the draft was written
+ * against an older version, it is marked outdated and the differences are
+ * returned instead of overwriting the newer content (W-68).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - base version of the draft the caller saw and the tab session.
+ * @returns the item with `started`, or with `outdated` and the differences.
+ */
+async resumeIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardResumeIterationInput, ): Promise<BoardResumeIterationResult>
+
+/**
+ * Apply the live attempt: write a new version and hash, count the round,
+ * record the learning scope, release the lock, and return to
+ * `PENDIENTE_CRITERIO`. A pending candidate must be resolved in the same call,
+ * and only the current attempt applies (W-40, W-57).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - attempt, base version, optional summary and evidence, the scope, and the choice.
+ * @returns the item and the released attempt.
+ */
+async applyIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApplyIterationInput, ): Promise<BoardIterationResult>
+
+/**
  * Read the audit history of one item.
  * @param actor - the authenticated reader.
  * @param id - item id.
@@ -1290,7 +1409,7 @@ Source: [`packages/faberloom/mcp-server/src/index.ts`](../../packages/faberloom/
 
 ### `ctx.faberloomMemory` — `FaberLoomMemory`
 
-The product memory service: versioned teachings, contextual performance, late errors, and portable knowledge.
+The product memory service: versioned teachings, contextual performance, the correction registry, learning candidates, maturity metrics, late errors, and portable knowledge.
 
 ```ts cordis-catalog
 /**
@@ -1368,6 +1487,101 @@ async recordPerformance(ownerId: string, input: PerformanceInput): Promise<void>
  * @returns the summary.
  */
 async performance(ownerId: string, filter: { agentId?: string; task?: string; spaceId?: string } = {}): Promise<PerformanceSummary>
+
+/**
+ * Entry point for every human correction: an inline edit, an answered doubt,
+ * or an applied iteration. The record is durable and identical in structure
+ * for all three origins. A candidate is created only when the chosen scope is
+ * not `puntual`; nothing is promoted here (W-34, W-35).
+ *
+ * Both writes land on the domain write chain in order: the correction first,
+ * because it is the fact, and the candidate second. A candidate write that
+ * fails rejects the call and leaves the correction recorded.
+ * @param actor - identity and scope of the caller.
+ * @param input - origin payload, lineage, classifications, and chosen scope.
+ * @returns the correction and the candidate it produced, when it produced one.
+ */
+async onCorrection(actor: LearningActor, input: CorrectionInput): Promise<CorrectionOutcome>
+
+/**
+ * Read one correction. Only an identity holding scope over its origin sees it.
+ * @param actor - identity and scope of the caller.
+ * @param id - correction id.
+ * @returns the correction.
+ */
+async getCorrection(actor: LearningActor, id: FaberLoomCorrectionId): Promise<FaberLoomCorrection>
+
+/**
+ * List the corrections the actor holds scope over.
+ * @param actor - identity and scope of the caller.
+ * @param filter - optional item, space, account, and agent filters.
+ * @returns the corrections, oldest first.
+ */
+async listCorrections(actor: LearningActor, filter: CorrectionFilter = {}): Promise<FaberLoomCorrection[]>
+
+/**
+ * Read one candidate. Reading is limited to whoever holds scope over its
+ * origin (§6.3).
+ * @param actor - identity and scope of the caller.
+ * @param id - candidate id.
+ * @returns the candidate.
+ */
+async getCandidate(actor: LearningActor, id: FaberLoomCandidateId): Promise<FaberLoomCandidate>
+
+/**
+ * List the candidates the actor holds scope over.
+ * @param actor - identity and scope of the caller.
+ * @param filter - optional item, space, account, agent, and status filters.
+ * @returns the candidates, oldest first.
+ */
+async listCandidates(actor: LearningActor, filter: CandidateFilter = {}): Promise<FaberLoomCandidate[]>
+
+/**
+ * Promote one candidate to its allowed destination. This is the only path
+ * that activates learning, and it revalidates tenant, account, space,
+ * classification, and provenance against that destination before committing
+ * (W-35, W-47, W-60). A destination wider than the allowed one is rejected;
+ * widening goes through {@link widenCandidate}.
+ * @param actor - identity and scope of the caller.
+ * @param id - candidate id.
+ * @param input - destination and the classifications it accepts.
+ * @returns the promoted candidate.
+ */
+async promoteCandidate( actor: LearningActor, id: FaberLoomCandidateId, input: CandidatePromotionInput, ): Promise<FaberLoomCandidate>
+
+/**
+ * Widen a candidate to a wider destination. Widening never moves the
+ * original candidate: it produces a new candidate with reviewed content,
+ * which still needs its own promotion (W-47). The new candidate revalidates
+ * tenant, space, account, classification, and provenance against the wider
+ * destination.
+ * @param actor - identity and scope of the caller.
+ * @param id - candidate to widen.
+ * @param input - wider destination, reviewed content, and accepted classifications.
+ * @returns the new candidate.
+ */
+async widenCandidate( actor: LearningActor, id: FaberLoomCandidateId, input: CandidateWideningInput, ): Promise<FaberLoomCandidate>
+
+/**
+ * Record what happened to one item, for the maturity metrics. Calls append:
+ * the latest outcome of an item decides how the item is counted.
+ * @param actor - identity and scope of the caller.
+ * @param input - item, task type, and result.
+ * @returns nothing.
+ */
+async recordOutcome(actor: LearningActor, input: LearningOutcomeInput): Promise<void>
+
+/**
+ * Maturity metrics per task type `(space, artifactType, actionType)`. Each
+ * metric is reported on its own: there is no composite index, no cohort
+ * rule, and no threshold, because the cohort definition and the alert
+ * threshold are unsigned (§10.2). Success is an approval with no correction
+ * of any origin, so an answered doubt disqualifies it (W-80).
+ * @param actor - identity and scope of the caller.
+ * @param filter - optional task-type and period filters.
+ * @returns one entry per task type, sorted by its three fields.
+ */
+async maturity(actor: LearningActor, filter: MaturityFilter = {}): Promise<readonly MaturityTaskTypeMetrics[]>
 
 /**
  * Record a late error. When it targets a teaching, the teaching gets a new
@@ -3698,6 +3912,91 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the events, oldest first.
  */
 @Remote('boardEvents') async boardEvents(id: string): Promise<readonly FaberLoomBoardEventRow[]>
+
+/**
+ * Read one item's iteration attempt (§9.7.1). The board applies the owner and
+ * company rule before answering, so the panel never re-derives who may see
+ * the attempt (W-31).
+ * @param id - board item id.
+ * @returns the attempt, or undefined when the reader holds no item with that id.
+ */
+@Remote('boardIteration') async boardIteration(id: string): Promise<FaberLoomBoardIteration | undefined>
+
+/**
+ * Read the pinned context an iteration chat starts from (§8.5, §9.7). It is
+ * minimised to the item: the board filters the item by owner and company, the
+ * spaces service filters the title, and no account history or space memory
+ * travels with it.
+ * @param id - board item id.
+ * @returns the context, or undefined when the reader holds no item with that id.
+ */
+@Remote('boardIterationContext') async boardIterationContext(id: string): Promise<FaberLoomBoardIterationContext | undefined>
+
+/**
+ * Start an iteration attempt over the version the caller saw. Starting never
+ * changes the artifact version (W-11).
+ * @param id - board item id.
+ * @param baseVersion - artifact version the panel shows.
+ * @param actorSession - tab opening the attempt, so two tabs are two attempts.
+ * @returns the attempt after the commit.
+ */
+@Remote('boardIterationStart') async boardIterationStart( id: string, baseVersion: number, actorSession: string, ): Promise<FaberLoomBoardIteration>
+
+/**
+ * Store one write of the attempt's work as its working draft. A write for an
+ * attempt that already ended is archived and the item is left untouched
+ * (W-57), which is what `linked: false` tells the panel.
+ * @param id - board item id.
+ * @param input - attempt, base version, and the draft summary.
+ * @returns the stored draft and whether the item still links it.
+ */
+@Remote('boardIterationSaveDraft') async boardIterationSaveDraft( id: string, input: FaberLoomBoardIterationSaveInput, ): Promise<FaberLoomBoardIterationDraftRow>
+
+/**
+ * Apply the live attempt with the scope its correction teaches, writing one
+ * new version and releasing the lock (W-34, W-40).
+ * @param id - board item id.
+ * @param input - attempt, base version, scope, and the candidate choice when one is pending.
+ * @returns the attempt after the commit.
+ */
+@Remote('boardIterationApply') async boardIterationApply( id: string, input: FaberLoomBoardIterationApplyInput, ): Promise<FaberLoomBoardIteration>
+
+/**
+ * Save and exit, carry to SpaceLoom, or return without resolving: the attempt
+ * releases the lock and keeps its draft (W-67, W-97).
+ * @param id - board item id.
+ * @param input - attempt and the exit the user chose.
+ * @returns the attempt after the commit.
+ */
+@Remote('boardIterationPause') async boardIterationPause( id: string, input: FaberLoomBoardIterationPauseInput, ): Promise<FaberLoomBoardIteration>
+
+/**
+ * Discard the attempt's work and release the lock. The version does not
+ * change except through an explicit candidate adoption (W-41).
+ * @param id - board item id.
+ * @param input - attempt and the candidate choice when one is pending.
+ * @returns the attempt after the commit.
+ */
+@Remote('boardIterationCancel') async boardIterationCancel( id: string, input: FaberLoomBoardIterationCancelInput, ): Promise<FaberLoomBoardIteration>
+
+/**
+ * Take a new attempt over the retained draft. A draft written against an
+ * older version is returned with its differences instead of overwriting the
+ * newer content (W-68).
+ * @param id - board item id.
+ * @param baseVersion - base version of the draft the caller saw.
+ * @returns the new attempt, or the stale draft's differences.
+ */
+@Remote('boardIterationResume') async boardIterationResume(id: string, baseVersion: number): Promise<FaberLoomBoardIterationResume>
+
+/**
+ * Read the item's retained draft and, when it was written against an older
+ * version, the fields where it disagrees. Reading never changes the version.
+ * @param id - board item id.
+ * @param iterationId - attempt to read; omitted reads the draft the item links.
+ * @returns the projected draft and its differences.
+ */
+@Remote('boardIterationDraft') async boardIterationDraft(id: string, iterationId?: string): Promise<FaberLoomBoardIterationDraftRead>
 
 /**
  * Clear staleness after checking whether the underlying condition changed.

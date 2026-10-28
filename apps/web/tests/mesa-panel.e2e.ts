@@ -2,18 +2,49 @@
 // FaberLoom rows in the shipped Web composition, seeds one board item through
 // the real service, and decides it from Foco: edit the draft, save a new
 // version, approve, and confirm the stored state. No model call is involved.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import type { ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 import type { FaberLoomBoard, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
+import type { FaberLoomSpaces } from '@deepseek-ai/dsh-faberloom-spaces'
 import { DECLARED_CHECKS } from '@deepseek-ai/dsh-faberloom-board'
 
 const OVERLAY = fileURLToPath(new URL('./mesa-panel.overlay.yml', import.meta.url))
 const BUNDLE = fileURLToPath(new URL('../../../packages/bundle/faberloom-app/package.json', import.meta.url))
 const TITLE = 'PF 9001-2026 · Cuenta Demo'
+const ITERATION_TITLE = 'PF 9002-2026 · Cuenta Demo'
+const SPACE_TITLE = 'Marluvas'
+
+/**
+ * The iteration chat opens one session per attempt, so the scenario supplies a
+ * deterministic closing turn for each instead of a live model. The reply is
+ * never asserted: the work happens in the panel. The recorded fixture is
+ * deliberately absent — the override is the whole script — which the scaffold
+ * accepts for an override-only replay.
+ */
+function iterationReplay(): { fixture: string; override: string; dir: string } {
+  const script: ReplayOverrideDoc = [{
+    kind: 'chunks',
+    chunks: [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'Iteración preparada.' },
+      { type: 'block-end', index: 0, block: { type: 'text', text: 'Iteración preparada.' } },
+      { type: 'usage', usage: { inputTokens: 32, outputTokens: 4 } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ],
+  }]
+  const dir = mkdtempSync(join(tmpdir(), 'mesa-iteration-replay-'))
+  const override = join(dir, 'replay.override.json')
+  writeFileSync(override, JSON.stringify(script))
+  return { fixture: join(dir, 'session.jsonl'), override, dir }
+}
 
 /**
  * Mount the controls a deployment supplies. Without an adapter the board
@@ -43,9 +74,18 @@ describe('web e2e: WorkLoom Mesa', () => {
   let board: FaberLoomBoard
   const actor = { id: 'e2e@mwt.one', companyId: 'mwt' }
   let itemId: FaberLoomBoardItemId
+  let iterationItemId: FaberLoomBoardItemId
+  let replayDir: string | undefined
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, extraInstallAnchors: [BUNDLE] })
+    const replay = iterationReplay()
+    replayDir = replay.dir
+    scaffold = await launchWebScaffold({
+      extraOverlayPath: OVERLAY,
+      extraInstallAnchors: [BUNDLE],
+      replayFixture: replay.fixture,
+      replayOverride: replay.override,
+    })
     board = (scaffold.ctx as unknown as { faberloomBoard: FaberLoomBoard }).faberloomBoard
     mountChecks(board)
     const item = await board.submit(actor, {
@@ -61,6 +101,24 @@ describe('web e2e: WorkLoom Mesa', () => {
     itemId = item.id
     await board.setSeverity(actor, item.id, 'HIGH', 'HUMAN')
 
+    // An iteration needs the item assigned to a space (W-31), so the scenario
+    // creates a real space through the shipped service instead of a fixture.
+    const spaces = (scaffold.ctx as unknown as { faberloomSpaces: FaberLoomSpaces }).faberloomSpaces
+    const space = await spaces.create({ ...actor, role: 'admin', readOnly: false }, { title: SPACE_TITLE })
+    const iterationItem = await board.submit(actor, {
+      runId: 'run-pf-9002',
+      idempotencyKey: 'pf-9002-2026',
+      businessKey: 'PF 9002-2026',
+      title: ITERATION_TITLE,
+      summary: 'Proforma DDP, 50 pares, USD 500,00.',
+      evidence: ['OC 9002', 'PF 9002-2026'],
+      artifactType: 'proforma',
+      accountRef: 'Cuenta Demo',
+    })
+    iterationItemId = iterationItem.id
+    await board.setSeverity(actor, iterationItem.id, 'HIGH', 'HUMAN')
+    await board.assignWorkspace(actor, iterationItem.id, String(space.id))
+
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -72,7 +130,34 @@ describe('web e2e: WorkLoom Mesa', () => {
   afterAll(async () => {
     await browser?.close()
     await scaffold?.close()
+    if (replayDir !== undefined) rmSync(replayDir, { recursive: true, force: true })
   })
+
+  /** Open one item in Foco and wait for its detail. */
+  async function openItem(title: string): Promise<void> {
+    await page.getByRole('button', { name: /Mesa de trabajo|Work bench/u }).first().click()
+    await page.getByText(title, { exact: false }).first().waitFor({ timeout: 20_000 })
+    await page.getByText(title, { exact: false }).first().click()
+    await page.getByText('③ Draft').waitFor({ timeout: 20_000 })
+  }
+
+  /** Start an iteration from the panel and come back to the item. */
+  async function startIteration(id: FaberLoomBoardItemId): Promise<void> {
+    await page.getByRole('button', { name: 'Iterate', exact: true }).click()
+    await vi.waitFor(async () => {
+      expect((await board.iterationStatus(actor, id)).phase).toBe('active')
+    }, { timeout: 20_000 })
+    // Iterating opens the space chat; the scenario returns to the Mesa to work
+    // the attempt from the panel.
+    await returnToMesa()
+  }
+
+  /** Wait for the iteration chat to own the screen, then reopen the Mesa. */
+  async function returnToMesa(): Promise<void> {
+    await page.locator('[data-composer-input]').first().waitFor({ timeout: 20_000 })
+    await page.getByRole('button', { name: /Mesa de trabajo|Work bench/u }).first().click()
+    await page.getByText(/Iteration in progress/u).first().waitFor({ timeout: 20_000 })
+  }
 
   it('edits the draft and approves the exact version', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-mesa-panel'))
@@ -107,4 +192,71 @@ describe('web e2e: WorkLoom Mesa', () => {
     expect(stored.state).toBe('APROBADO')
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
+
+  it('starts an iteration and applies it with a scope', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-mesa-iteration'))
+    await openItem(ITERATION_TITLE)
+    await startIteration(iterationItemId)
+
+    // The draft area edits the attempt's work, not the item summary.
+    const editor = page.locator('textarea').first()
+    await editor.fill('Ajustado: 50 pares DDP a 60 días.')
+    await vi.waitFor(async () => {
+      expect((await board.getIterationDraft(actor, iterationItemId))?.summary).toBe('Ajustado: 50 pares DDP a 60 días.')
+    }, { timeout: 20_000 })
+
+    await page.getByRole('button', { name: 'Apply', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('combobox').selectOption('cuenta')
+    await dialog.getByRole('button', { name: 'Apply', exact: true }).click()
+    await vi.waitFor(async () => {
+      const stored = await board.get(actor, iterationItemId)
+      expect(stored.version).toBe(2)
+      expect(stored.state).toBe('PENDIENTE_CRITERIO')
+    }, { timeout: 20_000 })
+    expect(await board.getIterationDraft(actor, iterationItemId)).toBeUndefined()
+    expect(await board.iterationStatus(actor, iterationItemId)).toMatchObject({ phase: 'idle', draft: null, rounds: 1 })
+    // Every exit leaves the user on the same item with the applied version.
+    await page.getByRole('button', { name: 'Approve' }).waitFor({ timeout: 20_000 })
+    expect(tripwire.pageErrors).toEqual([])
+  }, 240_000)
+
+  it('keeps a paused draft and recovers it on return', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-mesa-iteration-paused'))
+    await openItem(ITERATION_TITLE)
+    await startIteration(iterationItemId)
+
+    const editor = page.locator('textarea').first()
+    await editor.fill('Borrador a medio hacer.')
+    await vi.waitFor(async () => {
+      expect((await board.getIterationDraft(actor, iterationItemId))?.summary).toBe('Borrador a medio hacer.')
+    }, { timeout: 20_000 })
+
+    await page.getByRole('button', { name: 'Save and exit', exact: true }).click()
+    await vi.waitFor(async () => {
+      expect((await board.iterationStatus(actor, iterationItemId)).phase).toBe('idle')
+    }, { timeout: 20_000 })
+    expect((await board.get(actor, iterationItemId)).version).toBe(2)
+    expect((await board.getIterationDraft(actor, iterationItemId))?.summary).toBe('Borrador a medio hacer.')
+
+    await page.getByText('Unfinished work').first().waitFor({ timeout: 20_000 })
+    await page.getByRole('button', { name: 'Resume the iteration' }).click()
+    await vi.waitFor(async () => {
+      const status = await board.iterationStatus(actor, iterationItemId)
+      expect(status.phase).toBe('active')
+      expect(status.draft?.summary).toBe('Borrador a medio hacer.')
+    }, { timeout: 20_000 })
+    // Resuming opens the chat again; the panel keeps showing the attempt.
+    await returnToMesa()
+
+    // Leaving the item clean: discarding never changes the version.
+    await page.getByRole('button', { name: 'Discard my changes', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: 'Discard my changes', exact: true }).click()
+    await vi.waitFor(async () => {
+      expect(await board.getIterationDraft(actor, iterationItemId)).toBeUndefined()
+    }, { timeout: 20_000 })
+    expect((await board.get(actor, iterationItemId)).version).toBe(2)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 240_000)
 })

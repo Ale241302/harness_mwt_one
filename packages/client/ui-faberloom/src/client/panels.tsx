@@ -5,7 +5,7 @@
  * overview and expose their own row actions. The Conversar panel hands the user
  * to the harness conversation, which owns the composer.
  */
-import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: declares the sidebar shell's `sidebar.panellist` owner props.
@@ -45,6 +45,11 @@ import type {
   FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
   FaberLoomSkillInstallDestination, FaberLoomSkillInstallRow, FaberLoomHarnessReport,
   FaberLoomSpaceTreeEntry,
+  FaberLoomBoardIteration, FaberLoomBoardIterationApplyInput, FaberLoomBoardIterationCancelInput,
+  FaberLoomBoardIterationContext, FaberLoomBoardIterationDifference, FaberLoomBoardIterationDraftRead,
+  FaberLoomBoardIterationDraftRow,
+  FaberLoomBoardIterationExit, FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationResume,
+  FaberLoomBoardIterationSaveInput, FaberLoomBoardIterationChoice, FaberLoomBoardCorrectionScope,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { isDesktopApplication } from './desktop-app.ts'
@@ -160,6 +165,36 @@ export interface FaberloomPanelInjected {
   boardDiscardDraft: (id: string) => Promise<Result<void>>
   /** Clear staleness after checking the changed condition. */
   boardRevalidate: (id: string, changed: boolean) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Read one item's iteration attempt, already filtered by the host. */
+  boardIteration: (id: string) => Promise<Result<FaberLoomBoardIteration | undefined>>
+  /** Read the pinned chat context, minimised to the item the actor may see. */
+  boardIterationContext: (id: string) => Promise<Result<FaberLoomBoardIterationContext | undefined>>
+  /** Start an attempt over the version the panel shows. */
+  boardIterationStart: (id: string, baseVersion: number, actorSession: string) => Promise<Result<FaberLoomBoardIteration>>
+  /** Store one write of the attempt's working draft. */
+  boardIterationSaveDraft: (
+    id: string,
+    input: FaberLoomBoardIterationSaveInput,
+  ) => Promise<Result<FaberLoomBoardIterationDraftRow>>
+  /** Apply the attempt with the scope its correction teaches. */
+  boardIterationApply: (
+    id: string,
+    input: FaberLoomBoardIterationApplyInput,
+  ) => Promise<Result<FaberLoomBoardIteration>>
+  /** Save and exit, carry to SpaceLoom, or return without resolving. */
+  boardIterationPause: (
+    id: string,
+    input: FaberLoomBoardIterationPauseInput,
+  ) => Promise<Result<FaberLoomBoardIteration>>
+  /** Discard the attempt's work; the version does not change. */
+  boardIterationCancel: (
+    id: string,
+    input: FaberLoomBoardIterationCancelInput,
+  ) => Promise<Result<FaberLoomBoardIteration>>
+  /** Reopen the retained draft, or receive its differences when stale. */
+  boardIterationResume: (id: string, baseVersion: number) => Promise<Result<FaberLoomBoardIterationResume>>
+  /** Read the retained draft and, when stale, where it disagrees. */
+  boardIterationDraft: (id: string) => Promise<Result<FaberLoomBoardIterationDraftRead>>
   /** Create a draft routine, optionally scoped to a Space. */
   createRoutine: (name: string, spaceId: string | null) => void
   /** Activate or pause one routine. */
@@ -366,7 +401,13 @@ export interface FaberloomPanelInjected {
   /** Link one board task to the routine that runs it, or unlink it with null. */
   setBoardRoutine: (id: string, routineId: string | null) => Promise<Result<FaberLoomOverview>>
   /** Open a chat session seeded with the work-bench task's context and the assigned agent. */
-  openTaskChat: (kind: string, title: string, detail: string, agentName?: string | null) => void
+  openTaskChat: (
+    kind: string,
+    title: string,
+    detail: string,
+    agentName?: string | null,
+    iteration?: FaberLoomBoardIterationContext,
+  ) => void
   /** List one routine's executions. */
   executions: (routineId?: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
   /** Start a manual run of one routine. */
@@ -2478,6 +2519,21 @@ function checkName(t: ScreenProps['t'], id: string): string {
   return key === undefined ? id : t(key)
 }
 
+/**
+ * Keep Tab inside the open dialog, so a keyboard user cannot tab into the page
+ * behind a modal decision.
+ * @param event - the keydown of the dialog.
+ */
+function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>): void {
+  if (event.key !== 'Tab') return
+  const focusables = event.currentTarget.querySelectorAll<HTMLElement>('button, input, select, textarea')
+  if (focusables.length === 0) return
+  const first = focusables[0] as HTMLElement
+  const last = focusables[focusables.length - 1] as HTMLElement
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+}
+
 /** The WorkLoom Mesa: Foco, Kanban, Lista, and the detail zones. */function mesaScreen() {
   const COLUMNS = [
     ['TU_CRITERIO', 'mesa.column.tu'],
@@ -2487,6 +2543,9 @@ function checkName(t: ScreenProps['t'], id: string): string {
   ] as const
   const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const
   const REASONS = ['CLIENTE_CANCELO', 'DUPLICADO', 'ERROR_ORIGEN', 'NO_CORRESPONDE', 'RESUELTO_FUERA', 'OTRA'] as const
+  // Scope of the correction an applied iteration teaches. `puntual` is the
+  // default because it teaches nothing; the other three become candidates.
+  const SCOPES = ['puntual', 'cuenta', 'espacio', 'agente'] as const
   // The queue rail shows one window of the queue so a long backlog does not
   // build hundreds of rows; the List keeps the complete set.
   const RAIL_LIMIT = 60
@@ -2495,7 +2554,10 @@ function checkName(t: ScreenProps['t'], id: string): string {
     const {
       t, boardDetail, boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits,
       boardDiscard, boardResolveCandidate, boardAssignWorkspace, boardTakeDraft, boardRevalidate,
-      boardSaveDraft, openTaskChat,
+      boardSaveDraft, openTaskChat, goToWorkspace,
+      boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft,
+      boardIterationApply, boardIterationPause, boardIterationCancel, boardIterationResume,
+      boardIterationDraft,
     } = props
     const { overview, error } = useOverview(props)
     const [view, setView] = useState<'foco' | 'kanban' | 'lista'>('foco')
@@ -2511,6 +2573,11 @@ function checkName(t: ScreenProps['t'], id: string): string {
     const [discardNote, setDiscardNote] = useState('')
     const [showApprove, setShowApprove] = useState(false)
     const [confirmations, setConfirmations] = useState<readonly string[]>([])
+    const [iterationDraft, setIterationDraft] = useState<string | null>(null)
+    const [differences, setDifferences] = useState<readonly FaberLoomBoardIterationDifference[]>([])
+    const [exitMode, setExitMode] = useState<'apply' | 'discard' | null>(null)
+    const [scope, setScope] = useState<FaberLoomBoardCorrectionScope>('puntual')
+    const [candidateChoice, setCandidateChoice] = useState<'adopt' | 'keep' | null>(null)
     const [writerSession] = useState(() => `tab-${Math.random().toString(36).slice(2)}`)
     const hydrated = useRef<string | null>(null)
     const editRef = useRef<HTMLTextAreaElement>(null)
@@ -2532,7 +2599,29 @@ function checkName(t: ScreenProps['t'], id: string): string {
     const editable = value?.state === 'PENDIENTE_CRITERIO' && !foreignDraft
     const draftChanged = draft !== null && value !== undefined && draft !== value.summary
     const restricted = value !== undefined && (value.dataClass === 'N3' || value.dataClass === 'N4')
-    const iterationDraft = value !== undefined && (value.iterationDraftKey !== null || value.iterationId !== null)
+    const iteration = useLazy<FaberLoomBoardIteration | undefined>(
+      () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : boardIteration(selected),
+      [selected, tick],
+    )
+    const attempt = iteration.kind === 'ready' ? iteration.value : undefined
+    // An expired attempt already reads as idle; its draft stays offered (W-44).
+    const live = attempt?.phase === 'active'
+    const retainedDraft = live ? null : attempt?.draft ?? null
+    const candidateBlocked = attempt?.candidatePending === true && candidateChoice === null
+    const remaining = attempt?.lockUntil === null || attempt?.lockUntil === undefined
+      ? null
+      : Math.max(0, Math.ceil((Date.parse(attempt.lockUntil) - Date.now()) / 60_000))
+    const outdatedDraft = useLazy<FaberLoomBoardIterationDraftRead | undefined>(
+      () => selected === null || attempt?.draftOutdated !== true
+        ? Promise.resolve({ ok: true, value: undefined })
+        : boardIterationDraft(selected),
+      [selected, tick, attempt?.draftOutdated, attempt?.iterationId],
+    )
+
+    useEffect(() => {
+      if (outdatedDraft.kind !== 'ready' || outdatedDraft.value === undefined) return
+      setDifferences(outdatedDraft.value.differences)
+    }, [outdatedDraft])
 
     // Zone ④ reads the same live report approval runs, so a blocking verdict
     // here is the verdict the command will apply.
@@ -2585,17 +2674,28 @@ function checkName(t: ScreenProps['t'], id: string): string {
 
     useEffect(() => {
       if (value === undefined) return
-      const key = `${value.id}:${String(value.version)}:${value.editDraft?.writerSession ?? ''}`
+      const key = [
+        value.id,
+        String(value.version),
+        value.editDraft?.writerSession ?? '',
+        attempt?.iterationId ?? '',
+        attempt?.phase ?? '',
+        attempt?.draft?.updatedAt ?? '',
+      ].join(':')
       if (hydrated.current === key) return
       hydrated.current = key
       setDraft(value.editDraft !== null && value.editDraft.writerSession === writerSession
         ? value.editDraft.changes['summary'] ?? value.summary
         : value.summary)
       setDraftRevision(value.editDraft?.revision ?? 0)
+      setIterationDraft(live ? attempt?.draft?.summary ?? value.summary : null)
+      setDifferences([])
       setShowApprove(false)
       setShowDiscard(false)
+      setExitMode(null)
+      setCandidateChoice(null)
       setConfirmations([])
-    }, [value?.id, value?.version, value?.editDraft?.writerSession])
+    }, [value?.id, value?.version, value?.editDraft?.writerSession, attempt?.iterationId, attempt?.phase, attempt?.draft?.updatedAt])
 
     // The approval panel is a dialog: it takes focus when it opens and hands it
     // back to the button that opened it, so keyboard users never lose their place.
@@ -2622,15 +2722,135 @@ function checkName(t: ScreenProps['t'], id: string): string {
       return () => clearTimeout(timer)
     }, [draft, value?.id, value?.version, editable, restricted])
 
+    // While the attempt is live the draft area edits its work, not the item
+    // summary; the host stores it under the attempt and a write made after the
+    // attempt ended is archived instead of reaching the item (W-57).
+    useEffect(() => {
+      if (value === undefined || attempt === undefined || !live || iterationDraft === null) return
+      if (attempt.iterationId === null) return
+      if (iterationDraft === (attempt.draft?.summary ?? value.summary)) return
+      const iterationId = attempt.iterationId
+      const generation = attempt.generation
+      const baseVersion = value.version
+      const timer = setTimeout(() => {
+        void boardIterationSaveDraft(value.id, { iterationId, generation, baseVersion, summary: iterationDraft })
+          .then((result) => {
+            if (!result.ok) { setMessage(result.error.message); return }
+            if (!result.value.linked) setTick(count => count + 1)
+          })
+      }, 350)
+      return () => clearTimeout(timer)
+    }, [iterationDraft, live, attempt?.iterationId, attempt?.generation, value?.id, value?.version])
+
     const next = (): void => {
       const index = visible.findIndex(row => row.id === selected)
       setSelected(visible[index + 1]?.id ?? visible[0]?.id ?? null)
       setTick(count => count + 1)
     }
 
+    /** Open the iteration chat with the pinned context the host filtered for this actor (§8.5). */
+    const openIterationChat = (): void => {
+      if (value === undefined) return
+      void boardIterationContext(value.id).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        const context = result.value
+        if (context === undefined) { setMessage(t('mesa.error')); return }
+        openTaskChat('iteration', value.title, `v${String(value.version)}`, '', context)
+      })
+    }
+
+    /**
+     * Start or reopen the attempt and open the chat. A retained draft is
+     * resumed instead of starting over, so the work is never archived by a
+     * fresh attempt (E7); an outdated draft reports its differences instead of
+     * overwriting the newer version (W-68).
+     */
     const iterate = (): void => {
       if (value === undefined) return
-      openTaskChat('board', value.title, `${value.state} · ${value.spaceId ?? t('mesa.noSpace')}`, '')
+      if (live) { openIterationChat(); return }
+      const refresh = (): void => { setTick(count => count + 1) }
+      if (retainedDraft === null) {
+        void boardIterationStart(value.id, value.version, writerSession).then((result) => {
+          if (!result.ok) { setMessage(result.error.message); return }
+          refresh()
+          openIterationChat()
+        })
+        return
+      }
+      void boardIterationResume(value.id, retainedDraft.baseVersion).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        if (result.value.status === 'outdated') {
+          setDifferences(result.value.differences)
+          refresh()
+          return
+        }
+        setDifferences([])
+        refresh()
+        openIterationChat()
+      })
+    }
+
+    /** Leave the live attempt through the exit the user chose; the draft stays (W-97). */
+    const leaveIteration = (reason: FaberLoomBoardIterationExit, then?: () => void): void => {
+      if (value === undefined || attempt === undefined || attempt.iterationId === null) return
+      const run = boardIterationPause(value.id, {
+        iterationId: attempt.iterationId,
+        generation: attempt.generation,
+        reason,
+      })
+      void run.then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setExitMode(null)
+        setCandidateChoice(null)
+        setIterationDraft(null)
+        setDifferences([])
+        setTick(count => count + 1)
+        then?.()
+      })
+    }
+
+    /** The candidate choice that must ride along with the exit, when one is pending. */
+    const candidatePayload = (): { candidate?: FaberLoomBoardIterationChoice } => {
+      if (pending === null || candidateChoice === null) return {}
+      return { candidate: { id: pending.id, hash: pending.hash, decision: candidateChoice } }
+    }
+
+    /** Apply the attempt: one new version, the chosen scope, and the lock released. */
+    const applyIteration = (): void => {
+      if (value === undefined || attempt === undefined || attempt.iterationId === null) return
+      const run = boardIterationApply(value.id, {
+        iterationId: attempt.iterationId,
+        generation: attempt.generation,
+        baseVersion: value.version,
+        scope,
+        ...candidatePayload(),
+      })
+      void run.then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setExitMode(null)
+        setCandidateChoice(null)
+        setIterationDraft(null)
+        setDifferences([])
+        setTick(count => count + 1)
+      })
+    }
+
+    /** Discard the attempt's work: the draft goes and the version does not change. */
+    const discardIteration = (): void => {
+      if (value === undefined || attempt === undefined || attempt.iterationId === null) return
+      const run = boardIterationCancel(value.id, {
+        iterationId: attempt.iterationId,
+        generation: attempt.generation,
+        ...candidatePayload(),
+      })
+      void run.then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setExitMode(null)
+        setCandidateChoice(null)
+        setIterationDraft(null)
+        setDifferences([])
+        setTick(count => count + 1)
+      })
     }
 
     const save = (): void => {
@@ -2681,18 +2901,35 @@ function checkName(t: ScreenProps['t'], id: string): string {
         const target = event.target as HTMLElement | null
         const inField = target !== null && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
         const command = event.ctrlKey || event.metaKey
-        if (command && event.key === 'Enter') { event.preventDefault(); iterate(); return }
-        if (command && (event.key === 's' || event.key === 'S')) { event.preventDefault(); save(); return }
         // Escape closes the innermost control even when focus sits inside it;
         // that is the only shortcut that must reach a focused checkbox or field.
         if (event.key === 'Escape') {
+          if (exitMode !== null) { setExitMode(null); return }
           if (showApprove) { setShowApprove(false); return }
           if (showDiscard) { setShowDiscard(false); return }
           if (inField) { (event.target as HTMLElement).blur(); return }
           setSelected(null)
           return
         }
+        // Every other shortcut stays inert inside a field, modifiers included,
+        // so typing a draft never leaves the item.
         if (inField) return
+        if (command && event.key === 'Enter') {
+          event.preventDefault()
+          if (live) { setExitMode('apply'); setCandidateChoice(null) } else iterate()
+          return
+        }
+        if (command && (event.key === 's' || event.key === 'S')) {
+          event.preventDefault()
+          if (live) leaveIteration('guardar-y-salir')
+          else save()
+          return
+        }
+        if (live) {
+          // The item is frozen while the attempt holds it: only its chat reopens.
+          if (event.key === 'i' || event.key === 'I') iterate()
+          return
+        }
         if (event.key === 'ArrowRight') { event.preventDefault(); next(); return }
         if (event.key === 'a' || event.key === 'A') {
           if (pending !== null || value.stale || pendingConfirmations.length > 0) { setShowApprove(true); return }
@@ -2790,7 +3027,7 @@ function checkName(t: ScreenProps['t'], id: string): string {
         ),
       })
     }
-    if (iterationDraft) {
+    if (retainedDraft !== null) {
       notices.push({
         title: t('mesa.iterationDraft'),
         body: t('mesa.iterationDraftText'),
@@ -2889,12 +3126,25 @@ function checkName(t: ScreenProps['t'], id: string): string {
                 </div>
               </header>
 
+              {live && attempt !== undefined ? (
+                <p className={styles.mesaAttempt} role="status">
+                  <span className={styles.mesaAttemptDot} aria-hidden="true" />
+                  {remaining === null
+                    ? t('mesa.iteration.live')
+                    : `${t('mesa.iteration.live')} · ${t('mesa.iteration.remaining')} ${String(remaining)} ${t('mesa.iteration.minutes')}`}
+                </p>
+              ) : null}
+
               {noticeBlock}
 
               <section className={styles.mesaDraftZone}>
                 <div className={styles.mesaZoneHead}>
                   <h3>{t('mesa.detail.draft')}</h3>
-                  {value.editDraft !== null && !foreignDraft ? <span className={styles.mesaHintLine} role="status">{t('mesa.draftSaved')}</span> : null}
+                  {live
+                    ? <span className={styles.mesaHintLine}>{t('mesa.iteration.draftHint')}</span>
+                    : value.editDraft !== null && !foreignDraft
+                      ? <span className={styles.mesaHintLine} role="status">{t('mesa.draftSaved')}</span>
+                      : null}
                 </div>
                 {restricted
                   ? <StateBlock kind="empty" title={t('mesa.restricted')} text={t('mesa.restrictedText')} />
@@ -2903,12 +3153,34 @@ function checkName(t: ScreenProps['t'], id: string): string {
                       ref={editRef}
                       className={styles.mesaDraft}
                       aria-label={t('mesa.detail.draft')}
-                      value={draft ?? ''}
-                      disabled={!editable}
-                      onChange={event => setDraft(event.target.value)}
+                      value={(live ? iterationDraft ?? attempt?.draft?.summary ?? value.summary : draft) ?? ''}
+                      disabled={!live && !editable}
+                      onChange={(event) => {
+                        if (live) setIterationDraft(event.target.value)
+                        else setDraft(event.target.value)
+                      }}
                     />
                   )}
               </section>
+
+              {differences.length === 0 ? null : (
+                <section className={styles.mesaDiff} aria-label={t('mesa.iteration.diffTitle')}>
+                  <h3>{t('mesa.iteration.diffTitle')}</h3>
+                  <p className={styles.mesaHintLine}>{t('mesa.iteration.diffText')}</p>
+                  <dl className={styles.mesaDiffList}>
+                    {differences.map(difference => (
+                      <div key={difference.field}>
+                        <dt>{difference.field}</dt>
+                        <dd>
+                          <span className={styles.mesaDiffOld}>{difference.currentValue}</span>
+                          <span aria-hidden="true">→</span>
+                          <span className={styles.mesaDiffNew}>{difference.draftValue}</span>
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              )}
 
               <section className={styles.mesaChecksZone}>
                 <h3>{t('mesa.detail.checks')}</h3>
@@ -2954,11 +3226,71 @@ function checkName(t: ScreenProps['t'], id: string): string {
 
               <footer className={styles.mesaActionBar}>
                 <div className={styles.mesaActions}>
-                  <button ref={approveButtonRef} className={styles.primary} type="button" disabled={!editable || pending !== null || value.stale || value.severity === null || missingChecks.length > 0 || blockingFail !== undefined} onClick={() => setShowApprove(true)}>{t('action.approve')}</button>
-                  <button className={styles.secondary} type="button" disabled={!editable || draft === null || draft === value.summary} onClick={save}>{t('action.save')}</button>
-                  <button className={styles.secondary} type="button" disabled={!editable} onClick={iterate}>{t('mesa.iterate')}</button>
-                  <button className={styles.ghost} type="button" onClick={next}>{t('mesa.skip')}</button>
-                  <button className={styles.danger} type="button" disabled={!editable || pending !== null} onClick={() => setShowDiscard(true)}>{t('action.discard')}</button>
+                  {live ? (
+                    <>
+                      <button
+                        className={styles.primary}
+                        type="button"
+                        onClick={() => { setExitMode('apply'); setCandidateChoice(null) }}
+                      >
+                        {t('mesa.iteration.apply')}
+                      </button>
+                      <button
+                        className={styles.danger}
+                        type="button"
+                        onClick={() => { setExitMode('discard'); setCandidateChoice(null) }}
+                      >
+                        {t('mesa.iteration.discardChanges')}
+                      </button>
+                      <button
+                        className={styles.secondary}
+                        type="button"
+                        onClick={() => leaveIteration('guardar-y-salir')}
+                      >
+                        {t('mesa.iteration.saveExit')}
+                      </button>
+                      <button
+                        className={styles.ghost}
+                        type="button"
+                        onClick={() => leaveIteration('llevar-a-spaceloom', () => {
+                          if (value.spaceId !== null) goToWorkspace(value.spaceId)
+                        })}
+                      >
+                        {t('mesa.iteration.toSpaceloom')}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        ref={approveButtonRef}
+                        className={styles.primary}
+                        type="button"
+                        disabled={!editable || pending !== null || value.stale || value.severity === null
+                          || missingChecks.length > 0 || blockingFail !== undefined}
+                        onClick={() => setShowApprove(true)}
+                      >
+                        {t('action.approve')}
+                      </button>
+                      <button
+                        className={styles.secondary}
+                        type="button"
+                        disabled={!editable || draft === null || draft === value.summary}
+                        onClick={save}
+                      >
+                        {t('action.save')}
+                      </button>
+                      <button className={styles.secondary} type="button" disabled={!editable} onClick={iterate}>{t('mesa.iterate')}</button>
+                      <button className={styles.ghost} type="button" onClick={next}>{t('mesa.skip')}</button>
+                      <button
+                        className={styles.danger}
+                        type="button"
+                        disabled={!editable || pending !== null}
+                        onClick={() => setShowDiscard(true)}
+                      >
+                        {t('action.discard')}
+                      </button>
+                    </>
+                  )}
                 </div>
                 <details className={styles.mesaCollapse}>
                   <summary>{t('mesa.shortcutsTitle')}</summary>
@@ -2975,16 +3307,7 @@ function checkName(t: ScreenProps['t'], id: string): string {
                   aria-labelledby="mesa-approve-title"
                   tabIndex={-1}
                   ref={approvePanelRef}
-                  onKeyDown={(event) => {
-                    // The dialog is modal: Tab cycles inside it until it closes.
-                    if (event.key !== 'Tab') return
-                    const focusables = event.currentTarget.querySelectorAll<HTMLElement>('button, input, select, textarea')
-                    if (focusables.length === 0) return
-                    const first = focusables[0] as HTMLElement
-                    const last = focusables[focusables.length - 1] as HTMLElement
-                    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-                    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-                  }}
+                  onKeyDown={trapDialogTab}
                 >
                   <strong id="mesa-approve-title">{t('mesa.confirmApprove')}</strong>
                   <span>{t('mesa.approvePanel')}</span>
@@ -3028,6 +3351,78 @@ function checkName(t: ScreenProps['t'], id: string): string {
                   </span>
                 </section>
               ) : null}
+
+              {exitMode === null ? null : (
+                <section
+                  className={`${styles.mesaNotice} ${styles.mesaDialog}`}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="mesa-iteration-exit"
+                  tabIndex={-1}
+                  onKeyDown={trapDialogTab}
+                >
+                  <strong id="mesa-iteration-exit">
+                    {t(exitMode === 'apply' ? 'mesa.iteration.applyTitle' : 'mesa.iteration.discardTitle')}
+                  </strong>
+                  <span>{t(exitMode === 'apply' ? 'mesa.iteration.applyText' : 'mesa.iteration.discardText')}</span>
+                  {exitMode === 'apply' ? (
+                    <Field label={t('mesa.iteration.scope')}>
+                      <select
+                        value={scope}
+                        aria-label={t('mesa.iteration.scope')}
+                        onChange={(event) => { setScope(event.target.value as FaberLoomBoardCorrectionScope) }}
+                      >
+                        {SCOPES.map(option => (
+                          <option key={option} value={option}>
+                            {t(`mesa.iteration.scope.${option}` as FaberloomKey)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ) : null}
+                  {attempt?.candidatePending === true && pending !== null ? (
+                    <fieldset className={styles.mesaConfirmations}>
+                      <legend>{t('mesa.iteration.candidateAsk')}</legend>
+                      <span className={styles.tools}>
+                        <button
+                          className={candidateChoice === 'adopt' ? styles.primary : styles.secondary}
+                          type="button"
+                          aria-pressed={candidateChoice === 'adopt'}
+                          onClick={() => setCandidateChoice('adopt')}
+                        >
+                          {t('mesa.adopt')}
+                        </button>
+                        <button
+                          className={candidateChoice === 'keep' ? styles.primary : styles.secondary}
+                          type="button"
+                          aria-pressed={candidateChoice === 'keep'}
+                          onClick={() => setCandidateChoice('keep')}
+                        >
+                          {t('mesa.keep')}
+                        </button>
+                      </span>
+                    </fieldset>
+                  ) : null}
+                  <span className={styles.tools}>
+                    <button
+                      className={exitMode === 'apply' ? styles.primary : styles.danger}
+                      type="button"
+                      disabled={candidateBlocked}
+                      onClick={exitMode === 'apply' ? applyIteration : discardIteration}
+                    >
+                      {t(exitMode === 'apply' ? 'mesa.iteration.apply' : 'mesa.iteration.discardChanges')}
+                    </button>
+                    {exitMode === 'apply'
+                      ? (
+                        <button className={styles.ghost} type="button" onClick={() => leaveIteration('volver-sin-resolver')}>
+                          {t('mesa.iteration.exitUnresolved')}
+                        </button>
+                      )
+                      : null}
+                    <button className={styles.ghost} type="button" onClick={() => setExitMode(null)}>{t('action.cancel')}</button>
+                  </span>
+                </section>
+              )}
             </article>
           )
 

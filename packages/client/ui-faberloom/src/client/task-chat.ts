@@ -6,6 +6,7 @@
  * product copy, so it is authored here rather than in the UI dictionary.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { FaberLoomBoardIterationContext } from '@deepseek-ai/dsh-faberloom-view/types'
 // Type-only: pulls ctx.sessions (create / binding / open).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls ctx.layout.selectPanel.
@@ -18,7 +19,7 @@ export interface TaskChatBound {
 
 /** One work-bench task the chat should be seeded with. */
 export interface TaskChatInput {
-  /** Task source: `board`, `draft`, `inbox`, or `mwt`. */
+  /** Task source: `board`, `iteration`, `draft`, `inbox`, or `mwt`. */
   readonly kind: string
   /** Display title (the task's or email's subject). */
   readonly title: string
@@ -26,6 +27,8 @@ export interface TaskChatInput {
   readonly detail: string
   /** FabreLoom agent the owner assigned to the task, when they picked one. */
   readonly agentName?: string | null
+  /** The pinned iteration context the host filtered for this actor (§8.5). */
+  readonly iteration?: FaberLoomBoardIterationContext
 }
 
 /** The first thing every task chat must do: name the task before acting. */
@@ -46,6 +49,23 @@ function promptFor(input: TaskChatInput): string {
 
 /** Build the source-specific body of the opening prompt. */
 function taskBody(input: TaskChatInput): string {
+  if (input.kind === 'iteration' && input.iteration !== undefined) {
+    const pinned = input.iteration
+    return [
+      'Estoy iterando un ítem del banco de trabajo (Work bench) desde la Mesa.',
+      '',
+      `Ítem: ${pinned.title}`,
+      `Cuenta: ${pinned.accountRef ?? 'sin cuenta'}`,
+      `Espacio: ${pinned.spaceTitle ?? 'sin espacio'}`,
+      `Versión: v${String(pinned.version)}`,
+      `Resumen vigente: ${pinned.summary}`,
+      ...pinned.draftSummary === null ? [] : ['', `Trabajo sin terminar: ${pinned.draftSummary}`],
+      '',
+      'El ítem queda fijado: partimos de esa cuenta, ese espacio y esa versión, '
+        + 'y no inventamos datos que no estén en el contexto cargado.',
+      'Propón el cambio campo por campo; cada respuesta que cambie el borrador se muestra como diff y las verificaciones se recalculan.',
+    ].join('\n')
+  }
   if (input.kind === 'draft') {
     return [
       'Estoy revisando un borrador de correo en el banco de trabajo (Work bench).',

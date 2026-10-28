@@ -24,7 +24,9 @@ import type {} from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
-import type { FaberLoomBoardItem, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
+import type {
+  BoardIterationDraft, BoardIterationStatus, FaberLoomBoardItem, FaberLoomBoardItemId,
+} from '@deepseek-ai/dsh-faberloom-board'
 import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
@@ -62,6 +64,10 @@ import type {
   FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
   FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
   FaberLoomBoardSeverity, FaberLoomBoardEventRow, FaberLoomBoardDraftInput, FaberLoomBoardDraftRow,
+  FaberLoomBoardIteration, FaberLoomBoardIterationApplyInput, FaberLoomBoardIterationCancelInput,
+  FaberLoomBoardIterationContext, FaberLoomBoardIterationDifference, FaberLoomBoardIterationDraft,
+  FaberLoomBoardIterationDraftRead, FaberLoomBoardIterationDraftRow,
+  FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationResume, FaberLoomBoardIterationSaveInput,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
@@ -784,6 +790,88 @@ function mcpRegistryInput(input: FaberLoomMcpServerInput): McpServerInput {
     transport: { transport: 'streamable-http', url: input.url },
     ...input.headers === undefined ? {} : { headers: input.headers },
     ...input.enabled === undefined ? {} : { enabled: input.enabled },
+  }
+}
+
+/**
+ * One draft value as the difference view shows it. A string stays literal so a
+ * field reads as its own text; everything else is JSON, which is the only
+ * stable rendering for a number, a list, or an object the panel does not own.
+ * @param value - the field value the draft or the current version holds.
+ * @returns the display text.
+ */
+function iterationDisplayValue(value: unknown): string {
+  if (value === undefined) return ''
+  if (typeof value === 'string') return value
+  const json = JSON.stringify(value)
+  return json === undefined ? String(value) : json
+}
+
+/**
+ * Project one stored draft for the panel, dropping the artifact content the
+ * panel never edits.
+ * @param draft - the draft the board returned.
+ * @returns the projected draft.
+ */
+function iterationDraftOf(draft: BoardIterationDraft): FaberLoomBoardIterationDraft {
+  return {
+    baseVersion: draft.baseVersion,
+    summary: draft.summary,
+    evidence: [...draft.evidence],
+    outdated: draft.outdated,
+    archived: draft.archived,
+    updatedAt: draft.updatedAt,
+  }
+}
+
+/**
+ * Fields where a retained draft and the current content disagree (W-68). The
+ * view compares the draft the board stored with the item content it already
+ * read, so the panel receives a finished comparison and never compares
+ * versions itself.
+ * @param draft - the retained draft.
+ * @param current - content of the current revision.
+ * @returns one entry per differing top-level key, sorted by field.
+ */
+function iterationDifferences(
+  draft: BoardIterationDraft,
+  current: Readonly<Record<string, unknown>>,
+): FaberLoomBoardIterationDifference[] {
+  const draftContent = draft.content ?? {}
+  const fields = [...new Set([...Object.keys(draftContent), ...Object.keys(current)])].sort()
+  const differences: FaberLoomBoardIterationDifference[] = []
+  for (const field of fields) {
+    const draftValue = draftContent[field]
+    const currentValue = current[field]
+    if (JSON.stringify(draftValue) === JSON.stringify(currentValue)) continue
+    differences.push({
+      field,
+      draftValue: iterationDisplayValue(draftValue),
+      currentValue: iterationDisplayValue(currentValue),
+    })
+  }
+  return differences
+}
+
+/**
+ * Project one attempt for the panel.
+ * @param status - the attempt state the board returned.
+ * @returns the projected attempt.
+ */
+function iterationOf(status: BoardIterationStatus): FaberLoomBoardIteration {
+  return {
+    phase: status.phase,
+    iterationId: status.iterationId,
+    generation: status.generation,
+    baseVersion: status.baseVersion,
+    lockUntil: status.lockUntil,
+    renewalSeconds: status.renewalSeconds,
+    rounds: status.rounds,
+    roundLimit: status.roundLimit,
+    suggestRewrite: status.suggestRewrite,
+    draftOutdated: status.draftOutdated,
+    candidatePending: status.candidatePending,
+    draft: status.draft === null ? null : iterationDraftOf(status.draft),
   }
 }
 
@@ -6370,6 +6458,211 @@ export class FaberLoomViewService extends TypertRemoteService {
   async boardEvents(id: string): Promise<readonly FaberLoomBoardEventRow[]> {
     const events = await this.ctx.faberloomBoard.events(this.actor(), id as FaberLoomBoardItemId)
     return events.map(event => ({ command: event.command, at: event.at, reason: event.reason }))
+  }
+
+  /**
+   * Read one item's iteration attempt (§9.7.1). The board applies the owner and
+   * company rule before answering, so the panel never re-derives who may see
+   * the attempt (W-31).
+   * @param id - board item id.
+   * @returns the attempt, or undefined when the reader holds no item with that id.
+   */
+  @Remote('boardIteration')
+  async boardIteration(id: string): Promise<FaberLoomBoardIteration | undefined> {
+    const actor = this.actor()
+    const item = (await this.ctx.faberloomBoard.list(actor)).find(entry => entry.id === id)
+    if (item === undefined) return undefined
+    return iterationOf(await this.ctx.faberloomBoard.iterationStatus(actor, id as FaberLoomBoardItemId))
+  }
+
+  /**
+   * Read the pinned context an iteration chat starts from (§8.5, §9.7). It is
+   * minimised to the item: the board filters the item by owner and company, the
+   * spaces service filters the title, and no account history or space memory
+   * travels with it.
+   * @param id - board item id.
+   * @returns the context, or undefined when the reader holds no item with that id.
+   */
+  @Remote('boardIterationContext')
+  async boardIterationContext(id: string): Promise<FaberLoomBoardIterationContext | undefined> {
+    const actor = this.actor()
+    const item = (await this.ctx.faberloomBoard.list(actor)).find(entry => entry.id === id)
+    if (item === undefined) return undefined
+    const revision = item.revisions[item.revisions.length - 1]
+    const draft = await this.ctx.faberloomBoard.getIterationDraft(actor, item.id)
+    let spaceTitle: string | null = null
+    if (item.spaceId !== null) {
+      // A space the actor may not read contributes no title; the pinned context
+      // carries only what the reader is allowed to know (§8.5).
+      const space = await this.ctx.faberloomSpaces.get(actor, item.spaceId as FaberLoomSpaceId).catch(() => undefined)
+      spaceTitle = space?.title ?? null
+    }
+    return {
+      itemId: item.id,
+      title: item.title,
+      accountRef: item.accountRef,
+      spaceId: item.spaceId,
+      spaceTitle,
+      version: item.version,
+      summary: revision?.summary ?? '',
+      draftSummary: draft === undefined ? null : draft.summary,
+      rounds: item.iterationRoundCount,
+    }
+  }
+
+  /**
+   * Start an iteration attempt over the version the caller saw. Starting never
+   * changes the artifact version (W-11).
+   * @param id - board item id.
+   * @param baseVersion - artifact version the panel shows.
+   * @param actorSession - tab opening the attempt, so two tabs are two attempts.
+   * @returns the attempt after the commit.
+   */
+  @Remote('boardIterationStart')
+  async boardIterationStart(
+    id: string,
+    baseVersion: number,
+    actorSession: string,
+  ): Promise<FaberLoomBoardIteration> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const result = await this.ctx.faberloomBoard.iterate(this.actor(), id as FaberLoomBoardItemId, {
+      baseVersion,
+      actorSession,
+    })
+    return iterationOf(result.status)
+  }
+
+  /**
+   * Store one write of the attempt's work as its working draft. A write for an
+   * attempt that already ended is archived and the item is left untouched
+   * (W-57), which is what `linked: false` tells the panel.
+   * @param id - board item id.
+   * @param input - attempt, base version, and the draft summary.
+   * @returns the stored draft and whether the item still links it.
+   */
+  @Remote('boardIterationSaveDraft')
+  async boardIterationSaveDraft(
+    id: string,
+    input: FaberLoomBoardIterationSaveInput,
+  ): Promise<FaberLoomBoardIterationDraftRow> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const outcome = await this.ctx.faberloomBoard.saveIterationDraft(this.actor(), id as FaberLoomBoardItemId, {
+      iterationId: input.iterationId,
+      generation: input.generation,
+      baseVersion: input.baseVersion,
+      summary: input.summary,
+    })
+    return { summary: outcome.draft.summary, baseVersion: outcome.draft.baseVersion, linked: outcome.linked }
+  }
+
+  /**
+   * Apply the live attempt with the scope its correction teaches, writing one
+   * new version and releasing the lock (W-34, W-40).
+   * @param id - board item id.
+   * @param input - attempt, base version, scope, and the candidate choice when one is pending.
+   * @returns the attempt after the commit.
+   */
+  @Remote('boardIterationApply')
+  async boardIterationApply(
+    id: string,
+    input: FaberLoomBoardIterationApplyInput,
+  ): Promise<FaberLoomBoardIteration> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const result = await this.ctx.faberloomBoard.applyIteration(this.actor(), id as FaberLoomBoardItemId, {
+      iterationId: input.iterationId,
+      generation: input.generation,
+      baseVersion: input.baseVersion,
+      scope: input.scope,
+      ...input.candidate === undefined ? {} : { candidate: input.candidate },
+    })
+    return iterationOf(result.status)
+  }
+
+  /**
+   * Save and exit, carry to SpaceLoom, or return without resolving: the attempt
+   * releases the lock and keeps its draft (W-67, W-97).
+   * @param id - board item id.
+   * @param input - attempt and the exit the user chose.
+   * @returns the attempt after the commit.
+   */
+  @Remote('boardIterationPause')
+  async boardIterationPause(
+    id: string,
+    input: FaberLoomBoardIterationPauseInput,
+  ): Promise<FaberLoomBoardIteration> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const result = await this.ctx.faberloomBoard.pauseIteration(this.actor(), id as FaberLoomBoardItemId, {
+      iterationId: input.iterationId,
+      generation: input.generation,
+      reason: input.reason,
+    })
+    return iterationOf(result.status)
+  }
+
+  /**
+   * Discard the attempt's work and release the lock. The version does not
+   * change except through an explicit candidate adoption (W-41).
+   * @param id - board item id.
+   * @param input - attempt and the candidate choice when one is pending.
+   * @returns the attempt after the commit.
+   */
+  @Remote('boardIterationCancel')
+  async boardIterationCancel(
+    id: string,
+    input: FaberLoomBoardIterationCancelInput,
+  ): Promise<FaberLoomBoardIteration> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const result = await this.ctx.faberloomBoard.cancelIteration(this.actor(), id as FaberLoomBoardItemId, {
+      iterationId: input.iterationId,
+      generation: input.generation,
+      ...input.candidate === undefined ? {} : { candidate: input.candidate },
+    })
+    return iterationOf(result.status)
+  }
+
+  /**
+   * Take a new attempt over the retained draft. A draft written against an
+   * older version is returned with its differences instead of overwriting the
+   * newer content (W-68).
+   * @param id - board item id.
+   * @param baseVersion - base version of the draft the caller saw.
+   * @returns the new attempt, or the stale draft's differences.
+   */
+  @Remote('boardIterationResume')
+  async boardIterationResume(id: string, baseVersion: number): Promise<FaberLoomBoardIterationResume> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const board = this.ctx.faberloomBoard
+    const result = await board.resumeIteration(this.actor(), id as FaberLoomBoardItemId, { baseVersion })
+    const iteration = iterationOf(await board.iterationStatus(this.actor(), id as FaberLoomBoardItemId))
+    if (result.status === 'started') return { status: 'started', iteration, differences: [] }
+    return {
+      status: 'outdated',
+      iteration,
+      differences: result.differences.map(difference => ({
+        field: difference.field,
+        draftValue: iterationDisplayValue(difference.draftValue),
+        currentValue: iterationDisplayValue(difference.currentValue),
+      })),
+    }
+  }
+
+  /**
+   * Read the item's retained draft and, when it was written against an older
+   * version, the fields where it disagrees. Reading never changes the version.
+   * @param id - board item id.
+   * @param iterationId - attempt to read; omitted reads the draft the item links.
+   * @returns the projected draft and its differences.
+   */
+  @Remote('boardIterationDraft')
+  async boardIterationDraft(id: string, iterationId?: string): Promise<FaberLoomBoardIterationDraftRead> {
+    const actor = this.actor()
+    const draft = await this.ctx.faberloomBoard.getIterationDraft(actor, id as FaberLoomBoardItemId, iterationId)
+    if (draft === undefined) return { draft: null, differences: [] }
+    const item = await this.ctx.faberloomBoard.get(actor, id as FaberLoomBoardItemId)
+    return {
+      draft: iterationDraftOf(draft),
+      differences: draft.baseVersion === item.version ? [] : iterationDifferences(draft, item.content),
+    }
   }
 
   /**

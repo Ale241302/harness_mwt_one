@@ -2,7 +2,7 @@
 /** FaberLoom surface: identity tokens, brand name, real workspace reads, and panel switching. */
 import type { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
@@ -52,6 +52,21 @@ const DETAIL = {
   pendingCandidate: null, spaceId: null, iterationId: null, iterationDraftKey: null, editDraft: null,
   events: [], effects: [], routineId: null,
   checks: [], missingChecks: [], checksError: null, fieldOrigins: [],
+}
+
+const IDLE_ATTEMPT = {
+  phase: 'idle', iterationId: null, generation: 0, baseVersion: null, lockUntil: null,
+  renewalSeconds: 30, rounds: 0, roundLimit: 5, suggestRewrite: false,
+  draftOutdated: false, candidatePending: false, draft: null,
+}
+
+const LIVE_ATTEMPT = {
+  ...IDLE_ATTEMPT, phase: 'active', iterationId: 'iter-1', generation: 4, baseVersion: 1,
+  lockUntil: new Date(Date.now() + 9 * 60_000).toISOString(),
+  draft: {
+    baseVersion: 1, summary: 'Borrador', evidence: [], outdated: false, archived: false,
+    updatedAt: '2026-10-28T10:00:00Z',
+  },
 }
 
 const runtimes = new Set<SlotTestRuntime>()
@@ -127,6 +142,21 @@ async function bench(
   const boardTakeDraft = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { revision: 2, writerSession: 'tab', changes: {} } }))
   const boardDiscardDraft = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
   const boardRevalidate = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardIteration = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const boardIterationContext = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const boardIterationStart = vi.fn(async (): Promise<unknown> => ({ ok: true, value: LIVE_ATTEMPT }))
+  const boardIterationSaveDraft = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { summary: 'Borrador', baseVersion: 1, linked: true },
+  }))
+  const boardIterationApply = vi.fn(async (): Promise<unknown> => ({ ok: true, value: IDLE_ATTEMPT }))
+  const boardIterationPause = vi.fn(async (): Promise<unknown> => ({ ok: true, value: IDLE_ATTEMPT }))
+  const boardIterationCancel = vi.fn(async (): Promise<unknown> => ({ ok: true, value: IDLE_ATTEMPT }))
+  const boardIterationResume = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { status: 'started', iteration: LIVE_ATTEMPT, differences: [] },
+  }))
+  const boardIterationDraft = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { draft: null, differences: [] },
+  }))
   const setBoardRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
   const saveEmailDraft = vi.fn(async () => ({
@@ -225,6 +255,8 @@ async function bench(
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, setBoardRoutine, prepareHarness,
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
     boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
+    boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
+    boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationDraft,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
@@ -322,6 +354,9 @@ async function bench(
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
     deleteBoardItem, boardDetail, boardSaveEdits, boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
+    boardSaveDraft,
+    boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
+    boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationDraft,
     emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
@@ -580,12 +615,196 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(boardTakeDraft).toHaveBeenCalledWith('item-1', expect.stringMatching(/^tab-/)) })
   })
 
-  it('announces the iteration draft and opens the iteration', async () => {
-    const { runtime, view, boardDetail } = await bench()
+  it('announces the retained draft and offers to resume it', async () => {
+    const { runtime, view, boardDetail, boardIteration } = await bench()
     boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, iterationDraftKey: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: { ...IDLE_ATTEMPT, draft: LIVE_ATTEMPT.draft } } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     expect(await view.findByText(faberloomEn['mesa.iterationDraft'])).toBeTruthy()
     expect(view.getByRole('button', { name: faberloomEn['mesa.iterationOpen'] })).toBeTruthy()
+  })
+
+  it('starts the iteration over the shown version and pins the chat context', async () => {
+    const { runtime, view, boardDetail, boardIterationStart, boardIterationContext } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardIterationContext.mockResolvedValue({
+      ok: true,
+      value: {
+        itemId: 'item-1', title: 'Preparar proforma', accountRef: 'eguisa', spaceId: null, spaceTitle: null,
+        version: 1, summary: 'Borrador', draftSummary: null, rounds: 0,
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iterate'] }))
+    await waitFor(() => {
+      expect(boardIterationStart).toHaveBeenCalledWith('item-1', 1, expect.stringMatching(/^tab-/))
+    })
+    await waitFor(() => { expect(boardIterationContext).toHaveBeenCalledWith('item-1') })
+  })
+
+  it('edits the iteration draft and applies it with the default scope', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationApply } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(new RegExp(faberloomEn['mesa.iteration.live']))).toBeTruthy()
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('Borrador')
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iteration.apply'] }))
+    const dialog = view.getByRole('dialog')
+    expect((within(dialog).getByRole('combobox') as HTMLSelectElement).value).toBe('puntual')
+    fireEvent.click(within(dialog).getAllByRole('button', { name: faberloomEn['mesa.iteration.apply'] })[0] as HTMLElement)
+    await waitFor(() => {
+      expect(boardIterationApply).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1',
+        generation: 4,
+        baseVersion: 1,
+        scope: 'puntual',
+      })
+    })
+  })
+
+  it('applies with the scope the selector names', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationApply } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.apply'] }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'cuenta' } })
+    fireEvent.click(within(dialog).getAllByRole('button', { name: faberloomEn['mesa.iteration.apply'] })[0] as HTMLElement)
+    await waitFor(() => {
+      expect(boardIterationApply).toHaveBeenCalledWith('item-1', expect.objectContaining({ scope: 'cuenta' }))
+    })
+  })
+
+  it('asks which version wins before applying over a pending candidate', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationApply } = await bench()
+    const candidate = { id: 'c1', hash: 'h1', summary: 'Versión nueva', at: '2026-10-28T09:00:00Z' }
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1', pendingCandidate: candidate },
+    } as never)
+    boardIteration.mockResolvedValue({
+      ok: true,
+      value: { ...LIVE_ATTEMPT, candidatePending: true },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.apply'] }))
+    const dialog = view.getByRole('dialog')
+    const confirm = within(dialog).getAllByRole('button', { name: faberloomEn['mesa.iteration.apply'] })[0] as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['mesa.adopt'] }))
+    expect(confirm.disabled).toBe(false)
+    fireEvent.click(confirm)
+    await waitFor(() => {
+      expect(boardIterationApply).toHaveBeenCalledWith('item-1', expect.objectContaining({
+        scope: 'puntual',
+        candidate: { id: 'c1', hash: 'h1', decision: 'adopt' },
+      }))
+    })
+  })
+
+  it('keeps the draft when saving and exiting', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationPause, boardIterationCancel, boardIterationApply } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.saveExit'] }))
+    await waitFor(() => {
+      expect(boardIterationPause).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, reason: 'guardar-y-salir',
+      })
+    })
+    expect(boardIterationCancel).not.toHaveBeenCalled()
+    expect(boardIterationApply).not.toHaveBeenCalled()
+  })
+
+  it('discards the changes without applying them', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationCancel, boardIterationApply, boardIterationPause } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.discardChanges'] }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['mesa.iteration.discardChanges'] }))
+    await waitFor(() => {
+      expect(boardIterationCancel).toHaveBeenCalledWith('item-1', { iterationId: 'iter-1', generation: 4 })
+    })
+    expect(boardIterationApply).not.toHaveBeenCalled()
+    expect(boardIterationPause).not.toHaveBeenCalled()
+  })
+
+  it('shows the differences of a stale draft and never overwrites', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationDraft, boardIterationResume, boardSaveEdits } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, version: 2, summary: 'Versión nueva', iterationDraftKey: 'iter-1' },
+    } as never)
+    boardIteration.mockResolvedValue({
+      ok: true,
+      value: { ...IDLE_ATTEMPT, baseVersion: 1, draft: { ...LIVE_ATTEMPT.draft, outdated: true }, draftOutdated: true },
+    } as never)
+    boardIterationDraft.mockResolvedValue({
+      ok: true,
+      value: {
+        draft: { ...LIVE_ATTEMPT.draft, baseVersion: 1 },
+        differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.diffTitle'])).toBeTruthy()
+    expect(view.getByText('1200')).toBeTruthy()
+    expect(view.getByText('1000')).toBeTruthy()
+    expect(boardSaveEdits).not.toHaveBeenCalled()
+    expect(boardIterationResume).not.toHaveBeenCalled()
+  })
+
+  it('keeps the Ctrl shortcuts inert inside the draft field', async () => {
+    const { runtime, view, boardDetail, boardSaveEdits, boardIteration } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: undefined } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    const editor = await view.findByRole('textbox')
+    fireEvent.change(editor, { target: { value: 'Corregido' } })
+    fireEvent.keyDown(editor, { key: 's', ctrlKey: true })
+    fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true })
+    expect(boardSaveEdits).not.toHaveBeenCalled()
+    expect(await view.findByText('③ Draft')).toBeTruthy()
+  })
+
+  it('stores the draft area on the attempt instead of the item summary', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationSaveDraft, boardSaveDraft } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    const editor = await view.findByRole('textbox')
+    fireEvent.change(editor, { target: { value: 'Precio 1200' } })
+    await waitFor(() => {
+      expect(boardIterationSaveDraft).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, baseVersion: 1, summary: 'Precio 1200',
+      })
+    }, { timeout: 3_000 })
+    expect(boardSaveDraft).not.toHaveBeenCalled()
+  })
+
+  it('never renders a late answer for a dead attempt as the item data', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationSaveDraft, boardSaveEdits } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration
+      .mockResolvedValueOnce({ ok: true, value: LIVE_ATTEMPT } as never)
+      .mockResolvedValue({ ok: true, value: IDLE_ATTEMPT } as never)
+    boardIterationSaveDraft.mockResolvedValue({
+      ok: true, value: { summary: 'Tarde', baseVersion: 1, linked: false },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    const editor = await view.findByRole('textbox')
+    fireEvent.change(editor, { target: { value: 'Tarde' } })
+    await waitFor(() => { expect(boardIterationSaveDraft).toHaveBeenCalled() }, { timeout: 3_000 })
+    await waitFor(() => { expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('Borrador') })
+    expect(boardSaveEdits).not.toHaveBeenCalled()
+    expect(view.getByRole('button', { name: faberloomEn['mesa.iterate'] })).toBeTruthy()
   })
 
   it('saves with Ctrl+S, toggles Lista with V, and refuses R when not stale', async () => {
