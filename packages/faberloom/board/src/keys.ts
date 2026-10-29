@@ -62,10 +62,12 @@ export function sourceRefOf(item: {
   readonly sourceRef?: string | null
   readonly businessKey?: string | null
   readonly evidence?: readonly string[]
+  readonly revisions?: readonly { readonly evidence: readonly string[] }[]
 }): string {
   const recorded = item.sourceRef?.trim() ?? ''
   if (recorded.length > 0) return recorded
   const producer = item.businessKey?.trim() ?? ''
   if (producer.length > 0) return producer
-  return item.evidence?.[0]?.trim() ?? ''
+  const revision = item.revisions?.[item.revisions.length - 1]
+  return item.evidence?.[0]?.trim() ?? revision?.evidence[0]?.trim() ?? ''
 }

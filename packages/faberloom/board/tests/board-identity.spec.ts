@@ -32,6 +32,11 @@ describe('business identity (§2.1)', () => {
     expect(sourceRefOf({ sourceRef: null, businessKey: null, evidence: [] })).toBe('')
     expect(sourceRefOf({ sourceRef: '  ', businessKey: 'OC-7', evidence: ['oc:1'] })).toBe('OC-7')
     expect(sourceRefOf({ sourceRef: null, businessKey: null, evidence: ['oc:9'] })).toBe('oc:9')
+    expect(sourceRefOf({
+      sourceRef: null,
+      businessKey: null,
+      revisions: [{ evidence: ['oc:rev'] }],
+    })).toBe('oc:rev')
   })
 
   it('derives the key on submit and ignores a producer-supplied key as identity', async () => {
