@@ -24,6 +24,8 @@ function harness(options: {
 } = {}) {
   const board = {
     list: vi.fn(async () => []),
+    checkStatus: vi.fn(() => []),
+    runChecks: vi.fn(async () => ({ checks: [], missing: [] })),
     get: vi.fn(async () => ({ id: 'b1', version: 3, artifactHash: 'h1' })),
     create: vi.fn(),
     submitRevision: vi.fn(async () => ({})),

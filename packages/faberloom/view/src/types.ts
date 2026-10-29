@@ -718,6 +718,8 @@ export interface FaberLoomBoardDetail {
   readonly routineId: string | null
   /** Controls executed for this revision, the way zone ④ renders them. */
   readonly checks: readonly FaberLoomBoardCheckRow[]
+  /** Every control this artifact type declares, registered or not. */
+  readonly checksDeclared: readonly string[]
   /** Declared controls with no adapter: approval refuses while any remain. */
   readonly missingChecks: readonly string[]
   /** Why the controls could not run, or null when the report is complete. */

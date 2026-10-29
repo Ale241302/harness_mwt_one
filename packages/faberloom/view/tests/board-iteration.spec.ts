@@ -119,6 +119,8 @@ function harness(options: {
   const records = { iterationStatus: status(), draft: draft() as ReturnType<typeof draft> | undefined }
   const board = {
     list: vi.fn(async () => [item()]),
+    checkStatus: vi.fn(() => []),
+    runChecks: vi.fn(async () => ({ checks: [], missing: [] })),
     get: vi.fn(async () => item()),
     iterationStatus: vi.fn(async () => records.iterationStatus),
     iterate: vi.fn(async () => ({ item: item(), status: records.iterationStatus })),

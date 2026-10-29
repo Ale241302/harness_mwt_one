@@ -96,6 +96,7 @@ function harness(options: { readOnly?: boolean; role?: string; access?: boolean;
     get: vi.fn(async () => item),
     getEditDraft: vi.fn(async () => undefined),
     transferredDrafts: vi.fn(async () => []),
+    checkStatus: vi.fn(() => []),
     runChecks: vi.fn(async () => ({ checks: [], missing: [] })),
     effectStatus: vi.fn(async () => ({
       effectKey: 'eff-1',

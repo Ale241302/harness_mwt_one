@@ -4012,7 +4012,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 {checksError === null ? null : <p className={styles.mesaHintLine}>{`${t('mesa.checks.error')} ${checksError}`}</p>}
                 {missingChecks.length === 0 ? null : <p className={styles.mesaBlocked}>{t('mesa.checks.missing')}</p>}
                 {checks.length === 0 && missingChecks.length === 0 && checksError === null
-                  ? <p className={styles.mesaHintLine}>{t('mesa.noChecks')}</p>
+                  ? <p className={styles.mesaHintLine}>{value.checksDeclared.length === 0 ? t('mesa.checks.notApplicable') : t('mesa.noChecks')}</p>
                   : checks.map(check => (
                     <div className={styles.mesaCheck} data-status={check.status} key={check.id}>
                       <span className={styles.mesaCheckStatus}>{t(checkStatusKey(check.status))}</span>

@@ -6520,6 +6520,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     let checks: readonly FaberLoomBoardCheckRow[] = []
     let missingChecks: readonly string[] = []
     let checksError: string | null = null
+    // Which controls this artifact type declares at all: a task declares none,
+    // and the panel must say that instead of looking like a broken verification.
+    const checksDeclared = this.ctx.faberloomBoard.checkStatus(item.artifactType).map(entry => entry.id)
     try {
       const report = await this.ctx.faberloomBoard.runChecks(this.actor(), item.id)
       checks = report.checks.map(outcome => ({
@@ -6581,6 +6584,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       effects: item.effects.map(effect => ({ ref: effect.ref, detail: effect.detail, at: effect.at })),
       routineId: item.routineId,
       checks,
+      checksDeclared,
       missingChecks,
       checksError,
       fieldOrigins: item.fieldOrigins.map(origin => ({

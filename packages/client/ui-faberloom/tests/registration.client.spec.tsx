@@ -51,7 +51,7 @@ const DETAIL = {
   artifactType: 'proforma', accountRef: 'eguisa', artifactHash: 'h1', runId: 'run-1', supersedesItemId: null,
   pendingCandidate: null, spaceId: null, iterationId: null, iterationDraftKey: null, editDraft: null,
   events: [], effects: [], routineId: null,
-  checks: [], missingChecks: [], checksError: null, fieldOrigins: [], transferredDrafts: [],
+  checks: [], missingChecks: [], checksError: null, fieldOrigins: [], transferredDrafts: [], checksDeclared: [],
 }
 
 const IDLE_ATTEMPT = {
@@ -773,6 +773,17 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(boardAssignWorkspace).toHaveBeenCalledWith('item-1', 'space-1') })
     expect(await view.findByText('Vigente')).toBeTruthy()
     await waitFor(() => { expect(boardDetail).toHaveBeenCalledWith('item-2') })
+  })
+
+  it('says a task carries no verifications instead of looking unverified', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, artifactType: 'tarea', checks: [], checksDeclared: [], missingChecks: [] },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.checks.notApplicable'])).toBeTruthy()
+    expect(view.queryByText(faberloomEn['mesa.checks.missing'])).toBeNull()
   })
 
   it('opens the chat without a space instead of refusing the gesture', async () => {
