@@ -189,6 +189,7 @@ async function effectItem(
   harness: BoardHarness,
   options: {
     readonly businessKey?: string
+    readonly sourceRef?: string
     readonly summary?: string
     readonly evidence?: readonly string[]
     readonly actor?: BoardActor
@@ -200,7 +201,9 @@ async function effectItem(
     summary: options.summary ?? 'Respuesta al cliente con la proforma adjunta',
     evidence: [...(options.evidence ?? ['mail:thread-1'])],
     artifactType: 'proforma',
-    businessKey: options.businessKey ?? 'mail-eguisa-1',
+    ...options.sourceRef === undefined
+      ? { businessKey: options.businessKey ?? 'mail-eguisa-1' }
+      : { sourceRef: options.sourceRef },
   })
   return await harness.board.setSeverity(actor, created.id, 'MEDIUM', 'HUMAN')
 }
@@ -519,7 +522,7 @@ describe('FaberLoomBoard E15 reversal window', () => {
     const harness = await bootBoard({ board: { effectReversalWindowMs: { 'mail.send': 60_000 } } })
     const adapter = mutableAdapter()
     mountAdapter(harness, 'mail.send', adapter.port)
-    const item = await effectItem(harness, { businessKey: 'pf-2520' })
+    const item = await effectItem(harness, { businessKey: 'pf-2520', sourceRef: 'pf-2520' })
     const accepted = await accept(harness.board, item)
     const key = accepted.item.effectKey ?? ''
 
@@ -692,7 +695,7 @@ describe('FaberLoomBoard E15 reconciliation and administrative close', () => {
     const adapter = mutableAdapter()
     mountAdapter(harness, 'mail.send', adapter.port)
     adapter.response = { status: 'DESCONOCIDO' }
-    const item = await effectItem(harness, { businessKey: 'mail-eguisa-1' })
+    const item = await effectItem(harness, { businessKey: 'mail-eguisa-1', sourceRef: 'mail-eguisa-1' })
     const accepted = await accept(harness.board, item)
     await harness.board.dispatchEffect(ACTOR_A, accepted.item.effectKey ?? '')
     const unknown = await harness.board.get(ACTOR_A, item.id)
@@ -887,7 +890,7 @@ describe('FaberLoomBoard E15 reconciliation and administrative close', () => {
     const adapter = mutableAdapter()
     mountAdapter(harness, 'mail.send', adapter.port)
     adapter.response = { status: 'DESCONOCIDO' }
-    const item = await effectItem(harness, { businessKey: 'mail-eguisa-1' })
+    const item = await effectItem(harness, { businessKey: 'mail-eguisa-1', sourceRef: 'mail-eguisa-1' })
     const accepted = await accept(harness.board, item)
     await harness.board.dispatchEffect(ACTOR_A, accepted.item.effectKey ?? '')
 
@@ -1028,8 +1031,30 @@ describe('FaberLoomBoard E15 adapter declaration and destination probe', () => {
     })
   })
 
-  it('lists the mounted adapters so an operator sees whether a type can dispatch', async () => {
-    const harness = await bootBoard({ board: { effectActionTypes: ['custom.notify', 'custom.probe'], effectReversalWindowMs: {} } })
+  it('hands the adapter the item owner and tenant it must read the artifact with', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    const seen: BoardEffectDispatch[] = []
+    mountAdapter(harness, 'mail.send', {
+      idempotent: false,
+      async send(dispatch) {
+        seen.push(dispatch)
+        return { status: 'CONFIRMADO', ref: 'ok' }
+      },
+    })
+    const item = await effectItem(harness)
+    const accepted = await accept(harness.board, item)
+    await harness.board.dispatchEffect(ACTOR_A, accepted.item.effectKey ?? '')
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({
+      itemId: item.id,
+      ownerId: ACTOR_A.id,
+      companyId: COMPANY_A,
+      actionType: 'mail.send',
+      attempt: 1,
+    })
+  })
+
+  it('lists the mounted adapters so an operator sees whether a type can dispatch', async () => {    const harness = await bootBoard({ board: { effectActionTypes: ['custom.notify', 'custom.probe'], effectReversalWindowMs: {} } })
     mountAdapter(harness, 'custom.notify', mutableAdapter().port)
     mountAdapter(harness, 'custom.probe', {
       idempotent: true,

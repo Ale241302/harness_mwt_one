@@ -1224,9 +1224,13 @@ export class FaberLoomBoard extends Service {
     accountRef: string | null,
     summary: string,
     contentHash: string,
+    maySendSummary: boolean,
   ): Promise<BoardSeverityDecision> {
     const rules = resolveSeverity({ artifactType, accountRef }, { confidenceThreshold: this.confidenceThreshold })
     if (rules.severity !== null) return rules
+    // A provisional class permits no field to leave (D-05): the port still
+    // receives the type, account, and hash, but an empty summary.
+    const readable = maySendSummary ? summary : ''
     const classifier = this.ctx.get('faberloomBoardClassifier') as BoardClassifierPort | undefined
     const modelVersion = classifier?.modelVersion ?? ''
     const key = [
@@ -1245,12 +1249,14 @@ export class FaberLoomBoard extends Service {
       const timer = setTimeout(() => controller.abort(), this.classifierTimeoutMs)
       try {
         result = await classifier.classifySeverity(
-          { artifactType, accountRef, contentHash, summary },
+          { artifactType, accountRef, contentHash, summary: readable },
           { signal: controller.signal, confidenceThreshold: this.confidenceThreshold },
         )
       } catch (error) {
-        // A port that throws is a timeout: the item still enters (W-37).
-        result = { status: 'invalid', detail: error instanceof Error ? error.message : String(error) }
+        // A port that throws counts as a failure, not as a pass (W-37).
+        result = controller.signal.aborted
+          ? { status: 'timeout' }
+          : { status: 'invalid', detail: error instanceof Error ? error.message : String(error) }
       } finally {
         clearTimeout(timer)
       }
@@ -1271,7 +1277,13 @@ export class FaberLoomBoard extends Service {
       confidence: decision.confidence,
       at: new Date().toISOString(),
     }
-    await table.put(key, entry).catch(() => undefined)
+    // A timeout or a pre-mount answer is not a classification: not caching it
+    // lets the next submit ask again instead of pinning the item to null.
+    if (modelVersion.length > 0 && result?.status !== 'timeout') {
+      await table.put(key, entry).catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: classification cache write failed: ${String(error)}`)
+      })
+    }
     return decision
   }
 
@@ -1321,6 +1333,7 @@ export class FaberLoomBoard extends Service {
         accountRef,
         input.summary,
         artifactHash,
+        classification.permittedFields.includes('summary'),
       )
       : submittedSeverity(input.severity, input.severityConfidence ?? null, this.confidenceThreshold)
     return {
@@ -1404,20 +1417,49 @@ export class FaberLoomBoard extends Service {
     })
     const id = brandString<FaberLoomBoardItemId>(randomUUID())
     requireEvidence(input.evidence)
-    // The business identity is the server's (§2.1): the caller names the source,
-    // never the key it hashes. An item with no source cannot be deduplicated.
-    const sourceRef = sourceRefOf(input)
-    const businessKey = businessKeyOf({
-      companyId,
-      spaceId: input.spaceId ?? null,
-      accountRef: input.accountRef ?? null,
-      sourceRef,
-      artifactType: input.artifactType?.trim() || 'tarea',
+    // A manual item joins the canonical identity only when the caller names a
+    // sourceRef. The deprecated `businessKey` is stored as given and does not
+    // claim the canonical table; a keyed create checks and claims the key.
+    const sourceRef = (input.sourceRef ?? '').trim()
+    const legacyKey = (input.businessKey ?? '').trim()
+    const keyed = sourceRef.length > 0
+    const businessKey = keyed
+      ? businessKeyOf({
+        companyId,
+        spaceId: input.spaceId ?? null,
+        accountRef: input.accountRef ?? null,
+        sourceRef,
+        artifactType: input.artifactType?.trim() || 'tarea',
+      })
+      : legacyKey.length === 0 ? null : legacyKey
+    const record = await this.buildRecord(actor, {
+      ...input,
+      ...sourceRef.length === 0 ? {} : { sourceRef },
+      ...businessKey === null ? {} : { businessKey },
     })
-    const record = await this.buildRecord(actor, { ...input, sourceRef, businessKey })
-    await (await this.items()).put(id, record)
-    await this.claimReferences(companyId, id, { executionId: input.executionId, accountRef: input.accountRef })
-    return toItem(id, record)
+    if (!keyed) {
+      await (await this.items()).put(id, record)
+      await this.claimReferences(companyId, id, { executionId: input.executionId, accountRef: input.accountRef })
+      return toItem(id, record)
+    }
+    const canonicalKey = businessKey as string
+    return await this.serial(companyId, async () => {
+      // The key is unique per tenant: a live item already holding it makes this
+      // a duplicate, so one identity never has two live items (§2.1).
+      const existing = await this.findNonTerminal(companyId, canonicalKey)
+      if (existing !== undefined) {
+        throw new Error('faberloom: DUPLICATE — the business key already owns a non-terminal item')
+      }
+      await this.claimKey(companyId, 'bkey', canonicalKey, id)
+      try {
+        await (await this.items()).put(id, record)
+      } catch (error: unknown) {
+        await this.release(companyId, 'bkey', canonicalKey)
+        throw error
+      }
+      await this.claimReferences(companyId, id, { executionId: input.executionId, accountRef: input.accountRef })
+      return toItem(id, record)
+    })
   }
 
   /**
@@ -1454,7 +1496,13 @@ export class FaberLoomBoard extends Service {
 
     return await this.serial(companyId, async () => {
       const existingId = await this.claimedItem(companyId, 'idem', input.idempotencyKey)
-      if (existingId !== undefined) return toItem(existingId, await this.requireItem(existingId))
+      if (existingId !== undefined) {
+        // An idempotency key is tenant-scoped, so a replay must still prove the
+        // caller may read the item it would return.
+        const existing = await this.requireItem(existingId)
+        await this.authorizeRead(existing, actor)
+        return toItem(existingId, existing)
+      }
 
       const existing = await this.findNonTerminal(companyId, businessKey)
       let supersedes: string | null = null
@@ -1589,7 +1637,9 @@ export class FaberLoomBoard extends Service {
         summary: last?.summary ?? '',
       }, { signal: controller.signal, confidenceThreshold: this.confidenceThreshold })
     } catch (error: unknown) {
-      result = { status: 'invalid', detail: error instanceof Error ? error.message : String(error) }
+      result = controller.signal.aborted
+        ? { status: 'timeout' }
+        : { status: 'invalid', detail: error instanceof Error ? error.message : String(error) }
     } finally {
       clearTimeout(timer)
     }
@@ -1705,7 +1755,7 @@ export class FaberLoomBoard extends Service {
 
   /**
    * Approve a batch under §6.4. Every item is revalidated on the server — state,
-   * row, artifact hash, controls, and signatures — and the answer names what was
+   * row, artifact hash, and controls — and the answer names what was
    * approved and what was refused with its own code. A refusal on one item never
    * rolls back the others.
    *
@@ -1744,7 +1794,7 @@ export class FaberLoomBoard extends Service {
           expectedRowVersion: entry.expectedRowVersion,
           expectedArtifactVersion: entry.expectedArtifactVersion,
           expectedArtifactHash: entry.expectedArtifactHash,
-          ...input.confirmations === undefined ? {} : { confirmations: input.confirmations },
+          ...entry.confirmations === undefined ? {} : { confirmations: entry.confirmations },
         })
         approved.push({ id: entry.id, version: item.approvedRevision ?? item.version })
       } catch (error: unknown) {
@@ -1998,10 +2048,10 @@ export class FaberLoomBoard extends Service {
 
   /**
    * Undo a key migration that wrote canonical keys from a source that was not a
-   * real identity (for example, the first evidence reference). It releases the
-   * claim and returns the row to the keyless legacy state, recording the
-   * rollback. Used once to repair a migration whose strict rule was not in
-   * place; it never touches a row that already had no key.
+   * real identity (for example, the first evidence reference). It only touches a
+   * row whose own audit shows a `rekey` command, releases the claim, and records
+   * the rollback with the key it removed; a row submitted normally is never
+   * touched.
    * @param actor - the identity running the rollback; its company bounds it.
    * @returns how many rows were rolled back.
    */
@@ -2011,13 +2061,16 @@ export class FaberLoomBoard extends Service {
       if (record.companyId !== null && record.companyId !== actor.companyId) continue
       const key = record.businessKey
       if (key === null || !/^[0-9a-f]{64}$/u.test(key)) continue
+      if (!record.events.some(event => event.command === 'rekey')) continue
       const writer: BoardActor = record.companyId === null
         ? { id: record.ownerId }
         : { id: record.ownerId, companyId: record.companyId }
-      await this.release(record.companyId, 'bkey', key)
-      await this.mutate(writer, id, 'rekey.rollback', item => ({
-        ...item, businessKey: null, sourceRef: null,
-      }))
+      await this.serial(record.companyId, async () => {
+        await this.release(record.companyId, 'bkey', key)
+        await this.mutate(writer, id, 'rekey.rollback', item => ({
+          ...item, businessKey: null, sourceRef: null,
+        }), { data: { removedKey: key, sourceRef: record.sourceRef } })
+      })
       rolledBack += 1
     }
     return { rolledBack }
@@ -2027,7 +2080,8 @@ export class FaberLoomBoard extends Service {
    * Restore the items a key migration closed because their derived key
    * collided. A row with no real source reference was collapsed by a key that
    * hashed its first evidence, which is not an identity; this command returns
-   * it to `PENDIENTE_CRITERIO` and records the restoration.
+   * it to `PENDIENTE_CRITERIO`, drops the invented key and source, and records
+   * the restoration.
    * @param actor - the identity running the recovery.
    * @returns how many items were restored.
    */
@@ -2040,9 +2094,16 @@ export class FaberLoomBoard extends Service {
       const writer: BoardActor = record.companyId === null
         ? { id: record.ownerId }
         : { id: record.ownerId, companyId: record.companyId }
-      await this.mutate(writer, id, 'rekey.restore', item => ({
-        ...item, state: 'PENDIENTE_CRITERIO', status: 'waiting_approval',
-      }))
+      await this.serial(record.companyId, async () => {
+        if (record.businessKey !== null) await this.release(record.companyId, 'bkey', record.businessKey)
+        await this.mutate(writer, id, 'rekey.restore', item => ({
+          ...item,
+          state: 'PENDIENTE_CRITERIO',
+          status: 'waiting_approval',
+          businessKey: null,
+          sourceRef: null,
+        }))
+      })
       restored += 1
     }
     return { restored }
@@ -2052,24 +2113,19 @@ export class FaberLoomBoard extends Service {
    * Recompute every item's business key from §2.1. Only a row that names a real
    * source reference is migrated: its producer key or its recorded `sourceRef`.
    * A row with neither has no identity to dedupe by, so it is reported as
-   * skipped instead of being collapsed by its first evidence. A dry run reports
-   * what it would do and writes nothing.
+   * skipped instead of being collapsed by its first evidence. A row of another
+   * company is not read at all. A dry run reports what it would do and writes
+   * nothing.
    * @param actor - the identity running the migration; its company bounds the run.
    * @param options - `dryRun` reports without writing.
    * @returns what changed, what stayed, and what collided.
    */
   async rekeyAll(actor: BoardActor, options: { readonly dryRun?: boolean } = {}): Promise<BoardRekeyReport> {
     const rows = [...(await this.items()).entries()]
+      .filter(([, record]) => record.companyId === null || record.companyId === actor.companyId)
       .sort((left, right) => left[1].updatedAt.localeCompare(right[1].updatedAt) || left[0].localeCompare(right[0]))
     const report = { scanned: rows.length, rekeyed: 0, unchanged: 0, collisions: 0, skipped: 0, entries: [] as BoardRekeyEntry[] }
     for (const [id, record] of rows) {
-      // A row scoped to another company is another tenant's: the migration
-      // reports it as skipped instead of crossing the boundary.
-      if (record.companyId !== null && record.companyId !== actor.companyId) {
-        report.skipped += 1
-        report.entries.push({ id, from: record.businessKey, to: record.businessKey ?? '', sourceRef: '', action: 'skipped' })
-        continue
-      }
       // Only an explicit source migrates; evidence is not an identity.
       const sourceRef = record.sourceRef?.trim() || record.businessKey?.trim() || ''
       const to = sourceRef.length === 0
@@ -2096,10 +2152,17 @@ export class FaberLoomBoard extends Service {
         report.entries.push({ id, from: record.businessKey, to, sourceRef, action: 'rekeyed' })
         continue
       }
-      const outcome = await this.serial(record.companyId, async () => await this.rekeyOne(id, to, sourceRef))
-      report.rekeyed += 1
-      if (outcome === 'collision') report.collisions += 1
-      report.entries.push({ id, from: record.businessKey, to, sourceRef, action: outcome })
+      try {
+        const outcome = await this.serial(record.companyId, async () => await this.rekeyOne(actor, id, to, sourceRef))
+        report.rekeyed += 1
+        if (outcome === 'collision') report.collisions += 1
+        report.entries.push({ id, from: record.businessKey, to, sourceRef, action: outcome })
+      } catch (error: unknown) {
+        // A conflict found after the claim is a skip, not a half-applied run.
+        report.skipped += 1
+        report.entries.push({ id, from: record.businessKey, to, sourceRef, action: 'skipped' })
+        this.ctx.logger.warn(`faberloom: rekey skipped ${id}: ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
     return report
   }
@@ -2107,14 +2170,16 @@ export class FaberLoomBoard extends Service {
   /**
    * Write one canonical key, resolving a §2.3 collision the way a workspace
    * assignment does: a substitutable holder is superseded, a holder inside an
-   * attempt or an execution receives the artifact as a candidate.
-   * @param actor - the owning identity.
+   * attempt or an execution receives the artifact as a candidate. The claim is
+   * taken before the row is rewritten, so a taken key leaves the row untouched.
+   * @param actor - the identity that requested the migration, recorded in the audit.
    * @param id - item being rekeyed.
    * @param to - canonical key.
    * @param sourceRef - source reference the key hashes.
    * @returns `rekeyed`, or `collision` when another live item held the key.
    */
   private async rekeyOne(
+    actor: BoardActor,
     id: FaberLoomBoardItemId,
     to: string,
     sourceRef: string,
@@ -2132,10 +2197,10 @@ export class FaberLoomBoard extends Service {
         if (NOT_SUBSTITUTABLE.includes(stateOf(other.record))) {
           await this.mutate(ownerOf(other.record), other.id, 'candidate_arrived', item => ({
             ...item, pendingCandidate: this.candidateOf(current),
-          }))
+          }), { data: { requestedBy: actor.id } })
           await this.mutate(ownerOf(current), id, 'superseded', item => ({
             ...item, state: 'SUSTITUIDO', status: 'completed', iterationDraftKey: null,
-          }), { reason: 'rekey-collision' })
+          }), { reason: 'rekey-collision', data: { requestedBy: actor.id } })
           await this.transferDrafts(current, id, other.id)
           await this.claimKey(current.companyId, 'bkey', to, other.id)
           if (from !== null && from !== to) await this.release(current.companyId, 'bkey', from)
@@ -2143,14 +2208,16 @@ export class FaberLoomBoard extends Service {
         }
         await this.mutate(ownerOf(other.record), other.id, 'superseded', item => ({
           ...item, state: 'SUSTITUIDO', status: 'completed', iterationDraftKey: null, reversalDeadline: null,
-        }), { reason: 'rekey-collision' })
+        }), { reason: 'rekey-collision', data: { requestedBy: actor.id } })
         await this.releaseScheduledExecution(current.companyId, other.record.effectKey, 'substituted')
         await this.transferDrafts(other.record, other.id, id)
         await this.release(current.companyId, 'bkey', to)
       }
     }
-    await this.mutate(ownerOf(current), id, 'rekey', item => ({ ...item, businessKey: to, sourceRef }))
     await this.claimKey(current.companyId, 'bkey', to, id)
+    await this.mutate(ownerOf(current), id, 'rekey', item => ({ ...item, businessKey: to, sourceRef }), {
+      data: { requestedBy: actor.id, from, to, sourceRef },
+    })
     if (from !== null && from !== to) await this.release(current.companyId, 'bkey', from)
     return action
   }
@@ -3217,6 +3284,11 @@ export class FaberLoomBoard extends Service {
    * operator can see whether execution is operable before accepting an effect.
    * @returns the registered adapters with their declaration.
    */
+  /** @returns whether this deployment offers the §6.4 batch. */
+  bulkApprovalOffered(): boolean {
+    return this.bulkApprovalEnabled
+  }
+
   effectAdapters(): readonly { actionType: string; idempotent: boolean; probe: boolean }[] {
     return [...this.adapters.entries()]
       .map(([actionType, adapter]) => ({
@@ -4539,6 +4611,12 @@ export class FaberLoomBoard extends Service {
       await this.releaseReservation(message.companyId, effectKey, 'revalidation-failed')
       return refusal('REVALIDATION_FAILED', item, failure)
     }
+    // The signature that authorized the acceptance may have expired or been
+    // revoked while the message waited; nothing leaves on a stale signature.
+    const signer = record.companyId === null
+      ? { id: record.ownerId }
+      : { id: record.ownerId, companyId: record.companyId }
+    await this.requireActionSignature(signer, reservation.actionType)
     const adapter = this.adapters.get(reservation.actionType)
     if (adapter === undefined) {
       return refusal('EFFECT_NO_ADAPTER', toItem(id, record), `no adapter for ${reservation.actionType}`)

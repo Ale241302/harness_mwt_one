@@ -1261,10 +1261,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
                 rowVersion: { type: 'number' },
                 artifactVersion: { type: 'number' },
                 artifactHash: { type: 'string' },
+                confirmations: { type: 'array', description: 'Controles confirmados para este ítem.', items: { type: 'string' } },
               },
             },
           },
-          confirmations: { type: 'array', description: 'Controles confirmados por el revisor.', items: { type: 'string' } },
         },
       },
     },
@@ -1278,18 +1278,16 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         const rowVersion = num(row, 'rowVersion')
         const artifactVersion = num(row, 'artifactVersion')
         if (rowVersion === undefined || artifactVersion === undefined) throw new Error('each item needs rowVersion and artifactVersion')
+        const confirmations = strings(row, 'confirmations')
         return {
           id,
           expectedRowVersion: rowVersion,
           expectedArtifactVersion: artifactVersion,
           expectedArtifactHash: required(row, 'artifactHash'),
+          ...confirmations === undefined ? {} : { confirmations },
         }
       })
-      const confirmations = strings(args, 'confirmations')
-      const result = await context.faberloomBoard.approveBulk(boardActor(ownerId, companyId), {
-        items,
-        ...confirmations === undefined ? {} : { confirmations },
-      })
+      const result = await context.faberloomBoard.approveBulk(boardActor(ownerId, companyId), { items })
       return result
     },
   },
@@ -2842,8 +2840,15 @@ export class FaberLoomToolHost implements ToolHost {
   /** @returns the advertised tools the client's scopes allow. */
   tools(): readonly McpToolDefinition[] {
     return CATALOGUE
+      .filter(entry => this.offered(entry))
       .filter(entry => this.scopes === null || this.scopes.includes(entry.definition.name))
       .map(entry => entry.definition)
+  }
+
+  /** Whether this composition advertises one entry. The batch is absent while D-11 keeps it out of the pilot. */
+  private offered(entry: CatalogueEntry): boolean {
+    return entry.definition.name !== 'faberloom_board_approve_bulk'
+      || this.context.faberloomBoard.bulkApprovalOffered()
   }
 
   /**
@@ -2857,7 +2862,7 @@ export class FaberLoomToolHost implements ToolHost {
       throw new Error(`the token in use is not scoped for ${name}`)
     }
     const entry = CATALOGUE.find(candidate => candidate.definition.name === name)
-    if (entry === undefined) throw new Error(`unknown tool: ${name}`)
+    if (entry === undefined || !this.offered(entry)) throw new Error(`unknown tool: ${name}`)
     return value(await entry.run(this.context, this.ownerId, args, this.companyId))
   }
 }

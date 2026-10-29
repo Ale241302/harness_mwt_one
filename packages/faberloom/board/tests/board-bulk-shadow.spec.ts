@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ACTOR_A, bootBoard, seedSpace } from './helpers/harness.ts'
+import { ACTOR_A, ACTOR_B, bootBoard, seedSpace } from './helpers/harness.ts'
 import type { BoardClassifierResult, FaberLoomBoardItemId } from '../src/types.ts'
 
 type Harness = Awaited<ReturnType<typeof bootBoard>>
@@ -84,6 +84,63 @@ describe('bulk approval (§6.4, W-14/W-15)', () => {
     expect(codes[mixed.id]).toBe('BULK_MIXED')
   })
 
+  it('rejects an already-approved item, a stale version, another owner, and an effect action', async () => {
+    const harness = await bootBoard({ board: { bulkApprovalEnabled: true } })
+    const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    const approved = await lowTask(harness, space, 'Tarea aprobada')
+    await harness.board.approve(ACTOR_A, approved.id, {
+      expectedRowVersion: approved.rowVersion,
+      expectedArtifactVersion: approved.artifactVersion,
+      expectedArtifactHash: approved.artifactHash,
+    })
+    const stale = await lowTask(harness, space, 'Tarea versión vieja')
+    const foreign = await harness.board.create(ACTOR_B, {
+      title: 'Tarea ajena', summary: 's', evidence: ['oc:ajena'], artifactType: 'tarea',
+    })
+    await harness.board.setSeverity(ACTOR_B, foreign.id, 'LOW', 'HUMAN')
+    const foreignRow = await harness.board.get(ACTOR_B, foreign.id)
+    const effect = await harness.board.create(ACTOR_A, {
+      title: 'Tarea de efecto', summary: 's', evidence: ['oc:efecto'], artifactType: 'tarea', spaceId: space,
+      actionType: 'mail.send',
+    })
+    await harness.board.setSeverity(ACTOR_A, effect.id, 'LOW', 'HUMAN')
+    const effectRow = await harness.board.get(ACTOR_A, effect.id)
+
+    const result = await harness.board.approveBulk(ACTOR_A, {
+      items: [
+        entry(approved),
+        { ...entry(stale), expectedArtifactVersion: 99 },
+        {
+          id: foreign.id, expectedRowVersion: foreignRow.rowVersion,
+          expectedArtifactVersion: foreignRow.version, expectedArtifactHash: foreignRow.artifactHash ?? '',
+        },
+        {
+          id: effect.id, expectedRowVersion: effectRow.rowVersion,
+          expectedArtifactVersion: effectRow.version, expectedArtifactHash: effectRow.artifactHash ?? '',
+        },
+      ],
+    })
+    expect(result.approved).toEqual([])
+    const codes = Object.fromEntries(result.rejected.map(item => [item.id, item.code]))
+    expect(codes[approved.id]).toBe('STALE_ROW')
+    expect(codes[stale.id]).toBe('STALE_REVISION')
+    expect(codes[foreign.id]).toBe('NO_ACCESS')
+    expect(codes[effect.id]).toBe('BULK_ACTION')
+  })
+
+  it('honours a confirmation per item instead of one list for the batch', async () => {
+    const harness = await bootBoard({ board: { bulkApprovalEnabled: true } })
+    const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    const first = await lowTask(harness, space, 'Tarea uno')
+    const second = await lowTask(harness, space, 'Tarea dos')
+    const result = await harness.board.approveBulk(ACTOR_A, {
+      items: [
+        { ...entry(first), confirmations: ['proforma.separation'] },
+        { ...entry(second), confirmations: ['proforma.stock'] },
+      ],
+    })
+    expect(result.approved).toHaveLength(2)
+  })
   it('keeps the batch out of the pilot configuration (W-14)', async () => {
     const harness = await bootBoard()
     await expect(harness.board.approveBulk(ACTOR_A, { items: [] })).rejects.toThrow('BULK_DISABLED')
@@ -208,6 +265,24 @@ describe('shadow evaluation of a human severity (W-63)', () => {
     await harness.board.setSeverity(ACTOR_A, item.id, 'LOW', 'HUMAN')
     expect(fake.calls).toHaveLength(0)
     expect(await harness.board.shadowReport(ACTOR_A)).toMatchObject({ evaluated: 0 })
+  })
+
+  it('never counts an artifact approval as a shadow label', async () => {
+    const harness = await bootBoard()
+    const fake = shadow(() => ({ status: 'classified', severity: 'HIGH', confidence: 0.95 }))
+    harness.ctx.provide('faberloomBoardShadow', fake.port)
+    const id = await shadowItem(harness, 'Tarea aprobada')
+    await harness.board.setSeverity(ACTOR_A, id, 'HIGH', 'HUMAN')
+    expect(await harness.board.shadowReport(ACTOR_A)).toMatchObject({ evaluated: 1 })
+    const current = await harness.board.get(ACTOR_A, id)
+    await harness.board.approve(ACTOR_A, id, {
+      expectedRowVersion: current.rowVersion,
+      expectedArtifactVersion: current.version,
+      expectedArtifactHash: current.artifactHash ?? '',
+    })
+    // The approval is not a label: the evaluation count does not move.
+    expect(await harness.board.shadowReport(ACTOR_A)).toMatchObject({ evaluated: 1, matched: 1 })
+    expect(fake.calls).toHaveLength(1)
   })
 
   it('measures only a human confirmation, not a rule or a model proposal', async () => {

@@ -38,7 +38,7 @@ Mount the row where `ctx.llm` is available and the board is mounted.
 
 `provider` and `model` name a registered route and change the cache identity; `timeoutMs` bounds one classification (the board caps it at 3 s as well); `maxTokens` bounds the answer. The bundle mounts the row by default and reads `FABERLOOM_CLASSIFIER_PROVIDER`, `FABERLOOM_CLASSIFIER_MODEL`, and `FABERLOOM_CLASSIFIER=0` from the environment.
 
-The prompt carries only what the board already permits this provider to read: artifact type, account reference, content hash, and the summary truncated to 4 000 characters. The answer must be one JSON object with `severity` in `LOW|MEDIUM|HIGH|CRITICAL` and `confidence` in `0..1`; anything else is `invalid`.
+The prompt carries only what the board already permits this provider to read: artifact type, account reference, and the summary truncated to 4 000 characters. A provisional item — every type whose data-class rule permits no field — sends an empty summary (D-05); the classifier still sees the metadata and returns an answer or an abstention. The answer must be one JSON object with `severity` in `LOW|MEDIUM|HIGH|CRITICAL` and `confidence` in `0..1`; anything else is `invalid`.
 
 ## Model Experience
 

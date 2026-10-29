@@ -67,22 +67,36 @@ export function mailEffectAdapter(
   },
   connections: {
     sendMail(ownerId: string, mail: { to: string[]; subject: string; text: string }): Promise<{ messageId: string }>
+    /** Precondition read: whether the owner has a usable SMTP connection. */
+    smtp?(ownerId: string): Promise<unknown>
   },
   actionType: string,
 ): BoardEffectAdapter {
   return {
     idempotent: false,
-    async send(dispatch: BoardEffectDispatch): Promise<BoardEffectResult> {
+    async send(dispatch: BoardEffectDispatch, options: { readonly signal: AbortSignal }): Promise<BoardEffectResult> {
+      // Everything below is decided before anything reaches the wire, so a
+      // deterministic refusal is `FALLIDO`: the effect did not happen and may be
+      // retried. A throw is reserved for the send itself, which may have left.
+      if (options.signal.aborted) throw new Error('faberloom: EFFECT_ABORTED — the dispatch deadline expired')
       if (dispatch.actionType !== actionType) {
-        throw new Error(`faberloom: EFFECT_ACTION_MISMATCH — ${dispatch.actionType} is not ${actionType}`)
+        return { status: 'FALLIDO', detail: `EFFECT_ACTION_MISMATCH: ${dispatch.actionType} is not ${actionType}` }
       }
-      const to = dispatch.destination.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
-      if (to.length === 0) throw new Error('faberloom: EFFECT_DESTINATION_EMPTY — mail.send needs at least one recipient')
+      const to = dispatch.destination.split(/[,;\s]+/u).map(entry => entry.trim()).filter(entry => entry.length > 0)
+      if (to.length === 0) return { status: 'FALLIDO', detail: 'EFFECT_DESTINATION_EMPTY' }
+      if (connections.smtp !== undefined && await connections.smtp(dispatch.ownerId) === undefined) {
+        return { status: 'FALLIDO', detail: 'EFFECT_SMTP_UNCONFIGURED: the owner has no SMTP connection' }
+      }
       const actor = dispatch.companyId === null
         ? { id: dispatch.ownerId }
         : { id: dispatch.ownerId, companyId: dispatch.companyId }
-      const item = await board.get(actor, dispatch.itemId as FaberLoomBoardItemId)
-      const body = approvedMailBody(item)
+      let body: { readonly subject: string; readonly text: string }
+      try {
+        body = approvedMailBody(await board.get(actor, dispatch.itemId as FaberLoomBoardItemId))
+      } catch (error: unknown) {
+        return { status: 'FALLIDO', detail: error instanceof Error ? error.message : String(error) }
+      }
+      if (body.text.trim().length === 0) return { status: 'FALLIDO', detail: 'EFFECT_BODY_EMPTY' }
       const sent = await connections.sendMail(dispatch.ownerId, { to, subject: body.subject, text: body.text })
       return { status: 'CONFIRMADO', ref: sent.messageId, detail: `sent to ${to.join(', ')}` }
     },
@@ -95,11 +109,16 @@ export function mailEffectAdapter(
  * @param config - the action type this row serves.
  */
 export function apply(ctx: Context, config: Config = {}): void {
-  const actionType = config.actionType ?? 'mail.send'
+  const actionType = (config.actionType ?? 'mail.send').trim()
   // A deployment that did not accept the action type has execution off by
   // configuration (A-05); the row stays loaded but registers nothing, so an
-  // empty `effectActionTypes` does not fail the process.
-  if (!ctx.faberloomBoard.effectPolicy().actionTypes.includes(actionType)) {
+  // empty `effectActionTypes` does not fail the process. A non-empty list that
+  // lacks this type is a typo and fails at load.
+  const accepted = ctx.faberloomBoard.effectPolicy().actionTypes
+  if (!accepted.includes(actionType)) {
+    if (accepted.length > 0) {
+      throw new Error(`faberloom: EFFECT_ACTION_UNKNOWN — ${actionType} is not in ${accepted.join(', ')}`)
+    }
     ctx.logger.warn(`faberloom: ${actionType} is not an accepted effect type; the mail adapter stays unregistered`)
     return
   }

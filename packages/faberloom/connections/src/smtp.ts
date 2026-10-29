@@ -292,6 +292,13 @@ export async function sendSmtp(
   timeoutMs = 15_000,
 ): Promise<{ messageId: string; accepted: readonly string[] }> {
   const from = mail.from ?? credentials.username
+  // The envelope is line-oriented: a CR/LF or an angle bracket in an address
+  // would inject a second command, so the sender refuses it before writing.
+  const envelopeSafe = (value: string): boolean => !/[\r\n<>]/u.test(value)
+  if (!envelopeSafe(from)) throw new Error('faberloom: el remitente SMTP contiene caracteres no válidos')
+  for (const recipient of mail.to) {
+    if (!envelopeSafe(recipient)) throw new Error('faberloom: un destinatario SMTP contiene caracteres no válidos')
+  }
   const messageId = `<${randomUUID()}@faberloom.local>`
   const session = await SmtpSession.open({ ...credentials, timeoutMs })
   try {

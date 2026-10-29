@@ -38,7 +38,7 @@ kind: "package-reference"
 
 `provider` 与 `model` 指定已注册的路由，并改变缓存身份；`timeoutMs` 限制一次分类（看板另有 3 秒上限）；`maxTokens` 限制回答长度。默认 bundle 已挂载本行，并从环境读取 `FABERLOOM_CLASSIFIER_PROVIDER`、`FABERLOOM_CLASSIFIER_MODEL` 与 `FABERLOOM_CLASSIFIER=0`。
 
-提示词只携带看板已允许该提供方读取的内容：产物类型、账户引用、内容哈希，以及截断到 4 000 字符的摘要。回答必须是一个 JSON 对象，`severity` 属于 `LOW|MEDIUM|HIGH|CRITICAL`，`confidence` 在 `0..1`；其他一律为 `invalid`。
+提示词只携带看板已允许该提供方读取的内容：产物类型、账户引用，以及截断到 4 000 字符的摘要。临时分类的条目——即其数据类规则不允许任何字段离开的类型——发送空摘要（D-05）；分类器仍能看到元数据并给出回答或弃权。回答必须是一个 JSON 对象，`severity` 属于 `LOW|MEDIUM|HIGH|CRITICAL`，`confidence` 在 `0..1`；其他一律为 `invalid`。
 
 ## Model Experience
 

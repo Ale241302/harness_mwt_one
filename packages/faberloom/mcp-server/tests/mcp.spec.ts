@@ -255,8 +255,14 @@ describe('FaberLoomMcpServer', () => {
     expect(ctx.storageDomain.get('faberloom_agents')?.table('agents').get('ag1')).toMatchObject({ name: 'Desde la web' })
   })
 
-  it('F04 — the mirror tools refuse a process that does not mount the mirror row', async () => {
-    const ctx = new Context()
+  it('W-14 — the pilot does not advertise the batch tool', async () => {
+    const { ctx } = await harness()
+    const host = new FaberLoomToolHost(ctx, OWNER, null)
+    expect(host.tools().map(tool => tool.name)).not.toContain('faberloom_board_approve_bulk')
+    await expect(host.call('faberloom_board_approve_bulk', { items: [] })).rejects.toThrow('unknown tool')
+  })
+
+  it('F04 — the mirror tools refuse a process that does not mount the mirror row', async () => {    const ctx = new Context()
     await ctx.plugin(Storage)
     ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
     const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })

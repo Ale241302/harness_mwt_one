@@ -61,6 +61,7 @@ describe('faberloom classifier over ctx.llm', () => {
     const options = calls[0] as {
       provider: string
       model: string
+      system: string
       maxTokens: number
       temperature: number
       messages: { content: { text: string }[] }[]
@@ -69,8 +70,9 @@ describe('faberloom classifier over ctx.llm', () => {
     const prompt = options.messages[0]?.content[0]?.text ?? ''
     expect(prompt).toContain('proforma')
     expect(prompt).toContain('eguisa')
-    expect(prompt).toContain('abc')
     expect(prompt).toContain('Proforma de 100 pares')
+    expect(prompt.startsWith('<item>')).toBe(true)
+    expect(options.system).toContain('untrusted data')
   })
 
   it('reads an answer wrapped in prose or a code fence', async () => {
@@ -128,6 +130,28 @@ describe('faberloom classifier over ctx.llm', () => {
       .resolves.toEqual({ status: 'timeout' })
   })
 
+  it('settles a stream that ignores the abort at the deadline', async () => {
+    const ctx = new Context()
+    ;(ctx.provide as (name: string, value: unknown) => void)('llm', {
+      stream() {
+        return (async function* () {
+          yield { type: 'text-delta', index: 0, text: '{' }
+          await new Promise(() => {})
+        })()
+      },
+    })
+    apply(ctx, { timeoutMs: 10 })
+    const port = ctx.get('faberloomBoardClassifier') as {
+      classifySeverity: (request: unknown, options: { signal: AbortSignal; confidenceThreshold: number }) => Promise<unknown>
+    }
+    await expect(port.classifySeverity(REQUEST, SIGNAL)).resolves.toEqual({ status: 'timeout' })
+  })
+
+  it('refuses an answer that keeps growing past the bound', async () => {
+    const { port } = mount(() => answer('x'.repeat(5_000)))
+    await expect(port.classifySeverity(REQUEST, SIGNAL))
+      .resolves.toEqual({ status: 'invalid', detail: 'answer exceeds the bound' })
+  })
   it('bounds the summary it forwards', async () => {
     const { port, calls } = mount(() => answer('{"severity":"LOW","confidence":1}'))
     await port.classifySeverity({ ...REQUEST, summary: 'x'.repeat(9_000) }, SIGNAL)

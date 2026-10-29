@@ -61,13 +61,15 @@ describe('mail effect adapter', () => {
     const adapter = mailEffectAdapter(board, connections, 'mail.send')
     const signal = { signal: new AbortController().signal }
 
-    await expect(adapter.send({ ...DISPATCH, destination: ' , ' }, signal)).rejects.toThrow('EFFECT_DESTINATION_EMPTY')
+    await expect(adapter.send({ ...DISPATCH, destination: ' , ' }, signal))
+      .resolves.toMatchObject({ status: 'FALLIDO', detail: 'EFFECT_DESTINATION_EMPTY' })
     await expect(adapter.send({ ...DISPATCH, actionType: 'shipment.create' }, signal))
-      .rejects.toThrow('EFFECT_ACTION_MISMATCH')
+      .resolves.toMatchObject({ status: 'FALLIDO' })
 
     const missing = await services({ ...ITEM, approvedRevision: 9 } as FaberLoomBoardItem)
     const withoutRevision = mailEffectAdapter(missing.board, missing.connections, 'mail.send')
-    await expect(withoutRevision.send(DISPATCH, signal)).rejects.toThrow('NO_APPROVED_REVISION')
+    await expect(withoutRevision.send(DISPATCH, signal))
+      .resolves.toMatchObject({ status: 'FALLIDO' })
   })
 
   it('lets a provider failure reach the board as a throw, never as sent', async () => {

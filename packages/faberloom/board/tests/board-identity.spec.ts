@@ -26,6 +26,10 @@ describe('business identity (§2.1)', () => {
     }
     // Two nulls in one slot are equal, and never equal to a real value.
     expect(businessKeyOf({ ...base, spaceId: null })).toBe(businessKeyOf({ ...base, spaceId: null }))
+    // A null slot is tagged, so it cannot collide with a real value.
+    expect(businessKeyOf({ ...base, spaceId: null })).not.toBe(businessKeyOf({ ...base, spaceId: 'sin-espacio' }))
+    // Case and internal whitespace are the same identity.
+    expect(businessKeyOf({ ...base, sourceRef: 'oc  100' })).toBe(businessKeyOf({ ...base, sourceRef: 'OC 100' }))
     // A single-tenant deployment binds a reserved tenant value, not an empty one.
     expect(businessKeyOf({ ...base, companyId: null })).toMatch(/^[0-9a-f]{64}$/u)
     expect(() => businessKeyOf({ ...base, sourceRef: '  ' })).toThrow('SOURCE_REQUIRED')
@@ -167,7 +171,7 @@ describe('business-key migration (§2.1)', () => {
     await expect(harness.board.rekeyAll(ACTOR_A2)).resolves.toMatchObject({ scanned: 1, rekeyed: 1 })
     expect((await harness.board.get(ACTOR_A, legacy)).businessKey).toMatch(/^[0-9a-f]{64}$/u)
     // Another company's row is reported, never migrated across the boundary.
-    await expect(harness.board.rekeyAll(ACTOR_B)).resolves.toMatchObject({ skipped: 1, rekeyed: 0 })
+    await expect(harness.board.rekeyAll(ACTOR_B)).resolves.toMatchObject({ scanned: 0, rekeyed: 0 })
   })
 
   it('rolls a canonical key back to the keyless legacy state', async () => {

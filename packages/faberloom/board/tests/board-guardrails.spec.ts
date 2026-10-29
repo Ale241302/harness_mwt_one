@@ -125,6 +125,27 @@ describe('Mesa guardrails', () => {
     expect(fake.calls).toHaveLength(3)
   })
 
+  it('D-05 · a provisional item sends no summary to the classifier', async () => {
+    const harness = await bootBoard()
+    const seen: string[] = []
+    harness.ctx.provide('faberloomBoardClassifier', {
+      modelVersion: 'test-model-1',
+      async classifySeverity(request: { summary: string }) {
+        seen.push(request.summary)
+        return { status: 'invalid', detail: 'metadata only' }
+      },
+    })
+    await harness.board.submit(ACTOR_A, {
+      runId: 'run-d05',
+      idempotencyKey: 'idem-d05',
+      businessKey: 'bkey-d05',
+      summary: 'secreto del cliente',
+      evidence: ['oc:d05'],
+      artifactType: 'desconocido',
+    })
+    expect(seen).toEqual([''])
+  })
+
   it('W-37 · a classifier that times out leaves the item unclassified and still enters', async () => {
     const harness = await bootBoard()
     harness.ctx.provide('faberloomBoardClassifier', classifier({ status: 'timeout' }).port)

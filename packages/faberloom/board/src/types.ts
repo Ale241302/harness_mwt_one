@@ -204,6 +204,8 @@ export interface BoardBulkApproveItem {
   readonly expectedArtifactVersion: number
   /** Hash of that artifact version. */
   readonly expectedArtifactHash: string
+  /** Controls the reviewer confirmed for this item alone. */
+  readonly confirmations?: readonly string[]
 }
 
 /** Input for `approveBulk` (§6.4). */
