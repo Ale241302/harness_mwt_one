@@ -37,6 +37,33 @@ describe('FABERLOOM_DATA_MIGRATIONS', () => {
     expect(migration!.apply({ dataClassProvisional: true })).toEqual({ dataClassProvisional: true })
   })
 
+  it('settles a legacy item that was stored with a blank artifact type', () => {
+    const migration = FABERLOOM_DATA_MIGRATIONS.find(entry => entry.id === '2026-10-29-board-artifact-type-default')
+    expect(migration).toBeDefined()
+    const legacy = {
+      artifactType: '   ',
+      dataClass: 'N2',
+      dataClassProvisional: true,
+      updatedAt: '2026-10-01T00:00:00.000Z',
+    }
+    const migrated = migration!.apply(legacy) as Record<string, unknown>
+    expect(migrated['artifactType']).toBe('tarea')
+    expect(migrated['dataClassProvisional']).toBe(false)
+    // A record that carries its own instant keeps it.
+    expect(migrated['updatedAt']).toBe('2026-10-01T00:00:00.000Z')
+
+    // An already declared class survives the type default, and a record with
+    // no type at all is the same legacy write.
+    const declared = { artifactType: '', dataClass: 'N3', dataClassProvisional: false }
+    expect(migration!.apply(declared)).toMatchObject({ artifactType: 'tarea', dataClass: 'N3', dataClassProvisional: false })
+    expect(migration!.apply({})).toMatchObject({ artifactType: 'tarea' })
+
+    // A declared type and a second run both stay untouched.
+    const proforma = { artifactType: 'proforma', dataClass: 'N3', dataClassProvisional: false }
+    expect(migration!.apply(proforma)).toBe(proforma)
+    expect(migration!.apply(migrated as Record<string, unknown>)).toBe(migrated)
+  })
+
   it('maps the terminal legacy states', () => {
     const migration = FABERLOOM_DATA_MIGRATIONS[0]!
     const state = (status: string): unknown => {

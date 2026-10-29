@@ -110,6 +110,25 @@ export const FABERLOOM_DATA_MIGRATIONS: readonly FaberLoomDataMigration[] = [
       }
     },
   },
+  {
+    id: '2026-10-29-board-artifact-type-default',
+    domain: 'faberloom_board',
+    table: 'items',
+    describe: 'Asienta como tarea los ítems guardados sin tipo y los saca de la clasificación provisional.',
+    apply: (record) => {
+      // A caller that named no artifact type submitted a task, so a blank type
+      // is a legacy write rather than a different artifact. Without a type the
+      // item has no deterministic rule and D-05 keeps all of its content home.
+      const type = record['artifactType']
+      if (typeof type === 'string' && type.trim().length > 0) return record
+      return {
+        ...record,
+        artifactType: 'tarea',
+        ...record['dataClassProvisional'] === true ? { dataClass: 'N2', dataClassProvisional: false } : {},
+        updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : new Date().toISOString(),
+      }
+    },
+  },
 ]
 
 /** Canonical payload shape: domain name to table name to record key to value. */

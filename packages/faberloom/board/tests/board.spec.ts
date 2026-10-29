@@ -112,6 +112,14 @@ describe('FaberLoomBoard', () => {
     expect(await board.list(ACTOR)).toEqual([])
   })
 
+  it('D-05 · a submission that names no artifact type is a task, never untyped', async () => {
+    const { board } = await harness()
+    const blank = await board.create(OWNER, { title: 'x', summary: 's', evidence: ['e'], artifactType: '  ' })
+    expect(blank.artifactType).toBe('tarea')
+    const named = await board.create(OWNER, { title: 'y', summary: 's', evidence: ['e2'], artifactType: 'proforma' })
+    expect(named.artifactType).toBe('proforma')
+  })
+
   it('links a task to a routine, owner-only, and creates with one', async () => {
     const { board } = await harness()
     const linked = await board.create(OWNER, { title: 'x', summary: 's', evidence: ['e'], routineId: 'routine-1' })

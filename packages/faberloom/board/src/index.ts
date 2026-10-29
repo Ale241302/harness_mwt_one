@@ -1025,7 +1025,10 @@ export class FaberLoomBoard extends Service {
       idempotencyKey: input.idempotencyKey ?? null,
       businessKey: input.businessKey ?? null,
       supersedesItemId: input.supersedesItemId ?? null,
-      artifactType: input.artifactType ?? 'provisional',
+      // A caller that names no artifact type submitted a task: there is no
+      // priced commitment behind it, and D-05 needs a deterministic type
+      // before any field may leave for a provider.
+      artifactType: input.artifactType?.trim() || 'tarea',
       accountRef: input.accountRef ?? null,
       artifactHash,
       fieldOrigins,
