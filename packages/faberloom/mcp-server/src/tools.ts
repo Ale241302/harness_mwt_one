@@ -1077,13 +1077,15 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       const dueAt = optional(args, 'dueAt')
       const severity = optional(args, 'severity')
       const severityConfidence = num(args, 'severityConfidence')
+      const sourceRef = optional(args, 'sourceRef')
+      const businessKey = optional(args, 'businessKey')
       const item = await context.faberloomBoard.submit(boardActor(ownerId, companyId), {
         runId: required(args, 'runId'),
         idempotencyKey: required(args, 'idempotencyKey'),
         summary: required(args, 'summary'),
         evidence: strings(args, 'evidence') ?? [],
-        ...optional(args, 'sourceRef') === undefined ? {} : { sourceRef: optional(args, 'sourceRef') },
-        ...optional(args, 'businessKey') === undefined ? {} : { businessKey: optional(args, 'businessKey') },
+        ...sourceRef === undefined ? {} : { sourceRef },
+        ...businessKey === undefined ? {} : { businessKey },
         ...title === undefined ? {} : { title },
         ...spaceId === undefined ? {} : { spaceId },
         ...accountRef === undefined ? {} : { accountRef },
@@ -1266,9 +1268,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
           expectedArtifactHash: required(row, 'artifactHash'),
         }
       })
+      const confirmations = strings(args, 'confirmations')
       const result = await context.faberloomBoard.approveBulk(boardActor(ownerId, companyId), {
         items,
-        ...strings(args, 'confirmations') === undefined ? {} : { confirmations: strings(args, 'confirmations') },
+        ...confirmations === undefined ? {} : { confirmations },
       })
       return result
     },
@@ -1313,9 +1316,11 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       },
     },
     run: async (context, ownerId, args, companyId) => {
+      const from = optional(args, 'from')
+      const to = optional(args, 'to')
       return await context.faberloomBoard.shadowReport(boardActor(ownerId, companyId), {
-        ...optional(args, 'from') === undefined ? {} : { from: optional(args, 'from') },
-        ...optional(args, 'to') === undefined ? {} : { to: optional(args, 'to') },
+        ...from === undefined ? {} : { from },
+        ...to === undefined ? {} : { to },
       })
     },
   },
