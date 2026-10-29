@@ -18,6 +18,11 @@ import FaberLoomBoard from '../../src/index.ts'
 import { declaredChecks, registerProformaChecks } from '../../src/checks.ts'
 import { boardDomainSpec, type BoardItemRecord, type BoardIterationDraftRecord } from '../../src/spec.ts'
 import type {
+  EffectAlertRecord,
+  EffectOutboxRecord,
+  EffectReservationRecord,
+} from '../../src/spec.ts'
+import type {
   BoardActor,
   BoardCheckFn,
   BoardCheckSource,
@@ -212,6 +217,9 @@ export function rawBoardItem(overrides: Partial<BoardItemRecord> = {}): BoardIte
     effects: [],
     reviews: [],
     executionId: null,
+    effectKey: null,
+    reversalDeadline: null,
+    executionOutcome: null,
     createdAt: at,
     updatedAt: at,
     ...overrides,
@@ -281,4 +289,36 @@ export function durableRows(pool: MemoryMediaPool, table: string): Map<string, u
   const medium = pool.media.get('faberloom_board')
   const records: Map<string, unknown> | undefined = medium?.tables.get(table)
   return records ?? new Map<string, unknown>()
+}
+
+/**
+ * Write one effect row straight to a durable medium, so a suite can prove what
+ * the service does with a reservation, a message, or an alert it did not write.
+ * @param pool - the media pool the board will boot against.
+ * @param table - effect table to write.
+ * @param key - row key.
+ * @param record - the row to store.
+ */
+export async function seedRawEffectRow(
+  pool: MemoryMediaPool,
+  table: 'effect_reservations' | 'effect_outbox' | 'effect_alerts',
+  key: string,
+  record: EffectReservationRecord | EffectOutboxRecord | EffectAlertRecord,
+): Promise<void> {
+  const ctx = new Context()
+  await ctx.plugin(Storage)
+  ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
+  const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+  ctx.storage.mount('domain', facility)
+  ctx.provide('storageDomain', facility)
+  const domain = await facility.open(boardDomainSpec)
+  if (table === 'effect_reservations') {
+    await domain.table('effect_reservations').put(key, record as EffectReservationRecord)
+  } else if (table === 'effect_outbox') {
+    await domain.table('effect_outbox').put(key, record as EffectOutboxRecord)
+  } else {
+    await domain.table('effect_alerts').put(key, record as EffectAlertRecord)
+  }
+  await domain.close()
+  await ctx.fiber.dispose()
 }

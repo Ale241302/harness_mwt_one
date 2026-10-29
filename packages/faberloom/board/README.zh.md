@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包承载工作台：带版本化修订的准备结果与例外，批准绑定到精确版本，变更后需重新校验，效应需要显式授权。它还按条目运行一次迭代尝试——锁、工作草稿，以及只给出建议的轮次计数器。它注册 `ctx.faberloomBoard` 主机服务；模型工具位于 `dsh-tool-faberloom`。
+此包承载工作台：带版本化修订的准备结果与例外，批准绑定到精确版本，变更后需重新校验，效应需要显式授权。它还按条目运行一次迭代尝试——锁、工作草稿，以及只给出建议的轮次计数器——并承载 E15 的外部效应机制：按租户的效果预留、带校验消费者的发件箱、回退窗口与对账。它注册 `ctx.faberloomBoard` 主机服务；模型工具位于 `dsh-tool-faberloom`。
 
 ## 目录
 
@@ -114,6 +114,34 @@ kind: "package-reference"
 
 `iterationPolicy()` 返回解析后的值，因此面板按部署的数值调度，而不自带一份。
 
+### 执行（E15）
+
+`approveWithExecution(writer, id, input)` 批准精确的产物版本并为它接受一次执行：批准、效果预留与发件箱消息在同一条命令中获取，因此不存在已授权却没有发出意图的条目（§10.1）。它要求 `approve` 的全部前置条件，外加 `executionId`、`actionType`、`destination` 与显式 `authorization`；`idempotencyKey` 默认为 `effect:<effectKey>`。它返回条目、预留与消息。
+
+`effect_key` 是签署的身份：`sha256(tenant_id + ":" + action_type + ":" + destination + ":" + business_key + ":" + artifact_hash)`。租户即条目的 `companyId`，从不省略，因此没有公司的部署使用保留字面量 `sin-empresa`。邮件目的地是一个地址列表——去空白、转小写、去重、排序——因此同样的收件人以另一种顺序产生相同的键；其他目的地按外部系统 id 原样保留。导出 `effectKeyOf` 与 `normaliseDestination`，调用者据此算出 board 存储的同一个键。
+
+预留存放在 `effect_reservations`，每租户每个 `effect_key` 一行（ADR-001：与 `keys`、`references` 相同的键认领表），状态为 `RESERVADA`、`DESPACHADA`、`CONCILIADA` 与 `LIBERADA`。同一键的竞争执行在预留在 `RESERVADA` 或 `DESPACHADA` 期间以 `EFFECT_TAKEN` 被拒，`admin_close` 之后亦然。所有者的重试保留同一行、同一 `executionId` 与同一幂等键；已释放或已对账的行释放该键。预留从不跨租户：行键携带租户，其他租户的消费者找不到任何消息。
+
+动作类型有回退窗口时条目落在 `DELEGADO_EN_VENTANA`，没有时落在 `EJECUCION_PENDIENTE`；`reversalDeadline` 是效果可以离开的时刻。窗口内的 `revert(writer, id, { expectedRowVersion?, reason? })` 把条目返回 `PENDIENTE_CRITERIO`、释放预留并取消消息，因此不会发生效果（W-17、W-19）。到期或之后回退以 `WINDOW_EXPIRED` 被拒，没有记录到期时刻的委派条目以 `EFFECT_NO_DEADLINE` 被拒，而 `expireWindow(writer, id)` 是到 `EJECUCION_PENDIENTE` 的那一次转换：回退与到期在条目上串行化，因此恰好一个生效（W-18）。
+
+`effect_outbox` 为每个效果保存一条消息，携带键与执行 id，状态为 `PENDIENTE`、`DESPACHADO`、`CONFIRMADO`、`FALLIDO` 或 `CANCELADO`；`CANCELADO` 的消息不可派发。`dispatchEffect(actor, effectKey)` 是消费者：在一个租户区内要求消息可派发、预留仍为 `RESERVADA` 且属于同一执行、条目仍授权该效果、控件仍然通过；否则不发出任何效果、释放预留并把消息标记为 `CANCELADO`（W-95、W-102）。它在 `reversalDeadline` 之前拒绝发出，并在到期时刻已过时自行提交窗口到期（W-19）。适配器是一个端口：`registerEffectAdapter(actionType, adapter)` 从 `ctx.effect` 挂载它，board 发送 `{ effectKey, executionId, itemId, actionType, destination, idempotencyKey, attempt }`；没有适配器的动作类型以 `EFFECT_NO_ADAPTER` 被拒，而消息保持 `PENDIENTE`。抛错、被中止的信号或配置的派发超时都记为 `DESCONOCIDO`：没有确认，条目绝不会是 `EJECUTADO`（W-22）。`pendingEffects(actor)` 列出该租户仍可发出的消息。
+
+`reconcile(writer, id, { outcome, ref?, detail? })` 了结一个已派发的效果：`CONFIRMADO` 把条目关闭为 `EJECUTADO`，`FALLIDO` 带该结果移到 `ERROR_RECUPERABLE`，`DESCONOCIDO` 记录这次尝试并保留未知状态（W-21、W-76）。`retry(writer, id)` 保留原始执行 id、预留与幂等键，并把条目返回 `EJECUCION_PENDIENTE`；结果为未知时以 `OUTCOME_UNKNOWN` 被拒，除非适配器声明目的地幂等（W-21、W-84）。结果未知期间 `submitRevision` 与 `discard` 仍被拒绝，新产物成为候选，因此效果保留其追踪链（W-76）。
+
+`adminClose(writer, id, { reason, expectedRowVersion? })` 是对结果未知条目的行政关闭（D-9）：租户的所有者或管理员（`actor.role === 'admin'`）、必填理由，以及保持 `DESPACHADA` 并带 `closedAt`、`closedBy` 与 `closeReason` 的预留，因此对账仍然开放（W-65）。待处理候选变成一个新条目，以 `supersedesItemId` 链接并携带候选哈希（W-86）。之后对已关闭条目的对账写入 `effect.late_confirmation`、更新 `executionOutcome`、通过 `alerts(actor)` 可见地抛出 `LATE_CONFIRMATION` 告警，并且绝不重开条目（W-85）。`effectStatus(actor, id)` 为面板投影该效果：预留、消息、告警、`reversalDeadline`、`executionOutcome`，以及对账是否仍然开放。
+
+替换处于 `DELEGADO_EN_VENTANA` 的条目（`submit`、`assignWorkspace`）会取消其已排期的执行：消息变为 `CANCELADO`、预留变为 `LIBERADA`，且不发出任何效果（W-56）。
+
+| 配置字段 | 默认值 | 含义 |
+|---|---|---|
+| `effectReversalWindowMs` | `{ 'mail.send': 900000 }` | 每个动作类型的回退窗口毫秒数；未列出的类型没有窗口（D-12）。部署把 `FABERLOOM_REVERSAL_WINDOW_MS` 映射到邮件条目上 |
+| `effectRetentionDays` | 90 | 已了结的预留与消息在 `pruneEffects` 可删除前保存的天数 |
+| `effectDispatchTimeoutMs` | 30000 | 一次派发尝试在结果变为 `DESCONOCIDO` 前可用的毫秒数 |
+
+`effectPolicy()` 返回解析后的值。`pruneEffects(actor)` 删除超出保留窗口的已了结行，从不触碰活跃预留或未了结消息；没有任务自动调用它。
+
+此表面的稳定错误：`EFFECT_IDENTITY_INCOMPLETE`（缺动作类型、执行 id、目的地、业务键或产物哈希）、`EFFECT_TAKEN`（另一个活跃执行持有该键）、`NOT_DELEGATED`、`EFFECT_NO_DEADLINE`、`WINDOW_OPEN`、`WINDOW_EXPIRED`、`EFFECT_DISPATCHED`、`NO_EFFECT`、`NOT_RETRYABLE`、`OUTCOME_UNKNOWN`、`OUTCOME_KNOWN`、`REASON_REQUIRED`、`EFFECT_NO_ADAPTER`、`OUTBOX_NOT_PENDING` 与 `NOT_FOUND`。
+
 -----
 
 <a id="model-experience"></a>
@@ -144,7 +172,14 @@ kind: "package-reference"
 - **不随包提供校验适配器** — 本包只提供端口、已声明的控件与 proforma 实现。要批准 proforma 的部署需在自己包内挂载 `registerProformaChecks`，用 MCP 调用填充 `BoardCheckSource`；在此之前每次 proforma 批准都会以 `CHECK_UNAVAILABLE` 被拒，这是有意为之。
 - **尚未声明 `informativo` 控件** — D-8 只为 proforma 签署了阻塞与需确认两类控件，因此 `informativo` 类别没有已注册的示例，其分支没有被任何控件覆盖。
 - **校验结果不持久化** — 条目不保存校验快照。面板实时重读 `runChecks`，批准事件保留允许该决定的结果；按条目保存校验记录随持久化工作加入。
-- **外部效应前的重新校验属于 E15** — 控件在 `approve` 之前运行；发送之前必须再次运行它们的分发路径尚不存在。
+- **发件箱消费者不在此调度** — `dispatchEffect` 与 `pendingEffects` 只是表面；部署用自己的定时器或工作进程驱动它们，board 不启动任何循环。
+- **不随包提供效果适配器** — 本包只提供端口。要发出邮件、库存或运输效果的部署需为每个动作类型挂载一个适配器；在此之前，该类型的派发以 `EFFECT_NO_ADAPTER` 被拒且消息保持 `PENDIENTE`，这是有意为之。
+- **预留认领是单写入者** — 认领、条目提交与消息写入在每租户一个进程内区段中运行，与键认领相同；第二个产品写入者需要在 `(tenant, effect_key) WHERE status IN (RESERVADA, DESPACHADA)` 上真正的唯一约束，也就是 ADR-001 的重新评估触发条件。
+- **发件箱与目的地之间没有原子性** — 消息在调用适配器之前变为 `DESPACHADO`，因此在认领与结果之间崩溃会留下已派发却未确认的预留；由 `reconcile` 了结它，任何状态都不会声称目的地未确认的效果。
+- **此处不校验 CEO 签名** — 接受执行时会记录调用者给出的 `authorization` 字符串；W-16 对资金、库存与运输所要求的签名属于访问层（T5.7），由调用者在接受执行前查询。
+- **旧的效应路径仍在预留之外** — `recordEffect` 与 `complete` 早于 E15，仍会在没有预留的情况下记录效果或关闭已批准条目，因此通过它们发出效果的调用者会绕过 `EFFECT_TAKEN` 与消费者校验；`approveWithExecution` 是唯一获取预留的路径。
+- **保留期不会被自动清扫** — `pruneEffects` 在调用者运行时删除超出窗口的已了结行；没有任务调用它，因此 `effect_reservations` 与 `effect_outbox` 会持续增长，直到运维或后续清扫器接手。
+- **每次尝试只读取一次控件** — 消费者在条目的写链之外运行已声明的控件，若条目在此期间移动则以 `STALE_REVALIDATION` 拒绝派发，并让消息保持 `PENDIENTE` 供下一次尝试；它绝不会基于过期结论发出效果。
 - **迭代锁的持有者按尝试确定，而非按进程** — 写入判定把调用者的标签页会话与 `iterationLockBy` 比较，而 `KvTable.update` 在单个进程内串行化一个条目。不同进程中作用于同一条目的两个写入者仍需要真正的租约；持有者检查拒绝的是第二个标签页，而不是第二个主机。
 - **已应用的范畴只被记录，不被学习** — `applyIteration` 把 `scope` 写入其审计事件后即止。修正记录、学习候选与晋升位于本包之外（T4.5–T4.7）。
 - **草稿不会被清扫** — 保留期在读取或恢复草稿时执行；没有任务删除过期行，因此 `iteration_drafts` 会增长，直到后续清扫器接手。

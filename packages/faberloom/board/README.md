@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package carries the work table: prepared results and exceptions with versioned revisions, approval bound to the exact revision, revalidation after a change, and effects that require an explicit authorization. It also runs one iteration attempt per item — lock, working draft, and a round counter that only suggests. It registers the `ctx.faberloomBoard` host service; the model tools live in `dsh-tool-faberloom`.
+This package carries the work table: prepared results and exceptions with versioned revisions, approval bound to the exact revision, revalidation after a change, and effects that require an explicit authorization. It also runs one iteration attempt per item — lock, working draft, and a round counter that only suggests — and the external effect machine of E15: a per-tenant effect reservation, a transactional outbox with a verifying consumer, the reversal window, and reconciliation. It registers the `ctx.faberloomBoard` host service; the model tools live in `dsh-tool-faberloom`.
 
 ## Table of Contents
 
@@ -114,6 +114,34 @@ Every iteration write validates state, `iterationId`, generation, the tab sessio
 
 `iterationPolicy()` returns the resolved values, so the panel schedules from the deployment's numbers instead of carrying its own.
 
+### Execution (E15)
+
+`approveWithExecution(writer, id, input)` approves the exact artifact version and accepts one execution for it: the approval, the effect reservation, and the outbox message are acquired in one command, so an authorized item cannot exist without the intention to emit it (§10.1). It requires the preconditions of `approve` plus `executionId`, `actionType`, `destination`, and an explicit `authorization`; `idempotencyKey` defaults to `effect:<effectKey>`. It returns the item, the reservation, and the message.
+
+`effect_key` is the signed identity: `sha256(tenant_id + ":" + action_type + ":" + destination + ":" + business_key + ":" + artifact_hash)`. The tenant is the item's `companyId` and is never omitted, so a company-less deployment uses the reserved literal `sin-empresa`. A mail destination is one address list — trimmed, lowercased, de-duplicated, sorted — so the same recipients in another order produce the same key; any other destination is an external system id kept as written. `effectKeyOf` and `normaliseDestination` are exported, so a caller computes the key the board stores.
+
+The reservation lives in `effect_reservations`, one row per tenant and `effect_key` (ADR-001: a key-claim table, like `keys` and `references`), with the states `RESERVADA`, `DESPACHADA`, `CONCILIADA`, and `LIBERADA`. A competing execution of the same key is refused with `EFFECT_TAKEN` while the reservation is `RESERVADA` or `DESPACHADA`, including after `admin_close`. A retry of the owner keeps the same row, the same `executionId`, and the same idempotency key; a released or conciliated row frees the key. Reservations never cross tenants: the row key carries the tenant, and a consumer of another tenant finds no message.
+
+The item lands in `DELEGADO_EN_VENTANA` when the action type has a reversal window and in `EJECUCION_PENDIENTE` when it has none; `reversalDeadline` is the instant the effect may leave. `revert(writer, id, { expectedRowVersion?, reason? })` inside the window returns the item to `PENDIENTE_CRITERIO`, releases the reservation, and cancels the message, so no effect happens (W-17, W-19). A revert at or after the deadline is refused with `WINDOW_EXPIRED`, a delegated item with no recorded deadline with `EFFECT_NO_DEADLINE`, and `expireWindow(writer, id)` is the one transition to `EJECUCION_PENDIENTE`: revert and expiry are serialized on the item, so exactly one of them applies (W-18).
+
+`effect_outbox` holds one message per effect with the key and the execution id, in `PENDIENTE`, `DESPACHADO`, `CONFIRMADO`, `FALLIDO`, or `CANCELADO`; a `CANCELADO` message is not dispatchable. `dispatchEffect(actor, effectKey)` is the consumer: inside one tenant section it requires a dispatchable message, a `RESERVADA` reservation owned by the same execution, an item that still authorizes the effect, and controls that still pass; otherwise it emits nothing, releases the reservation, and marks the message `CANCELADO` (W-95, W-102). It also refuses to emit before `reversalDeadline` and commits the window expiry itself when the deadline passed (W-19). The adapter is a port: `registerEffectAdapter(actionType, adapter)` mounts it from `ctx.effect`, the board sends `{ effectKey, executionId, itemId, actionType, destination, idempotencyKey, attempt }`, and an action type with no adapter is refused with `EFFECT_NO_ADAPTER` while the message stays `PENDIENTE`. A throw, an aborted signal, or the configured dispatch timeout is `DESCONOCIDO`: the item is never `EJECUTADO` without a confirmation (W-22). `pendingEffects(actor)` lists what the tenant may still emit.
+
+`reconcile(writer, id, { outcome, ref?, detail? })` settles a dispatched effect: `CONFIRMADO` closes the item as `EJECUTADO`, `FALLIDO` moves it to `ERROR_RECUPERABLE` with that outcome, and `DESCONOCIDO` records the attempt and leaves the unknown state in place (W-21, W-76). `retry(writer, id)` keeps the original execution id, reservation, and idempotency key and returns the item to `EJECUCION_PENDIENTE`; an unknown outcome is refused with `OUTCOME_UNKNOWN` unless the adapter declares the destination idempotent (W-21, W-84). While the outcome is unknown, `submitRevision` and `discard` stay refused and a new artifact becomes a candidate, so the effect keeps its trail (W-76).
+
+`adminClose(writer, id, { reason, expectedRowVersion? })` is the administrative close of an item whose outcome is unknown (D-9): the owner or an administrator of the tenant (`actor.role === 'admin'`), a mandatory reason, and a reservation that stays `DESPACHADA` with `closedAt`, `closedBy`, and `closeReason`, so the reconciliation remains open (W-65). A pending candidate becomes a new item linked with `supersedesItemId` and carrying the candidate hash (W-86). A later reconciliation on a closed item writes `effect.late_confirmation`, updates `executionOutcome`, raises a `LATE_CONFIRMATION` alert visible through `alerts(actor)`, and never reopens the item (W-85). `effectStatus(actor, id)` projects the effect for the panel: reservation, message, alerts, `reversalDeadline`, `executionOutcome`, and whether the reconciliation is still open.
+
+Substituting an item in `DELEGADO_EN_VENTANA` (`submit`, `assignWorkspace`) cancels its scheduled execution: the message is `CANCELADO` and the reservation `LIBERADA`, and no effect is emitted (W-56).
+
+| Config field | Default | Meaning |
+|---|---|---|
+| `effectReversalWindowMs` | `{ 'mail.send': 900000 }` | Reversal window per action type in milliseconds; an unlisted type has none (D-12). A deployment maps `FABERLOOM_REVERSAL_WINDOW_MS` onto it for mail |
+| `effectRetentionDays` | 90 | Days a settled reservation and message stay stored before `pruneEffects` may delete them |
+| `effectDispatchTimeoutMs` | 30000 | Milliseconds one dispatch attempt may take before the outcome is `DESCONOCIDO` |
+
+`effectPolicy()` returns the resolved values. `pruneEffects(actor)` deletes settled rows past their retention window and never touches a live reservation or an unsettled message; no task calls it automatically.
+
+The stable errors of this surface are `EFFECT_IDENTITY_INCOMPLETE` (no action type, execution id, destination, business key, or artifact hash), `EFFECT_TAKEN` (another live execution holds the key), `NOT_DELEGATED`, `EFFECT_NO_DEADLINE`, `WINDOW_OPEN`, `WINDOW_EXPIRED`, `EFFECT_DISPATCHED`, `NO_EFFECT`, `NOT_RETRYABLE`, `OUTCOME_UNKNOWN`, `OUTCOME_KNOWN`, `REASON_REQUIRED`, `EFFECT_NO_ADAPTER`, `OUTBOX_NOT_PENDING`, and `NOT_FOUND`.
+
 -----
 
 <a id="model-experience"></a>
@@ -144,7 +172,14 @@ Independent of live requests: the registration never touches a request prefix.
 - **No shipped check adapter** — the package carries the port, the declared controls, and the proforma implementations only. A deployment that approves a proforma mounts `registerProformaChecks` from its own package, filling `BoardCheckSource` with MCP calls; until then every proforma approval is refused with `CHECK_UNAVAILABLE`, by design.
 - **No `informativo` control declared yet** — D-8 signed only blocking and confirmation controls for a proforma, so the `informativo` class has no registered example and its branch is exercised by no control.
 - **No check result is persisted** — the item stores no verification snapshot. The panel re-reads `runChecks`, and the approval event keeps the results that allowed the decision; a stored per-item verification record arrives with the persistence work.
-- **Revalidation before the external effect is E15** — the controls run before `approve`; the dispatch path that must run them again before sending does not exist yet.
+- **The outbox consumer is not scheduled here** — `dispatchEffect` and `pendingEffects` are the surface; a deployment drives them from its own timer or worker, and the board starts no loop.
+- **No effect adapter ships** — the package carries the port only. A deployment that emits mail, inventory, or shipment effects mounts one adapter per action type; until it does, a dispatch of that type is refused with `EFFECT_NO_ADAPTER` and the message stays `PENDIENTE`, by design.
+- **Reservation claims are single-writer** — the claim, the item commit, and the message write run in one in-process section per tenant, like the key claims; a second product writer needs a real unique constraint on `(tenant, effect_key) WHERE status IN (RESERVADA, DESPACHADA)`, which is ADR-001's revisit trigger.
+- **The outbox is not atomic with the destination** — the message becomes `DESPACHADO` before the adapter is called, so a crash between the claim and the result leaves a dispatched reservation without a confirmation; `reconcile` settles it, and no state ever claims an effect the destination did not confirm.
+- **The CEO signature is not verified here** — an acceptance records the `authorization` string it was given, and the signature that W-16 requires for money, inventory, and shipments belongs to the access package (T5.7), which the caller consults before it accepts the execution.
+- **Legacy effect paths stay outside the reservation** — `recordEffect` and `complete` predate E15 and still record an effect or close an approved item without a reservation, so a caller that emits through them bypasses `EFFECT_TAKEN` and the consumer check; `approveWithExecution` is the only path that acquires one.
+- **Retention is not swept** — `pruneEffects` deletes settled rows past their window when a caller runs it; no task calls it, so `effect_reservations` and `effect_outbox` grow until an operator or a later sweeper owns them.
+- **A revalidation reads controls once per attempt** — the consumer runs the declared controls outside the item's write chain and refuses the dispatch when the item moved while they ran (`STALE_REVALIDATION`), leaving the message `PENDIENTE` for the next attempt; it never emits on a stale verdict.
 - **Iteration lock holder is per attempt, not per process** — the write predicate compares the caller's tab session with `iterationLockBy`, and `KvTable.update` serializes one item inside one process. Two writers on one item in different processes still need a real lease; the holder check refuses a second tab, not a second host.
 - **Applied scope is recorded, not learned** — `applyIteration` writes `scope` on its audit event and stops there. Correction records, learning candidates, and promotion live outside this package (T4.5–T4.7).
 - **Drafts are not swept** — retention is enforced when a draft is read or resumed; no task deletes expired rows, so `iteration_drafts` grows until a later sweeper owns it.

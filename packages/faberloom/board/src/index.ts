@@ -24,11 +24,33 @@ import {
   type BoardItemRecord,
   type BoardKeyRecord,
   type BoardReferenceRecord,
+  type EffectAlertRecord,
+  type EffectOutboxRecord,
+  type EffectReservationRecord,
 } from './spec.ts'
 import { submittedSeverity } from './classify.ts'
 import { orderBoardItems } from './order.ts'
 import { CHECKS_VERSION, artifactOf, checkClass, checkKey, declaredChecks } from './checks.ts'
 import { fieldOriginsOf, mergeOrigins, revisionContent } from './projection.ts'
+import {
+  alertKeyOf,
+  effectCommandFor,
+  effectKeyOf,
+  legacyStatusOf,
+  messageIsDispatchable,
+  messageStatusFor,
+  normaliseDestination,
+  outboxKeyOf,
+  reservationIsLive,
+  reservationIsSettled,
+  reservationKeyOf,
+  retainUntilOf,
+  reversalDeadlineOf,
+  reversalWindowMs,
+  stateForOutcome,
+  type EffectIdentity,
+  type EffectPolicy,
+} from './effects.ts'
 import {
   attemptFields,
   attemptRejection,
@@ -54,6 +76,8 @@ import {
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   BoardActor,
+  BoardAdminCloseInput,
+  BoardAdminCloseResult,
   BoardApplyIterationInput,
   BoardApproveInput,
   BoardArtifact,
@@ -71,10 +95,21 @@ import type {
   BoardCreateInput,
   BoardDataClass,
   BoardDiscardInput,
+  BoardDispatchCode,
+  BoardDispatchOutcome,
   BoardEditDraft,
   BoardEditsInput,
+  BoardEffectAdapter,
+  BoardEffectAlert,
+  BoardEffectExecution,
   BoardEffectInput,
+  BoardEffectOutcome,
+  BoardEffectReservation,
+  BoardEffectResult,
+  BoardEffectRevalidation,
+  BoardEffectStatus,
   BoardEvent,
+  BoardExecutionInput,
   BoardFieldOriginEntry,
   BoardIterateInput,
   BoardIterateWithEditsInput,
@@ -84,11 +119,16 @@ import type {
   BoardIterationLockInput,
   BoardIterationResult,
   BoardIterationStatus,
+  BoardOutboxMessage,
+  BoardOutboxStatus,
   BoardPauseIterationInput,
+  BoardReconcileInput,
   BoardRecoverDraftInput,
   BoardRecoverDraftResult,
   BoardResumeIterationInput,
   BoardResumeIterationResult,
+  BoardRetryInput,
+  BoardRevertInput,
   BoardReviewInput,
   BoardSeverity,
   BoardState,
@@ -107,6 +147,7 @@ export * from './projection.ts'
 export * from './classify.ts'
 export * from './order.ts'
 export * from './iteration.ts'
+export * from './effects.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -137,6 +178,16 @@ export interface Config {
    * discarding. D-10 signs 5; the counter only suggests and never blocks.
    */
   readonly iterationRoundLimit?: number
+  /**
+   * Reversal window per action type, in milliseconds (D-12). The signed values
+   * are 15 minutes for `mail.send` and none for money, inventory, and shipments;
+   * a deployment maps `FABERLOOM_REVERSAL_WINDOW_MS` onto this field for mail.
+   */
+  readonly effectReversalWindowMs?: Record<string, number>
+  /** Days a settled effect record stays stored before `pruneEffects` may delete it. */
+  readonly effectRetentionDays?: number
+  /** Milliseconds one dispatch attempt may take before the outcome is `DESCONOCIDO`. */
+  readonly effectDispatchTimeoutMs?: number
 }
 
 /** Validated board configuration. */
@@ -147,6 +198,9 @@ export const Config = z.object({
   iterationLockSeconds: z.number().int().positive().default(900),
   iterationDraftRetentionDays: z.number().int().positive().default(30),
   iterationRoundLimit: z.number().int().positive().default(5),
+  effectReversalWindowMs: z.record(z.string(), z.number().int().min(0)).default({ 'mail.send': 900_000 }),
+  effectRetentionDays: z.number().int().positive().default(90),
+  effectDispatchTimeoutMs: z.number().int().positive().default(30_000),
 })
 
 /** Discard reasons signed in the specification. */
@@ -196,6 +250,22 @@ interface RegisteredCheck {
   readonly fn: BoardCheckFn
   /** Source port the registration supplied, or undefined when it supplied none. */
   readonly source: BoardCheckSource | undefined
+}
+
+/**
+ * The identity of one accepted effect, resolved from the item and the caller's
+ * input: the five signed components, the key they hash to, and the execution
+ * identity that owns the reservation.
+ */
+interface ResolvedEffect extends EffectIdentity {
+  /** The signed effect key. */
+  readonly effectKey: string
+  /** Execution that owns the reservation. */
+  readonly executionId: string
+  /** Idempotency key the destination receives. */
+  readonly idempotencyKey: string
+  /** Explicit authorization recorded with the acceptance, or null. */
+  readonly authorization: string | null
 }
 
 /** The revision one edit produces, before it is appended to the item. */
@@ -294,6 +364,26 @@ function opaqueReferences(refs: BoardReferences): [ReferenceKind, string][] {
   return pairs.filter((pair): pair is [ReferenceKind, string] => pair[1] !== undefined && pair[1].trim().length > 0)
 }
 
+/** One durable reservation, as the panel reads it. */
+function toReservation(record: EffectReservationRecord): BoardEffectReservation {
+  return { ...record }
+}
+
+/** One durable outbox message, as the panel reads it. */
+function toMessage(record: EffectOutboxRecord): BoardOutboxMessage {
+  return { ...record }
+}
+
+/** One durable alert, as the panel reads it. */
+function toAlert(record: EffectAlertRecord): BoardEffectAlert {
+  return { ...record }
+}
+
+/** A consumer attempt that emitted nothing. */
+function refusal(code: BoardDispatchCode, item: FaberLoomBoardItem | null, detail: string | null): BoardDispatchOutcome {
+  return { dispatched: false, code, item, outcome: null, detail }
+}
+
 /** Map one durable record to the consumer-facing item. */
 function toItem(id: FaberLoomBoardItemId, record: BoardItemRecord): FaberLoomBoardItem {
   const state = stateOf(record)
@@ -324,6 +414,7 @@ export class FaberLoomBoard extends Service {
   private readonly eventCap: number
   private readonly confidenceThreshold: number
   private readonly iterationConfig: IterationPolicy
+  private readonly effectConfig: EffectPolicy
   private readonly claims = new Map<string, Promise<unknown>>()
   /**
    * Registered check implementations, keyed by artifact type and check id. The
@@ -332,10 +423,17 @@ export class FaberLoomBoard extends Service {
    * no entry refuses approval with `CHECK_UNAVAILABLE`.
    */
   private readonly checks = new Map<string, RegisteredCheck>()
+  /**
+   * Effect adapters, one per action type. The board owns no mail, inventory, or
+   * shipment client: a deployment mounts the adapter from `ctx.effect`, and a
+   * dispatch of an action type with no adapter is refused with
+   * `EFFECT_NO_ADAPTER` instead of being silently dropped.
+   */
+  private readonly adapters = new Map<string, BoardEffectAdapter>()
 
   /**
    * @param ctx - Cordis context owning the service fiber.
-   * @param config - inline audit cap, classifier threshold, and iteration policy.
+   * @param config - inline audit cap, classifier threshold, iteration policy, and effect policy.
    */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'faberloomBoard')
@@ -347,6 +445,11 @@ export class FaberLoomBoard extends Service {
       lockSeconds: resolved.iterationLockSeconds,
       retentionDays: resolved.iterationDraftRetentionDays,
       roundLimit: resolved.iterationRoundLimit,
+    }
+    this.effectConfig = {
+      reversalWindowMs: { ...resolved.effectReversalWindowMs },
+      retentionDays: resolved.effectRetentionDays,
+      dispatchTimeoutMs: resolved.effectDispatchTimeoutMs,
     }
   }
 
@@ -377,6 +480,18 @@ export class FaberLoomBoard extends Service {
 
   private async iterationDrafts(): Promise<KvTable<string, BoardIterationDraftRecord>> {
     return (await this.domain()).table('iteration_drafts')
+  }
+
+  private async effectReservations(): Promise<KvTable<string, EffectReservationRecord>> {
+    return (await this.domain()).table('effect_reservations')
+  }
+
+  private async effectMessages(): Promise<KvTable<string, EffectOutboxRecord>> {
+    return (await this.domain()).table('effect_outbox')
+  }
+
+  private async effectAlerts(): Promise<KvTable<string, EffectAlertRecord>> {
+    return (await this.domain()).table('effect_alerts')
   }
 
   private draftId(itemId: FaberLoomBoardItemId | string, userId: string): string {
@@ -741,34 +856,42 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Apply one command inside a single `update` transform: authorization,
-   * optimistic check, state change, and appended event commit together. A
-   * `data` callback receives the record at its queue slot and the transformed
-   * one, so an audit event names the values the command actually wrote.
+   * Apply one command inside a single `update` transform: optimistic check,
+   * state change, and appended event commit together. A `data` callback receives
+   * the record at its queue slot and the transformed one, so an audit event
+   * names the values the command actually wrote.
+   *
+   * Authorization stays in the caller: {@link mutate} derives it from the owner,
+   * while an administrative close and the outbox consumer check a role or the
+   * tenant before they commit.
+   * @param id - item id.
+   * @param command - audit command name.
+   * @param actorId - identity the audit event names.
+   * @param transform - the transition, re-validated at its queue slot.
+   * @param options - expected row token, reason, and audit detail.
+   * @returns the item after the commit.
    */
-  private async mutate(
-    writer: BoardWriter,
+  private async commitItem(
     id: FaberLoomBoardItemId,
     command: string,
-    transform: (current: BoardItemRecord, actor: BoardActor) => BoardItemRecord,
+    actorId: string,
+    transform: (current: BoardItemRecord) => BoardItemRecord,
     options: {
       expectedRowVersion?: number | undefined
       reason?: string | null | undefined
       data?: MutateData
     } = {},
   ): Promise<FaberLoomBoardItem> {
-    const actor = this.actorOf(writer)
     const table = await this.items()
     let next: BoardItemRecord | undefined
     await table.update(id, (current) => {
-      this.authorizeWrite(current, writer)
       this.requireRowVersion(current, options.expectedRowVersion)
-      const candidate = transform(current, actor)
+      const candidate = transform(current)
       const fromState = stateOf(current)
       const toState = stateOf(candidate)
       const event = this.event({
         command,
-        actor: actor.id,
+        actor: actorId,
         fromState,
         toState,
         revision: candidate.version,
@@ -786,6 +909,28 @@ export class FaberLoomBoard extends Service {
     })
     if (next === undefined) throw new Error(`faberloom: NOT_FOUND — board item ${id} disappeared during the command`)
     return toItem(id, next)
+  }
+
+  /**
+   * Apply one command on behalf of the item's owner: authorization, optimistic
+   * check, state change, and the appended event commit in one `update`.
+   */
+  private async mutate(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    command: string,
+    transform: (current: BoardItemRecord, actor: BoardActor) => BoardItemRecord,
+    options: {
+      expectedRowVersion?: number | undefined
+      reason?: string | null | undefined
+      data?: MutateData
+    } = {},
+  ): Promise<FaberLoomBoardItem> {
+    const actor = this.actorOf(writer)
+    return await this.commitItem(id, command, actor.id, (current) => {
+      this.authorizeWrite(current, writer)
+      return transform(current, actor)
+    }, options)
   }
 
   private buildRecord(
@@ -862,6 +1007,9 @@ export class FaberLoomBoard extends Service {
       effects: [],
       reviews: [],
       executionId: input.executionId ?? null,
+      effectKey: null,
+      reversalDeadline: null,
+      executionOutcome: null,
       createdAt: now,
       updatedAt: now,
     }
@@ -941,8 +1089,11 @@ export class FaberLoomBoard extends Service {
           return toItem(existing.id, await this.requireItem(existing.id))
         }
         await this.mutate(actor, existing.id, 'superseded', current => ({
-          ...current, state: 'SUSTITUIDO', status: 'completed',
+          ...current, state: 'SUSTITUIDO', status: 'completed', reversalDeadline: null,
         }), { reason: 'new-artifact' })
+        // A substituted item no longer holds an execution: the scheduled effect
+        // is cancelled and its reservation released (W-56).
+        await this.releaseScheduledExecution(companyId, existing.record.effectKey, 'substituted')
         await this.release(companyId, 'bkey', existing.record.businessKey)
         supersedes = existing.id
       }
@@ -1282,8 +1433,9 @@ export class FaberLoomBoard extends Service {
           return { item: toItem(other.id, await this.requireItem(other.id)), transferredDrafts }
         }
         await this.mutate(writer, other.id, 'superseded', item => ({
-          ...item, state: 'SUSTITUIDO', status: 'completed', iterationDraftKey: null,
+          ...item, state: 'SUSTITUIDO', status: 'completed', iterationDraftKey: null, reversalDeadline: null,
         }), { reason: 'workspace-collision' })
+        await this.releaseScheduledExecution(companyId, other.record.effectKey, 'substituted')
         transferredDrafts = await this.transferDrafts(other.record, other.id, id)
         await this.release(companyId, 'bkey', key)
         superseded = other.id
@@ -2200,6 +2352,1321 @@ export class FaberLoomBoard extends Service {
     await drafts.put(key, {
       ...stored, archived: true, superseded: true, updatedAt: new Date().toISOString(),
     })
+  }
+
+  // ── Execution (E15) ─────────────────────────────────────────────────
+
+  /**
+   * The resolved effect policy (D-12): the reversal window per action type, the
+   * retention of a settled effect record, and the timeout one dispatch attempt
+   * gets from its adapter.
+   * @returns a copy of the resolved policy.
+   */
+  effectPolicy(): EffectPolicy {
+    return {
+      reversalWindowMs: { ...this.effectConfig.reversalWindowMs },
+      retentionDays: this.effectConfig.retentionDays,
+      dispatchTimeoutMs: this.effectConfig.dispatchTimeoutMs,
+    }
+  }
+
+  /**
+   * Register the adapter of one action type. The registry is mounted from
+   * outside the board, the way `registerCheck` mounts a control: a deployment
+   * owns the mail, inventory, or shipment client, and the board only decides
+   * when to call it. A second adapter for one action type replaces the first.
+   * @param actionType - action type the adapter emits (`mail.send`, ...).
+   * @param adapter - the implementation.
+   * @returns the disposer that removes this registration.
+   */
+  registerEffectAdapter(actionType: string, adapter: BoardEffectAdapter): () => void {
+    const key = actionType.trim()
+    if (key.length === 0) throw new Error('faberloom: EFFECT_NO_ADAPTER — an adapter needs an action type')
+    this.adapters.set(key, adapter)
+    return () => {
+      if (this.adapters.get(key) === adapter) this.adapters.delete(key)
+    }
+  }
+
+  /**
+   * Approve the exact artifact version and accept one execution for it: the
+   * approval, the reservation, and the outbox message are acquired in one
+   * command, so a crash cannot leave an authorized item without its intention
+   * (§10.1). The reservation is per tenant and `effect_key`, so a competing
+   * execution of the same effect is refused with `EFFECT_TAKEN` while it is
+   * `RESERVADA` or `DESPACHADA`.
+   *
+   * The item lands in `DELEGADO_EN_VENTANA` when the action type has a reversal
+   * window, and in `EJECUCION_PENDIENTE` when it has none (D-12). The controls
+   * run again immediately before the transition, exactly as `approve` does.
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - approval expectations, execution identity, and destination.
+   * @returns the item, its reservation, and its outbox message.
+   */
+  async approveWithExecution(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    input: BoardExecutionInput,
+  ): Promise<BoardEffectExecution> {
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    this.requireRowVersion(current, input.expectedRowVersion)
+    this.requireApprovable(current, input)
+    const identity = this.requireEffectIdentity(current, input)
+    const confirmations = input.confirmations ?? []
+    const report = await this.evaluateChecks(current, id)
+    this.requireChecksPassable(report, confirmations)
+
+    return await this.serial(current.companyId, async () => {
+      const latest = await this.requireItem(id)
+      this.authorizeWrite(latest, writer)
+      this.requireRowVersion(latest, input.expectedRowVersion)
+      this.requireApprovable(latest, input)
+      const reservations = await this.effectReservations()
+      const key = reservationKeyOf(latest.companyId, identity.effectKey)
+      const held = reservations.get(key)
+      if (held !== undefined && reservationIsLive(held.status) && held.executionId !== identity.executionId) {
+        throw new Error(
+          `faberloom: EFFECT_TAKEN — the effect ${identity.effectKey} is held by execution ${held.executionId}`,
+        )
+      }
+
+      const now = new Date()
+      const windowMs = reversalWindowMs(this.effectConfig, identity.actionType)
+      const deadline = reversalDeadlineOf(this.effectConfig, identity.actionType, now)
+      const at = now.toISOString()
+      const reservation: EffectReservationRecord = {
+        companyId: latest.companyId,
+        effectKey: identity.effectKey,
+        actionType: identity.actionType,
+        destination: identity.destination,
+        businessKey: identity.businessKey,
+        artifactHash: identity.artifactHash,
+        executionId: identity.executionId,
+        itemId: id,
+        idempotencyKey: identity.idempotencyKey,
+        authorization: identity.authorization,
+        status: 'RESERVADA',
+        outcome: null,
+        reversalDeadline: deadline,
+        dispatchedAt: null,
+        releasedAt: null,
+        releaseReason: null,
+        closedAt: null,
+        closedBy: null,
+        closeReason: null,
+        settledAt: null,
+        createdAt: held?.createdAt ?? at,
+        updatedAt: at,
+        retainUntil: retainUntilOf(this.effectConfig, now),
+      }
+      if (held === undefined) await reservations.put(key, reservation)
+      else await reservations.update(key, () => reservation)
+
+      const messages = await this.effectMessages()
+      const messageKey = outboxKeyOf(latest.companyId, identity.effectKey)
+      const previousMessage = messages.get(messageKey)
+      const message: EffectOutboxRecord = {
+        companyId: latest.companyId,
+        effectKey: identity.effectKey,
+        executionId: identity.executionId,
+        itemId: id,
+        actionType: identity.actionType,
+        destination: identity.destination,
+        idempotencyKey: identity.idempotencyKey,
+        status: 'PENDIENTE',
+        dispatchable: true,
+        attempts: previousMessage?.attempts ?? 0,
+        reason: null,
+        ref: null,
+        createdAt: previousMessage?.createdAt ?? at,
+        updatedAt: at,
+        dispatchedAt: null,
+        settledAt: null,
+        retainUntil: retainUntilOf(this.effectConfig, now),
+      }
+      if (previousMessage === undefined) await messages.put(messageKey, message)
+      else await messages.update(messageKey, () => message)
+
+      try {
+        const item = await this.mutate(writer, id, 'effect.accepted', (record) => {
+          this.requireApprovable(record, input)
+          return {
+            ...record,
+            state: deadline === null ? 'EJECUCION_PENDIENTE' : 'DELEGADO_EN_VENTANA',
+            status: 'in_progress',
+            approvedRevision: record.version,
+            stale: false,
+            staleReason: null,
+            executionId: identity.executionId,
+            effectKey: identity.effectKey,
+            reversalDeadline: deadline,
+            executionOutcome: null,
+          }
+        }, {
+          expectedRowVersion: input.expectedRowVersion,
+          data: {
+            ...this.checkEventData(report, confirmations) ?? {},
+            effectKey: identity.effectKey,
+            executionId: identity.executionId,
+            actionType: identity.actionType,
+            destination: identity.destination,
+            idempotencyKey: identity.idempotencyKey,
+            windowMs,
+            reversalDeadline: deadline,
+            authorization: identity.authorization,
+          },
+        })
+        return { item, reservation: toReservation(reservation), message: toMessage(message) }
+      } catch (error) {
+        // The acceptance did not commit, so neither row may outlive it.
+        await this.cancelMessage(latest.companyId, identity.effectKey, 'ACCEPTANCE_FAILED')
+        await this.releaseReservation(latest.companyId, identity.effectKey, 'acceptance-failed')
+        throw error
+      }
+    })
+  }
+
+  /**
+   * Revert a delegated execution inside its window. The effect has not happened
+   * and cannot have happened, so the reservation is released and the outbox
+   * message cancelled; a revert at or after the deadline is refused (W-18) and
+   * a delegated item with no recorded deadline is refused outright (W-17).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - optimistic token and optional reason.
+   * @returns the item back in `PENDIENTE_CRITERIO`.
+   */
+  async revert(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRevertInput = {}): Promise<FaberLoomBoardItem> {
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    const effectKey = current.effectKey
+    return await this.serial(current.companyId, async () => {
+      const latest = await this.requireItem(id)
+      this.authorizeWrite(latest, writer)
+      const now = new Date()
+      const deadline = this.requireDelegatedDeadline(latest)
+      if (now.getTime() >= Date.parse(deadline)) {
+        throw new Error('faberloom: WINDOW_EXPIRED — the reversal window closed; only expiry applies')
+      }
+      if (effectKey !== null) {
+        const held = (await this.effectReservations()).get(reservationKeyOf(latest.companyId, effectKey))
+        if (held !== undefined && held.status === 'DESPACHADA') {
+          throw new Error('faberloom: EFFECT_DISPATCHED — only reconciliation settles a dispatched effect')
+        }
+      }
+      const item = await this.mutate(writer, id, 'revert', (record) => {
+        const recordDeadline = this.requireDelegatedDeadline(record)
+        if (now.getTime() >= Date.parse(recordDeadline)) {
+          throw new Error('faberloom: WINDOW_EXPIRED — the reversal window closed; only expiry applies')
+        }
+        return {
+          ...record,
+          state: 'PENDIENTE_CRITERIO',
+          status: 'waiting_approval',
+          approvedRevision: null,
+          effectKey: null,
+          reversalDeadline: null,
+          executionOutcome: null,
+        }
+      }, {
+        expectedRowVersion: input.expectedRowVersion,
+        reason: input.reason ?? null,
+        data: { effectKey, reversalDeadline: deadline },
+      })
+      await this.cancelMessage(latest.companyId, effectKey, 'REVERTED')
+      await this.releaseReservation(latest.companyId, effectKey, 'reverted')
+      return item
+    })
+  }
+
+  /**
+   * Expire the reversal window: the item moves to `EJECUCION_PENDIENTE` and the
+   * effect becomes dispatchable. An item whose window is still open is refused
+   * with `WINDOW_OPEN`, and one that is not delegated with `NOT_DELEGATED`, so a
+   * revert and an expiry produce exactly one transition (W-18).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @returns the item in `EJECUCION_PENDIENTE`.
+   */
+  async expireWindow(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem> {
+    const actor = this.actorOf(writer)
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    return await this.serial(current.companyId, async () => {
+      const latest = await this.requireItem(id)
+      this.authorizeWrite(latest, writer)
+      const now = new Date()
+      return await this.commitItem(id, 'window.expired', actor.id, (record) => {
+        const deadline = this.requireClosedWindow(record, now)
+        return this.expiredRecord(record, deadline, actor.id)
+      }, { data: { effectKey: latest.effectKey, reversalDeadline: latest.reversalDeadline } })
+    })
+  }
+
+  /**
+   * Run the controls again before the effect leaves (W-50, W-75). A blocking
+   * failure, a declared control with no adapter, or a confirmation failure the
+   * approval never accepted invalidates the acceptance: the item returns to
+   * `PENDIENTE_CRITERIO`, the reservation is released, and the message is
+   * cancelled, so a fresh approval of the same effect is accepted (W-95).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @returns whether the effect may still leave, and the item after the attempt.
+   */
+  async revalidateEffect(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<BoardEffectRevalidation> {
+    const actor = this.actorOf(writer)
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    this.requireAcceptedExecution(current)
+    const failure = await this.revalidateForDispatch(current, id)
+    if (failure === null) return { ok: true, item: toItem(id, current) }
+    return await this.serial(current.companyId, async () => {
+      const latest = await this.requireItem(id)
+      this.authorizeWrite(latest, writer)
+      const item = await this.invalidateAcceptance(latest, id, actor.id, failure, current.rowVersion)
+      await this.cancelMessage(latest.companyId, latest.effectKey, 'REVALIDATION_FAILED')
+      await this.releaseReservation(latest.companyId, latest.effectKey, 'revalidation-failed')
+      return { ok: false, item }
+    })
+  }
+
+  /**
+   * Consent to emit one effect: the outbox consumer. Before it calls the
+   * adapter it verifies, inside one tenant section, that the message is
+   * dispatchable, that the reservation is still `RESERVADA` for this execution,
+   * that the item still authorizes the effect, and that the controls still
+   * pass. Any failed check emits nothing, releases the reservation, and marks
+   * the message non-dispatchable (W-95, W-102).
+   *
+   * An item still inside its reversal window keeps the message `PENDIENTE` and
+   * reports `WINDOW_OPEN`: nothing leaves before `reversal_deadline` (W-19).
+   * @param actor - the tenant the consumer acts for.
+   * @param effectKey - effect to emit.
+   * @returns what the attempt produced.
+   */
+  async dispatchEffect(actor: BoardActor, effectKey: string): Promise<BoardDispatchOutcome> {
+    const messageKey = outboxKeyOf(actor.companyId ?? null, effectKey)
+    const message = (await this.effectMessages()).get(messageKey)
+    if (message === undefined || message.companyId !== (actor.companyId ?? null)) {
+      throw new Error(`faberloom: NOT_FOUND — outbox message ${effectKey} not found`)
+    }
+    return await this.serial(message.companyId, async () => await this.dispatchOne(actor, messageKey, effectKey))
+  }
+
+  /**
+   * The messages this tenant may still emit, oldest first. A cancelled,
+   * dispatched, or failed message is not listed: it is not dispatchable.
+   * @param actor - the tenant the consumer acts for.
+   * @returns the dispatchable messages.
+   */
+  async pendingEffects(actor: BoardActor): Promise<readonly BoardOutboxMessage[]> {
+    const tenant = actor.companyId ?? null
+    const pending: BoardOutboxMessage[] = []
+    for (const [, row] of (await this.effectMessages()).entries()) {
+      if (row.companyId !== tenant) continue
+      if (!messageIsDispatchable(row.status, row.dispatchable)) continue
+      pending.push(toMessage(row))
+    }
+    return pending.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+  }
+
+  /**
+   * Everything one item's external effect looks like to the panel: the
+   * reservation, the outbox message, the visible alerts, and whether a
+   * dispatched effect still awaits reconciliation.
+   * @param actor - the authenticated reader.
+   * @param id - item id.
+   * @returns the effect projection, or null when the item authorized none.
+   */
+  async effectStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEffectStatus | null> {
+    const record = await this.requireItem(id)
+    this.authorizeRead(record, actor)
+    const effectKey = record.effectKey
+    if (effectKey === null) return null
+    const reservation = (await this.effectReservations()).get(reservationKeyOf(record.companyId, effectKey))
+    const message = (await this.effectMessages()).get(outboxKeyOf(record.companyId, effectKey))
+    const alerts: BoardEffectAlert[] = []
+    for (const [, row] of (await this.effectAlerts()).entries()) {
+      if (row.companyId !== record.companyId || row.effectKey !== effectKey) continue
+      alerts.push(toAlert(row))
+    }
+    return {
+      effectKey,
+      reversalDeadline: record.reversalDeadline,
+      executionOutcome: record.executionOutcome,
+      reservation: reservation === undefined ? null : toReservation(reservation),
+      message: message === undefined ? null : toMessage(message),
+      alerts: alerts.sort((left, right) => left.updatedAt.localeCompare(right.updatedAt)),
+      reconciliationOpen: reservation !== undefined && reservation.status === 'DESPACHADA',
+    }
+  }
+
+  /**
+   * Reconcile a dispatched effect with what the destination reports.
+   * `CONFIRMADO` closes the item as `EJECUTADO`; `FALLIDO` moves it to
+   * `ERROR_RECUPERABLE` with that outcome, which is what makes a retry legal;
+   * `DESCONOCIDO` records the attempt and leaves the item in its unknown state
+   * (W-21, W-76).
+   *
+   * A reconciliation after an administrative close updates the outcome, raises
+   * a visible alert, writes an audit event, and never reopens the item (W-85).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - the outcome the destination reported.
+   * @returns the item after the reconciliation.
+   */
+  async reconcile(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReconcileInput): Promise<FaberLoomBoardItem> {
+    const actor = this.actorOf(writer)
+    const current = await this.requireItem(id)
+    this.authorizeOwnerOrAdmin(current, writer, 'settle the item')
+    const effectKey = current.effectKey
+    if (effectKey === null) throw new Error('faberloom: NO_EFFECT — the item holds no reserved effect')
+    const held = (await this.effectReservations()).get(reservationKeyOf(current.companyId, effectKey))
+    if (held === undefined) throw new Error('faberloom: NO_EFFECT — the item holds no reserved effect')
+    const message = (await this.effectMessages()).get(outboxKeyOf(current.companyId, effectKey))
+    const dispatched = held.status === 'DESPACHADA' || message?.status === 'DESPACHADO'
+    if (!dispatched) throw new Error('faberloom: NO_EFFECT — the effect was never dispatched')
+    const closed = held.closedAt !== null
+    const late = closed && input.outcome !== 'DESCONOCIDO'
+    const command = late ? 'effect.late_confirmation' : 'effect.reconciled'
+    return await this.serial(current.companyId, async () => {
+      const item = await this.commitItem(id, command, actor.id, record => this.outcomeRecord(record, {
+        command,
+        actorId: actor.id,
+        outcome: input.outcome,
+        detail: input.detail ?? null,
+      }), {
+        expectedRowVersion: input.expectedRowVersion,
+        data: {
+          effectKey,
+          executionId: held.executionId,
+          outcome: input.outcome,
+          ref: input.ref ?? null,
+          detail: input.detail ?? null,
+          closed,
+        },
+      })
+      await this.settleMessage(
+        outboxKeyOf(current.companyId, effectKey),
+        messageStatusFor(input.outcome),
+        input.outcome === 'DESCONOCIDO' ? 'OUTCOME_UNKNOWN' : null,
+        input.ref ?? null,
+      )
+      await this.settleReservation(reservationKeyOf(current.companyId, effectKey), input.outcome)
+      if (late) {
+        await this.raiseAlert({
+          companyId: current.companyId,
+          effectKey,
+          itemId: id,
+          executionId: held.executionId,
+          outcome: input.outcome,
+          detail: input.detail ?? null,
+          actorId: actor.id,
+        })
+      }
+      return item
+    })
+  }
+
+  /**
+   * Retry a failed execution. The retry keeps the original `executionId`, the
+   * same reservation, and the same idempotency key (W-84, W-77); it moves the
+   * item back to `EJECUCION_PENDIENTE` so the consumer may emit it again.
+   *
+   * An unknown outcome is refused with `OUTCOME_UNKNOWN` unless the adapter of
+   * that action type declares the destination idempotent, because a destination
+   * that may already have the effect cannot be sent twice (W-21).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - optimistic token.
+   * @returns the item in `EJECUCION_PENDIENTE`.
+   */
+  async retry(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRetryInput = {}): Promise<FaberLoomBoardItem> {
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    const effectKey = current.effectKey
+    if (effectKey === null) throw new Error('faberloom: NO_EFFECT — the item holds no effect to retry')
+    const reservations = await this.effectReservations()
+    const reservationKey = reservationKeyOf(current.companyId, effectKey)
+    const held = reservations.get(reservationKey)
+    if (held === undefined) throw new Error('faberloom: NO_EFFECT — the item holds no effect to retry')
+    const state = stateOf(current)
+    if (state !== 'ERROR_RECUPERABLE' && state !== 'DESCONOCIDO') {
+      throw new Error('faberloom: NOT_RETRYABLE — only a failed execution can be retried')
+    }
+    const unknown = state === 'DESCONOCIDO'
+      || current.executionOutcome === 'DESCONOCIDO'
+      || held.outcome === 'DESCONOCIDO'
+    const adapter = this.adapters.get(held.actionType)
+    if (unknown && adapter?.idempotent !== true) {
+      throw new Error(
+        'faberloom: OUTCOME_UNKNOWN — the destination may hold the effect; reconcile it or declare it idempotent',
+      )
+    }
+    return await this.serial(current.companyId, async () => {
+      const now = new Date()
+      const at = now.toISOString()
+      const item = await this.mutate(writer, id, 'effect.retried', (record) => {
+        const currentState = stateOf(record)
+        if (currentState !== 'ERROR_RECUPERABLE' && currentState !== 'DESCONOCIDO') {
+          throw new Error('faberloom: NOT_RETRYABLE — only a failed execution can be retried')
+        }
+        return {
+          ...record,
+          state: 'EJECUCION_PENDIENTE',
+          status: 'in_progress',
+          reversalDeadline: null,
+          executionOutcome: null,
+          stale: false,
+          staleReason: null,
+        }
+      }, {
+        expectedRowVersion: input.expectedRowVersion,
+        data: { effectKey, executionId: held.executionId, idempotencyKey: held.idempotencyKey },
+      })
+      await reservations.update(reservationKey, record => ({
+        ...record,
+        status: 'RESERVADA',
+        outcome: null,
+        reversalDeadline: null,
+        dispatchedAt: null,
+        settledAt: null,
+        updatedAt: at,
+        retainUntil: retainUntilOf(this.effectConfig, now),
+      }))
+      const messageKey = outboxKeyOf(current.companyId, effectKey)
+      const messages = await this.effectMessages()
+      const previous = messages.get(messageKey)
+      if (previous === undefined) {
+        await messages.put(messageKey, {
+          companyId: current.companyId,
+          effectKey,
+          executionId: held.executionId,
+          itemId: id,
+          actionType: held.actionType,
+          destination: held.destination,
+          idempotencyKey: held.idempotencyKey,
+          status: 'PENDIENTE',
+          dispatchable: true,
+          attempts: 0,
+          reason: null,
+          ref: null,
+          createdAt: at,
+          updatedAt: at,
+          dispatchedAt: null,
+          settledAt: null,
+          retainUntil: retainUntilOf(this.effectConfig, now),
+        })
+      } else {
+        await messages.update(messageKey, record => ({
+          ...record,
+          status: 'PENDIENTE',
+          dispatchable: true,
+          reason: null,
+          ref: null,
+          dispatchedAt: null,
+          settledAt: null,
+          updatedAt: at,
+        }))
+      }
+      return item
+    })
+  }
+
+  /**
+   * Close an item administratively while its effect outcome is unknown: Owner
+   * or Admin of the tenant, with a reason, and the reservation stays
+   * `DESPACHADA` so the reconciliation remains open (D-9, W-65). A pending
+   * candidate becomes a new linked item in the same command (W-86).
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - optimistic token and the mandatory reason.
+   * @returns the closed item and the item the candidate became.
+   */
+  async adminClose(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    input: BoardAdminCloseInput,
+  ): Promise<BoardAdminCloseResult> {
+    const actor = this.actorOf(writer)
+    const current = await this.requireItem(id)
+    this.requireAdminClose(current, actor)
+    const reason = input.reason.trim()
+    if (reason.length === 0) {
+      throw new Error('faberloom: REASON_REQUIRED — an administrative close needs a reason')
+    }
+    this.requireUnknownOutcome(current)
+    return await this.serial(current.companyId, async () => {
+      const latest = await this.requireItem(id)
+      this.requireAdminClose(latest, actor)
+      const candidate = latest.pendingCandidate
+      const item = await this.commitItem(id, 'admin_close', actor.id, (record) => {
+        this.requireAdminClose(record, actor)
+        this.requireUnknownOutcome(record)
+        return { ...record, state: 'DESCARTADO', status: 'completed', pendingCandidate: null }
+      }, {
+        expectedRowVersion: input.expectedRowVersion,
+        reason,
+        data: {
+          effectKey: latest.effectKey,
+          executionOutcome: latest.executionOutcome,
+          candidateId: candidate?.id ?? null,
+          candidateHash: candidate?.hash ?? null,
+        },
+      })
+      await this.markReservationClosed(latest.companyId, latest.effectKey, actor.id, reason)
+      const created = candidate === null ? null : await this.createFromCandidate(actor, id, latest, candidate)
+      return { item, created }
+    })
+  }
+
+  /**
+   * The visible alerts of this tenant, newest first. A late confirmation after
+   * an administrative close raises one, and the panel reads it here (W-85).
+   * @param actor - the tenant the reader acts for.
+   * @returns the alerts.
+   */
+  async alerts(actor: BoardActor): Promise<readonly BoardEffectAlert[]> {
+    const tenant = actor.companyId ?? null
+    const alerts: BoardEffectAlert[] = []
+    for (const [, row] of (await this.effectAlerts()).entries()) {
+      if (row.companyId !== tenant) continue
+      alerts.push(toAlert(row))
+    }
+    return alerts.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  }
+
+  /**
+   * Delete settled effect records past their retention window. A reservation
+   * that is still live and a message that was never settled are never pruned:
+   * they carry a decision that a human may still need to see.
+   * @param actor - the tenant the operator acts for.
+   * @returns how many rows were removed.
+   */
+  async pruneEffects(actor: BoardActor): Promise<number> {
+    const tenant = actor.companyId ?? null
+    const now = Date.now()
+    const expired = (retainUntil: string | null): boolean =>
+      retainUntil !== null && Date.parse(retainUntil) <= now
+    let removed = 0
+    const reservations = await this.effectReservations()
+    for (const [key, row] of [...reservations.entries()]) {
+      if (row.companyId !== tenant || !reservationIsSettled(row.status) || !expired(row.retainUntil)) continue
+      if (await reservations.delete(key)) removed += 1
+    }
+    const messages = await this.effectMessages()
+    for (const [key, row] of [...messages.entries()]) {
+      if (row.companyId !== tenant || row.status === 'PENDIENTE' || row.status === 'DESPACHADO') continue
+      if (!expired(row.retainUntil)) continue
+      if (await messages.delete(key)) removed += 1
+    }
+    const alerts = await this.effectAlerts()
+    for (const [key, row] of [...alerts.entries()]) {
+      if (row.companyId !== tenant) continue
+      const limit = Date.parse(row.updatedAt) + this.effectConfig.retentionDays * 86_400_000
+      if (limit > now) continue
+      if (await alerts.delete(key)) removed += 1
+    }
+    return removed
+  }
+
+  /**
+   * Resolve the five components of the effect identity from the item and the
+   * acceptance. The contract never omits the tenant, the business key, or the
+   * artifact hash, so an item missing either of the last two is refused here
+   * instead of producing a key over a hole.
+   * @param record - the item being accepted.
+   * @param input - the execution identity the caller supplied.
+   * @returns the resolved identity, including the derived idempotency key.
+   */
+  private requireEffectIdentity(
+    record: BoardItemRecord,
+    input: BoardExecutionInput,
+  ): ResolvedEffect {
+    const actionType = input.actionType.trim()
+    if (actionType.length === 0) {
+      throw new Error('faberloom: EFFECT_IDENTITY_INCOMPLETE — the execution needs an action type')
+    }
+    const executionId = input.executionId.trim()
+    if (executionId.length === 0) {
+      throw new Error('faberloom: EFFECT_IDENTITY_INCOMPLETE — the execution needs an execution id')
+    }
+    if (record.businessKey === null || record.businessKey.trim().length === 0) {
+      throw new Error('faberloom: EFFECT_IDENTITY_INCOMPLETE — the item has no business key')
+    }
+    if (record.artifactHash === null || record.artifactHash.trim().length === 0) {
+      throw new Error('faberloom: EFFECT_IDENTITY_INCOMPLETE — the item has no artifact hash')
+    }
+    const destination = normaliseDestination(actionType, input.destination)
+    const effectKey = effectKeyOf({
+      tenantId: record.companyId,
+      actionType,
+      destination,
+      businessKey: record.businessKey,
+      artifactHash: record.artifactHash,
+    })
+    const submittedKey = (input.idempotencyKey ?? '').trim()
+    const authorization = (input.authorization ?? '').trim()
+    return {
+      tenantId: record.companyId,
+      actionType,
+      destination,
+      businessKey: record.businessKey,
+      artifactHash: record.artifactHash,
+      effectKey,
+      executionId,
+      idempotencyKey: submittedKey.length > 0 ? submittedKey : `effect:${effectKey}`,
+      authorization: authorization.length > 0 ? authorization : null,
+    }
+  }
+
+  /**
+   * The recorded deadline of a delegated item. An item that is not delegated
+   * carries no window (`NOT_DELEGATED`), and one delegated without a deadline is
+   * refused outright (W-17).
+   * @param record - the stored item.
+   * @returns the ISO-8601 deadline.
+   */
+  private requireDelegatedDeadline(record: BoardItemRecord): string {
+    if (stateOf(record) !== 'DELEGADO_EN_VENTANA') {
+      throw new Error('faberloom: NOT_DELEGATED — only a delegated item carries a reversal window')
+    }
+    const deadline = record.reversalDeadline
+    if (deadline === null) {
+      throw new Error('faberloom: EFFECT_NO_DEADLINE — the delegated item records no reversal deadline')
+    }
+    return deadline
+  }
+
+  /**
+   * The deadline of a delegated item whose window is over, so the effect may
+   * leave. A window still ahead of the clock is refused with `WINDOW_OPEN`: the
+   * window postpones the effect (D-4, W-19).
+   * @param record - the stored item.
+   * @param now - the server clock.
+   * @returns the ISO-8601 deadline the window closed on.
+   */
+  private requireClosedWindow(record: BoardItemRecord, now: Date): string {
+    const deadline = this.requireDelegatedDeadline(record)
+    if (now.getTime() < Date.parse(deadline)) {
+      throw new Error('faberloom: WINDOW_OPEN — the effect waits until its reversal deadline')
+    }
+    return deadline
+  }
+
+  /**
+   * The record of one window expiry: the single transition revert and expiry
+   * share, appended once (§3.2, W-18).
+   * @param record - the delegated record.
+   * @param deadline - the deadline it closed on.
+   * @param actorId - identity the audit event names.
+   * @returns the record in `EJECUCION_PENDIENTE`.
+   */
+  private expiredRecord(record: BoardItemRecord, deadline: string, actorId: string): BoardItemRecord {
+    const event = this.event({
+      command: 'window.expired',
+      actor: actorId,
+      fromState: 'DELEGADO_EN_VENTANA',
+      toState: 'EJECUCION_PENDIENTE',
+      revision: record.version,
+      artifactHash: record.artifactHash,
+      data: { effectKey: record.effectKey, reversalDeadline: deadline },
+    })
+    return {
+      ...record,
+      state: 'EJECUCION_PENDIENTE',
+      status: 'in_progress',
+      rowVersion: record.rowVersion + 1,
+      events: [...record.events, event].slice(-this.eventCap),
+      updatedAt: event.at,
+    }
+  }
+
+  /**
+   * The record of one reported outcome. A closed item keeps its state and only
+   * gains the outcome, which is how a late confirmation never reopens it
+   * (W-85); every other state follows the outcome (W-22).
+   * @param record - the record at its queue slot.
+   * @param input - the command, the actor, the outcome, and the detail.
+   * @returns the record after the outcome.
+   */
+  private outcomeRecord(
+    record: BoardItemRecord,
+    input: {
+      readonly command: string
+      readonly actorId: string
+      readonly outcome: BoardEffectOutcome
+      readonly detail: string | null
+    },
+  ): BoardItemRecord {
+    const state = stateOf(record)
+    const closed = state === 'DESCARTADO' || state === 'SUSTITUIDO' || state === 'EJECUTADO'
+    const target = stateForOutcome(input.outcome)
+    const toState = closed ? state : target
+    const event = this.event({
+      command: input.command,
+      actor: input.actorId,
+      fromState: state,
+      toState,
+      revision: record.version,
+      artifactHash: record.artifactHash,
+      data: { outcome: input.outcome, detail: input.detail, closed },
+    })
+    return {
+      ...record,
+      state: toState,
+      status: legacyStatusOf(toState),
+      executionOutcome: input.outcome,
+      rowVersion: record.rowVersion + 1,
+      events: [...record.events, event].slice(-this.eventCap),
+      updatedAt: event.at,
+    }
+  }
+
+  /**
+   * Refuse a command that needs an accepted, still-executing item.
+   * @param record - the stored item.
+   */
+  private requireAcceptedExecution(record: BoardItemRecord): void {
+    const state = stateOf(record)
+    if (state !== 'EJECUCION_PENDIENTE' && state !== 'DELEGADO_EN_VENTANA') {
+      throw new Error('faberloom: NO_EFFECT — the item holds no accepted execution')
+    }
+    if (record.effectKey === null) {
+      throw new Error('faberloom: NO_EFFECT — the item holds no effect key')
+    }
+  }
+
+  /**
+   * The control verdict of a dispatch revalidation: null when the effect may
+   * leave, or the stable reason it may not.
+   * @param record - the record under review.
+   * @param id - item id.
+   * @returns the failure detail, or null.
+   */
+  private async revalidateForDispatch(record: BoardItemRecord, id: FaberLoomBoardItemId): Promise<string | null> {
+    const report = await this.evaluateChecks(record, id)
+    try {
+      this.requireChecksPassable(report, this.confirmationsOf(record))
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  /**
+   * The confirmations the last acceptance recorded, so a revalidation does not
+   * count a `confirmacion` failure the human already accepted as new (W-75).
+   * @param record - the stored item.
+   * @returns the control ids the acceptance confirmed.
+   */
+  private confirmationsOf(record: BoardItemRecord): string[] {
+    for (let index = record.events.length - 1; index >= 0; index -= 1) {
+      const event = record.events[index]
+      if (event === undefined) continue
+      if (event.command !== 'approve' && event.command !== 'approve_with_edits' && event.command !== 'effect.accepted') {
+        continue
+      }
+      const confirmed = event.data?.['confirmed']
+      if (!Array.isArray(confirmed)) return []
+      return confirmed.filter((entry): entry is string => typeof entry === 'string')
+    }
+    return []
+  }
+
+  /**
+   * Invalidate one acceptance because its controls no longer pass: the item
+   * returns to the pending column with no effect key, and the caller releases
+   * the reservation and cancels the message (W-75, W-95).
+   * @param record - the item as the revalidation read it.
+   * @param id - item id.
+   * @param actorId - identity the audit event names.
+   * @param detail - the failed control.
+   * @param expectedRowVersion - the row the controls evaluated.
+   * @returns the item back in `PENDIENTE_CRITERIO`.
+   */
+  private async invalidateAcceptance(
+    record: BoardItemRecord,
+    id: FaberLoomBoardItemId,
+    actorId: string,
+    detail: string,
+    expectedRowVersion: number,
+  ): Promise<FaberLoomBoardItem> {
+    return await this.commitItem(id, 'effect.revalidation_failed', actorId, (current) => {
+      this.requireAcceptedExecution(current)
+      return {
+        ...current,
+        state: 'PENDIENTE_CRITERIO',
+        status: 'waiting_approval',
+        approvedRevision: null,
+        effectKey: null,
+        reversalDeadline: null,
+        executionOutcome: null,
+        stale: false,
+        staleReason: null,
+      }
+    }, {
+      expectedRowVersion,
+      data: { effectKey: record.effectKey, detail },
+    })
+  }
+
+  /**
+   * Emit one effect for its tenant. Everything up to the claim runs inside the
+   * tenant section; the adapter call does not, because it is the external
+   * boundary the outbox exists for.
+   * @param actor - the tenant the consumer acts for.
+   * @param messageKey - outbox row key.
+   * @param effectKey - the effect identity.
+   * @returns what the attempt produced.
+   */
+  private async dispatchOne(
+    actor: BoardActor,
+    messageKey: string,
+    effectKey: string,
+  ): Promise<BoardDispatchOutcome> {
+    const messages = await this.effectMessages()
+    const message = messages.get(messageKey)
+    if (message === undefined) throw new Error(`faberloom: NOT_FOUND — outbox message ${effectKey} not found`)
+    if (!messageIsDispatchable(message.status, message.dispatchable)) {
+      return refusal('OUTBOX_NOT_PENDING', null, `the message is ${message.status}`)
+    }
+    const id = brandString<FaberLoomBoardItemId>(message.itemId)
+    let record = (await this.items()).get(id)
+    if (record === undefined) {
+      await this.settleMessage(messageKey, 'CANCELADO', 'ITEM_MISSING')
+      return refusal('ITEM_MISSING', null, `board item ${message.itemId} is gone`)
+    }
+    const now = new Date()
+    if (stateOf(record) === 'DELEGADO_EN_VENTANA') {
+      const deadline = record.reversalDeadline
+      if (deadline === null) {
+        await this.settleMessage(messageKey, 'CANCELADO', 'EFFECT_NO_DEADLINE')
+        await this.releaseReservation(message.companyId, effectKey, 'no-deadline')
+        return refusal('NOT_AUTHORIZED', toItem(id, record), 'the delegated item records no reversal deadline')
+      }
+      if (now.getTime() < Date.parse(deadline)) {
+        return refusal('WINDOW_OPEN', toItem(id, record), 'the reversal window postpones the effect')
+      }
+      const expired = await this.expireForDispatch(id, actor.id, now).catch(() => undefined)
+      const latest = expired ?? (await this.items()).get(id)
+      if (latest === undefined) {
+        await this.settleMessage(messageKey, 'CANCELADO', 'ITEM_MISSING')
+        return refusal('ITEM_MISSING', null, `board item ${message.itemId} is gone`)
+      }
+      record = latest
+    }
+    const state = stateOf(record)
+    if (state !== 'EJECUCION_PENDIENTE') {
+      await this.settleMessage(messageKey, 'CANCELADO', 'NOT_AUTHORIZED')
+      await this.releaseReservation(message.companyId, effectKey, 'not-authorized')
+      return refusal('NOT_AUTHORIZED', toItem(id, record), `the item is ${state}`)
+    }
+    const reservations = await this.effectReservations()
+    const reservationKey = reservationKeyOf(message.companyId, effectKey)
+    const reservation = reservations.get(reservationKey)
+    if (reservation === undefined
+      || reservation.status !== 'RESERVADA'
+      || reservation.executionId !== message.executionId
+      || reservation.itemId !== message.itemId) {
+      await this.settleMessage(messageKey, 'CANCELADO', 'RESERVATION_RELEASED')
+      return refusal('NOT_AUTHORIZED', toItem(id, record), 'the reservation is not RESERVADA for this execution')
+    }
+    const failure = await this.revalidateForDispatch(record, id)
+    const latest = (await this.items()).get(id)
+    if (latest === undefined || latest.rowVersion !== record.rowVersion) {
+      return refusal(
+        'STALE_REVALIDATION',
+        latest === undefined ? null : toItem(id, latest),
+        'the item moved while its controls ran',
+      )
+    }
+    if (failure !== null) {
+      const item = await this.invalidateAcceptance(record, id, actor.id, failure, record.rowVersion)
+      await this.cancelMessage(message.companyId, effectKey, 'REVALIDATION_FAILED')
+      await this.releaseReservation(message.companyId, effectKey, 'revalidation-failed')
+      return refusal('REVALIDATION_FAILED', item, failure)
+    }
+    const adapter = this.adapters.get(reservation.actionType)
+    if (adapter === undefined) {
+      return refusal('EFFECT_NO_ADAPTER', toItem(id, record), `no adapter for ${reservation.actionType}`)
+    }
+
+    const at = new Date().toISOString()
+    const attempt = message.attempts + 1
+    // The message is the dispatch gate: claiming it first means a crash after
+    // the claim can never emit the effect twice. The reservation follows it.
+    await messages.update(messageKey, (current) => {
+      if (!messageIsDispatchable(current.status, current.dispatchable)) {
+        throw new Error('faberloom: OUTBOX_NOT_PENDING — the message stopped being dispatchable')
+      }
+      return {
+        ...current,
+        status: 'DESPACHADO',
+        dispatchable: false,
+        attempts: current.attempts + 1,
+        reason: null,
+        dispatchedAt: at,
+        updatedAt: at,
+      }
+    })
+    await reservations.update(reservationKey, (current) => {
+      if (current.status !== 'RESERVADA') {
+        throw new Error('faberloom: NOT_AUTHORIZED — the reservation is no longer live')
+      }
+      return { ...current, status: 'DESPACHADA', dispatchedAt: at, updatedAt: at }
+    })
+
+    const result = await this.sendEffect(adapter, message, attempt)
+    const item = await this.commitItem(id, effectCommandFor(result.status), actor.id, current =>
+      this.outcomeRecord(current, {
+        command: effectCommandFor(result.status),
+        actorId: actor.id,
+        outcome: result.status,
+        detail: result.detail ?? null,
+      }))
+    await this.settleMessage(
+      messageKey,
+      messageStatusFor(result.status),
+      result.status === 'DESCONOCIDO' ? 'OUTCOME_UNKNOWN' : null,
+      result.ref ?? null,
+    )
+    await this.settleReservation(reservationKey, result.status)
+    return {
+      dispatched: true,
+      code: 'DISPATCHED',
+      item,
+      outcome: result.status,
+      detail: result.detail ?? null,
+    }
+  }
+
+  /**
+   * Call one adapter under the configured dispatch timeout. A throw, an aborted
+   * signal, or an expired timeout is `DESCONOCIDO`: the board cannot claim an
+   * effect it did not confirm (W-22).
+   * @param adapter - the registered adapter.
+   * @param message - the stored message.
+   * @param attempt - one-based attempt count.
+   * @returns what the destination reported.
+   */
+  private async sendEffect(
+    adapter: BoardEffectAdapter,
+    message: EffectOutboxRecord,
+    attempt: number,
+  ): Promise<BoardEffectResult> {
+    const controller = new AbortController()
+    const timeoutMs = this.effectConfig.dispatchTimeoutMs
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<BoardEffectResult>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort()
+        resolve({ status: 'DESCONOCIDO', detail: 'TIMEOUT' })
+      }, timeoutMs)
+    })
+    const sent = adapter.send({
+      effectKey: message.effectKey,
+      executionId: message.executionId,
+      itemId: message.itemId,
+      actionType: message.actionType,
+      destination: message.destination,
+      idempotencyKey: message.idempotencyKey,
+      attempt,
+    }, { signal: controller.signal }).catch((error: unknown): BoardEffectResult => ({
+      status: 'DESCONOCIDO',
+      detail: error instanceof Error ? error.message : String(error),
+    }))
+    try {
+      return await Promise.race([sent, timeout])
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
+    }
+  }
+
+  /**
+   * Commit the window expiry the consumer needs before it may emit. A concurrent
+   * revert or expiry makes the update refuse; the caller re-reads the item.
+   * @param id - item id.
+   * @param actorId - identity the audit event names.
+   * @param now - the server clock.
+   * @returns the record in `EJECUCION_PENDIENTE`.
+   */
+  private async expireForDispatch(
+    id: FaberLoomBoardItemId,
+    actorId: string,
+    now: Date,
+  ): Promise<BoardItemRecord> {
+    const items = await this.items()
+    let next: BoardItemRecord | undefined
+    await items.update(id, (current) => {
+      const deadline = this.requireClosedWindow(current, now)
+      next = this.expiredRecord(current, deadline, actorId)
+      return next
+    })
+    if (next === undefined) throw new Error(`faberloom: NOT_FOUND — board item ${id} disappeared during the window expiry`)
+    return next
+  }
+
+  /**
+   * Cancel one message before the effect leaves: the reservation is released in
+   * the same command, so a CANCELADO message is never dispatchable (W-56, W-102).
+   * A message that already left is left alone.
+   * @param companyId - tenant of the effect.
+   * @param effectKey - the effect identity, or null when the item holds none.
+   * @param reason - stable reason the message stopped being dispatchable.
+   * @returns whether a message was cancelled.
+   */
+  private async cancelMessage(companyId: string | null, effectKey: string | null, reason: string): Promise<boolean> {
+    if (effectKey === null) return false
+    const key = outboxKeyOf(companyId, effectKey)
+    const table = await this.effectMessages()
+    const record = table.get(key)
+    if (record === undefined || record.status !== 'PENDIENTE') return false
+    const at = new Date().toISOString()
+    await table.update(key, current => ({
+      ...current,
+      status: 'CANCELADO',
+      dispatchable: false,
+      reason,
+      updatedAt: at,
+      settledAt: at,
+    }))
+    return true
+  }
+
+  /**
+   * Release one reservation that has not been dispatched. A synthetic release
+   * of an already dispatched effect is refused by returning false: only
+   * reconciliation settles that one.
+   * @param companyId - tenant of the effect.
+   * @param effectKey - the effect identity, or null when the item holds none.
+   * @param reason - stable reason of the release.
+   * @returns whether a reservation was released.
+   */
+  private async releaseReservation(companyId: string | null, effectKey: string | null, reason: string): Promise<boolean> {
+    if (effectKey === null) return false
+    const key = reservationKeyOf(companyId, effectKey)
+    const table = await this.effectReservations()
+    const record = table.get(key)
+    if (record === undefined || record.status !== 'RESERVADA') return false
+    const at = new Date().toISOString()
+    await table.update(key, current => ({
+      ...current,
+      status: 'LIBERADA',
+      releasedAt: at,
+      releaseReason: reason,
+      settledAt: at,
+      updatedAt: at,
+    }))
+    return true
+  }
+
+  /**
+   * Cancel the scheduled execution of an item that stops being the live one:
+   * the message first, then the reservation (W-56).
+   * @param companyId - tenant of the effect.
+   * @param effectKey - the effect identity, or null.
+   * @param reason - stable reason of the release.
+   */
+  private async releaseScheduledExecution(
+    companyId: string | null,
+    effectKey: string | null,
+    reason: string,
+  ): Promise<void> {
+    if (effectKey === null) return
+    await this.cancelMessage(companyId, effectKey, reason)
+    await this.releaseReservation(companyId, effectKey, reason)
+  }
+
+  /**
+   * Move one message to its reported state.
+   * @param key - outbox row key.
+   * @param status - the state to store.
+   * @param reason - stable reason, or null when none applies.
+   * @param ref - destination reference, or null.
+   */
+  private async settleMessage(
+    key: string,
+    status: BoardOutboxStatus,
+    reason: string | null,
+    ref: string | null = null,
+  ): Promise<void> {
+    const table = await this.effectMessages()
+    if (table.get(key) === undefined) return
+    const at = new Date().toISOString()
+    await table.update(key, current => ({
+      ...current,
+      status,
+      dispatchable: status === 'PENDIENTE',
+      reason,
+      ref,
+      updatedAt: at,
+      settledAt: status === 'PENDIENTE' || status === 'DESPACHADO' ? current.settledAt : at,
+    }))
+  }
+
+  /**
+   * Record the outcome one reservation settles on. `DESCONOCIDO` keeps the
+   * reservation dispatched, so the effect stays open for reconciliation.
+   * @param key - reservation row key.
+   * @param outcome - the reported outcome.
+   */
+  private async settleReservation(key: string, outcome: BoardEffectOutcome): Promise<void> {
+    const table = await this.effectReservations()
+    if (table.get(key) === undefined) return
+    const at = new Date().toISOString()
+    await table.update(key, current => outcome === 'DESCONOCIDO'
+      ? { ...current, outcome, updatedAt: at }
+      : { ...current, status: 'CONCILIADA', outcome, settledAt: at, updatedAt: at })
+  }
+
+  /**
+   * Record that a human closed the item administratively: the reservation keeps
+   * its state, so the reconciliation stays open and a competing execution keeps
+   * being refused (W-65, W-84).
+   * @param companyId - tenant of the effect.
+   * @param effectKey - the effect identity, or null.
+   * @param actorId - identity that closed the item.
+   * @param reason - the reason it recorded.
+   */
+  private async markReservationClosed(
+    companyId: string | null,
+    effectKey: string | null,
+    actorId: string,
+    reason: string,
+  ): Promise<void> {
+    if (effectKey === null) return
+    const key = reservationKeyOf(companyId, effectKey)
+    const table = await this.effectReservations()
+    if (table.get(key) === undefined) return
+    const at = new Date().toISOString()
+    await table.update(key, current => ({
+      ...current, closedAt: at, closedBy: actorId, closeReason: reason, updatedAt: at,
+    }))
+  }
+
+  /**
+   * Raise the visible alert of a late confirmation after an administrative
+   * close. One alert per effect; a second late confirmation updates it (W-85).
+   * @param input - the effect, the outcome, and the identity that reconciled.
+   */
+  private async raiseAlert(input: {
+    readonly companyId: string | null
+    readonly effectKey: string
+    readonly itemId: FaberLoomBoardItemId
+    readonly executionId: string
+    readonly outcome: BoardEffectOutcome
+    readonly detail: string | null
+    readonly actorId: string
+  }): Promise<void> {
+    const key = alertKeyOf(input.companyId, input.effectKey)
+    const table = await this.effectAlerts()
+    const previous = table.get(key)
+    const at = new Date().toISOString()
+    const record: EffectAlertRecord = {
+      companyId: input.companyId,
+      effectKey: input.effectKey,
+      itemId: input.itemId,
+      executionId: input.executionId,
+      kind: 'LATE_CONFIRMATION',
+      outcome: input.outcome,
+      detail: input.detail,
+      actor: input.actorId,
+      createdAt: previous?.createdAt ?? at,
+      updatedAt: at,
+    }
+    if (previous === undefined) await table.put(key, record)
+    else await table.update(key, () => record)
+  }
+
+  /**
+   * Refuse a write unless the actor owns the item or administers its tenant.
+   * The administrative close and the reconciliation that settles a closed
+   * effect accept both (D-9, W-65); the tenant must match in every case.
+   * @param record - the stored item.
+   * @param writer - the acting identity.
+   * @param action - what the caller is about to do, for the refusal message.
+   */
+  private authorizeOwnerOrAdmin(record: BoardItemRecord, writer: BoardWriter, action: string): void {
+    const actor = this.actorOf(writer)
+    if ((actor.companyId ?? null) !== record.companyId) {
+      throw new Error('faberloom: NO_ACCESS — the item belongs to another company')
+    }
+    if (record.ownerId === actor.id || actor.role === 'admin') return
+    throw new Error(`faberloom: NO_ACCESS — only the owner or an administrator of the tenant may ${action}`)
+  }
+
+  /**
+   * Refuse an administrative close by anyone but the owner or a tenant
+   * administrator, or across tenants.
+   * @param record - the stored item.
+   * @param actor - the acting identity.
+   */
+  private requireAdminClose(record: BoardItemRecord, actor: BoardActor): void {
+    this.authorizeOwnerOrAdmin(record, actor, 'close the item')
+  }
+
+  /**
+   * Refuse an administrative close of an item whose outcome is known: only an
+   * unknown effect needs it (D-9, W-65).
+   * @param record - the stored item.
+   */
+  private requireUnknownOutcome(record: BoardItemRecord): void {
+    const unknown = stateOf(record) === 'DESCONOCIDO'
+      || (stateOf(record) === 'ERROR_RECUPERABLE' && record.executionOutcome === 'DESCONOCIDO')
+    if (!unknown) {
+      throw new Error('faberloom: OUTCOME_KNOWN — only an item with an unknown effect outcome can be closed')
+    }
+  }
+
+  /**
+   * Turn the pending candidate of an administratively closed item into a new
+   * item linked to it, claiming the business key the closed item released
+   * (W-86). The candidate carries the artifact hash the user saw.
+   * @param actor - identity that closes the item.
+   * @param closed - record of the item being closed.
+   * @param candidate - the candidate it held.
+   * @returns the new item.
+   */
+  private async createFromCandidate(
+    actor: BoardActor,
+    closedId: FaberLoomBoardItemId,
+    closed: BoardItemRecord,
+    candidate: BoardCandidate,
+  ): Promise<FaberLoomBoardItem> {
+    const evidence = candidate.evidence.length > 0
+      ? [...candidate.evidence]
+      : requireEvidence(closed.revisions[closed.revisions.length - 1]?.evidence)
+    const id = brandString<FaberLoomBoardItemId>(randomUUID())
+    const record: BoardItemRecord = {
+      ...this.buildRecord(actor, {
+        title: candidate.summary.slice(0, 80),
+        summary: candidate.summary,
+        evidence,
+        artifactType: closed.artifactType,
+        supersedesItemId: closedId,
+        dataClass: closed.dataClass,
+        ...closed.companyId === null ? {} : { companyId: closed.companyId },
+        ...closed.spaceId === null ? {} : { spaceId: closed.spaceId },
+        ...closed.businessKey === null ? {} : { businessKey: closed.businessKey },
+        ...closed.accountRef === null ? {} : { accountRef: closed.accountRef },
+      }),
+      severity: closed.severity,
+      severitySource: closed.severitySource,
+      severityConfidence: closed.severityConfidence,
+      artifactHash: candidate.hash,
+    }
+    const businessKey = record.businessKey
+    if (businessKey !== null) await this.claimKey(closed.companyId, 'bkey', businessKey, id)
+    try {
+      await (await this.items()).put(id, record)
+    } catch (error) {
+      if (businessKey !== null) await this.release(closed.companyId, 'bkey', businessKey)
+      throw error
+    }
+    return toItem(id, record)
   }
 
   /**

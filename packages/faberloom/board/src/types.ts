@@ -21,6 +21,13 @@ export interface BoardActor {
   readonly id: string
   /** Company scope, when the deployment knows it. */
   readonly companyId?: string | undefined
+  /**
+   * Console role (`admin`, `client_b2b`, `viewer`, ...) when the deployment
+   * carries one. An administrator of the tenant may close an item
+   * administratively without owning it (D-9, W-65); every other command still
+   * requires the owner.
+   */
+  readonly role?: string | undefined
 }
 
 /**
@@ -312,6 +319,20 @@ export interface FaberLoomBoardItem {
   readonly reviews: readonly BoardReview[]
   /** Originating execution id, when created from one. */
   readonly executionId: string | null
+  /**
+   * Effect key of the accepted execution (E15), or null when nothing was
+   * authorized. It identifies the reservation that this item owns.
+   */
+  readonly effectKey: string | null
+  /**
+   * Instant the delegated reversal window closes, or null outside
+   * `DELEGADO_EN_VENTANA`. The window postpones the effect: nothing is emitted
+   * before it (D-4, W-19), and a delegated item without a deadline is refused
+   * (W-17).
+   */
+  readonly reversalDeadline: string | null
+  /** Last reported outcome of the external effect, or null while none was reported. */
+  readonly executionOutcome: BoardEffectOutcome | null
   /** ISO-8601 creation instant. */
   readonly createdAt: string
   /** ISO-8601 instant of the last durable mutation. */
@@ -1044,3 +1065,325 @@ export interface BoardRecoverDraftInput {
  * Neither outcome writes the artifact version; only `applyIteration` does.
  */
 export type BoardRecoverDraftResult = BoardResumeIterationResult
+
+// ── External effects (E15) ───────────────────────────────────────────
+
+/**
+ * What a destination said about one effect (§10.1). `CONFIRMADO` is the only
+ * outcome that leads to `EJECUTADO`; `DESCONOCIDO` keeps the item recoverable
+ * and verifiable, never executed (W-22).
+ */
+export type BoardEffectOutcome = 'CONFIRMADO' | 'FALLIDO' | 'DESCONOCIDO'
+
+/**
+ * State of one effect reservation. Only `RESERVADA` (and `DESPACHADA`) blocks a
+ * competing execution; `CONCILIADA` and `LIBERADA` are terminal for the key.
+ */
+export type BoardReservationStatus = 'RESERVADA' | 'DESPACHADA' | 'CONCILIADA' | 'LIBERADA'
+
+/**
+ * State of one outbox message. `CANCELADO` is not dispatchable and the consumer
+ * ignores it; `DESPACHADO` means the effect went out and awaits a confirmation.
+ */
+export type BoardOutboxStatus = 'PENDIENTE' | 'DESPACHADO' | 'CONFIRMADO' | 'FALLIDO' | 'CANCELADO'
+
+/**
+ * One reservation of one effect, as the panel and the consumer read it. The
+ * contract fixes the identity of the row: one per tenant and `effectKey`, tied
+ * to the execution that owns it.
+ */
+export interface BoardEffectReservation {
+  /** Tenant that owns the reservation; null is the single-tenant deployment. */
+  readonly companyId: string | null
+  /** Effect the reservation protects. */
+  readonly effectKey: string
+  /** Action type of the effect (`mail.send`, `inventory.reserve`, ...). */
+  readonly actionType: string
+  /** Normalised destination. */
+  readonly destination: string
+  /** Business identity the effect belongs to. */
+  readonly businessKey: string
+  /** Exact artifact version the effect was authorized for. */
+  readonly artifactHash: string
+  /** Execution that owns the reservation; its retries keep this id (W-84). */
+  readonly executionId: string
+  /** Item that authorized the effect. */
+  readonly itemId: string
+  /** Idempotency key the destination receives; a retry keeps it (W-77). */
+  readonly idempotencyKey: string
+  /** Explicit authorization recorded with the acceptance, or null. */
+  readonly authorization: string | null
+  /** Reservation state. */
+  readonly status: BoardReservationStatus
+  /** Last reported outcome, or null while none was reported. */
+  readonly outcome: BoardEffectOutcome | null
+  /** Instant the delegated window closes, or null when the action type has no window. */
+  readonly reversalDeadline: string | null
+  /** Instant the effect was dispatched, or null. */
+  readonly dispatchedAt: string | null
+  /** Instant the reservation was released, or null. */
+  readonly releasedAt: string | null
+  /** Why it was released, or null. */
+  readonly releaseReason: string | null
+  /** Instant the item was closed administratively, or null. */
+  readonly closedAt: string | null
+  /** Identity that closed the item administratively, or null. */
+  readonly closedBy: string | null
+  /** Reason the item was closed administratively, or null. */
+  readonly closeReason: string | null
+  /** Instant the reservation reached a terminal state, or null. */
+  readonly settledAt: string | null
+  /** ISO-8601 instant the reservation was first acquired. */
+  readonly createdAt: string
+  /** ISO-8601 instant of the last mutation. */
+  readonly updatedAt: string
+  /** Instant after which a settled reservation may be pruned, or null. */
+  readonly retainUntil: string | null
+}
+
+/** One outbox message: the durable intention to emit one effect (§5 of the contract). */
+export interface BoardOutboxMessage {
+  /** Tenant that owns the message. */
+  readonly companyId: string | null
+  /** Effect the message emits; one message per effect. */
+  readonly effectKey: string
+  /** Execution the message belongs to. */
+  readonly executionId: string
+  /** Item that authorized the effect. */
+  readonly itemId: string
+  /** Action type of the effect. */
+  readonly actionType: string
+  /** Normalised destination. */
+  readonly destination: string
+  /** Idempotency key the destination receives. */
+  readonly idempotencyKey: string
+  /** Message state. */
+  readonly status: BoardOutboxStatus
+  /** Whether the consumer may emit it; false once cancelled, dispatched, or failed. */
+  readonly dispatchable: boolean
+  /** Dispatch attempts so far. */
+  readonly attempts: number
+  /** Stable reason the message stopped being dispatchable, or null. */
+  readonly reason: string | null
+  /** Destination reference the adapter reported, or null. */
+  readonly ref: string | null
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+  /** ISO-8601 instant of the last mutation. */
+  readonly updatedAt: string
+  /** Instant the message was handed to the adapter, or null. */
+  readonly dispatchedAt: string | null
+  /** Instant the message reached a terminal state, or null. */
+  readonly settledAt: string | null
+  /** Instant after which a settled message may be pruned, or null. */
+  readonly retainUntil: string | null
+}
+
+/**
+ * One visible alert. A late confirmation after an administrative close raises
+ * it: the outcome of a closed item changed and a human must see it (W-85).
+ */
+export interface BoardEffectAlert {
+  /** Tenant that owns the alert. */
+  readonly companyId: string | null
+  /** Effect the alert is about. */
+  readonly effectKey: string
+  /** Item that was closed administratively. */
+  readonly itemId: string
+  /** Execution that reported the outcome. */
+  readonly executionId: string
+  /** Alert class; the contract defines the late confirmation. */
+  readonly kind: 'LATE_CONFIRMATION'
+  /** Outcome the destination reported after the close. */
+  readonly outcome: BoardEffectOutcome
+  /** Optional detail from the reconciliation. */
+  readonly detail: string | null
+  /** Identity that reconciled the effect. */
+  readonly actor: string
+  /** ISO-8601 instant the alert was raised. */
+  readonly createdAt: string
+  /** ISO-8601 instant of the last update. */
+  readonly updatedAt: string
+}
+
+/** Everything one item's effect looks like to the panel. */
+export interface BoardEffectStatus {
+  /** Effect key of the accepted execution. */
+  readonly effectKey: string
+  /** Instant the delegated window closes, or null. */
+  readonly reversalDeadline: string | null
+  /** Last reported outcome, or null. */
+  readonly executionOutcome: BoardEffectOutcome | null
+  /** Reservation of the effect, or null when none is stored. */
+  readonly reservation: BoardEffectReservation | null
+  /** Outbox message of the effect, or null when none is stored. */
+  readonly message: BoardOutboxMessage | null
+  /** Visible alerts raised for this effect, newest last. */
+  readonly alerts: readonly BoardEffectAlert[]
+  /**
+   * True while the effect went out and no reconciliation settled it. An
+   * administratively closed item keeps this true, because the close leaves the
+   * reconciliation open (W-65).
+   */
+  readonly reconciliationOpen: boolean
+}
+
+/** One acceptance that reserves an effect: the item, its reservation, and its message. */
+export interface BoardEffectExecution {
+  /** Item after the acceptance. */
+  readonly item: FaberLoomBoardItem
+  /** Reservation the acceptance acquired. */
+  readonly reservation: BoardEffectReservation
+  /** Outbox message the acceptance wrote. */
+  readonly message: BoardOutboxMessage
+}
+
+/** Why the consumer did or did not emit one effect. */
+export type BoardDispatchCode =
+  | 'DISPATCHED'
+  | 'OUTBOX_NOT_PENDING'
+  | 'WINDOW_OPEN'
+  | 'EFFECT_NO_ADAPTER'
+  | 'REVALIDATION_FAILED'
+  | 'NOT_AUTHORIZED'
+  | 'STALE_REVALIDATION'
+  | 'ITEM_MISSING'
+
+/** What one dispatch attempt produced. */
+export interface BoardDispatchOutcome {
+  /** Whether the adapter was called. */
+  readonly dispatched: boolean
+  /** Stable code of the attempt. */
+  readonly code: BoardDispatchCode
+  /** Item after the attempt, or null when the message names no item. */
+  readonly item: FaberLoomBoardItem | null
+  /** Outcome the destination reported, or null when nothing was emitted. */
+  readonly outcome: BoardEffectOutcome | null
+  /** Diagnostic detail of a refused attempt, or null. */
+  readonly detail: string | null
+}
+
+/** What one dispatch revalidation produced. */
+export interface BoardEffectRevalidation {
+  /** True when the controls still allow the effect. */
+  readonly ok: boolean
+  /** Item after the revalidation; it is back in `PENDIENTE_CRITERIO` when `ok` is false. */
+  readonly item: FaberLoomBoardItem
+}
+
+/** Result of an administrative close: the closed item and the item the candidate became. */
+export interface BoardAdminCloseResult {
+  /** The item after the close. */
+  readonly item: FaberLoomBoardItem
+  /** New item the pending candidate became, or null when none was pending (W-86). */
+  readonly created: FaberLoomBoardItem | null
+}
+
+/**
+ * The message one adapter receives. It carries the idempotency key, so a
+ * destination that supports retries can dedupe them, and the attempt number.
+ */
+export interface BoardEffectDispatch {
+  /** Effect the message emits. */
+  readonly effectKey: string
+  /** Execution that owns the effect. */
+  readonly executionId: string
+  /** Item that authorized the effect. */
+  readonly itemId: string
+  /** Action type of the effect. */
+  readonly actionType: string
+  /** Normalised destination. */
+  readonly destination: string
+  /** Idempotency key the destination dedupes on. */
+  readonly idempotencyKey: string
+  /** One-based dispatch attempt count. */
+  readonly attempt: number
+}
+
+/** What one adapter reports. */
+export interface BoardEffectResult {
+  /** What the destination said; a throw is reported as `DESCONOCIDO`. */
+  readonly status: BoardEffectOutcome
+  /** Destination reference, when the destination reports one. */
+  readonly ref?: string
+  /** Diagnostic detail for operators, never product copy. */
+  readonly detail?: string
+}
+
+/**
+ * The port the consumer sends through (E15). The board owns no mail, inventory,
+ * or shipment client: a deployment mounts one adapter per action type from
+ * `ctx.effect` and the board only decides when to call it.
+ */
+export interface BoardEffectAdapter {
+  /**
+   * Whether the destination dedupes a repeated idempotency key. `retry` refuses
+   * an unknown outcome unless this is true (W-21); without it only `reconcile`
+   * may settle the effect.
+   */
+  readonly idempotent: boolean
+  /**
+   * Emit one effect.
+   * @param dispatch - the message and the attempt number.
+   * @param options - abort signal the board aborts when the dispatch timeout expires.
+   * @returns what the destination reported.
+   */
+  send(
+    dispatch: BoardEffectDispatch,
+    options: { readonly signal: AbortSignal },
+  ): Promise<BoardEffectResult>
+}
+
+/** Input for one acceptance that reserves and schedules an effect (§3.2). */
+export interface BoardExecutionInput extends BoardApproveInput {
+  /** Execution that owns the reservation; its retries keep it (W-84). */
+  readonly executionId: string
+  /** Action type of the effect (`mail.send`, `inventory.reserve`, `shipment.create`). */
+  readonly actionType: string
+  /** Destination; an address list is normalised to a sorted lowercase list. */
+  readonly destination: string
+  /**
+   * Explicit authorization recorded with the acceptance. Approval alone never
+   * sends, so an execution names the signature or grant that allows it.
+   */
+  readonly authorization?: string
+  /** Idempotency key the destination must dedupe on; derived from the effect key when omitted. */
+  readonly idempotencyKey?: string
+}
+
+/** Input for `revert`: the optimistic token and an optional reason. */
+export interface BoardRevertInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+  /** Why the item was reverted; recorded on the audit event. */
+  readonly reason?: string
+}
+
+/** Input for `reconcile`: the outcome the destination reported. */
+export interface BoardReconcileInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+  /**
+   * What the destination reported. `DESCONOCIDO` records the attempt and leaves
+   * the item in its unknown state (W-76).
+   */
+  readonly outcome: BoardEffectOutcome
+  /** Destination reference, when the reconciliation learned one. */
+  readonly ref?: string
+  /** Diagnostic detail for operators. */
+  readonly detail?: string
+}
+
+/** Input for `retry`: the optimistic token only; the execution identity is kept. */
+export interface BoardRetryInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+}
+
+/** Input for `adminClose`: the optimistic token and the mandatory reason. */
+export interface BoardAdminCloseInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+  /** Reason of the administrative close; mandatory (D-9, W-65). */
+  readonly reason: string
+}

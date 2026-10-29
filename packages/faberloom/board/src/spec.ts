@@ -118,6 +118,14 @@ export const boardItemRecord = z.object({
   iterationLockBy: z.string().nullable().default(null),
   /** Applied iteration rounds; the panel suggests a rewrite at the configured limit (D-10). */
   iterationRoundCount: z.number().default(0),
+  /** Effect key of the accepted execution (E15), or null when nothing was authorized. */
+  effectKey: z.string().nullable().default(null),
+  /** Instant the delegated reversal window closes, or null outside it (W-17, W-19). */
+  reversalDeadline: z.string().nullable().default(null),
+  /** Last reported external outcome, or null while none was reported (W-22). */
+  executionOutcome: z.union([
+    z.literal('CONFIRMADO'), z.literal('FALLIDO'), z.literal('DESCONOCIDO'),
+  ]).nullable().default(null),
   version: z.number(),
   revisions: z.array(revisionRecord),
   approvedRevision: z.number().nullable(),
@@ -223,9 +231,152 @@ export const boardIterationDraftRecord = z.object({
 /** One stored iteration draft. */
 export type BoardIterationDraftRecord = z.infer<typeof boardIterationDraftRecord>
 
+/** Outcome of one external effect, as the destination reported it. */
+const outcomeRecord = z.union([
+  z.literal('CONFIRMADO'), z.literal('FALLIDO'), z.literal('DESCONOCIDO'),
+])
+
+/**
+ * One effect reservation, keyed `<tenant>:<effect_key>` (E15). The key is the
+ * contract's uniqueness rule: one row per tenant and effect key, so a competing
+ * execution finds the holder instead of writing a second reservation.
+ */
+export const effectReservationRecord = z.object({
+  /** Tenant that owns the reservation; null is the single-tenant deployment. */
+  companyId: z.string().nullable().default(null),
+  /** Signed effect identity (`sha256` of tenant, action, destination, business key, artifact hash). */
+  effectKey: z.string(),
+  /** Action type of the effect. */
+  actionType: z.string(),
+  /** Normalised destination. */
+  destination: z.string(),
+  /** Business identity the effect belongs to. */
+  businessKey: z.string(),
+  /** Exact artifact version the effect was authorized for. */
+  artifactHash: z.string(),
+  /** Execution that owns the reservation; its retries keep this id (W-84). */
+  executionId: z.string(),
+  /** Item that authorized the effect. */
+  itemId: z.string(),
+  /** Idempotency key the destination receives; a retry keeps it (W-77). */
+  idempotencyKey: z.string(),
+  /** Explicit authorization recorded with the acceptance, or null. */
+  authorization: z.string().nullable().default(null),
+  /** Reservation state. */
+  status: z.union([
+    z.literal('RESERVADA'), z.literal('DESPACHADA'), z.literal('CONCILIADA'), z.literal('LIBERADA'),
+  ]),
+  /** Last reported outcome, or null while none was reported. */
+  outcome: outcomeRecord.nullable().default(null),
+  /** Instant the delegated window closes, or null when the action type has no window. */
+  reversalDeadline: z.string().nullable().default(null),
+  /** Instant the effect was dispatched, or null. */
+  dispatchedAt: z.string().nullable().default(null),
+  /** Instant the reservation was released, or null. */
+  releasedAt: z.string().nullable().default(null),
+  /** Why it was released, or null. */
+  releaseReason: z.string().nullable().default(null),
+  /** Instant the item was closed administratively, or null (W-65). */
+  closedAt: z.string().nullable().default(null),
+  /** Identity that closed the item administratively, or null. */
+  closedBy: z.string().nullable().default(null),
+  /** Reason the item was closed administratively, or null. */
+  closeReason: z.string().nullable().default(null),
+  /** Instant the reservation reached a terminal state, or null. */
+  settledAt: z.string().nullable().default(null),
+  /** ISO-8601 instant the reservation was first acquired. */
+  createdAt: z.string(),
+  /** ISO-8601 instant of the last mutation. */
+  updatedAt: z.string(),
+  /** Instant after which a settled reservation may be pruned, or null. */
+  retainUntil: z.string().nullable().default(null),
+})
+
+/** One stored reservation. */
+export type EffectReservationRecord = z.infer<typeof effectReservationRecord>
+
+/**
+ * One outbox message, keyed `<tenant>:<effect_key>` (E15): the durable
+ * intention to emit one effect, with the identity the consumer verifies before
+ * it calls an adapter.
+ */
+export const effectOutboxRecord = z.object({
+  /** Tenant that owns the message. */
+  companyId: z.string().nullable().default(null),
+  /** Effect the message emits; one message per effect. */
+  effectKey: z.string(),
+  /** Execution the message belongs to. */
+  executionId: z.string(),
+  /** Item that authorized the effect. */
+  itemId: z.string(),
+  /** Action type of the effect. */
+  actionType: z.string(),
+  /** Normalised destination. */
+  destination: z.string(),
+  /** Idempotency key the destination receives. */
+  idempotencyKey: z.string(),
+  /** Message state. */
+  status: z.union([
+    z.literal('PENDIENTE'), z.literal('DESPACHADO'), z.literal('CONFIRMADO'),
+    z.literal('FALLIDO'), z.literal('CANCELADO'),
+  ]),
+  /** Whether the consumer may emit it; false once cancelled, dispatched, or failed. */
+  dispatchable: z.boolean().default(true),
+  /** Dispatch attempts so far. */
+  attempts: z.number().default(0),
+  /** Stable reason the message stopped being dispatchable, or null. */
+  reason: z.string().nullable().default(null),
+  /** Destination reference the adapter reported, or null. */
+  ref: z.string().nullable().default(null),
+  /** ISO-8601 creation instant. */
+  createdAt: z.string(),
+  /** ISO-8601 instant of the last mutation. */
+  updatedAt: z.string(),
+  /** Instant the message was handed to the adapter, or null. */
+  dispatchedAt: z.string().nullable().default(null),
+  /** Instant the message reached a terminal state, or null. */
+  settledAt: z.string().nullable().default(null),
+  /** Instant after which a settled message may be pruned, or null. */
+  retainUntil: z.string().nullable().default(null),
+})
+
+/** One stored outbox message. */
+export type EffectOutboxRecord = z.infer<typeof effectOutboxRecord>
+
+/**
+ * One visible alert, keyed `<tenant>:<effect_key>`: a late confirmation after
+ * an administrative close must reach a human without reopening the item (W-85).
+ */
+export const effectAlertRecord = z.object({
+  /** Tenant that owns the alert. */
+  companyId: z.string().nullable().default(null),
+  /** Effect the alert is about. */
+  effectKey: z.string(),
+  /** Item that was closed administratively. */
+  itemId: z.string(),
+  /** Execution that reported the outcome. */
+  executionId: z.string(),
+  /** Alert class; the contract defines the late confirmation. */
+  kind: z.literal('LATE_CONFIRMATION'),
+  /** Outcome the destination reported after the close. */
+  outcome: outcomeRecord,
+  /** Optional detail from the reconciliation. */
+  detail: z.string().nullable().default(null),
+  /** Identity that reconciled the effect. */
+  actor: z.string(),
+  /** ISO-8601 instant the alert was raised. */
+  createdAt: z.string(),
+  /** ISO-8601 instant of the last update. */
+  updatedAt: z.string(),
+})
+
+/** One stored effect alert. */
+export type EffectAlertRecord = z.infer<typeof effectAlertRecord>
+
 /**
  * The board domain spec: item aggregates, the key-claim table, the edit-draft
- * table, the iteration-draft table, and the tenant claims on opaque references.
+ * table, the iteration-draft table, the tenant claims on opaque references, and
+ * the external-effect reservation, outbox, and alert tables.
  */
 export const boardDomainSpec = defineDomain({
   name: 'faberloom_board',
@@ -236,5 +387,8 @@ export const boardDomainSpec = defineDomain({
     drafts: domainTable<string, BoardDraftRecord>(boardDraftRecord),
     iteration_drafts: domainTable<string, BoardIterationDraftRecord>(boardIterationDraftRecord),
     references: domainTable<string, BoardReferenceRecord>(boardReferenceRecord),
+    effect_reservations: domainTable<string, EffectReservationRecord>(effectReservationRecord),
+    effect_outbox: domainTable<string, EffectOutboxRecord>(effectOutboxRecord),
+    effect_alerts: domainTable<string, EffectAlertRecord>(effectAlertRecord),
   },
 })
