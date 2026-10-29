@@ -154,7 +154,7 @@ export interface FaberloomPanelInjected {
   /** Save inline edits as a new version and report a correction that could not be recorded. */
   boardSaveEdits: (
     id: string,
-    input: { rowVersion: number; baseVersion: number; changes: Record<string, unknown> },
+    input: { rowVersion: number; baseVersion: number; changes: Record<string, string | number | boolean | null> },
   ) => Promise<Result<FaberLoomBoardEditResult>>
   /** Approve the exact version and hash. */
   boardApprove: (
@@ -169,7 +169,7 @@ export interface FaberloomPanelInjected {
       baseVersion: number
       artifactVersion: number
       artifactHash: string
-      changes: Record<string, unknown>
+      changes: Record<string, string | number | boolean | null>
       confirmations?: readonly string[]
     },
   ) => Promise<Result<FaberLoomBoardDetail | undefined>>
@@ -194,7 +194,7 @@ export interface FaberloomPanelInjected {
   /** Save one inline draft write. */
   boardSaveDraft: (
     id: string,
-    input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, unknown> },
+    input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, string | number | boolean | null> },
   ) => Promise<Result<FaberLoomBoardDraftRow>>
   /** Take the writer seat for this tab. */
   boardTakeDraft: (id: string, writerSession: string) => Promise<Result<FaberLoomBoardDraftRow>>

@@ -160,6 +160,9 @@ export interface BoardViewFilters {
   readonly due: 'all' | 'overdue' | 'none'
 }
 
+/** A value one inline edit may write: a JSON scalar. */
+export type BoardEditValue = string | number | boolean | null
+
 /** One in-progress inline edit, owned by one browser tab. */
 export interface BoardEditDraft {
   /** Item the draft edits. */
@@ -177,8 +180,8 @@ export interface BoardEditDraft {
   readonly revision: number
   /** Tab that currently holds the writer seat. */
   readonly writerSession: string
-  /** Changed fields. */
-  readonly changes: Record<string, unknown>
+  /** Changed fields; a value is a JSON scalar. */
+  readonly changes: Record<string, BoardEditValue>
   /** ISO-8601 instant. */
   readonly updatedAt: string
 }

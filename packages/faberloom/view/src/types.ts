@@ -722,7 +722,7 @@ export interface FaberLoomBoardDetail {
   readonly editDraft: {
     readonly revision: number
     readonly writerSession: string
-    readonly changes: Record<string, unknown>
+    readonly changes: Record<string, FaberLoomBoardEditValue>
   } | null
   /** Recorded external effects. */
   readonly effects: readonly { readonly ref: string; readonly detail: string | null; readonly at: string }[]
@@ -799,8 +799,8 @@ export interface FaberLoomBoardDraftInput {
   readonly revision: number
   /** Browser tab holding the writer seat. */
   readonly writerSession: string
-  /** Changed fields; a field may carry a number or a boolean, not only text. */
-  readonly changes: Record<string, unknown>
+  /** Changed fields; a value is a JSON scalar. */
+  readonly changes: Record<string, FaberLoomBoardEditValue>
 }
 
 /** One inline edit draft as the browser reads it. */
@@ -809,8 +809,8 @@ export interface FaberLoomBoardDraftRow {
   readonly revision: number
   /** Tab holding the writer seat. */
   readonly writerSession: string
-  /** Changed fields; a field may carry a number or a boolean, not only text. */
-  readonly changes: Record<string, unknown>
+  /** Changed fields; a value is a JSON scalar. */
+  readonly changes: Record<string, FaberLoomBoardEditValue>
 }
 
 /** Editable fields of one board revision. */
@@ -819,8 +819,8 @@ export interface FaberLoomBoardEditsInput {
   readonly expectedRowVersion: number
   /** Version the edits were made against. */
   readonly baseVersion: number
-  /** Changed fields; a field may carry a number or a boolean, not only text. */
-  readonly changes: Record<string, unknown>
+  /** Changed fields; a value is a JSON scalar. */
+  readonly changes: Record<string, FaberLoomBoardEditValue>
 }
 
 /**
@@ -1277,6 +1277,9 @@ export interface FaberLoomBoardIterationContext {
   /** Artifact version the attempt started from, or null. */
   readonly baseVersion: number | null
 }
+
+/** A value one inline edit may write: a JSON scalar. */
+export type FaberLoomBoardEditValue = string | number | boolean | null
 
 /** The filters a saved board view restores (§9.4). */
 export interface FaberLoomBoardViewFilters {

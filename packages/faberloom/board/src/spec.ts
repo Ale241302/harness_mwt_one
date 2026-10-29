@@ -193,7 +193,7 @@ export const boardDraftRecord = z.object({
   baseVersion: z.number(),
   revision: z.number(),
   writerSession: z.string(),
-  changes: z.record(z.string(), z.unknown()),
+  changes: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
   updatedAt: z.string(),
 })
 
