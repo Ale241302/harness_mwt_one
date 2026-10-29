@@ -1884,7 +1884,7 @@ export class FaberLoomBoard extends Service {
   async saveEditDraft(
     actor: BoardActor,
     id: FaberLoomBoardItemId,
-    input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, string> },
+    input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, unknown> },
   ): Promise<BoardEditDraft> {
     const record = await this.requireItem(id)
     this.authorizeWrite(record, actor)

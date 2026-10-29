@@ -722,7 +722,7 @@ export interface FaberLoomBoardDetail {
   readonly editDraft: {
     readonly revision: number
     readonly writerSession: string
-    readonly changes: Record<string, string>
+    readonly changes: Record<string, unknown>
   } | null
   /** Recorded external effects. */
   readonly effects: readonly { readonly ref: string; readonly detail: string | null; readonly at: string }[]
@@ -799,8 +799,8 @@ export interface FaberLoomBoardDraftInput {
   readonly revision: number
   /** Browser tab holding the writer seat. */
   readonly writerSession: string
-  /** Changed fields. */
-  readonly changes: Record<string, string>
+  /** Changed fields; a field may carry a number or a boolean, not only text. */
+  readonly changes: Record<string, unknown>
 }
 
 /** One inline edit draft as the browser reads it. */
@@ -809,8 +809,8 @@ export interface FaberLoomBoardDraftRow {
   readonly revision: number
   /** Tab holding the writer seat. */
   readonly writerSession: string
-  /** Changed fields. */
-  readonly changes: Record<string, string>
+  /** Changed fields; a field may carry a number or a boolean, not only text. */
+  readonly changes: Record<string, unknown>
 }
 
 /** Editable fields of one board revision. */
@@ -819,8 +819,8 @@ export interface FaberLoomBoardEditsInput {
   readonly expectedRowVersion: number
   /** Version the edits were made against. */
   readonly baseVersion: number
-  /** Changed fields. */
-  readonly changes: Record<string, string>
+  /** Changed fields; a field may carry a number or a boolean, not only text. */
+  readonly changes: Record<string, unknown>
 }
 
 /**

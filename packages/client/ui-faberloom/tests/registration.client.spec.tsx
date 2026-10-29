@@ -2925,3 +2925,26 @@ it('§9.4 · filters the queue by the agent responsible', async () => {
     expect(view.getAllByRole('button', { name: /PF 2000/u }).length).toBeGreaterThan(0)
   })
 })
+
+it('§9.7 · applies a deterministic field instruction without the agent', async () => {
+  const { runtime, view, boardDetail, boardSaveEdits } = await bench()
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.router.label'] }))
+  fireEvent.change(view.getByRole('textbox', { name: faberloomEn['mesa.router.label'] }), {
+    target: { value: '@summary = Listo' },
+  })
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.router.apply'] }))
+  await waitFor(() => {
+    expect(boardSaveEdits).toHaveBeenCalledWith('item-1', expect.objectContaining({ changes: { summary: 'Listo' } }))
+  })
+
+  // A sentence the router does not own is not written; it stays for the agent.
+  fireEvent.change(view.getByRole('textbox', { name: faberloomEn['mesa.router.label'] }), {
+    target: { value: 'hacé lo que puedas' },
+  })
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.router.apply'] }))
+  expect(await view.findByText(faberloomEn['mesa.router.unmatched'])).toBeTruthy()
+})

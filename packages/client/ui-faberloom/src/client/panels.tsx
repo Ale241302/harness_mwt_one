@@ -65,6 +65,7 @@ import { isDesktopApplication } from './desktop-app.ts'
 import { HarnessInstallWizard } from './harness-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import { uniqueSpaces } from './space-options.ts'
+import { routeIteration } from './iteration-router.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -153,7 +154,7 @@ export interface FaberloomPanelInjected {
   /** Save inline edits as a new version and report a correction that could not be recorded. */
   boardSaveEdits: (
     id: string,
-    input: { rowVersion: number; baseVersion: number; changes: Record<string, string> },
+    input: { rowVersion: number; baseVersion: number; changes: Record<string, unknown> },
   ) => Promise<Result<FaberLoomBoardEditResult>>
   /** Approve the exact version and hash. */
   boardApprove: (
@@ -168,7 +169,7 @@ export interface FaberloomPanelInjected {
       baseVersion: number
       artifactVersion: number
       artifactHash: string
-      changes: Record<string, string>
+      changes: Record<string, unknown>
       confirmations?: readonly string[]
     },
   ) => Promise<Result<FaberLoomBoardDetail | undefined>>
@@ -193,7 +194,7 @@ export interface FaberloomPanelInjected {
   /** Save one inline draft write. */
   boardSaveDraft: (
     id: string,
-    input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, string> },
+    input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, unknown> },
   ) => Promise<Result<FaberLoomBoardDraftRow>>
   /** Take the writer seat for this tab. */
   boardTakeDraft: (id: string, writerSession: string) => Promise<Result<FaberLoomBoardDraftRow>>
@@ -3224,7 +3225,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       if (hydrated.current === key) return
       hydrated.current = key
       setDraft(value.editDraft !== null && value.editDraft.writerSession === writerSession
-        ? value.editDraft.changes['summary'] ?? value.summary
+        ? (typeof value.editDraft.changes['summary'] === 'string' ? value.editDraft.changes['summary'] : value.summary)
         : value.summary)
       setDraftRevision(value.editDraft?.revision ?? 0)
       // A text the board refused to store survives the re-read and returns to
@@ -3609,6 +3610,31 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         }
         setDifferences([])
         openIterationChat()
+      })
+    }
+
+    const [instruction, setInstruction] = useState('')
+    const [routing, setRouting] = useState(false)
+    const routedFields = [...new Set(['summary', ...(value?.fieldOrigins ?? []).map(origin => origin.field)])]
+
+    /**
+     * Apply one deterministic field instruction without a model. The router
+     * only owns instructions naming a declared field; anything else is left to
+     * the agent (§9.7).
+     */
+    const applyInstruction = (): void => {
+      if (value === undefined) return
+      const changes = routeIteration(instruction, routedFields)
+      if (changes === null) { setMessage(t('mesa.router.unmatched')); return }
+      const payload = Object.fromEntries(changes.map(change => [change.field, change.value]))
+      void boardSaveEdits(value.id, {
+        rowVersion: value.rowVersion,
+        baseVersion: value.version,
+        changes: payload,
+      }).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setInstruction('')
+        setTick(count => count + 1)
       })
     }
 
@@ -4431,19 +4457,56 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 {restricted
                   ? <StateBlock kind="empty" title={t('mesa.restricted')} text={t('mesa.restrictedText')} />
                   : (
-                    <textarea
-                      ref={editRef}
-                      className={styles.mesaDraft}
-                      aria-label={t('mesa.detail.draft')}
-                      value={(live ? iterationDraft ?? attempt?.draft?.summary ?? value.summary : draft) ?? ''}
-                      disabled={otherTabHolds || (!live && !editable)}
-                      onChange={(event) => {
-                        if (live) {
-                          setIterationDraft(event.target.value)
-                          draftText.current = event.target.value
-                        } else setDraft(event.target.value)
-                      }}
-                    />
+                    <>
+                      <textarea
+                        ref={editRef}
+                        className={styles.mesaDraft}
+                        aria-label={t('mesa.detail.draft')}
+                        value={(live ? iterationDraft ?? attempt?.draft?.summary ?? value.summary : draft) ?? ''}
+                        disabled={otherTabHolds || (!live && !editable)}
+                        onChange={(event) => {
+                          if (live) {
+                            setIterationDraft(event.target.value)
+                            draftText.current = event.target.value
+                          } else setDraft(event.target.value)
+                        }}
+                      />
+                      {live ? null : routing ? (
+                        <div className={styles.tools}>
+                          <input
+                            type="text"
+                            value={instruction}
+                            placeholder={t('mesa.router.placeholder')}
+                            aria-label={t('mesa.router.label')}
+                            onChange={event => setInstruction(event.target.value)}
+                            disabled={!editable}
+                          />
+                          <button
+                            className={styles.secondary}
+                            type="button"
+                            onClick={applyInstruction}
+                            disabled={!editable || instruction.trim().length === 0}
+                          >
+                            {t('mesa.router.apply')}
+                          </button>
+                          {routedFields.filter(field => field !== 'summary').map(field => (
+                            <button
+                              key={field}
+                              className={styles.ghost}
+                              type="button"
+                              onClick={() => setInstruction(`@${field} = `)}
+                              disabled={!editable}
+                            >
+                              {`@${field}`}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <button className={styles.ghost} type="button" onClick={() => setRouting(true)} disabled={!editable}>
+                          {t('mesa.router.label')}
+                        </button>
+                      )}
+                    </>
                   )}
               </section>
 

@@ -178,7 +178,7 @@ export interface BoardEditDraft {
   /** Tab that currently holds the writer seat. */
   readonly writerSession: string
   /** Changed fields. */
-  readonly changes: Record<string, string>
+  readonly changes: Record<string, unknown>
   /** ISO-8601 instant. */
   readonly updatedAt: string
 }
