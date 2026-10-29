@@ -27,7 +27,7 @@ kind: "package-reference"
 
 ### 读取与隔离
 
-`get(actor, id)` 与 `list(actor, filter)` 都要求 `BoardActor`，不存在无过滤的列举。只有所有者能读取，且当条目带有 `companyId` 时，actor 必须携带相同的公司；没有公司的 actor 只能读取没有公司的条目。`companyId: null` 表示单租户部署，而不是通配符。MCP 令牌携带公司，view 传递部署解析出的 actor，因此浏览器、API 与外部智能体共用同一条读写规则。
+`get(actor, id)` 与 `list(actor, filter)` 都要求 `BoardActor`，不存在无过滤的列举。只有所有者能读取，且当条目带有 `companyId` 时，actor 必须携带相同的公司；没有公司的 actor 只能读取没有公司的条目。`companyId: null` 表示单租户部署，而不是通配符。位于某个空间的条目也可由该空间服务允许读取它的人读取——所有者、成员、管理员或 `view` 授权（W-23）——且始终在同一租户内；没有空间的条目仅限所有者，写入始终仅限所有者。MCP 令牌携带公司，view 传递部署解析出的 actor，因此浏览器、API 与外部智能体共用同一条读写规则。
 
 ### WorkLoom 命令
 
@@ -35,7 +35,7 @@ kind: "package-reference"
 
 `create` 与 `submit` 以 `CROSS_TENANT_REFERENCE` 拒绝属于其他租户的被引用对象。`spaceId` 通过已挂载的 `faberloomSpaces` 服务解析，由它持有空间租户；`runId`、`executionId` 与 `accountRef` 是不透明引用，因此第一个存储它的条目会记录可复用它的租户（`references` 表）。无法校验的引用一律拒绝，不予存储。
 
-`runId` 与 `businessKey` 在写入条目记录之前先认领到 `keys` 表；记录写入失败时释放认领，因此崩溃只会留下没有条目的键，而不会留下两个同键的活跃条目。唯一性按租户计算：同一公司内另一个所有者的活跃条目持有该键时返回 `DUPLICATE`。
+`runId` 与 `businessKey` 在写入条目记录之前先认领到 `keys` 表；记录写入失败时释放认领，因此崩溃只会留下没有条目的键，而不会留下两个同键的活跃条目。业务键由服务端决定（§2.1）：`businessKeyOf({ companyId, spaceId, accountRef, sourceRef, artifactType })` 对五个字段求哈希，空值使用保留值，因此生产者命名 `sourceRef`，从不命名键。仍发送 `businessKey` 的生产者会把它当作来源引用，而不是身份。唯一性按租户计算：同一公司内另一个所有者的活跃条目持有该键时返回 `DUPLICATE`。
 
 对话提示不是条目。条目是运行准备的结果，或带 PF/OC/SAP、账户与证据的具体缺数据任务；`artifactType` 区分 `proforma` 与 `tarea`。未声明类型的提交是一条 `tarea`：它不承载计价承诺，而无类型的记录没有确定性类别来放行其内容。`submit` 接受 `accountRef`、`valueAmount`、`valueCurrency`、`dueAt`、`severity` 与 `severityConfidence`，让工作台一次写入就能显示金额、期限与分类。
 
@@ -56,7 +56,7 @@ kind: "package-reference"
 
 `approve` 要求已确认严重性，并拒绝待处理候选、过期条目或与当前不一致的版本/哈希。试点中批准绝不发送外部效果。`saveEdits` 与 `discard` 拒绝处于 `ITERANDO` 或已关闭的条目，`discard` 还拒绝 `DESCONOCIDO`；面板隐藏这些控件，而由服务对 MCP 与智能体调用者强制实施。旧的 `review`、`submitRevision`、`reopen`、`requestData`、`fail` 与 `complete` 仍作为现有面板的别名保留；`review` 批准时必须提供产物哈希，因此调用者批准的正是它看到的内容，`fail(writer, id, 'DESCONOCIDO')` 记录未确认的效应。
 
-`assignWorkspace(writer, id, workspaceId)` 保留条目的业务键，要求目标空间位于 actor 的租户内（`NO_ACCESS`）且服务于条目的账户（`ACCOUNT_MISMATCH`），并返回 `BoardAssignment`：活跃条目，以及冲突转移给它的草稿。与另一个同键活跃条目冲突时，可替代的对等条目被关闭；对 `ITERANDO`、`EJECUCION_PENDIENTE` 或 `DESCONOCIDO` 的对等条目则把产物作为候选转移过去，并打开该条目（W-87、W-88）。被关闭条目的草稿 —— 它链接的迭代草稿与它的行内编辑草稿 —— 转移到活跃条目，并标记写入时所依据的版本与指向其来源条目的 `transferredFrom`，因此面板可以把它们作为“在更早版本上完成的工作”提供出来（W-98）。`transferredDrafts(actor, id)` 列出它们；来源键无法归属到该条目的行、或目标键已被占用的行，保持原位而不是猜测。`recoverTransferredDraft` 把其中列出的一个草稿变为活跃尝试的草稿，因此接收条目可以继续该工作，而不只是比较它（W-98）。
+`assignWorkspace(writer, id, workspaceId)` 为目标空间重新计算条目的业务键（键绑定空间，§2.1），要求目标空间位于 actor 的租户内（`NO_ACCESS`）且服务于条目的账户（`ACCOUNT_MISMATCH`），并返回 `BoardAssignment`：活跃条目，以及冲突转移给它的草稿。与另一个同键活跃条目冲突时，可替代的对等条目被关闭；对 `ITERANDO`、`EJECUCION_PENDIENTE` 或 `DESCONOCIDO` 的对等条目则把产物作为候选转移过去，并打开该条目（W-87、W-88）。被关闭条目的草稿 —— 它链接的迭代草稿与它的行内编辑草稿 —— 转移到活跃条目，并标记写入时所依据的版本与指向其来源条目的 `transferredFrom`，因此面板可以把它们作为“在更早版本上完成的工作”提供出来（W-98）。`transferredDrafts(actor, id)` 列出它们；来源键无法归属到该条目的行、或目标键已被占用的行，保持原位而不是猜测。`recoverTransferredDraft` 把其中列出的一个草稿变为活跃尝试的草稿，因此接收条目可以继续该工作，而不只是比较它（W-98）。
 
 ### 校验（E12）
 
@@ -98,6 +98,12 @@ kind: "package-reference"
 每次迭代写入都同时校验状态、`iterationId`、代次、标签页会话与基础版本，并以 `LOCK_LOST`、`ITERATION_STALE` 或 `LOCK_HELD` 无副作用地拒绝（W-43、W-57）。产物已越过其基础版本的尝试已过期，绝不会覆盖更新的内容。
 
 `routeInstruction(actor, id, text)` 是 §9.7 的确定性字段路由器：`@campo = valor`、`campo: valor` 或 `cambiar campo a valor`，作用于条目声明的字段——其摘要、最后一次修订的内容键，以及记录的来源字段——并识别西班牙语界面别名。它不写入任何内容；对不属于它的句子返回 `null`，调用者据此把句子交给智能体，而不是猜测。`attachIterationChat(writer, id, sessionId)` 把活动尝试记录在面板打开的聊天会话名下，`applyIterationInstruction(sessionId, text)` 则把该聊天里的句子路由进尝试的草稿：它通过 `saveIterationDraft` 写入 `summary` 与内容字段，复用附件的持有者会话，并返回改动的字段以及尝试是否仍然有效。宿主自己回答该指令，因此被识别的指令永远不会到达提供方。
+
+`approveBulk(writer, { items, confirmations? })` 实现 §6.4：每个条目都在服务端重新校验（状态、行、产物哈希、控制项、签名），回答列出批准的条目与被拒条目及各自的代码。资格为同一租户、空间、负责人、动作类型与产物类型；严重度 LOW；无金额；无效果动作。D-11 让批量留在试点之外，因此 `bulkApprovalEnabled` 默认为 false，调用返回 `BULK_DISABLED`；启用它的部署获得完整行为（W-14、W-15）。
+
+`shadowReport(actor, { from?, to? })` 汇总 `faberloomBoardShadow` 端口相对人类确认严重度的评估：一致、不一致、低于置信度下限的弃权、无效回答、超时，以及被影子评为更低的 CRITICAL。评估存入 `severity_shadow`，从不改变条目，也不对 N2+ 条目运行（W-63、D-14）。
+
+`rekeyAll(actor, { dryRun? })` 重新计算租户各行的规范键。只有命名真实来源的行——`sourceRef` 或其生产者键——会被迁移；没有来源的行报告为 skipped，而不是被其证据折叠。冲突按 §2.3 解决。`restoreRekeyCollisions` 把被冲突关闭的条目恢复为 `PENDIENTE_CRITERIO`，`rollbackRekey` 释放并非真实身份的规范键；两者都带审计，仅用于修复迁移。
 
 `pauseIteration(writer, id, { iterationId, generation, actorSession, reason })` 覆盖保存并退出、带到 SpaceLoom、未解决返回与 `lock-vencido`：释放锁、使尝试 id 失效、把条目返回 `PENDIENTE_CRITERIO`、保留与其基础版本绑定的草稿，并保持任何待处理候选不变（W-67、W-97）。`cancelIteration` 删除草稿且不改变版本，除非通过它在有候选时接受的 adopt 选择（W-41）；调用者省略该选择时以 `CANDIDATE_PENDING` 拒绝。二者都要求持有者的会话，因此来自另一个标签页的暂停或取消会被拒绝；任一出口之后，任何会话都可以开启新尝试。
 
@@ -178,7 +184,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **仅限所有者审阅** — 变更需要工单所有者；基于成员的审阅需要访问层。
+- **仅所有者写入、读取按空间授权** — 变更需要工单所有者；读取遵循空间 ACL（所有者、成员、管理员或 `view` 授权），基于成员的写入需要看板不做的访问决定。
 - **单写入者唯一性** — `idempotency_key` 与 `business_key` 的认领在单个进程内串行化。若部署有多个产品写入者，需要真正的唯一约束或租约；项目的 ADR-001 记录了该决定与重新评估的触发条件。
 - **精简的引用登记** — 本包不持有运行、执行或账户登记，因此不透明引用的租户由第一个存储它的条目确定。从第二次使用起，其他租户会被拒绝；首次使用被信任，而所有者服务缺失的引用一律拒绝。
 - **不透明文档** — 文档以引用表示；二进制文档随 blob 存储加入。
