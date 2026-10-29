@@ -42,7 +42,14 @@ export const SEVERITY_RULES: BoardClassifyRules = {
  */
 export const DATA_CLASS_POLICY: BoardDataClassPolicy = {
   version: DATA_CLASS_POLICY_VERSION,
-  rules: [],
+  rules: [
+    // A board artifact carries business identifiers only: codes, amounts,
+    // dates and product references. One deterministic rule per artifact type
+    // is what D-05 asks for before any field may leave, so these are settled
+    // classes rather than provisional ones.
+    { artifactType: 'proforma', dataClass: 'N2', permittedFields: ['title', 'summary', 'evidence', 'content'] },
+    { artifactType: 'tarea', dataClass: 'N2', permittedFields: ['title', 'summary', 'evidence', 'content'] },
+  ],
 }
 
 /**

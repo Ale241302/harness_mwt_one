@@ -145,7 +145,9 @@ describe('entry classification', () => {
   })
 
   it('W-93 · a provisional item feeds no derived product', () => {
-    const projection = contentProjection(classifyDataClass({ artifactType: 'proforma', accountRef: null }))
+    // An artifact type with no deterministic rule stays provisional, which is
+    // the only case where nothing may leave (D-05).
+    const projection = contentProjection(classifyDataClass({ artifactType: 'desconocido', accountRef: null }))
 
     expect(projection).toEqual({
       contentVisible: false,
@@ -154,6 +156,15 @@ describe('entry classification', () => {
       learningCandidates: false,
       classificationCache: false,
       sharedContext: false,
+    })
+  })
+
+  it('D-05 · a classified artifact type settles its class and its permitted fields', () => {
+    const decision = classifyDataClass({ artifactType: 'proforma', accountRef: null })
+    expect(decision).toMatchObject({
+      dataClass: 'N2',
+      provisional: false,
+      permittedFields: ['title', 'summary', 'evidence', 'content'],
     })
   })
 

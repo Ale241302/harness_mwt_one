@@ -90,6 +90,26 @@ export const FABERLOOM_DATA_MIGRATIONS: readonly FaberLoomDataMigration[] = [
       }
     },
   },
+  {
+    id: '2026-10-29-board-data-class-settled',
+    domain: 'faberloom_board',
+    table: 'items',
+    describe: 'Asienta la clase N2 de los artefactos que ya tienen regla determinista (proforma, tarea).',
+    apply: (record) => {
+      // One deterministic rule per artifact type is what D-05 asks for before a
+      // field may travel; an item written before that rule existed stays
+      // provisional and would keep its content home forever.
+      const type = record['artifactType']
+      const settled = typeof type === 'string' && (type === 'proforma' || type === 'tarea')
+      if (!settled || record['dataClassProvisional'] !== true) return record
+      return {
+        ...record,
+        dataClass: 'N2',
+        dataClassProvisional: false,
+        updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : new Date().toISOString(),
+      }
+    },
+  },
 ]
 
 /** Canonical payload shape: domain name to table name to record key to value. */

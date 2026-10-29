@@ -6816,10 +6816,12 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   private providerCeiling(providerId: string): FaberLoomBoardDataClass {
     const named = providerId.length === 0 ? this.config.defaultProvider : providerId
-    // No provider named and no default declared is no policy at all: the lowest
-    // class, so content stays home instead of being guessed into a model.
-    if (named === undefined || named.length === 0) return DATA_CLASSES[0]
-    return this.config.providerDataClassCeilings?.[named] ?? DATA_CLASSES[0]
+    // N2 is the baseline this product routes: business identifiers with no
+    // personal data. N3 and N4 stay closed until a deployment declares a
+    // ceiling for the provider that receives them.
+    const baseline: FaberLoomBoardDataClass = 'N2'
+    if (named === undefined || named.length === 0) return baseline
+    return this.config.providerDataClassCeilings?.[named] ?? baseline
   }
 
   /**

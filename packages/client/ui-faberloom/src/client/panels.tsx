@@ -2920,7 +2920,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     /** Report a write and refresh the detail and the queue. */
     function apply<T>(result: Result<T> | Promise<Result<T>>): void {
       void Promise.resolve(result).then((resolved) => {
-        if (resolved.ok) setTick(count => count + 1)
+        if (resolved.ok) { setTick(count => count + 1); setMessage(null) }
         else setMessage(resolved.error.message)
       })
     }
@@ -3011,6 +3011,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       setExitMode(null)
       setCandidateChoice(null)
       setConfirmations([])
+      setMessage(null)
     }, [
       value?.id, value?.version, value?.editDraft?.writerSession,
       attempt?.iterationId, attempt?.phase, attempt?.draft?.updatedAt, residue,
@@ -3145,6 +3146,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
      */
     const iterate = (): void => {
       if (value === undefined) return
+      setMessage(null)
       // A task without a Space can still open its conversation: the attempt is
       // what needs a Space, not the gesture. Assigning one starts the attempt.
       if (value.spaceId === null && !live) {

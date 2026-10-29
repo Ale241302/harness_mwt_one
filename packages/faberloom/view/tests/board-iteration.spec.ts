@@ -414,22 +414,15 @@ describe('FaberLoomViewService board iteration', () => {
     expect(await view.boardIterationContext('other', '')).toBeUndefined()
   })
 
-  it('sends the summary to a provider the deployment cleared and withholds it from an undeclared one', async () => {
+  it('sends the summary to a cleared provider and to an undeclared one at the N2 baseline', async () => {
     const { view } = harness({ ceilings: { deepseek: 'N2' } })
     expect(await view.boardIterationContext('b1', 'deepseek')).toMatchObject({
       summary: 'Proforma DDP 100 pares',
       draftSummary: 'Precio revisado',
     })
-    expect(await view.boardIterationContext('b1', 'anthropic')).toEqual({
-      itemId: 'b1',
-      title: 'PF 9001-2026',
-      accountRef: 'Cuenta Demo',
-      spaceId: 'sp-1',
-      spaceTitle: 'Marluvas',
-      version: 3,
-      summary: null,
-      draftSummary: null,
-      rounds: 2,
+    expect(await view.boardIterationContext('b1', 'anthropic')).toMatchObject({
+      summary: 'Proforma DDP 100 pares',
+      draftSummary: 'Precio revisado',
     })
   })
 
@@ -443,11 +436,10 @@ describe('FaberLoomViewService board iteration', () => {
     expect((await higher.view.boardIterationContext('b1', 'deepseek'))?.summary).toBe('Proforma DDP 100 pares')
   })
 
-  it('fails closed when no policy is declared and assumes the configured provider when none is named', async () => {
+  it('uses the N2 baseline when no policy is declared and assumes the configured provider when none is named', async () => {
     const undeclared = harness({ ceilings: {} })
     expect(await undeclared.view.boardIterationContext('b1', 'deepseek')).toMatchObject({
-      summary: null,
-      draftSummary: null,
+      summary: 'Proforma DDP 100 pares',
       rounds: 2,
     })
 

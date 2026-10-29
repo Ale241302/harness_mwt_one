@@ -21,6 +21,22 @@ describe('FABERLOOM_DATA_MIGRATIONS', () => {
     expect(migration!.apply(migrated)).toBe(migrated)
   })
 
+  it('settles the class of an artifact that already has a deterministic rule', () => {
+    const migration = FABERLOOM_DATA_MIGRATIONS.find(entry => entry.id === '2026-10-29-board-data-class-settled')
+    expect(migration).toBeDefined()
+    const provisional = { artifactType: 'tarea', dataClass: 'N2', dataClassProvisional: true }
+    const migrated = migration!.apply(provisional) as Record<string, unknown>
+    expect(migrated['dataClassProvisional']).toBe(false)
+    expect(migrated['dataClass']).toBe('N2')
+
+    // A settled row, an unknown type and a missing type stay untouched.
+    const settled = { artifactType: 'tarea', dataClass: 'N2', dataClassProvisional: false }
+    expect(migration!.apply(settled)).toBe(settled)
+    const unknown = { artifactType: 'desconocido', dataClassProvisional: true }
+    expect(migration!.apply(unknown)).toBe(unknown)
+    expect(migration!.apply({ dataClassProvisional: true })).toEqual({ dataClassProvisional: true })
+  })
+
   it('maps the terminal legacy states', () => {
     const migration = FABERLOOM_DATA_MIGRATIONS[0]!
     const state = (status: string): unknown => {
