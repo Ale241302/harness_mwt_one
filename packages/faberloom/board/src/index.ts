@@ -1997,6 +1997,33 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
+   * Undo a key migration that wrote canonical keys from a source that was not a
+   * real identity (for example, the first evidence reference). It releases the
+   * claim and returns the row to the keyless legacy state, recording the
+   * rollback. Used once to repair a migration whose strict rule was not in
+   * place; it never touches a row that already had no key.
+   * @param actor - the identity running the rollback; its company bounds it.
+   * @returns how many rows were rolled back.
+   */
+  async rollbackRekey(actor: BoardActor): Promise<{ readonly rolledBack: number }> {
+    let rolledBack = 0
+    for (const [id, record] of (await this.items()).entries()) {
+      if (record.companyId !== null && record.companyId !== actor.companyId) continue
+      const key = record.businessKey
+      if (key === null || !/^[0-9a-f]{64}$/u.test(key)) continue
+      const writer: BoardActor = record.companyId === null
+        ? { id: record.ownerId }
+        : { id: record.ownerId, companyId: record.companyId }
+      await this.release(record.companyId, 'bkey', key)
+      await this.mutate(writer, id, 'rekey.rollback', item => ({
+        ...item, businessKey: null, sourceRef: null,
+      }))
+      rolledBack += 1
+    }
+    return { rolledBack }
+  }
+
+  /**
    * Restore the items a key migration closed because their derived key
    * collided. A row with no real source reference was collapsed by a key that
    * hashed its first evidence, which is not an identity; this command returns

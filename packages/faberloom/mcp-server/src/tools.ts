@@ -1322,6 +1322,20 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   },
   {
     definition: {
+      name: 'faberloom_board_rekey_rollback',
+      description: 'Revierte las claves canónicas escritas por una migración: libera la reserva y deja la fila sin clave, como estaba. Solo para reparar una migración hecha con una fuente que no era identidad.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    run: async (context, ownerId, _args, companyId) => {
+      return await context.faberloomBoard.rollbackRekey(boardActor(ownerId, companyId))
+    },
+  },
+  {
+    definition: {
       name: 'faberloom_board_rekey_restore',
       description: 'Restaura los ítems que una migración de claves cerró por colisión sin tener una referencia de origen real. Vuelven a PENDIENTE_CRITERIO y queda auditado. Solo debe ejecutarse tras revisar el reporte de rekey.',
       inputSchema: {

@@ -170,6 +170,20 @@ describe('business-key migration (§2.1)', () => {
     await expect(harness.board.rekeyAll(ACTOR_B)).resolves.toMatchObject({ skipped: 1, rekeyed: 0 })
   })
 
+  it('rolls a canonical key back to the keyless legacy state', async () => {
+    const pool = new MemoryMediaPool()
+    const legacy = await seedRawItem(pool, rawBoardItem({ businessKey: 'legacy-key', sourceRef: null }), 'item-legacy')
+    const harness = await bootBoard({ pool })
+    await harness.board.rekeyAll(ACTOR_A)
+    expect((await harness.board.get(ACTOR_A, legacy)).businessKey).toMatch(/^[0-9a-f]{64}$/u)
+
+    expect(await harness.board.rollbackRekey(ACTOR_A)).toEqual({ rolledBack: 1 })
+    const rolled = await harness.board.get(ACTOR_A, legacy)
+    expect(rolled.businessKey).toBeNull()
+    expect(rolled.sourceRef).toBeNull()
+    expect(await harness.board.rollbackRekey(ACTOR_A)).toEqual({ rolledBack: 0 })
+  })
+
   it('skips a row with no source instead of collapsing it by its evidence', async () => {
     const pool = new MemoryMediaPool()
     const first = await seedRawItem(pool, rawBoardItem({ businessKey: null, sourceRef: null, title: 'A' }), 'item-a')
