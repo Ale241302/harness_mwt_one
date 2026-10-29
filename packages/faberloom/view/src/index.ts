@@ -25,7 +25,8 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type {
-  BoardIterationDraft, BoardIterationStatus, BoardResumeIterationResult, FaberLoomBoardItem, FaberLoomBoardItemId,
+  BoardEffectAlert, BoardIterationDraft, BoardIterationStatus, BoardResumeIterationResult, FaberLoomBoardItem,
+  FaberLoomBoardItemId,
 } from '@deepseek-ai/dsh-faberloom-board'
 import type {
   FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineDefinition, RoutineInput, RoutineStepInput,
@@ -36,7 +37,7 @@ import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@dee
 // Type-only: the correction payloads, identity, and classifications the view hands to the learning registry.
 import type { CorrectionInput, LearningActor, LearningScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
-import type {} from '@deepseek-ai/dsh-faberloom-access'
+import type { FaberLoomAccess, SignatureStatus } from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
 // Type-only: the owner's MCP server registry, its probe, and the input it saves.
 import type { FaberLoomMcpRegistry, FaberLoomMcpServer, McpServerInput } from '@deepseek-ai/dsh-faberloom-mcp-registry'
@@ -77,6 +78,10 @@ import type {
   FaberLoomBoardEditResult,
   FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationRecover, FaberLoomBoardIterationResume,
   FaberLoomBoardIterationSaveInput,
+  FaberLoomBoardEffectStatus, FaberLoomBoardEffectAlertRow, FaberLoomBoardEffectPolicy,
+  FaberLoomBoardExecutionInput, FaberLoomBoardRevertInput, FaberLoomBoardRetryInput,
+  FaberLoomBoardReconcileInput, FaberLoomBoardAdminCloseInput, FaberLoomBoardAdminCloseResult,
+  FaberLoomSignatureRow, SignatureIssueInput,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
@@ -383,6 +388,12 @@ function unquoteHarnessScalar(value: string): string {
 /** Data classes, lowest first: the order the provider ceiling compares on. */
 const DATA_CLASSES = ['N0', 'N1', 'N2', 'N3', 'N4'] as const
 
+/**
+ * Action types an acceptance may name by default. D-12 signs these three; a
+ * deployment extends them on the board row and on this row together.
+ */
+const EFFECT_ACTION_TYPES = ['mail.send', 'inventory.reserve', 'shipment.create'] as const
+
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
 export interface Config {
   /** The gateway injects the logged-in user's email here, per dsh process. */
@@ -436,6 +447,13 @@ export interface Config {
    * and the context falls back to the lowest class: the fallback is deny.
    */
   defaultProvider?: string
+  /**
+   * Action types the Mesa offers when an approval executes an external effect.
+   * D-12 signs the three defaults; a deployment that mounts an adapter for
+   * another type lists it here and on the board row, which still refuses a type
+   * it does not accept.
+   */
+  effectActionTypes?: string[]
 }
 
 /** Schemastery configuration for the workspace view. */
@@ -459,6 +477,7 @@ export const Config: z<Config> = z.object({
   anydocApiKey: z.string().default(''),
   providerDataClassCeilings: z.dict(z.union(DATA_CLASSES)).default({}),
   defaultProvider: z.string().default(''),
+  effectActionTypes: z.array(z.string().min(1)).default([...EFFECT_ACTION_TYPES]),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -1023,6 +1042,42 @@ function iterationResumeAnswer(
       draftValue: iterationDisplayValue(difference.draftValue),
       currentValue: iterationDisplayValue(difference.currentValue),
     })),
+  }
+}
+
+/**
+ * Project one board effect alert for the Mesa, with the item it names already
+ * resolved so the panel never looks an id up itself.
+ * @param alert - the alert the board raised.
+ * @param itemTitle - title of the item it names, or null when the reader lost it.
+ * @returns the render row.
+ */
+function effectAlertRow(alert: BoardEffectAlert, itemTitle: string | null): FaberLoomBoardEffectAlertRow {
+  return {
+    itemId: alert.itemId,
+    itemTitle,
+    kind: alert.kind,
+    outcome: alert.outcome,
+    detail: alert.detail,
+    actor: alert.actor,
+    updatedAt: alert.updatedAt,
+  }
+}
+
+/**
+ * Project one signature state onto the row the signature panel renders.
+ * @param status - the state the access service reported.
+ * @returns the render row.
+ */
+function signatureRow(status: SignatureStatus): FaberLoomSignatureRow {
+  return {
+    actionType: status.actionType,
+    protected: status.protected,
+    state: status.state,
+    signatureId: status.signatureId,
+    signedAt: status.signedAt,
+    expiresAt: status.expiresAt,
+    signedBy: status.signedBy,
   }
 }
 
@@ -7094,6 +7149,301 @@ export class FaberLoomViewService extends TypertRemoteService {
       failure ??= message
     }
     return failure
+  }
+
+  /**
+   * Read the external effect of one item: the reservation that protects it, the
+   * durable intention to emit it, the visible alerts it raised, and whether a
+   * dispatched effect still awaits reconciliation (E15, §10.1).
+   * @param id - board item id.
+   * @returns the effect, or null when the item authorized none.
+   */
+  @Remote('boardEffectStatus')
+  async boardEffectStatus(id: string): Promise<FaberLoomBoardEffectStatus | null> {
+    const board = this.ctx.faberloomBoard
+    const actor = this.actor()
+    const item = await this.boardItemOf(id)
+    if (item === undefined) return null
+    const status = await board.effectStatus(actor, id as FaberLoomBoardItemId)
+    if (status === null) return null
+    const reservation = status.reservation
+    return {
+      effectKey: status.effectKey,
+      actionType: reservation?.actionType ?? status.message?.actionType ?? null,
+      destination: reservation?.destination ?? status.message?.destination ?? null,
+      reversalDeadline: status.reversalDeadline,
+      executionOutcome: status.executionOutcome,
+      reservation: reservation === null
+        ? null
+        : {
+          status: reservation.status,
+          actionType: reservation.actionType,
+          destination: reservation.destination,
+          idempotencyKey: reservation.idempotencyKey,
+          reversalDeadline: reservation.reversalDeadline,
+          dispatchedAt: reservation.dispatchedAt,
+          releasedAt: reservation.releasedAt,
+          releaseReason: reservation.releaseReason,
+          closedAt: reservation.closedAt,
+          closeReason: reservation.closeReason,
+        },
+      outbox: status.message?.status ?? null,
+      idempotencyKey: reservation?.idempotencyKey ?? status.message?.idempotencyKey ?? null,
+      alerts: status.alerts.map(alert => effectAlertRow(alert, item.title)),
+      reconciliationOpen: status.reconciliationOpen,
+      idempotent: this.effectIdempotent(),
+      canAdminClose: this.mayCloseAdministratively(item),
+    }
+  }
+
+  /**
+   * The visible alerts of this tenant, newest first, with the item each names
+   * resolved to its title. A late confirmation after an administrative close
+   * raises one and never reopens the item (W-85).
+   * @returns the alerts the Mesa shows.
+   */
+  @Remote('boardEffectAlerts')
+  async boardEffectAlerts(): Promise<readonly FaberLoomBoardEffectAlertRow[]> {
+    const board = this.ctx.faberloomBoard
+    const actor = this.actor()
+    const titles = new Map<string, string>((await board.list(actor)).map(item => [item.id, item.title]))
+    const alerts = await board.alerts(actor)
+    return alerts.map(alert => effectAlertRow(alert, titles.get(alert.itemId) ?? null))
+  }
+
+  /**
+   * The effect policy the Mesa offers an executing approval: the action types an
+   * acceptance may name and the reversal window of each (D-12).
+   * @returns the action types and their windows.
+   */
+  @Remote('boardEffectPolicy')
+  async boardEffectPolicy(): Promise<FaberLoomBoardEffectPolicy> {
+    return {
+      // The row carries the deployment's list; a composition that omits it
+      // offers the D-12 set the board row signs by default.
+      actionTypes: [...this.config.effectActionTypes ?? EFFECT_ACTION_TYPES],
+      reversalWindowMs: { ...this.ctx.faberloomBoard.effectPolicy().reversalWindowMs },
+    }
+  }
+
+  /**
+   * Approve the exact artifact and accept one execution for it: the approval,
+   * the reservation, and the intention to emit are one command (§10.1). The
+   * access service refuses a protected action type without an active CEO
+   * signature and its refusal reaches the panel unchanged (W-16).
+   * @param id - board item id.
+   * @param input - approval expectations and the execution identity.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardApproveWithExecution')
+  async boardApproveWithExecution(
+    id: string,
+    input: FaberLoomBoardExecutionInput,
+  ): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot approve board items')
+    await this.ctx.faberloomBoard.approveWithExecution(this.actor(), id as FaberLoomBoardItemId, {
+      expectedRowVersion: input.expectedRowVersion,
+      expectedArtifactVersion: input.expectedArtifactVersion,
+      expectedArtifactHash: input.expectedArtifactHash,
+      ...input.confirmations === undefined ? {} : { confirmations: input.confirmations },
+      executionId: input.executionId,
+      actionType: input.actionType,
+      destination: input.destination,
+      ...input.authorization === undefined ? {} : { authorization: input.authorization },
+      ...input.idempotencyKey === undefined ? {} : { idempotencyKey: input.idempotencyKey },
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Revert a delegated execution inside its window: the reservation is released,
+   * the intention is cancelled, and the item returns to the pending column
+   * (W-18). A revert at or after the deadline is refused by the board.
+   * @param id - board item id.
+   * @param input - optimistic token and optional reason.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardEffectRevert')
+  async boardEffectRevert(id: string, input: FaberLoomBoardRevertInput): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revert board items')
+    await this.ctx.faberloomBoard.revert(this.actor(), id as FaberLoomBoardItemId, {
+      ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+      ...input.reason === undefined ? {} : { reason: input.reason },
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Retry a failed execution, keeping the original execution identity, its
+   * reservation, and its idempotency key (W-84). An unknown outcome is refused
+   * unless the destination declared itself idempotent (W-21).
+   * @param id - board item id.
+   * @param input - optimistic token.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardEffectRetry')
+  async boardEffectRetry(id: string, input: FaberLoomBoardRetryInput): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot retry board items')
+    await this.ctx.faberloomBoard.retry(this.actor(), id as FaberLoomBoardItemId, {
+      ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Reconcile a dispatched effect with what the destination reports. A
+   * confirmation executes the item, a failure makes it retryable, and an unknown
+   * outcome leaves it recoverable (W-21, W-76).
+   * @param id - board item id.
+   * @param input - the outcome the destination reported.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardEffectReconcile')
+  async boardEffectReconcile(
+    id: string,
+    input: FaberLoomBoardReconcileInput,
+  ): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot settle board items')
+    await this.ctx.faberloomBoard.reconcile(this.actor(), id as FaberLoomBoardItemId, {
+      ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+      outcome: input.outcome,
+      ...input.ref === undefined ? {} : { ref: input.ref },
+      ...input.detail === undefined ? {} : { detail: input.detail },
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Close an item administratively while its effect outcome is unknown: Owner or
+   * Admin of the tenant, with a reason, and the reservation stays open so the
+   * reconciliation remains possible (D-9, W-65).
+   * @param id - board item id.
+   * @param input - optimistic token and the mandatory reason.
+   * @returns the closed detail and the item a pending candidate became.
+   */
+  @Remote('boardEffectAdminClose')
+  async boardEffectAdminClose(
+    id: string,
+    input: FaberLoomBoardAdminCloseInput,
+  ): Promise<FaberLoomBoardAdminCloseResult> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot close board items')
+    const result = await this.ctx.faberloomBoard.adminClose(this.actor(), id as FaberLoomBoardItemId, {
+      ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+      reason: input.reason,
+    })
+    return {
+      detail: await this.boardDetail(id) ?? null,
+      createdId: result.created === null ? null : String(result.created.id),
+    }
+  }
+
+  /**
+   * Whether one protected action type carries an active CEO signature for this
+   * reader's tenant, so the panel can say why approval would refuse (W-16).
+   * @param actionType - the action type the approval would run.
+   * @returns the signature state for this reader.
+   */
+  @Remote('boardSignatureStatus')
+  async boardSignatureStatus(actionType: string): Promise<FaberLoomSignatureRow> {
+    const status = await this.accessService().signatureStatus(this.signatureActor(), actionType)
+    return signatureRow(status)
+  }
+
+  /**
+   * Every protected action type and the signature state that covers it, which is
+   * what the signature panel lists.
+   * @returns one row per protected action type, in the order the deployment declares them.
+   */
+  @Remote('boardSignatures')
+  async boardSignatures(): Promise<readonly FaberLoomSignatureRow[]> {
+    const access = this.accessService()
+    const actor = this.signatureActor()
+    const rows: FaberLoomSignatureRow[] = []
+    for (const actionType of access.protectedActionTypes) {
+      rows.push(signatureRow(await access.signatureStatus(actor, actionType)))
+    }
+    return rows
+  }
+
+  /**
+   * Issue one CEO signature for the acting identity's tenant. The access service
+   * refuses an identity that is not a configured signing authority, and its
+   * refusal reaches the panel unchanged.
+   * @param input - the action types the signature covers and an optional expiry.
+   * @returns the refreshed signature rows.
+   */
+  @Remote('boardSignatureIssue')
+  async boardSignatureIssue(input: SignatureIssueInput): Promise<readonly FaberLoomSignatureRow[]> {
+    await this.accessService().issueSignature(this.signatureActor(), {
+      ...input.actionTypes === undefined ? {} : { actionTypes: [...input.actionTypes] },
+      ...input.expiresAt === undefined ? {} : { expiresAt: input.expiresAt },
+    })
+    return await this.boardSignatures()
+  }
+
+  /**
+   * Revoke one signature of the acting identity's tenant; the next approval of a
+   * covered action type refuses from that instant.
+   * @param signatureId - signature to revoke.
+   * @returns the refreshed signature rows.
+   */
+  @Remote('boardSignatureRevoke')
+  async boardSignatureRevoke(signatureId: string): Promise<readonly FaberLoomSignatureRow[]> {
+    await this.accessService().revokeSignature(this.signatureActor(), signatureId)
+    return await this.boardSignatures()
+  }
+
+  /**
+   * The access service that owns the signatures, resolved lazily so a deployment
+   * without it keeps every other panel working.
+   * @returns the mounted access service.
+   * @throws when the deployment did not mount it.
+   */
+  private accessService(): FaberLoomAccess {
+    const service = this.ctx.get('faberloomAccess')
+    if (service === undefined) throw new Error('faberloom: the access service is not mounted')
+    return service
+  }
+
+  /**
+   * The identity a signature read or write acts for: the deployment's owner and
+   * its tenant, never a client argument.
+   * @returns the signature actor.
+   */
+  private signatureActor(): { readonly id: string; readonly companyId: string | undefined } {
+    const actor = this.actor()
+    return { id: actor.id, companyId: actor.companyId }
+  }
+
+  /**
+   * One board item the actor may read, by id.
+   * @param id - board item id.
+   * @returns the item, or undefined when the actor holds none with that id.
+   */
+  private async boardItemOf(id: string): Promise<FaberLoomBoardItem | undefined> {
+    return (await this.ctx.faberloomBoard.list(this.actor())).find(entry => entry.id === id)
+  }
+
+  /**
+   * Whether the board may retry this effect's unknown outcome. The board decides
+   * by the adapter's `idempotent` declaration (W-21) and exposes no read of it,
+   * so the Mesa reports the conservative answer and offers reconciliation
+   * instead: enabling a retry here would invite a second send.
+   * @returns always false until the board publishes its adapters' declarations.
+   */
+  private effectIdempotent(): boolean {
+    return false
+  }
+
+  /**
+   * Whether this reader may close one item administratively, using the board's
+   * own rule: the owner of the item, or an administrator of its tenant (D-9).
+   * The board re-applies the rule when the command runs.
+   * @param item - the item being closed.
+   * @returns true when the close may be offered.
+   */
+  private mayCloseAdministratively(item: FaberLoomBoardItem): boolean {
+    return item.ownerId === this.actor().id || this.actor().role === 'admin'
   }
 
   /**

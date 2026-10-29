@@ -16,7 +16,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.faberloomAccess` — `FaberLoomAccess`
 
-The product access service: action-scoped, revocable autonomy grants.
+The product access service: action-scoped, revocable autonomy grants plus the tenant signatures protected action types require before approval.
 
 ```ts cordis-catalog
 /**
@@ -49,6 +49,62 @@ async revokeGrant(ownerId: string, id: string): Promise<FaberLoomGrant>
  * @returns the decision and the grant that decided it.
  */
 async check(request: GrantCheck): Promise<GrantDecision>
+
+/**
+ * Issue one CEO signature for the acting identity's tenant.
+ *
+ * Only a configured `signingAuthorities` identity may sign; with none
+ * configured, issuance refuses (`SIGNATURE_AUTHORITY_UNCONFIGURED`) instead of
+ * letting any actor sign. The signature is repeatable: it authorizes every
+ * approval of a covered action type until it expires or is revoked, and issuing
+ * it does not mark it used.
+ * @param actor - the authenticated signer, which also supplies the tenant.
+ * @param input - covered action types or a wildcard, and an optional expiry.
+ * @param options - instant the signature is dated; defaults to now.
+ * @returns the stored signature.
+ */
+async issueSignature( actor: SignatureActor, input: SignatureInput, options: SignatureCheckOptions = {}, ): Promise<FaberLoomSignature>
+
+/**
+ * Revoke one signature of the acting identity's tenant. The next check refuses
+ * from this instant and the record keeps the revoking identity and instant. The
+ * signer may always revoke their own signature; `revocationAuthorities` adds
+ * others. Revoking an already-revoked signature returns it unchanged and keeps
+ * the first revocation.
+ * @param actor - the acting identity.
+ * @param id - signature id.
+ * @param options - instant of revocation; defaults to now.
+ * @returns the revoked signature.
+ */
+async revokeSignature( actor: SignatureActor, id: FaberLoomSignatureId, options: SignatureCheckOptions = {}, ): Promise<FaberLoomSignature>
+
+/**
+ * Require an active CEO signature before approving a protected action type.
+ *
+ * Refuses, never warns: a protected action type with no active signature throws
+ * `SIGNATURE_REQUIRED`, a revoked one `SIGNATURE_REVOKED`, an expired one
+ * `SIGNATURE_EXPIRED` — all as {@link FaberLoomAccessRefusal}, the family the
+ * other access refusals use. Signatures of another tenant are never consulted.
+ * The accepted signature stays valid for further approvals (§7.4 states no
+ * single use); callers must not consume or mutate it.
+ * @param actor - the approving identity; its `companyId` is the tenant.
+ * @param actionType - the action type the approval would run.
+ * @param options - instant the check evaluates; defaults to now.
+ * @returns the accepted signature, or `null` when the action type is unprotected.
+ */
+async requireSignature( actor: SignatureActor, actionType: string, options: SignatureCheckOptions = {}, ): Promise<FaberLoomSignature | null>
+
+/**
+ * Report whether the acting identity's tenant holds a signature for one action
+ * type, so a panel or tool can show the state before approval. The signer
+ * identity appears only to the signer or to `signerIdentityAudience`; another
+ * tenant's signature is never visible.
+ * @param actor - the reading identity; its `companyId` is the tenant.
+ * @param actionType - the action type to report.
+ * @param options - instant the state evaluates; defaults to now.
+ * @returns the signature state for this reader.
+ */
+async signatureStatus( actor: SignatureActor, actionType: string, options: SignatureCheckOptions = {}, ): Promise<SignatureStatus>
 ```
 
 Source: [`packages/faberloom/access/src/index.ts`](../../packages/faberloom/access/src/index.ts)
@@ -351,6 +407,118 @@ async delegate(parentAgentId: FaberLoomAgentId, request: DelegateRequest): Promi
 Types: [CredentialRef](credentials.md)
 
 Source: [`packages/faberloom/agents/src/index.ts`](../../packages/faberloom/agents/src/index.ts)
+
+<a id="ctxfaberloomautonomy--faberloomautonomy"></a>
+
+### `ctx.faberloomAutonomy` — `FaberLoomAutonomy`
+
+The autonomy service: the level of every unit, the promotion report, the sample of delegated items, and the automatic suspension of §7.3.
+
+```ts cordis-catalog
+/**
+ * Register one unit at `SHADOW` if it has none, and return it otherwise.
+ * Registration is idempotent and records no level change.
+ * @param actor - identity supplying the tenant.
+ * @param ref - tenant, space, agent, and action type of the unit.
+ * @returns the stored unit.
+ */
+async ensureUnit(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyUnit>
+
+/**
+ * Read one unit. Another tenant's unit is refused before the store is read.
+ * @param actor - reading identity and its tenant.
+ * @param ref - unit to read.
+ * @returns the unit, or `undefined` when it is not registered.
+ */
+async getUnit(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyUnit | undefined>
+
+/**
+ * List the units of the actor's tenant, optionally filtered. Units of other
+ * tenants are never read.
+ * @param actor - reading identity and its tenant.
+ * @param filter - space, agent, action type, and level to keep.
+ * @returns the units, ordered by space, agent, and action type.
+ */
+async listUnits(actor: AutonomyActor, filter: AutonomyUnitFilter = {}): Promise<AutonomyUnit[]>
+
+/**
+ * Report the numbers of one unit without changing its level. The report
+ * states whether the signed thresholds are met and which values are still
+ * unsigned; it never promotes (W-53).
+ * @param actor - reading identity and its tenant.
+ * @param ref - unit to report.
+ * @param options - period to evaluate instead of the configured one.
+ * @returns the numbers, the eligibility, and the last suspension.
+ */
+async report( actor: AutonomyActor, ref: AutonomyUnitRef, options: AutonomyReportOptions = {}, ): Promise<AutonomyUnitReport>
+
+/**
+ * Apply the monitoring rule of §7.3 to one unit: while it is `DELEGADO`, a
+ * reversal-or-failure rate above the configured threshold returns it to
+ * `SUPERVISADO` with an audit entry. The decision needs no human command;
+ * the caller that records delegated outcomes calls this after them, because
+ * the package owns no scheduler.
+ * @param actor - identity supplying the tenant.
+ * @param ref - unit to assess.
+ * @param options - period to evaluate instead of the configured one.
+ * @returns the report after the assessment, with the level it now holds.
+ */
+async assess( actor: AutonomyActor, ref: AutonomyUnitRef, options: AutonomyReportOptions = {}, ): Promise<AutonomyUnitReport>
+
+/**
+ * Promote one unit to `DELEGADO`. The command is explicit and gated: the
+ * identity must hold a governance role of the tenant, and the unit must meet
+ * the signed thresholds. The promotion records who promoted it, when, and on
+ * which numbers. No automatic path exists (W-53, W-64).
+ * @param actor - promoting identity and its tenant.
+ * @param ref - unit to promote.
+ * @returns the promoted unit with its promotion record.
+ */
+async promote(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyUnit>
+
+/**
+ * Return one unit to `SUPERVISADO` at a human's request. The audit keeps the
+ * cause, and delegating again needs a new promotion.
+ * @param actor - identity narrowing the unit.
+ * @param ref - unit to supervise.
+ * @param cause - why the unit loses its delegation.
+ * @returns the supervised unit.
+ */
+async supervise(actor: AutonomyActor, ref: AutonomyUnitRef, cause: string): Promise<AutonomyUnit>
+
+/**
+ * Plan the sample of one period: the configured share of the delegated items,
+ * at least the configured minimum, chosen from the earliest delegations that
+ * are not in the sample yet. Planning only selects; execution is never
+ * blocked (D-13).
+ * @param actor - identity supplying the tenant.
+ * @param ref - delegated unit.
+ * @param period - period the sample covers.
+ * @returns the target, the items this call added, and what still waits.
+ */
+async planSample(actor: AutonomyActor, ref: AutonomyUnitRef, period: AutonomyPeriod): Promise<AutonomySamplePlan>
+
+/**
+ * Record the human verdict on one sampled item. A rejection suspends a
+ * delegated unit on the spot, with the cause and the numbers in the audit
+ * (D-13). A verdict is recorded once.
+ * @param actor - reviewing identity; it must hold a governance role.
+ * @param ref - unit the item belongs to.
+ * @param input - period, item, verdict, and optional note.
+ * @returns the reviewed item and the suspension the verdict caused.
+ */
+async reviewSample( actor: AutonomyActor, ref: AutonomyUnitRef, input: AutonomySampleVerdictInput, ): Promise<AutonomySampleVerdict>
+
+/**
+ * List the audit entries of one unit, oldest first.
+ * @param actor - reading identity and its tenant.
+ * @param ref - unit to read.
+ * @returns the audit entries.
+ */
+async listAudit(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyAuditEvent[]>
+```
+
+Source: [`packages/faberloom/autonomy/src/index.ts`](../../packages/faberloom/autonomy/src/index.ts)
 
 <a id="ctxfaberloombackup--faberloombackup"></a>
 
@@ -754,6 +922,196 @@ async recoverTransferredDraft( writer: BoardWriter, id: FaberLoomBoardItemId, in
 async applyIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApplyIterationInput, ): Promise<BoardIterationResult>
 
 /**
+ * The resolved effect policy (D-12): the reversal window per action type, the
+ * retention of a settled effect record, the timeout one dispatch attempt gets
+ * from its adapter, and the lease a crashed acceptance is given.
+ * @returns a copy of the resolved policy.
+ */
+effectPolicy(): EffectPolicy
+
+/**
+ * Register the adapter of one action type. The registry is mounted from
+ * outside the board, the way `registerCheck` mounts a control: a deployment
+ * owns the mail, inventory, or shipment client, and the board only decides
+ * when to call it. A second adapter for one action type replaces the first.
+ * @param actionType - action type the adapter emits (`mail.send`, ...).
+ * @param adapter - the implementation.
+ * @returns the disposer that removes this registration.
+ */
+registerEffectAdapter(actionType: string, adapter: BoardEffectAdapter): () => void
+
+/**
+ * Approve the exact artifact version and accept one execution for it: the
+ * approval, the reservation, and the outbox message are acquired in one
+ * command, so a crash cannot leave an authorized item without its intention
+ * (§10.1). The reservation is per tenant and `effect_key`, so a competing
+ * execution of the same effect is refused with `EFFECT_TAKEN` while it is
+ * `RESERVADA` or `DESPACHADA`.
+ *
+ * When the `faberloomAccess` service is mounted, the acceptance asks it for
+ * the CEO signature W-16 requires and lets its refusal propagate unchanged;
+ * a composition without that service enforces no signature here, because the
+ * board cannot tell which action types are protected.
+ *
+ * The item lands in `DELEGADO_EN_VENTANA` when the action type has a reversal
+ * window, and in `EJECUCION_PENDIENTE` when it has none (D-12). The controls
+ * run again immediately before the transition, exactly as `approve` does.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - approval expectations, execution identity, and destination.
+ * @returns the item, its reservation, and its outbox message.
+ */
+async approveWithExecution( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardExecutionInput, ): Promise<BoardEffectExecution>
+
+/**
+ * Revert a delegated execution inside its window. The effect has not happened
+ * and cannot have happened, so the reservation is released and the outbox
+ * message cancelled; a revert at or after the deadline is refused (W-18) and
+ * a delegated item with no recorded deadline is refused outright (W-17).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - optimistic token and optional reason.
+ * @returns the item back in `PENDIENTE_CRITERIO`.
+ */
+async revert(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRevertInput = {}): Promise<FaberLoomBoardItem>
+
+/**
+ * Expire the reversal window: the item moves to `EJECUCION_PENDIENTE` and the
+ * effect becomes dispatchable. An item whose window is still open is refused
+ * with `WINDOW_OPEN`, and one that is not delegated with `NOT_DELEGATED`, so a
+ * revert and an expiry produce exactly one transition (W-18).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @returns the item in `EJECUCION_PENDIENTE`.
+ */
+async expireWindow(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
+
+/**
+ * Run the controls again before the effect leaves (W-50, W-75). A blocking
+ * failure, a declared control with no adapter, or a confirmation failure the
+ * approval never accepted invalidates the acceptance: the item returns to
+ * `PENDIENTE_CRITERIO`, the reservation is released, and the message is
+ * cancelled, so a fresh approval of the same effect is accepted (W-95).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @returns whether the effect may still leave, and the item after the attempt.
+ */
+async revalidateEffect(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<BoardEffectRevalidation>
+
+/**
+ * Consent to emit one effect: the outbox consumer. Before it calls the
+ * adapter it verifies, inside one tenant section, that the message is
+ * dispatchable, that the reservation is still `RESERVADA` for this execution,
+ * that the item still authorizes the effect, and that the controls still
+ * pass. Any failed check emits nothing, releases the reservation, and marks
+ * the message non-dispatchable (W-95, W-102).
+ *
+ * An item still inside its reversal window keeps the message `PENDIENTE` and
+ * reports `WINDOW_OPEN`: nothing leaves before `reversal_deadline` (W-19).
+ * @param actor - the tenant the consumer acts for.
+ * @param effectKey - effect to emit.
+ * @returns what the attempt produced.
+ */
+async dispatchEffect(actor: BoardActor, effectKey: string): Promise<BoardDispatchOutcome>
+
+/**
+ * The messages this tenant may still emit, oldest first. A cancelled,
+ * dispatched, or failed message is not listed: it is not dispatchable.
+ * @param actor - the tenant the consumer acts for.
+ * @returns the dispatchable messages.
+ */
+async pendingEffects(actor: BoardActor): Promise<readonly BoardOutboxMessage[]>
+
+/**
+ * Everything one item's external effect looks like to the panel: the
+ * reservation, the outbox message, the visible alerts, and whether a
+ * dispatched effect still awaits reconciliation.
+ * @param actor - the authenticated reader.
+ * @param id - item id.
+ * @returns the effect projection, or null when the item authorized none.
+ */
+async effectStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEffectStatus | null>
+
+/**
+ * Reconcile a dispatched effect with what the destination reports.
+ * `CONFIRMADO` closes the item as `EJECUTADO`; `FALLIDO` moves it to
+ * `ERROR_RECUPERABLE` with that outcome, which is what makes a retry legal;
+ * `DESCONOCIDO` records the attempt and leaves the item in its unknown state
+ * (W-21, W-76).
+ *
+ * A reconciliation after an administrative close updates the outcome, raises
+ * a visible alert, writes an audit event, and never reopens the item (W-85).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - the outcome the destination reported.
+ * @returns the item after the reconciliation.
+ */
+async reconcile(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReconcileInput): Promise<FaberLoomBoardItem>
+
+/**
+ * Retry a failed execution. The retry keeps the original `executionId`, the
+ * same reservation, and the same idempotency key (W-84, W-77); it moves the
+ * item back to `EJECUCION_PENDIENTE` so the consumer may emit it again.
+ *
+ * An unknown outcome is refused with `OUTCOME_UNKNOWN` unless the adapter of
+ * that action type declares the destination idempotent, because a destination
+ * that may already have the effect cannot be sent twice (W-21).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - optimistic token.
+ * @returns the item in `EJECUCION_PENDIENTE`.
+ */
+async retry(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRetryInput = {}): Promise<FaberLoomBoardItem>
+
+/**
+ * Close an item administratively while its effect outcome is unknown: Owner
+ * or Admin of the tenant, with a reason, and the reservation stays
+ * `DESPACHADA` so the reconciliation remains open (D-9, W-65). A pending
+ * candidate becomes a new linked item in the same command (W-86).
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - optimistic token and the mandatory reason.
+ * @returns the closed item and the item the candidate became.
+ */
+async adminClose( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardAdminCloseInput, ): Promise<BoardAdminCloseResult>
+
+/**
+ * The visible alerts of this tenant, newest first. A late confirmation after
+ * an administrative close raises one, and the panel reads it here (W-85).
+ * @param actor - the tenant the reader acts for.
+ * @returns the alerts.
+ */
+async alerts(actor: BoardActor): Promise<readonly BoardEffectAlert[]>
+
+/**
+ * Delete settled effect records past their retention window. A reservation
+ * that is still live and a message that was never settled are never pruned:
+ * they carry a decision that a human may still need to see. Audit events of
+ * effects no item names are pruned by the same window.
+ * @param actor - the tenant the operator acts for.
+ * @returns how many rows were removed.
+ */
+async pruneEffects(actor: BoardActor): Promise<number>
+
+/**
+ * Release the reservations no item reaches and no consumer can emit.
+ *
+ * An acceptance writes the reservation and its message before it commits the
+ * item. A crash in between leaves a `RESERVADA` row whose key no item records:
+ * `revert`, `reconcile`, and `pruneEffects` all need an item for it, so the key
+ * would stay taken and every other execution of that effect would be refused
+ * with `EFFECT_TAKEN`. A row older than `effectReservationLeaseMs` is released,
+ * its message cancelled, an audit event stored, and an alert raised (D-12).
+ *
+ * A row whose key an item records is never swept, in whatever state: a failed
+ * execution still needs its reservation to retry (W-84). A row younger than the
+ * lease is left alone, because its acceptance may still be committing.
+ * @param actor - the tenant the operator acts for.
+ * @returns the released keys and the rows the sweep wrote.
+ */
+async recoverOrphanedReservations(actor: BoardActor): Promise<BoardOrphanRecovery>
+
+/**
  * Read the audit history of one item.
  * @param actor - the authenticated reader.
  * @param id - item id.
@@ -800,7 +1158,12 @@ async fail( writer: BoardWriter, id: FaberLoomBoardItemId, outcome: 'FALLIDO' | 
 async reopen(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
 
 /**
- * Complete an approved item.
+ * Complete an approved item that carries no live effect.
+ *
+ * An item that accepted an execution closes through its reconciliation, never
+ * through this command: it is refused with `EFFECT_NOT_CONCILIATED` unless the
+ * reservation of its `effectKey` is `CONCILIADA` (W-84). An item that never had
+ * an effect keeps the legacy path around `complete`.
  * @param writer - the acting identity.
  * @param id - item id.
  * @returns the updated item.
@@ -855,8 +1218,13 @@ async markStale(writer: BoardWriter, id: FaberLoomBoardItemId, reason: string): 
 async revalidate(writer: BoardWriter, id: FaberLoomBoardItemId, changed: boolean): Promise<FaberLoomBoardItem>
 
 /**
- * Record an effect. Approval never sends: an explicit authorization is
- * required, and a stale or unapproved item refuses.
+ * Record an effect on an item that never had a reserved one. Approval never
+ * sends: an explicit authorization is required, and a stale or unapproved item
+ * refuses.
+ *
+ * An item that carries an `effectKey` is refused with `EFFECT_VIA_OUTBOX`: its
+ * effect has a reservation and a message, so it is recorded by the consumer's
+ * outcome, and this path would bypass `EFFECT_TAKEN` (W-84).
  * @param writer - the acting identity.
  * @param id - item id.
  * @param input - external reference, authorization, and optional detail.
@@ -4072,6 +4440,113 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the projected draft and its differences.
  */
 @Remote('boardIterationDraft') async boardIterationDraft(id: string, iterationId?: string): Promise<FaberLoomBoardIterationDraftRead>
+
+/**
+ * Read the external effect of one item: the reservation that protects it, the
+ * durable intention to emit it, the visible alerts it raised, and whether a
+ * dispatched effect still awaits reconciliation (E15, §10.1).
+ * @param id - board item id.
+ * @returns the effect, or null when the item authorized none.
+ */
+@Remote('boardEffectStatus') async boardEffectStatus(id: string): Promise<FaberLoomBoardEffectStatus | null>
+
+/**
+ * The visible alerts of this tenant, newest first, with the item each names
+ * resolved to its title. A late confirmation after an administrative close
+ * raises one and never reopens the item (W-85).
+ * @returns the alerts the Mesa shows.
+ */
+@Remote('boardEffectAlerts') async boardEffectAlerts(): Promise<readonly FaberLoomBoardEffectAlertRow[]>
+
+/**
+ * The effect policy the Mesa offers an executing approval: the action types an
+ * acceptance may name and the reversal window of each (D-12).
+ * @returns the action types and their windows.
+ */
+@Remote('boardEffectPolicy') async boardEffectPolicy(): Promise<FaberLoomBoardEffectPolicy>
+
+/**
+ * Approve the exact artifact and accept one execution for it: the approval,
+ * the reservation, and the intention to emit are one command (§10.1). The
+ * access service refuses a protected action type without an active CEO
+ * signature and its refusal reaches the panel unchanged (W-16).
+ * @param id - board item id.
+ * @param input - approval expectations and the execution identity.
+ * @returns the refreshed detail.
+ */
+@Remote('boardApproveWithExecution') async boardApproveWithExecution( id: string, input: FaberLoomBoardExecutionInput, ): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Revert a delegated execution inside its window: the reservation is released,
+ * the intention is cancelled, and the item returns to the pending column
+ * (W-18). A revert at or after the deadline is refused by the board.
+ * @param id - board item id.
+ * @param input - optimistic token and optional reason.
+ * @returns the refreshed detail.
+ */
+@Remote('boardEffectRevert') async boardEffectRevert(id: string, input: FaberLoomBoardRevertInput): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Retry a failed execution, keeping the original execution identity, its
+ * reservation, and its idempotency key (W-84). An unknown outcome is refused
+ * unless the destination declared itself idempotent (W-21).
+ * @param id - board item id.
+ * @param input - optimistic token.
+ * @returns the refreshed detail.
+ */
+@Remote('boardEffectRetry') async boardEffectRetry(id: string, input: FaberLoomBoardRetryInput): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Reconcile a dispatched effect with what the destination reports. A
+ * confirmation executes the item, a failure makes it retryable, and an unknown
+ * outcome leaves it recoverable (W-21, W-76).
+ * @param id - board item id.
+ * @param input - the outcome the destination reported.
+ * @returns the refreshed detail.
+ */
+@Remote('boardEffectReconcile') async boardEffectReconcile( id: string, input: FaberLoomBoardReconcileInput, ): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Close an item administratively while its effect outcome is unknown: Owner or
+ * Admin of the tenant, with a reason, and the reservation stays open so the
+ * reconciliation remains possible (D-9, W-65).
+ * @param id - board item id.
+ * @param input - optimistic token and the mandatory reason.
+ * @returns the closed detail and the item a pending candidate became.
+ */
+@Remote('boardEffectAdminClose') async boardEffectAdminClose( id: string, input: FaberLoomBoardAdminCloseInput, ): Promise<FaberLoomBoardAdminCloseResult>
+
+/**
+ * Whether one protected action type carries an active CEO signature for this
+ * reader's tenant, so the panel can say why approval would refuse (W-16).
+ * @param actionType - the action type the approval would run.
+ * @returns the signature state for this reader.
+ */
+@Remote('boardSignatureStatus') async boardSignatureStatus(actionType: string): Promise<FaberLoomSignatureRow>
+
+/**
+ * Every protected action type and the signature state that covers it, which is
+ * what the signature panel lists.
+ * @returns one row per protected action type, in the order the deployment declares them.
+ */
+@Remote('boardSignatures') async boardSignatures(): Promise<readonly FaberLoomSignatureRow[]>
+
+/**
+ * Issue one CEO signature for the acting identity's tenant. The access service
+ * refuses an identity that is not a configured signing authority, and its
+ * refusal reaches the panel unchanged.
+ * @param input - the action types the signature covers and an optional expiry.
+ * @returns the refreshed signature rows.
+ */
+@Remote('boardSignatureIssue') async boardSignatureIssue(input: SignatureIssueInput): Promise<readonly FaberLoomSignatureRow[]>
+
+/**
+ * Revoke one signature of the acting identity's tenant; the next approval of a
+ * covered action type refuses from that instant.
+ * @param signatureId - signature to revoke.
+ * @returns the refreshed signature rows.
+ */
+@Remote('boardSignatureRevoke') async boardSignatureRevoke(signatureId: string): Promise<readonly FaberLoomSignatureRow[]>
 
 /**
  * Clear staleness after checking whether the underlying condition changed.

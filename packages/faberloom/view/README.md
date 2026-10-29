@@ -27,6 +27,8 @@ Mount this row in a composition that already carries `ctx.faberloomSpaces`, `ctx
 
 The Files panel reads one level of a Space's area with `spaceFiles(id, path)`: the path is workspace-relative, an escaping path is refused, hidden entries are listed, and directories sort first. A click on a file calls `openSpaceFile(id, path)`, which hands it to the operating system's associated application; the Web, which has no native opener, reports that instead of opening it.
 
+The Mesa's external effects are reads and writes the owner's identity scopes, never the browser's. `boardEffectStatus(id)` returns the reservation, the durable intention to emit, the visible alerts, and whether a dispatched effect still awaits reconciliation, plus the two answers the panel may not derive: whether the destination declared itself idempotent, and whether this reader may close the item administratively. `boardEffectAlerts()` lists the tenant's alerts newest first with each item's title resolved. `boardEffectPolicy()` names the action types an acceptance may execute and the reversal window the board resolved for each. `boardApproveWithExecution(id, input)` accepts the approval, the reservation, and the intention in one command; `boardEffectRevert`, `boardEffectRetry`, `boardEffectReconcile`, and `boardEffectAdminClose` carry the four decisions a delegated, failed, unknown, or closed item takes, and each returns the refreshed detail. The signature reads and writes — `boardSignatureStatus(actionType)`, `boardSignatures()`, `boardSignatureIssue(input)`, and `boardSignatureRevoke(id)` — act for the deployment's owner and tenant, so a client cannot sign for another identity.
+
 -----
 
 <a id="model-experience"></a>
@@ -51,6 +53,8 @@ Independent of live requests: the service never touches a request prefix.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Writes cover the panel actions, not every product operation.** The namespace creates and renames spaces and agents, deactivates agents, creates and reviews board items, creates and toggles routines, and records memory statements; board revision submission, model policy, and routine step editing stay out until their screens land.
+- **An unknown effect outcome cannot be retried from the Mesa yet.** The board decides that by the adapter's `idempotent` declaration (W-21) and exposes no read of it, so `boardEffectStatus` reports `idempotent: false` and the panel offers reconciliation instead. Publish the declaration on the effect status before enabling the retry path.
+- **The Mesa's action list is a second declaration.** `effectActionTypes` on this row defaults to the D-12 set and must match the board row; the board still refuses a type its own row does not accept.
 - **Memory writes go through the pipeline.** `remember` appends one statement to the agent-memory conversation inlet; the server distils L0 into L1 asynchronously, so the new row can appear after the next read. Reads stay read-only.
 - **Change events.** The browser refreshes on the harness's forwarded session-activity event, on mount, and after every write; a dedicated change event waits for a forwarded-event allowlist entry.
 - **The connectivity map is read-only.** `spaceMap` reports links; it does not create or mutate Spaces, agents, connections, or workspaces.

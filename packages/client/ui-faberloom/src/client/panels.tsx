@@ -53,6 +53,10 @@ import type {
   FaberLoomBoardIterationResume, FaberLoomBoardTransferredDraft,
   FaberLoomBoardIterationLockInput,
   FaberLoomBoardIterationSaveInput, FaberLoomBoardIterationChoice, FaberLoomBoardCorrectionScope,
+  FaberLoomBoardEffectStatus, FaberLoomBoardEffectAlertRow, FaberLoomBoardEffectPolicy,
+  FaberLoomBoardExecutionInput, FaberLoomBoardRevertInput, FaberLoomBoardRetryInput,
+  FaberLoomBoardReconcileInput, FaberLoomBoardAdminCloseInput, FaberLoomBoardAdminCloseResult,
+  FaberLoomBoardEffectOutcome, FaberLoomSignatureRow, SignatureIssueInput,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { isDesktopApplication } from './desktop-app.ts'
@@ -213,6 +217,42 @@ export interface FaberloomPanelInjected {
   ) => Promise<Result<FaberLoomBoardIterationRecover>>
   /** Read the retained draft and, when stale, where it disagrees. */
   boardIterationDraft: (id: string, iterationId?: string) => Promise<Result<FaberLoomBoardIterationDraftRead>>
+  /** Approve the exact artifact and accept one execution for it. */
+  boardApproveWithExecution: (
+    id: string,
+    input: FaberLoomBoardExecutionInput,
+  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Read one item's external effect, or null when it authorized none. */
+  boardEffectStatus: (id: string) => Promise<Result<FaberLoomBoardEffectStatus | null>>
+  /** Read the tenant's visible effect alerts, newest first. */
+  boardEffectAlerts: () => Promise<Result<readonly FaberLoomBoardEffectAlertRow[]>>
+  /** Read the action types an acceptance may name and their reversal windows. */
+  boardEffectPolicy: () => Promise<Result<FaberLoomBoardEffectPolicy>>
+  /** Revert a delegated execution inside its window. */
+  boardEffectRevert: (
+    id: string,
+    input: FaberLoomBoardRevertInput,
+  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Retry a failed execution with its original identity. */
+  boardEffectRetry: (
+    id: string,
+    input: FaberLoomBoardRetryInput,
+  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Record what the destination reported about a dispatched effect. */
+  boardEffectReconcile: (
+    id: string,
+    input: FaberLoomBoardReconcileInput,
+  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Close an item administratively, leaving its reconciliation open. */
+  boardEffectAdminClose: (id: string, input: FaberLoomBoardAdminCloseInput) => Promise<Result<FaberLoomBoardAdminCloseResult>>
+  /** List every protected action type and the signature state that covers it. */
+  boardSignatures: () => Promise<Result<readonly FaberLoomSignatureRow[]>>
+  /** Read the signature state covering one action type. */
+  boardSignatureStatus: (actionType: string) => Promise<Result<FaberLoomSignatureRow>>
+  /** Issue one CEO signature for the acting identity's tenant. */
+  boardSignatureIssue: (input: SignatureIssueInput) => Promise<Result<readonly FaberLoomSignatureRow[]>>
+  /** Revoke one CEO signature. */
+  boardSignatureRevoke: (signatureId: string) => Promise<Result<readonly FaberLoomSignatureRow[]>>
   /** Create a draft routine, optionally scoped to a Space. */
   createRoutine: (name: string, spaceId: string | null) => void
   /** Activate or pause one routine. */
@@ -2611,6 +2651,24 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
   // The queue rail shows one window of the queue so a long backlog does not
   // build hundreds of rows; the List keeps the complete set.
   const RAIL_LIMIT = 60
+  // Business labels for the action types a deployment may execute. A type the
+  // product does not know reads as the deployment declared it, never as an
+  // internal token.
+  const ACTION_KEYS: Readonly<Record<string, FaberloomKey>> = {
+    'mail.send': 'mesa.action.mailSend',
+    'inventory.reserve': 'mesa.action.inventoryReserve',
+    'shipment.create': 'mesa.action.shipmentCreate',
+  }
+  // What a destination can report, as the reconciliation panel offers it.
+  const OUTCOMES = ['CONFIRMADO', 'FALLIDO', 'DESCONOCIDO'] as const
+  // One label per signature state; the panel never prints the token itself.
+  const SIGNATURE_STATE_KEYS: Readonly<Record<FaberLoomSignatureRow['state'], FaberloomKey>> = {
+    NOT_REQUIRED: 'mesa.signature.state.notRequired',
+    ACTIVE: 'mesa.signature.state.active',
+    MISSING: 'mesa.signature.state.missing',
+    REVOKED: 'mesa.signature.state.revoked',
+    EXPIRED: 'mesa.signature.state.expired',
+  }
 
   return function FaberloomMesa(props: ScreenProps) {
     const {
@@ -2620,6 +2678,9 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft,
       boardIterationApply, boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume,
       boardIterationRecover, boardIterationDraft,
+      boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
+      boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectAdminClose,
+      boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     } = props
     const { overview, error } = useOverview(props)
     const [view, setView] = useState<'foco' | 'kanban' | 'lista'>('foco')
@@ -2635,6 +2696,24 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const [discardNote, setDiscardNote] = useState('')
     const [showApprove, setShowApprove] = useState(false)
     const [confirmations, setConfirmations] = useState<readonly string[]>([])
+    // E15: the effect-state controls. One panel at a time, like Discard, and
+    // every one of them comes from the board's own vocabulary.
+    const [showRevert, setShowRevert] = useState(false)
+    const [revertReason, setRevertReason] = useState<string>('DUPLICADO')
+    const [showReconcile, setShowReconcile] = useState(false)
+    const [reconcileOutcome, setReconcileOutcome] = useState<FaberLoomBoardEffectOutcome>('DESCONOCIDO')
+    const [showRetry, setShowRetry] = useState(false)
+    const [showClose, setShowClose] = useState(false)
+    const [closeReason, setCloseReason] = useState('')
+    const [showSignatures, setShowSignatures] = useState(false)
+    // Action the approval executes, its destination, and the acceptance it
+    // belongs to. An empty action approves without executing anything.
+    const [execAction, setExecAction] = useState('')
+    const [execDestination, setExecDestination] = useState('')
+    const [executionId, setExecutionId] = useState('')
+    // The clock the reversal countdown reads; one tick per second while a
+    // delegated item is open.
+    const [clock, setClock] = useState(() => Date.now())
     const [iterationDraft, setIterationDraft] = useState<string | null>(null)
     // Text of a draft write the board refused because the attempt was over,
     // kept for this item so the work is never dropped without a trace (W-43).
@@ -2652,6 +2731,10 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const severityRef = useRef<HTMLSelectElement>(null)
     const approvePanelRef = useRef<HTMLElement>(null)
     const approveButtonRef = useRef<HTMLButtonElement>(null)
+    // The effect panels take focus when they open and hand it back to the
+    // control that opened them, like the approval dialog (§9.9).
+    const effectPanelRef = useRef<HTMLElement>(null)
+    const effectTriggerRef = useRef<HTMLButtonElement | null>(null)
 
     const rows = (overview?.board ?? []).filter(row => row.column !== 'CERRADO')
     const visible = rows.filter(row =>
@@ -2697,6 +2780,61 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       setDifferences(outdatedDraft.value.differences)
     }, [outdatedDraft])
 
+    // E15: the item's external effect, the tenant's visible alerts, and the
+    // action types an approval may execute. A read that fails leaves the item
+    // usable: the effect zone simply shows nothing.
+    const effect = useLazy<FaberLoomBoardEffectStatus | null>(
+      () => selected === null
+        ? Promise.resolve({ ok: true, value: null })
+        : boardEffectStatus(selected),
+      [selected, tick],
+    )
+    const effectStatus = effect.kind === 'ready' ? effect.value : null
+    const alerts = useLazy<readonly FaberLoomBoardEffectAlertRow[]>(() => boardEffectAlerts(), [tick])
+    const policy = useLazy<FaberLoomBoardEffectPolicy>(() => boardEffectPolicy(), [])
+    const protectedSignatures = useLazy<readonly FaberLoomSignatureRow[]>(
+      () => boardSignatures(),
+      [tick, showSignatures],
+    )
+    // The signature covering the action this approval would execute, read
+    // against the reader's tenant before the panel enables its button (W-16).
+    const coveringSignature = useLazy<FaberLoomSignatureRow | null>(
+      () => execAction.length === 0
+        ? Promise.resolve({ ok: true, value: null })
+        : boardSignatureStatus(execAction),
+      [execAction, tick, showSignatures],
+    )
+    const signature = coveringSignature.kind === 'ready' ? coveringSignature.value : null
+    const actionTypes = policy.kind === 'ready' ? policy.value.actionTypes : []
+    const signatureRows = protectedSignatures.kind === 'ready' ? protectedSignatures.value : []
+    // The board states the reversal window per action type; the panel says what
+    // will happen from it and never keeps a window of its own (D-12).
+    const windowMsOf = (actionType: string): number | null =>
+      policy.kind === 'ready' ? policy.value.reversalWindowMs[actionType] ?? null : null
+
+    // The effect state the panel is in. Every action below reads one of these,
+    // so a state the board adds later simply shows no effect controls.
+    const delegated = value?.state === 'DELEGADO_EN_VENTANA'
+    const effectRunning = value?.state === 'EJECUCION_PENDIENTE'
+    const effectOutcome = effectStatus?.executionOutcome ?? null
+    // "No sabemos si se envió": the item's outcome, or its state, is unknown
+    // (W-21, W-22). Correct and discard stay closed here (W-76).
+    const outcomeUnknown = value?.state === 'DESCONOCIDO'
+      || (value?.state === 'ERROR_RECUPERABLE' && effectOutcome === 'DESCONOCIDO')
+    const outcomeFailed = value?.state === 'ERROR_RECUPERABLE' && !outcomeUnknown
+    const effectZone = delegated || effectRunning || outcomeUnknown || outcomeFailed
+    const canAdminClose = effectStatus?.canAdminClose === true
+    const mayRetry = effectStatus?.idempotent === true
+    const effectDeadline = delegated ? effectStatus?.reversalDeadline ?? null : null
+    const remainingMs = effectDeadline === null ? 0 : Math.max(0, Date.parse(effectDeadline) - clock)
+    const windowOpen = delegated && remainingMs > 0
+    const signatureNeeded = signature !== null && signature.protected
+    const signatureReady = signature === null || !signature.protected || signature.state === 'ACTIVE'
+    const executing = execAction.length > 0
+    const effectActionLabel = effectStatus?.actionType === null || effectStatus?.actionType === undefined
+      ? t('mesa.none')
+      : actionLabel(effectStatus.actionType)
+
     // Zone ④ reads the same live report approval runs, so a blocking verdict
     // here is the verdict the command will apply.
     const checks = value?.checks ?? []
@@ -2713,6 +2851,14 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     /** Account and space as one line; an absent space is dropped instead of printed. */
     const kickerOf = (account: string | null, space: string | null): string =>
       [account ?? t('mesa.noAccount'), space === null ? null : spaceName(space)].filter(part => part !== null).join(' · ')
+
+    /** Business label for one action type; an unknown one reads as declared. */
+    function actionLabel(actionType: string): string {
+      const key = ACTION_KEYS[actionType]
+      return key === undefined ? actionType : t(key)
+    }
+    /** Minutes and seconds left in the reversal window. */
+    const countdown = `${String(Math.floor(remainingMs / 60_000))}:${String(Math.floor((remainingMs % 60_000) / 1_000)).padStart(2, '0')}`
 
     const selectedIndex = visible.findIndex(row => row.id === selected)
     const railStart = selectedIndex < RAIL_LIMIT ? 0 : Math.max(0, selectedIndex - 10)
@@ -2815,6 +2961,14 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       setDifferences([])
       setShowApprove(false)
       setShowDiscard(false)
+      setShowRevert(false)
+      setShowReconcile(false)
+      setShowRetry(false)
+      setShowClose(false)
+      setCloseReason('')
+      setExecAction('')
+      setExecDestination('')
+      setExecutionId('')
       setExitMode(null)
       setCandidateChoice(null)
       setConfirmations([])
@@ -2830,6 +2984,24 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       approvePanelRef.current?.focus()
       return () => { approveButtonRef.current?.focus() }
     }, [showApprove])
+
+    // One effect control is open at a time; it takes focus when it opens and
+    // returns it to the control that opened it (§9.9).
+    const effectPanelOpen = showRevert || showReconcile || showRetry || showClose || showSignatures
+    useEffect(() => {
+      if (!effectPanelOpen) return
+      effectPanelRef.current?.focus()
+      return () => { effectTriggerRef.current?.focus() }
+    }, [effectPanelOpen])
+
+    // The reversal countdown reads the deadline the board recorded, once a
+    // second while a delegated item is open (D-04). It stops with the item.
+    useEffect(() => {
+      if (!delegated) return
+      setClock(Date.now())
+      const timer = setInterval(() => { setClock(Date.now()) }, 1_000)
+      return () => { clearInterval(timer) }
+    }, [delegated, effectDeadline, selected])
 
     useEffect(() => {
       if (draft === null || value === undefined || !editable || restricted) return
@@ -3138,6 +3310,29 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       if (value === undefined || restricted) return
       if (value.artifactHash === null) { setMessage(t('mesa.error')); return }
       if (!confirmedAll) return
+      if (executing) {
+        // The acceptance names a destination and, when the deployment protects
+        // the action type, the signature that covers it (W-16).
+        if (execDestination.trim().length === 0) { setMessage(t('mesa.approveEffect.destinationRequired')); return }
+        if (!signatureReady) return
+        setShowApprove(false)
+        if (!draftChanged) { acceptExecution(value); return }
+        // The spec commits pending edits before the panel; the panel already
+        // showed them, so the save happens here and the acceptance follows on
+        // the version it committed (§9.8).
+        void boardSaveEdits(value.id, {
+          rowVersion: value.rowVersion,
+          baseVersion: value.version,
+          changes: { summary: draft ?? '' },
+        }).then((result) => {
+          if (!result.ok) { setMessage(result.error.message); return }
+          const saved = result.value.detail
+          if (saved === null) { setMessage(t('mesa.error')); return }
+          setTick(count => count + 1)
+          acceptExecution(saved)
+        })
+        return
+      }
       const accepted = pendingConfirmations.length === 0 ? {} : { confirmations: pendingConfirmations.map(check => check.id) }
       apply(draftChanged
         ? boardApproveWithEdits(value.id, {
@@ -3167,6 +3362,113 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       setShowDiscard(false)
     }
 
+    /**
+     * Accept the execution the confirmation panel describes, against the exact
+     * version and hash the board answered with. The acceptance carries the
+     * signature that covers its action type, so the audit names what allowed it
+     * (§10.1).
+     * @param current - the detail whose version and hash the acceptance names.
+     */
+    const acceptExecution = (current: FaberLoomBoardDetail): void => {
+      if (current.artifactHash === null) { setMessage(t('mesa.error')); return }
+      const accepted = pendingConfirmations.length === 0
+        ? {}
+        : { confirmations: pendingConfirmations.map(check => check.id) }
+      apply(boardApproveWithExecution(current.id, {
+        expectedRowVersion: current.rowVersion,
+        expectedArtifactVersion: current.version,
+        expectedArtifactHash: current.artifactHash,
+        executionId,
+        actionType: execAction,
+        destination: execDestination.trim(),
+        ...signature?.signatureId === null || signature?.signatureId === undefined
+          ? {}
+          : { authorization: signature.signatureId },
+        ...accepted,
+      }))
+    }
+
+    /** Open the single confirmation panel and mint the acceptance it will name. */
+    const openApprove = (): void => {
+      setExecutionId(`exec-${writerSession}-${String(Date.now())}`)
+      setShowApprove(true)
+    }
+
+    /** Revert the delegated execution: the reason and the button are two steps (§9.8). */
+    const revertExecution = (): void => {
+      if (value === undefined) return
+      apply(boardEffectRevert(value.id, { expectedRowVersion: value.rowVersion, reason: revertReason }))
+      setShowRevert(false)
+    }
+
+    /** Record what the destination reported about a dispatched effect (W-21). */
+    const reconcileExecution = (): void => {
+      if (value === undefined) return
+      apply(boardEffectReconcile(value.id, {
+        expectedRowVersion: value.rowVersion,
+        outcome: reconcileOutcome,
+      }))
+      setShowReconcile(false)
+    }
+
+    /** Retry the failed execution with the identity it already holds (W-84). */
+    const retryExecution = (): void => {
+      if (value === undefined) return
+      apply(boardEffectRetry(value.id, { expectedRowVersion: value.rowVersion }))
+      setShowRetry(false)
+    }
+
+    /**
+     * Close the item while its effect stays unconfirmed: the reason is
+     * mandatory and the follow-up remains open (D-9, W-65). A pending candidate
+     * becomes its own item, which this panel then opens (W-86).
+     */
+    const closeWithPendingReconciliation = (): void => {
+      if (value === undefined || closeReason.trim().length === 0) return
+      const run = boardEffectAdminClose(value.id, {
+        expectedRowVersion: value.rowVersion,
+        reason: closeReason.trim(),
+      })
+      void run.then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setShowClose(false)
+        setCloseReason('')
+        setSelected(result.value.createdId)
+        setTick(count => count + 1)
+      })
+    }
+
+    /** Issue one CEO signature for a protected action type (W-16). */
+    const signAction = (actionType: string): void => {
+      const run = boardSignatureIssue({ actionTypes: [actionType] })
+      void run.then((result) => {
+        if (result.ok) setTick(count => count + 1)
+        else setMessage(result.error.message)
+      })
+    }
+
+    /** Revoke one CEO signature; the next approval of its action type refuses. */
+    const revokeSignature = (signatureId: string): void => {
+      const run = boardSignatureRevoke(signatureId)
+      void run.then((result) => {
+        if (result.ok) setTick(count => count + 1)
+        else setMessage(result.error.message)
+      })
+    }
+
+    /** Close the innermost open control; false when none is open (§9.9). */
+    const closeTopControl = (): boolean => {
+      if (exitMode !== null) { setExitMode(null); return true }
+      if (showRevert) { setShowRevert(false); return true }
+      if (showReconcile) { setShowReconcile(false); return true }
+      if (showRetry) { setShowRetry(false); return true }
+      if (showClose) { setShowClose(false); return true }
+      if (showSignatures) { setShowSignatures(false); return true }
+      if (showApprove) { setShowApprove(false); return true }
+      if (showDiscard) { setShowDiscard(false); return true }
+      return false
+    }
+
     useEffect(() => {
       const onKey = (event: KeyboardEvent): void => {
         if (value === undefined) return
@@ -3176,9 +3478,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         // Escape closes the innermost control even when focus sits inside it;
         // that is the only shortcut that must reach a focused checkbox or field.
         if (event.key === 'Escape') {
-          if (exitMode !== null) { setExitMode(null); return }
-          if (showApprove) { setShowApprove(false); return }
-          if (showDiscard) { setShowDiscard(false); return }
+          if (closeTopControl()) return
           if (inField) { (event.target as HTMLElement).blur(); return }
           setSelected(null)
           return
@@ -3207,6 +3507,35 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
           return
         }
         if (event.key === 'ArrowRight') { event.preventDefault(); next(); return }
+        // E15 decision keys: Revertir inside a delegated window, Reintentar
+        // after a failed effect, Conciliar while the outcome is unknown. Each
+        // opens its panel and none executes by itself (§9.9).
+        if (delegated) {
+          if (event.key === 'v' || event.key === 'V') {
+            event.preventDefault()
+            if (windowOpen) setShowRevert(true)
+            return
+          }
+        }
+        if (outcomeFailed && (event.key === 'r' || event.key === 'R')) {
+          event.preventDefault()
+          setShowRetry(true)
+          return
+        }
+        if (outcomeUnknown) {
+          if (event.key === 'c' || event.key === 'C') {
+            event.preventDefault()
+            setReconcileOutcome('DESCONOCIDO')
+            setShowReconcile(true)
+            return
+          }
+          // The effect may already exist: correct and discard stay shut so the
+          // follow-up is never lost (W-76).
+          if (event.key === 'd' || event.key === 'D' || event.key === 'g' || event.key === 'G') {
+            event.preventDefault()
+            return
+          }
+        }
         if (event.key === 'a' || event.key === 'A') {
           if (pending !== null || value.stale || pendingConfirmations.length > 0) { setShowApprove(true); return }
           if (blockedReason !== null) { setMessage(blockedReason); return }
@@ -3380,6 +3709,35 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       </div>
     )
 
+    // A late confirmation raises one visible alert and never reopens its item
+    // (W-85). The newest is shown; the rest fold behind a counter.
+    const alertRows = alerts.kind === 'ready' ? alerts.value : []
+    const alertLine = (alert: FaberLoomBoardEffectAlertRow): string =>
+      t(alert.kind === 'LATE_CONFIRMATION' ? 'mesa.effect.alert.late' : 'mesa.effect.alert.orphan')
+        .replace('{item}', alert.itemTitle ?? alert.itemId)
+    const alertText = (alert: FaberLoomBoardEffectAlertRow): string =>
+      t(alert.kind === 'LATE_CONFIRMATION' ? 'mesa.effect.alert.lateText' : 'mesa.effect.alert.orphanText')
+    const alertBlock = alertRows.length === 0 ? null : (
+      <div className={styles.mesaNotice} role="status">
+        <div className={styles.mesaNoticeHead}>
+          <strong>{alertLine(alertRows[0] as FaberLoomBoardEffectAlertRow)}</strong>
+          <span>{alertText(alertRows[0] as FaberLoomBoardEffectAlertRow)}</span>
+        </div>
+        {alertRows.length === 1 ? null : (
+          <details className={styles.mesaCollapse}>
+            <summary>{`${String(alertRows.length - 1)} ${t('mesa.effect.alert.more')}`}</summary>
+            <div className={styles.mesaCollapseBody}>
+              {alertRows.slice(1).map(alert => (
+                <p className={styles.mesaHintLine} key={`${alert.itemId}-${alert.updatedAt}`}>
+                  {`${alertLine(alert)} · ${alertText(alert)}`}
+                </p>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+    )
+
     const detailBody = detail.kind === 'loading'
       ? <StateBlock kind="loading" title={t('state.loading')} />
       : detail.kind === 'error'
@@ -3400,6 +3758,9 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                   <span>{value.dueAt === null ? t('mesa.noDue') : dayOf(value.dueAt)}</span>
                   {restricted || value.valueUsd === null ? null : <span>{`${money.format(value.valueUsd)} ${t('mesa.usd')}`}</span>}
                   <span>{`${String(position)} ${t('mesa.of')} ${String(visible.length)}`}</span>
+                  <button className={styles.ghost} type="button" onClick={() => setShowSignatures(true)}>
+                    {t('mesa.signature.title')}
+                  </button>
                 </div>
                 <div className={styles.mesaProperties}>
                   <label className={styles.mesaProperty}>
@@ -3444,6 +3805,67 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     ? t('mesa.iteration.live')
                     : `${t('mesa.iteration.live')} · ${t('mesa.iteration.remaining')} ${String(remaining)} ${t('mesa.iteration.minutes')}`}
                 </p>
+              ) : null}
+
+              {effectZone ? (
+                <section className={styles.mesaChecksZone} aria-label={t('mesa.effect.title')}>
+                  <h3>{t('mesa.effect.title')}</h3>
+                  {delegated ? (
+                    effectStatus === null ? (
+                      <p className={styles.mesaHintLine}>{t('state.loading')}</p>
+                    ) : (
+                      <>
+                        <p className={styles.mesaHintLine}>
+                          {t('mesa.effect.delegatedText')
+                            .replace('{action}', effectActionLabel)
+                            .replace('{destination}', effectStatus.destination ?? t('mesa.none'))}
+                        </p>
+                        <p className={styles.mesaAttempt} role="timer">
+                          <span className={styles.mesaAttemptDot} aria-hidden="true" />
+                          {windowOpen
+                            ? t('mesa.effect.remaining').replace('{time}', countdown)
+                            : t('mesa.effect.windowClosed')}
+                        </p>
+                      </>
+                    )
+                  ) : effectRunning ? (
+                    <>
+                      <p className={styles.mesaAttempt} role="status">
+                        <span className={styles.mesaAttemptDot} aria-hidden="true" />
+                        {t('mesa.effect.pending')}
+                      </p>
+                      <p className={styles.mesaHintLine}>
+                        {t('mesa.effect.pendingText')
+                          .replace('{destination}', effectStatus?.destination ?? t('mesa.none'))}
+                      </p>
+                    </>
+                  ) : outcomeUnknown ? (
+                    <>
+                      <p className={styles.mesaBlocked}>{t('mesa.effect.unknown')}</p>
+                      <p className={styles.mesaHintLine}>{t('mesa.effect.unknownText')}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className={styles.mesaBlocked}>{t('mesa.effect.failed')}</p>
+                      <p className={styles.mesaHintLine}>{t('mesa.effect.failedText')}</p>
+                    </>
+                  )}
+                  <dl className={styles.mesaFacts}>
+                    <div><dt>{t('mesa.effect.action')}</dt><dd>{effectActionLabel}</dd></div>
+                    <div>
+                      <dt>{t('mesa.effect.destination')}</dt>
+                      <dd>{effectStatus?.destination ?? t('mesa.none')}</dd>
+                    </div>
+                    {effectStatus?.idempotencyKey === null || effectStatus?.idempotencyKey === undefined
+                      ? null
+                      : (
+                        <div>
+                          <dt>{t('mesa.effect.idempotency')}</dt>
+                          <dd>{effectStatus.idempotencyKey}</dd>
+                        </div>
+                      )}
+                  </dl>
+                </section>
               ) : null}
 
               {noticeBlock}
@@ -3574,6 +3996,62 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                         {t('mesa.iteration.toSpaceloom')}
                       </button>
                     </>
+                  ) : effectZone ? (
+                    <>
+                      {delegated ? (
+                        <button
+                          ref={effectTriggerRef}
+                          className={styles.danger}
+                          type="button"
+                          disabled={!windowOpen}
+                          onClick={() => setShowRevert(true)}
+                        >
+                          {t('mesa.effect.revert')}
+                        </button>
+                      ) : null}
+                      {outcomeUnknown ? (
+                        <button
+                          ref={effectTriggerRef}
+                          className={styles.primary}
+                          type="button"
+                          onClick={() => { setReconcileOutcome('DESCONOCIDO'); setShowReconcile(true) }}
+                        >
+                          {t('mesa.effect.reconcile')}
+                        </button>
+                      ) : null}
+                      {outcomeUnknown ? (
+                        <button
+                          className={styles.secondary}
+                          type="button"
+                          disabled={!mayRetry}
+                          onClick={() => setShowRetry(true)}
+                        >
+                          {t('mesa.effect.retry')}
+                        </button>
+                      ) : null}
+                      {outcomeFailed ? (
+                        <button
+                          ref={effectTriggerRef}
+                          className={styles.primary}
+                          type="button"
+                          onClick={() => setShowRetry(true)}
+                        >
+                          {t('mesa.effect.retry')}
+                        </button>
+                      ) : null}
+                      {outcomeFailed ? (
+                        <button className={styles.secondary} type="button" onClick={() => editRef.current?.focus()}>
+                          {t('mesa.effect.correct')}
+                        </button>
+                      ) : null}
+                      {outcomeUnknown && canAdminClose ? (
+                        <button className={styles.danger} type="button" onClick={() => setShowClose(true)}>
+                          {t('mesa.effect.adminClose')}
+                        </button>
+                      ) : null}
+                      {effectRunning ? <span className={styles.mesaHintLine}>{t('mesa.effect.noDecision')}</span> : null}
+                      <button className={styles.ghost} type="button" onClick={next}>{t('mesa.skip')}</button>
+                    </>
                   ) : (
                     <>
                       <button
@@ -3582,7 +4060,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                         type="button"
                         disabled={!editable || pending !== null || value.stale || value.severity === null
                           || missingChecks.length > 0 || blockingFail !== undefined}
-                        onClick={() => setShowApprove(true)}
+                        onClick={openApprove}
                       >
                         {t('action.approve')}
                       </button>
@@ -3613,6 +4091,9 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 </details>
               </footer>
               {blockedReason === null ? null : <p className={styles.mesaBlocked}>{blockedReason}</p>}
+              {outcomeUnknown && !mayRetry
+                ? <p className={styles.mesaBlocked}>{t('mesa.effect.retryBlocked')}</p>
+                : null}
 
               {showApprove ? (
                 <section
@@ -3624,8 +4105,66 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                   ref={approvePanelRef}
                   onKeyDown={trapDialogTab}
                 >
-                  <strong id="mesa-approve-title">{t('mesa.confirmApprove')}</strong>
-                  <span>{t('mesa.approvePanel')}</span>
+                  <strong id="mesa-approve-title">
+                    {executing ? t('mesa.approveEffect.title') : t('mesa.confirmApprove')}
+                  </strong>
+                  <span>{executing ? t('mesa.approveEffect.text') : t('mesa.approvePanel')}</span>
+                  <Field label={t('mesa.effect.action')}>
+                    <select
+                      value={execAction}
+                      aria-label={t('mesa.effect.action')}
+                      onChange={(event) => { setExecAction(event.target.value) }}
+                    >
+                      <option value="">{t('mesa.approveEffect.none')}</option>
+                      {actionTypes.map(actionType => (
+                        <option key={actionType} value={actionType}>{actionLabel(actionType)}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  {executing ? (
+                    <>
+                      <Field label={t('mesa.approveEffect.destination')}>
+                        <input
+                          type="text"
+                          aria-label={t('mesa.approveEffect.destination')}
+                          value={execDestination}
+                          onChange={(event) => { setExecDestination(event.target.value) }}
+                        />
+                      </Field>
+                      <dl className={styles.mesaFacts}>
+                        <div>
+                          <dt>{t('mesa.approveEffect.amount')}</dt>
+                          <dd>
+                            {restricted || value.valueUsd === null
+                              ? t('mesa.approveEffect.restricted')
+                              : `${money.format(value.valueUsd)} ${t('mesa.usd')}`}
+                          </dd>
+                        </div>
+                      </dl>
+                      {signatureNeeded ? (
+                        <p className={signatureReady ? styles.mesaHintLine : styles.mesaBlocked}>
+                          {signatureReady
+                            ? t('mesa.approveEffect.signatureActive').replace('{action}', actionLabel(execAction))
+                            : t('mesa.approveEffect.signatureMissing').replace('{action}', actionLabel(execAction))}
+                        </p>
+                      ) : null}
+                      {signatureNeeded && !signatureReady ? (
+                        <button
+                          className={styles.secondary}
+                          type="button"
+                          onClick={() => setShowSignatures(true)}
+                        >
+                          {t('mesa.approveEffect.openSignatures')}
+                        </button>
+                      ) : null}
+                      {windowMsOf(execAction) === null ? null : (
+                        <p className={styles.mesaHintLine}>
+                          {t('mesa.approveEffect.window')
+                            .replace('{minutes}', String(Math.round((windowMsOf(execAction) ?? 0) / 60_000)))}
+                        </p>
+                      )}
+                    </>
+                  ) : null}
                   {pendingConfirmations.length === 0 ? null : (
                     <fieldset className={styles.mesaConfirmations}>
                       <legend>{t('mesa.checks.confirmTitle')}</legend>
@@ -3646,7 +4185,14 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     </fieldset>
                   )}
                   <span className={styles.tools}>
-                    <button className={styles.primary} type="button" disabled={!confirmedAll} onClick={approve}>{t('action.confirm')}</button>
+                    <button
+                      className={styles.primary}
+                      type="button"
+                      disabled={!confirmedAll || (executing && (execDestination.trim().length === 0 || !signatureReady))}
+                      onClick={approve}
+                    >
+                      {executing ? t('mesa.approveEffect.confirm') : t('action.confirm')}
+                    </button>
                     <button className={styles.ghost} type="button" onClick={() => setShowApprove(false)}>{t('action.cancel')}</button>
                   </span>
                 </section>
@@ -3663,6 +4209,204 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                   <span className={styles.tools}>
                     <button className={styles.danger} type="button" onClick={discard}>{t('action.discard')}</button>
                     <button className={styles.ghost} type="button" onClick={() => setShowDiscard(false)}>{t('action.cancel')}</button>
+                  </span>
+                </section>
+              ) : null}
+
+              {showRevert ? (
+                <section
+                  className={styles.mesaNotice}
+                  role="region"
+                  aria-label={t('mesa.effect.revertTitle')}
+                  ref={effectPanelRef}
+                  tabIndex={-1}
+                >
+                  <strong>{t('mesa.effect.revertTitle')}</strong>
+                  <span>{t('mesa.effect.revertText')}</span>
+                  <Field label={t('mesa.effect.reason')}>
+                    <select
+                      value={revertReason}
+                      aria-label={t('mesa.effect.reason')}
+                      onChange={event => setRevertReason(event.target.value)}
+                    >
+                      {REASONS.map(reason => (
+                        <option key={reason} value={reason}>
+                          {t(`mesa.reason.${reason.toLowerCase()}` as FaberloomKey)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <span className={styles.tools}>
+                    <button
+                      className={styles.danger}
+                      type="button"
+                      disabled={!windowOpen}
+                      onClick={revertExecution}
+                    >
+                      {t('mesa.effect.revert')}
+                    </button>
+                    <button className={styles.ghost} type="button" onClick={() => setShowRevert(false)}>
+                      {t('action.cancel')}
+                    </button>
+                  </span>
+                </section>
+              ) : null}
+
+              {showReconcile ? (
+                <section
+                  className={styles.mesaNotice}
+                  role="region"
+                  aria-label={t('mesa.effect.reconcileTitle')}
+                  ref={effectPanelRef}
+                  tabIndex={-1}
+                >
+                  <strong>{t('mesa.effect.reconcileTitle')}</strong>
+                  <span>{t('mesa.effect.reconcileText')}</span>
+                  <Field label={t('mesa.effect.reconcileTitle')}>
+                    <select
+                      value={reconcileOutcome}
+                      aria-label={t('mesa.effect.reconcileTitle')}
+                      onChange={event => setReconcileOutcome(event.target.value as FaberLoomBoardEffectOutcome)}
+                    >
+                      {OUTCOMES.map(outcome => (
+                        <option key={outcome} value={outcome}>
+                          {t(`mesa.effect.outcome.${outcome.toLowerCase()}` as FaberloomKey)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <span className={styles.tools}>
+                    <button className={styles.primary} type="button" onClick={reconcileExecution}>
+                      {t('mesa.effect.confirmReconcile')}
+                    </button>
+                    <button className={styles.ghost} type="button" onClick={() => setShowReconcile(false)}>
+                      {t('action.cancel')}
+                    </button>
+                  </span>
+                </section>
+              ) : null}
+
+              {showRetry ? (
+                <section
+                  className={`${styles.mesaNotice} ${styles.mesaDialog}`}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="mesa-retry-title"
+                  tabIndex={-1}
+                  ref={effectPanelRef}
+                  onKeyDown={trapDialogTab}
+                >
+                  <strong id="mesa-retry-title">{t('mesa.effect.retryTitle')}</strong>
+                  <span>
+                    {t('mesa.effect.retryText').replace('{destination}', effectStatus?.destination ?? t('mesa.none'))}
+                  </span>
+                  <dl className={styles.mesaFacts}>
+                    <div><dt>{t('mesa.effect.action')}</dt><dd>{effectActionLabel}</dd></div>
+                    <div>
+                      <dt>{t('mesa.effect.idempotency')}</dt>
+                      <dd>{effectStatus?.idempotencyKey ?? t('mesa.none')}</dd>
+                    </div>
+                  </dl>
+                  <span className={styles.tools}>
+                    <button
+                      className={styles.primary}
+                      type="button"
+                      disabled={outcomeUnknown && !mayRetry}
+                      onClick={retryExecution}
+                    >
+                      {t('mesa.effect.retry')}
+                    </button>
+                    <button className={styles.ghost} type="button" onClick={() => setShowRetry(false)}>
+                      {t('action.cancel')}
+                    </button>
+                  </span>
+                </section>
+              ) : null}
+
+              {showClose ? (
+                <section
+                  className={`${styles.mesaNotice} ${styles.mesaDialog}`}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="mesa-close-title"
+                  tabIndex={-1}
+                  ref={effectPanelRef}
+                  onKeyDown={trapDialogTab}
+                >
+                  <strong id="mesa-close-title">{t('mesa.effect.adminCloseTitle')}</strong>
+                  <span>{t('mesa.effect.adminCloseText')}</span>
+                  <p className={styles.mesaHintLine}>{t('mesa.effect.closeFollowUp')}</p>
+                  <Field label={t('mesa.effect.closeReason')}>
+                    <input
+                      type="text"
+                      aria-label={t('mesa.effect.closeReason')}
+                      value={closeReason}
+                      onChange={event => setCloseReason(event.target.value)}
+                    />
+                  </Field>
+                  <span className={styles.tools}>
+                    <button
+                      className={styles.danger}
+                      type="button"
+                      disabled={closeReason.trim().length === 0}
+                      onClick={closeWithPendingReconciliation}
+                    >
+                      {t('mesa.effect.close')}
+                    </button>
+                    <button className={styles.ghost} type="button" onClick={() => setShowClose(false)}>
+                      {t('action.cancel')}
+                    </button>
+                  </span>
+                </section>
+              ) : null}
+
+              {showSignatures ? (
+                <section
+                  className={`${styles.mesaNotice} ${styles.mesaDialog}`}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="mesa-signatures-title"
+                  tabIndex={-1}
+                  ref={effectPanelRef}
+                  onKeyDown={trapDialogTab}
+                >
+                  <strong id="mesa-signatures-title">{t('mesa.signature.title')}</strong>
+                  <span>{t('mesa.signature.intro')}</span>
+                  {signatureRows.length === 0 ? (
+                    <p className={styles.mesaHintLine}>{t('mesa.signature.none')}</p>
+                  ) : (
+                    <dl className={styles.mesaFacts}>
+                      {signatureRows.map(row => (
+                        <div key={row.actionType}>
+                          <dt>{actionLabel(row.actionType)}</dt>
+                          <dd>
+                            <span>{t(SIGNATURE_STATE_KEYS[row.state])}</span>
+                            {row.state === 'ACTIVE' && row.signatureId !== null ? (
+                              <button
+                                className={styles.secondary}
+                                type="button"
+                                onClick={() => revokeSignature(row.signatureId ?? '')}
+                              >
+                                {t('mesa.signature.revoke')}
+                              </button>
+                            ) : (
+                              <button
+                                className={styles.secondary}
+                                type="button"
+                                onClick={() => signAction(row.actionType)}
+                              >
+                                {t('mesa.signature.issue')}
+                              </button>
+                            )}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  <span className={styles.tools}>
+                    <button className={styles.ghost} type="button" onClick={() => setShowSignatures(false)}>
+                      {t('action.cancel')}
+                    </button>
                   </span>
                 </section>
               ) : null}
@@ -3798,6 +4542,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         <Feedback t={t} message={error ?? message} />
         {filters}
         {scopeBar}
+        {alertBlock}
         {view === 'foco'
           ? (visible.length === 0
             ? <StateBlock kind="empty" title={t('mesa.empty')} text={rows.length === 0 ? t('mesa.emptyHint') : t('mesa.noSelection')} />

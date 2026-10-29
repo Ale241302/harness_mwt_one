@@ -165,6 +165,22 @@ async function bench(
   const boardIterationDraft = vi.fn(async (): Promise<unknown> => ({
     ok: true, value: { draft: null, differences: [] },
   }))
+  const boardApproveWithExecution = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
+  const boardEffectStatus = vi.fn(async (): Promise<unknown> => ({ ok: true, value: null }))
+  const boardEffectAlerts = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const boardEffectPolicy = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { actionTypes: ['mail.send'], reversalWindowMs: { 'mail.send': 900_000 } },
+  }))
+  const boardEffectRevert = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
+  const boardEffectRetry = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
+  const boardEffectReconcile = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
+  const boardEffectAdminClose = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { detail: DETAIL, createdId: null },
+  }))
+  const boardSignatures = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const boardSignatureStatus = vi.fn(async (): Promise<unknown> => ({ ok: true, value: null }))
+  const boardSignatureIssue = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const boardSignatureRevoke = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const setBoardRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
   const saveEmailDraft = vi.fn(async () => ({
@@ -266,6 +282,9 @@ async function bench(
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
     boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationRecover,
     boardIterationDraft,
+    boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
+    boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectAdminClose,
+    boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
@@ -367,6 +386,9 @@ async function bench(
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
     boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationRecover,
     boardIterationDraft,
+    boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
+    boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectAdminClose,
+    boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
@@ -1942,5 +1964,309 @@ describe('faberloom routines visibility', () => {
     fireEvent.change(await view.findByRole('combobox', { name: 'Space' }), { target: { value: 'space-1' } })
     fireEvent.click(view.getByRole('button', { name: 'Save' }))
     await waitFor(() => { expect(saveRoutine).toHaveBeenCalledWith('routine-1', expect.objectContaining({ spaceId: 'space-1' })) })
+  })
+})
+
+/** The effect one accepted execution holds, as the host projects it. */
+function effectStatus(overrides: Record<string, unknown> = {}) {
+  return {
+    effectKey: 'eff-1',
+    actionType: 'mail.send',
+    destination: 'cliente@demo.test',
+    reversalDeadline: null,
+    executionOutcome: null,
+    reservation: {
+      status: 'RESERVADA',
+      actionType: 'mail.send',
+      destination: 'cliente@demo.test',
+      idempotencyKey: 'effect:eff-1',
+      reversalDeadline: null,
+      dispatchedAt: null,
+      releasedAt: null,
+      releaseReason: null,
+      closedAt: null,
+      closeReason: null,
+    },
+    outbox: 'PENDIENTE',
+    idempotencyKey: 'effect:eff-1',
+    alerts: [],
+    reconciliationOpen: false,
+    idempotent: false,
+    canAdminClose: false,
+    ...overrides,
+  }
+}
+
+/** One signature state the host reads for an action type. */
+function signature(state: 'ACTIVE' | 'MISSING') {
+  return {
+    actionType: 'mail.send',
+    protected: true,
+    state,
+    signatureId: state === 'ACTIVE' ? 'sig-1' : null,
+    signedAt: state === 'ACTIVE' ? '2026-10-28T09:00:00.000Z' : null,
+    expiresAt: null,
+    signedBy: state === 'ACTIVE' ? 'ceo@muitowork.com' : null,
+  }
+}
+
+describe('mesa effect states', () => {
+  it('counts down the reversal window and reverts from its own selector', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectRevert } = await bench()
+    const deadline = new Date(Date.now() + 90_000).toISOString()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'DELEGADO_EN_VENTANA', column: 'DELEGADO' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ reversalDeadline: deadline, reservation: { ...effectStatus().reservation, reversalDeadline: deadline } }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    // What will happen, to whom, and how long is left to stop it (D-04).
+    expect(await view.findByText('Send email will be sent to cliente@demo.test.')).toBeTruthy()
+    await view.findByText(/You have 1:(29|30) left to revert it\./)
+
+    fireEvent.click(view.getByRole('button', { name: 'Revert' }))
+    const panel = await view.findByRole('region', { name: faberloomEn['mesa.effect.revertTitle'] })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Revert' }))
+    await waitFor(() => {
+      expect(boardEffectRevert).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2, reason: 'DUPLICADO' })
+    })
+  })
+
+  it('closes the window the moment its deadline passes', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus } = await bench()
+    const deadline = new Date(Date.now() + 1_000).toISOString()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'DELEGADO_EN_VENTANA', column: 'DELEGADO' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ reversalDeadline: deadline }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    await view.findByText(/You have 0:0[01] left to revert it\./)
+    // The countdown reads the deadline the board recorded, so the same item
+    // stops offering a revert once that instant passes (W-18).
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1_600)) })
+    await waitFor(() => { expect(view.getByText(faberloomEn['mesa.effect.windowClosed'])).toBeTruthy() })
+    expect((view.getByRole('button', { name: 'Revert' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('reads a pending execution as in progress with no decision buttons', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'EJECUCION_PENDIENTE', column: 'DELEGADO' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({ ok: true, value: effectStatus() } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    expect(await view.findByText(faberloomEn['mesa.effect.pending'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.effect.pendingText'].replace('{destination}', 'cliente@demo.test'))).toBeTruthy()
+    expect(view.queryByRole('button', { name: 'Approve' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'Discard' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'Retry' })).toBeNull()
+    expect(view.getByRole('button', { name: 'Skip' })).toBeTruthy()
+  })
+
+  it('records what the destination answered and never offers correct or discard while unknown', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectReconcile } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true, canAdminClose: true }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    expect(await view.findByText(faberloomEn['mesa.effect.unknown'])).toBeTruthy()
+    // W-76: the effect may already exist, so the tracking survives.
+    expect(view.queryByRole('button', { name: 'Discard' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'Correct' })).toBeNull()
+    // W-21: a retry needs a destination that dedupes, which this host cannot prove.
+    expect((view.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(view.getByText(faberloomEn['mesa.effect.retryBlocked'])).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.effect.reconcile'] }))
+    const panel = await view.findByRole('region', { name: faberloomEn['mesa.effect.reconcileTitle'] })
+    // The panel starts on the answer that changes nothing; the operator states
+    // what the destination reported.
+    fireEvent.change(within(panel).getByRole('combobox'), { target: { value: 'CONFIRMADO' } })
+    fireEvent.click(within(panel).getByRole('button', { name: faberloomEn['mesa.effect.confirmReconcile'] }))
+    await waitFor(() => {
+      expect(boardEffectReconcile).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2, outcome: 'CONFIRMADO' })
+    })
+  })
+
+  it('offers retry and correct after a failed outcome', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectRetry } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'FALLIDO' }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    expect(await view.findByText(faberloomEn['mesa.effect.failed'])).toBeTruthy()
+    expect(view.queryByRole('button', { name: faberloomEn['mesa.effect.reconcile'] })).toBeNull()
+    expect(view.getByRole('button', { name: 'Correct' })).toBeTruthy()
+    expect((view.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.click(view.getByRole('button', { name: 'Retry' }))
+    const dialog = view.getByRole('dialog')
+    // The retry keeps the identity the failed attempt already holds (W-84).
+    expect(within(dialog).getByText('effect:eff-1')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Retry' }))
+    await waitFor(() => {
+      expect(boardEffectRetry).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2 })
+    })
+  })
+
+  it('closes with a pending check only for the owner or an administrator, with a reason', async () => {
+    const gated = await bench()
+    gated.boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    gated.boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true, canAdminClose: false }),
+    } as never)
+    act(() => { gated.runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await gated.view.findByText(faberloomEn['mesa.effect.unknown'])
+    expect(gated.view.queryByRole('button', { name: faberloomEn['mesa.effect.adminClose'] })).toBeNull()
+    await gated.surface.dispose()
+
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectAdminClose } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true, canAdminClose: true }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.effect.adminClose'] }))
+    const dialog = view.getByRole('dialog')
+    expect(within(dialog).getByText(faberloomEn['mesa.effect.closeFollowUp'])).toBeTruthy()
+    const close = within(dialog).getByRole('button', { name: faberloomEn['mesa.effect.close'] }) as HTMLButtonElement
+    expect(close.disabled).toBe(true)
+
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'el destino no responde' } })
+    fireEvent.click(close)
+    await waitFor(() => {
+      expect(boardEffectAdminClose).toHaveBeenCalledWith('item-1', {
+        expectedRowVersion: 2,
+        reason: 'el destino no responde',
+      })
+    })
+  })
+
+  it('keeps the approval disabled until a CEO signature covers the action type', async () => {
+    const { runtime, view, boardDetail, boardSignatureStatus, boardApproveWithExecution } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardSignatureStatus.mockResolvedValue({ ok: true, value: signature('MISSING') } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: 'Approve' }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'mail.send' } })
+    const missing = faberloomEn['mesa.approveEffect.signatureMissing'].replace('{action}', 'Send email')
+    expect(await within(dialog).findByText(missing)).toBeTruthy()
+    expect((within(dialog).getByRole('button', { name: faberloomEn['mesa.approveEffect.confirm'] }) as HTMLButtonElement).disabled).toBe(true)
+    expect(boardApproveWithExecution).not.toHaveBeenCalled()
+
+    // The panel points to the signature panel, which lists every protected type.
+    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['mesa.approveEffect.openSignatures'] }))
+    expect(await view.findByRole('dialog', { name: faberloomEn['mesa.signature.title'] })).toBeTruthy()
+  })
+
+  it('approves with execution naming the action, the destination, and the amount', async () => {
+    const { runtime, view, boardDetail, boardSignatureStatus, boardApproveWithExecution } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardSignatureStatus.mockResolvedValue({ ok: true, value: signature('ACTIVE') } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: 'Approve' }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'mail.send' } })
+    const active = faberloomEn['mesa.approveEffect.signatureActive'].replace('{action}', 'Send email')
+    expect(await within(dialog).findByText(active)).toBeTruthy()
+    // The amount the operator is approving is named on the panel.
+    const amount = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(1200)
+    expect(within(dialog).getByText(new RegExp(amount.replace('.', '\\.')))).toBeTruthy()
+
+    const confirm = within(dialog).getByRole('button', { name: faberloomEn['mesa.approveEffect.confirm'] }) as HTMLButtonElement
+    // The destination is part of the acceptance, so it is required first.
+    expect(confirm.disabled).toBe(true)
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'cliente@demo.test' } })
+    await waitFor(() => { expect(confirm.disabled).toBe(false) })
+    fireEvent.click(confirm)
+    await waitFor(() => {
+      expect(boardApproveWithExecution).toHaveBeenCalledWith('item-1', expect.objectContaining({
+        expectedRowVersion: 2,
+        expectedArtifactVersion: 1,
+        expectedArtifactHash: 'h1',
+        executionId: expect.stringMatching(/^exec-tab-/),
+        actionType: 'mail.send',
+        destination: 'cliente@demo.test',
+        authorization: 'sig-1',
+      }))
+    })
+  })
+
+  it('lists protected action types and issues or revokes one signature', async () => {
+    const { runtime, view, boardDetail, boardSignatures, boardSignatureIssue, boardSignatureRevoke } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardSignatures.mockResolvedValue({
+      ok: true,
+      value: [signature('MISSING'), { ...signature('ACTIVE'), actionType: 'shipment.create' }],
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.signature.title'] }))
+    const dialog = await view.findByRole('dialog', { name: faberloomEn['mesa.signature.title'] })
+    expect(within(dialog).getByText('Create shipment')).toBeTruthy()
+
+    fireEvent.click(within(dialog).getAllByRole('button', { name: faberloomEn['mesa.signature.issue'] })[0] as HTMLElement)
+    await waitFor(() => { expect(boardSignatureIssue).toHaveBeenCalledWith({ actionTypes: ['mail.send'] }) })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['mesa.signature.revoke'] }))
+    await waitFor(() => { expect(boardSignatureRevoke).toHaveBeenCalledWith('sig-1') })
+  })
+
+  it('shows one visible alert for a late confirmation without reopening the item', async () => {
+    const { runtime, view, boardDetail, boardEffectAlerts } = await bench()
+    boardEffectAlerts.mockResolvedValue({
+      ok: true,
+      value: [{
+        itemId: 'item-9',
+        itemTitle: 'PF 9009-2026',
+        kind: 'LATE_CONFIRMATION',
+        outcome: 'CONFIRMADO',
+        detail: null,
+        actor: 'owner@muitowork.com',
+        updatedAt: '2026-10-28T12:30:00.000Z',
+      }],
+    } as never)
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    expect(await view.findByText('Late confirmation: PF 9009-2026')).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.effect.alert.lateText'])).toBeTruthy()
+    // The alert names the closed item and never opens it.
+    expect(boardDetail).toHaveBeenCalledWith('item-1')
   })
 })

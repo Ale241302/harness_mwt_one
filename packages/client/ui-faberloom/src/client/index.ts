@@ -275,6 +275,38 @@ export function apply(ctx: ClientContext): void {
         return run
       },
       boardIterationDraft: (id, iterationId) => ctx.remote.faberloomView.boardIterationDraft(id, iterationId),
+      boardApproveWithExecution: (id, input) => {
+        const run = ctx.remote.faberloomView.boardApproveWithExecution(id, input)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardEffectStatus: id => ctx.remote.faberloomView.boardEffectStatus(id),
+      boardEffectAlerts: () => ctx.remote.faberloomView.boardEffectAlerts(),
+      boardEffectPolicy: () => ctx.remote.faberloomView.boardEffectPolicy(),
+      boardEffectRevert: (id, input) => {
+        const run = ctx.remote.faberloomView.boardEffectRevert(id, input)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardEffectRetry: (id, input) => {
+        const run = ctx.remote.faberloomView.boardEffectRetry(id, input)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardEffectReconcile: (id, input) => {
+        const run = ctx.remote.faberloomView.boardEffectReconcile(id, input)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardEffectAdminClose: (id, input) => {
+        const run = ctx.remote.faberloomView.boardEffectAdminClose(id, input)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardSignatures: () => ctx.remote.faberloomView.boardSignatures(),
+      boardSignatureStatus: actionType => ctx.remote.faberloomView.boardSignatureStatus(actionType),
+      boardSignatureIssue: input => ctx.remote.faberloomView.boardSignatureIssue(input),
+      boardSignatureRevoke: signatureId => ctx.remote.faberloomView.boardSignatureRevoke(signatureId),
       createRoutine: (name, spaceId) => { write(() => ctx.remote.faberloomView.createRoutine(name, name, spaceId ?? undefined)) },
       setRoutineActive: (id, active) => { write(() => ctx.remote.faberloomView.setRoutineActive(id, active)) },
       remember: (text, spaceId) => { write(() => ctx.remote.faberloomView.remember(text, spaceId ?? undefined)) },

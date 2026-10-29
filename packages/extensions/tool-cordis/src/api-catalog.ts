@@ -882,9 +882,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'faberloomAccess',
-    summary: 'The product access service: action-scoped, revocable autonomy grants.',
-    description: 'The product access service: action-scoped, revocable autonomy grants.',
+    summary: 'The product access service: action-scoped, revocable autonomy grants plus the tenant signatures protected action types require before approval.',
+    description: 'The product access service: action-scoped, revocable autonomy grants plus the tenant signatures protected action types require before approval.',
     methods: [
+      {
+        signature: 'readonly protectedActionTypes: readonly string[]',
+        description: 'Action types that require a CEO signature in this deployment. Empty means the deployment protects nothing, and the constructor warns about it.',
+        parameters: [],
+      },
       {
         signature: 'async grant(ownerId: string, input: GrantInput): Promise<FaberLoomGrant>',
         description: 'Issue one grant.',
@@ -908,6 +913,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Check whether an action is authorized before running it.',
         parameters: [{ name: 'request', description: 'owner, action, optional agent/context, and instant.' }],
         returns: 'the decision and the grant that decided it.',
+      },
+      {
+        signature: 'async issueSignature( actor: SignatureActor, input: SignatureInput, options: SignatureCheckOptions = {}, ): Promise<FaberLoomSignature>',
+        description: 'Issue one CEO signature for the acting identity\'s tenant.\n\nOnly a configured `signingAuthorities` identity may sign; with none configured, issuance refuses (`SIGNATURE_AUTHORITY_UNCONFIGURED`) instead of letting any actor sign. The signature is repeatable: it authorizes every approval of a covered action type until it expires or is revoked, and issuing it does not mark it used.',
+        parameters: [{ name: 'actor', description: 'the authenticated signer, which also supplies the tenant.' }, { name: 'input', description: 'covered action types or a wildcard, and an optional expiry.' }, { name: 'options', description: 'instant the signature is dated; defaults to now.' }],
+        returns: 'the stored signature.',
+      },
+      {
+        signature: 'async revokeSignature( actor: SignatureActor, id: FaberLoomSignatureId, options: SignatureCheckOptions = {}, ): Promise<FaberLoomSignature>',
+        description: 'Revoke one signature of the acting identity\'s tenant. The next check refuses from this instant and the record keeps the revoking identity and instant. The signer may always revoke their own signature; `revocationAuthorities` adds others. Revoking an already-revoked signature returns it unchanged and keeps the first revocation.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'signature id.' }, { name: 'options', description: 'instant of revocation; defaults to now.' }],
+        returns: 'the revoked signature.',
+      },
+      {
+        signature: 'async requireSignature( actor: SignatureActor, actionType: string, options: SignatureCheckOptions = {}, ): Promise<FaberLoomSignature | null>',
+        description: 'Require an active CEO signature before approving a protected action type.\n\nRefuses, never warns: a protected action type with no active signature throws `SIGNATURE_REQUIRED`, a revoked one `SIGNATURE_REVOKED`, an expired one `SIGNATURE_EXPIRED` — all as FaberLoomAccessRefusal, the family the other access refusals use. Signatures of another tenant are never consulted. The accepted signature stays valid for further approvals (§7.4 states no single use); callers must not consume or mutate it.',
+        parameters: [{ name: 'actor', description: 'the approving identity; its `companyId` is the tenant.' }, { name: 'actionType', description: 'the action type the approval would run.' }, { name: 'options', description: 'instant the check evaluates; defaults to now.' }],
+        returns: 'the accepted signature, or `null` when the action type is unprotected.',
+      },
+      {
+        signature: 'async signatureStatus( actor: SignatureActor, actionType: string, options: SignatureCheckOptions = {}, ): Promise<SignatureStatus>',
+        description: 'Report whether the acting identity\'s tenant holds a signature for one action type, so a panel or tool can show the state before approval. The signer identity appears only to the signer or to `signerIdentityAudience`; another tenant\'s signature is never visible.',
+        parameters: [{ name: 'actor', description: 'the reading identity; its `companyId` is the tenant.' }, { name: 'actionType', description: 'the action type to report.' }, { name: 'options', description: 'instant the state evaluates; defaults to now.' }],
+        returns: 'the signature state for this reader.',
       },
     ],
   },
@@ -1122,6 +1151,73 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Delegate one task to a named subagent, resolving its policy inside the parent\'s shared budget and recording the selection.',
         parameters: [{ name: 'parentAgentId', description: 'the parent agent.' }, { name: 'request', description: 'subagent name, task, spent budget, and met condition.' }],
         returns: 'the subagent result and the remaining parent budget.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomAutonomy',
+    summary: 'The autonomy service: the level of every unit, the promotion report, the sample of delegated items, and the automatic suspension of §7.3.',
+    description: 'The autonomy service: the level of every unit, the promotion report, the sample of delegated items, and the automatic suspension of §7.3.',
+    methods: [
+      {
+        signature: 'async ensureUnit(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyUnit>',
+        description: 'Register one unit at `SHADOW` if it has none, and return it otherwise. Registration is idempotent and records no level change.',
+        parameters: [{ name: 'actor', description: 'identity supplying the tenant.' }, { name: 'ref', description: 'tenant, space, agent, and action type of the unit.' }],
+        returns: 'the stored unit.',
+      },
+      {
+        signature: 'async getUnit(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyUnit | undefined>',
+        description: 'Read one unit. Another tenant\'s unit is refused before the store is read.',
+        parameters: [{ name: 'actor', description: 'reading identity and its tenant.' }, { name: 'ref', description: 'unit to read.' }],
+        returns: 'the unit, or `undefined` when it is not registered.',
+      },
+      {
+        signature: 'async listUnits(actor: AutonomyActor, filter: AutonomyUnitFilter = {}): Promise<AutonomyUnit[]>',
+        description: 'List the units of the actor\'s tenant, optionally filtered. Units of other tenants are never read.',
+        parameters: [{ name: 'actor', description: 'reading identity and its tenant.' }, { name: 'filter', description: 'space, agent, action type, and level to keep.' }],
+        returns: 'the units, ordered by space, agent, and action type.',
+      },
+      {
+        signature: 'async report( actor: AutonomyActor, ref: AutonomyUnitRef, options: AutonomyReportOptions = {}, ): Promise<AutonomyUnitReport>',
+        description: 'Report the numbers of one unit without changing its level. The report states whether the signed thresholds are met and which values are still unsigned; it never promotes (W-53).',
+        parameters: [{ name: 'actor', description: 'reading identity and its tenant.' }, { name: 'ref', description: 'unit to report.' }, { name: 'options', description: 'period to evaluate instead of the configured one.' }],
+        returns: 'the numbers, the eligibility, and the last suspension.',
+      },
+      {
+        signature: 'async assess( actor: AutonomyActor, ref: AutonomyUnitRef, options: AutonomyReportOptions = {}, ): Promise<AutonomyUnitReport>',
+        description: 'Apply the monitoring rule of §7.3 to one unit: while it is `DELEGADO`, a reversal-or-failure rate above the configured threshold returns it to `SUPERVISADO` with an audit entry. The decision needs no human command; the caller that records delegated outcomes calls this after them, because the package owns no scheduler.',
+        parameters: [{ name: 'actor', description: 'identity supplying the tenant.' }, { name: 'ref', description: 'unit to assess.' }, { name: 'options', description: 'period to evaluate instead of the configured one.' }],
+        returns: 'the report after the assessment, with the level it now holds.',
+      },
+      {
+        signature: 'async promote(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyUnit>',
+        description: 'Promote one unit to `DELEGADO`. The command is explicit and gated: the identity must hold a governance role of the tenant, and the unit must meet the signed thresholds. The promotion records who promoted it, when, and on which numbers. No automatic path exists (W-53, W-64).',
+        parameters: [{ name: 'actor', description: 'promoting identity and its tenant.' }, { name: 'ref', description: 'unit to promote.' }],
+        returns: 'the promoted unit with its promotion record.',
+      },
+      {
+        signature: 'async supervise(actor: AutonomyActor, ref: AutonomyUnitRef, cause: string): Promise<AutonomyUnit>',
+        description: 'Return one unit to `SUPERVISADO` at a human\'s request. The audit keeps the cause, and delegating again needs a new promotion.',
+        parameters: [{ name: 'actor', description: 'identity narrowing the unit.' }, { name: 'ref', description: 'unit to supervise.' }, { name: 'cause', description: 'why the unit loses its delegation.' }],
+        returns: 'the supervised unit.',
+      },
+      {
+        signature: 'async planSample(actor: AutonomyActor, ref: AutonomyUnitRef, period: AutonomyPeriod): Promise<AutonomySamplePlan>',
+        description: 'Plan the sample of one period: the configured share of the delegated items, at least the configured minimum, chosen from the earliest delegations that are not in the sample yet. Planning only selects; execution is never blocked (D-13).',
+        parameters: [{ name: 'actor', description: 'identity supplying the tenant.' }, { name: 'ref', description: 'delegated unit.' }, { name: 'period', description: 'period the sample covers.' }],
+        returns: 'the target, the items this call added, and what still waits.',
+      },
+      {
+        signature: 'async reviewSample( actor: AutonomyActor, ref: AutonomyUnitRef, input: AutonomySampleVerdictInput, ): Promise<AutonomySampleVerdict>',
+        description: 'Record the human verdict on one sampled item. A rejection suspends a delegated unit on the spot, with the cause and the numbers in the audit (D-13). A verdict is recorded once.',
+        parameters: [{ name: 'actor', description: 'reviewing identity; it must hold a governance role.' }, { name: 'ref', description: 'unit the item belongs to.' }, { name: 'input', description: 'period, item, verdict, and optional note.' }],
+        returns: 'the reviewed item and the suspension the verdict caused.',
+      },
+      {
+        signature: 'async listAudit(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyAuditEvent[]>',
+        description: 'List the audit entries of one unit, oldest first.',
+        parameters: [{ name: 'actor', description: 'reading identity and its tenant.' }, { name: 'ref', description: 'unit to read.' }],
+        returns: 'the audit entries.',
       },
     ],
   },
@@ -1359,6 +1455,96 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the item and the released attempt.',
       },
       {
+        signature: 'effectPolicy(): EffectPolicy',
+        description: 'The resolved effect policy (D-12): the reversal window per action type, the retention of a settled effect record, the timeout one dispatch attempt gets from its adapter, and the lease a crashed acceptance is given.',
+        parameters: [],
+        returns: 'a copy of the resolved policy.',
+      },
+      {
+        signature: 'registerEffectAdapter(actionType: string, adapter: BoardEffectAdapter): () => void',
+        description: 'Register the adapter of one action type. The registry is mounted from outside the board, the way `registerCheck` mounts a control: a deployment owns the mail, inventory, or shipment client, and the board only decides when to call it. A second adapter for one action type replaces the first.',
+        parameters: [{ name: 'actionType', description: 'action type the adapter emits (`mail.send`, ...).' }, { name: 'adapter', description: 'the implementation.' }],
+        returns: 'the disposer that removes this registration.',
+      },
+      {
+        signature: 'async approveWithExecution( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardExecutionInput, ): Promise<BoardEffectExecution>',
+        description: 'Approve the exact artifact version and accept one execution for it: the approval, the reservation, and the outbox message are acquired in one command, so a crash cannot leave an authorized item without its intention (§10.1). The reservation is per tenant and `effect_key`, so a competing execution of the same effect is refused with `EFFECT_TAKEN` while it is `RESERVADA` or `DESPACHADA`.\n\nWhen the `faberloomAccess` service is mounted, the acceptance asks it for the CEO signature W-16 requires and lets its refusal propagate unchanged; a composition without that service enforces no signature here, because the board cannot tell which action types are protected.\n\nThe item lands in `DELEGADO_EN_VENTANA` when the action type has a reversal window, and in `EJECUCION_PENDIENTE` when it has none (D-12). The controls run again immediately before the transition, exactly as `approve` does.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'approval expectations, execution identity, and destination.' }],
+        returns: 'the item, its reservation, and its outbox message.',
+      },
+      {
+        signature: 'async revert(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRevertInput = {}): Promise<FaberLoomBoardItem>',
+        description: 'Revert a delegated execution inside its window. The effect has not happened and cannot have happened, so the reservation is released and the outbox message cancelled; a revert at or after the deadline is refused (W-18) and a delegated item with no recorded deadline is refused outright (W-17).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'optimistic token and optional reason.' }],
+        returns: 'the item back in `PENDIENTE_CRITERIO`.',
+      },
+      {
+        signature: 'async expireWindow(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        description: 'Expire the reversal window: the item moves to `EJECUCION_PENDIENTE` and the effect becomes dispatchable. An item whose window is still open is refused with `WINDOW_OPEN`, and one that is not delegated with `NOT_DELEGATED`, so a revert and an expiry produce exactly one transition (W-18).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the item in `EJECUCION_PENDIENTE`.',
+      },
+      {
+        signature: 'async revalidateEffect(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<BoardEffectRevalidation>',
+        description: 'Run the controls again before the effect leaves (W-50, W-75). A blocking failure, a declared control with no adapter, or a confirmation failure the approval never accepted invalidates the acceptance: the item returns to `PENDIENTE_CRITERIO`, the reservation is released, and the message is cancelled, so a fresh approval of the same effect is accepted (W-95).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        returns: 'whether the effect may still leave, and the item after the attempt.',
+      },
+      {
+        signature: 'async dispatchEffect(actor: BoardActor, effectKey: string): Promise<BoardDispatchOutcome>',
+        description: 'Consent to emit one effect: the outbox consumer. Before it calls the adapter it verifies, inside one tenant section, that the message is dispatchable, that the reservation is still `RESERVADA` for this execution, that the item still authorizes the effect, and that the controls still pass. Any failed check emits nothing, releases the reservation, and marks the message non-dispatchable (W-95, W-102).\n\nAn item still inside its reversal window keeps the message `PENDIENTE` and reports `WINDOW_OPEN`: nothing leaves before `reversal_deadline` (W-19).',
+        parameters: [{ name: 'actor', description: 'the tenant the consumer acts for.' }, { name: 'effectKey', description: 'effect to emit.' }],
+        returns: 'what the attempt produced.',
+      },
+      {
+        signature: 'async pendingEffects(actor: BoardActor): Promise<readonly BoardOutboxMessage[]>',
+        description: 'The messages this tenant may still emit, oldest first. A cancelled, dispatched, or failed message is not listed: it is not dispatchable.',
+        parameters: [{ name: 'actor', description: 'the tenant the consumer acts for.' }],
+        returns: 'the dispatchable messages.',
+      },
+      {
+        signature: 'async effectStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEffectStatus | null>',
+        description: 'Everything one item\'s external effect looks like to the panel: the reservation, the outbox message, the visible alerts, and whether a dispatched effect still awaits reconciliation.',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the effect projection, or null when the item authorized none.',
+      },
+      {
+        signature: 'async reconcile(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReconcileInput): Promise<FaberLoomBoardItem>',
+        description: 'Reconcile a dispatched effect with what the destination reports. `CONFIRMADO` closes the item as `EJECUTADO`; `FALLIDO` moves it to `ERROR_RECUPERABLE` with that outcome, which is what makes a retry legal; `DESCONOCIDO` records the attempt and leaves the item in its unknown state (W-21, W-76).\n\nA reconciliation after an administrative close updates the outcome, raises a visible alert, writes an audit event, and never reopens the item (W-85).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'the outcome the destination reported.' }],
+        returns: 'the item after the reconciliation.',
+      },
+      {
+        signature: 'async retry(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRetryInput = {}): Promise<FaberLoomBoardItem>',
+        description: 'Retry a failed execution. The retry keeps the original `executionId`, the same reservation, and the same idempotency key (W-84, W-77); it moves the item back to `EJECUCION_PENDIENTE` so the consumer may emit it again.\n\nAn unknown outcome is refused with `OUTCOME_UNKNOWN` unless the adapter of that action type declares the destination idempotent, because a destination that may already have the effect cannot be sent twice (W-21).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'optimistic token.' }],
+        returns: 'the item in `EJECUCION_PENDIENTE`.',
+      },
+      {
+        signature: 'async adminClose( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardAdminCloseInput, ): Promise<BoardAdminCloseResult>',
+        description: 'Close an item administratively while its effect outcome is unknown: Owner or Admin of the tenant, with a reason, and the reservation stays `DESPACHADA` so the reconciliation remains open (D-9, W-65). A pending candidate becomes a new linked item in the same command (W-86).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'optimistic token and the mandatory reason.' }],
+        returns: 'the closed item and the item the candidate became.',
+      },
+      {
+        signature: 'async alerts(actor: BoardActor): Promise<readonly BoardEffectAlert[]>',
+        description: 'The visible alerts of this tenant, newest first. A late confirmation after an administrative close raises one, and the panel reads it here (W-85).',
+        parameters: [{ name: 'actor', description: 'the tenant the reader acts for.' }],
+        returns: 'the alerts.',
+      },
+      {
+        signature: 'async pruneEffects(actor: BoardActor): Promise<number>',
+        description: 'Delete settled effect records past their retention window. A reservation that is still live and a message that was never settled are never pruned: they carry a decision that a human may still need to see. Audit events of effects no item names are pruned by the same window.',
+        parameters: [{ name: 'actor', description: 'the tenant the operator acts for.' }],
+        returns: 'how many rows were removed.',
+      },
+      {
+        signature: 'async recoverOrphanedReservations(actor: BoardActor): Promise<BoardOrphanRecovery>',
+        description: 'Release the reservations no item reaches and no consumer can emit.\n\nAn acceptance writes the reservation and its message before it commits the item. A crash in between leaves a `RESERVADA` row whose key no item records: `revert`, `reconcile`, and `pruneEffects` all need an item for it, so the key would stay taken and every other execution of that effect would be refused with `EFFECT_TAKEN`. A row older than `effectReservationLeaseMs` is released, its message cancelled, an audit event stored, and an alert raised (D-12).\n\nA row whose key an item records is never swept, in whatever state: a failed execution still needs its reservation to retry (W-84). A row younger than the lease is left alone, because its acceptance may still be committing.',
+        parameters: [{ name: 'actor', description: 'the tenant the operator acts for.' }],
+        returns: 'the released keys and the rows the sweep wrote.',
+      },
+      {
         signature: 'async events(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardEvent[]>',
         description: 'Read the audit history of one item.',
         parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
@@ -1390,7 +1576,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async complete(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
-        description: 'Complete an approved item.',
+        description: 'Complete an approved item that carries no live effect.\n\nAn item that accepted an execution closes through its reconciliation, never through this command: it is refused with `EFFECT_NOT_CONCILIATED` unless the reservation of its `effectKey` is `CONCILIADA` (W-84). An item that never had an effect keeps the legacy path around `complete`.',
         parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
         returns: 'the updated item.',
       },
@@ -1426,7 +1612,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async recordEffect(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEffectInput): Promise<FaberLoomBoardItem>',
-        description: 'Record an effect. Approval never sends: an explicit authorization is required, and a stale or unapproved item refuses.',
+        description: 'Record an effect on an item that never had a reserved one. Approval never sends: an explicit authorization is required, and a stale or unapproved item refuses.\n\nAn item that carries an `effectKey` is refused with `EFFECT_VIA_OUTBOX`: its effect has a reservation and a message, so it is recorded by the consumer\'s outcome, and this path would bypass `EFFECT_TAKEN` (W-84).',
         parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'external reference, authorization, and optional detail.' }],
         returns: 'the updated item.',
       },
@@ -3614,6 +3800,78 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read the item\'s retained draft and, when it was written against an older version, the fields where it disagrees. Reading never changes the version.',
         parameters: [{ name: 'id', description: 'board item id.' }, { name: 'iterationId', description: 'attempt to read; omitted reads the draft the item links.' }],
         returns: 'the projected draft and its differences.',
+      },
+      {
+        signature: '@Remote(\'boardEffectStatus\') async boardEffectStatus(id: string): Promise<FaberLoomBoardEffectStatus | null>',
+        description: 'Read the external effect of one item: the reservation that protects it, the durable intention to emit it, the visible alerts it raised, and whether a dispatched effect still awaits reconciliation (E15, §10.1).',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the effect, or null when the item authorized none.',
+      },
+      {
+        signature: '@Remote(\'boardEffectAlerts\') async boardEffectAlerts(): Promise<readonly FaberLoomBoardEffectAlertRow[]>',
+        description: 'The visible alerts of this tenant, newest first, with the item each names resolved to its title. A late confirmation after an administrative close raises one and never reopens the item (W-85).',
+        parameters: [],
+        returns: 'the alerts the Mesa shows.',
+      },
+      {
+        signature: '@Remote(\'boardEffectPolicy\') async boardEffectPolicy(): Promise<FaberLoomBoardEffectPolicy>',
+        description: 'The effect policy the Mesa offers an executing approval: the action types an acceptance may name and the reversal window of each (D-12).',
+        parameters: [],
+        returns: 'the action types and their windows.',
+      },
+      {
+        signature: '@Remote(\'boardApproveWithExecution\') async boardApproveWithExecution( id: string, input: FaberLoomBoardExecutionInput, ): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Approve the exact artifact and accept one execution for it: the approval, the reservation, and the intention to emit are one command (§10.1). The access service refuses a protected action type without an active CEO signature and its refusal reaches the panel unchanged (W-16).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'approval expectations and the execution identity.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardEffectRevert\') async boardEffectRevert(id: string, input: FaberLoomBoardRevertInput): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Revert a delegated execution inside its window: the reservation is released, the intention is cancelled, and the item returns to the pending column (W-18). A revert at or after the deadline is refused by the board.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'optimistic token and optional reason.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardEffectRetry\') async boardEffectRetry(id: string, input: FaberLoomBoardRetryInput): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Retry a failed execution, keeping the original execution identity, its reservation, and its idempotency key (W-84). An unknown outcome is refused unless the destination declared itself idempotent (W-21).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'optimistic token.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardEffectReconcile\') async boardEffectReconcile( id: string, input: FaberLoomBoardReconcileInput, ): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Reconcile a dispatched effect with what the destination reports. A confirmation executes the item, a failure makes it retryable, and an unknown outcome leaves it recoverable (W-21, W-76).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'the outcome the destination reported.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardEffectAdminClose\') async boardEffectAdminClose( id: string, input: FaberLoomBoardAdminCloseInput, ): Promise<FaberLoomBoardAdminCloseResult>',
+        description: 'Close an item administratively while its effect outcome is unknown: Owner or Admin of the tenant, with a reason, and the reservation stays open so the reconciliation remains possible (D-9, W-65).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'optimistic token and the mandatory reason.' }],
+        returns: 'the closed detail and the item a pending candidate became.',
+      },
+      {
+        signature: '@Remote(\'boardSignatureStatus\') async boardSignatureStatus(actionType: string): Promise<FaberLoomSignatureRow>',
+        description: 'Whether one protected action type carries an active CEO signature for this reader\'s tenant, so the panel can say why approval would refuse (W-16).',
+        parameters: [{ name: 'actionType', description: 'the action type the approval would run.' }],
+        returns: 'the signature state for this reader.',
+      },
+      {
+        signature: '@Remote(\'boardSignatures\') async boardSignatures(): Promise<readonly FaberLoomSignatureRow[]>',
+        description: 'Every protected action type and the signature state that covers it, which is what the signature panel lists.',
+        parameters: [],
+        returns: 'one row per protected action type, in the order the deployment declares them.',
+      },
+      {
+        signature: '@Remote(\'boardSignatureIssue\') async boardSignatureIssue(input: SignatureIssueInput): Promise<readonly FaberLoomSignatureRow[]>',
+        description: 'Issue one CEO signature for the acting identity\'s tenant. The access service refuses an identity that is not a configured signing authority, and its refusal reaches the panel unchanged.',
+        parameters: [{ name: 'input', description: 'the action types the signature covers and an optional expiry.' }],
+        returns: 'the refreshed signature rows.',
+      },
+      {
+        signature: '@Remote(\'boardSignatureRevoke\') async boardSignatureRevoke(signatureId: string): Promise<readonly FaberLoomSignatureRow[]>',
+        description: 'Revoke one signature of the acting identity\'s tenant; the next approval of a covered action type refuses from that instant.',
+        parameters: [{ name: 'signatureId', description: 'signature to revoke.' }],
+        returns: 'the refreshed signature rows.',
       },
       {
         signature: '@Remote(\'boardRevalidate\') async boardRevalidate(id: string, changed: boolean): Promise<FaberLoomBoardDetail | undefined>',
@@ -7164,6 +7422,98 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AuthorizationStatus = \'authorized\' | \'cancelled\';',
   },
   {
+    name: 'AutonomyActor',
+    declaration: 'export interface AutonomyActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n    readonly role?: string | undefined;\n}',
+  },
+  {
+    name: 'AutonomyAuditEvent',
+    declaration: 'export interface AutonomyAuditEvent {\n    readonly id: string;\n    readonly unitId: string;\n    readonly tenantId: string;\n    readonly at: string;\n    readonly event: AutonomyAuditEventKind;\n    readonly actor: string;\n    readonly cause: string | null;\n    readonly detail: string | null;\n    readonly numbers: Readonly<Record<string, number>>;\n}',
+  },
+  {
+    name: 'AutonomyAuditEventKind',
+    declaration: 'export type AutonomyAuditEventKind = \'promoted\' | \'supervised\' | \'suspended\' | \'sample-planned\' | \'sample-reviewed\';',
+  },
+  {
+    name: 'AutonomyDelegationSuspensionNumbers',
+    declaration: 'export interface AutonomyDelegationSuspensionNumbers {\n    readonly delegations: number;\n    readonly reversed: number;\n    readonly failed: number;\n    readonly technicalFailures: number;\n    readonly rate: number;\n    readonly suspensionRate: number;\n    readonly period: string | null;\n}',
+  },
+  {
+    name: 'AutonomyDelegationWindow',
+    declaration: 'export interface AutonomyDelegationWindow {\n    readonly window: number;\n    readonly confirmed: number;\n    readonly reversed: number;\n    readonly failed: number;\n    readonly rate: number | undefined;\n}',
+  },
+  {
+    name: 'AutonomyEligibility',
+    declaration: 'export interface AutonomyEligibility {\n    readonly minimumRealRuns: number;\n    readonly minimumApprovalShare: number;\n    readonly statisticalMinimum: number | null;\n    readonly realRunsMet: boolean;\n    readonly approvalShareMet: boolean;\n    readonly statisticalMinimumMet: boolean | null;\n    readonly meetsThreshold: boolean;\n    readonly automaticPromotion: \'DISABLED\';\n    readonly unsignedValues: readonly AutonomyUnsignedValue[];\n}',
+  },
+  {
+    name: 'AutonomyLevel',
+    declaration: 'export type AutonomyLevel = \'SHADOW\' | \'SUPERVISADO\' | \'DELEGADO\';',
+  },
+  {
+    name: 'AutonomyPeriod',
+    declaration: 'export interface AutonomyPeriod {\n    readonly label?: string | undefined;\n    readonly from: string;\n    readonly until: string;\n}',
+  },
+  {
+    name: 'AutonomyPromotion',
+    declaration: 'export interface AutonomyPromotion {\n    readonly by: string;\n    readonly at: string;\n    readonly numbers: AutonomyThresholdNumbers;\n}',
+  },
+  {
+    name: 'AutonomyReportOptions',
+    declaration: 'export interface AutonomyReportOptions {\n    readonly period?: AutonomyPeriod | undefined;\n}',
+  },
+  {
+    name: 'AutonomySamplePlan',
+    declaration: 'export interface AutonomySamplePlan {\n    readonly period: AutonomyPeriod;\n    readonly target: number;\n    readonly selected: readonly AutonomySampleReview[];\n    readonly pending: readonly AutonomySampleReview[];\n}',
+  },
+  {
+    name: 'AutonomySampleReview',
+    declaration: 'export interface AutonomySampleReview {\n    readonly unitId: FaberLoomAutonomyUnitId;\n    readonly period: string;\n    readonly itemId: string;\n    readonly delegatedAt: string;\n    readonly selectedAt: string;\n    readonly verdict: \'pending\' | \'accepted\' | \'rejected\';\n    readonly reviewedBy: string | null;\n    readonly reviewedAt: string | null;\n    readonly note: string | null;\n}',
+  },
+  {
+    name: 'AutonomySampleSummary',
+    declaration: 'export interface AutonomySampleSummary {\n    readonly period: string;\n    readonly planned: number;\n    readonly reviewed: number;\n    readonly rejected: number;\n    readonly pending: number;\n}',
+  },
+  {
+    name: 'AutonomySampleSuspensionNumbers',
+    declaration: 'export interface AutonomySampleSuspensionNumbers {\n    readonly period: string;\n    readonly sampleSize: number;\n    readonly rejectedSampleItems: number;\n    readonly sampleRejectionsToSuspend: number;\n}',
+  },
+  {
+    name: 'AutonomySampleVerdict',
+    declaration: 'export interface AutonomySampleVerdict {\n    readonly review: AutonomySampleReview;\n    readonly suspension: AutonomySuspension | null;\n}',
+  },
+  {
+    name: 'AutonomySampleVerdictInput',
+    declaration: 'export interface AutonomySampleVerdictInput {\n    readonly period: string;\n    readonly itemId: string;\n    readonly verdict: \'accepted\' | \'rejected\';\n    readonly note?: string | undefined;\n}',
+  },
+  {
+    name: 'AutonomySuspension',
+    declaration: 'export type AutonomySuspension = {\n    readonly at: string;\n    readonly cause: \'delegation-rate\';\n    readonly numbers: AutonomyDelegationSuspensionNumbers;\n} | {\n    readonly at: string;\n    readonly cause: \'sample-rejected\';\n    readonly numbers: AutonomySampleSuspensionNumbers;\n};',
+  },
+  {
+    name: 'AutonomyThresholdNumbers',
+    declaration: 'export interface AutonomyThresholdNumbers {\n    readonly realRuns: number;\n    readonly approvedWithoutIntervention: number;\n    readonly approvalShare: number;\n    readonly technicalFailures: number;\n    readonly minimumRealRuns: number;\n    readonly minimumApprovalShare: number;\n    readonly statisticalMinimum: number | null;\n    readonly period: string | null;\n}',
+  },
+  {
+    name: 'AutonomyUnit',
+    declaration: 'export interface AutonomyUnit {\n    readonly id: FaberLoomAutonomyUnitId;\n    readonly tenantId: string;\n    readonly spaceId: string;\n    readonly agentId: string;\n    readonly actionType: string;\n    readonly level: AutonomyLevel;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly promotion: AutonomyPromotion | null;\n    readonly suspension: AutonomySuspension | null;\n}',
+  },
+  {
+    name: 'AutonomyUnitFilter',
+    declaration: 'export interface AutonomyUnitFilter {\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly actionType?: string;\n    readonly level?: AutonomyLevel;\n}',
+  },
+  {
+    name: 'AutonomyUnitRef',
+    declaration: 'export interface AutonomyUnitRef {\n    readonly tenantId: string;\n    readonly spaceId: string;\n    readonly agentId: string;\n    readonly actionType: string;\n}',
+  },
+  {
+    name: 'AutonomyUnitReport',
+    declaration: 'export interface AutonomyUnitReport {\n    readonly unit: AutonomyUnit;\n    readonly period: AutonomyPeriod | null;\n    readonly realRuns: number;\n    readonly approvedWithoutIntervention: number;\n    readonly approvedWithIntervention: number;\n    readonly discarded: number;\n    readonly approvalShare: number | undefined;\n    readonly technicalFailures: number;\n    readonly delegations: AutonomyDelegationWindow;\n    readonly samples: readonly AutonomySampleSummary[];\n    readonly eligibility: AutonomyEligibility;\n    readonly suspension: AutonomySuspension | null;\n}',
+  },
+  {
+    name: 'AutonomyUnsignedValue',
+    declaration: 'export type AutonomyUnsignedValue = \'period\' | \'statistical-minimum\';',
+  },
+  {
     name: 'BackendRegistry',
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
@@ -7181,7 +7531,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardActor',
-    declaration: 'export interface BoardActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n}',
+    declaration: 'export interface BoardActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n    readonly role?: string | undefined;\n}',
+  },
+  {
+    name: 'BoardAdminCloseInput',
+    declaration: 'export interface BoardAdminCloseInput {\n    readonly expectedRowVersion?: number;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'BoardAdminCloseResult',
+    declaration: 'export interface BoardAdminCloseResult {\n    readonly item: FaberLoomBoardItem;\n    readonly created: FaberLoomBoardItem | null;\n}',
   },
   {
     name: 'BoardApplyIterationInput',
@@ -7272,6 +7630,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoardDiscardInput {\n    readonly expectedRowVersion: number;\n    readonly reason: string;\n    readonly note?: string;\n}',
   },
   {
+    name: 'BoardDispatchCode',
+    declaration: 'export type BoardDispatchCode = \'DISPATCHED\' | \'OUTBOX_NOT_PENDING\' | \'WINDOW_OPEN\' | \'EFFECT_NO_ADAPTER\' | \'REVALIDATION_FAILED\' | \'NOT_AUTHORIZED\' | \'STALE_REVALIDATION\' | \'ITEM_MISSING\';',
+  },
+  {
+    name: 'BoardDispatchOutcome',
+    declaration: 'export interface BoardDispatchOutcome {\n    readonly dispatched: boolean;\n    readonly code: BoardDispatchCode;\n    readonly item: FaberLoomBoardItem | null;\n    readonly outcome: BoardEffectOutcome | null;\n    readonly detail: string | null;\n}',
+  },
+  {
     name: 'BoardEditDraft',
     declaration: 'export interface BoardEditDraft {\n    readonly itemId: string;\n    readonly transferredFrom: string | null;\n    readonly userId: string;\n    readonly baseVersion: number;\n    readonly revision: number;\n    readonly writerSession: string;\n    readonly changes: Record<string, string>;\n    readonly updatedAt: string;\n}',
   },
@@ -7280,12 +7646,60 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoardEditsInput {\n    readonly expectedRowVersion: number;\n    readonly baseVersion: number;\n    readonly changes: Record<string, unknown>;\n}',
   },
   {
+    name: 'BoardEffectAdapter',
+    declaration: 'export interface BoardEffectAdapter {\n    readonly idempotent: boolean;\n    send(dispatch: BoardEffectDispatch, options: {\n        readonly signal: AbortSignal;\n    }): Promise<BoardEffectResult>;\n}',
+  },
+  {
+    name: 'BoardEffectAlert',
+    declaration: 'export interface BoardEffectAlert {\n    readonly companyId: string | null;\n    readonly effectKey: string;\n    readonly itemId: string;\n    readonly executionId: string;\n    readonly kind: BoardEffectAlertKind;\n    readonly outcome: BoardEffectOutcome | null;\n    readonly detail: string | null;\n    readonly actor: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'BoardEffectAlertKind',
+    declaration: 'export type BoardEffectAlertKind = \'LATE_CONFIRMATION\' | \'ORPHAN_RELEASED\';',
+  },
+  {
+    name: 'BoardEffectDispatch',
+    declaration: 'export interface BoardEffectDispatch {\n    readonly effectKey: string;\n    readonly executionId: string;\n    readonly itemId: string;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly idempotencyKey: string;\n    readonly attempt: number;\n}',
+  },
+  {
+    name: 'BoardEffectEvent',
+    declaration: 'export interface BoardEffectEvent {\n    readonly companyId: string | null;\n    readonly effectKey: string;\n    readonly command: \'effect.orphaned\';\n    readonly actor: string;\n    readonly itemId: string | null;\n    readonly executionId: string | null;\n    readonly detail: Record<string, unknown> | null;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'BoardEffectExecution',
+    declaration: 'export interface BoardEffectExecution {\n    readonly item: FaberLoomBoardItem;\n    readonly reservation: BoardEffectReservation;\n    readonly message: BoardOutboxMessage;\n}',
+  },
+  {
     name: 'BoardEffectInput',
     declaration: 'export interface BoardEffectInput {\n    readonly ref: string;\n    readonly authorization?: string;\n    readonly detail?: string;\n}',
   },
   {
+    name: 'BoardEffectOutcome',
+    declaration: 'export type BoardEffectOutcome = \'CONFIRMADO\' | \'FALLIDO\' | \'DESCONOCIDO\';',
+  },
+  {
+    name: 'BoardEffectReservation',
+    declaration: 'export interface BoardEffectReservation {\n    readonly companyId: string | null;\n    readonly effectKey: string;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly businessKey: string;\n    readonly artifactHash: string;\n    readonly executionId: string;\n    readonly itemId: string;\n    readonly idempotencyKey: string;\n    readonly authorization: string | null;\n    readonly status: BoardReservationStatus;\n    readonly outcome: BoardEffectOutcome | null;\n    readonly reversalDeadline: string | null;\n    readonly dispatchedAt: string | null;\n    readonly releasedAt: string | null;\n    readonly releaseReason: string | null;\n    readonly closedAt: string | null;\n    readonly closedBy: string | null;\n    readonly closeReason: string | null;\n    readonly settledAt: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly retainUntil: string | null;\n}',
+  },
+  {
+    name: 'BoardEffectResult',
+    declaration: 'export interface BoardEffectResult {\n    readonly status: BoardEffectOutcome;\n    readonly ref?: string;\n    readonly detail?: string;\n}',
+  },
+  {
+    name: 'BoardEffectRevalidation',
+    declaration: 'export interface BoardEffectRevalidation {\n    readonly ok: boolean;\n    readonly item: FaberLoomBoardItem;\n}',
+  },
+  {
+    name: 'BoardEffectStatus',
+    declaration: 'export interface BoardEffectStatus {\n    readonly effectKey: string;\n    readonly reversalDeadline: string | null;\n    readonly executionOutcome: BoardEffectOutcome | null;\n    readonly reservation: BoardEffectReservation | null;\n    readonly message: BoardOutboxMessage | null;\n    readonly alerts: readonly BoardEffectAlert[];\n    readonly reconciliationOpen: boolean;\n}',
+  },
+  {
     name: 'BoardEvent',
     declaration: 'export interface BoardEvent {\n    readonly id: string;\n    readonly command: string;\n    readonly actor: string;\n    readonly fromState: BoardState | null;\n    readonly toState: BoardState;\n    readonly revision: number | null;\n    readonly artifactHash: string | null;\n    readonly reason: string | null;\n    readonly at: string;\n    readonly data: Record<string, unknown> | null;\n}',
+  },
+  {
+    name: 'BoardExecutionInput',
+    declaration: 'export interface BoardExecutionInput extends BoardApproveInput {\n    readonly executionId: string;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly authorization?: string;\n    readonly idempotencyKey?: string;\n}',
   },
   {
     name: 'BoardFieldOriginEntry',
@@ -7344,8 +7758,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoardOrderTotals {\n    readonly totalClient: number;\n    readonly totalMwt: number;\n}',
   },
   {
+    name: 'BoardOrphanRecovery',
+    declaration: 'export interface BoardOrphanRecovery {\n    readonly released: readonly string[];\n    readonly events: readonly BoardEffectEvent[];\n    readonly alerts: number;\n}',
+  },
+  {
+    name: 'BoardOutboxMessage',
+    declaration: 'export interface BoardOutboxMessage {\n    readonly companyId: string | null;\n    readonly effectKey: string;\n    readonly executionId: string;\n    readonly itemId: string;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly idempotencyKey: string;\n    readonly status: BoardOutboxStatus;\n    readonly dispatchable: boolean;\n    readonly attempts: number;\n    readonly reason: string | null;\n    readonly ref: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly dispatchedAt: string | null;\n    readonly settledAt: string | null;\n    readonly retainUntil: string | null;\n}',
+  },
+  {
+    name: 'BoardOutboxStatus',
+    declaration: 'export type BoardOutboxStatus = \'PENDIENTE\' | \'DESPACHADO\' | \'CONFIRMADO\' | \'FALLIDO\' | \'CANCELADO\';',
+  },
+  {
     name: 'BoardPauseIterationInput',
     declaration: 'export interface BoardPauseIterationInput extends BoardIterationLockInput {\n    readonly reason: BoardIterationExitReason;\n}',
+  },
+  {
+    name: 'BoardReconcileInput',
+    declaration: 'export interface BoardReconcileInput {\n    readonly expectedRowVersion?: number;\n    readonly outcome: BoardEffectOutcome;\n    readonly ref?: string;\n    readonly detail?: string;\n}',
   },
   {
     name: 'BoardRecoverDraftInput',
@@ -7356,12 +7786,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BoardRecoverDraftResult = BoardResumeIterationResult;',
   },
   {
+    name: 'BoardReservationStatus',
+    declaration: 'export type BoardReservationStatus = \'RESERVADA\' | \'DESPACHADA\' | \'CONCILIADA\' | \'LIBERADA\';',
+  },
+  {
     name: 'BoardResumeIterationInput',
     declaration: 'export interface BoardResumeIterationInput {\n    readonly baseVersion: number;\n    readonly actorSession: string;\n}',
   },
   {
     name: 'BoardResumeIterationResult',
     declaration: 'export type BoardResumeIterationResult = {\n    readonly item: FaberLoomBoardItem;\n    readonly status: \'started\';\n} | {\n    readonly item: FaberLoomBoardItem;\n    readonly status: \'outdated\';\n    readonly differences: readonly BoardIterationDifference[];\n};',
+  },
+  {
+    name: 'BoardRetryInput',
+    declaration: 'export interface BoardRetryInput {\n    readonly expectedRowVersion?: number;\n}',
+  },
+  {
+    name: 'BoardRevertInput',
+    declaration: 'export interface BoardRevertInput {\n    readonly expectedRowVersion?: number;\n    readonly reason?: string;\n}',
   },
   {
     name: 'BoardReviewInput',
@@ -7900,6 +8342,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EffectiveContextConflict {\n    readonly key: string;\n    readonly candidates: readonly {\n        readonly spaceId: FaberLoomSpaceId;\n        readonly value: string;\n    }[];\n}',
   },
   {
+    name: 'EffectPolicy',
+    declaration: 'export interface EffectPolicy {\n    readonly reversalWindowMs: Readonly<Record<string, number>>;\n    readonly retentionDays: number;\n    readonly dispatchTimeoutMs: number;\n    readonly reservationLeaseMs: number;\n}',
+  },
+  {
     name: 'EmailAutoPolicy',
     declaration: 'export interface EmailAutoPolicy {\n    readonly enabled: boolean;\n    readonly threshold: number;\n    readonly cleanSends: number;\n}',
   },
@@ -7988,6 +8434,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomAgentRow {\n    readonly id: string;\n    readonly name: string;\n    readonly spaceIds: readonly string[];\n    readonly detached: boolean;\n    readonly active: boolean;\n    readonly editable: boolean;\n    readonly sharedBy?: string;\n}',
   },
   {
+    name: 'FaberLoomAutonomyUnitId',
+    declaration: 'export type FaberLoomAutonomyUnitId = Branded<\'FaberLoomAutonomyUnitId\'>;',
+  },
+  {
     name: 'FaberLoomBackupDomainDigest',
     declaration: 'export interface FaberLoomBackupDomainDigest {\n    domain: string;\n    tables: FaberLoomBackupTableDigest[];\n}',
   },
@@ -8018,6 +8468,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomBackupVerifyResult',
     declaration: 'export interface FaberLoomBackupVerifyResult {\n    id: string;\n    ok: boolean;\n    expectedDigest: string;\n    actualDigest: string;\n    tables: FaberLoomBackupTableVerdict[];\n}',
+  },
+  {
+    name: 'FaberLoomBoardAdminCloseInput',
+    declaration: 'export interface FaberLoomBoardAdminCloseInput {\n    readonly expectedRowVersion?: number;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardAdminCloseResult',
+    declaration: 'export interface FaberLoomBoardAdminCloseResult {\n    readonly detail: FaberLoomBoardDetail | null;\n    readonly createdId: string | null;\n}',
   },
   {
     name: 'FaberLoomBoardApproveInput',
@@ -8052,8 +8510,32 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomBoardEditsInput {\n    readonly expectedRowVersion: number;\n    readonly baseVersion: number;\n    readonly changes: Record<string, string>;\n}',
   },
   {
+    name: 'FaberLoomBoardEffectAlertRow',
+    declaration: 'export interface FaberLoomBoardEffectAlertRow {\n    readonly itemId: string;\n    readonly itemTitle: string | null;\n    readonly kind: \'LATE_CONFIRMATION\' | \'ORPHAN_RELEASED\';\n    readonly outcome: FaberLoomBoardEffectOutcome | null;\n    readonly detail: string | null;\n    readonly actor: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardEffectOutcome',
+    declaration: 'export type FaberLoomBoardEffectOutcome = \'CONFIRMADO\' | \'FALLIDO\' | \'DESCONOCIDO\';',
+  },
+  {
+    name: 'FaberLoomBoardEffectPolicy',
+    declaration: 'export interface FaberLoomBoardEffectPolicy {\n    readonly actionTypes: readonly string[];\n    readonly reversalWindowMs: Readonly<Record<string, number>>;\n}',
+  },
+  {
+    name: 'FaberLoomBoardEffectReservationRow',
+    declaration: 'export interface FaberLoomBoardEffectReservationRow {\n    readonly status: FaberLoomBoardReservationState;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly idempotencyKey: string;\n    readonly reversalDeadline: string | null;\n    readonly dispatchedAt: string | null;\n    readonly releasedAt: string | null;\n    readonly releaseReason: string | null;\n    readonly closedAt: string | null;\n    readonly closeReason: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomBoardEffectStatus',
+    declaration: 'export interface FaberLoomBoardEffectStatus {\n    readonly effectKey: string;\n    readonly actionType: string | null;\n    readonly destination: string | null;\n    readonly reversalDeadline: string | null;\n    readonly executionOutcome: FaberLoomBoardEffectOutcome | null;\n    readonly reservation: FaberLoomBoardEffectReservationRow | null;\n    readonly outbox: FaberLoomBoardOutboxState | null;\n    readonly idempotencyKey: string | null;\n    readonly alerts: readonly FaberLoomBoardEffectAlertRow[];\n    readonly reconciliationOpen: boolean;\n    readonly idempotent: boolean;\n    readonly canAdminClose: boolean;\n}',
+  },
+  {
     name: 'FaberLoomBoardEventRow',
     declaration: 'export interface FaberLoomBoardEventRow {\n    readonly command: string;\n    readonly at: string;\n    readonly reason: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomBoardExecutionInput',
+    declaration: 'export interface FaberLoomBoardExecutionInput extends FaberLoomBoardApproveInput {\n    readonly executionId: string;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly authorization?: string;\n    readonly idempotencyKey?: string;\n}',
   },
   {
     name: 'FaberLoomBoardItem',
@@ -8130,6 +8612,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomBoardIterationSaveInput',
     declaration: 'export interface FaberLoomBoardIterationSaveInput extends FaberLoomBoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly summary: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardOutboxState',
+    declaration: 'export type FaberLoomBoardOutboxState = \'PENDIENTE\' | \'DESPACHADO\' | \'CONFIRMADO\' | \'FALLIDO\' | \'CANCELADO\';',
+  },
+  {
+    name: 'FaberLoomBoardReconcileInput',
+    declaration: 'export interface FaberLoomBoardReconcileInput {\n    readonly expectedRowVersion?: number;\n    readonly outcome: FaberLoomBoardEffectOutcome;\n    readonly ref?: string;\n    readonly detail?: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardReservationState',
+    declaration: 'export type FaberLoomBoardReservationState = \'RESERVADA\' | \'DESPACHADA\' | \'CONCILIADA\' | \'LIBERADA\';',
+  },
+  {
+    name: 'FaberLoomBoardRetryInput',
+    declaration: 'export interface FaberLoomBoardRetryInput {\n    readonly expectedRowVersion?: number;\n}',
+  },
+  {
+    name: 'FaberLoomBoardRevertInput',
+    declaration: 'export interface FaberLoomBoardRevertInput {\n    readonly expectedRowVersion?: number;\n    readonly reason?: string;\n}',
   },
   {
     name: 'FaberLoomBoardRow',
@@ -8562,6 +9064,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomShareStatus',
     declaration: 'export type FaberLoomShareStatus = \'pending\' | \'active\' | \'revoked\';',
+  },
+  {
+    name: 'FaberLoomSignature',
+    declaration: 'export interface FaberLoomSignature {\n    readonly id: FaberLoomSignatureId;\n    readonly tenantId: string | null;\n    readonly signedBy: string;\n    readonly signedAt: string;\n    readonly active: boolean;\n    readonly expiresAt: string | null;\n    readonly actionTypes: readonly string[];\n    readonly wildcard: boolean;\n    readonly revokedBy: string | null;\n    readonly revokedAt: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomSignatureId',
+    declaration: 'export type FaberLoomSignatureId = string;',
+  },
+  {
+    name: 'FaberLoomSignatureRow',
+    declaration: 'export interface FaberLoomSignatureRow {\n    readonly actionType: string;\n    readonly protected: boolean;\n    readonly state: FaberLoomSignatureState;\n    readonly signatureId: string | null;\n    readonly signedAt: string | null;\n    readonly expiresAt: string | null;\n    readonly signedBy: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomSignatureState',
+    declaration: 'export type FaberLoomSignatureState = \'NOT_REQUIRED\' | \'ACTIVE\' | \'MISSING\' | \'REVOKED\' | \'EXPIRED\';',
   },
   {
     name: 'FaberLoomSkillCandidateReason',
@@ -10566,6 +11084,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ShellSandboxInfo',
     declaration: 'export interface ShellSandboxInfo {\n    mode: SandboxMode;\n    denied: boolean;\n    enforcement?: SandboxEnforcement;\n    runnerFailed?: boolean;\n}',
+  },
+  {
+    name: 'SignatureActor',
+    declaration: 'export interface SignatureActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n}',
+  },
+  {
+    name: 'SignatureCheckOptions',
+    declaration: 'export interface SignatureCheckOptions {\n    readonly now?: string;\n}',
+  },
+  {
+    name: 'SignatureInput',
+    declaration: 'export interface SignatureInput {\n    readonly actionTypes?: readonly string[];\n    readonly wildcard?: boolean;\n    readonly expiresAt?: string | null;\n}',
+  },
+  {
+    name: 'SignatureIssueInput',
+    declaration: 'export interface SignatureIssueInput {\n    readonly actionTypes?: readonly string[];\n    readonly expiresAt?: string | null;\n}',
+  },
+  {
+    name: 'SignatureState',
+    declaration: 'export type SignatureState = \'NOT_REQUIRED\' | \'ACTIVE\' | \'MISSING\' | \'REVOKED\' | \'EXPIRED\';',
+  },
+  {
+    name: 'SignatureStatus',
+    declaration: 'export interface SignatureStatus {\n    readonly actionType: string;\n    readonly protected: boolean;\n    readonly state: SignatureState;\n    readonly signatureId: FaberLoomSignatureId | null;\n    readonly signedAt: string | null;\n    readonly expiresAt: string | null;\n    readonly signedBy: string | null;\n}',
   },
   {
     name: 'SkillCandidate',

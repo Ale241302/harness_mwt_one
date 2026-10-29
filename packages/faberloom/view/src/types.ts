@@ -843,6 +843,186 @@ export interface FaberLoomBoardDiscardInput {
   readonly note?: string
 }
 
+// ── External effects (E15) ──────────────────────────────────────────
+
+/**
+ * What a destination reported about one effect. `CONFIRMADO` is the only
+ * outcome that executes the item; `DESCONOCIDO` keeps it recoverable (W-22).
+ */
+export type FaberLoomBoardEffectOutcome = 'CONFIRMADO' | 'FALLIDO' | 'DESCONOCIDO'
+
+/** State of one effect reservation; the Mesa never prints these tokens. */
+export type FaberLoomBoardReservationState = 'RESERVADA' | 'DESPACHADA' | 'CONCILIADA' | 'LIBERADA'
+
+/** State of the durable intention to emit one effect; the Mesa never prints it. */
+export type FaberLoomBoardOutboxState = 'PENDIENTE' | 'DESPACHADO' | 'CONFIRMADO' | 'FALLIDO' | 'CANCELADO'
+
+/** The reservation one item's effect holds, as the Mesa reads it (§10.1). */
+export interface FaberLoomBoardEffectReservationRow {
+  /** Reservation state. */
+  readonly status: FaberLoomBoardReservationState
+  /** Action type of the effect (`mail.send`, ...). */
+  readonly actionType: string
+  /** Where the effect goes, already normalised. */
+  readonly destination: string
+  /** Key the destination dedupes a repeated attempt on. */
+  readonly idempotencyKey: string
+  /** Instant the reversal window closes, or null when the action type has none. */
+  readonly reversalDeadline: string | null
+  /** Instant the effect was emitted, or null. */
+  readonly dispatchedAt: string | null
+  /** Instant the reservation was released, or null. */
+  readonly releasedAt: string | null
+  /** Why it was released, or null. */
+  readonly releaseReason: string | null
+  /** Instant the item was closed administratively, or null. */
+  readonly closedAt: string | null
+  /** Reason of the administrative close, or null. */
+  readonly closeReason: string | null
+}
+
+/** One visible alert about an effect, with the item it names resolved. */
+export interface FaberLoomBoardEffectAlertRow {
+  /** Item the alert is about. */
+  readonly itemId: string
+  /** Title of that item, or null when the reader no longer holds it. */
+  readonly itemTitle: string | null
+  /** Alert class: a late confirmation, or a reservation no item reached. */
+  readonly kind: 'LATE_CONFIRMATION' | 'ORPHAN_RELEASED'
+  /** Outcome the destination reported, or null. */
+  readonly outcome: FaberLoomBoardEffectOutcome | null
+  /** Detail the reconciliation left, or null. */
+  readonly detail: string | null
+  /** Identity that reconciled the effect or ran the recovery sweep. */
+  readonly actor: string
+  /** ISO-8601 instant of the last update. */
+  readonly updatedAt: string
+}
+
+/** Everything one item's external effect looks like to the Mesa (E15). */
+export interface FaberLoomBoardEffectStatus {
+  /** Effect the item authorized. */
+  readonly effectKey: string
+  /** Action type, or null when neither a reservation nor a message is stored. */
+  readonly actionType: string | null
+  /** Destination the effect goes to, or null. */
+  readonly destination: string | null
+  /** Instant the reversal window closes, or null. */
+  readonly reversalDeadline: string | null
+  /** Last reported outcome, or null while none was reported. */
+  readonly executionOutcome: FaberLoomBoardEffectOutcome | null
+  /** The reservation, or null when none is stored. */
+  readonly reservation: FaberLoomBoardEffectReservationRow | null
+  /** State of the durable intention, or null when none is stored. */
+  readonly outbox: FaberLoomBoardOutboxState | null
+  /** Idempotency key the destination receives, or null. */
+  readonly idempotencyKey: string | null
+  /** Visible alerts this effect raised, oldest first. */
+  readonly alerts: readonly FaberLoomBoardEffectAlertRow[]
+  /** True while the effect went out and no reconciliation settled it (W-65). */
+  readonly reconciliationOpen: boolean
+  /**
+   * Whether an unknown outcome may be retried: only a destination that dedupes a
+   * repeated idempotency key allows it (W-21).
+   */
+  readonly idempotent: boolean
+  /** Whether this reader may close the item administratively (D-9, W-65). */
+  readonly canAdminClose: boolean
+}
+
+/** The effect policy the Mesa offers an executing approval (D-12). */
+export interface FaberLoomBoardEffectPolicy {
+  /** Action types an acceptance may name. */
+  readonly actionTypes: readonly string[]
+  /** Reversal window per action type, in milliseconds. */
+  readonly reversalWindowMs: Readonly<Record<string, number>>
+}
+
+/** Approval of the exact artifact that also accepts one execution (§10.1). */
+export interface FaberLoomBoardExecutionInput extends FaberLoomBoardApproveInput {
+  /** Execution that owns the reservation; its retries keep it (W-84). */
+  readonly executionId: string
+  /** Action type of the effect. */
+  readonly actionType: string
+  /** Destination; an address list is normalised by the board. */
+  readonly destination: string
+  /** Explicit authorization recorded with the acceptance. */
+  readonly authorization?: string
+  /** Idempotency key the destination dedupes on; derived when omitted. */
+  readonly idempotencyKey?: string
+}
+
+/** Input for `boardEffectRevert`: the optimistic token and an optional reason. */
+export interface FaberLoomBoardRevertInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+  /** Why the item was reverted. */
+  readonly reason?: string
+}
+
+/** Input for `boardEffectRetry`: the optimistic token only. */
+export interface FaberLoomBoardRetryInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+}
+
+/** Input for `boardEffectReconcile`: what the destination reported. */
+export interface FaberLoomBoardReconcileInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+  /** What the destination reported. */
+  readonly outcome: FaberLoomBoardEffectOutcome
+  /** Destination reference the reconciliation learned, when any. */
+  readonly ref?: string
+  /** Diagnostic detail for operators. */
+  readonly detail?: string
+}
+
+/** Input for `boardEffectAdminClose`: the mandatory reason (D-9, W-65). */
+export interface FaberLoomBoardAdminCloseInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+  /** Reason of the administrative close. */
+  readonly reason: string
+}
+
+/** What one administrative close produced (W-86). */
+export interface FaberLoomBoardAdminCloseResult {
+  /** The item after the close, or null when it is gone. */
+  readonly detail: FaberLoomBoardDetail | null
+  /** Item the pending candidate became, or null when none was pending. */
+  readonly createdId: string | null
+}
+
+/** Whether a protected action type carries an active CEO signature (W-16). */
+export type FaberLoomSignatureState = 'NOT_REQUIRED' | 'ACTIVE' | 'MISSING' | 'REVOKED' | 'EXPIRED'
+
+/** One protected action type and the signature state that covers it. */
+export interface FaberLoomSignatureRow {
+  /** Action type that was checked. */
+  readonly actionType: string
+  /** Whether the deployment protects this action type. */
+  readonly protected: boolean
+  /** Signature state for the reader's tenant. */
+  readonly state: FaberLoomSignatureState
+  /** Signature that decided the state, or null. */
+  readonly signatureId: string | null
+  /** ISO-8601 instant it was issued, or null. */
+  readonly signedAt: string | null
+  /** ISO-8601 expiry, or null. */
+  readonly expiresAt: string | null
+  /** Signer identity when the reader may see it, otherwise null. */
+  readonly signedBy: string | null
+}
+
+/** Issue one CEO signature for the acting identity's tenant. */
+export interface SignatureIssueInput {
+  /** Action types the signature covers. */
+  readonly actionTypes?: readonly string[]
+  /** ISO-8601 expiry; omitted takes the deployment's validity window. */
+  readonly expiresAt?: string | null
+}
+
 /**
  * Lifecycle of one item's iteration attempt, as the Mesa reads it (§9.7.1).
  * `active` holds the lock; `idle` also covers a paused attempt whose working

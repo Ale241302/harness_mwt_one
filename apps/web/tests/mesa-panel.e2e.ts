@@ -22,6 +22,7 @@ const BUNDLE = fileURLToPath(new URL('../../../packages/bundle/faberloom-app/pac
 const TITLE = 'PF 9001-2026 · Cuenta Demo'
 const ITERATION_TITLE = 'PF 9002-2026 · Cuenta Demo'
 const RESIDUE_TITLE = 'PF 9003-2026 · Cuenta Demo'
+const EFFECT_TITLE = 'PF 9004-2026 · Cuenta Demo'
 const SPACE_TITLE = 'Marluvas'
 
 /**
@@ -78,6 +79,7 @@ describe('web e2e: WorkLoom Mesa', () => {
   let itemId: FaberLoomBoardItemId
   let iterationItemId: FaberLoomBoardItemId
   let residueItemId: FaberLoomBoardItemId
+  let effectItemId: FaberLoomBoardItemId
   let iterationSpaceId: string | undefined
   let replayDir: string | undefined
 
@@ -139,6 +141,24 @@ describe('web e2e: WorkLoom Mesa', () => {
     residueItemId = residueItem.id
     await board.setSeverity(actor, residueItem.id, 'HIGH', 'HUMAN')
     await board.assignWorkspace(actor, residueItem.id, String(space.id))
+
+    // The item the scenario approves with execution: its effect has a reversal
+    // window, so it lands in DELEGADO_EN_VENTANA and can be reverted (W-19).
+    const effectItem = await board.submit(actor, {
+      runId: 'run-pf-9004',
+      idempotencyKey: 'pf-9004-2026',
+      businessKey: 'PF 9004-2026',
+      title: EFFECT_TITLE,
+      summary: 'Proforma DDP, 10 pares, USD 100,00.',
+      evidence: ['OC 9004', 'PF 9004-2026'],
+      artifactType: 'proforma',
+      accountRef: 'Cuenta Demo',
+    })
+    effectItemId = effectItem.id
+    await board.setSeverity(actor, effectItem.id, 'HIGH', 'HUMAN')
+    // Owned by the same space as the other HIGH items, so the queue order the
+    // scenario relies on does not change.
+    await board.assignWorkspace(actor, effectItem.id, String(space.id))
 
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -396,4 +416,61 @@ describe('web e2e: WorkLoom Mesa', () => {
     }, { timeout: 20_000 })
     expect(tripwire.pageErrors).toEqual([])
   }, 240_000)
+
+  it('approves with execution, reverts inside the window, and returns the item', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-mesa-effect'))
+    await openItem(EFFECT_TITLE)
+
+    // One panel names the action, the destination, and the amount, and the
+    // acceptance is bound to them (§9.8).
+    await page.getByRole('button', { name: 'Approve' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('combobox').selectOption('mail.send')
+    await dialog.getByRole('textbox').fill('cliente@demo.test')
+    const boxes = dialog.getByRole('checkbox')
+    const differences = await boxes.count()
+    for (let index = 0; index < differences; index += 1) await boxes.nth(index).check()
+    await dialog.getByRole('button', { name: 'Approve and send' }).click()
+
+    await vi.waitFor(async () => {
+      expect((await board.get(actor, effectItemId)).state).toBe('DELEGADO_EN_VENTANA')
+    }, { timeout: 20_000 })
+
+    // What will happen and to whom, plus the window the board recorded (D-04).
+    await page.getByText('Send email will be sent to cliente@demo.test.').waitFor({ timeout: 20_000 })
+    await page.getByText(/left to revert it/u).waitFor()
+    const accepted = await board.effectStatus(actor, effectItemId)
+    expect(accepted?.reservation?.status).toBe('RESERVADA')
+    expect(accepted?.reversalDeadline).not.toBeNull()
+
+    // Revertir opens its reason selector; its button is a separate step.
+    await page.getByRole('button', { name: 'Revert', exact: true }).click()
+    const revert = page.getByRole('region', { name: 'Revert the execution' })
+    await revert.getByRole('button', { name: 'Revert', exact: true }).click()
+
+    await vi.waitFor(async () => {
+      const stored = await board.get(actor, effectItemId)
+      expect(stored.state).toBe('PENDIENTE_CRITERIO')
+      expect(stored.effectKey).toBeNull()
+    }, { timeout: 20_000 })
+    // The item returns to the queue with its decision buttons.
+    await page.getByRole('button', { name: 'Approve' }).waitFor({ timeout: 20_000 })
+    expect(await board.effectStatus(actor, effectItemId)).toBeNull()
+    expect((await board.pendingEffects(actor)).some(entry => entry.itemId === String(effectItemId))).toBe(false)
+
+    // The effect is free again: a live reservation would refuse this
+    // acceptance with EFFECT_TAKEN, so accepting it proves the release (§10.1).
+    const current = await board.get(actor, effectItemId)
+    const again = await board.approveWithExecution(actor, effectItemId, {
+      expectedRowVersion: current.rowVersion,
+      expectedArtifactVersion: current.version,
+      expectedArtifactHash: current.artifactHash ?? '',
+      executionId: 'exec-effect-2',
+      actionType: 'mail.send',
+      destination: 'cliente@demo.test',
+    })
+    expect(again.item.state).toBe('DELEGADO_EN_VENTANA')
+    await board.revert(actor, effectItemId)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 180_000)
 })

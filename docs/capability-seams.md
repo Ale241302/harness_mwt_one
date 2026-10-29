@@ -273,6 +273,8 @@ flowchart LR
   svc_faberloomMemory["ctx.faberloomMemory<br/>Product memory and contextual performance"]
   pkg_access["access"]
   svc_faberloomAccess["ctx.faberloomAccess<br/>Identity bindings and elective autonomy"]
+  pkg_autonomy["autonomy"]
+  svc_faberloomAutonomy["ctx.faberloomAutonomy<br/>Autonomy levels per unit"]
   pkg_backup["backup"]
   svc_faberloomBackup["ctx.faberloomBackup<br/>Product knowledge backup and restore"]
   pkg_view["view"]
@@ -287,6 +289,12 @@ flowchart LR
   svc_faberloomMcpServer["ctx.faberloomMcpServer<br/>MCP server for other agents"]
   pkg_inbound["inbound"]
   svc_faberloomInbound["ctx.faberloomInbound<br/>Mailbox inbound receiver"]
+  pkg_harness_projection["harness-projection"]
+  svc_faberloomHarnessProjection["ctx.faberloomHarnessProjection<br/>Scope harness projection"]
+  pkg_mirror["mirror"]
+  svc_faberloomMirror["ctx.faberloomMirror<br/>Deployment mirror"]
+  pkg_skill_install["skill-install"]
+  svc_skillInstall["ctx.skillInstall<br/>Skill installation"]
   pkg_access --> svc_faberloomAccess
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
@@ -308,6 +316,7 @@ flowchart LR
   pkg_attachment --> svc_attachments
   pkg_attachment_local --> svc_attachments
   pkg_authorization --> svc_authorization
+  pkg_autonomy --> svc_faberloomAutonomy
   pkg_backup --> svc_faberloomBackup
   pkg_bash_local --> svc_shell
   pkg_bash_sandbox --> svc_shell
@@ -345,6 +354,7 @@ flowchart LR
   pkg_fs_ssh --> svc_fs
   pkg_goal --> svc_goals
   pkg_handlers --> svc_faberloomHandlers
+  pkg_harness_projection --> svc_faberloomHarnessProjection
   pkg_host_directory_picker --> svc_directoryPicker
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
@@ -367,6 +377,7 @@ flowchart LR
   pkg_mcp_resources --> svc_mcpResources
   pkg_mcp_server --> svc_faberloomMcpServer
   pkg_message_feedback --> svc_messageFeedback
+  pkg_mirror --> svc_faberloomMirror
   pkg_model_catalog --> svc_faberloomModelCatalog
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
@@ -403,6 +414,7 @@ flowchart LR
   pkg_skill --> svc_skills
   pkg_skill_badge --> svc_skills
   pkg_skill_filesystem --> svc_skills
+  pkg_skill_install --> svc_skillInstall
   pkg_spaces --> svc_faberloomSpaces
   pkg_spaces --> svc_spaceIndex
   pkg_spill --> svc_spillStore
@@ -675,6 +687,7 @@ flowchart LR
 | `ctx.faberloomExecutions` | `core` | `execution` | - | - | - | Owns durable execution state, waits, idempotency keys, the effect ledger, and timeout reconciliation so an effect is never repeated after a lost response. |
 | `ctx.faberloomMemory` | `core` | `learning` | - | - | - | Owns versioned teachings with their recorded source, scope, and revocation, plus performance evidence per task and context; it never grants permissions. |
 | `ctx.faberloomAccess` | `core` | `access` | - | - | - | Owns per-user identity bindings, connection references, and action-scoped autonomy grants that are validated before every external effect and revocable at any time. |
+| `ctx.faberloomAutonomy` | `core` | `autonomy` | - | - | - | Owns the SHADOW, SUPERVISADO, and DELEGADO level of each tenant, space, agent, and action-type unit: it reports the §7.2 promotion thresholds, samples delegated items for later review, and returns a unit to supervision when D-13 is exceeded. It reads closed items through the faberloomAutonomyOutcomes port and promotes only on an explicit Owner or Admin command. |
 | `ctx.faberloomBackup` | `core` | `backup` | - | - | - | Owns export, restore, integrity manifests, and migrations for the product domains, restoring only what the current permissions still allow. |
 | `ctx.faberloomView` | `core` | `view` | - | - | - | Projects the owner-scoped spaces, agents, board, and routines as plain JSON rows for the FaberLoom panels; it performs no writes and derives its identity from deployment configuration. |
 | `ctx.faberloomConnections` | `core` | `connections` | - | - | - | Owns the IMAP mailbox and knowledge-backup settings the owner enters, kept per identity and checked with a real probe; it never depends on the MWT.ONE MCP. |
@@ -682,5 +695,8 @@ flowchart LR
 | `ctx.faberloomDefaults` | `core` | `defaults` | - | - | - | Seeds the plan-derived agents and routines once per owner, assigning only the skills the owner's role ships; seeded routines stay draft until the owner activates them. |
 | `ctx.faberloomMcpServer` | `core` | `mcp-server` | - | - | - | Serves JSON-RPC over an MCP Streamable HTTP endpoint on a per-owner socket, authenticating each client with a bearer token the owner minted and answering every call through the product services. |
 | `ctx.faberloomInbound` | `core` | `inbound` | - | - | - | Polls the IMAP mailbox the owner configured and turns new messages into routine events, without marking or moving their mail; idempotency is the engine's Message-ID and UID key. |
+| `ctx.faberloomHarnessProjection` | `core` | `harness-projection` | - | - | - | Writes the agents, skills, flows, routines, memory, and context of one Workspace or Space into that scope's directory, keeps one ownership manifest, and prunes only the paths it declared and no longer writes. |
+| `ctx.faberloomMirror` | `core` | `mirror` | - | - | - | Reads the versioned gateway document and applies its rows and skill files locally, then pushes local changes back with a delay; inert until the deployment enables it and names its credential. |
+| `ctx.skillInstall` | `core` | [`skill-install`](../packages/skill/skill-install) | - | - | - | Installs one skill from an allowed source into the user skill root through the single native path, so a panel and a model tool cannot diverge. |
 
 Maintenance mode: hybrid: services are discovered from Cordis declarations; interface/implementation/consumer roles are classified in `scripts/gen-doc-graphs.ts` with a completeness guard.
