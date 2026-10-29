@@ -687,7 +687,7 @@ describe('faberloom surface', () => {
 
   it('offers the retained work of a dead attempt the item never linked', async () => {
     const { runtime, view, boardDetail, boardIteration, boardIterationResume } = await bench()
-    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, iterationDraftKey: null } } as never)
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, spaceId: 'space-1', iterationDraftKey: null } } as never)
     boardIteration.mockResolvedValue({
       ok: true,
       value: {
@@ -775,9 +775,27 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(boardDetail).toHaveBeenCalledWith('item-2') })
   })
 
-  it('starts the iteration over the shown version and pins the chat context', async () => {
+  it('opens the chat without a space instead of refusing the gesture', async () => {
     const { runtime, view, boardDetail, boardIterationStart, boardIterationContext } = await bench()
     boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardIterationContext.mockResolvedValue({
+      ok: true,
+      value: {
+        itemId: 'item-1', title: 'Preparar proforma', accountRef: 'eguisa', spaceId: null, spaceTitle: null,
+        version: 1, summary: 'Borrador', draftSummary: null, rounds: 0,
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iterate'] }))
+    expect(await view.findByText(faberloomEn['mesa.iteration.noSpaceChat'])).toBeTruthy()
+    await waitFor(() => { expect(boardIterationContext).toHaveBeenCalled() })
+    expect(boardIterationStart).not.toHaveBeenCalled()
+  })
+
+  it('starts the iteration over the shown version and pins the chat context', async () => {
+    const { runtime, view, boardDetail, boardIterationStart, boardIterationContext } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, spaceId: 'space-1' } } as never)
     boardIterationContext.mockResolvedValue({
       ok: true,
       value: {

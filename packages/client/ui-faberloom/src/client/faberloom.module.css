@@ -2049,6 +2049,22 @@
   color: var(--dsw-alias-state-warn-primary);
 }
 
+.mesaFilters select {
+  width: auto;
+  max-width: 280px;
+  padding: 6px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaFilters select:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-accent);
+  outline-offset: 1px;
+}
+
 .mesaFoco {
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr);

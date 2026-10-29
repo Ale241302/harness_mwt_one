@@ -467,6 +467,7 @@ export interface FaberloomPanelInjected {
     detail: string,
     agentName?: string | null,
     iteration?: FaberLoomBoardIterationContext,
+    cwd?: string,
   ) => void
   /** List one routine's executions. */
   executions: (routineId?: string) => Promise<Result<readonly FaberLoomExecutionRow[]>>
@@ -2871,6 +2872,25 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const kickerOf = (account: string | null, space: string | null): string =>
       [account ?? t('mesa.noAccount'), space === null ? null : spaceName(space)].filter(part => part !== null).join(' · ')
 
+    // The picker mirrors the sidebar: a Space and its sub-spaces, indented by
+    // depth, so the human recognises where the work will live.
+    const spaceOptions = (() => {
+      const rows = overview?.spaces ?? []
+      const byId = new Map(rows.map(space => [space.id, space]))
+      const depthOf = (id: string): number => {
+        let depth = 0
+        let parent = byId.get(id)?.parentId ?? null
+        while (parent !== null && depth < 8) {
+          depth += 1
+          parent = byId.get(parent)?.parentId ?? null
+        }
+        return depth
+      }
+      return rows
+        .map(space => ({ id: space.id, title: space.title, depth: depthOf(space.id) }))
+        .sort((left, right) => left.depth - right.depth || left.title.localeCompare(right.title))
+    })()
+
     /** Business label for one action type; an unknown one reads as declared. */
     function actionLabel(actionType: string): string {
       const key = ACTION_KEYS[actionType]
@@ -3108,7 +3128,12 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         if (!result.ok) { setMessage(result.error.message); return }
         const context = result.value
         if (context === undefined) { setMessage(t('mesa.error')); return }
-        openTaskChat('iteration', value.title, `v${String(value.version)}`, '', context)
+        // A task with a Space starts its session inside that Space's folder, so
+        // the conversation shows up in the sidebar next to the work.
+        const folder = value.spaceId === null
+          ? undefined
+          : overview?.spaces.find(space => space.id === value.spaceId)?.folderPath ?? undefined
+        openTaskChat('iteration', value.title, `v${String(value.version)}`, '', context, folder)
       })
     }
 
@@ -3120,6 +3145,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
      */
     const iterate = (): void => {
       if (value === undefined) return
+      // A task without a Space can still open its conversation: the attempt is
+      // what needs a Space, not the gesture. Assigning one starts the attempt.
+      if (value.spaceId === null && !live) {
+        openIterationChat()
+        setMessage(t('mesa.iteration.noSpaceChat'))
+        return
+      }
       if (live) { openIterationChat(); return }
       const refresh = (): void => { setTick(count => count + 1) }
       if (retainedDraft === null) {
@@ -3616,10 +3648,12 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     )
 
     const filters = (
-      <span className={styles.tools}>
+      <span className={`${styles.tools} ${styles.mesaFilters}`}>
         <select value={spaceFilter} aria-label={t('mesa.space')} onChange={event => setSpaceFilter(event.target.value)}>
           <option value="">{t('mesa.allSpaces')}</option>
-          {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+          {spaceOptions.map(space => (
+            <option key={space.id} value={space.id}>{`${'\u00a0\u00a0'.repeat(space.depth)}${space.title}`}</option>
+          ))}
         </select>
         <select value={severityFilter} aria-label={t('mesa.severity')} onChange={event => setSeverityFilter(event.target.value)}>
           <option value="">{t('mesa.allSeverities')}</option>
@@ -3839,7 +3873,9 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                       }}
                     >
                       <option value="">{t('mesa.noSpace')}</option>
-                      {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+                      {spaceOptions.map(space => (
+                        <option key={space.id} value={space.id}>{`${'\u00a0\u00a0'.repeat(space.depth)}${space.title}`}</option>
+                      ))}
                     </select>
                   </label>
                 </div>

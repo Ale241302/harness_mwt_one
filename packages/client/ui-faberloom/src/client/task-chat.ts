@@ -29,6 +29,8 @@ export interface TaskChatInput {
   readonly agentName?: string | null
   /** The pinned iteration context the host filtered for this actor (§8.5). */
   readonly iteration?: FaberLoomBoardIterationContext
+  /** Folder of the Space the task belongs to, so the session is born there. */
+  readonly cwd?: string
 }
 
 /** The first thing every task chat must do: name the task before acting. */
@@ -112,7 +114,10 @@ function taskBody(input: TaskChatInput): string {
  */
 export function runTaskChat(ctx: ClientContext, bound: TaskChatBound, input: TaskChatInput): void {
   void (async () => {
-    const sessionId = await ctx.sessions.create({})
+    // A task with a Space opens its session inside that Space's folder, so the
+    // conversation appears in the sidebar where the work lives; a task with no
+    // Space still opens a global session instead of refusing the gesture.
+    const sessionId = await ctx.sessions.create(input.cwd === undefined ? {} : { cwd: input.cwd })
     const session = ctx.sessions.binding(sessionId)?.session
     if (session !== undefined) {
       await session.prompt([{ type: 'text', text: promptFor(input) }], 'queue')

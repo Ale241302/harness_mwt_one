@@ -437,13 +437,14 @@ export function apply(ctx: ClientContext): void {
         write(() => run)
         return run
       },
-      openTaskChat: (kind, title, detail, agentName, iteration) => {
+      openTaskChat: (kind, title, detail, agentName, iteration, cwd) => {
         runTaskChat(ctx, bound, {
           kind,
           title,
           detail,
           ...agentName === undefined ? {} : { agentName },
           ...iteration === undefined ? {} : { iteration },
+          ...cwd === undefined ? {} : { cwd },
         })
       },
       executions: routineId => ctx.remote.faberloomView.executions(routineId),
