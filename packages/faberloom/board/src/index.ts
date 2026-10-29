@@ -2012,8 +2012,8 @@ export class FaberLoomBoard extends Service {
     const rows = [...(await this.items()).entries()]
       .sort((left, right) => left[1].updatedAt.localeCompare(right[1].updatedAt) || left[0].localeCompare(right[0]))
     for (const [, record] of rows) {
-      if (record.ownerId === actor.id && (record.companyId === null || record.companyId === actor.companyId)) continue
-      throw new Error('faberloom: NO_ACCESS — the key migration is tenant-wide and must run as the owning identity')
+      if (record.companyId === (actor.companyId ?? null)) continue
+      throw new Error('faberloom: NO_ACCESS — the key migration is tenant-wide and cannot cross companies')
     }
     const report = { scanned: rows.length, rekeyed: 0, unchanged: 0, collisions: 0, skipped: 0, entries: [] as BoardRekeyEntry[] }
     for (const [id, record] of rows) {
@@ -2042,7 +2042,7 @@ export class FaberLoomBoard extends Service {
         report.entries.push({ id, from: record.businessKey, to, sourceRef, action: 'rekeyed' })
         continue
       }
-      const outcome = await this.serial(record.companyId, async () => await this.rekeyOne(actor, id, to, sourceRef))
+      const outcome = await this.serial(record.companyId, async () => await this.rekeyOne(id, to, sourceRef))
       report.rekeyed += 1
       if (outcome === 'collision') report.collisions += 1
       report.entries.push({ id, from: record.businessKey, to, sourceRef, action: outcome })
@@ -2061,12 +2061,14 @@ export class FaberLoomBoard extends Service {
    * @returns `rekeyed`, or `collision` when another live item held the key.
    */
   private async rekeyOne(
-    actor: BoardActor,
     id: FaberLoomBoardItemId,
     to: string,
     sourceRef: string,
   ): Promise<'rekeyed' | 'collision'> {
     const current = await this.requireItem(id)
+    const ownerOf = (record: BoardItemRecord): BoardActor => record.companyId === null
+      ? { id: record.ownerId }
+      : { id: record.ownerId, companyId: record.companyId }
     const from = current.businessKey
     let action: 'rekeyed' | 'collision' = 'rekeyed'
     if (!TERMINAL.includes(stateOf(current))) {
@@ -2074,10 +2076,10 @@ export class FaberLoomBoard extends Service {
       if (other !== undefined) {
         action = 'collision'
         if (NOT_SUBSTITUTABLE.includes(stateOf(other.record))) {
-          await this.mutate(actor, other.id, 'candidate_arrived', item => ({
+          await this.mutate(ownerOf(other.record), other.id, 'candidate_arrived', item => ({
             ...item, pendingCandidate: this.candidateOf(current),
           }))
-          await this.mutate(actor, id, 'superseded', item => ({
+          await this.mutate(ownerOf(current), id, 'superseded', item => ({
             ...item, state: 'SUSTITUIDO', status: 'completed', iterationDraftKey: null,
           }), { reason: 'rekey-collision' })
           await this.transferDrafts(current, id, other.id)
@@ -2085,7 +2087,7 @@ export class FaberLoomBoard extends Service {
           if (from !== null && from !== to) await this.release(current.companyId, 'bkey', from)
           return action
         }
-        await this.mutate(actor, other.id, 'superseded', item => ({
+        await this.mutate(ownerOf(other.record), other.id, 'superseded', item => ({
           ...item, state: 'SUSTITUIDO', status: 'completed', iterationDraftKey: null, reversalDeadline: null,
         }), { reason: 'rekey-collision' })
         await this.releaseScheduledExecution(current.companyId, other.record.effectKey, 'substituted')
@@ -2093,7 +2095,7 @@ export class FaberLoomBoard extends Service {
         await this.release(current.companyId, 'bkey', to)
       }
     }
-    await this.mutate(actor, id, 'rekey', item => ({ ...item, businessKey: to, sourceRef }))
+    await this.mutate(ownerOf(current), id, 'rekey', item => ({ ...item, businessKey: to, sourceRef }))
     await this.claimKey(current.companyId, 'bkey', to, id)
     if (from !== null && from !== to) await this.release(current.companyId, 'bkey', from)
     return action

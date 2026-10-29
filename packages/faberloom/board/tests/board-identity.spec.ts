@@ -154,10 +154,15 @@ describe('business-key migration (§2.1)', () => {
     })).resolves.toMatchObject({ supersedesItemId: legacy })
   })
 
-  it('refuses a migration run by an identity that does not own every item', async () => {
-    const harness = await bootBoard()
-    await harness.board.create(ACTOR_A, { title: 'A', summary: 's', evidence: ['oc:1'], artifactType: 'tarea' })
-    await expect(harness.board.rekeyAll(ACTOR_A2)).rejects.toThrow('NO_ACCESS')
+  it('runs tenant-wide for any identity of the company and refuses another company', async () => {
+    const pool = new MemoryMediaPool()
+    const legacy = await seedRawItem(pool, rawBoardItem({ businessKey: 'legacy-key', sourceRef: null }), 'item-legacy')
+    const harness = await bootBoard({ pool })
+    // A same-company identity may migrate the tenant's rows, including another owner's.
+    await expect(harness.board.rekeyAll(ACTOR_A2)).resolves.toMatchObject({ scanned: 1, rekeyed: 1 })
+    expect((await harness.board.get(ACTOR_A, legacy)).businessKey).toMatch(/^[0-9a-f]{64}$/u)
+    // Another company cannot cross the tenant boundary.
+    await expect(harness.board.rekeyAll(ACTOR_B)).rejects.toThrow('NO_ACCESS')
   })
 
   it('resolves a canonical collision through §2.3 and leaves one live item', async () => {
