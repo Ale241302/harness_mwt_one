@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { MemoryMediaPool } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import {
   ACTOR_A,
+  COMPANY_A,
   bootBoard,
   rawBoardItem,
   seedRawItem,
@@ -77,6 +78,16 @@ describe('classify pending items', () => {
     })
     expect(await harness.board.classifyUnclassified(ACTOR_A)).toEqual({ classified: 1, failed: 0, remaining: 0 })
     expect(await harness.board.get(ACTOR_A, id)).toMatchObject({ severity: 'LOW', severitySource: 'RULE' })
+  })
+
+  it('classifies another identity of the same board as its owner', async () => {
+    const pool = new MemoryMediaPool()
+    const id = await seedRawItem(pool, rawBoardItem({
+      ownerId: 'test.muitowork@muitowork.com', artifactType: 'tarea', severity: null,
+    }), 'item-other-owner')
+    const harness = await bootBoard({ pool })
+    expect(await harness.board.classifyUnclassified(ACTOR_A)).toEqual({ classified: 1, failed: 0, remaining: 0 })
+    expect((await harness.board.get({ id: 'test.muitowork@muitowork.com', companyId: COMPANY_A }, id)).severity).toBe('LOW')
   })
 
   it('counts an item it cannot classify and leaves it pending', async () => {

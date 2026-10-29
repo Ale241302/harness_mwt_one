@@ -1706,7 +1706,12 @@ export class FaberLoomBoard extends Service {
           failed += 1
           continue
         }
-        await this.setSeverity(actor, id, decision.severity, decision.source ?? 'RULE', decision.confidence)
+        // The backfill is tenant-wide: an item of another identity in the same
+        // board is classified as its owner, so the write passes the owner rule.
+        const writer: BoardActor = record.companyId === null
+          ? { id: record.ownerId }
+          : { id: record.ownerId, companyId: record.companyId }
+        await this.setSeverity(writer, id, decision.severity, decision.source ?? 'RULE', decision.confidence)
         classified += 1
       } catch (error: unknown) {
         failed += 1
