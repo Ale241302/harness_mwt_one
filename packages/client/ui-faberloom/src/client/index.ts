@@ -426,6 +426,7 @@ export function apply(ctx: ClientContext): void {
       boardSaveView: (name, filters) => ctx.remote.faberloomView.boardSaveView(name, filters),
       boardRemoveView: name => ctx.remote.faberloomView.boardRemoveView(name),
       boardRouteInstruction: (id, text) => ctx.remote.faberloomView.boardRouteInstruction(id, text),
+      boardClassify: limit => ctx.remote.faberloomView.boardClassify(limit),
       deleteBoardItem: (id) => {
         const run = ctx.remote.faberloomView.deleteBoardItem(id)
         write(() => run)

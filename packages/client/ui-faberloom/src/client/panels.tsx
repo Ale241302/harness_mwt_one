@@ -65,6 +65,7 @@ import { isDesktopApplication } from './desktop-app.ts'
 import { HarnessInstallWizard } from './harness-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import { uniqueSpaces } from './space-options.ts'
+import { evidenceLabel } from './evidence.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -492,6 +493,8 @@ export interface FaberloomPanelInjected {
     id: string,
     text: string,
   ) => Promise<Result<readonly FaberLoomBoardFieldChange[] | null>>
+  /** Classify the items that carry no severity. */
+  boardClassify: (limit: number) => Promise<Result<{ classified: number; failed: number; remaining: number }>>
   /** Save or replace one named view. */
   boardSaveView: (name: string, filters: FaberLoomBoardViewFilters) => Promise<Result<readonly FaberLoomBoardView[]>>
   /** Remove one named view. */
@@ -2566,6 +2569,14 @@ function skillsScreen() {
 }
 
 /** Locale key of one severity token; `null` and unknown tokens read as unclassified. */
+function severitySourceKey(source: string): FaberloomKey {
+  switch (source) {
+    case 'LLM': return 'mesa.severity.llm'
+    case 'HUMAN': return 'mesa.severity.human'
+    default: return 'mesa.severity.rule'
+  }
+}
+
 function severityKey(severity: string | null): FaberloomKey {
   switch ((severity ?? '').toUpperCase()) {
     case 'LOW': return 'mesa.severity.low'
@@ -2599,6 +2610,7 @@ function autonomyKey(level: string): FaberloomKey {
 function dayOf(iso: string): string {
   return iso.slice(0, 10)
 }
+
 
 /** Two-decimal money with grouping, shared by the detail and the List. */
 const money = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -2731,7 +2743,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
 
   return function FaberloomMesa(props: ScreenProps) {
     const {
-      t, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction,
+      t, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify,
       boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits,
       boardDiscard, boardResolveCandidate, boardAssignWorkspace, boardTakeDraft, boardRevalidate,
       boardSaveDraft, openTaskChat, goToWorkspace,
@@ -2747,6 +2759,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [tick, setTick] = useState(0)
+    const [classifying, setClassifying] = useState(false)
     const [spaceFilter, setSpaceFilter] = useState('')
     const [severityFilter, setSeverityFilter] = useState('')
     const [accountFilter, setAccountFilter] = useState('')
@@ -3035,6 +3048,18 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const railRows = visible.slice(railStart, railStart + RAIL_LIMIT)
     const position = selectedIndex < 0 ? 0 : selectedIndex + 1
     const unclassifiedCount = visible.filter(row => row.severity === null).length
+    /** Ask the classifier for the pending items and refresh the overview. */
+    const classifyPending = (): void => {
+      if (classifying) return
+      setClassifying(true)
+      void boardClassify(50).then((result) => {
+        setClassifying(false)
+        if (!result.ok) { setMessage(result.error.message); return }
+        setTick(count => count + 1)
+        setMessage(`${t('mesa.classify.done')} ${String(result.value.classified)}`
+          + (result.value.remaining === 0 ? '' : ` · ${t('mesa.classify.remaining')} ${String(result.value.remaining)}`))
+      })
+    }
     const criticalCount = visible.filter(row => row.severity === 'CRITICAL').length
     const overdueCount = visible.filter(row => row.dueAt !== null && Date.parse(row.dueAt) < Date.now()).length
     const outsideCount = hidden.length
@@ -4117,6 +4142,11 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       <div className={styles.mesaScope}>
         <span>{`${t('mesa.column.tu')}: ${String(visible.filter(row => row.column === 'TU_CRITERIO').length)}`}</span>
         <span className={unclassifiedCount > 0 ? styles.mesaScopeAlert : undefined}>{`${t('mesa.unclassified')}: ${String(unclassifiedCount)}`}</span>
+        {unclassifiedCount === 0 ? null : (
+          <button className={styles.secondary} type="button" onClick={classifyPending} disabled={classifying}>
+            {t('mesa.classify.pending')}
+          </button>
+        )}
         <span className={criticalCount > 0 ? styles.mesaScopeAlert : undefined}>{`${t('mesa.scope.critical')}: ${String(criticalCount)}`}</span>
         {overdueCount === 0 ? null : <span className={styles.mesaScopeAlert}>{`${t('mesa.scope.overdue')}: ${String(overdueCount)}`}</span>}
         {outsideCount === 0 ? null : <span>{`${t('mesa.scope.outside')}: ${String(outsideCount)}`}</span>}
@@ -4334,6 +4364,9 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                       <option value="">{t('mesa.unclassified')}</option>
                       {SEVERITIES.map(severity => <option key={severity} value={severity}>{t(severityKey(severity))}</option>)}
                     </select>
+                    {value.severitySource === null ? null : (
+                      <span className={styles.mesaHintLine}>{t(severitySourceKey(value.severitySource))}</span>
+                    )}
                   </label>
                   <label className={styles.mesaProperty}>
                     <span>{t('mesa.space')}</span>
@@ -4359,7 +4392,20 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 <summary>{t('mesa.detail.origin')}</summary>
                 <div className={styles.mesaCollapseBody}>
                   <dl className={styles.mesaFacts}>
-                    <div><dt>{t('mesa.evidence')}</dt><dd>{value.evidence.length === 0 ? t('cell.none') : value.evidence.join(', ')}</dd></div>
+                    <div>
+                      <dt>{t('mesa.evidence')}</dt>
+                      <dd>
+                        {value.evidence.length === 0
+                          ? t('cell.none')
+                          : (
+                            <ul className={styles.mesaEvidenceList}>
+                              {value.evidence.map((entry, index) => (
+                                <li key={`${index}-${entry.slice(0, 24)}`}>{evidenceLabel(entry)}</li>
+                              ))}
+                            </ul>
+                          )}
+                      </dd>
+                    </div>
                   </dl>
                   {value.fieldOrigins.length === 0 ? null : (
                     <dl className={styles.mesaFacts}>
@@ -4513,7 +4559,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                           ))}
                         </div>
                       ) : (
-                        <button className={styles.ghost} type="button" onClick={() => setRouting(true)} disabled={!editable}>
+                        <button className={styles.mesaRouterToggle} type="button" onClick={() => setRouting(true)} disabled={!editable}>
                           {t('mesa.router.label')}
                         </button>
                       )}
@@ -5134,18 +5180,19 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         <div className={styles.mesaColumns}>
           {COLUMNS.map(([column, key]) => {
             const cards = visible.filter(row => row.column === column)
-            if (cards.length === 0) return null
             return (
               <section className={styles.mesaColumn} key={column}>
                 <h3>{t(key)} <span className={styles.mesaQueueMeta}>{String(cards.length)}</span></h3>
-                {groupBySpace
-                  ? spaceGroups(cards).map(group => (
-                    <div key={group.key}>
-                      {groupHeader(group)}
-                      {groupCollapsed(group.key) ? null : group.rows.map(cardOf)}
-                    </div>
-                  ))
-                  : cards.map(cardOf)}
+                {cards.length === 0
+                  ? <p className={styles.mesaColumnEmpty}>{t('mesa.column.empty')}</p>
+                  : groupBySpace
+                    ? spaceGroups(cards).map(group => (
+                      <div key={group.key}>
+                        {groupHeader(group)}
+                        {groupCollapsed(group.key) ? null : group.rows.map(cardOf)}
+                      </div>
+                    ))
+                    : cards.map(cardOf)}
               </section>
             )
           })}

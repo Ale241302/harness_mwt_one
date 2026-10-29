@@ -1293,6 +1293,26 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   },
   {
     definition: {
+      name: 'faberloom_board_classify',
+      description: 'Clasifica los ítems que no tienen severidad. Pregunta primero al clasificador montado y cae a las reglas deterministas; un humano que corrige una severidad enseña la próxima. Repetir hasta que remaining sea 0.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          limit: { type: 'number', description: 'Cuántos ítems procesa esta pasada (1-200, por defecto 50).' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const limit = num(args, 'limit')
+      return await context.faberloomBoard.classifyUnclassified(
+        boardActor(ownerId, companyId),
+        limit === undefined ? {} : { limit },
+      )
+    },
+  },
+  {
+    definition: {
       name: 'faberloom_board_rekey',
       description: 'Recalcula la business_key canónica de §2.1 en todos los ítems del tenant. dryRun informa sin escribir. Debe ejecutarlo la identidad dueña de todos los ítems; una colisión se resuelve por §2.3.',
       inputSchema: {

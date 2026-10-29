@@ -130,6 +130,7 @@ async function bench(
   }))
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
   const boardViews = vi.fn(async () => ({ ok: true, value: [] }))
+  const boardClassify = vi.fn(async () => ({ ok: true, value: { classified: 3, failed: 0, remaining: 1 } }))
   const boardRouteInstruction = vi.fn(async (_id: string, text: string) => text.startsWith('@summary')
     ? { ok: true, value: [{ field: 'summary', value: text.split('=')[1]?.trim() ?? '' }] }
     : { ok: true, value: null })
@@ -286,7 +287,7 @@ async function bench(
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
-    boardSaveView, boardRemoveView, boardRouteInstruction, setBoardRoutine, prepareHarness,
+    boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, setBoardRoutine, prepareHarness,
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
     boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
@@ -391,7 +392,7 @@ async function bench(
   const view = runtime.renderRoot()
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
-    deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction, boardSaveEdits,
+    deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardSaveEdits,
     boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
     boardSetSeverity, boardSaveDraft, boardAssignWorkspace, boardDiscard, boardResolveCandidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
@@ -1242,12 +1243,15 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
   })
 
-  it('hides a Kanban column with no cards', async () => {    const { runtime, view } = await bench()
+  it('keeps a Kanban column with no cards and explains it', async () => {
+    const { runtime, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
     expect(await view.findByText(faberloomEn['mesa.column.tu'])).toBeTruthy()
-    expect(view.queryByText(faberloomEn['mesa.column.esperando'])).toBeNull()
-    expect(view.queryByText(faberloomEn['mesa.column.delegado'])).toBeNull()
+    expect(view.getByText(faberloomEn['mesa.column.esperando'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.column.delegado'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.column.error'])).toBeTruthy()
+    expect(view.getAllByText(faberloomEn['mesa.column.empty'])).toHaveLength(3)
   })
 
   it('routes a candidate through the attempt instead of adopting it standalone', async () => {
@@ -2951,4 +2955,25 @@ it('§9.7 · applies a deterministic field instruction without the agent', async
   })
   fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.router.apply'] }))
   expect(await view.findByText(faberloomEn['mesa.router.unmatched'])).toBeTruthy()
+})
+
+it('§9.2 · Kanban keeps the four columns even when a column is empty', async () => {
+  const { runtime, view } = await bench()
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+  for (const key of ['mesa.column.tu', 'mesa.column.esperando', 'mesa.column.delegado', 'mesa.column.error'] as const) {
+    expect(await view.findByRole('heading', { name: new RegExp(faberloomEn[key], 'u') })).toBeTruthy()
+  }
+  expect(view.getAllByText(faberloomEn['mesa.column.empty']).length).toBeGreaterThan(0)
+})
+
+it('offers to classify the pending items and calls the classifier', async () => {
+  const pending = { ...OVERVIEW, board: [{ ...OVERVIEW.board[0], severity: null, severitySource: null }] }
+  const { runtime, view, boardDetail, boardClassify } = await bench({ ok: true, value: pending })
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+
+  fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.classify.pending'] }))
+  await waitFor(() => { expect(boardClassify).toHaveBeenCalledWith(50) })
 })

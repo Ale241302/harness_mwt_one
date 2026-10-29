@@ -6851,6 +6851,18 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Classify the items that carry no severity. The panel offers it while the
+   * queue says how many are unclassified; repeating the call drains the batch.
+   * @param limit - items this pass handles.
+   * @returns how many were classified, how many failed, and how many remain.
+   */
+  @Remote('boardClassify')
+  async boardClassify(limit: number): Promise<{ readonly classified: number; readonly failed: number; readonly remaining: number }> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot classify')
+    return await this.ctx.faberloomBoard.classifyUnclassified(this.actor(), { limit })
+  }
+
+  /**
    * Route one instruction against the fields the item declares (§9.7). The
    * panel writes the changes through `boardSaveEdits`; the parser lives on the
    * board so the iteration chat and the detail cannot disagree.

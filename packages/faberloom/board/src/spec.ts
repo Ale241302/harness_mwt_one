@@ -453,7 +453,7 @@ export const classificationCacheRecord = z.object({
   /** Resolved severity; null records that nothing resolved. */
   severity: z.union([z.literal('LOW'), z.literal('MEDIUM'), z.literal('HIGH'), z.literal('CRITICAL')]).nullable(),
   /** Who produced it. */
-  source: z.union([z.literal('RULE'), z.literal('LLM')]).nullable(),
+  source: z.union([z.literal('RULE'), z.literal('LLM'), z.literal('HUMAN')]).nullable(),
   /** Proposal confidence. */
   confidence: z.number().nullable(),
   /** ISO-8601 instant the entry was written. */
@@ -491,9 +491,31 @@ export const iterationChatRecord = z.object({
 /** One stored iteration-chat attachment. */
 export type IterationChatRecord = z.infer<typeof iterationChatRecord>
 
+/**
+ * One severity a human taught for an artifact type and account. The next item
+ * of that type and account starts from it, so a correction changes the rule
+ * instead of only the item it was made on.
+ */
+export const severityLearningRecord = z.object({
+  /** Tenant the lesson belongs to. */
+  companyId: z.string().nullable().default(null),
+  /** Artifact type the human corrected. */
+  artifactType: z.string(),
+  /** Account the correction was made for, or null. */
+  accountRef: z.string().nullable(),
+  /** Severity the human chose. */
+  severity: z.string(),
+  /** Corrections that agreed on this severity. */
+  count: z.number().default(1),
+  /** ISO-8601 instant of the last correction. */
+  updatedAt: z.string(),
+})
+
+/** One stored severity lesson. */
+export type SeverityLearningRecord = z.infer<typeof severityLearningRecord>
+
 /** One stored shadow evaluation of a human severity confirmation (W-63). */
-export const shadowEvaluationRecord = z.object({
-  /** Tenant that owns the item. */
+export const shadowEvaluationRecord = z.object({  /** Tenant that owns the item. */
   companyId: z.string().nullable().default(null),
   /** Item the evaluation belongs to. */
   itemId: z.string(),
@@ -536,5 +558,6 @@ export const boardDomainSpec = defineDomain({
     views: domainTable<string, BoardViewRecord>(boardViewRecord),
     iteration_chats: domainTable<string, IterationChatRecord>(iterationChatRecord),
     severity_shadow: domainTable<string, ShadowEvaluationRecord>(shadowEvaluationRecord),
+    severity_learning: domainTable<string, SeverityLearningRecord>(severityLearningRecord),
   },
 })

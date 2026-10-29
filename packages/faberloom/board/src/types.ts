@@ -691,7 +691,7 @@ export interface BoardOrderGroup<T extends BoardOrderFields = BoardOrderFields> 
 }
 
 /** Who produced a classification value. */
-export type BoardClassifySource = 'RULE' | 'LLM'
+export type BoardClassifySource = 'RULE' | 'LLM' | 'HUMAN'
 
 /** One deterministic severity rule, keyed by artifact type and optionally by account. */
 export interface BoardSeverityRule {

@@ -25,6 +25,7 @@ import {
   type BoardKeyRecord,
   type BoardReferenceRecord,
   type BoardViewRecord,
+  type SeverityLearningRecord,
   type ShadowEvaluationRecord,
   type EffectAlertRecord,
   type EffectEventRecord,
@@ -511,6 +512,11 @@ function shadowEvaluationOf(
   }
 }
 
+/** Stable key of one severity lesson: tenant, artifact type, and account. */
+function severityLessonKey(companyId: string | null, artifactType: string, accountRef: string | null): string {
+  return [companyId ?? 'sin-empresa', artifactType, accountRef ?? 'sin-cuenta'].join('\u0000')
+}
+
 /** The fields one item declares: its summary, its artifact content, and its origins. */
 function declaredItemFields(record: BoardItemRecord): readonly string[] {  const last = record.revisions[record.revisions.length - 1]
   return [...new Set([
@@ -701,6 +707,11 @@ export class FaberLoomBoard extends Service {
   /** The shadow evaluations that measure a classifier without deciding anything. */
   private async shadowEvaluations(): Promise<KvTable<string, ShadowEvaluationRecord>> {
     return (await this.domain()).table('severity_shadow')
+  }
+
+  /** The severity lessons a human has taught. */
+  private async severityLearning(): Promise<KvTable<string, SeverityLearningRecord>> {
+    return (await this.domain()).table('severity_learning')
   }
 
   private draftId(itemId: FaberLoomBoardItemId | string, userId: string): string {
@@ -1226,6 +1237,12 @@ export class FaberLoomBoard extends Service {
     contentHash: string,
     maySendSummary: boolean,
   ): Promise<BoardSeverityDecision> {
+    // A human correction outranks the shipped rule: the next item of this type
+    // and account starts from what the human taught.
+    const lesson = (await this.severityLearning()).get(severityLessonKey(companyId, artifactType, accountRef))
+    if (lesson !== undefined) {
+      return { severity: lesson.severity as BoardSeverity, source: 'HUMAN', confidence: 1 }
+    }
     const rules = resolveSeverity({ artifactType, accountRef }, { confidenceThreshold: this.confidenceThreshold })
     if (rules.severity !== null) return rules
     // A provisional class permits no field to leave (D-05): the port still
@@ -1609,8 +1626,98 @@ export class FaberLoomBoard extends Service {
     })
     // A human confirmation is the label the shadow evaluator is measured
     // against (W-63); the evaluation never changes the item.
-    if (source === 'HUMAN') await this.evaluateShadow(updated)
+    if (source === 'HUMAN') {
+      await this.evaluateShadow(updated)
+      await this.learnSeverity(updated)
+    }
     return updated
+  }
+
+  /**
+   * Record what a human chose for one artifact type and account, so the next
+   * item of that pair starts from the correction. The count records agreement
+   * and the latest severity wins.
+   * @param item - the item whose severity a human just set.
+   */
+  private async learnSeverity(item: FaberLoomBoardItem): Promise<void> {
+    const key = severityLessonKey(item.companyId, item.artifactType, item.accountRef)
+    const table = await this.severityLearning()
+    const previous = table.get(key)
+    await table.put(key, {
+      companyId: item.companyId,
+      artifactType: item.artifactType,
+      accountRef: item.accountRef,
+      severity: item.severity ?? 'LOW',
+      count: (previous?.count ?? 0) + 1,
+      updatedAt: new Date().toISOString(),
+    })
+  }
+
+  /**
+   * Classify the items that carry no severity. A one-time backfill for rows
+   * written before the rules existed: it asks the mounted classifier first
+   * (metadata only when the class permits no summary) and falls back to the
+   * deterministic rules, so a deployment without a provider still classifies.
+   * New submissions keep the rules-first order (A-04).
+   * @param actor - the tenant whose items are classified.
+   * @param options - how many items this pass handles; repeat until remaining is zero.
+   * @returns how many were classified, how many failed, and how many remain.
+   */
+  async classifyUnclassified(
+    actor: BoardActor,
+    options: { readonly limit?: number } = {},
+  ): Promise<{ readonly classified: number; readonly failed: number; readonly remaining: number }> {
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 200))
+    const pending = [...(await this.items()).entries()]
+      .filter(([, record]) => (record.companyId === null || record.companyId === actor.companyId))
+      .filter(([, record]) => record.severity === null && !TERMINAL.includes(stateOf(record)))
+      .slice(0, limit)
+    const classifier = this.ctx.get('faberloomBoardClassifier') as BoardClassifierPort | undefined
+    let classified = 0
+    let failed = 0
+    for (const [id, record] of pending) {
+      try {
+        const classification = classifyDataClass({ artifactType: record.artifactType, accountRef: record.accountRef })
+        const last = record.revisions[record.revisions.length - 1]
+        const summary = classification.permittedFields.includes('summary') ? last?.summary ?? '' : ''
+        let decision: BoardSeverityDecision | undefined
+        if (classifier !== undefined) {
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), this.classifierTimeoutMs)
+          try {
+            const answer = await classifier.classifySeverity(
+              { artifactType: record.artifactType, accountRef: record.accountRef, contentHash: record.artifactHash ?? '', summary },
+              { signal: controller.signal, confidenceThreshold: this.confidenceThreshold },
+            )
+            if (answer.status === 'classified' && answer.confidence >= this.confidenceThreshold) {
+              decision = { severity: answer.severity, source: 'LLM', confidence: answer.confidence }
+            }
+          } catch {
+            // A provider failure falls back to the deterministic rules below.
+          } finally {
+            clearTimeout(timer)
+          }
+        }
+        decision ??= resolveSeverity(
+          { artifactType: record.artifactType, accountRef: record.accountRef },
+          { confidenceThreshold: this.confidenceThreshold },
+        )
+        if (decision.severity === null) {
+          failed += 1
+          continue
+        }
+        await this.setSeverity(actor, id, decision.severity, decision.source ?? 'RULE', decision.confidence)
+        classified += 1
+      } catch (error: unknown) {
+        failed += 1
+        this.ctx.logger.warn(`faberloom: classification failed for ${id}: ${String(error)}`)
+      }
+    }
+    const remaining = [...(await this.items()).entries()]
+      .filter(([, record]) => record.companyId === null || record.companyId === actor.companyId)
+      .filter(([, record]) => record.severity === null && !TERMINAL.includes(stateOf(record)))
+      .length
+    return { classified, failed, remaining }
   }
 
   /**

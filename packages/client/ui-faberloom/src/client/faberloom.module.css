@@ -2067,21 +2067,21 @@
 
 .mesaFoco {
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: clamp(280px, 22vw, 420px) minmax(0, 1fr);
   gap: 24px;
-  align-items: stretch;
+  align-items: start;
   min-height: calc(100vh - 300px);
 }
 
 .mesaQueue {
   position: sticky;
   top: 0;
-  align-self: start;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: calc(100vh - 220px);
-  overflow-y: auto;
+  height: calc(100vh - 190px);
+  max-height: calc(100vh - 190px);
+  overflow: hidden;
   padding-right: 4px;
 }
 
@@ -2104,6 +2104,7 @@
   gap: 1px;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
   list-style: none;
 }
 
@@ -2152,7 +2153,6 @@
   flex-direction: column;
   gap: 16px;
   min-width: 0;
-  max-width: 78ch;
 }
 
 .mesaIdentity {
@@ -2532,8 +2532,6 @@
 }
 
 .mesaActionBar {
-  position: sticky;
-  bottom: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
@@ -2561,7 +2559,7 @@
 
 .mesaColumns {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   align-items: start;
 }
@@ -2571,9 +2569,42 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
-  max-width: 420px;
 }
 
+.mesaRouterToggle {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+  cursor: pointer;
+}
+
+.mesaRouterToggle:hover,
+.mesaRouterToggle:focus-visible {
+  border-color: var(--dsw-alias-border-accent);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.mesaColumnEmpty {
+  margin: 0;
+  padding: 14px 12px;
+  border: 0.5px dashed var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaEvidenceList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding-left: 16px;
+}
 .mesaColumn h3 {
   display: flex;
   gap: 8px;
@@ -2608,6 +2639,12 @@
   flex-wrap: wrap;
   gap: 10px;
   align-items: baseline;
+}
+
+@media (max-width: 1280px) {
+  .mesaColumns {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
 }
 
 @media (max-width: 900px) {

@@ -39,7 +39,7 @@ kind: "package-reference"
 
 对话提示不是条目。条目是运行准备的结果，或带 PF/OC/SAP、账户与证据的具体缺数据任务；`artifactType` 区分 `proforma` 与 `tarea`。未声明类型的提交是一条 `tarea`：它不承载计价承诺，而无类型的记录没有确定性类别来放行其内容。`submit` 接受 `accountRef`、`valueAmount`、`valueCurrency`、`dueAt`、`severity` 与 `severityConfidence`，让工作台一次写入就能显示金额、期限与分类。
 
-数据类别由服务端决定：`submit` 用 `classifyDataClass` 从产物类型与账户推导，调用方即使声明 `dataClass` 也无法降低自己条目的敏感度（D-05、D-07）。非 USD 金额需要生产者使用的汇率：`valueFxRate`、`valueFxSource` 与 `valueFxDate` 必填，`valueUsd` 是按该汇率四舍五入到两位的换算值（D-03），缺任何一项都以 `FX_RATE_REQUIRED`、`FX_SOURCE_REQUIRED` 或 `FX_DATE_REQUIRED` 拒绝条目，而不是编造汇率。运行未报告严重度时先走确定性规则，只有部署挂载 `faberloomBoardClassifier` 端口时才走分类器；端口超时则条目保持未分类且仍然进入（W-37）。分类结果按租户、空间、账户、产物类型、字段、内容哈希、规则版本、策略版本与模型版本缓存（§5.1、W-51）。
+数据类别由服务端决定：`submit` 用 `classifyDataClass` 从产物类型与账户推导，调用方即使声明 `dataClass` 也无法降低自己条目的敏感度（D-05、D-07）。非 USD 金额需要生产者使用的汇率：`valueFxRate`、`valueFxSource` 与 `valueFxDate` 必填，`valueUsd` 是按该汇率四舍五入到两位的换算值（D-03），缺任何一项都以 `FX_RATE_REQUIRED`、`FX_SOURCE_REQUIRED` 或 `FX_DATE_REQUIRED` 拒绝条目，而不是编造汇率。运行未报告严重度时，先采用人类为该产物类型与账户教过的严重度，再走确定性规则，只有部署挂载 `faberloomBoardClassifier` 端口时才走分类器；端口超时则条目保持未分类且仍然进入（W-37）。临时分类的条目向分类器发送空摘要（D-05）。分类结果按租户、空间、账户、产物类型、字段、内容哈希、规则版本、策略版本、模型版本与置信度下限缓存（§5.1、W-51）。`setSeverity(..., 'HUMAN')` 会记录这堂课，因此同类型同账户的下一个条目从这次纠正开始。
 
 `list` 返回规范队列顺序：优先级等级降序，未分类或无空间的条目排在所有 `CRITICAL` 之前，其后依次是到期日、USD 金额、创建时刻与 id。严重程度与数据分类来自 `classify.ts`：先跑确定性规则，规则无法判定的产物保持未分类，而不是猜测。临时分类的条目不开放任何字段，因此在分类前既不建立索引，也不发送给供应商。
 
@@ -99,7 +99,9 @@ kind: "package-reference"
 
 `routeInstruction(actor, id, text)` 是 §9.7 的确定性字段路由器：`@campo = valor`、`campo: valor` 或 `cambiar campo a valor`，作用于条目声明的字段——其摘要、最后一次修订的内容键，以及记录的来源字段——并识别西班牙语界面别名。它不写入任何内容；对不属于它的句子返回 `null`，调用者据此把句子交给智能体，而不是猜测。`attachIterationChat(writer, id, sessionId)` 把活动尝试记录在面板打开的聊天会话名下，`applyIterationInstruction(sessionId, text)` 则把该聊天里的句子路由进尝试的草稿：它通过 `saveIterationDraft` 写入 `summary` 与内容字段，复用附件的持有者会话，并返回改动的字段以及尝试是否仍然有效。宿主自己回答该指令，因此被识别的指令永远不会到达提供方。
 
-`approveBulk(writer, { items, confirmations? })` 实现 §6.4：每个条目都在服务端重新校验（状态、行、产物哈希、控制项、签名），回答列出批准的条目与被拒条目及各自的代码。资格为同一租户、空间、负责人、动作类型与产物类型；严重度 LOW；无金额；无效果动作。D-11 让批量留在试点之外，因此 `bulkApprovalEnabled` 默认为 false，调用返回 `BULK_DISABLED`；启用它的部署获得完整行为（W-14、W-15）。
+`approveBulk(writer, { items })` 实现 §6.4：每个条目都在服务端重新校验（状态、行、产物哈希与控制项，使用评审者为该条目给出的确认），回答列出批准的条目与被拒条目及各自的代码。资格为同一租户、空间、负责人、动作类型与产物类型；严重度 LOW；无金额；无效果动作。D-11 让批量留在试点之外，因此 `bulkApprovalEnabled` 默认为 false：看板返回 `BULK_DISABLED`，MCP 表面不会公布该工具。启用它的部署获得完整行为（W-14、W-15）。
+
+`classifyUnclassified(actor, { limit? })` 是为规则存在之前写入的行准备的回填：先询问已挂载的分类器（类不允许字段时发送空摘要），失败时回落到确定性规则，因此没有供应商的部署也能分类。它返回已分类、失败与剩余的数量；重复调用可排空队列。新提交仍保持规则优先。
 
 `shadowReport(actor, { from?, to? })` 汇总 `faberloomBoardShadow` 端口相对人类确认严重度的评估：一致、不一致、低于置信度下限的弃权、无效回答、超时，以及被影子评为更低的 CRITICAL。评估存入 `severity_shadow`，从不改变条目，也不对 N2+ 条目运行（W-63、D-14）。
 
