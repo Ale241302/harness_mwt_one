@@ -170,6 +170,32 @@ describe('business-key migration (§2.1)', () => {
     await expect(harness.board.rekeyAll(ACTOR_B)).resolves.toMatchObject({ skipped: 1, rekeyed: 0 })
   })
 
+  it('skips a row with no source instead of collapsing it by its evidence', async () => {
+    const pool = new MemoryMediaPool()
+    const first = await seedRawItem(pool, rawBoardItem({ businessKey: null, sourceRef: null, title: 'A' }), 'item-a')
+    const second = await seedRawItem(pool, rawBoardItem({ businessKey: null, sourceRef: null, title: 'B' }), 'item-b')
+    const harness = await bootBoard({ pool })
+
+    const report = await harness.board.rekeyAll(ACTOR_A)
+    expect(report).toMatchObject({ scanned: 2, rekeyed: 0, skipped: 2, collisions: 0 })
+    expect((await harness.board.get(ACTOR_A, first)).state).toBe('PENDIENTE_CRITERIO')
+    expect((await harness.board.get(ACTOR_A, second)).state).toBe('PENDIENTE_CRITERIO')
+  })
+
+  it('restores the items a collision closed and counts the restoration', async () => {
+    const pool = new MemoryMediaPool()
+    const first = await seedRawItem(pool, rawBoardItem({ businessKey: 'viejo-1', sourceRef: 'OC-9', title: 'A' }), 'item-a')
+    await seedRawItem(pool, rawBoardItem({ businessKey: 'viejo-2', sourceRef: 'OC-9', title: 'B' }), 'item-b')
+    const harness = await bootBoard({ pool })
+    expect(await harness.board.rekeyAll(ACTOR_A)).toMatchObject({ collisions: 1 })
+
+    const restored = await harness.board.restoreRekeyCollisions(ACTOR_A)
+    expect(restored).toEqual({ restored: 1 })
+    expect((await harness.board.get(ACTOR_A, first)).state).toBe('PENDIENTE_CRITERIO')
+    // Idempotent: a second pass finds nothing left to restore.
+    expect(await harness.board.restoreRekeyCollisions(ACTOR_A)).toEqual({ restored: 0 })
+  })
+
   it('resolves a canonical collision through §2.3 and leaves one live item', async () => {
     const pool = new MemoryMediaPool()
     const first = await seedRawItem(pool, rawBoardItem({

@@ -1322,6 +1322,20 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   },
   {
     definition: {
+      name: 'faberloom_board_rekey_restore',
+      description: 'Restaura los ítems que una migración de claves cerró por colisión sin tener una referencia de origen real. Vuelven a PENDIENTE_CRITERIO y queda auditado. Solo debe ejecutarse tras revisar el reporte de rekey.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    run: async (context, ownerId, _args, companyId) => {
+      return await context.faberloomBoard.restoreRekeyCollisions(boardActor(ownerId, companyId))
+    },
+  },
+  {
+    definition: {
       name: 'faberloom_board_shadow_report',      description: 'Reporta la evaluación en sombra contra la severidad humana (W-63): coincidencias, abstenciones, errores y críticos rebajados. La sombra nunca cambia la severidad del ítem.',
       inputSchema: {
         type: 'object',

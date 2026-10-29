@@ -1997,14 +1997,37 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Recompute every item's business key from §2.1. A legacy item recorded a
-   * producer key and no source; the migration reads the producer key as its
-   * source reference, so the dedup identity is preserved instead of invented.
-   * A dry run reports what it would do and writes nothing.
-   *
-   * The migration is tenant-wide, so it runs as the owning identity: an actor
-   * that does not own every item is refused before anything is written.
-   * @param actor - the owning identity running the migration.
+   * Restore the items a key migration closed because their derived key
+   * collided. A row with no real source reference was collapsed by a key that
+   * hashed its first evidence, which is not an identity; this command returns
+   * it to `PENDIENTE_CRITERIO` and records the restoration.
+   * @param actor - the identity running the recovery.
+   * @returns how many items were restored.
+   */
+  async restoreRekeyCollisions(actor: BoardActor): Promise<{ readonly restored: number }> {
+    let restored = 0
+    for (const [id, record] of (await this.items()).entries()) {
+      if (record.companyId !== null && record.companyId !== actor.companyId) continue
+      const last = record.events[record.events.length - 1]
+      if (last?.command !== 'superseded' || last.reason !== 'rekey-collision') continue
+      const writer: BoardActor = record.companyId === null
+        ? { id: record.ownerId }
+        : { id: record.ownerId, companyId: record.companyId }
+      await this.mutate(writer, id, 'rekey.restore', item => ({
+        ...item, state: 'PENDIENTE_CRITERIO', status: 'waiting_approval',
+      }))
+      restored += 1
+    }
+    return { restored }
+  }
+
+  /**
+   * Recompute every item's business key from §2.1. Only a row that names a real
+   * source reference is migrated: its producer key or its recorded `sourceRef`.
+   * A row with neither has no identity to dedupe by, so it is reported as
+   * skipped instead of being collapsed by its first evidence. A dry run reports
+   * what it would do and writes nothing.
+   * @param actor - the identity running the migration; its company bounds the run.
    * @param options - `dryRun` reports without writing.
    * @returns what changed, what stayed, and what collided.
    */
@@ -2020,7 +2043,8 @@ export class FaberLoomBoard extends Service {
         report.entries.push({ id, from: record.businessKey, to: record.businessKey ?? '', sourceRef: '', action: 'skipped' })
         continue
       }
-      const sourceRef = sourceRefOf(record)
+      // Only an explicit source migrates; evidence is not an identity.
+      const sourceRef = record.sourceRef?.trim() || record.businessKey?.trim() || ''
       const to = sourceRef.length === 0
         ? record.businessKey ?? ''
         : businessKeyOf({
