@@ -16,6 +16,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import z from '@deepseek-ai/schemastery'
 import { mcpMwtCheckClient } from './client.ts'
 import { registerProformaChecks } from './source.ts'
+import { jsonPayload } from './wire.ts'
 import type { Context } from '@deepseek-ai/cordis'
 // Side-effect type import: declaration-merges `ctx.tools` onto Context.
 import type {} from '@deepseek-ai/dsh-tools'
@@ -141,7 +142,11 @@ export function apply(ctx: Context, config: Config = {}): void {
           signal: AbortSignal.timeout(toolTimeoutMs),
         }).catch(() => undefined)
         if (result === undefined || result.isError) return undefined
-        return usdRateOf(currency, result.value)
+        try {
+          return usdRateOf(currency, jsonPayload(result.value))
+        } catch {
+          return undefined
+        }
       },
     })
   }

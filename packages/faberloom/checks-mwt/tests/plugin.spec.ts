@@ -297,3 +297,20 @@ describe('MWT ONE exchange rate', () => {
     expect(plugin.usdRateOf('CRC', { rate: 'nope' })).toBeUndefined()
   })
 })
+
+describe('MWT ONE exchange-rate port', () => {
+  it('registers the port the board reads and converts with it', async () => {
+    const backend: Backend = () => Promise.resolve({ rate: 460, source: 'BCCR', timestamp: '2026-10-29T12:00:00Z' })
+    const { ctx, board } = await mount(backend)
+    const port = ctx.get('faberloomBoardFx') as { usdRate(currency: string): Promise<unknown> } | undefined
+    expect(port).toBeDefined()
+    expect(await port!.usdRate('CRC')).toEqual({ rate: 1 / 460, source: 'BCCR', date: '2026-10-29' })
+
+    const item = await board.submit(ACTOR, {
+      runId: 'run-fx', idempotencyKey: 'idem-fx', businessKey: 'bkey-fx',
+      summary: 'pedido en colones', evidence: ['oc:fx'], artifactType: 'tarea',
+      valueAmount: 1000, valueCurrency: 'CRC',
+    })
+    expect(item).toMatchObject({ valueUsd: 2.17, valueFxSource: 'BCCR', valueFxDate: '2026-10-29' })
+  })
+})
