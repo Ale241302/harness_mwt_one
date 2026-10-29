@@ -28,6 +28,8 @@ export const EFFECT_NO_TENANT = 'sin-empresa'
 
 /** Deployment choices of the effect machine; the service resolves them from `Config`. */
 export interface EffectPolicy {
+  /** Action types an acceptance or an adapter may name (D-12), in declared order. */
+  readonly actionTypes: readonly string[]
   /** Reversal window per action type, in milliseconds. An unlisted type has none (D-12). */
   readonly reversalWindowMs: Readonly<Record<string, number>>
   /** Days a settled reservation and its message stay stored. */

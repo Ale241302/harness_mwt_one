@@ -1244,10 +1244,32 @@ export interface BoardOrphanRecovery {
   readonly alerts: number
 }
 
+/**
+ * The adapter that serves one item's action type, as a deployment registered
+ * it. `effectStatus` reports it so a client states what the board holds instead
+ * of keeping its own copy of the action list or guessing idempotency (W-21).
+ */
+export interface BoardEffectAdapterStatus {
+  /** Action type the adapter is registered for. */
+  readonly actionType: string
+  /**
+   * Whether the adapter declares the destination idempotent, so `retry` may
+   * send an unknown outcome again (W-21).
+   */
+  readonly idempotent: boolean
+  /** Whether the adapter can answer a reconciliation question about the effect (§9.8). */
+  readonly probe: boolean
+}
+
 /** Everything one item's effect looks like to the panel. */
 export interface BoardEffectStatus {
   /** Effect key of the accepted execution. */
   readonly effectKey: string
+  /**
+   * Action type of the effect, read from the reservation or the message, or
+   * null when neither row is stored.
+   */
+  readonly actionType: string | null
   /** Instant the delegated window closes, or null. */
   readonly reversalDeadline: string | null
   /** Last reported outcome, or null. */
@@ -1264,6 +1286,8 @@ export interface BoardEffectStatus {
    * reconciliation open (W-65).
    */
   readonly reconciliationOpen: boolean
+  /** The adapter serving {@link BoardEffectStatus.actionType}, or null when none is registered. */
+  readonly adapter: BoardEffectAdapterStatus | null
 }
 
 /** One acceptance that reserves an effect: the item, its reservation, and its message. */
@@ -1367,6 +1391,20 @@ export interface BoardEffectAdapter {
    * @returns what the destination reported.
    */
   send(
+    dispatch: BoardEffectDispatch,
+    options: { readonly signal: AbortSignal },
+  ): Promise<BoardEffectResult>
+  /**
+   * Ask the destination what became of an emitted effect, without emitting
+   * anything (§9.8). An adapter that omits it leaves the operator to state the
+   * outcome; an adapter that declares it answers one of the three outcomes the
+   * contract already names, and a throw, an aborted signal, or the dispatch
+   * timeout reads as `DESCONOCIDO`.
+   * @param dispatch - the message the effect was emitted with.
+   * @param options - abort signal the board aborts when the dispatch timeout expires.
+   * @returns what the destination reported.
+   */
+  probe?(
     dispatch: BoardEffectDispatch,
     options: { readonly signal: AbortSignal },
   ): Promise<BoardEffectResult>

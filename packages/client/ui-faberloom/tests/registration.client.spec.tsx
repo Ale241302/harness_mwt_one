@@ -174,6 +174,9 @@ async function bench(
   const boardEffectRevert = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
   const boardEffectRetry = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
   const boardEffectReconcile = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
+  const boardEffectProbe = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: effectStatus({ probe: true, executionOutcome: 'DESCONOCIDO' }),
+  }))
   const boardEffectAdminClose = vi.fn(async (): Promise<unknown> => ({
     ok: true, value: { detail: DETAIL, createdId: null },
   }))
@@ -283,7 +286,7 @@ async function bench(
     boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationRecover,
     boardIterationDraft,
     boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
-    boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectAdminClose,
+    boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft, mwtStatus,
@@ -387,7 +390,7 @@ async function bench(
     boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationRecover,
     boardIterationDraft,
     boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
-    boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectAdminClose,
+    boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
@@ -1992,6 +1995,7 @@ function effectStatus(overrides: Record<string, unknown> = {}) {
     alerts: [],
     reconciliationOpen: false,
     idempotent: false,
+    probe: false,
     canAdminClose: false,
     ...overrides,
   }
@@ -2090,18 +2094,70 @@ describe('mesa effect states', () => {
     // W-76: the effect may already exist, so the tracking survives.
     expect(view.queryByRole('button', { name: 'Discard' })).toBeNull()
     expect(view.queryByRole('button', { name: 'Correct' })).toBeNull()
-    // W-21: a retry needs a destination that dedupes, which this host cannot prove.
+    // W-21: this adapter declares no idempotent destination, so the board's
+    // read keeps the retry shut.
     expect((view.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(true)
     expect(view.getByText(faberloomEn['mesa.effect.retryBlocked'])).toBeTruthy()
 
     fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.effect.reconcile'] }))
     const panel = await view.findByRole('region', { name: faberloomEn['mesa.effect.reconcileTitle'] })
+    // No adapter of this action type declares a probe, so the panel says the
+    // destination cannot be asked and the operator states the answer (§9.8).
+    expect(within(panel).getByText(faberloomEn['mesa.effect.reconcileNoProbe'])).toBeTruthy()
     // The panel starts on the answer that changes nothing; the operator states
     // what the destination reported.
     fireEvent.change(within(panel).getByRole('combobox'), { target: { value: 'CONFIRMADO' } })
     fireEvent.click(within(panel).getByRole('button', { name: faberloomEn['mesa.effect.confirmReconcile'] }))
     await waitFor(() => {
       expect(boardEffectReconcile).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2, outcome: 'CONFIRMADO' })
+    })
+  })
+
+  it('asks the destination when its adapter declares a probe and shows the answer', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectProbe, boardEffectReconcile } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true, probe: true }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.effect.reconcile'] }))
+    // Conciliar consults the destination: the panel calls the probe and never
+    // opens the operator's selector while an adapter can answer (§9.8).
+    await waitFor(() => {
+      expect(boardEffectProbe).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2 })
+    })
+    expect(boardEffectReconcile).not.toHaveBeenCalled()
+    expect(view.queryByRole('region', { name: faberloomEn['mesa.effect.reconcileTitle'] })).toBeNull()
+    // The answer was unknown, so the item stays where it is and the panel shows
+    // what the destination answered.
+    expect(await view.findByText(faberloomEn['mesa.effect.probe.desconocido'])).toBeTruthy()
+  })
+
+  it('enables the retry of an unknown outcome the board reports as idempotent', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectRetry } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true, idempotent: true }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    const retry = await view.findByRole('button', { name: 'Retry' })
+    expect((retry as HTMLButtonElement).disabled).toBe(false)
+    expect(view.queryByText(faberloomEn['mesa.effect.retryBlocked'])).toBeNull()
+
+    fireEvent.click(retry)
+    fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: 'Retry' }))
+    await waitFor(() => {
+      expect(boardEffectRetry).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2 })
     })
   })
 

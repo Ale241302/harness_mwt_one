@@ -46,10 +46,13 @@ interface MutableAdapter {
 
 /**
  * An adapter that records its calls and answers with `response`.
- * @param options - whether the destination dedupes a repeated key.
+ * @param options - whether the destination dedupes a repeated key, and its probe.
  * @returns the mutable adapter.
  */
-function mutableAdapter(options: { readonly idempotent?: boolean } = {}): MutableAdapter {
+function mutableAdapter(options: {
+  readonly idempotent?: boolean
+  readonly probe?: () => Promise<BoardEffectResult>
+} = {}): MutableAdapter {
   const calls: BoardEffectDispatch[] = []
   const mutable: MutableAdapter = {
     calls,
@@ -60,6 +63,7 @@ function mutableAdapter(options: { readonly idempotent?: boolean } = {}): Mutabl
         calls.push(dispatch)
         return mutable.response
       },
+      ...options.probe === undefined ? {} : { probe: options.probe },
     },
   }
   return mutable
@@ -996,6 +1000,124 @@ describe('FaberLoomBoard E15 reconciliation and administrative close', () => {
     expect(await harness.board.pruneEffects(ACTOR_B)).toBe(0)
     expect(await harness.board.pruneEffects(ACTOR_A)).toBe(1)
     expect(durableRows(pool, 'effect_reservations').size).toBe(0)
+  })
+})
+
+describe('FaberLoomBoard E15 adapter declaration and destination probe', () => {
+  it('reports the action type and the declaration of the adapter that serves it', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    mountAdapter(harness, 'mail.send', mutableAdapter({ idempotent: true }).port)
+    const item = await effectItem(harness)
+    const accepted = await accept(harness.board, item)
+
+    const status = await harness.board.effectStatus(ACTOR_A, item.id)
+    expect(status).toMatchObject({
+      effectKey: accepted.item.effectKey,
+      actionType: 'mail.send',
+      adapter: { actionType: 'mail.send', idempotent: true, probe: false },
+    })
+  })
+
+  it('reports no adapter for an action type the deployment has not mounted', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    const item = await effectItem(harness)
+    await accept(harness.board, item, {
+      actionType: 'shipment.create',
+      destination: 'mwt-ship-1',
+    })
+    const status = await harness.board.effectStatus(ACTOR_A, item.id)
+    expect(status).toMatchObject({ actionType: 'shipment.create', adapter: null })
+  })
+
+  it('carries the accepted action types in the policy', async () => {
+    const harness = await bootBoard({
+      board: { effectActionTypes: ['custom.notify'], effectReversalWindowMs: { 'custom.notify': 1_000 } },
+    })
+    expect(harness.board.effectPolicy()).toMatchObject({
+      actionTypes: ['custom.notify'],
+      reversalWindowMs: { 'custom.notify': 1_000 },
+    })
+  })
+
+  it('settles a dispatched effect with the answer the destination gave (§9.8)', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    const probed: BoardEffectDispatch[] = []
+    const adapter: BoardEffectAdapter = {
+      idempotent: false,
+      async send(): Promise<BoardEffectResult> {
+        return { status: 'DESCONOCIDO', detail: 'gateway timeout' }
+      },
+      async probe(dispatch): Promise<BoardEffectResult> {
+        probed.push(dispatch)
+        return { status: 'CONFIRMADO', ref: 'mail-77' }
+      },
+    }
+    mountAdapter(harness, 'mail.send', adapter)
+    const item = await effectItem(harness)
+    const accepted = await accept(harness.board, item)
+    const key = accepted.item.effectKey ?? ''
+    await harness.board.dispatchEffect(ACTOR_A, key)
+    expect((await harness.board.get(ACTOR_A, item.id)).state).toBe('DESCONOCIDO')
+
+    const answer = await harness.board.probeEffect(ACTOR_A, item.id)
+    // §9.8: the projection carries the answer the destination gave.
+    expect(answer).toMatchObject({
+      executionOutcome: 'CONFIRMADO',
+      adapter: { actionType: 'mail.send', idempotent: false, probe: true },
+    })
+    expect((await harness.board.get(ACTOR_A, item.id)).state).toBe('EJECUTADO')
+    // The probe asks about the emitted effect, never emitting it again.
+    expect(probed).toHaveLength(1)
+    expect(probed[0]).toMatchObject({ effectKey: key, idempotencyKey: `effect:${key}`, attempt: 1 })
+    expect(reservationOfKey(harness, key)?.status).toBe('CONCILIADA')
+    expect(messageOfKey(harness, key)).toMatchObject({ status: 'CONFIRMADO', ref: 'mail-77' })
+  })
+
+  it('leaves the item where it is when the destination does not answer', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    const adapter: BoardEffectAdapter = {
+      idempotent: false,
+      async send(): Promise<BoardEffectResult> {
+        return { status: 'DESCONOCIDO' }
+      },
+      async probe(): Promise<BoardEffectResult> {
+        throw new Error('the destination is unreachable')
+      },
+    }
+    mountAdapter(harness, 'mail.send', adapter)
+    const item = await effectItem(harness)
+    const accepted = await accept(harness.board, item)
+    const key = accepted.item.effectKey ?? ''
+    await harness.board.dispatchEffect(ACTOR_A, key)
+
+    const answer = await harness.board.probeEffect(ACTOR_A, item.id)
+    expect(answer).toMatchObject({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true })
+    // W-76: an unanswered probe records the attempt and keeps the doubt visible.
+    const stored = await harness.board.get(ACTOR_A, item.id)
+    expect(stored.state).toBe('DESCONOCIDO')
+    expect(stored.executionOutcome).toBe('DESCONOCIDO')
+    expect(stored.events.at(-1)).toMatchObject({ command: 'effect.reconciled', toState: 'DESCONOCIDO' })
+    expect(reservationOfKey(harness, key)?.status).toBe('DESPACHADA')
+  })
+
+  it('writes nothing when no adapter of the action type declares a probe', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    const adapter = mutableAdapter()
+    mountAdapter(harness, 'mail.send', adapter.port)
+    adapter.response = { status: 'DESCONOCIDO' }
+    const item = await effectItem(harness)
+    const accepted = await accept(harness.board, item)
+    await harness.board.dispatchEffect(ACTOR_A, accepted.item.effectKey ?? '')
+    const before = await harness.board.get(ACTOR_A, item.id)
+
+    const answer = await harness.board.probeEffect(ACTOR_A, item.id)
+    // The projection says no adapter can be asked, so the operator still states
+    // the outcome and the item records no second reconciliation.
+    expect(answer.adapter).toMatchObject({ idempotent: false, probe: false })
+    expect(answer.executionOutcome).toBe('DESCONOCIDO')
+    const after = await harness.board.get(ACTOR_A, item.id)
+    expect(after.rowVersion).toBe(before.rowVersion)
+    expect(after.events).toHaveLength(before.events.length)
   })
 })
 

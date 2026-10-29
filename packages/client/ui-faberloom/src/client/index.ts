@@ -298,6 +298,11 @@ export function apply(ctx: ClientContext): void {
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
+      boardEffectProbe: (id, input) => {
+        const run = ctx.remote.faberloomView.boardEffectProbe(id, input)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
       boardEffectAdminClose: (id, input) => {
         const run = ctx.remote.faberloomView.boardEffectAdminClose(id, input)
         void run.then((result) => { if (result.ok) refresh() })

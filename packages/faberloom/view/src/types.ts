@@ -922,10 +922,15 @@ export interface FaberLoomBoardEffectStatus {
   /** True while the effect went out and no reconciliation settled it (W-65). */
   readonly reconciliationOpen: boolean
   /**
-   * Whether an unknown outcome may be retried: only a destination that dedupes a
-   * repeated idempotency key allows it (W-21).
+   * Whether an unknown outcome may be retried: only a destination whose adapter
+   * declares it dedupes a repeated idempotency key allows it (W-21).
    */
   readonly idempotent: boolean
+  /**
+   * Whether the adapter that serves this action type can be asked what the
+   * destination holds (§9.8). False leaves the operator to state the outcome.
+   */
+  readonly probe: boolean
   /** Whether this reader may close the item administratively (D-9, W-65). */
   readonly canAdminClose: boolean
 }

@@ -99,15 +99,18 @@ function harness(options: { readOnly?: boolean; role?: string; access?: boolean;
     runChecks: vi.fn(async () => ({ checks: [], missing: [] })),
     effectStatus: vi.fn(async () => ({
       effectKey: 'eff-1',
+      actionType: 'mail.send',
       reversalDeadline: '2026-10-28T12:15:00.000Z',
       executionOutcome: null,
       reservation: RESERVATION,
       message: MESSAGE,
       alerts: [ALERT],
       reconciliationOpen: false,
+      adapter: { actionType: 'mail.send', idempotent: false, probe: false },
     })),
     effectPolicy: vi.fn(() => ({
-      reversalWindowMs: { 'mail.send': 900_000 },
+      actionTypes: ['mail.send', 'inventory.reserve', 'shipment.create'],
+      reversalWindowMs: { 'mail.send': 900_000 } as Record<string, number>,
       retentionDays: 90,
       dispatchTimeoutMs: 30_000,
       reservationLeaseMs: 300_000,
@@ -116,6 +119,17 @@ function harness(options: { readOnly?: boolean; role?: string; access?: boolean;
     revert: vi.fn(async () => item),
     retry: vi.fn(async () => item),
     reconcile: vi.fn(async () => item),
+    probeEffect: vi.fn(async () => ({
+      effectKey: 'eff-1',
+      actionType: 'mail.send',
+      reversalDeadline: null,
+      executionOutcome: 'CONFIRMADO',
+      reservation: { ...RESERVATION, status: 'CONCILIADA', outcome: 'CONFIRMADO' },
+      message: { ...MESSAGE, status: 'CONFIRMADO' },
+      alerts: [],
+      reconciliationOpen: false,
+      adapter: { actionType: 'mail.send', idempotent: false, probe: true },
+    })),
     adminClose: vi.fn(async () => ({ item, created: null })),
     approveWithExecution: vi.fn(async () => ({ item, reservation: RESERVATION, message: MESSAGE })),
   }
@@ -147,7 +161,6 @@ function harness(options: { readOnly?: boolean; role?: string; access?: boolean;
     role: options.role ?? 'admin',
     companyId: 'mwt',
     readOnly: options.readOnly === true,
-    effectActionTypes: ['mail.send', 'inventory.reserve', 'shipment.create'],
   })
   return { view, board, access }
 }
@@ -204,12 +217,48 @@ describe('FaberLoomViewService external effects', () => {
     await expect(view.boardEffectStatus('missing')).resolves.toBeNull()
   })
 
-  it('never offers a retry of an unknown outcome while the board hides its adapters', async () => {
-    const { view } = harness()
+  it('reports the declaration of the adapter the board holds for the action type', async () => {
+    const { view, board } = harness()
     const status = await view.boardEffectStatus('item-1')
-    // W-21: the board decides by the adapter's declaration, and exposes no read
-    // of it, so the Mesa offers reconciliation only.
-    expect(status?.idempotent).toBe(false)
+    // W-21: the board decides by the adapter's declaration, and publishes it.
+    expect(status).toMatchObject({
+      actionType: 'mail.send',
+      idempotent: false,
+      probe: false,
+    })
+
+    board.effectStatus.mockResolvedValue({
+      effectKey: 'eff-1',
+      actionType: 'mail.send',
+      reversalDeadline: null,
+      executionOutcome: 'DESCONOCIDO',
+      reservation: RESERVATION,
+      message: MESSAGE,
+      alerts: [],
+      reconciliationOpen: true,
+      adapter: { actionType: 'mail.send', idempotent: true, probe: true },
+    } as never)
+    await expect(view.boardEffectStatus('item-1')).resolves.toMatchObject({ idempotent: true, probe: true })
+  })
+
+  it('reports no adapter when the board has none registered', async () => {
+    const { view, board } = harness()
+    board.effectStatus.mockResolvedValue({
+      effectKey: 'eff-1',
+      actionType: 'shipment.create',
+      reversalDeadline: null,
+      executionOutcome: null,
+      reservation: { ...RESERVATION, actionType: 'shipment.create' },
+      message: { ...MESSAGE, actionType: 'shipment.create' },
+      alerts: [],
+      reconciliationOpen: false,
+      adapter: null,
+    } as never)
+    await expect(view.boardEffectStatus('item-1')).resolves.toMatchObject({
+      actionType: 'shipment.create',
+      idempotent: false,
+      probe: false,
+    })
   })
 
   it('offers the administrative close to the item owner and to an administrator only', async () => {
@@ -239,11 +288,23 @@ describe('FaberLoomViewService external effects', () => {
     expect(board.alerts).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com', companyId: 'mwt' }))
   })
 
-  it('offers the deployment action types with the windows the board resolved', async () => {
-    const { view } = harness()
+  it('offers the action types and windows the board resolved, never a copy of its own', async () => {
+    const { view, board } = harness()
     await expect(view.boardEffectPolicy()).resolves.toEqual({
       actionTypes: ['mail.send', 'inventory.reserve', 'shipment.create'],
       reversalWindowMs: { 'mail.send': 900_000 },
+    })
+
+    board.effectPolicy.mockReturnValue({
+      actionTypes: ['custom.notify'],
+      reversalWindowMs: { 'custom.notify': 60_000 },
+      retentionDays: 90,
+      dispatchTimeoutMs: 30_000,
+      reservationLeaseMs: 300_000,
+    })
+    await expect(view.boardEffectPolicy()).resolves.toEqual({
+      actionTypes: ['custom.notify'],
+      reversalWindowMs: { 'custom.notify': 60_000 },
     })
   })
 
@@ -268,6 +329,40 @@ describe('FaberLoomViewService external effects', () => {
       expectedRowVersion: 7,
       outcome: 'CONFIRMADO',
       ref: 'msg-9',
+    })
+  })
+
+  it('asks the destination through the board and reports the answer it got', async () => {
+    const { view, board } = harness({ item: boardItem({ state: 'DESCONOCIDO' }) })
+    const answer = await view.boardEffectProbe('item-1', { expectedRowVersion: 7 })
+    expect(board.probeEffect).toHaveBeenCalledWith(expect.anything(), 'item-1', { expectedRowVersion: 7 })
+    // §9.8: the answer is the board's, and the projection says whether an
+    // adapter could be asked and what the destination reported.
+    expect(answer).toMatchObject({
+      actionType: 'mail.send',
+      executionOutcome: 'CONFIRMADO',
+      probe: true,
+      idempotent: false,
+    })
+    expect(answer?.canAdminClose).toBe(true)
+
+    board.probeEffect.mockResolvedValue({
+      effectKey: 'eff-1',
+      actionType: 'mail.send',
+      reversalDeadline: null,
+      executionOutcome: 'DESCONOCIDO',
+      reservation: { ...RESERVATION, status: 'DESPACHADA' },
+      message: { ...MESSAGE, status: 'DESPACHADO' },
+      alerts: [],
+      reconciliationOpen: true,
+      adapter: { actionType: 'mail.send', idempotent: false, probe: false },
+    } as never)
+    // No adapter of the action type declares a probe, so nothing was asked and
+    // the effect stays exactly where it was.
+    await expect(view.boardEffectProbe('item-1', {})).resolves.toMatchObject({
+      probe: false,
+      executionOutcome: 'DESCONOCIDO',
+      reconciliationOpen: true,
     })
   })
 
@@ -311,6 +406,7 @@ describe('FaberLoomViewService external effects', () => {
     await expect(view.boardEffectRevert('item-1', {})).rejects.toThrow('read-only')
     await expect(view.boardEffectRetry('item-1', {})).rejects.toThrow('read-only')
     await expect(view.boardEffectReconcile('item-1', { outcome: 'CONFIRMADO' })).rejects.toThrow('read-only')
+    await expect(view.boardEffectProbe('item-1', {})).rejects.toThrow('read-only')
     await expect(view.boardEffectAdminClose('item-1', { reason: 'x' })).rejects.toThrow('read-only')
     await expect(view.boardApproveWithExecution('item-1', {
       expectedRowVersion: 7,

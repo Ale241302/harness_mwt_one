@@ -25,8 +25,8 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
 import type {
-  BoardEffectAlert, BoardIterationDraft, BoardIterationStatus, BoardResumeIterationResult, FaberLoomBoardItem,
-  FaberLoomBoardItemId,
+  BoardEffectAlert, BoardEffectStatus, BoardIterationDraft, BoardIterationStatus, BoardResumeIterationResult,
+  FaberLoomBoardItem, FaberLoomBoardItemId,
 } from '@deepseek-ai/dsh-faberloom-board'
 import type {
   FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineDefinition, RoutineInput, RoutineStepInput,
@@ -388,12 +388,6 @@ function unquoteHarnessScalar(value: string): string {
 /** Data classes, lowest first: the order the provider ceiling compares on. */
 const DATA_CLASSES = ['N0', 'N1', 'N2', 'N3', 'N4'] as const
 
-/**
- * Action types an acceptance may name by default. D-12 signs these three; a
- * deployment extends them on the board row and on this row together.
- */
-const EFFECT_ACTION_TYPES = ['mail.send', 'inventory.reserve', 'shipment.create'] as const
-
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
 export interface Config {
   /** The gateway injects the logged-in user's email here, per dsh process. */
@@ -447,13 +441,6 @@ export interface Config {
    * and the context falls back to the lowest class: the fallback is deny.
    */
   defaultProvider?: string
-  /**
-   * Action types the Mesa offers when an approval executes an external effect.
-   * D-12 signs the three defaults; a deployment that mounts an adapter for
-   * another type lists it here and on the board row, which still refuses a type
-   * it does not accept.
-   */
-  effectActionTypes?: string[]
 }
 
 /** Schemastery configuration for the workspace view. */
@@ -477,7 +464,6 @@ export const Config: z<Config> = z.object({
   anydocApiKey: z.string().default(''),
   providerDataClassCeilings: z.dict(z.union(DATA_CLASSES)).default({}),
   defaultProvider: z.string().default(''),
-  effectActionTypes: z.array(z.string().min(1)).default([...EFFECT_ACTION_TYPES]),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -1061,6 +1047,52 @@ function effectAlertRow(alert: BoardEffectAlert, itemTitle: string | null): Fabe
     detail: alert.detail,
     actor: alert.actor,
     updatedAt: alert.updatedAt,
+  }
+}
+
+/**
+ * Project one board effect for the Mesa, with the item it belongs to resolved
+ * and the reader's own administrative-close permission applied.
+ * @param status - the effect the board reported.
+ * @param item - the item that authorizes it.
+ * @param canAdminClose - whether this reader may close the item administratively.
+ * @returns the render row.
+ */
+function effectStatusRow(
+  status: BoardEffectStatus,
+  item: FaberLoomBoardItem,
+  canAdminClose: boolean,
+): FaberLoomBoardEffectStatus {
+  const reservation = status.reservation
+  return {
+    effectKey: status.effectKey,
+    actionType: status.actionType ?? reservation?.actionType ?? status.message?.actionType ?? null,
+    destination: reservation?.destination ?? status.message?.destination ?? null,
+    reversalDeadline: status.reversalDeadline,
+    executionOutcome: status.executionOutcome,
+    reservation: reservation === null
+      ? null
+      : {
+        status: reservation.status,
+        actionType: reservation.actionType,
+        destination: reservation.destination,
+        idempotencyKey: reservation.idempotencyKey,
+        reversalDeadline: reservation.reversalDeadline,
+        dispatchedAt: reservation.dispatchedAt,
+        releasedAt: reservation.releasedAt,
+        releaseReason: reservation.releaseReason,
+        closedAt: reservation.closedAt,
+        closeReason: reservation.closeReason,
+      },
+    outbox: status.message?.status ?? null,
+    idempotencyKey: reservation?.idempotencyKey ?? status.message?.idempotencyKey ?? null,
+    alerts: status.alerts.map(alert => effectAlertRow(alert, item.title)),
+    reconciliationOpen: status.reconciliationOpen,
+    // The board reads its own registry, so the panel states the declaration the
+    // dispatcher will apply instead of guessing one (W-21).
+    idempotent: status.adapter?.idempotent === true,
+    probe: status.adapter?.probe === true,
+    canAdminClose,
   }
 }
 
@@ -7153,47 +7185,18 @@ export class FaberLoomViewService extends TypertRemoteService {
 
   /**
    * Read the external effect of one item: the reservation that protects it, the
-   * durable intention to emit it, the visible alerts it raised, and whether a
-   * dispatched effect still awaits reconciliation (E15, §10.1).
+   * durable intention to emit it, the visible alerts it raised, whether a
+   * dispatched effect still awaits reconciliation, and the declaration of the
+   * adapter the board holds for its action type (E15, §9.8, §10.1).
    * @param id - board item id.
    * @returns the effect, or null when the item authorized none.
    */
   @Remote('boardEffectStatus')
   async boardEffectStatus(id: string): Promise<FaberLoomBoardEffectStatus | null> {
-    const board = this.ctx.faberloomBoard
-    const actor = this.actor()
     const item = await this.boardItemOf(id)
     if (item === undefined) return null
-    const status = await board.effectStatus(actor, id as FaberLoomBoardItemId)
-    if (status === null) return null
-    const reservation = status.reservation
-    return {
-      effectKey: status.effectKey,
-      actionType: reservation?.actionType ?? status.message?.actionType ?? null,
-      destination: reservation?.destination ?? status.message?.destination ?? null,
-      reversalDeadline: status.reversalDeadline,
-      executionOutcome: status.executionOutcome,
-      reservation: reservation === null
-        ? null
-        : {
-          status: reservation.status,
-          actionType: reservation.actionType,
-          destination: reservation.destination,
-          idempotencyKey: reservation.idempotencyKey,
-          reversalDeadline: reservation.reversalDeadline,
-          dispatchedAt: reservation.dispatchedAt,
-          releasedAt: reservation.releasedAt,
-          releaseReason: reservation.releaseReason,
-          closedAt: reservation.closedAt,
-          closeReason: reservation.closeReason,
-        },
-      outbox: status.message?.status ?? null,
-      idempotencyKey: reservation?.idempotencyKey ?? status.message?.idempotencyKey ?? null,
-      alerts: status.alerts.map(alert => effectAlertRow(alert, item.title)),
-      reconciliationOpen: status.reconciliationOpen,
-      idempotent: this.effectIdempotent(),
-      canAdminClose: this.mayCloseAdministratively(item),
-    }
+    const status = await this.ctx.faberloomBoard.effectStatus(this.actor(), id as FaberLoomBoardItemId)
+    return status === null ? null : effectStatusRow(status, item, this.mayCloseAdministratively(item))
   }
 
   /**
@@ -7212,18 +7215,18 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * The effect policy the Mesa offers an executing approval: the action types an
-   * acceptance may name and the reversal window of each (D-12).
+   * The effect policy the Mesa offers an executing approval: the action types
+   * the board accepts and the reversal window it resolved for each (D-12). The
+   * board row owns both lists, so the Mesa carries no copy of them.
    * @returns the action types and their windows.
    */
   @Remote('boardEffectPolicy')
-  async boardEffectPolicy(): Promise<FaberLoomBoardEffectPolicy> {
-    return {
-      // The row carries the deployment's list; a composition that omits it
-      // offers the D-12 set the board row signs by default.
-      actionTypes: [...this.config.effectActionTypes ?? EFFECT_ACTION_TYPES],
-      reversalWindowMs: { ...this.ctx.faberloomBoard.effectPolicy().reversalWindowMs },
-    }
+  boardEffectPolicy(): Promise<FaberLoomBoardEffectPolicy> {
+    const policy = this.ctx.faberloomBoard.effectPolicy()
+    return Promise.resolve({
+      actionTypes: [...policy.actionTypes],
+      reversalWindowMs: { ...policy.reversalWindowMs },
+    })
   }
 
   /**
@@ -7311,6 +7314,28 @@ export class FaberLoomViewService extends TypertRemoteService {
       ...input.detail === undefined ? {} : { detail: input.detail },
     })
     return await this.boardDetail(id)
+  }
+
+  /**
+   * Ask the destination what became of a dispatched effect (§9.8). The board
+   * answers with the effect projection after it settled what the destination
+   * said: `executionOutcome` carries `CONFIRMADO`, `FALLIDO`, or `DESCONOCIDO`,
+   * and `probe` says whether an adapter could be asked at all. An unanswered
+   * probe leaves the item where it is; a missing adapter leaves the operator's
+   * three answers in place.
+   * @param id - board item id.
+   * @param input - optimistic token.
+   * @returns the effect after the answer, or null when the item authorized none.
+   */
+  @Remote('boardEffectProbe')
+  async boardEffectProbe(id: string, input: FaberLoomBoardRetryInput): Promise<FaberLoomBoardEffectStatus | null> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot settle board items')
+    const item = await this.boardItemOf(id)
+    if (item === undefined) return null
+    const status = await this.ctx.faberloomBoard.probeEffect(this.actor(), id as FaberLoomBoardItemId, {
+      ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+    })
+    return effectStatusRow(status, item, this.mayCloseAdministratively(item))
   }
 
   /**
@@ -7422,17 +7447,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   private async boardItemOf(id: string): Promise<FaberLoomBoardItem | undefined> {
     return (await this.ctx.faberloomBoard.list(this.actor())).find(entry => entry.id === id)
-  }
-
-  /**
-   * Whether the board may retry this effect's unknown outcome. The board decides
-   * by the adapter's `idempotent` declaration (W-21) and exposes no read of it,
-   * so the Mesa reports the conservative answer and offers reconciliation
-   * instead: enabling a retry here would invite a second send.
-   * @returns always false until the board publishes its adapters' declarations.
-   */
-  private effectIdempotent(): boolean {
-    return false
   }
 
   /**

@@ -243,6 +243,8 @@ export interface FaberloomPanelInjected {
     id: string,
     input: FaberLoomBoardReconcileInput,
   ) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Ask the destination what became of a dispatched effect. */
+  boardEffectProbe: (id: string, input: FaberLoomBoardRetryInput) => Promise<Result<FaberLoomBoardEffectStatus | null>>
   /** Close an item administratively, leaving its reconciliation open. */
   boardEffectAdminClose: (id: string, input: FaberLoomBoardAdminCloseInput) => Promise<Result<FaberLoomBoardAdminCloseResult>>
   /** List every protected action type and the signature state that covers it. */
@@ -2661,6 +2663,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
   }
   // What a destination can report, as the reconciliation panel offers it.
   const OUTCOMES = ['CONFIRMADO', 'FALLIDO', 'DESCONOCIDO'] as const
+  // One label per answer a probed destination can give (§9.8). An unknown
+  // answer records the attempt and leaves the item in place.
+  const PROBE_KEYS: Readonly<Record<FaberLoomBoardEffectOutcome, FaberloomKey>> = {
+    CONFIRMADO: 'mesa.effect.probe.confirmado',
+    FALLIDO: 'mesa.effect.probe.fallido',
+    DESCONOCIDO: 'mesa.effect.probe.desconocido',
+  }
   // One label per signature state; the panel never prints the token itself.
   const SIGNATURE_STATE_KEYS: Readonly<Record<FaberLoomSignatureRow['state'], FaberloomKey>> = {
     NOT_REQUIRED: 'mesa.signature.state.notRequired',
@@ -2679,7 +2688,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       boardIterationApply, boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume,
       boardIterationRecover, boardIterationDraft,
       boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
-      boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectAdminClose,
+      boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
       boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     } = props
     const { overview, error } = useOverview(props)
@@ -2702,6 +2711,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const [revertReason, setRevertReason] = useState<string>('DUPLICADO')
     const [showReconcile, setShowReconcile] = useState(false)
     const [reconcileOutcome, setReconcileOutcome] = useState<FaberLoomBoardEffectOutcome>('DESCONOCIDO')
+    // The answer the destination gave to one Conciliar request, kept with the
+    // item it belongs to, so another item never shows it (§9.8).
+    const [probeAnswer, setProbeAnswer] = useState<{
+      readonly itemId: string
+      readonly asked: boolean
+      readonly outcome: FaberLoomBoardEffectOutcome | null
+    } | null>(null)
     const [showRetry, setShowRetry] = useState(false)
     const [showClose, setShowClose] = useState(false)
     const [closeReason, setCloseReason] = useState('')
@@ -2825,6 +2841,9 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const effectZone = delegated || effectRunning || outcomeUnknown || outcomeFailed
     const canAdminClose = effectStatus?.canAdminClose === true
     const mayRetry = effectStatus?.idempotent === true
+    // The board says whether its adapter can be asked about the destination
+    // (§9.8); without one the operator states the answer.
+    const probeAvailable = effectStatus?.probe === true
     const effectDeadline = delegated ? effectStatus?.reversalDeadline ?? null : null
     const remainingMs = effectDeadline === null ? 0 : Math.max(0, Date.parse(effectDeadline) - clock)
     const windowOpen = delegated && remainingMs > 0
@@ -3411,6 +3430,32 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       setShowReconcile(false)
     }
 
+    /**
+     * Ask the destination what became of the effect (§9.8). The board settles
+     * the answer it gets and returns the effect projection, so an unknown answer
+     * records the attempt and leaves the item where it is, and the panel reports
+     * what came back instead of choosing.
+     */
+    const probeDestination = (): void => {
+      if (value === undefined) return
+      const id = value.id
+      const run = boardEffectProbe(id, { expectedRowVersion: value.rowVersion })
+      void run.then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        if (result.value === null) return
+        // `probe` is the board's declaration that an adapter could be asked, so
+        // the answer below is the destination's, not a default.
+        setProbeAnswer({ itemId: id, asked: result.value.probe, outcome: result.value.executionOutcome })
+        setTick(count => count + 1)
+      })
+    }
+
+    /** Open the panel that offers the three answers the destination could not give. */
+    const openManualReconcile = (): void => {
+      setReconcileOutcome('DESCONOCIDO')
+      setShowReconcile(true)
+    }
+
     /** Retry the failed execution with the identity it already holds (W-84). */
     const retryExecution = (): void => {
       if (value === undefined) return
@@ -3525,8 +3570,10 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         if (outcomeUnknown) {
           if (event.key === 'c' || event.key === 'C') {
             event.preventDefault()
-            setReconcileOutcome('DESCONOCIDO')
-            setShowReconcile(true)
+            // Conciliar asks the destination when the board's adapter can be
+            // asked, and only otherwise asks the operator for the answer (§9.8).
+            if (probeAvailable) probeDestination()
+            else openManualReconcile()
             return
           }
           // The effect may already exist: correct and discard stay shut so the
@@ -3850,6 +3897,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                       <p className={styles.mesaHintLine}>{t('mesa.effect.failedText')}</p>
                     </>
                   )}
+                  {probeAnswer === null || probeAnswer.itemId !== value.id ? null : (
+                    <p className={styles.mesaHintLine} role="status">
+                      {probeAnswer.asked && probeAnswer.outcome !== null
+                        ? t(PROBE_KEYS[probeAnswer.outcome])
+                        : t('mesa.effect.probe.unavailable')}
+                    </p>
+                  )}
                   <dl className={styles.mesaFacts}>
                     <div><dt>{t('mesa.effect.action')}</dt><dd>{effectActionLabel}</dd></div>
                     <div>
@@ -4014,7 +4068,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                           ref={effectTriggerRef}
                           className={styles.primary}
                           type="button"
-                          onClick={() => { setReconcileOutcome('DESCONOCIDO'); setShowReconcile(true) }}
+                          onClick={probeAvailable ? probeDestination : openManualReconcile}
                         >
                           {t('mesa.effect.reconcile')}
                         </button>
@@ -4262,6 +4316,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 >
                   <strong>{t('mesa.effect.reconcileTitle')}</strong>
                   <span>{t('mesa.effect.reconcileText')}</span>
+                  {probeAvailable ? null : <p className={styles.mesaHintLine}>{t('mesa.effect.reconcileNoProbe')}</p>}
                   <Field label={t('mesa.effect.reconcileTitle')}>
                     <select
                       value={reconcileOutcome}

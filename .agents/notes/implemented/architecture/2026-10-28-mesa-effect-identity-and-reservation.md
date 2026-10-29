@@ -220,6 +220,22 @@ The board never infers idempotency from an action type or a destination string.
 
 A retry against a non-idempotent destination duplicates an effect that nothing on either side can undo.
 
+`effectStatus` publishes that declaration, read from the same `adapters` map `retry` and the consumer read: the action type, whether an adapter serves it, and whether it declares the destination idempotent.
+
+`effectPolicy` publishes the accepted action types with the windows, so a client states the board's list instead of keeping a second one that can disagree with it.
+
+**A destination may be asked what it holds, through the same port.**
+
+`BoardEffectAdapter.probe` is optional. An adapter that declares it answers one of the three outcomes the contract already names; an adapter that omits it makes `probeEffect` write nothing, so the operator keeps stating the outcome and the returned projection reports `adapter.probe: false`.
+
+`probeEffect` settles the answer through `reconcile`, so a probed outcome takes the same audit event, alert, and reservation transition as a stated one.
+
+`DESCONOCIDO` — including a throw, an abort, or the dispatch timeout — records the attempt and leaves the item where it is, because the destination did not answer.
+
+The probe never emits: it asks the message's identity, never calls `send`, and changes no reservation state before the answer settles it.
+
+A probe is not a fourth reconciliation outcome. It feeds the three the contract names.
+
 ### The signature the acceptance requires
 
 **The acceptance asks before it writes, when the access service is mounted.**
@@ -243,6 +259,8 @@ The accepted `authorization` string is still recorded; it is evidence of what th
 5. A `retry` of `DESCONOCIDO` on a destination that has not declared itself idempotent, or a `revert` after the deadline.
 6. A second route to `EJECUTADO` or to a recorded effect. `complete` refuses an item whose `effectKey` has no `CONCILIADA` reservation, and `recordEffect` refuses an item that carries one; both stay available for items that never had an effect.
 7. An action type outside the configured set, or a component that contains the formula separator, reaching `createHash`.
+8. A reconciliation outcome a destination probe invents. A probe answers `CONFIRMADO`, `FALLIDO`, or `DESCONOCIDO`; anything else is a new outcome the contract does not have.
+9. A client that keeps its own action-type list or its own idempotency guess. `effectPolicy` and `effectStatus` are the reads.
 
 ## Alternatives considered
 
@@ -280,4 +298,4 @@ It lost because two adapters would key one effect twice, and the board could no 
 - `complete` and `recordEffect` stay for items that never had an effect and refuse one that carries a key, so W-84 holds on both paths.
 - `action_type` is a closed set of three signed values a deployment extends, and a component holding `:` is refused before hashing.
 - `approveWithExecution` enforces W-16 through `faberloomAccess` when that service is mounted, and a composition without it enforces no signature.
-- The evidence is `CONTRATO_EFECTOS_MESA.md` §6: nine cases covering W-84, W-95, W-96, and W-102, plus the E15 suites of `board-effects.spec.ts` for the sweep, the refusals, the action set, the separator, the destination, and W-16.
+- The evidence is `CONTRATO_EFECTOS_MESA.md` §6: nine cases covering W-84, W-95, W-96, and W-102, plus the E15 suites of `board-effects.spec.ts` for the sweep, the refusals, the action set, the separator, the destination, W-16, the published adapter declaration, and the probed reconciliation.

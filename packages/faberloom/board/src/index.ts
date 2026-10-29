@@ -103,8 +103,10 @@ import type {
   BoardEditDraft,
   BoardEditsInput,
   BoardEffectAdapter,
+  BoardEffectAdapterStatus,
   BoardEffectAlert,
   BoardEffectAlertKind,
+  BoardEffectDispatch,
   BoardEffectEvent,
   BoardEffectExecution,
   BoardEffectInput,
@@ -482,6 +484,7 @@ export class FaberLoomBoard extends Service {
       roundLimit: resolved.iterationRoundLimit,
     }
     this.effectConfig = {
+      actionTypes: [...resolved.effectActionTypes],
       reversalWindowMs: { ...resolved.effectReversalWindowMs },
       retentionDays: resolved.effectRetentionDays,
       dispatchTimeoutMs: resolved.effectDispatchTimeoutMs,
@@ -2398,13 +2401,15 @@ export class FaberLoomBoard extends Service {
   // ── Execution (E15) ─────────────────────────────────────────────────
 
   /**
-   * The resolved effect policy (D-12): the reversal window per action type, the
-   * retention of a settled effect record, the timeout one dispatch attempt gets
-   * from its adapter, and the lease a crashed acceptance is given.
+   * The resolved effect policy (D-12): the action types this deployment accepts,
+   * the reversal window per action type, the retention of a settled effect
+   * record, the timeout one dispatch attempt gets from its adapter, and the lease
+   * a crashed acceptance is given.
    * @returns a copy of the resolved policy.
    */
   effectPolicy(): EffectPolicy {
     return {
+      actionTypes: [...this.effectConfig.actionTypes],
       reversalWindowMs: { ...this.effectConfig.reversalWindowMs },
       retentionDays: this.effectConfig.retentionDays,
       dispatchTimeoutMs: this.effectConfig.dispatchTimeoutMs,
@@ -2757,8 +2762,9 @@ export class FaberLoomBoard extends Service {
 
   /**
    * Everything one item's external effect looks like to the panel: the
-   * reservation, the outbox message, the visible alerts, and whether a
-   * dispatched effect still awaits reconciliation.
+   * reservation, the outbox message, the visible alerts, whether a dispatched
+   * effect still awaits reconciliation, the action type, and the declaration of
+   * the adapter that serves it.
    * @param actor - the authenticated reader.
    * @param id - item id.
    * @returns the effect projection, or null when the item authorized none.
@@ -2768,6 +2774,17 @@ export class FaberLoomBoard extends Service {
     this.authorizeRead(record, actor)
     const effectKey = record.effectKey
     if (effectKey === null) return null
+    return await this.projectEffect(record, effectKey)
+  }
+
+  /**
+   * The effect projection of one item whose key is known. A probe answers with
+   * the same projection as a read, so the panel refreshes from one value.
+   * @param record - the stored item.
+   * @param effectKey - the effect the item authorized.
+   * @returns the effect projection.
+   */
+  private async projectEffect(record: BoardItemRecord, effectKey: string): Promise<BoardEffectStatus> {
     const reservation = (await this.effectReservations()).get(reservationKeyOf(record.companyId, effectKey))
     const message = (await this.effectMessages()).get(outboxKeyOf(record.companyId, effectKey))
     const alerts: BoardEffectAlert[] = []
@@ -2775,15 +2792,33 @@ export class FaberLoomBoard extends Service {
       if (row.companyId !== record.companyId || row.effectKey !== effectKey) continue
       alerts.push(toAlert(row))
     }
+    const actionType = reservation?.actionType ?? message?.actionType ?? null
     return {
       effectKey,
+      actionType,
       reversalDeadline: record.reversalDeadline,
       executionOutcome: record.executionOutcome,
       reservation: reservation === undefined ? null : toReservation(reservation),
       message: message === undefined ? null : toMessage(message),
       alerts: alerts.sort((left, right) => left.updatedAt.localeCompare(right.updatedAt)),
       reconciliationOpen: reservation !== undefined && reservation.status === 'DESPACHADA',
+      adapter: this.adapterStatusOf(actionType),
     }
+  }
+
+  /**
+   * The declaration of the adapter that serves one action type, read from the
+   * registry the dispatcher itself reads. A client therefore states the
+   * destination's idempotency and probe support from the board instead of
+   * keeping a list of its own (W-21).
+   * @param actionType - action type of the effect, or null when none is known.
+   * @returns the adapter status, or null when no adapter serves the type.
+   */
+  private adapterStatusOf(actionType: string | null): BoardEffectAdapterStatus | null {
+    if (actionType === null) return null
+    const adapter = this.adapters.get(actionType)
+    if (adapter === undefined) return null
+    return { actionType, idempotent: adapter.idempotent, probe: adapter.probe !== undefined }
   }
 
   /**
@@ -2852,6 +2887,59 @@ export class FaberLoomBoard extends Service {
       }
       return item
     })
+  }
+
+  /**
+   * Ask the destination what became of a dispatched effect and settle the
+   * answer (§9.8). Only an adapter that declares `probe` can be asked; without
+   * one the command writes nothing, so the operator keeps stating the outcome,
+   * and the returned projection says so through `adapter.probe`. The answer is
+   * one of the three outcomes the contract names: `CONFIRMADO` and `FALLIDO`
+   * settle the effect, and `DESCONOCIDO` — including a throw, an abort, or the
+   * dispatch timeout — records the attempt and leaves the item where it is
+   * (W-21, W-76).
+   *
+   * The answer is settled through {@link reconcile}, so a probed outcome takes
+   * the same audit event, alert, and reservation transition as an operator's.
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param input - optimistic token.
+   * @returns the effect projection after the answer.
+   */
+  async probeEffect(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRetryInput = {}): Promise<BoardEffectStatus> {
+    const current = await this.requireItem(id)
+    this.authorizeOwnerOrAdmin(current, writer, 'settle the item')
+    const effectKey = current.effectKey
+    if (effectKey === null) throw new Error('faberloom: NO_EFFECT — the item holds no reserved effect')
+    const held = (await this.effectReservations()).get(reservationKeyOf(current.companyId, effectKey))
+    if (held === undefined) throw new Error('faberloom: NO_EFFECT — the item holds no reserved effect')
+    const adapter = this.adapters.get(held.actionType)
+    const probe = adapter?.probe?.bind(adapter)
+    if (probe !== undefined) {
+      const message = (await this.effectMessages()).get(outboxKeyOf(current.companyId, effectKey))
+      // A dispatched effect keeps its message; a reservation that outlived its
+      // message still names the effect the destination deduped on.
+      const dispatch: BoardEffectDispatch = message === undefined
+        ? {
+          effectKey,
+          executionId: held.executionId,
+          itemId: id,
+          actionType: held.actionType,
+          destination: held.destination,
+          idempotencyKey: held.idempotencyKey,
+          attempt: 0,
+        }
+        : this.dispatchOf(message, message.attempts)
+      const answer = await this.callAdapter((asked, options) => probe(asked, options), dispatch)
+      await this.reconcile(writer, id, {
+        ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+        outcome: answer.status,
+        ...answer.ref === undefined ? {} : { ref: answer.ref },
+        ...answer.detail === undefined ? {} : { detail: answer.detail },
+      })
+    }
+    const item = await this.requireItem(id)
+    return await this.projectEffect(item, effectKey)
   }
 
   /**
@@ -3527,18 +3615,34 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
+   * The dispatch identity one outbox row names.
+   * @param message - the stored message.
+   * @param attempt - one-based attempt count.
+   * @returns the message an adapter receives.
+   */
+  private dispatchOf(message: EffectOutboxRecord, attempt: number): BoardEffectDispatch {
+    return {
+      effectKey: message.effectKey,
+      executionId: message.executionId,
+      itemId: message.itemId,
+      actionType: message.actionType,
+      destination: message.destination,
+      idempotencyKey: message.idempotencyKey,
+      attempt,
+    }
+  }
+
+  /**
    * Call one adapter under the configured dispatch timeout. A throw, an aborted
    * signal, or an expired timeout is `DESCONOCIDO`: the board cannot claim an
    * effect it did not confirm (W-22).
-   * @param adapter - the registered adapter.
-   * @param message - the stored message.
-   * @param attempt - one-based attempt count.
+   * @param call - the adapter method, sent or probed.
+   * @param dispatch - the message identity it receives.
    * @returns what the destination reported.
    */
-  private async sendEffect(
-    adapter: BoardEffectAdapter,
-    message: EffectOutboxRecord,
-    attempt: number,
+  private async callAdapter(
+    call: (dispatch: BoardEffectDispatch, options: { readonly signal: AbortSignal }) => Promise<BoardEffectResult>,
+    dispatch: BoardEffectDispatch,
   ): Promise<BoardEffectResult> {
     const controller = new AbortController()
     const timeoutMs = this.effectConfig.dispatchTimeoutMs
@@ -3549,23 +3653,30 @@ export class FaberLoomBoard extends Service {
         resolve({ status: 'DESCONOCIDO', detail: 'TIMEOUT' })
       }, timeoutMs)
     })
-    const sent = adapter.send({
-      effectKey: message.effectKey,
-      executionId: message.executionId,
-      itemId: message.itemId,
-      actionType: message.actionType,
-      destination: message.destination,
-      idempotencyKey: message.idempotencyKey,
-      attempt,
-    }, { signal: controller.signal }).catch((error: unknown): BoardEffectResult => ({
+    const answered = call(dispatch, { signal: controller.signal }).catch((error: unknown): BoardEffectResult => ({
       status: 'DESCONOCIDO',
       detail: error instanceof Error ? error.message : String(error),
     }))
     try {
-      return await Promise.race([sent, timeout])
+      return await Promise.race([answered, timeout])
     } finally {
       if (timer !== undefined) clearTimeout(timer)
     }
+  }
+
+  /**
+   * Emit one effect through its adapter.
+   * @param adapter - the registered adapter.
+   * @param message - the stored message.
+   * @param attempt - one-based attempt count.
+   * @returns what the destination reported.
+   */
+  private async sendEffect(
+    adapter: BoardEffectAdapter,
+    message: EffectOutboxRecord,
+    attempt: number,
+  ): Promise<BoardEffectResult> {
+    return await this.callAdapter((dispatch, options) => adapter.send(dispatch, options), this.dispatchOf(message, attempt))
   }
 
   /**

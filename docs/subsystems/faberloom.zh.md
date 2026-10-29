@@ -922,9 +922,10 @@ async recoverTransferredDraft( writer: BoardWriter, id: FaberLoomBoardItemId, in
 async applyIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApplyIterationInput, ): Promise<BoardIterationResult>
 
 /**
- * The resolved effect policy (D-12): the reversal window per action type, the
- * retention of a settled effect record, the timeout one dispatch attempt gets
- * from its adapter, and the lease a crashed acceptance is given.
+ * The resolved effect policy (D-12): the action types this deployment accepts,
+ * the reversal window per action type, the retention of a settled effect
+ * record, the timeout one dispatch attempt gets from its adapter, and the lease
+ * a crashed acceptance is given.
  * @returns a copy of the resolved policy.
  */
 effectPolicy(): EffectPolicy
@@ -1024,8 +1025,9 @@ async pendingEffects(actor: BoardActor): Promise<readonly BoardOutboxMessage[]>
 
 /**
  * Everything one item's external effect looks like to the panel: the
- * reservation, the outbox message, the visible alerts, and whether a
- * dispatched effect still awaits reconciliation.
+ * reservation, the outbox message, the visible alerts, whether a dispatched
+ * effect still awaits reconciliation, the action type, and the declaration of
+ * the adapter that serves it.
  * @param actor - the authenticated reader.
  * @param id - item id.
  * @returns the effect projection, or null when the item authorized none.
@@ -1047,6 +1049,25 @@ async effectStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEf
  * @returns the item after the reconciliation.
  */
 async reconcile(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReconcileInput): Promise<FaberLoomBoardItem>
+
+/**
+ * Ask the destination what became of a dispatched effect and settle the
+ * answer (§9.8). Only an adapter that declares `probe` can be asked; without
+ * one the command writes nothing, so the operator keeps stating the outcome,
+ * and the returned projection says so through `adapter.probe`. The answer is
+ * one of the three outcomes the contract names: `CONFIRMADO` and `FALLIDO`
+ * settle the effect, and `DESCONOCIDO` — including a throw, an abort, or the
+ * dispatch timeout — records the attempt and leaves the item where it is
+ * (W-21, W-76).
+ *
+ * The answer is settled through {@link reconcile}, so a probed outcome takes
+ * the same audit event, alert, and reservation transition as an operator's.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param input - optimistic token.
+ * @returns the effect projection after the answer.
+ */
+async probeEffect(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRetryInput = {}): Promise<BoardEffectStatus>
 
 /**
  * Retry a failed execution. The retry keeps the original `executionId`, the
@@ -4443,8 +4464,9 @@ async mirrorSharedSpaces(): Promise<void>
 
 /**
  * Read the external effect of one item: the reservation that protects it, the
- * durable intention to emit it, the visible alerts it raised, and whether a
- * dispatched effect still awaits reconciliation (E15, §10.1).
+ * durable intention to emit it, the visible alerts it raised, whether a
+ * dispatched effect still awaits reconciliation, and the declaration of the
+ * adapter the board holds for its action type (E15, §9.8, §10.1).
  * @param id - board item id.
  * @returns the effect, or null when the item authorized none.
  */
@@ -4459,11 +4481,12 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('boardEffectAlerts') async boardEffectAlerts(): Promise<readonly FaberLoomBoardEffectAlertRow[]>
 
 /**
- * The effect policy the Mesa offers an executing approval: the action types an
- * acceptance may name and the reversal window of each (D-12).
+ * The effect policy the Mesa offers an executing approval: the action types
+ * the board accepts and the reversal window it resolved for each (D-12). The
+ * board row owns both lists, so the Mesa carries no copy of them.
  * @returns the action types and their windows.
  */
-@Remote('boardEffectPolicy') async boardEffectPolicy(): Promise<FaberLoomBoardEffectPolicy>
+@Remote('boardEffectPolicy') boardEffectPolicy(): Promise<FaberLoomBoardEffectPolicy>
 
 /**
  * Approve the exact artifact and accept one execution for it: the approval,
@@ -4505,6 +4528,19 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the refreshed detail.
  */
 @Remote('boardEffectReconcile') async boardEffectReconcile( id: string, input: FaberLoomBoardReconcileInput, ): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Ask the destination what became of a dispatched effect (§9.8). The board
+ * answers with the effect projection after it settled what the destination
+ * said: `executionOutcome` carries `CONFIRMADO`, `FALLIDO`, or `DESCONOCIDO`,
+ * and `probe` says whether an adapter could be asked at all. An unanswered
+ * probe leaves the item where it is; a missing adapter leaves the operator's
+ * three answers in place.
+ * @param id - board item id.
+ * @param input - optimistic token.
+ * @returns the effect after the answer, or null when the item authorized none.
+ */
+@Remote('boardEffectProbe') async boardEffectProbe(id: string, input: FaberLoomBoardRetryInput): Promise<FaberLoomBoardEffectStatus | null>
 
 /**
  * Close an item administratively while its effect outcome is unknown: Owner or
