@@ -53,6 +53,10 @@ describe('runTaskChat', () => {
     summary: 'Proforma DDP 100 pares' as string | null,
     draftSummary: 'Precio revisado' as string | null,
     rounds: 2,
+    iterationId: 'iter-1',
+    generation: 4,
+    holderSession: 'tab-1',
+    baseVersion: 3,
   }
 
   it('seeds an iteration chat with the pinned summary and unfinished work', async () => {

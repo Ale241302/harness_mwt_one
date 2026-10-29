@@ -892,7 +892,7 @@ export interface FaberLoomBoardEffectAlertRow {
   /** Title of that item, or null when the reader no longer holds it. */
   readonly itemTitle: string | null
   /** Alert class: a late confirmation, or a reservation no item reached. */
-  readonly kind: 'LATE_CONFIRMATION' | 'ORPHAN_RELEASED'
+  readonly kind: 'LATE_CONFIRMATION' | 'ORPHAN_RELEASED' | 'DISPATCH_REFUSED'
   /** Outcome the destination reported, or null. */
   readonly outcome: FaberLoomBoardEffectOutcome | null
   /** Detail the reconciliation left, or null. */

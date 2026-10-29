@@ -1516,7 +1516,11 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         reason: required(args, 'reason'),
         ...rowVersion === undefined ? {} : { expectedRowVersion: rowVersion },
       })
-      return { id: String(closed.item.id), state: closed.item.state, candidateId: closed.candidateId }
+      return {
+        id: String(closed.item.id),
+        state: closed.item.state,
+        candidateId: closed.created === null ? null : String(closed.created.id),
+      }
     },
   },
   {
