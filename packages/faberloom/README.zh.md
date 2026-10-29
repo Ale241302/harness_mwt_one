@@ -37,6 +37,7 @@ kind: "package-group"
 - `@deepseek-ai/dsh-faberloom-routines` — 声明式版本化例程。
 - `@deepseek-ai/dsh-faberloom-execution` — 持久化执行、等待与效应账本。
 - `@deepseek-ai/dsh-faberloom-learning` — 记忆、版本化教学与情境绩效。
+- `@deepseek-ai/dsh-faberloom-autonomy` — 每个单元的自治级别、晋升报告与委派工作的抽样复核。
 - `@deepseek-ai/dsh-faberloom-access` — 身份绑定、连接与选择性自主。
 - `@deepseek-ai/dsh-faberloom-backup` — 知识导出、恢复、完整性与迁移。
 - `@deepseek-ai/dsh-tool-faberloom` — 面向模型的产品工具（`faberloom_*`）。

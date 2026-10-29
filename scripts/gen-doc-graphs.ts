@@ -843,6 +843,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns per-user identity bindings, connection references, and action-scoped autonomy grants that are validated before every external effect and revocable at any time.',
   },
   {
+    key: 'faberloomAutonomy',
+    pkg: 'autonomy',
+    title: 'Autonomy levels per unit',
+    mode: 'core',
+    note: 'Owns the SHADOW, SUPERVISADO, and DELEGADO level of each tenant, space, agent, and action-type unit: it reports the §7.2 promotion thresholds, samples delegated items for later review, and returns a unit to supervision when D-13 is exceeded. It reads closed items through the faberloomAutonomyOutcomes port and promotes only on an explicit Owner or Admin command.',
+  },
+  {
     key: 'faberloomBackup',
     pkg: 'backup',
     title: 'Product knowledge backup and restore',
@@ -890,6 +897,27 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Mailbox inbound receiver',
     mode: 'core',
     note: 'Polls the IMAP mailbox the owner configured and turns new messages into routine events, without marking or moving their mail; idempotency is the engine\'s Message-ID and UID key.',
+  },
+  {
+    key: 'faberloomHarnessProjection',
+    pkg: 'harness-projection',
+    title: 'Scope harness projection',
+    mode: 'core',
+    note: 'Writes the agents, skills, flows, routines, memory, and context of one Workspace or Space into that scope\'s directory, keeps one ownership manifest, and prunes only the paths it declared and no longer writes.',
+  },
+  {
+    key: 'faberloomMirror',
+    pkg: 'mirror',
+    title: 'Deployment mirror',
+    mode: 'core',
+    note: 'Reads the versioned gateway document and applies its rows and skill files locally, then pushes local changes back with a delay; inert until the deployment enables it and names its credential.',
+  },
+  {
+    key: 'skillInstall',
+    pkg: 'skill-install',
+    title: 'Skill installation',
+    mode: 'core',
+    note: 'Installs one skill from an allowed source into the user skill root through the single native path, so a panel and a model tool cannot diverge.',
   },
 ]
 

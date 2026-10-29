@@ -236,6 +236,7 @@
     { "path": "./packages/faberloom/routines" },
     { "path": "./packages/faberloom/execution" },
     { "path": "./packages/faberloom/learning" },
+    { "path": "./packages/faberloom/autonomy" },
     { "path": "./packages/faberloom/access" },
     { "path": "./packages/faberloom/backup" },
     { "path": "./packages/faberloom/mirror" },

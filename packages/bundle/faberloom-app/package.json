@@ -40,6 +40,7 @@
     "@deepseek-ai/dsh-faberloom-agent-plane": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agent-runtime": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-autonomy": "workspace:^",
     "@deepseek-ai/dsh-faberloom-backup": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
     "@deepseek-ai/dsh-faberloom-checks-mwt": "workspace:^",

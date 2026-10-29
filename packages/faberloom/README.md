@@ -37,6 +37,7 @@ The subsystem reference is [docs/subsystems/faberloom.md](../../docs/subsystems/
 - `@deepseek-ai/dsh-faberloom-routines` — declarative versioned routines.
 - `@deepseek-ai/dsh-faberloom-execution` — persistent execution, waits, and the effects ledger.
 - `@deepseek-ai/dsh-faberloom-learning` — memory, versioned teachings, and contextual performance.
+- `@deepseek-ai/dsh-faberloom-autonomy` — the autonomy level per unit, its promotion report, and the sampled review of delegated work.
 - `@deepseek-ai/dsh-faberloom-access` — identity bindings, connections, and elective autonomy.
 - `@deepseek-ai/dsh-faberloom-backup` — knowledge export, restore, integrity, and migrations.
 - `@deepseek-ai/dsh-tool-faberloom` — the model-facing product tools (`faberloom_*`).

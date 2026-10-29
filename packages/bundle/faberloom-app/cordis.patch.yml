@@ -98,6 +98,16 @@
     - id: faberloom-access
       name: '@deepseek-ai/dsh-faberloom-access'
 
+    # Autonomy levels per unit (tenant, space, agent, action type): the §7.2
+    # promotion report, the sampled review of delegated items, and the automatic
+    # suspension of §7.3. Off by default. It reads closed items only through the
+    # `faberloomAutonomyOutcomes` port that the board adapter provides, and
+    # automatic promotion stays disabled until the period and the statistical
+    # minimum are signed (W-53). FABERLOOM_AUTONOMY=1 mounts the row.
+    - id: faberloom-autonomy
+      name: '@deepseek-ai/dsh-faberloom-autonomy'
+      disabled: !!js process.env.FABERLOOM_AUTONOMY !== '1'
+
     - id: faberloom-backup
       name: '@deepseek-ai/dsh-faberloom-backup'
 

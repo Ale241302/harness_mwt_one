@@ -1779,6 +1779,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-agents':
         specifier: workspace:^
         version: link:../../faberloom/agents
+      '@deepseek-ai/dsh-faberloom-autonomy':
+        specifier: workspace:^
+        version: link:../../faberloom/autonomy
       '@deepseek-ai/dsh-faberloom-backup':
         specifier: workspace:^
         version: link:../../faberloom/backup
@@ -6817,6 +6820,22 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+
+  packages/faberloom/autonomy:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain
