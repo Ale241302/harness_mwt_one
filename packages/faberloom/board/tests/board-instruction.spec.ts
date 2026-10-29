@@ -79,6 +79,24 @@ describe('iteration chat attachment (§9.7)', () => {
     expect(await harness.board.getIterationDraft(ACTOR_A, item.id)).toMatchObject({ summary: null })
   })
 
+  it('accepts an instruction over a field the artifact declares before the draft carries it', async () => {
+    const harness = await bootBoard()
+    const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    const created = await harness.board.create(ACTOR_A, {
+      title: 'Proforma declarada',
+      summary: 'borrador',
+      evidence: ['oc:decl'],
+      content: { total: 50 },
+      spaceId: space,
+    })
+    await harness.board.iterate(ACTOR_A, created.id, { baseVersion: created.version, actorSession: 'tab-a' })
+    await harness.board.attachIterationChat(ACTOR_A, created.id, 'chat-1')
+
+    const outcome = await harness.board.applyIterationInstruction('chat-1', '@total = 75')
+    expect(outcome).toMatchObject({ applied: true, changes: [{ field: 'total', value: 75 }] })
+    expect(await harness.board.getIterationDraft(ACTOR_A, created.id)).toMatchObject({ content: { total: 75 } })
+  })
+
   it('refuses to attach a chat to an item without a live attempt', async () => {
     const harness = await bootBoard()
     const space = await seedSpace(harness, ACTOR_A, 'Proformas')

@@ -2298,7 +2298,9 @@ export class FaberLoomBoard extends Service {
       : { id: chat.ownerId, companyId: chat.companyId }
     this.authorizeWrite(current, writer)
     const draft = await this.getIterationDraft(writer, id, chat.iterationId)
-    const fields = ['summary', ...Object.keys(draft?.content ?? {})]
+    // What the item declares plus what the draft already carries: an instruction
+    // may fix a field of the artifact the draft has not touched yet.
+    const fields = [...new Set([...declaredItemFields(current), ...Object.keys(draft?.content ?? {})])]
     const changes = routeFieldInstruction(text, fields)
     if (changes === null) return undefined
     const summary = changes.find(change => change.field === 'summary')
