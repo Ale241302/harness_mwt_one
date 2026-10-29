@@ -34,7 +34,12 @@ export interface EffectPolicy {
   readonly retentionDays: number
   /** Milliseconds one dispatch attempt may take before the outcome is `DESCONOCIDO`. */
   readonly dispatchTimeoutMs: number
+  /** Milliseconds a `RESERVADA` row may sit unreachable before the sweep releases it. */
+  readonly reservationLeaseMs: number
 }
+
+/** Separator the signed formula joins the five components with. */
+export const EFFECT_KEY_SEPARATOR = ':'
 
 /** The five components the signed `effect_key` formula hashes. */
 export interface EffectIdentity {
@@ -52,9 +57,11 @@ export interface EffectIdentity {
 
 /**
  * Normalise the destination before it enters the key. A mail destination is one
- * address list: trimmed, lowercased, empties dropped, duplicates removed, and
- * sorted, so the same recipients in another order produce the same effect. Any
- * other destination is an external system id and is kept as written, trimmed.
+ * address list: trimmed, lowercased, split on any comma, semicolon, or
+ * whitespace, empties dropped, duplicates removed, and sorted, so the same
+ * recipients in another order or with another separator produce the same
+ * effect. Any other destination is an external system id, trimmed and
+ * otherwise kept as written.
  * @param actionType - action type of the effect.
  * @param destination - destination the caller supplied.
  * @returns the normalised destination.
@@ -66,7 +73,7 @@ export function normaliseDestination(actionType: string, destination: string): s
   }
   if (!actionType.startsWith('mail.') && !raw.includes('@')) return raw
   const addresses = raw
-    .split(/[,;]/)
+    .split(/[,;\s]+/)
     .map(part => part.trim().toLowerCase())
     .filter(part => part.length > 0)
   if (addresses.length === 0) {
@@ -76,16 +83,39 @@ export function normaliseDestination(actionType: string, destination: string): s
 }
 
 /**
+ * Refuse a component the signed formula joins. A `:` inside one would let two
+ * different tuples produce the same key string, which no reservation could tell
+ * apart.
+ * @param component - the component value.
+ * @param name - component name, for the refusal.
+ * @returns the component unchanged.
+ */
+function requireSeparatorFree(component: string, name: string): string {
+  if (component.includes(EFFECT_KEY_SEPARATOR)) {
+    throw new Error(
+      `faberloom: EFFECT_COMPONENT_INVALID — the ${name} contains '${EFFECT_KEY_SEPARATOR}',`
+      + ' which the signed formula joins the five components with',
+    )
+  }
+  return component
+}
+
+/**
  * The signed identity of one effect:
  * `sha256(tenant_id + ":" + action_type + ":" + destination + ":" + business_key + ":" + artifact_hash)`.
+ * Every component is refused when it carries the separator, so two tuples never
+ * join into one key string (D-12).
  * @param identity - the five components.
  * @returns the hex digest.
  */
 export function effectKeyOf(identity: EffectIdentity): string {
-  const tenant = identity.tenantId ?? EFFECT_NO_TENANT
   const material = [
-    tenant, identity.actionType, identity.destination, identity.businessKey, identity.artifactHash,
-  ].join(':')
+    requireSeparatorFree(identity.tenantId ?? EFFECT_NO_TENANT, 'tenant'),
+    requireSeparatorFree(identity.actionType, 'action type'),
+    requireSeparatorFree(identity.destination, 'destination'),
+    requireSeparatorFree(identity.businessKey, 'business key'),
+    requireSeparatorFree(identity.artifactHash, 'artifact hash'),
+  ].join(EFFECT_KEY_SEPARATOR)
   return createHash('sha256').update(material).digest('hex')
 }
 
@@ -125,6 +155,22 @@ export function retainUntilOf(policy: EffectPolicy, now: Date): string {
 }
 
 /**
+ * Whether a reservation has outlived the lease a crashed acceptance is given
+ * before the recovery sweep may treat it as unreachable. The row is written
+ * before the item that names it, so a row past its lease that no item records
+ * can only come from an acceptance that never committed.
+ * @param createdAt - ISO-8601 instant the reservation was acquired.
+ * @param policy - resolved effect policy.
+ * @param now - the server clock.
+ * @returns true when the row is at least `reservationLeaseMs` old.
+ */
+export function reservationLeaseExpired(createdAt: string, policy: EffectPolicy, now: Date): boolean {
+  const acquired = Date.parse(createdAt)
+  if (Number.isNaN(acquired)) return false
+  return now.getTime() - acquired >= policy.reservationLeaseMs
+}
+
+/**
  * Storage key of one reservation: one row per tenant and effect key.
  * @param tenantId - tenant of the item.
  * @param effectKey - the effect identity.
@@ -152,6 +198,19 @@ export function outboxKeyOf(tenantId: string | null, effectKey: string): string 
  */
 export function alertKeyOf(tenantId: string | null, effectKey: string): string {
   return `${tenantId ?? EFFECT_NO_TENANT}:${effectKey}`
+}
+
+/**
+ * Storage key of one effect audit event. The effect key addresses the row from
+ * the effect; the event id keeps two writes about one effect apart. Audit rows
+ * exist for effects no item names, so the reservation row cannot hold them.
+ * @param tenantId - tenant of the effect.
+ * @param effectKey - the effect identity.
+ * @param eventId - id of the event.
+ * @returns the storage key.
+ */
+export function effectEventKeyOf(tenantId: string | null, effectKey: string, eventId: string): string {
+  return `${tenantId ?? EFFECT_NO_TENANT}:${effectKey}:${eventId}`
 }
 
 /**

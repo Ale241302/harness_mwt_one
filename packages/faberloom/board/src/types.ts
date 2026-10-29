@@ -1181,29 +1181,67 @@ export interface BoardOutboxMessage {
 
 /**
  * One visible alert. A late confirmation after an administrative close raises
- * it: the outcome of a closed item changed and a human must see it (W-85).
+ * it (W-85); the recovery sweep raises `ORPHAN_RELEASED` when it frees a
+ * reservation no item reaches, so the key does not change hands unremarked.
  */
 export interface BoardEffectAlert {
   /** Tenant that owns the alert. */
   readonly companyId: string | null
   /** Effect the alert is about. */
   readonly effectKey: string
-  /** Item that was closed administratively. */
+  /** Item involved, or the item the orphaned reservation named. */
   readonly itemId: string
-  /** Execution that reported the outcome. */
+  /** Execution that reported the outcome or held the reservation. */
   readonly executionId: string
-  /** Alert class; the contract defines the late confirmation. */
-  readonly kind: 'LATE_CONFIRMATION'
-  /** Outcome the destination reported after the close. */
-  readonly outcome: BoardEffectOutcome
-  /** Optional detail from the reconciliation. */
+  /** Alert class: a late confirmation, or a reservation no item reached. */
+  readonly kind: BoardEffectAlertKind
+  /** Outcome the destination reported, or null when the alert is not about one. */
+  readonly outcome: BoardEffectOutcome | null
+  /** Optional detail from the reconciliation or the sweep. */
   readonly detail: string | null
-  /** Identity that reconciled the effect. */
+  /** Identity that reconciled the effect or ran the sweep. */
   readonly actor: string
   /** ISO-8601 instant the alert was raised. */
   readonly createdAt: string
   /** ISO-8601 instant of the last update. */
   readonly updatedAt: string
+}
+
+/** Alert classes the board raises for one effect. */
+export type BoardEffectAlertKind = 'LATE_CONFIRMATION' | 'ORPHAN_RELEASED'
+
+/**
+ * One audit event of an effect no item can hold. Every other command audits
+ * inside the item aggregate; an orphaned reservation has no item, so its
+ * release is recorded in `effect_events`.
+ */
+export interface BoardEffectEvent {
+  /** Tenant that owns the event. */
+  readonly companyId: string | null
+  /** Effect the event is about. */
+  readonly effectKey: string
+  /** Command that produced it. */
+  readonly command: 'effect.orphaned'
+  /** Identity that ran the command. */
+  readonly actor: string
+  /** Item the reservation named, or null when the row carried none. */
+  readonly itemId: string | null
+  /** Execution that held the reservation, or null. */
+  readonly executionId: string | null
+  /** Structured detail of the command, or null. */
+  readonly detail: Record<string, unknown> | null
+  /** ISO-8601 instant. */
+  readonly at: string
+}
+
+/** What one recovery sweep did: the keys it freed and the rows it wrote. */
+export interface BoardOrphanRecovery {
+  /** Effect keys whose reservation and message the sweep settled. */
+  readonly released: readonly string[]
+  /** Audit events the sweep stored. */
+  readonly events: readonly BoardEffectEvent[]
+  /** Alerts the sweep raised, one per released key. */
+  readonly alerts: number
 }
 
 /** Everything one item's effect looks like to the panel. */

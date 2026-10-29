@@ -43,8 +43,8 @@ effect_key = sha256(tenant_id + ":" + action_type + ":" + destination + ":" + bu
 | 组成部分 | 规范化 | 换一种写法会 |
 |---|---|---|
 | `tenant_id` | 条目的 `companyId`，按预留键的写法书写 | 把一个效果挪进另一个租户 |
-| `action_type` | 调用方给的动作类型，去空白 | 把 `Mail Send` 当成第二个效果 |
-| `destination` | 邮件列表小写、拆分、去重、排序；其他去空白后照原样 | 按收件人顺序给同一封邮件各生成一个键 |
+| `action_type` | 调用方给的动作类型，去空白，对照已接受的集合 | 把 `Mail Send` 当成第二个效果 |
+| `destination` | 邮件列表小写、按逗号、分号或空白拆分、去重、排序；其他去空白后照原样 | 按收件人顺序给同一封邮件各生成一个键 |
 | `business_key` | 条目的 `businessKey`，绝不用条目 id | 把竞争这一情形删掉 |
 | `artifact_hash` | 已批准版本的哈希 | 把一个版本散列成两个键 |
 
@@ -54,15 +54,17 @@ effect_key = sha256(tenant_id + ":" + action_type + ":" + destination + ":" + bu
 
 残余风险是一个真名叫 `sin-empresa` 的租户；那需要新公式，不是第二个哨兵值。
 
-`action_type` 去空白后按原样使用。
+`action_type` 去空白后必须是部署接受的类型，即经校验的 `effectActionTypes` Config 列表。
 
-目前没有任何东西拒绝第二种写法，所以 `Mail Send` 和 `mail.send` 会为同一个效果生成两个键。
+其默认值是 D-12 签署的三个值——`mail.send`、`inventory.reserve`、`shipment.create`——其他任何类型都会在键生成之前以 `EFFECT_ACTION_UNKNOWN` 被拒，因此部署扩展该列表，而不是在 `mail.send` 旁边另造 `Mail Send`。
+
+`registerEffectAdapter` 读取同一个集合，所以配置省略的动作类型的适配器在加载时就会失败，而不是等到第一次派发。
 
 目的地是邮件列表，当动作类型以 `mail.` 开头或值里含 `@`。
 
-该列表依次去空白、小写、按逗号或分号拆分、去空项、去重、排序。
+该列表依次去空白、小写、按逗号、分号或空白拆分、去空项、去重、排序。
 
-空白不是分隔符：`a@x b@y` 与 `a@x;b@y` 是两个键，所以调用方只能写两种被接受的分隔符之一。
+空白也是分隔符：`a@x b@y` 与 `a@x;b@y` 是一个键，所以分隔符的写法无法生成第二个效果。
 
 其他目的地在去空白后照原样使用外部 id，因为看板无法核实某个系统的字母大小写规则。
 
@@ -74,9 +76,11 @@ effect_key = sha256(tenant_id + ":" + action_type + ":" + destination + ":" + bu
 
 效果代码不再对载荷哈希一次，所以一次接受和它的效果不可能指向同一份文档的两个版本。
 
-各组成部分用 `:` 拼接，而没有任何东西拒绝含有它的组成部分。
+各组成部分用 `:` 拼接，`effectKeyOf` 会以 `EFFECT_COMPONENT_INVALID` 拒绝任何含有它的组成部分，并指明是哪一个。
 
-因此一个带冒号的业务键可以让两个不同的元组共用同一个字符串；要堵住它需要 D-12 下的新公式，不是转义。
+因此一个带冒号的业务键再也不能让两个不同的元组共用同一个字符串。
+
+这一拒绝取消了 D-12 下再开新公式的需要：分隔符保留，五个组成部分保持各自的写法。
 
 **同一执行的重试保留键。**
 
@@ -122,9 +126,17 @@ effect_key = sha256(tenant_id + ":" + action_type + ":" + destination + ":" + bu
 
 在预留写入与条目提交之间崩溃，会留下一行条目从未记录过的 `RESERVADA`。
 
-它自己的执行在重试时修复它，因为接管守卫只拒绝另一个执行。
+`recoverOrphanedReservations` 就是那次修复：一行早于经校验的 `effectReservationLeaseMs` Config 字段、且没有任何条目记录其键的行会被释放、其消息被取消、在 `effect_events` 中保存 `effect.orphaned` 审计事件，并抛出 `ORPHAN_RELEASED` 告警。
 
-该键的其他任何接受都被拒绝，而 `pruneEffects` 只删已结算的行，所以这个键一直被占着。
+清扫是 `pruneEffects` 的同级命令而不是它的一部分，因为释放一个声明与删除一行保留记录是不同的运维决定。
+
+键被条目记录的行无论处于什么状态都不会被清扫：失败的执行仍需要它的预留来重试。
+
+租约把清扫挡在接受仍在提交的行之外，而活过租约的孤儿正是键必须易手的唯一情形。
+
+审计行存在的原因是其他每条命令都在条目聚合里审计，而孤儿没有条目。
+
+`effect_events` 与其他效果行使用同一保留期被清扫。
 
 **键由预留行本身声明，不是由索引声明。**
 
@@ -208,6 +220,20 @@ SPEC §10.1 写的是部分唯一索引，这个存储建不出来。
 
 对非幂等目的地重试，会复制一个两侧都无法撤销的效果。
 
+### 接受操作要求的签名
+
+**挂载了访问服务时，接受在写入之前先询问。**
+
+`approveWithExecution` 在解析出身份之后、获取预留或写入消息之前，向 `faberloomAccess` 调用 `requireSignature(writer, actionType)`。
+
+受保护动作类型的拒绝会原样传播，因此未签名的接受不留预留、不留消息，也不改变条目状态（W-16）。
+
+看板自己不保留受保护动作类型的列表：`protectedActionTypes` 是访问配置，这里再来一份只会与它矛盾。
+
+没有该服务的组合不执行签名校验，而 `approveWithExecution` 的 JSDoc 会明说这一点，而不是暗示一个该组合做不到的检查。
+
+被接受的 `authorization` 字符串仍会被记录；它是调用方所出示内容的证据，不是看板已核实的证明。
+
 ### 本备忘之后禁止
 
 1. 第二个键公式，无论在适配器、控制台任务、MCP 接口还是测试辅助里。一个函数，一种写法。
@@ -215,7 +241,8 @@ SPEC §10.1 写的是部分唯一索引，这个存储建不出来。
 3. 没有消费者检查的派发：不从接受路径发出，也不设绕过它的已核实快路径。
 4. 释放预留的 `admin_close`。它关闭条目；预留在核对之前保持 `DESPACHADA`。
 5. 对尚未声明自己幂等的目的地做 `DESCONOCIDO` 的 `retry`，或在截止之后接受回退。
-6. 通往 `EJECUTADO` 或记录效果的第二条路径：`complete` 和 `recordEffect` 早于预留。
+6. 通往 `EJECUTADO` 或记录效果的第二条路径。`complete` 拒绝 `effectKey` 没有 `CONCILIADA` 预留的条目，`recordEffect` 拒绝携带该键的条目；两者仍为从未有过效果的条目保留。
+7. 配置集合之外的动作类型，或含有公式分隔符的组成部分，到达 `createHash`。
 
 ## 考虑过的替代方案
 
@@ -243,12 +270,14 @@ SPEC §10.1 写的是部分唯一索引，这个存储建不出来。
 
 ## 后果
 
-- 三张新表：`effect_reservations`、`effect_outbox`、`effect_alerts`，以及三个默认 null 的新条目字段。
+- 四张新表：`effect_reservations`、`effect_outbox`、`effect_alerts`、`effect_events`，以及三个默认 null 的新条目字段。
 - 已有的行照常加载，因为每个新字段都默认为 null，域版本仍是 1。
 - 看板在第二次发送之前拒绝竞争者，让回退不参与竞速，并在重试时不生成新身份。
 - 租户隔离是行键：没有键跨过 `companyId`，所以另一个租户的预留永远不会被读到（契约 §2.7）。
-- `pruneEffects` 删除超过 `effectRetentionDays`（90 天）的已结算行；活预留和未结算消息永不清理。
-- 一行孤儿 `RESERVADA` 会一直占着它的键，直到它自己的执行重试；没有命令能结算一行条目从未记录过键的预留。
-- `complete` 和 `recordEffect` 仍能在没有预留的情况下到达 `EJECUTADO` 并记录效果，所以 W-84 和 W-96 在那两条路径上不成立。
-- `action_type` 没有封闭集合，含 `:` 的组成部分不被拒绝；两者都是公式层面的缺口，不是规范化选择。
-- 证据是 `CONTRATO_EFECTOS_MESA.md` §6：九个用例，覆盖 W-84、W-95、W-96、W-102。
+- `pruneEffects` 删除超过 `effectRetentionDays`（90 天）的已结算行，也包括同年龄的审计事件；活预留和未结算消息永不清理。
+- `recoverOrphanedReservations` 释放超过 `effectReservationLeaseMs`（300000）且没有任何条目记录的 `RESERVADA` 行，因此一次崩溃的接受只花掉一个租约，而不是那个键。
+- 清扫会读取该租户的每个条目以得知哪些键被记录，因为存储没有 `effectKey` 的二级索引；它是运维节奏，而不是每次派发的检查。
+- `complete` 和 `recordEffect` 为从未有过效果的条目保留，并拒绝携带键的条目，所以 W-84 在两条路径上都成立。
+- `action_type` 是三个签署值的封闭集合，部署可扩展；含 `:` 的组成部分在哈希之前被拒绝。
+- 挂载了该服务时，`approveWithExecution` 通过 `faberloomAccess` 执行 W-16；没有它的组合不执行签名校验。
+- 证据是 `CONTRATO_EFECTOS_MESA.md` §6：九个用例，覆盖 W-84、W-95、W-96、W-102，外加 `board-effects.spec.ts` 的 E15 用例，覆盖清扫、两处拒绝、动作集合、分隔符、目的地与 W-16。

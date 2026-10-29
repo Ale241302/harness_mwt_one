@@ -14,6 +14,7 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomSpaces from '../../../spaces/src/index.ts'
+import FaberLoomAccess, { type Config as AccessConfig } from '../../../access/src/index.ts'
 import FaberLoomBoard from '../../src/index.ts'
 import { declaredChecks, registerProformaChecks } from '../../src/checks.ts'
 import { boardDomainSpec, type BoardItemRecord, type BoardIterationDraftRecord } from '../../src/spec.ts'
@@ -74,15 +75,21 @@ export interface BoardHarness {
 
 /**
  * Boot the storage/domain composition the board package runs on.
- * @param options - a shared media pool, the board configuration row, and how the
- * harness mounts the proforma controls: `permissive` (the default) registers a
- * passing stub for every declared control so the command suites can approve a
- * proforma that carries no artifact content, and `none` leaves the registry
- * empty so a suite can prove a missing adapter rejects the approval.
+ * @param options - a shared media pool, the board configuration row, how the
+ * harness mounts the proforma controls (`permissive` registers a passing stub
+ * for every declared control so the command suites can approve a proforma that
+ * carries no artifact content; `none` leaves the registry empty so a suite can
+ * prove a missing adapter rejects the approval), and the access configuration
+ * when a suite needs the signature gate W-16 mounts.
  * @returns the context, board, Spaces service, and media pool.
  */
 export async function bootBoard(
-  options: { pool?: MemoryMediaPool; board?: BoardConfig; checks?: 'permissive' | 'none' } = {},
+  options: {
+    pool?: MemoryMediaPool
+    board?: BoardConfig
+    checks?: 'permissive' | 'none'
+    access?: AccessConfig
+  } = {},
 ): Promise<BoardHarness> {
   const pool = options.pool ?? new MemoryMediaPool()
   const ctx = new Context()
@@ -92,6 +99,7 @@ export async function bootBoard(
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
   await ctx.plugin(FaberLoomSpaces)
+  if (options.access !== undefined) await ctx.plugin(FaberLoomAccess, options.access)
   await ctx.plugin(FaberLoomBoard, options.board)
   if (options.checks !== 'none') {
     for (const definition of declaredChecks('proforma')) {

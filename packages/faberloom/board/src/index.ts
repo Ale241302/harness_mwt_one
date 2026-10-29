@@ -25,6 +25,7 @@ import {
   type BoardKeyRecord,
   type BoardReferenceRecord,
   type EffectAlertRecord,
+  type EffectEventRecord,
   type EffectOutboxRecord,
   type EffectReservationRecord,
 } from './spec.ts'
@@ -35,6 +36,7 @@ import { fieldOriginsOf, mergeOrigins, revisionContent } from './projection.ts'
 import {
   alertKeyOf,
   effectCommandFor,
+  effectEventKeyOf,
   effectKeyOf,
   legacyStatusOf,
   messageIsDispatchable,
@@ -44,6 +46,7 @@ import {
   reservationIsLive,
   reservationIsSettled,
   reservationKeyOf,
+  reservationLeaseExpired,
   retainUntilOf,
   reversalDeadlineOf,
   reversalWindowMs,
@@ -101,6 +104,8 @@ import type {
   BoardEditsInput,
   BoardEffectAdapter,
   BoardEffectAlert,
+  BoardEffectAlertKind,
+  BoardEffectEvent,
   BoardEffectExecution,
   BoardEffectInput,
   BoardEffectOutcome,
@@ -119,6 +124,7 @@ import type {
   BoardIterationLockInput,
   BoardIterationResult,
   BoardIterationStatus,
+  BoardOrphanRecovery,
   BoardOutboxMessage,
   BoardOutboxStatus,
   BoardPauseIterationInput,
@@ -184,10 +190,22 @@ export interface Config {
    * a deployment maps `FABERLOOM_REVERSAL_WINDOW_MS` onto this field for mail.
    */
   readonly effectReversalWindowMs?: Record<string, number>
+  /**
+   * Action types an acceptance may name. D-12 signs the three defaults, so a
+   * deployment extends the list instead of letting `Mail Send` and `mail.send`
+   * become two effects; an unlisted type is refused with `EFFECT_ACTION_UNKNOWN`.
+   */
+  readonly effectActionTypes?: readonly string[]
   /** Days a settled effect record stays stored before `pruneEffects` may delete it. */
   readonly effectRetentionDays?: number
   /** Milliseconds one dispatch attempt may take before the outcome is `DESCONOCIDO`. */
   readonly effectDispatchTimeoutMs?: number
+  /**
+   * Milliseconds a `RESERVADA` row may sit unreachable before
+   * `recoverOrphanedReservations` releases it. It must outlast the three writes
+   * one acceptance makes, so a row younger than the lease is never swept.
+   */
+  readonly effectReservationLeaseMs?: number
 }
 
 /** Validated board configuration. */
@@ -199,8 +217,10 @@ export const Config = z.object({
   iterationDraftRetentionDays: z.number().int().positive().default(30),
   iterationRoundLimit: z.number().int().positive().default(5),
   effectReversalWindowMs: z.record(z.string(), z.number().int().min(0)).default({ 'mail.send': 900_000 }),
+  effectActionTypes: z.array(z.string().min(1)).default(['mail.send', 'inventory.reserve', 'shipment.create']),
   effectRetentionDays: z.number().int().positive().default(90),
   effectDispatchTimeoutMs: z.number().int().positive().default(30_000),
+  effectReservationLeaseMs: z.number().int().positive().default(300_000),
 })
 
 /** Discard reasons signed in the specification. */
@@ -242,6 +262,19 @@ interface BoardSpace {
 /** The `faberloomSpaces` surface the board reads through `ctx.get`. */
 interface BoardSpaces {
   get(actor: { id: string; companyId?: string | undefined; role: string; readOnly: boolean }, id: string): Promise<BoardSpace>
+}
+
+/**
+ * The `faberloomAccess` surface the board reads through `ctx.get` (T5.7). The
+ * board declares the obligation W-16 puts on an acceptance and lets the access
+ * service decide which action types are protected and whether a signature covers
+ * one; a refusal propagates unchanged.
+ */
+interface BoardAccess {
+  requireSignature(
+    actor: { id: string; companyId?: string | undefined },
+    actionType: string,
+  ): Promise<unknown>
 }
 
 /** One registered check implementation and the source port it reads. */
@@ -415,6 +448,8 @@ export class FaberLoomBoard extends Service {
   private readonly confidenceThreshold: number
   private readonly iterationConfig: IterationPolicy
   private readonly effectConfig: EffectPolicy
+  /** Action types this deployment accepts for an acceptance (D-12). */
+  private readonly effectActionTypes: ReadonlySet<string>
   private readonly claims = new Map<string, Promise<unknown>>()
   /**
    * Registered check implementations, keyed by artifact type and check id. The
@@ -450,7 +485,9 @@ export class FaberLoomBoard extends Service {
       reversalWindowMs: { ...resolved.effectReversalWindowMs },
       retentionDays: resolved.effectRetentionDays,
       dispatchTimeoutMs: resolved.effectDispatchTimeoutMs,
+      reservationLeaseMs: resolved.effectReservationLeaseMs,
     }
+    this.effectActionTypes = new Set(resolved.effectActionTypes)
   }
 
   private domain(): Promise<Domain<typeof boardDomainSpec>> {
@@ -492,6 +529,10 @@ export class FaberLoomBoard extends Service {
 
   private async effectAlerts(): Promise<KvTable<string, EffectAlertRecord>> {
     return (await this.domain()).table('effect_alerts')
+  }
+
+  private async effectEvents(): Promise<KvTable<string, EffectEventRecord>> {
+    return (await this.domain()).table('effect_events')
   }
 
   private draftId(itemId: FaberLoomBoardItemId | string, userId: string): string {
@@ -2358,8 +2399,8 @@ export class FaberLoomBoard extends Service {
 
   /**
    * The resolved effect policy (D-12): the reversal window per action type, the
-   * retention of a settled effect record, and the timeout one dispatch attempt
-   * gets from its adapter.
+   * retention of a settled effect record, the timeout one dispatch attempt gets
+   * from its adapter, and the lease a crashed acceptance is given.
    * @returns a copy of the resolved policy.
    */
   effectPolicy(): EffectPolicy {
@@ -2367,6 +2408,7 @@ export class FaberLoomBoard extends Service {
       reversalWindowMs: { ...this.effectConfig.reversalWindowMs },
       retentionDays: this.effectConfig.retentionDays,
       dispatchTimeoutMs: this.effectConfig.dispatchTimeoutMs,
+      reservationLeaseMs: this.effectConfig.reservationLeaseMs,
     }
   }
 
@@ -2380,12 +2422,47 @@ export class FaberLoomBoard extends Service {
    * @returns the disposer that removes this registration.
    */
   registerEffectAdapter(actionType: string, adapter: BoardEffectAdapter): () => void {
-    const key = actionType.trim()
-    if (key.length === 0) throw new Error('faberloom: EFFECT_NO_ADAPTER — an adapter needs an action type')
+    const key = this.requireAcceptedActionType(actionType)
     this.adapters.set(key, adapter)
     return () => {
       if (this.adapters.get(key) === adapter) this.adapters.delete(key)
     }
+  }
+
+  /**
+   * Refuse an action type this deployment does not accept. The accepted set is
+   * a Config field whose defaults D-12 signs, so an adapter or an acceptance
+   * cannot mint a second spelling of one effect.
+   * @param actionType - the caller's action type.
+   * @returns the trimmed action type.
+   */
+  private requireAcceptedActionType(actionType: string): string {
+    const key = actionType.trim()
+    if (!this.effectActionTypes.has(key)) {
+      throw new Error(
+        `faberloom: EFFECT_ACTION_UNKNOWN — ${key.length === 0 ? '(empty)' : key} is not an accepted action type,`
+        + ` accepted: ${[...this.effectActionTypes].join(', ')}`,
+      )
+    }
+    return key
+  }
+
+  /**
+   * Ask the mounted access service for the CEO signature W-16 requires before a
+   * protected action type leaves. A refusal — missing, revoked, or expired —
+   * propagates unchanged, and nothing is written.
+   *
+   * A composition without `faberloomAccess` enforces no signature: the board
+   * does not know which action types are protected, so it cannot decide, and the
+   * caller of such a composition owns that gap.
+   * @param writer - the acting identity; its company scopes the signature.
+   * @param actionType - the action type the acceptance names.
+   */
+  private async requireActionSignature(writer: BoardWriter, actionType: string): Promise<void> {
+    const access = this.ctx.get('faberloomAccess') as BoardAccess | undefined
+    if (access === undefined) return
+    const actor = this.actorOf(writer)
+    await access.requireSignature({ id: actor.id, companyId: actor.companyId }, actionType)
   }
 
   /**
@@ -2395,6 +2472,11 @@ export class FaberLoomBoard extends Service {
    * (§10.1). The reservation is per tenant and `effect_key`, so a competing
    * execution of the same effect is refused with `EFFECT_TAKEN` while it is
    * `RESERVADA` or `DESPACHADA`.
+   *
+   * When the `faberloomAccess` service is mounted, the acceptance asks it for
+   * the CEO signature W-16 requires and lets its refusal propagate unchanged;
+   * a composition without that service enforces no signature here, because the
+   * board cannot tell which action types are protected.
    *
    * The item lands in `DELEGADO_EN_VENTANA` when the action type has a reversal
    * window, and in `EJECUCION_PENDIENTE` when it has none (D-12). The controls
@@ -2414,6 +2496,7 @@ export class FaberLoomBoard extends Service {
     this.requireRowVersion(current, input.expectedRowVersion)
     this.requireApprovable(current, input)
     const identity = this.requireEffectIdentity(current, input)
+    await this.requireActionSignature(writer, identity.actionType)
     const confirmations = input.confirmations ?? []
     const report = await this.evaluateChecks(current, id)
     this.requireChecksPassable(report, confirmations)
@@ -2761,6 +2844,7 @@ export class FaberLoomBoard extends Service {
           effectKey,
           itemId: id,
           executionId: held.executionId,
+          kind: 'LATE_CONFIRMATION',
           outcome: input.outcome,
           detail: input.detail ?? null,
           actorId: actor.id,
@@ -2941,7 +3025,8 @@ export class FaberLoomBoard extends Service {
   /**
    * Delete settled effect records past their retention window. A reservation
    * that is still live and a message that was never settled are never pruned:
-   * they carry a decision that a human may still need to see.
+   * they carry a decision that a human may still need to see. Audit events of
+   * effects no item names are pruned by the same window.
    * @param actor - the tenant the operator acts for.
    * @returns how many rows were removed.
    */
@@ -2969,14 +3054,112 @@ export class FaberLoomBoard extends Service {
       if (limit > now) continue
       if (await alerts.delete(key)) removed += 1
     }
+    const events = await this.effectEvents()
+    for (const [key, row] of [...events.entries()]) {
+      if (row.companyId !== tenant) continue
+      const limit = Date.parse(row.at) + this.effectConfig.retentionDays * 86_400_000
+      if (limit > now) continue
+      if (await events.delete(key)) removed += 1
+    }
     return removed
+  }
+
+  /**
+   * Release the reservations no item reaches and no consumer can emit.
+   *
+   * An acceptance writes the reservation and its message before it commits the
+   * item. A crash in between leaves a `RESERVADA` row whose key no item records:
+   * `revert`, `reconcile`, and `pruneEffects` all need an item for it, so the key
+   * would stay taken and every other execution of that effect would be refused
+   * with `EFFECT_TAKEN`. A row older than `effectReservationLeaseMs` is released,
+   * its message cancelled, an audit event stored, and an alert raised (D-12).
+   *
+   * A row whose key an item records is never swept, in whatever state: a failed
+   * execution still needs its reservation to retry (W-84). A row younger than the
+   * lease is left alone, because its acceptance may still be committing.
+   * @param actor - the tenant the operator acts for.
+   * @returns the released keys and the rows the sweep wrote.
+   */
+  async recoverOrphanedReservations(actor: BoardActor): Promise<BoardOrphanRecovery> {
+    const tenant = actor.companyId ?? null
+    return await this.serial(tenant, async () => {
+      const now = new Date()
+      const recorded = await this.recordedEffectKeys(tenant)
+      const reservations = await this.effectReservations()
+      const audit = await this.effectEvents()
+      const released: string[] = []
+      const events: BoardEffectEvent[] = []
+      let alerts = 0
+      for (const [, row] of [...reservations.entries()]) {
+        if (row.companyId !== tenant || row.status !== 'RESERVADA') continue
+        if (recorded.has(row.effectKey)) continue
+        if (!reservationLeaseExpired(row.createdAt, this.effectConfig, now)) continue
+        await this.cancelMessage(tenant, row.effectKey, 'ORPHANED_RESERVATION')
+        if (!await this.releaseReservation(tenant, row.effectKey, 'orphaned-reservation')) continue
+        const at = new Date().toISOString()
+        const event: EffectEventRecord = {
+          companyId: tenant,
+          effectKey: row.effectKey,
+          command: 'effect.orphaned',
+          actor: actor.id,
+          itemId: row.itemId,
+          executionId: row.executionId,
+          detail: { leaseMs: this.effectConfig.reservationLeaseMs, createdAt: row.createdAt },
+          at,
+        }
+        await audit.put(effectEventKeyOf(tenant, row.effectKey, randomUUID()), event)
+        await this.raiseAlert({
+          companyId: tenant,
+          effectKey: row.effectKey,
+          itemId: row.itemId,
+          executionId: row.executionId,
+          kind: 'ORPHAN_RELEASED',
+          outcome: null,
+          detail: `the reservation outlived its ${this.effectConfig.reservationLeaseMs} ms lease`
+            + ' and no item records its key',
+          actorId: actor.id,
+        })
+        released.push(row.effectKey)
+        events.push(event)
+        alerts += 1
+      }
+      return { released, events, alerts }
+    })
+  }
+
+  /**
+   * Every effect key an item of one tenant records. An item keeps its key after
+   * a failed or unknown outcome, so only a key no item records is unreachable.
+   * @param companyId - the tenant to scan.
+   * @returns the effect keys the tenant's items name.
+   */
+  private async recordedEffectKeys(companyId: string | null): Promise<Set<string>> {
+    const keys = new Set<string>()
+    for (const [, record] of (await this.items()).entries()) {
+      if (record.companyId !== companyId || record.effectKey === null) continue
+      keys.add(record.effectKey)
+    }
+    return keys
+  }
+
+  /**
+   * Whether the reservation of one effect reached `CONCILIADA`, the only state in
+   * which a confirmation settled the effect (contract §2).
+   * @param companyId - tenant of the effect.
+   * @param effectKey - the effect identity.
+   * @returns true when a stored reservation of the key is conciliated.
+   */
+  private async reservationIsConciliated(companyId: string | null, effectKey: string): Promise<boolean> {
+    const held = (await this.effectReservations()).get(reservationKeyOf(companyId, effectKey))
+    return held !== undefined && held.status === 'CONCILIADA'
   }
 
   /**
    * Resolve the five components of the effect identity from the item and the
    * acceptance. The contract never omits the tenant, the business key, or the
    * artifact hash, so an item missing either of the last two is refused here
-   * instead of producing a key over a hole.
+   * instead of producing a key over a hole; an action type outside the accepted
+   * set is refused with `EFFECT_ACTION_UNKNOWN` before anything is hashed.
    * @param record - the item being accepted.
    * @param input - the execution identity the caller supplied.
    * @returns the resolved identity, including the derived idempotency key.
@@ -2985,10 +3168,10 @@ export class FaberLoomBoard extends Service {
     record: BoardItemRecord,
     input: BoardExecutionInput,
   ): ResolvedEffect {
-    const actionType = input.actionType.trim()
-    if (actionType.length === 0) {
+    if (input.actionType.trim().length === 0) {
       throw new Error('faberloom: EFFECT_IDENTITY_INCOMPLETE — the execution needs an action type')
     }
+    const actionType = this.requireAcceptedActionType(input.actionType)
     const executionId = input.executionId.trim()
     if (executionId.length === 0) {
       throw new Error('faberloom: EFFECT_IDENTITY_INCOMPLETE — the execution needs an execution id')
@@ -3548,16 +3731,18 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Raise the visible alert of a late confirmation after an administrative
-   * close. One alert per effect; a second late confirmation updates it (W-85).
-   * @param input - the effect, the outcome, and the identity that reconciled.
+   * Raise one visible alert for an effect, or update the one it already holds.
+   * A late confirmation after an administrative close raises
+   * `LATE_CONFIRMATION` (W-85); the recovery sweep raises `ORPHAN_RELEASED`.
+   * @param input - the effect, the alert class, its outcome, and the identity that acted.
    */
   private async raiseAlert(input: {
     readonly companyId: string | null
     readonly effectKey: string
-    readonly itemId: FaberLoomBoardItemId
+    readonly itemId: string
     readonly executionId: string
-    readonly outcome: BoardEffectOutcome
+    readonly kind: BoardEffectAlertKind
+    readonly outcome: BoardEffectOutcome | null
     readonly detail: string | null
     readonly actorId: string
   }): Promise<void> {
@@ -3570,7 +3755,7 @@ export class FaberLoomBoard extends Service {
       effectKey: input.effectKey,
       itemId: input.itemId,
       executionId: input.executionId,
-      kind: 'LATE_CONFIRMATION',
+      kind: input.kind,
       outcome: input.outcome,
       detail: input.detail,
       actor: input.actorId,
@@ -3770,14 +3955,30 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Complete an approved item.
+   * Complete an approved item that carries no live effect.
+   *
+   * An item that accepted an execution closes through its reconciliation, never
+   * through this command: it is refused with `EFFECT_NOT_CONCILIATED` unless the
+   * reservation of its `effectKey` is `CONCILIADA` (W-84). An item that never had
+   * an effect keeps the legacy path around `complete`.
    * @param writer - the acting identity.
    * @param id - item id.
    * @returns the updated item.
    */
   async complete(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem> {
+    const record = await this.requireItem(id)
+    this.authorizeWrite(record, writer)
+    const effectKey = record.effectKey
+    if (effectKey !== null && !await this.reservationIsConciliated(record.companyId, effectKey)) {
+      throw new Error(
+        'faberloom: EFFECT_NOT_CONCILIATED — an item with a reserved effect closes through its reconciliation',
+      )
+    }
     return await this.mutate(writer, id, 'complete', (current) => {
       if (stateOf(current) !== 'APROBADO') throw new Error('faberloom: NO_ACCESS — item is not approved')
+      if (current.effectKey !== effectKey) {
+        throw new Error('faberloom: STALE_ROW — the item effect changed since it was read')
+      }
       return { ...current, state: 'EJECUTADO', status: 'completed' }
     })
   }
@@ -3872,8 +4073,13 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Record an effect. Approval never sends: an explicit authorization is
-   * required, and a stale or unapproved item refuses.
+   * Record an effect on an item that never had a reserved one. Approval never
+   * sends: an explicit authorization is required, and a stale or unapproved item
+   * refuses.
+   *
+   * An item that carries an `effectKey` is refused with `EFFECT_VIA_OUTBOX`: its
+   * effect has a reservation and a message, so it is recorded by the consumer's
+   * outcome, and this path would bypass `EFFECT_TAKEN` (W-84).
    * @param writer - the acting identity.
    * @param id - item id.
    * @param input - external reference, authorization, and optional detail.
@@ -3885,6 +4091,11 @@ export class FaberLoomBoard extends Service {
     }
     return await this.mutate(writer, id, 'effect', (current) => {
       if (current.stale) throw new Error('faberloom: REVALIDATION_REQUIRED — the item changed after approval')
+      if (current.effectKey !== null) {
+        throw new Error(
+          'faberloom: EFFECT_VIA_OUTBOX — an item with a reserved effect records it through the outbox',
+        )
+      }
       if (stateOf(current) !== 'APROBADO') throw new Error('faberloom: NO_ACCESS — item is not approved')
       return {
         ...current,

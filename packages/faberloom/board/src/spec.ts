@@ -344,25 +344,26 @@ export const effectOutboxRecord = z.object({
 export type EffectOutboxRecord = z.infer<typeof effectOutboxRecord>
 
 /**
- * One visible alert, keyed `<tenant>:<effect_key>`: a late confirmation after
- * an administrative close must reach a human without reopening the item (W-85).
+ * One visible alert, keyed `<tenant>:<effect_key>`: a late confirmation after an
+ * administrative close must reach a human without reopening the item (W-85), and
+ * a reservation the recovery sweep released must not pass unnoticed.
  */
 export const effectAlertRecord = z.object({
   /** Tenant that owns the alert. */
   companyId: z.string().nullable().default(null),
   /** Effect the alert is about. */
   effectKey: z.string(),
-  /** Item that was closed administratively. */
+  /** Item involved, or the item the orphaned reservation named. */
   itemId: z.string(),
-  /** Execution that reported the outcome. */
+  /** Execution that reported the outcome or held the reservation. */
   executionId: z.string(),
-  /** Alert class; the contract defines the late confirmation. */
-  kind: z.literal('LATE_CONFIRMATION'),
-  /** Outcome the destination reported after the close. */
-  outcome: outcomeRecord,
-  /** Optional detail from the reconciliation. */
+  /** Alert class: a late confirmation, or a reservation no item reached. */
+  kind: z.union([z.literal('LATE_CONFIRMATION'), z.literal('ORPHAN_RELEASED')]),
+  /** Outcome the destination reported, or null when the alert is not about one. */
+  outcome: outcomeRecord.nullable().default(null),
+  /** Optional detail from the reconciliation or the sweep. */
   detail: z.string().nullable().default(null),
-  /** Identity that reconciled the effect. */
+  /** Identity that reconciled the effect or ran the sweep. */
   actor: z.string(),
   /** ISO-8601 instant the alert was raised. */
   createdAt: z.string(),
@@ -374,9 +375,35 @@ export const effectAlertRecord = z.object({
 export type EffectAlertRecord = z.infer<typeof effectAlertRecord>
 
 /**
+ * One audit event of an effect that no item can hold: the item aggregate is the
+ * audit trail of every other command, and an orphaned reservation has no item.
+ */
+export const effectEventRecord = z.object({
+  /** Tenant that owns the event. */
+  companyId: z.string().nullable().default(null),
+  /** Effect the event is about. */
+  effectKey: z.string(),
+  /** Command that produced it. */
+  command: z.literal('effect.orphaned'),
+  /** Identity that ran the command. */
+  actor: z.string(),
+  /** Item the reservation named, or null when the row carried none. */
+  itemId: z.string().nullable().default(null),
+  /** Execution that held the reservation. */
+  executionId: z.string().nullable().default(null),
+  /** Structured detail of the command. */
+  detail: z.record(z.string(), z.unknown()).nullable().default(null),
+  /** ISO-8601 instant. */
+  at: z.string(),
+})
+
+/** One stored effect audit event. */
+export type EffectEventRecord = z.infer<typeof effectEventRecord>
+
+/**
  * The board domain spec: item aggregates, the key-claim table, the edit-draft
  * table, the iteration-draft table, the tenant claims on opaque references, and
- * the external-effect reservation, outbox, and alert tables.
+ * the external-effect reservation, outbox, alert, and audit tables.
  */
 export const boardDomainSpec = defineDomain({
   name: 'faberloom_board',
@@ -390,5 +417,6 @@ export const boardDomainSpec = defineDomain({
     effect_reservations: domainTable<string, EffectReservationRecord>(effectReservationRecord),
     effect_outbox: domainTable<string, EffectOutboxRecord>(effectOutboxRecord),
     effect_alerts: domainTable<string, EffectAlertRecord>(effectAlertRecord),
+    effect_events: domainTable<string, EffectEventRecord>(effectEventRecord),
   },
 })

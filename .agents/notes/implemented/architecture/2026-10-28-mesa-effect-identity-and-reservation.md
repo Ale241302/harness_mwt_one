@@ -43,8 +43,8 @@ effect_key = sha256(tenant_id + ":" + action_type + ":" + destination + ":" + bu
 | Component | Normalisation | A second spelling would |
 |---|---|---|
 | `tenant_id` | the item's `companyId`, spelled as the reservation keys spell it | move one effect into another tenant |
-| `action_type` | the caller's action type, trimmed | key `Mail Send` as a second effect |
-| `destination` | mail lists lowercased, split, deduped, sorted; else trimmed, verbatim | key one mail per recipient order |
+| `action_type` | the caller's action type, trimmed, against the accepted set | key `Mail Send` as a second effect |
+| `destination` | mail lists lowercased, split on comma, semicolon or whitespace, deduped, sorted; else trimmed, verbatim | key one mail per recipient order |
 | `business_key` | the item's `businessKey`, never its id | delete the competitor case |
 | `artifact_hash` | the hash of the approved revision | hash one version into two keys |
 
@@ -54,15 +54,17 @@ A deployment with no company uses the `sin-empresa` sentinel the reservation key
 
 The residual risk is a tenant literally named `sin-empresa`; that needs a new formula, not a second sentinel.
 
-`action_type` is trimmed and used as spelled.
+`action_type` is trimmed and must be one the deployment accepts, which is the validated `effectActionTypes` Config list.
 
-Nothing refuses a second spelling yet, so `Mail Send` and `mail.send` mint two keys for one effect.
+Its default is the three values D-12 signs — `mail.send`, `inventory.reserve`, `shipment.create` — and anything else is refused with `EFFECT_ACTION_UNKNOWN` before a key exists, so a deployment extends the list instead of minting `Mail Send` beside `mail.send`.
+
+`registerEffectAdapter` reads the same set, so an adapter whose action type the configuration omits fails at load rather than at the first dispatch.
 
 A destination is a mail list when the action type starts with `mail.` or the value contains `@`.
 
-That list is trimmed, lowercased, split on comma or semicolon, stripped of empties, deduplicated, and sorted.
+That list is trimmed, lowercased, split on a comma, a semicolon, or whitespace, stripped of empties, deduplicated, and sorted.
 
-Whitespace is not a separator: `a@x b@y` and `a@x;b@y` are two keys, so a caller writes one of the two accepted separators.
+Whitespace is a separator too: `a@x b@y` and `a@x;b@y` are one key, so the spelling of the separator cannot mint a second effect.
 
 Any other destination is the external id trimmed and otherwise verbatim, because the board cannot verify a system's case rule.
 
@@ -74,9 +76,11 @@ An item id in the key would make every item unique and delete the competitor cas
 
 The effects code never hashes a payload again, so an acceptance and its effect cannot name two versions of one document.
 
-The components are joined with `:`, and nothing refuses a component that contains it.
+The components are joined with `:`, and `effectKeyOf` refuses any component that contains it with `EFFECT_COMPONENT_INVALID`, naming the component.
 
-A business key holding a colon can therefore make two tuples share one string; closing that is a new formula under D-12.
+A business key holding a colon can therefore no longer make two tuples share one string.
+
+That refusal removes the need for a new formula under D-12: the separator stays, and the five components keep their spelling.
 
 **A retry of the same execution keeps the key.**
 
@@ -122,9 +126,17 @@ The cost is that one acceptance is three writes.
 
 A crash between the reservation write and the item commit leaves a `RESERVADA` row the item never recorded.
 
-Its own execution repairs it on retry, because the takeover guard refuses only another execution.
+`recoverOrphanedReservations` is that repair: a row older than the validated `effectReservationLeaseMs` Config field whose key no item records is released, its message cancelled, an `effect.orphaned` audit event stored in `effect_events`, and an `ORPHAN_RELEASED` alert raised.
 
-Every other acceptance of that key is refused, and `pruneEffects` deletes settled rows alone, so the key stays held.
+The sweep is a sibling of `pruneEffects` rather than part of it, because releasing a claim and deleting a retained row are different operator decisions.
+
+A row whose key an item records is never swept, in whatever state: a failed execution still needs its reservation to retry.
+
+The lease keeps the sweep away from a row whose acceptance is still committing, and an orphan that outlives it is the one case where the key must change hands.
+
+The audit row exists because every other command audits inside the item aggregate, and an orphan has no item.
+
+`effect_events` is pruned with the same retention as the other effect rows.
 
 **The key is claimed by the reservation row itself, not by an index.**
 
@@ -208,6 +220,20 @@ The board never infers idempotency from an action type or a destination string.
 
 A retry against a non-idempotent destination duplicates an effect that nothing on either side can undo.
 
+### The signature the acceptance requires
+
+**The acceptance asks before it writes, when the access service is mounted.**
+
+`approveWithExecution` calls `requireSignature(writer, actionType)` on `faberloomAccess` after it resolves the identity and before it acquires the reservation or writes a message.
+
+A refusal for a protected action type propagates unchanged, so an unsigned acceptance leaves no reservation, no message, and no item transition (W-16).
+
+The board keeps no list of protected action types: `protectedActionTypes` is the access configuration, and a second list here would disagree with it.
+
+A composition without that service enforces no signature, and the JSDoc of `approveWithExecution` says so instead of implying a check the composition cannot make.
+
+The accepted `authorization` string is still recorded; it is evidence of what the caller presented, not proof the board verified.
+
 ### Forbidden after this note
 
 1. A second key formula, in an adapter, a console job, an MCP surface, or a test helper. One function, one spelling.
@@ -215,7 +241,8 @@ A retry against a non-idempotent destination duplicates an effect that nothing o
 3. A dispatch without the consumer check: no emit from the acceptance path and no verified fast path around it.
 4. An `admin_close` that frees the reservation. It closes the item; the reservation stays `DESPACHADA` until reconciliation.
 5. A `retry` of `DESCONOCIDO` on a destination that has not declared itself idempotent, or a `revert` after the deadline.
-6. A second route to `EJECUTADO` or to a recorded effect: `complete` and `recordEffect` predate the reservation.
+6. A second route to `EJECUTADO` or to a recorded effect. `complete` refuses an item whose `effectKey` has no `CONCILIADA` reservation, and `recordEffect` refuses an item that carries one; both stay available for items that never had an effect.
+7. An action type outside the configured set, or a component that contains the formula separator, reaching `createHash`.
 
 ## Alternatives considered
 
@@ -243,12 +270,14 @@ It lost because two adapters would key one effect twice, and the board could no 
 
 ## Consequences
 
-- Three new tables: `effect_reservations`, `effect_outbox`, `effect_alerts`, and three new item fields, all defaulted to null.
+- Four new tables: `effect_reservations`, `effect_outbox`, `effect_alerts`, `effect_events`, and three new item fields, all defaulted to null.
 - Existing rows load unchanged, because every new field defaults to null and the domain version stays 1.
 - The board refuses a competitor before a second send, keeps a revert out of a race, and retries without a new identity.
 - Tenant isolation is the row key: no key crosses `companyId`, so another tenant's reservation is never read (contract §2.7).
-- `pruneEffects` deletes a settled row past `effectRetentionDays` (90); a live reservation and an unsettled message are never pruned.
-- An orphan `RESERVADA` row holds its key until its own execution retries; no command settles a row whose item never recorded the key.
-- `complete` and `recordEffect` still reach `EJECUTADO` and record an effect with no reservation, so W-84 and W-96 do not hold there.
-- `action_type` has no closed set and a component holding `:` is not refused; both are formula-level gaps, not normalisation choices.
-- The evidence is `CONTRATO_EFECTOS_MESA.md` §6: nine cases covering W-84, W-95, W-96, and W-102.
+- `pruneEffects` deletes a settled row past `effectRetentionDays` (90), including an audit event of that age; a live reservation and an unsettled message are never pruned.
+- `recoverOrphanedReservations` releases a `RESERVADA` row past `effectReservationLeaseMs` (300000) that no item records, so a crashed acceptance costs one lease instead of the key.
+- The sweep reads every item of the tenant to learn which keys are recorded, because the store has no secondary index on `effectKey`; it is an operator cadence, not a per-dispatch check.
+- `complete` and `recordEffect` stay for items that never had an effect and refuse one that carries a key, so W-84 holds on both paths.
+- `action_type` is a closed set of three signed values a deployment extends, and a component holding `:` is refused before hashing.
+- `approveWithExecution` enforces W-16 through `faberloomAccess` when that service is mounted, and a composition without it enforces no signature.
+- The evidence is `CONTRATO_EFECTOS_MESA.md` §6: nine cases covering W-84, W-95, W-96, and W-102, plus the E15 suites of `board-effects.spec.ts` for the sweep, the refusals, the action set, the separator, the destination, and W-16.

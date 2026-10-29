@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包承载工作台：带版本化修订的准备结果与例外，批准绑定到精确版本，变更后需重新校验，效应需要显式授权。它还按条目运行一次迭代尝试——锁、工作草稿，以及只给出建议的轮次计数器——并承载 E15 的外部效应机制：按租户的效果预留、带校验消费者的发件箱、回退窗口与对账。它注册 `ctx.faberloomBoard` 主机服务；模型工具位于 `dsh-tool-faberloom`。
+此包承载工作台：带版本化修订的准备结果与例外，批准绑定到精确版本，变更后需重新校验，效应需要显式授权。它还按条目运行一次迭代尝试——锁、工作草稿，以及只给出建议的轮次计数器——并承载 E15 的外部效应机制：按租户的效果预留、带校验消费者的发件箱、回退窗口、对账，以及为崩溃的接受所遗留预留而设的恢复清扫。它注册 `ctx.faberloomBoard` 主机服务；模型工具位于 `dsh-tool-faberloom`。
 
 ## 目录
 
@@ -116,9 +116,9 @@ kind: "package-reference"
 
 ### 执行（E15）
 
-`approveWithExecution(writer, id, input)` 批准精确的产物版本并为它接受一次执行：批准、效果预留与发件箱消息在同一条命令中获取，因此不存在已授权却没有发出意图的条目（§10.1）。它要求 `approve` 的全部前置条件，外加 `executionId`、`actionType`、`destination` 与显式 `authorization`；`idempotencyKey` 默认为 `effect:<effectKey>`。它返回条目、预留与消息。
+`approveWithExecution(writer, id, input)` 批准精确的产物版本并为它接受一次执行：批准、效果预留与发件箱消息在同一条命令中获取，因此不存在已授权却没有发出意图的条目（§10.1）。它要求 `approve` 的全部前置条件，外加 `executionId`、`actionType`、`destination` 与显式 `authorization`；`idempotencyKey` 默认为 `effect:<effectKey>`。`actionType` 必须是部署接受的动作类型（`effectActionTypes`）；挂载了 `faberloomAccess` 服务时，接受会在获取任何内容之前向它索取 W-16 要求的 CEO 签名，并原样传播其拒绝。它返回条目、预留与消息。
 
-`effect_key` 是签署的身份：`sha256(tenant_id + ":" + action_type + ":" + destination + ":" + business_key + ":" + artifact_hash)`。租户即条目的 `companyId`，从不省略，因此没有公司的部署使用保留字面量 `sin-empresa`。邮件目的地是一个地址列表——去空白、转小写、去重、排序——因此同样的收件人以另一种顺序产生相同的键；其他目的地按外部系统 id 原样保留。导出 `effectKeyOf` 与 `normaliseDestination`，调用者据此算出 board 存储的同一个键。
+`effect_key` 是签署的身份：`sha256(tenant_id + ":" + action_type + ":" + destination + ":" + business_key + ":" + artifact_hash)`。租户即条目的 `companyId`，从不省略，因此没有公司的部署使用保留字面量 `sin-empresa`。邮件目的地是一个地址列表——去空白、转小写、按逗号、分号或空白拆分、去重、排序——因此同样的收件人以另一种顺序或另一种分隔符产生相同的键；其他目的地按外部系统 id 原样保留。任何分量都不得包含 `:`，即公式用来连接分量的分隔符，因此两个元组绝不会共用一个键字符串（`EFFECT_COMPONENT_INVALID`）。导出 `effectKeyOf` 与 `normaliseDestination`，调用者据此算出 board 存储的同一个键。
 
 预留存放在 `effect_reservations`，每租户每个 `effect_key` 一行（ADR-001：与 `keys`、`references` 相同的键认领表），状态为 `RESERVADA`、`DESPACHADA`、`CONCILIADA` 与 `LIBERADA`。同一键的竞争执行在预留在 `RESERVADA` 或 `DESPACHADA` 期间以 `EFFECT_TAKEN` 被拒，`admin_close` 之后亦然。所有者的重试保留同一行、同一 `executionId` 与同一幂等键；已释放或已对账的行释放该键。预留从不跨租户：行键携带租户，其他租户的消费者找不到任何消息。
 
@@ -132,15 +132,21 @@ kind: "package-reference"
 
 替换处于 `DELEGADO_EN_VENTANA` 的条目（`submit`、`assignWorkspace`）会取消其已排期的执行：消息变为 `CANCELADO`、预留变为 `LIBERADA`，且不发出任何效果（W-56）。
 
+`recoverOrphanedReservations(actor)` 是恢复清扫。接受操作在提交条目之前先写入预留与其消息，因此两者之间的崩溃会留下没有任何条目记录的 `RESERVADA` 行；`revert`、`reconcile` 与 `pruneEffects` 都需要条目才能触及它，于是该键会一直被占用，同一效果的每一次其他执行都会以 `EFFECT_TAKEN` 被拒。清扫会释放早于 `effectReservationLeaseMs`、且没有任何条目记录其键的行，取消其消息，在 `effect_events` 中保存 `effect.orphaned` 审计事件，并抛出 `ORPHAN_RELEASED` 告警；它返回释放的键以及写入的行。键被条目记录的行无论处于何种状态都不会被清扫，因为失败的执行仍需要其预留来重试（W-84）；年轻于租约的行也会被放过，因为它的接受可能仍在提交。
+
+`complete` 与 `recordEffect` 早于预留，只为从未有过效果的条目保留：`complete` 拒绝其 `effectKey` 没有 `CONCILIADA` 预留的条目（`EFFECT_NOT_CONCILIATED`），`recordEffect` 拒绝携带效果键的条目（`EFFECT_VIA_OUTBOX`），因为该效果属于发件箱及其对账（W-84）。
+
 | 配置字段 | 默认值 | 含义 |
 |---|---|---|
 | `effectReversalWindowMs` | `{ 'mail.send': 900000 }` | 每个动作类型的回退窗口毫秒数；未列出的类型没有窗口（D-12）。部署把 `FABERLOOM_REVERSAL_WINDOW_MS` 映射到邮件条目上 |
+| `effectActionTypes` | `['mail.send', 'inventory.reserve', 'shipment.create']` | 接受或适配器可命名的动作类型；部署扩展该列表而不是另造一种拼写，未列出的类型以 `EFFECT_ACTION_UNKNOWN` 被拒 |
 | `effectRetentionDays` | 90 | 已了结的预留与消息在 `pruneEffects` 可删除前保存的天数 |
 | `effectDispatchTimeoutMs` | 30000 | 一次派发尝试在结果变为 `DESCONOCIDO` 前可用的毫秒数 |
+| `effectReservationLeaseMs` | 300000 | `RESERVADA` 行在被 `recoverOrphanedReservations` 释放前可无条目可达的毫秒数；必须长于一次接受的三次写入 |
 
-`effectPolicy()` 返回解析后的值。`pruneEffects(actor)` 删除超出保留窗口的已了结行，从不触碰活跃预留或未了结消息；没有任务自动调用它。
+`effectPolicy()` 返回解析后的值。`pruneEffects(actor)` 删除超出保留窗口的已了结行——也包括没有条目记录其键的效应的审计事件——从不触碰活跃预留或未了结消息；没有任务自动调用这两个清扫。
 
-此表面的稳定错误：`EFFECT_IDENTITY_INCOMPLETE`（缺动作类型、执行 id、目的地、业务键或产物哈希）、`EFFECT_TAKEN`（另一个活跃执行持有该键）、`NOT_DELEGATED`、`EFFECT_NO_DEADLINE`、`WINDOW_OPEN`、`WINDOW_EXPIRED`、`EFFECT_DISPATCHED`、`NO_EFFECT`、`NOT_RETRYABLE`、`OUTCOME_UNKNOWN`、`OUTCOME_KNOWN`、`REASON_REQUIRED`、`EFFECT_NO_ADAPTER`、`OUTBOX_NOT_PENDING` 与 `NOT_FOUND`。
+此表面的稳定错误：`EFFECT_IDENTITY_INCOMPLETE`（缺动作类型、执行 id、目的地、业务键或产物哈希）、`EFFECT_COMPONENT_INVALID`（某个分量包含公式分隔符）、`EFFECT_ACTION_UNKNOWN`（部署不接受的动作类型）、`EFFECT_TAKEN`（另一个活跃执行持有该键）、`EFFECT_NOT_CONCILIATED`（对预留未了结的条目调用 `complete`）、`EFFECT_VIA_OUTBOX`（对带有有效果键的条目调用 `recordEffect`）、`NOT_DELEGATED`、`EFFECT_NO_DEADLINE`、`WINDOW_OPEN`、`WINDOW_EXPIRED`、`EFFECT_DISPATCHED`、`NO_EFFECT`、`NOT_RETRYABLE`、`OUTCOME_UNKNOWN`、`OUTCOME_KNOWN`、`REASON_REQUIRED`、`EFFECT_NO_ADAPTER`、`OUTBOX_NOT_PENDING` 与 `NOT_FOUND`。
 
 -----
 
@@ -176,9 +182,10 @@ kind: "package-reference"
 - **不随包提供效果适配器** — 本包只提供端口。要发出邮件、库存或运输效果的部署需为每个动作类型挂载一个适配器；在此之前，该类型的派发以 `EFFECT_NO_ADAPTER` 被拒且消息保持 `PENDIENTE`，这是有意为之。
 - **预留认领是单写入者** — 认领、条目提交与消息写入在每租户一个进程内区段中运行，与键认领相同；第二个产品写入者需要在 `(tenant, effect_key) WHERE status IN (RESERVADA, DESPACHADA)` 上真正的唯一约束，也就是 ADR-001 的重新评估触发条件。
 - **发件箱与目的地之间没有原子性** — 消息在调用适配器之前变为 `DESPACHADO`，因此在认领与结果之间崩溃会留下已派发却未确认的预留；由 `reconcile` 了结它，任何状态都不会声称目的地未确认的效果。
-- **此处不校验 CEO 签名** — 接受执行时会记录调用者给出的 `authorization` 字符串；W-16 对资金、库存与运输所要求的签名属于访问层（T5.7），由调用者在接受执行前查询。
-- **旧的效应路径仍在预留之外** — `recordEffect` 与 `complete` 早于 E15，仍会在没有预留的情况下记录效果或关闭已批准条目，因此通过它们发出效果的调用者会绕过 `EFFECT_TAKEN` 与消费者校验；`approveWithExecution` 是唯一获取预留的路径。
-- **保留期不会被自动清扫** — `pruneEffects` 在调用者运行时删除超出窗口的已了结行；没有任务调用它，因此 `effect_reservations` 与 `effect_outbox` 会持续增长，直到运维或后续清扫器接手。
+- **签名属于访问包** — 挂载 `faberloomAccess` 时，`approveWithExecution` 向它索取 W-16 要求的签名并原样传播其拒绝；没有该服务的组合不执行签名校验，因为 board 无法判断哪些动作类型受保护。
+- **旧的效应路径保留一项豁免** — `complete` 可关闭预留已 `CONCILIADA` 的已批准条目，`recordEffect` 可为从未携带效果键的条目记录效果。两者都拒绝仍有活跃预留的条目，且都不会获取预留；`approveWithExecution` 是唯一获取预留的路径。
+- **保留期与恢复清扫不会被自动调度** — `pruneEffects` 与 `recoverOrphanedReservations` 在调用者运行时才运行；没有任务调用它们，因此已了结行与孤立预留会等待运维处理。
+- **恢复清扫会扫描租户** — 找出没有条目记录的键需要读取该租户的每个条目，因为存储没有 `effectKey` 的二级索引；清扫是运维节奏，而不是每次派发的检查。
 - **每次尝试只读取一次控件** — 消费者在条目的写链之外运行已声明的控件，若条目在此期间移动则以 `STALE_REVALIDATION` 拒绝派发，并让消息保持 `PENDIENTE` 供下一次尝试；它绝不会基于过期结论发出效果。
 - **迭代锁的持有者按尝试确定，而非按进程** — 写入判定把调用者的标签页会话与 `iterationLockBy` 比较，而 `KvTable.update` 在单个进程内串行化一个条目。不同进程中作用于同一条目的两个写入者仍需要真正的租约；持有者检查拒绝的是第二个标签页，而不是第二个主机。
 - **已应用的范畴只被记录，不被学习** — `applyIteration` 把 `scope` 写入其审计事件后即止。修正记录、学习候选与晋升位于本包之外（T4.5–T4.7）。

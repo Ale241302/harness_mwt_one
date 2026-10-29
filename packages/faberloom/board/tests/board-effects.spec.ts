@@ -80,6 +80,78 @@ function mountAdapter(harness: BoardHarness, actionType: string, adapter: BoardE
 }
 
 /**
+ * A reservation row for a suite that needs one the service did not write: a
+ * crashed acceptance, a contradicted key, or a row past its lease.
+ * @param effectKey - the effect identity the row protects.
+ * @param status - the reservation state.
+ * @param overrides - fields to replace.
+ * @returns the row.
+ */
+function manualReservation(
+  effectKey: string,
+  status: EffectReservationRecord['status'],
+  overrides: Partial<EffectReservationRecord> = {},
+): EffectReservationRecord {
+  const at = new Date().toISOString()
+  return {
+    companyId: COMPANY_A,
+    effectKey,
+    actionType: 'mail.send',
+    destination: 'a@eguisa.com',
+    businessKey: 'mail-manual',
+    artifactHash: 'hash-manual',
+    executionId: 'exec-manual',
+    itemId: 'item-manual',
+    idempotencyKey: `effect:${effectKey}`,
+    authorization: null,
+    status,
+    outcome: null,
+    reversalDeadline: null,
+    dispatchedAt: null,
+    releasedAt: null,
+    releaseReason: null,
+    closedAt: null,
+    closedBy: null,
+    closeReason: null,
+    settledAt: null,
+    createdAt: at,
+    updatedAt: at,
+    retainUntil: null,
+    ...overrides,
+  }
+}
+
+/**
+ * An outbox row for a suite that needs one the service did not write.
+ * @param effectKey - the effect identity the message emits.
+ * @param overrides - fields to replace.
+ * @returns the row.
+ */
+function manualMessage(effectKey: string, overrides: Partial<EffectOutboxRecord> = {}): EffectOutboxRecord {
+  const at = new Date().toISOString()
+  return {
+    companyId: COMPANY_A,
+    effectKey,
+    executionId: 'exec-manual',
+    itemId: 'item-manual',
+    actionType: 'mail.send',
+    destination: 'a@eguisa.com',
+    idempotencyKey: `effect:${effectKey}`,
+    status: 'PENDIENTE',
+    dispatchable: true,
+    attempts: 0,
+    reason: null,
+    ref: null,
+    createdAt: at,
+    updatedAt: at,
+    dispatchedAt: null,
+    settledAt: null,
+    retainUntil: null,
+    ...overrides,
+  }
+}
+
+/**
  * Replace the proforma price control with one the test flips. The declared
  * control is blocking, so a failure makes approval or dispatch refuse.
  * @param harness - the booted board.
@@ -924,5 +996,218 @@ describe('FaberLoomBoard E15 reconciliation and administrative close', () => {
     expect(await harness.board.pruneEffects(ACTOR_B)).toBe(0)
     expect(await harness.board.pruneEffects(ACTOR_A)).toBe(1)
     expect(durableRows(pool, 'effect_reservations').size).toBe(0)
+  })
+})
+
+describe('FaberLoomBoard E15 closed action types', () => {
+  it('refuses an action type the deployment does not accept', async () => {
+    const harness = await bootBoard()
+    const item = await effectItem(harness)
+    await expect(accept(harness.board, item, { actionType: 'Mail Send' })).rejects.toThrow('EFFECT_ACTION_UNKNOWN')
+    expect(durableRows(harness.pool, 'effect_reservations').size).toBe(0)
+    expect(durableRows(harness.pool, 'effect_outbox').size).toBe(0)
+    expect((await harness.board.get(ACTOR_A, item.id)).state).toBe('PENDIENTE_CRITERIO')
+
+    expect(() => harness.board.registerEffectAdapter('Mail Send', mutableAdapter().port))
+      .toThrow('EFFECT_ACTION_UNKNOWN')
+  })
+
+  it('accepts a type the deployment extended and refuses one it omitted', async () => {
+    const harness = await bootBoard({ board: { effectActionTypes: ['custom.notify'], effectReversalWindowMs: {} } })
+    const item = await effectItem(harness)
+    const accepted = await accept(harness.board, item, { actionType: 'custom.notify', destination: 'system-9' })
+    expect(accepted.reservation.actionType).toBe('custom.notify')
+    expect(() => harness.board.registerEffectAdapter('mail.send', mutableAdapter().port))
+      .toThrow('EFFECT_ACTION_UNKNOWN')
+    const other = await effectItem(harness, { businessKey: 'mail-egisa-2' })
+    await expect(accept(harness.board, other)).rejects.toThrow('EFFECT_ACTION_UNKNOWN')
+  })
+})
+
+describe('FaberLoomBoard E15 formula separator', () => {
+  it('refuses a component that contains the separator, one at a time', () => {
+    const base = {
+      tenantId: 'co-sondel',
+      actionType: 'mail.send',
+      destination: 'a@eguisa.com',
+      businessKey: 'PF 2520-2026',
+      artifactHash: 'hash-1',
+    }
+    expect(effectKeyOf(base)).toMatch(/^[a-f0-9]{64}$/)
+    for (const field of ['tenantId', 'actionType', 'destination', 'businessKey', 'artifactHash'] as const) {
+      expect(() => effectKeyOf({ ...base, [field]: 'a:b' })).toThrow('EFFECT_COMPONENT_INVALID')
+    }
+  })
+
+  it('refuses an approval whose business key carries the separator', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    const created = await harness.board.create(ACTOR_A, {
+      title: 'Correo con clave partida',
+      summary: 'Correo con clave partida',
+      evidence: ['mail:thread-1'],
+      artifactType: 'proforma',
+      businessKey: 'pf:2520',
+    })
+    const item = await harness.board.setSeverity(ACTOR_A, created.id, 'MEDIUM', 'HUMAN')
+    await expect(accept(harness.board, item)).rejects.toThrow('EFFECT_COMPONENT_INVALID')
+    expect(durableRows(harness.pool, 'effect_reservations').size).toBe(0)
+  })
+})
+
+describe('FaberLoomBoard E15 destination normalisation', () => {
+  it('treats whitespace as a recipient separator', () => {
+    const spaced = normaliseDestination('mail.send', 'a@eguisa.com b@eguisa.com')
+    expect(spaced).toBe('a@eguisa.com,b@eguisa.com')
+    expect(spaced).toBe(normaliseDestination('mail.send', 'a@eguisa.com;b@eguisa.com'))
+    expect(normaliseDestination('mail.send', ' A@Eguisa.com\tb@eguisa.com ')).toBe('a@eguisa.com,b@eguisa.com')
+  })
+
+  it('W-96: two spellings of one recipient list mint one key', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    mountAdapter(harness, 'mail.send', mutableAdapter().port)
+    const first = await effectItem(harness, { businessKey: 'mail-eguisa-1' })
+    const second = await effectItem(harness, { businessKey: 'mail-eguisa-1' })
+    await accept(harness.board, first, { executionId: 'exec-a', destination: 'a@eguisa.com b@eguisa.com' })
+    await expect(accept(harness.board, second, { executionId: 'exec-b', destination: 'a@eguisa.com;b@eguisa.com' }))
+      .rejects.toThrow('EFFECT_TAKEN')
+    expect(durableRows(harness.pool, 'effect_reservations').size).toBe(1)
+  })
+})
+
+describe('FaberLoomBoard E15 reservation recovery', () => {
+  it('releases a reservation no item records and frees the key for the next approval', async () => {
+    const pool = new MemoryMediaPool()
+    const first = await bootBoard({ pool })
+    const item = await effectItem(first, { businessKey: 'mail-eguisa-1' })
+    const rival = await effectItem(first, { businessKey: 'mail-eguisa-1' })
+    const key = keyOf(item)
+    expect(rival.artifactHash).toBe(item.artifactHash)
+    await first.ctx.fiber.dispose()
+
+    const old = new Date(Date.now() - 3_600_000).toISOString()
+    await seedRawEffectRow(pool, 'effect_reservations', `${COMPANY_A}:${key}`, manualReservation(key, 'RESERVADA', {
+      createdAt: old, updatedAt: old, itemId: 'crashed-item', executionId: 'exec-crashed',
+    }))
+    await seedRawEffectRow(pool, 'effect_outbox', `${COMPANY_A}:${key}`, manualMessage(key, {
+      createdAt: old, updatedAt: old, itemId: 'crashed-item', executionId: 'exec-crashed',
+    }))
+
+    const harness = await bootBoard({ pool, board: { effectReversalWindowMs: {} } })
+    mountAdapter(harness, 'mail.send', mutableAdapter().port)
+    await expect(accept(harness.board, rival, { executionId: 'exec-rival' })).rejects.toThrow('EFFECT_TAKEN')
+
+    const swept = await harness.board.recoverOrphanedReservations(ACTOR_A)
+    expect(swept.released).toEqual([key])
+    expect(swept.alerts).toBe(1)
+    expect(swept.events).toHaveLength(1)
+    expect(swept.events[0]).toMatchObject({
+      command: 'effect.orphaned', effectKey: key, actor: ACTOR_A.id, executionId: 'exec-crashed',
+    })
+    expect(reservationOfKey(harness, key))
+      .toMatchObject({ status: 'LIBERADA', releaseReason: 'orphaned-reservation' })
+    expect(messageOfKey(harness, key)).toMatchObject({ status: 'CANCELADO', reason: 'ORPHANED_RESERVATION' })
+    expect(durableRows(pool, 'effect_events').size).toBe(1)
+    const alerts = await harness.board.alerts(ACTOR_A)
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]).toMatchObject({ kind: 'ORPHAN_RELEASED', outcome: null, effectKey: key })
+
+    const accepted = await accept(harness.board, rival, { executionId: 'exec-rival' })
+    expect(accepted.item.effectKey).toBe(key)
+    expect(accepted.reservation.status).toBe('RESERVADA')
+    expect((await harness.board.recoverOrphanedReservations(ACTOR_A)).released).toEqual([])
+  })
+
+  it('leaves a reservation younger than the lease', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    const item = await effectItem(harness)
+    const accepted = await accept(harness.board, item)
+    const key = accepted.item.effectKey ?? ''
+    // The item goes away, so only the lease keeps the row from being swept.
+    await harness.board.remove(ACTOR_A, item.id)
+    expect((await harness.board.recoverOrphanedReservations(ACTOR_A)).released).toEqual([])
+    expect(reservationOfKey(harness, key)?.status).toBe('RESERVADA')
+  })
+
+  it('keeps a reservation whose item records its key, even past the lease', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {}, effectReservationLeaseMs: 1 } })
+    const item = await effectItem(harness)
+    const accepted = await accept(harness.board, item)
+    const key = accepted.item.effectKey ?? ''
+    await settle(10)
+    expect((await harness.board.recoverOrphanedReservations(ACTOR_A)).released).toEqual([])
+    expect(reservationOfKey(harness, key)?.status).toBe('RESERVADA')
+  })
+})
+
+describe('FaberLoomBoard E15 single route to EJECUTADO', () => {
+  it('refuses complete and recordEffect for an item that carries an effect key', async () => {
+    const pool = new MemoryMediaPool()
+    const openId = await seedRawItem(pool, rawBoardItem({
+      state: 'APROBADO', status: 'approved', effectKey: 'key-open', approvedRevision: 1,
+    }))
+    const settledId = await seedRawItem(pool, rawBoardItem({
+      state: 'APROBADO', status: 'approved', effectKey: 'key-conciliated', approvedRevision: 1,
+    }))
+    await seedRawEffectRow(pool, 'effect_reservations', `${COMPANY_A}:key-open`, manualReservation('key-open', 'RESERVADA'))
+    await seedRawEffectRow(
+      pool,
+      'effect_reservations',
+      `${COMPANY_A}:key-conciliated`,
+      manualReservation('key-conciliated', 'CONCILIADA'),
+    )
+    const harness = await bootBoard({ pool })
+
+    await expect(harness.board.complete(ACTOR_A, openId)).rejects.toThrow('EFFECT_NOT_CONCILIATED')
+    await expect(harness.board.recordEffect(ACTOR_A, openId, { ref: 'mail:1', authorization: 'grant:mail' }))
+      .rejects.toThrow('EFFECT_VIA_OUTBOX')
+    const untouched = await harness.board.get(ACTOR_A, openId)
+    expect(untouched).toMatchObject({ state: 'APROBADO', effects: [] })
+
+    const closed = await harness.board.complete(ACTOR_A, settledId)
+    expect(closed.state).toBe('EJECUTADO')
+  })
+
+  it('keeps the legacy path for an item that never had an effect', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    const item = await effectItem(harness)
+    const approved = await harness.board.approve(ACTOR_A, item.id, {
+      expectedRowVersion: item.rowVersion,
+      expectedArtifactVersion: item.version,
+      expectedArtifactHash: item.artifactHash ?? '',
+    })
+    const recorded = await harness.board.recordEffect(ACTOR_A, approved.id, {
+      ref: 'mail:1', authorization: 'user-approved-send', detail: 'enviado',
+    })
+    expect(recorded.effects).toHaveLength(1)
+    expect((await harness.board.complete(ACTOR_A, approved.id)).state).toBe('EJECUTADO')
+  })
+})
+
+describe('FaberLoomBoard E15 CEO signature', () => {
+  it('W-16: a protected action type needs an active signature before the reservation', async () => {
+    const ceo = 'ceo@sondelsa.com'
+    const harness = await bootBoard({
+      board: { effectReversalWindowMs: {} },
+      access: { protectedActionTypes: ['inventory.reserve'], signingAuthorities: [ceo] },
+    })
+    mountAdapter(harness, 'inventory.reserve', mutableAdapter().port)
+    const item = await effectItem(harness, { businessKey: 'oc-505288' })
+
+    await expect(accept(harness.board, item, {
+      actionType: 'inventory.reserve', destination: 'mwt-warehouse-1',
+    })).rejects.toThrow('SIGNATURE_REQUIRED')
+    expect(durableRows(harness.pool, 'effect_reservations').size).toBe(0)
+    expect(durableRows(harness.pool, 'effect_outbox').size).toBe(0)
+    expect((await harness.board.get(ACTOR_A, item.id)).state).toBe('PENDIENTE_CRITERIO')
+
+    await harness.ctx.faberloomAccess.issueSignature(
+      { id: ceo, companyId: COMPANY_A },
+      { actionTypes: ['inventory.reserve'] },
+    )
+    const accepted = await accept(harness.board, item, {
+      actionType: 'inventory.reserve', destination: 'mwt-warehouse-1',
+    })
+    expect(accepted.reservation).toMatchObject({ status: 'RESERVADA', actionType: 'inventory.reserve' })
+    expect(messageRows(harness)).toHaveLength(1)
   })
 })
