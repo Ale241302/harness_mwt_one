@@ -106,6 +106,8 @@ export const boardItemRecord = z.object({
   runId: z.string().nullable().default(null),
   idempotencyKey: z.string().nullable().default(null),
   businessKey: z.string().nullable().default(null),
+  /** Source reference the business key hashes. */
+  sourceRef: z.string().nullable().default(null),
   supersedesItemId: z.string().nullable().default(null),
   artifactType: z.string().default(''),
   accountRef: z.string().nullable().default(null),
@@ -489,11 +491,33 @@ export const iterationChatRecord = z.object({
 /** One stored iteration-chat attachment. */
 export type IterationChatRecord = z.infer<typeof iterationChatRecord>
 
+/** One stored shadow evaluation of a human severity confirmation (W-63). */
+export const shadowEvaluationRecord = z.object({
+  /** Tenant that owns the item. */
+  companyId: z.string().nullable().default(null),
+  /** Item the evaluation belongs to. */
+  itemId: z.string(),
+  /** Severity the human confirmed. */
+  humanSeverity: z.string(),
+  /** Severity the shadow evaluator proposed, or null when it abstained. */
+  shadowSeverity: z.string().nullable(),
+  /** How the evaluation compares with the human label. */
+  status: z.string(),
+  /** Shadow model identity. */
+  modelVersion: z.string(),
+  /** ISO-8601 instant. */
+  at: z.string(),
+})
+
+/** One stored shadow evaluation. */
+export type ShadowEvaluationRecord = z.infer<typeof shadowEvaluationRecord>
+
 /**
  * The board domain spec: item aggregates, the key-claim table, the edit-draft
  * table, the iteration-draft and iteration-chat tables, the tenant claims on
  * opaque references, the external-effect reservation, outbox, alert, and audit
- * tables, and the per-tenant classification cache.
+ * tables, the per-tenant classification cache, and the shadow evaluations that
+ * measure a classifier without deciding anything.
  */
 export const boardDomainSpec = defineDomain({
   name: 'faberloom_board',
@@ -511,5 +535,6 @@ export const boardDomainSpec = defineDomain({
     classification_cache: domainTable<string, ClassificationCacheRecord>(classificationCacheRecord),
     views: domainTable<string, BoardViewRecord>(boardViewRecord),
     iteration_chats: domainTable<string, IterationChatRecord>(iterationChatRecord),
+    severity_shadow: domainTable<string, ShadowEvaluationRecord>(shadowEvaluationRecord),
   },
 })

@@ -4,6 +4,7 @@ import {
   ACTOR_A,
   ACTOR_A2,
   ACTOR_B,
+  COMPANY_A,
   OWNER_A,
   bootBoard,
   durableRows,
@@ -12,7 +13,7 @@ import {
   seedRawIterationDraft,
   seedSpace,
 } from './helpers/harness.ts'
-import type { FaberLoomBoardItem } from '../src/index.ts'
+import { businessKeyOf, type FaberLoomBoardItem } from '../src/index.ts'
 
 /** One prepared artifact the candidate suites submit. */
 const ARTIFACT = { summary: 'borrador', evidence: ['oc:505288'], artifactType: 'proforma' } as const
@@ -56,27 +57,35 @@ describe('FaberLoomBoard assignWorkspace (W-45, W-59, W-87, W-88)', () => {
 
   it('W-45 · keeps the business key, supersedes a substitutable peer, and returns the live item', async () => {
     const pool = new MemoryMediaPool()
-    const first = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-shared', title: 'A' }))
-    const second = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-shared', title: 'B' }))
     const harness = await bootBoard({ pool })
     const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    // The peer was migrated before this assignment: it already carries the
+    // canonical key of the destination space.
+    const key = businessKeyOf({
+      companyId: COMPANY_A, spaceId: space, accountRef: null, sourceRef: 'k-shared', artifactType: 'proforma',
+    })
+    const first = await seedRawItem(pool, rawBoardItem({ businessKey: key, sourceRef: 'k-shared', title: 'A' }))
+    const second = await seedRawItem(pool, rawBoardItem({ businessKey: key, sourceRef: 'k-shared', title: 'B' }))
 
     const assigned = await harness.board.assignWorkspace(ACTOR_A, first, space)
 
     expect(assigned.transferredDrafts).toEqual([])
     expect(assigned.item.id).toBe(first)
     expect(assigned.item.spaceId).toBe(space)
-    expect(assigned.item.businessKey).toBe('k-shared')
+    expect(assigned.item.businessKey).toBe(key)
     expect(assigned.item.supersedesItemId).toBe(String(second))
     expect((await harness.board.get(ACTOR_A, second)).state).toBe('SUSTITUIDO')
   })
 
   it('W-87 · transfers the artifact as a candidate to a non-substitutable peer and opens that peer', async () => {
     const pool = new MemoryMediaPool()
-    const source = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-iter', title: 'A' }))
-    const iterating = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-iter', title: 'B', state: 'ITERANDO' }))
     const harness = await bootBoard({ pool })
     const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    const key = businessKeyOf({
+      companyId: COMPANY_A, spaceId: space, accountRef: null, sourceRef: 'k-iter', artifactType: 'proforma',
+    })
+    const source = await seedRawItem(pool, rawBoardItem({ businessKey: key, sourceRef: 'k-iter', title: 'A' }))
+    const iterating = await seedRawItem(pool, rawBoardItem({ businessKey: key, sourceRef: 'k-iter', title: 'B', state: 'ITERANDO' }))
 
     const live = await harness.board.assignWorkspace(ACTOR_A, source, space)
 
@@ -91,19 +100,23 @@ describe('FaberLoomBoard assignWorkspace (W-45, W-59, W-87, W-88)', () => {
 
   it('W-88 · leaves one non-terminal item and one key claim when two assignments race', async () => {
     const pool = new MemoryMediaPool()
-    const left = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-race-ws', title: 'A' }))
-    const right = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-race-ws', title: 'B' }))
     const harness = await bootBoard({ pool })
     const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    const key = businessKeyOf({
+      companyId: COMPANY_A, spaceId: space, accountRef: null, sourceRef: 'k-race-ws', artifactType: 'proforma',
+    })
+    const left = await seedRawItem(pool, rawBoardItem({ businessKey: key, sourceRef: 'k-race-ws', title: 'A' }))
+    const right = await seedRawItem(pool, rawBoardItem({ businessKey: key, sourceRef: 'k-race-ws', title: 'B' }))
 
     await Promise.allSettled([
       harness.board.assignWorkspace(ACTOR_A, left, space),
       harness.board.assignWorkspace(ACTOR_A, right, space),
     ])
 
-    const live = (await harness.board.list(ACTOR_A)).filter(item => !TERMINAL_STATES.includes(item.state))
+    const all = await harness.board.list(ACTOR_A)
+    const live = all.filter(item => !TERMINAL_STATES.includes(item.state))
     expect(live).toHaveLength(1)
-    const claims = [...durableRows(pool, 'keys').entries()].filter(([key]) => key.endsWith(':bkey:k-race-ws'))
+    const claims = [...durableRows(pool, 'keys').entries()].filter(([rowKey]) => rowKey.endsWith(`:bkey:${key}`))
     expect(claims).toHaveLength(1)
     expect(claims[0]?.[1]).toMatchObject({ itemId: String(live[0]?.id) })
     expect(live[0]?.spaceId).toBe(space)
@@ -150,12 +163,19 @@ describe('FaberLoomBoard assignment draft transfer (W-98)', () => {
 
   it('transfers the iteration and edit drafts to the peer that received the candidate', async () => {
     const pool = new MemoryMediaPool()
+    const harness = await bootBoard({ pool })
+    const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    const key = businessKeyOf({
+      companyId: COMPANY_A, spaceId: space, accountRef: null, sourceRef: 'k-drafts', artifactType: 'proforma',
+    })
     const source = await seedRawItem(pool, rawBoardItem({
-      businessKey: 'k-drafts', title: 'A', iterationDraftKey: 'item-source:att-a', iterationBaseVersion: 1,
+      businessKey: key, sourceRef: 'k-drafts', title: 'A',
+      iterationDraftKey: 'item-source:att-a', iterationBaseVersion: 1,
     }), 'item-source')
     await seedRawIterationDraft(pool, iterationDraftRow('item-source', 'att-a'))
     const iterating = await seedRawItem(pool, rawBoardItem({
-      businessKey: 'k-drafts',
+      businessKey: key,
+      sourceRef: 'k-drafts',
       title: 'B',
       state: 'ITERANDO',
       iterationId: 'att-b',
@@ -164,8 +184,6 @@ describe('FaberLoomBoard assignment draft transfer (W-98)', () => {
       iterationLockUntil: '2099-01-01T00:00:00.000Z',
       iterationLockBy: 'tab-b',
     }), 'item-iterating')
-    const harness = await bootBoard({ pool })
-    const space = await seedSpace(harness, ACTOR_A, 'Proformas')
     await harness.board.saveEditDraft(ACTOR_A, source, {
       baseVersion: 1, revision: 0, writerSession: 'tab-a', changes: { total: '9' },
     })
@@ -195,13 +213,17 @@ describe('FaberLoomBoard assignment draft transfer (W-98)', () => {
 
   it('transfers the closed substitutable peer’s drafts to the assigned item', async () => {
     const pool = new MemoryMediaPool()
-    const live = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-sub', title: 'A' }), 'item-live')
-    const peer = await seedRawItem(pool, rawBoardItem({
-      businessKey: 'k-sub', title: 'B', iterationDraftKey: 'item-peer:att-p', iterationBaseVersion: 1,
-    }), 'item-peer')
-    await seedRawIterationDraft(pool, iterationDraftRow('item-peer', 'att-p'))
     const harness = await bootBoard({ pool })
     const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    const key = businessKeyOf({
+      companyId: COMPANY_A, spaceId: space, accountRef: null, sourceRef: 'k-sub', artifactType: 'proforma',
+    })
+    const live = await seedRawItem(pool, rawBoardItem({ businessKey: key, sourceRef: 'k-sub', title: 'A' }), 'item-live')
+    const peer = await seedRawItem(pool, rawBoardItem({
+      businessKey: key, sourceRef: 'k-sub', title: 'B',
+      iterationDraftKey: 'item-peer:att-p', iterationBaseVersion: 1,
+    }), 'item-peer')
+    await seedRawIterationDraft(pool, iterationDraftRow('item-peer', 'att-p'))
     await harness.board.saveEditDraft(ACTOR_A, peer, {
       baseVersion: 1, revision: 0, writerSession: 'tab-b', changes: { total: '3' },
     })
@@ -233,13 +255,17 @@ describe('FaberLoomBoard assignment draft transfer (W-98)', () => {
 
   it('leaves a draft the source cannot attribute on the closed item', async () => {
     const pool = new MemoryMediaPool()
-    const source = await seedRawItem(pool, rawBoardItem({
-      businessKey: 'k-orphan', title: 'A', iterationDraftKey: 'item-source:att-x', iterationBaseVersion: 1,
-    }), 'item-source')
-    await seedRawIterationDraft(pool, iterationDraftRow('item-elsewhere', 'att-x'))
-    const peer = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-orphan', title: 'B', state: 'ITERANDO' }), 'item-peer')
     const harness = await bootBoard({ pool })
     const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    const key = businessKeyOf({
+      companyId: COMPANY_A, spaceId: space, accountRef: null, sourceRef: 'k-orphan', artifactType: 'proforma',
+    })
+    const source = await seedRawItem(pool, rawBoardItem({
+      businessKey: key, sourceRef: 'k-orphan', title: 'A',
+      iterationDraftKey: 'item-source:att-x', iterationBaseVersion: 1,
+    }), 'item-source')
+    await seedRawIterationDraft(pool, iterationDraftRow('item-elsewhere', 'att-x'))
+    const peer = await seedRawItem(pool, rawBoardItem({ businessKey: key, sourceRef: 'k-orphan', title: 'B', state: 'ITERANDO' }), 'item-peer')
 
     const assigned = await harness.board.assignWorkspace(ACTOR_A, source, space)
 
@@ -262,11 +288,17 @@ describe('FaberLoomBoard transferred draft recovery (W-68, W-98)', () => {
     foreignDrafts?: readonly { readonly itemId: string; readonly iterationId: string; readonly transferredFrom: string | null }[]
   } = {}) {
     const pool = new MemoryMediaPool()
+    const harness = await bootBoard({ pool })
+    const space = await seedSpace(harness, ACTOR_A, 'Proformas')
+    const key = businessKeyOf({
+      companyId: COMPANY_A, spaceId: space, accountRef: null, sourceRef: 'k-recover', artifactType: 'proforma',
+    })
     const live = await seedRawItem(pool, rawBoardItem({
-      businessKey: 'k-recover', title: 'Vigente', version: options.liveVersion ?? 1,
+      businessKey: key, sourceRef: 'k-recover', title: 'Vigente', version: options.liveVersion ?? 1,
     }), 'item-live')
     await seedRawItem(pool, rawBoardItem({
-      businessKey: 'k-recover', title: 'Cerrado', iterationDraftKey: 'item-peer:att-p', iterationBaseVersion: 1,
+      businessKey: key, sourceRef: 'k-recover', title: 'Cerrado',
+      iterationDraftKey: 'item-peer:att-p', iterationBaseVersion: 1,
     }), 'item-peer')
     await seedRawIterationDraft(pool, {
       itemId: 'item-peer',
@@ -298,13 +330,10 @@ describe('FaberLoomBoard transferred draft recovery (W-68, W-98)', () => {
         transferredFrom: draft.transferredFrom,
       })
     }
-    const harness = await bootBoard({ pool })
-    const space = await seedSpace(harness, ACTOR_A, 'Proformas')
     await harness.board.assignWorkspace(ACTOR_A, live, space)
     const listed = await harness.board.transferredDrafts(ACTOR_A, live)
     return { harness, live, listed }
   }
-
   it('W-98 · recovers a transferred draft as the live draft without applying it', async () => {
     const { harness, live, listed } = await received()
     const entry = listed.find(draft => draft.kind === 'iteration')
@@ -400,7 +429,7 @@ describe('FaberLoomBoard DESCONOCIDO and candidates (W-22, W-42, W-66, W-76)', (
     expect(unknown).toMatchObject({ state: 'DESCONOCIDO', column: 'ERROR_ACCIONABLE' })
 
     const candidate = await harness.board.submit(ACTOR_A, {
-      runId: 'run-1', idempotencyKey: 'idem-unknown-2', businessKey: 'k-unknown', ...ARTIFACT,
+      runId: 'run-1', idempotencyKey: 'idem-unknown-2', businessKey: 'k-unknown', ...ARTIFACT, accountRef: 'Eguisa',
     })
 
     expect(candidate.id).toBe(item.id)
@@ -428,7 +457,7 @@ describe('FaberLoomBoard DESCONOCIDO and candidates (W-22, W-42, W-66, W-76)', (
     const item = await submitArtifact(harness.board, 'idem-pend', 'k-pend')
     await harness.board.fail(ACTOR_A, item.id, 'DESCONOCIDO')
     await harness.board.submit(ACTOR_A, {
-      runId: 'run-1', idempotencyKey: 'idem-pend-2', businessKey: 'k-pend', ...ARTIFACT,
+      runId: 'run-1', idempotencyKey: 'idem-pend-2', businessKey: 'k-pend', ...ARTIFACT, accountRef: 'Eguisa',
     })
     const waiting = await harness.board.reopen(ACTOR_A, item.id)
     const withSeverity = await harness.board.setSeverity(ACTOR_A, item.id, 'HIGH', 'HUMAN')
@@ -448,13 +477,14 @@ describe('FaberLoomBoard DESCONOCIDO and candidates (W-22, W-42, W-66, W-76)', (
     const item = await submitArtifact(harness.board, 'idem-stale', 'k-stale')
     await harness.board.fail(ACTOR_A, item.id, 'DESCONOCIDO')
     const first = await harness.board.submit(ACTOR_A, {
-      runId: 'run-1', idempotencyKey: 'idem-stale-2', businessKey: 'k-stale', ...ARTIFACT,
+      runId: 'run-1', idempotencyKey: 'idem-stale-2', businessKey: 'k-stale', ...ARTIFACT, accountRef: 'Eguisa',
     })
     const shown = first.pendingCandidate
     expect(shown).not.toBeNull()
 
     const second = await harness.board.submit(ACTOR_A, {
       runId: 'run-1', idempotencyKey: 'idem-stale-3', businessKey: 'k-stale', summary: 'segundo', evidence: ['oc:2'],
+      artifactType: 'proforma', accountRef: 'Eguisa',
     })
     expect(second.pendingCandidate?.id).not.toBe(shown?.id)
 

@@ -2705,7 +2705,7 @@ export function apply(ctx: Context, config: Config): void {
     name: 'faberloom_board_submit',
     description: 'Submit one prepared result or one concrete missing-data task to the Mesa. Requires the business key (PF/OC/SAP), the account, real evidence, and a summary; a conversation prompt is not an item.',
     parameters: {
-      businessKey: { type: 'string', required: true, description: 'Business identity: PF, OC, or SAP code.' },
+      sourceRef: { type: 'string', required: true, description: 'Source reference the server hashes: PF, OC, or SAP code, or the mail thread or order id.' },
       accountRef: { type: 'string', required: true, description: 'Customer or account the item belongs to.' },
       title: { type: 'string', required: true, description: 'Concrete title: artifact or missing data plus the PF/OC/SAP.' },
       summary: { type: 'string', required: true, description: 'What the prepared result contains, or what is missing and why.' },
@@ -2729,7 +2729,7 @@ export function apply(ctx: Context, config: Config): void {
       const item = await board(ctx).submit(actor(config), {
         runId: sessionId,
         idempotencyKey: String(exec.callId),
-        businessKey: args.businessKey,
+        sourceRef: args.sourceRef,
         accountRef: args.accountRef,
         title: args.title,
         summary: args.summary,

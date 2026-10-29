@@ -25,6 +25,7 @@ import {
   type BoardKeyRecord,
   type BoardReferenceRecord,
   type BoardViewRecord,
+  type ShadowEvaluationRecord,
   type EffectAlertRecord,
   type EffectEventRecord,
   type EffectOutboxRecord,
@@ -32,6 +33,7 @@ import {
   type IterationChatRecord,
 } from './spec.ts'
 import { routeFieldInstruction, type BoardFieldChange } from './router.ts'
+import { businessKeyOf, sourceRefOf } from './keys.ts'
 import { submittedSeverity, classifyDataClass, resolveSeverity, DATA_CLASS_POLICY_VERSION, CLASSIFY_RULES_VERSION } from './classify.ts'
 import { orderBoardItems } from './order.ts'
 import { CHECKS_VERSION, artifactOf, checkClass, checkKey, declaredChecks } from './checks.ts'
@@ -147,8 +149,15 @@ import type {
   BoardResumeIterationInput,
   BoardResumeIterationResult,
   BoardRetryInput,
+  BoardRekeyEntry,
+  BoardRekeyReport,
   BoardRevertInput,
   BoardSeverity,
+  BoardBulkApproveInput,
+  BoardBulkApproveResult,
+  BoardBulkRejection,
+  BoardShadowEvaluation,
+  BoardShadowReport,
   BoardSeverityDecision,
   BoardState,
   BoardStatus,
@@ -164,6 +173,7 @@ import type {
 
 export type * from './types.ts'
 export * from './router.ts'
+export * from './keys.ts'
 export * from './checks.ts'
 export * from './projection.ts'
 export * from './classify.ts'
@@ -232,6 +242,11 @@ export interface Config {
   readonly effectDispatchBackoffMs?: number
   /** Milliseconds the classifier port may take before its answer is a timeout (W-37). */
   readonly classifierTimeoutMs?: number
+  /**
+   * Whether `approveBulk` is offered. D-11 keeps the batch outside the pilot;
+   * a deployment enables it explicitly when volume justifies it.
+   */
+  readonly bulkApprovalEnabled?: boolean
 }
 
 /** Validated board configuration. */
@@ -250,6 +265,11 @@ export const Config = z.object({
   effectDispatchIntervalMs: z.number().int().min(0).default(0),
   effectDispatchBackoffMs: z.number().int().positive().default(60_000),
   classifierTimeoutMs: z.number().int().positive().default(3_000),
+  /**
+   * Whether `approveBulk` is offered. D-11 keeps the batch outside the pilot, so
+   * the default is false; W-15's behavior is implemented and tested behind it.
+   */
+  bulkApprovalEnabled: z.boolean().default(false),
 })
 
 /** Discard reasons signed in the specification. */
@@ -448,9 +468,51 @@ function refusal(code: BoardDispatchCode, item: FaberLoomBoardItem | null, detai
   return { dispatched: false, code, item, outcome: null, detail }
 }
 
+/** The stable code of one board refusal, or `UNKNOWN` for an unexpected error. */
+function errorCodeOf(error: unknown): string {
+  const match = /^faberloom: ([A-Z0-9_]+)/u.exec(error instanceof Error ? error.message : String(error))
+  return match?.[1] ?? 'UNKNOWN'
+}
+
+/** The operator detail of one refusal. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Compare one shadow answer with the human label. A confidence below the floor
+ * is an abstention, not a disagreement; a failed answer is an error, not a match.
+ * @param item - the item whose severity the human confirmed.
+ * @param result - what the shadow evaluator answered.
+ * @param modelVersion - the shadow model identity.
+ * @param threshold - the board's confidence floor.
+ * @returns the evaluation to store.
+ */
+function shadowEvaluationOf(
+  item: FaberLoomBoardItem,
+  result: BoardClassifierResult,
+  modelVersion: string,
+  threshold: number,
+): BoardShadowEvaluation {
+  const base = {
+    itemId: item.id,
+    humanSeverity: item.severity as BoardSeverity,
+    shadowSeverity: null,
+    modelVersion,
+    at: new Date().toISOString(),
+  }
+  if (result.status === 'timeout') return { ...base, status: 'timeout' }
+  if (result.status === 'invalid') return { ...base, status: 'invalid' }
+  if (result.confidence < threshold) return { ...base, status: 'abstained' }
+  return {
+    ...base,
+    shadowSeverity: result.severity,
+    status: result.severity === item.severity ? 'matched' : 'mismatched',
+  }
+}
+
 /** The fields one item declares: its summary, its artifact content, and its origins. */
-function declaredItemFields(record: BoardItemRecord): readonly string[] {
-  const last = record.revisions[record.revisions.length - 1]
+function declaredItemFields(record: BoardItemRecord): readonly string[] {  const last = record.revisions[record.revisions.length - 1]
   return [...new Set([
     'summary',
     ...Object.keys(last?.content ?? {}),
@@ -512,6 +574,7 @@ export class FaberLoomBoard extends Service {
   private readonly effectConfig: EffectPolicy
   /** Milliseconds the classifier port may take before the answer counts as a timeout. */
   private readonly classifierTimeoutMs: number
+  private readonly bulkApprovalEnabled: boolean
   /** Outbox sweep cadence; zero keeps the consumer idle. */
   private readonly dispatchIntervalMs: number
   /** How long a refused dispatch waits before the consumer retries it. */
@@ -558,6 +621,7 @@ export class FaberLoomBoard extends Service {
     }
     this.effectActionTypes = new Set(resolved.effectActionTypes)
     this.classifierTimeoutMs = resolved.classifierTimeoutMs
+    this.bulkApprovalEnabled = resolved.bulkApprovalEnabled
     this.dispatchIntervalMs = resolved.effectDispatchIntervalMs
     this.dispatchBackoffMs = resolved.effectDispatchBackoffMs
     this.startEffectConsumer()
@@ -632,6 +696,11 @@ export class FaberLoomBoard extends Service {
   /** The iteration-chat attachments, keyed by session id. */
   private async iterationChats(): Promise<KvTable<string, IterationChatRecord>> {
     return (await this.domain()).table('iteration_chats')
+  }
+
+  /** The shadow evaluations that measure a classifier without deciding anything. */
+  private async shadowEvaluations(): Promise<KvTable<string, ShadowEvaluationRecord>> {
+    return (await this.domain()).table('severity_shadow')
   }
 
   private draftId(itemId: FaberLoomBoardItemId | string, userId: string): string {
@@ -815,7 +884,7 @@ export class FaberLoomBoard extends Service {
    */
   async runChecks(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardCheckReport> {
     const record = await this.requireItem(id)
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     return await this.evaluateChecks(record, id)
   }
 
@@ -1212,6 +1281,7 @@ export class FaberLoomBoard extends Service {
       runId?: string
       idempotencyKey?: string
       businessKey?: string
+      sourceRef?: string | null
       state?: BoardState
       supersedesItemId?: string | null
       valueAmount?: number
@@ -1279,6 +1349,7 @@ export class FaberLoomBoard extends Service {
       runId: input.runId ?? null,
       idempotencyKey: input.idempotencyKey ?? null,
       businessKey: input.businessKey ?? null,
+      sourceRef: input.sourceRef ?? null,
       supersedesItemId: input.supersedesItemId ?? null,
       artifactType,
       accountRef,
@@ -1332,7 +1403,18 @@ export class FaberLoomBoard extends Service {
       accountRef: input.accountRef,
     })
     const id = brandString<FaberLoomBoardItemId>(randomUUID())
-    const record = await this.buildRecord(actor, input)
+    requireEvidence(input.evidence)
+    // The business identity is the server's (§2.1): the caller names the source,
+    // never the key it hashes. An item with no source cannot be deduplicated.
+    const sourceRef = sourceRefOf(input)
+    const businessKey = businessKeyOf({
+      companyId,
+      spaceId: input.spaceId ?? null,
+      accountRef: input.accountRef ?? null,
+      sourceRef,
+      artifactType: input.artifactType?.trim() || 'tarea',
+    })
+    const record = await this.buildRecord(actor, { ...input, sourceRef, businessKey })
     await (await this.items()).put(id, record)
     await this.claimReferences(companyId, id, { executionId: input.executionId, accountRef: input.accountRef })
     return toItem(id, record)
@@ -1349,11 +1431,19 @@ export class FaberLoomBoard extends Service {
     const actor = this.actorOf(writer)
     if (input.runId.trim().length === 0) throw new Error('faberloom: NO_RUN — an item requires a run id')
     if (input.idempotencyKey.trim().length === 0) throw new Error('faberloom: NO_RUN — an item requires an idempotency key')
-    if (input.businessKey.trim().length === 0) throw new Error('faberloom: NO_RUN — an item requires a business key')
     if (input.companyId !== undefined && input.companyId !== actor.companyId) {
       throw new Error('faberloom: NO_ACCESS — the item company is not the actor company')
     }
     const companyId = input.companyId ?? actor.companyId ?? null
+    requireEvidence(input.evidence)
+    const sourceRef = sourceRefOf(input)
+    const businessKey = businessKeyOf({
+      companyId,
+      spaceId: input.spaceId ?? null,
+      accountRef: input.accountRef ?? null,
+      sourceRef,
+      artifactType: input.artifactType?.trim() || 'tarea',
+    })
     const references: BoardReferences = {
       spaceId: input.spaceId,
       runId: input.runId,
@@ -1366,7 +1456,7 @@ export class FaberLoomBoard extends Service {
       const existingId = await this.claimedItem(companyId, 'idem', input.idempotencyKey)
       if (existingId !== undefined) return toItem(existingId, await this.requireItem(existingId))
 
-      const existing = await this.findNonTerminal(companyId, input.businessKey)
+      const existing = await this.findNonTerminal(companyId, businessKey)
       let supersedes: string | null = null
       if (existing !== undefined) {
         // Uniqueness is per tenant, not per owner: another owner's live item on
@@ -1400,6 +1490,8 @@ export class FaberLoomBoard extends Service {
       const id = brandString<FaberLoomBoardItemId>(randomUUID())
       const record = await this.buildRecord(actor, {
         ...input,
+        sourceRef,
+        businessKey,
         title: input.title ?? input.summary.slice(0, 80),
         companyId: companyId ?? undefined,
         supersedesItemId: supersedes,
@@ -1408,11 +1500,11 @@ export class FaberLoomBoard extends Service {
       // claim and the put leaves a claim, never a second live item.
       await this.claimKey(companyId, 'idem', input.idempotencyKey, id)
       try {
-        await this.claimKey(companyId, 'bkey', input.businessKey, id)
+        await this.claimKey(companyId, 'bkey', businessKey, id)
         await (await this.items()).put(id, record)
       } catch (error) {
         await this.release(companyId, 'idem', input.idempotencyKey)
-        await this.release(companyId, 'bkey', input.businessKey)
+        await this.release(companyId, 'bkey', businessKey)
         throw error
       }
       await this.claimReferences(companyId, id, references)
@@ -1461,12 +1553,89 @@ export class FaberLoomBoard extends Service {
     expectedRowVersion?: number,
   ): Promise<FaberLoomBoardItem> {
     const previous = (await this.requireItem(id)).severity
-    return await this.mutate(writer, id, 'set_severity', current => ({
+    const updated = await this.mutate(writer, id, 'set_severity', current => ({
       ...current, severity, severitySource: source, severityConfidence: confidence,
     }), {
       expectedRowVersion,
       data: { previous, source, confidence },
     })
+    // A human confirmation is the label the shadow evaluator is measured
+    // against (W-63); the evaluation never changes the item.
+    if (source === 'HUMAN') await this.evaluateShadow(updated)
+    return updated
+  }
+
+  /**
+   * Run one shadow evaluation of a human severity confirmation (W-63). The
+   * result is stored for the report and never applied: the human severity stays
+   * the item's severity. N2+ items are skipped because DPA, ZDR, and SOC 2 are
+   * not in place for them; no content leaves for a shadow provider.
+   * @param item - the item whose severity a human just confirmed.
+   */
+  private async evaluateShadow(item: FaberLoomBoardItem): Promise<void> {
+    const shadow = this.ctx.get('faberloomBoardShadow') as BoardClassifierPort | undefined
+    if (shadow === undefined) return
+    const record = await this.requireItem(item.id)
+    if (record.dataClass !== 'N0' && record.dataClass !== 'N1') return
+    const last = record.revisions[record.revisions.length - 1]
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.classifierTimeoutMs)
+    let result: BoardClassifierResult
+    try {
+      result = await shadow.classifySeverity({
+        artifactType: record.artifactType,
+        accountRef: record.accountRef,
+        contentHash: record.artifactHash ?? '',
+        summary: last?.summary ?? '',
+      }, { signal: controller.signal, confidenceThreshold: this.confidenceThreshold })
+    } catch (error: unknown) {
+      result = { status: 'invalid', detail: error instanceof Error ? error.message : String(error) }
+    } finally {
+      clearTimeout(timer)
+    }
+    const evaluation: BoardShadowEvaluation = shadowEvaluationOf(item, result, shadow.modelVersion, this.confidenceThreshold)
+    await (await this.shadowEvaluations()).put(
+      `${item.id}\u0000${evaluation.at}`,
+      {
+        companyId: record.companyId,
+        itemId: item.id,
+        humanSeverity: evaluation.humanSeverity,
+        shadowSeverity: evaluation.shadowSeverity,
+        status: evaluation.status,
+        modelVersion: evaluation.modelVersion,
+        at: evaluation.at,
+      },
+    ).catch(() => undefined)
+  }
+
+  /**
+   * The shadow report of one tenant's window (W-63): agreement, abstentions,
+   * errors, and the case that matters, a CRITICAL the shadow ranked lower.
+   * @param actor - the tenant whose evaluations are read.
+   * @param filter - inclusive ISO-8601 window; omitted reads every stored row.
+   * @returns the aggregate.
+   */
+  async shadowReport(
+    actor: BoardActor,
+    filter: { readonly from?: string; readonly to?: string } = {},
+  ): Promise<BoardShadowReport> {
+    const byHuman: Record<BoardSeverity, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
+    const report = { evaluated: 0, matched: 0, mismatched: 0, abstained: 0, invalid: 0, timeout: 0, criticalLowered: 0 }
+    for (const [, row] of (await this.shadowEvaluations()).entries()) {
+      if (row.companyId !== (actor.companyId ?? null)) continue
+      if (filter.from !== undefined && row.at < filter.from) continue
+      if (filter.to !== undefined && row.at > filter.to) continue
+      const human = row.humanSeverity as BoardSeverity
+      report.evaluated += 1
+      byHuman[human] += 1
+      if (row.status === 'matched') report.matched += 1
+      else if (row.status === 'mismatched') report.mismatched += 1
+      else if (row.status === 'abstained') report.abstained += 1
+      else if (row.status === 'timeout') report.timeout += 1
+      else report.invalid += 1
+      if (human === 'CRITICAL' && row.shadowSeverity !== null && row.shadowSeverity !== 'CRITICAL') report.criticalLowered += 1
+    }
+    return { ...report, byHuman }
   }
 
   /**
@@ -1532,6 +1701,78 @@ export class FaberLoomBoard extends Service {
     }, { expectedRowVersion: input.expectedRowVersion, data: this.checkEventData(report, confirmations) })
     await this.clearEditDraft(this.actorOf(writer), id)
     return updated
+  }
+
+  /**
+   * Approve a batch under §6.4. Every item is revalidated on the server — state,
+   * row, artifact hash, controls, and signatures — and the answer names what was
+   * approved and what was refused with its own code. A refusal on one item never
+   * rolls back the others.
+   *
+   * The batch stays off until a deployment enables it (D-11); W-14 records that
+   * absence, and this method is the W-15 behavior behind the flag.
+   * @param writer - the acting identity.
+   * @param input - the items the reviewer saw and the controls they confirmed.
+   * @returns approved items and refused items with their reasons.
+   */
+  async approveBulk(writer: BoardWriter, input: BoardBulkApproveInput): Promise<BoardBulkApproveResult> {
+    if (!this.bulkApprovalEnabled) {
+      throw new Error('faberloom: BULK_DISABLED — this deployment keeps the batch outside the pilot (D-11)')
+    }
+    const actor = this.actorOf(writer)
+    const approved: { id: string; version: number }[] = []
+    const rejected: BoardBulkRejection[] = []
+    let first: BoardItemRecord | undefined
+    for (const entry of input.items) {
+      const id = entry.id as FaberLoomBoardItemId
+      let record: BoardItemRecord
+      try {
+        record = await this.requireItem(id)
+        this.authorizeWrite(record, actor)
+      } catch (error: unknown) {
+        rejected.push({ id: entry.id, code: errorCodeOf(error), detail: messageOf(error) })
+        continue
+      }
+      const ineligible = this.bulkEligibility(record, first)
+      if (ineligible !== null) {
+        rejected.push({ id: entry.id, code: ineligible, detail: 'the item is not eligible for a batch (§6.4)' })
+        continue
+      }
+      first ??= record
+      try {
+        const item = await this.approve(writer, id, {
+          expectedRowVersion: entry.expectedRowVersion,
+          expectedArtifactVersion: entry.expectedArtifactVersion,
+          expectedArtifactHash: entry.expectedArtifactHash,
+          ...input.confirmations === undefined ? {} : { confirmations: input.confirmations },
+        })
+        approved.push({ id: entry.id, version: item.approvedRevision ?? item.version })
+      } catch (error: unknown) {
+        rejected.push({ id: entry.id, code: errorCodeOf(error), detail: messageOf(error) })
+      }
+    }
+    return { approved, rejected }
+  }
+
+  /**
+   * Why one item may not join the batch, or null when it may.
+   * @param record - the stored item.
+   * @param first - the first eligible item, which fixes the batch's scope.
+   * @returns the refusal code, or null.
+   */
+  private bulkEligibility(record: BoardItemRecord, first: BoardItemRecord | undefined): string | null {
+    if (record.severity !== 'LOW' || record.severitySource === null) return 'BULK_SEVERITY'
+    // §6.4 excludes any action that touches money, inventory, or external
+    // shipments: a priced item or an effect type is reviewed one at a time.
+    if (record.valueUsd !== null) return 'BULK_MONEY'
+    if (record.actionType !== 'mesa.decide') return 'BULK_ACTION'
+    if (first === undefined) return null
+    const sameScope = record.companyId === first.companyId
+      && record.spaceId === first.spaceId
+      && record.assigneeId === first.assigneeId
+      && record.actionType === first.actionType
+      && record.artifactType === first.artifactType
+    return sameScope ? null : 'BULK_MIXED'
   }
 
   /**
@@ -1705,13 +1946,16 @@ export class FaberLoomBoard extends Service {
       if (TERMINAL.includes(stateOf(current))) {
         throw new Error('faberloom: NO_ACCESS — a closed item cannot be assigned to a space')
       }
-      // The business key is the item's own identity (§2.1); assigning a space
-      // never rewrites it, so the key keeps deduping the pair.
-      const key = current.businessKey
-      if (key === null) {
-        const item = await this.mutate(writer, id, 'assign_workspace', entry => ({ ...entry, spaceId: workspaceId }))
-        return { item, transferredDrafts: [] }
-      }
+      // The key binds the space (§2.1): assigning one recomputes the identity,
+      // and a collision with another live item resolves per §2.3.
+      const previousKey = current.businessKey
+      const key = businessKeyOf({
+        companyId,
+        spaceId: workspaceId,
+        accountRef: current.accountRef,
+        sourceRef: sourceRefOf(current),
+        artifactType: current.artifactType,
+      })
       const other = await this.findNonTerminal(companyId, key, id)
       let superseded: string | null = null
       let transferredDrafts: readonly BoardTransferredDraft[] = []
@@ -1729,6 +1973,7 @@ export class FaberLoomBoard extends Service {
           }), { reason: 'transferred-as-candidate' })
           transferredDrafts = await this.transferDrafts(current, id, other.id)
           await this.claimKey(companyId, 'bkey', key, other.id)
+          if (previousKey !== null && previousKey !== key) await this.release(companyId, 'bkey', previousKey)
           return { item: toItem(other.id, await this.requireItem(other.id)), transferredDrafts }
         }
         await this.mutate(writer, other.id, 'superseded', item => ({
@@ -1743,10 +1988,115 @@ export class FaberLoomBoard extends Service {
       const item = await this.mutate(writer, id, 'assign_workspace', entry => ({
         ...entry,
         spaceId: workspaceId,
+        businessKey: key,
         supersedesItemId: superseded ?? entry.supersedesItemId,
       }))
+      if (previousKey !== null && previousKey !== key) await this.release(companyId, 'bkey', previousKey)
       return { item, transferredDrafts }
     })
+  }
+
+  /**
+   * Recompute every item's business key from §2.1. A legacy item recorded a
+   * producer key and no source; the migration reads the producer key as its
+   * source reference, so the dedup identity is preserved instead of invented.
+   * A dry run reports what it would do and writes nothing.
+   *
+   * The migration is tenant-wide, so it runs as the owning identity: an actor
+   * that does not own every item is refused before anything is written.
+   * @param actor - the owning identity running the migration.
+   * @param options - `dryRun` reports without writing.
+   * @returns what changed, what stayed, and what collided.
+   */
+  async rekeyAll(actor: BoardActor, options: { readonly dryRun?: boolean } = {}): Promise<BoardRekeyReport> {
+    const rows = [...(await this.items()).entries()]
+      .sort((left, right) => left[1].updatedAt.localeCompare(right[1].updatedAt) || left[0].localeCompare(right[0]))
+    for (const [, record] of rows) {
+      if (record.ownerId === actor.id && (record.companyId === null || record.companyId === actor.companyId)) continue
+      throw new Error('faberloom: NO_ACCESS — the key migration is tenant-wide and must run as the owning identity')
+    }
+    const report = { scanned: rows.length, rekeyed: 0, unchanged: 0, collisions: 0, skipped: 0, entries: [] as BoardRekeyEntry[] }
+    for (const [id, record] of rows) {
+      const sourceRef = sourceRefOf(record)
+      const to = sourceRef.length === 0
+        ? record.businessKey ?? ''
+        : businessKeyOf({
+          companyId: record.companyId,
+          spaceId: record.spaceId,
+          accountRef: record.accountRef,
+          sourceRef,
+          artifactType: record.artifactType,
+        })
+      if (sourceRef.length === 0) {
+        report.skipped += 1
+        report.entries.push({ id, from: record.businessKey, to, sourceRef, action: 'skipped' })
+        continue
+      }
+      if (record.businessKey === to && record.sourceRef === sourceRef) {
+        report.unchanged += 1
+        report.entries.push({ id, from: record.businessKey, to, sourceRef, action: 'unchanged' })
+        continue
+      }
+      if (options.dryRun === true) {
+        report.rekeyed += 1
+        report.entries.push({ id, from: record.businessKey, to, sourceRef, action: 'rekeyed' })
+        continue
+      }
+      const outcome = await this.serial(record.companyId, async () => await this.rekeyOne(actor, id, to, sourceRef))
+      report.rekeyed += 1
+      if (outcome === 'collision') report.collisions += 1
+      report.entries.push({ id, from: record.businessKey, to, sourceRef, action: outcome })
+    }
+    return report
+  }
+
+  /**
+   * Write one canonical key, resolving a §2.3 collision the way a workspace
+   * assignment does: a substitutable holder is superseded, a holder inside an
+   * attempt or an execution receives the artifact as a candidate.
+   * @param actor - the owning identity.
+   * @param id - item being rekeyed.
+   * @param to - canonical key.
+   * @param sourceRef - source reference the key hashes.
+   * @returns `rekeyed`, or `collision` when another live item held the key.
+   */
+  private async rekeyOne(
+    actor: BoardActor,
+    id: FaberLoomBoardItemId,
+    to: string,
+    sourceRef: string,
+  ): Promise<'rekeyed' | 'collision'> {
+    const current = await this.requireItem(id)
+    const from = current.businessKey
+    let action: 'rekeyed' | 'collision' = 'rekeyed'
+    if (!TERMINAL.includes(stateOf(current))) {
+      const other = await this.findNonTerminal(current.companyId, to, id)
+      if (other !== undefined) {
+        action = 'collision'
+        if (NOT_SUBSTITUTABLE.includes(stateOf(other.record))) {
+          await this.mutate(actor, other.id, 'candidate_arrived', item => ({
+            ...item, pendingCandidate: this.candidateOf(current),
+          }))
+          await this.mutate(actor, id, 'superseded', item => ({
+            ...item, state: 'SUSTITUIDO', status: 'completed', iterationDraftKey: null,
+          }), { reason: 'rekey-collision' })
+          await this.transferDrafts(current, id, other.id)
+          await this.claimKey(current.companyId, 'bkey', to, other.id)
+          if (from !== null && from !== to) await this.release(current.companyId, 'bkey', from)
+          return action
+        }
+        await this.mutate(actor, other.id, 'superseded', item => ({
+          ...item, state: 'SUSTITUIDO', status: 'completed', iterationDraftKey: null, reversalDeadline: null,
+        }), { reason: 'rekey-collision' })
+        await this.releaseScheduledExecution(current.companyId, other.record.effectKey, 'substituted')
+        await this.transferDrafts(other.record, other.id, id)
+        await this.release(current.companyId, 'bkey', to)
+      }
+    }
+    await this.mutate(actor, id, 'rekey', item => ({ ...item, businessKey: to, sourceRef }))
+    await this.claimKey(current.companyId, 'bkey', to, id)
+    if (from !== null && from !== to) await this.release(current.companyId, 'bkey', from)
+    return action
   }
 
   /**
@@ -1827,7 +2177,7 @@ export class FaberLoomBoard extends Service {
    */
   async transferredDrafts(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardTransferredDraft[]> {
     const record = await this.requireItem(id)
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     const now = new Date()
     const drafts = await this.iterationDrafts()
     const listed: BoardTransferredDraft[] = []
@@ -1891,7 +2241,7 @@ export class FaberLoomBoard extends Service {
    */
   async getEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEditDraft | undefined> {
     const record = await this.requireItem(id)
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     const draft = (await this.drafts()).get(this.draftId(id, actor.id))
     return draft === undefined ? undefined : { ...draft }
   }
@@ -2001,7 +2351,7 @@ export class FaberLoomBoard extends Service {
    */
   async iterationStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardIterationStatus> {
     const record = await this.requireItem(id)
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     return await this.statusOf(id, record)
   }
 
@@ -2016,7 +2366,7 @@ export class FaberLoomBoard extends Service {
   async iterationContext(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardIterationContext | undefined> {
     const record = (await this.items()).get(id)
     if (record === undefined) return undefined
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     const item = toItem(id, record)
     const restricted = item.dataClassProvisional || item.dataClass === 'N3' || item.dataClass === 'N4'
     const revision = item.revisions[item.revisions.length - 1]
@@ -2207,7 +2557,7 @@ export class FaberLoomBoard extends Service {
     iterationId?: string,
   ): Promise<BoardIterationDraft | undefined> {
     const record = await this.requireItem(id)
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     const now = new Date()
     const drafts = await this.iterationDrafts()
     if (iterationId !== undefined) {
@@ -2233,7 +2583,7 @@ export class FaberLoomBoard extends Service {
     text: string,
   ): Promise<readonly BoardFieldChange[] | null> {
     const record = await this.requireItem(id)
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     return routeFieldInstruction(text, declaredItemFields(record))
   }
 
@@ -3232,7 +3582,7 @@ export class FaberLoomBoard extends Service {
    */
   async noteAccess(actor: BoardActor, id: FaberLoomBoardItemId, detail: string): Promise<void> {
     const record = await this.requireItem(id)
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     if (record.dataClass !== 'N3' && record.dataClass !== 'N4') return
     const hourAgo = Date.now() - 3_600_000
     const recent = record.events.some(event =>
@@ -3326,7 +3676,7 @@ export class FaberLoomBoard extends Service {
    */
   async effectStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEffectStatus | null> {
     const record = await this.requireItem(id)
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     const effectKey = record.effectKey
     if (effectKey === null) return null
     return await this.projectEffect(record, effectKey)
@@ -3479,12 +3829,14 @@ export class FaberLoomBoard extends Service {
           effectKey,
           executionId: held.executionId,
           itemId: id,
+          ownerId: current.ownerId,
+          companyId: current.companyId,
           actionType: held.actionType,
           destination: held.destination,
           idempotencyKey: held.idempotencyKey,
           attempt: 0,
         }
-        : this.dispatchOf(message, message.attempts)
+        : this.dispatchOf(message, message.attempts, current.ownerId)
       const answer = await this.callAdapter((asked, options) => probe(asked, options), dispatch)
       await this.reconcile(writer, id, {
         ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
@@ -4146,7 +4498,7 @@ export class FaberLoomBoard extends Service {
       return { ...current, status: 'DESPACHADA', dispatchedAt: at, updatedAt: at }
     })
 
-    const result = await this.sendEffect(adapter, message, attempt)
+    const result = await this.sendEffect(adapter, message, attempt, record.ownerId)
     const item = await this.commitItem(id, effectCommandFor(result.status), actor.id, current =>
       this.outcomeRecord(current, {
         command: effectCommandFor(result.status),
@@ -4176,11 +4528,13 @@ export class FaberLoomBoard extends Service {
    * @param attempt - one-based attempt count.
    * @returns the message an adapter receives.
    */
-  private dispatchOf(message: EffectOutboxRecord, attempt: number): BoardEffectDispatch {
+  private dispatchOf(message: EffectOutboxRecord, attempt: number, ownerId: string): BoardEffectDispatch {
     return {
       effectKey: message.effectKey,
       executionId: message.executionId,
       itemId: message.itemId,
+      ownerId,
+      companyId: message.companyId,
       actionType: message.actionType,
       destination: message.destination,
       idempotencyKey: message.idempotencyKey,
@@ -4231,8 +4585,9 @@ export class FaberLoomBoard extends Service {
     adapter: BoardEffectAdapter,
     message: EffectOutboxRecord,
     attempt: number,
+    ownerId: string,
   ): Promise<BoardEffectResult> {
-    return await this.callAdapter((dispatch, options) => adapter.send(dispatch, options), this.dispatchOf(message, attempt))
+    return await this.callAdapter((dispatch, options) => adapter.send(dispatch, options), this.dispatchOf(message, attempt, ownerId))
   }
 
   /**
@@ -4501,6 +4856,7 @@ export class FaberLoomBoard extends Service {
       ...closed.companyId === null ? {} : { companyId: closed.companyId },
       ...closed.spaceId === null ? {} : { spaceId: closed.spaceId },
       ...closed.businessKey === null ? {} : { businessKey: closed.businessKey },
+      ...closed.sourceRef === null ? {} : { sourceRef: closed.sourceRef },
       ...closed.accountRef === null ? {} : { accountRef: closed.accountRef },
     })
     // The successor is the same artifact, so it keeps the class settled for the
@@ -4533,7 +4889,7 @@ export class FaberLoomBoard extends Service {
    */
   async events(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardEvent[]> {
     const record = await this.requireItem(id)
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     return record.events.map(event => ({
       ...event,
       fromState: event.fromState as BoardState | null,
@@ -4800,16 +5156,41 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Refuse a read when the item belongs to another owner or to another company.
+   * Refuse a read the actor may not make. The tenant rule comes first; an item
+   * without a space stays owner-only, and an item inside a space is readable by
+   * whoever the Spaces service lets read that space (owner, member, admin, or a
+   * `view` grant). That is W-23: no scope, no read, no count, no list.
    * @param record - the stored item.
    * @param actor - the authenticated reader.
    */
-  private authorizeRead(record: BoardItemRecord, actor: BoardActor): void {
-    if (record.ownerId !== actor.id) {
-      throw new Error('faberloom: NO_ACCESS — the item belongs to another owner')
-    }
+  private async authorizeRead(record: BoardItemRecord, actor: BoardActor): Promise<void> {
     if (record.companyId !== null && record.companyId !== actor.companyId) {
       throw new Error('faberloom: NO_ACCESS — the item belongs to another company')
+    }
+    if (record.ownerId === actor.id) return
+    if (record.spaceId === null || !await this.spaceReadable(record.spaceId, actor)) {
+      throw new Error('faberloom: NO_ACCESS — the item belongs to another owner')
+    }
+  }
+
+  /**
+   * Whether the actor may read one Space. The Spaces service owns the rule
+   * (owner, member, admin, or a `view` grant); a composition without that
+   * service grants nothing, so no read widens by accident.
+   * @param spaceId - the space the item belongs to.
+   * @param actor - the authenticated reader.
+   * @returns true when the space is readable.
+   */
+  private async spaceReadable(spaceId: string, actor: BoardActor): Promise<boolean> {
+    const spaces = this.ctx.get('faberloomSpaces') as {
+      get(actor: { id: string; companyId?: string | undefined; role?: string; readOnly?: boolean }, id: string): Promise<unknown>
+    } | undefined
+    if (spaces === undefined) return false
+    try {
+      await spaces.get({ id: actor.id, companyId: actor.companyId, role: actor.role ?? 'client_b2b', readOnly: true }, spaceId)
+      return true
+    } catch {
+      return false
     }
   }
 
@@ -4837,7 +5218,7 @@ export class FaberLoomBoard extends Service {
    */
   async get(actor: BoardActor, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem> {
     const record = await this.requireItem(id)
-    this.authorizeRead(record, actor)
+    await this.authorizeRead(record, actor)
     return toItem(id, record)
   }
 
@@ -4854,9 +5235,20 @@ export class FaberLoomBoard extends Service {
     filter: { status?: BoardStatus; state?: BoardState; spaceId?: string } = {},
   ): Promise<FaberLoomBoardItem[]> {
     const out: FaberLoomBoardItem[] = []
+    // One Space lookup per distinct space: a member's queue may hold hundreds of
+    // items from the same space, and W-23 asks for scope, not per-row calls.
+    const readable = new Map<string, boolean>()
     for (const [id, record] of (await this.items()).entries()) {
-      if (record.ownerId !== actor.id) continue
       if (record.companyId !== null && record.companyId !== actor.companyId) continue
+      if (record.ownerId !== actor.id) {
+        if (record.spaceId === null) continue
+        let allowed = readable.get(record.spaceId)
+        if (allowed === undefined) {
+          allowed = await this.spaceReadable(record.spaceId, actor)
+          readable.set(record.spaceId, allowed)
+        }
+        if (!allowed) continue
+      }
       if (filter.status !== undefined && record.status !== filter.status) continue
       if (filter.state !== undefined && stateOf(record) !== filter.state) continue
       if (filter.spaceId !== undefined && record.spaceId !== filter.spaceId) continue

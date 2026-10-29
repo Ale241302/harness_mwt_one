@@ -58,6 +58,26 @@
     - id: faberloom-routines
       name: '@deepseek-ai/dsh-faberloom-routines'
 
+    # Adaptador de `mail.send` (E15): envía la revisión aprobada por la conexión
+    # SMTP del dueño. Solo registra el adaptador si el tablero acepta el tipo
+    # (`FABERLOOM_EFFECT_ACTION_TYPES`); con la lista vacía queda cargado sin
+    # efecto, que es el estado seguro del piloto (A-05).
+    - id: faberloom-effects-mail
+      name: '@deepseek-ai/dsh-faberloom-effects-mail'
+      disabled: !!js process.env.FABERLOOM_EFFECT_MAIL === '0'
+
+    # Clasificador de severidad sobre `ctx.llm` (A-04): las reglas deterministas
+    # resuelven primero y este puerto solo ve lo que las reglas no resolvieron.
+    # Una respuesta inválida o un plazo vencido dejan `severity: null` y el ítem
+    # entra igual (W-37). Se apaga con FABERLOOM_CLASSIFIER=0; el proveedor y el
+    # modelo se declaran por entorno para que la clave de caché los nombre.
+    - id: faberloom-classifier-llm
+      name: '@deepseek-ai/dsh-faberloom-classifier-llm'
+      disabled: !!js process.env.FABERLOOM_CLASSIFIER === '0'
+      config:
+        provider: !!js process.env.FABERLOOM_CLASSIFIER_PROVIDER ?? 'deepseek-official'
+        model: !!js process.env.FABERLOOM_CLASSIFIER_MODEL ?? 'deepseek-chat'
+
     # Controles de proforma sobre el MCP de MWT.ONE (`mcp__mwt__*`): precio por
     # línea, SKU, cantidades, suma, stock y separación (D-01, D-02). Encendido
     # por defecto; sin esta fila el board rechaza toda aprobación de proforma con

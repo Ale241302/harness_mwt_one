@@ -2384,9 +2384,9 @@ Submit one prepared result or one concrete missing-data task to the Mesa. Requir
 {
   "type": "object",
   "properties": {
-    "businessKey": {
+    "sourceRef": {
       "type": "string",
-      "description": "Business identity: PF, OC, or SAP code."
+      "description": "Source reference the server hashes: PF, OC, or SAP code, or the mail thread or order id."
     },
     "accountRef": {
       "type": "string",
@@ -2445,7 +2445,7 @@ Submit one prepared result or one concrete missing-data task to the Mesa. Requir
     }
   },
   "required": [
-    "businessKey",
+    "sourceRef",
     "accountRef",
     "title",
     "summary",

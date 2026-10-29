@@ -194,6 +194,110 @@ export interface BoardInstructionOutcome {
   readonly applied: boolean
 }
 
+/** One item one bulk approval names, with the version and hash the reviewer saw. */
+export interface BoardBulkApproveItem {
+  /** Item id. */
+  readonly id: string
+  /** Optimistic row token. */
+  readonly expectedRowVersion: number
+  /** Exact artifact version reviewed. */
+  readonly expectedArtifactVersion: number
+  /** Hash of that artifact version. */
+  readonly expectedArtifactHash: string
+}
+
+/** Input for `approveBulk` (§6.4). */
+export interface BoardBulkApproveInput {
+  /** Items to approve, in the order the reviewer selected them. */
+  readonly items: readonly BoardBulkApproveItem[]
+  /** Controls the reviewer explicitly confirmed. */
+  readonly confirmations?: readonly string[]
+}
+
+/** Why one item of a bulk approval was not approved. */
+export interface BoardBulkRejection {
+  /** Item id. */
+  readonly id: string
+  /** Stable refusal code. */
+  readonly code: string
+  /** Operator detail, never product copy. */
+  readonly detail: string
+}
+
+/** Answer of one bulk approval: what was approved and what was not, with its reason. */
+export interface BoardBulkApproveResult {
+  /** Approved items with their new approved revision. */
+  readonly approved: readonly { readonly id: string; readonly version: number }[]
+  /** Items the server refused, each with its code and detail. */
+  readonly rejected: readonly BoardBulkRejection[]
+}
+
+/** One shadow evaluation of a human severity confirmation (W-63). */
+export interface BoardShadowEvaluation {
+  /** Item the evaluation belongs to. */
+  readonly itemId: string
+  /** Severity the human confirmed; the label, never the approval. */
+  readonly humanSeverity: BoardSeverity
+  /** Severity the shadow evaluator proposed, or null when it abstained. */
+  readonly shadowSeverity: BoardSeverity | null
+  /** How the evaluation compares with the human label. */
+  readonly status: 'matched' | 'mismatched' | 'abstained' | 'invalid' | 'timeout'
+  /** Shadow model identity. */
+  readonly modelVersion: string
+  /** ISO-8601 instant. */
+  readonly at: string
+}
+
+/** Aggregate of one tenant's shadow evaluations (W-63). */
+export interface BoardShadowReport {
+  /** Evaluations in the window. */
+  readonly evaluated: number
+  /** Evaluations that agree with the human label. */
+  readonly matched: number
+  /** Evaluations that disagree. */
+  readonly mismatched: number
+  /** Evaluations that returned no severity or answered below the confidence floor. */
+  readonly abstained: number
+  /** Evaluations that failed to answer. */
+  readonly invalid: number
+  /** Evaluations that exceeded their deadline. */
+  readonly timeout: number
+  /** Evaluations per confirmed human severity. */
+  readonly byHuman: Readonly<Record<BoardSeverity, number>>
+  /** A CRITICAL item the shadow ranked lower, the case W-63 stresses. */
+  readonly criticalLowered: number
+}
+
+/** One item's outcome in a business-key migration. */
+export interface BoardRekeyEntry {
+  /** Item id. */
+  readonly id: string
+  /** Key the item held before the migration, or null. */
+  readonly from: string | null
+  /** Key the item holds after the migration. */
+  readonly to: string
+  /** Source reference the new key hashes. */
+  readonly sourceRef: string
+  /** What the migration did with the item. */
+  readonly action: 'rekeyed' | 'unchanged' | 'collision' | 'skipped'
+}
+
+/** Report of one business-key migration (§2.1). */
+export interface BoardRekeyReport {
+  /** Items read. */
+  readonly scanned: number
+  /** Items whose key changed. */
+  readonly rekeyed: number
+  /** Items already carrying the canonical key and source. */
+  readonly unchanged: number
+  /** Items resolved through §2.3 because another live item held the key. */
+  readonly collisions: number
+  /** Items with no source reference; they were not touched. */
+  readonly skipped: number
+  /** One row per item, in the order the migration read them. */
+  readonly entries: readonly BoardRekeyEntry[]
+}
+
 /** One in-progress inline edit, owned by one browser tab. */
 export interface BoardEditDraft {
   /** Item the draft edits. */
@@ -335,6 +439,8 @@ export interface FaberLoomBoardItem {
   readonly idempotencyKey: string | null
   /** Business identity, or null. */
   readonly businessKey: string | null
+  /** Source reference the key hashes (purchase order, mail thread, order id), or null. */
+  readonly sourceRef: string | null
   /** Item this one replaces, or null. */
   readonly supersedesItemId: string | null
   /** Artifact type (`proforma`, `respuesta`, ...). */
@@ -415,6 +521,8 @@ export interface BoardSubmitInput {
   readonly summary: string
   /** Real evidence references; at least one is required. */
   readonly evidence: readonly string[]
+  /** Source reference the server hashes: purchase order, mail thread, or order id. */
+  readonly sourceRef?: string
   /** Opaque document reference. */
   readonly documentRef?: string
   /**
@@ -481,8 +589,8 @@ export interface BoardSubmitRequest extends BoardSubmitInput {
   readonly runId: string
   /** Unique per run step. */
   readonly idempotencyKey: string
-  /** Business identity of the artifact. */
-  readonly businessKey: string
+  /** Producer's former business identity; read as a source reference when sourceRef is absent. */
+  readonly businessKey?: string
   /** Artifact type. */
   readonly artifactType?: string
   /** Account/client reference. */
@@ -1529,6 +1637,10 @@ export interface BoardEffectDispatch {
   readonly executionId: string
   /** Item that authorized the effect. */
   readonly itemId: string
+  /** Identity that owns the item, so an adapter can read the approved artifact. */
+  readonly ownerId: string
+  /** Tenant of the item. */
+  readonly companyId: string | null
   /** Action type of the effect. */
   readonly actionType: string
   /** Normalised destination. */

@@ -1791,6 +1791,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-checks-mwt':
         specifier: workspace:^
         version: link:../../faberloom/checks-mwt
+      '@deepseek-ai/dsh-faberloom-classifier-llm':
+        specifier: workspace:^
+        version: link:../../faberloom/classifier-llm
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../../faberloom/connections
@@ -1800,6 +1803,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-defaults':
         specifier: workspace:^
         version: link:../../faberloom/defaults
+      '@deepseek-ai/dsh-faberloom-effects-mail':
+        specifier: workspace:^
+        version: link:../../faberloom/effects-mail
       '@deepseek-ai/dsh-faberloom-execution':
         specifier: workspace:^
         version: link:../../faberloom/execution
@@ -6894,6 +6900,22 @@ importers:
         specifier: workspace:^
         version: link:../../core/tools
 
+  packages/faberloom/classifier-llm:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-board':
+        specifier: workspace:^
+        version: link:../board
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+
   packages/faberloom/connections:
     dependencies:
       zod:
@@ -6947,6 +6969,22 @@ importers:
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines
+
+  packages/faberloom/effects-mail:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-board':
+        specifier: workspace:^
+        version: link:../board
+      '@deepseek-ai/dsh-faberloom-connections':
+        specifier: workspace:^
+        version: link:../connections
 
   packages/faberloom/execution:
     dependencies:

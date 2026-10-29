@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
-import FaberLoomBoard from '../src/index.ts'
+import FaberLoomBoard, { businessKeyOf } from '../src/index.ts'
 import {
   ACTOR_A,
   ACTOR_A2,
@@ -125,7 +125,8 @@ describe('FaberLoomBoard key uniqueness (W-39)', () => {
     const retried = await board.submit(ACTOR_A, {
       runId: 'run-fail', idempotencyKey: 'idem-fail', businessKey: 'k-fail', ...ARTIFACT,
     })
-    expect(retried.businessKey).toBe('k-fail')
+    expect(retried).toMatchObject({ sourceRef: 'k-fail' })
+    expect(retried.businessKey).toMatch(/^[0-9a-f]{64}$/u)
   })
 
   it('keeps one non-terminal item per tenant when two submits race on the same key', async () => {
@@ -142,7 +143,10 @@ describe('FaberLoomBoard key uniqueness (W-39)', () => {
     expect(results.every(result => result.status === 'fulfilled')).toBe(true)
     const live = (await harness.board.list(ACTOR_A)).filter(item => !TERMINAL_STATES.includes(item.state))
     expect(live).toHaveLength(1)
-    const claim = [...durableRows(harness.pool, 'keys').entries()].find(([key]) => key.endsWith(':bkey:k-race'))
+    const derived = businessKeyOf({
+      companyId: COMPANY_A, spaceId: null, accountRef: null, sourceRef: 'k-race', artifactType: 'proforma',
+    })
+    const claim = [...durableRows(harness.pool, 'keys').entries()].find(([key]) => key.endsWith(`:bkey:${derived}`))
     expect(claim?.[1]).toMatchObject({ itemId: String(live[0]?.id) })
   })
 

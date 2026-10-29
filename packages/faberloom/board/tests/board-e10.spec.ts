@@ -110,7 +110,8 @@ describe('FaberLoomBoard E10 commands', () => {
     expect(discarded.events.at(-1)?.reason).toBe('DUPLICADO')
   })
 
-  it('keeps the concrete artifact identity on submit', async () => {    const { board } = await bootBoard()
+  it('keeps the concrete artifact identity on submit', async () => {
+    const { board } = await bootBoard()
     const item = await board.submit(ACTOR_A, {
       runId: 'run-pf',
       idempotencyKey: 'idem-pf',
@@ -127,7 +128,7 @@ describe('FaberLoomBoard E10 commands', () => {
       severityConfidence: 0.93,
     })
     expect(item).toMatchObject({
-      businessKey: 'PF 2520-2026',
+      sourceRef: 'PF 2520-2026',
       accountRef: 'Eguisa',
       artifactType: 'proforma',
       valueAmount: 17528.55,
@@ -137,6 +138,17 @@ describe('FaberLoomBoard E10 commands', () => {
       severitySource: 'LLM',
       severityConfidence: 0.93,
     })
+    // The server derives the key; the producer names the source (PF 2520-2026).
+    expect(item.businessKey).toMatch(/^[0-9a-f]{64}$/u)
+    // The same source and scope is the same business identity: the new
+    // artifact supersedes the previous item (§2.1).
+    const again = await board.submit(ACTOR_A, {
+      runId: 'run-pf', idempotencyKey: 'idem-pf-2', businessKey: 'PF 2520-2026',
+      summary: 'Proforma DDP con precios verificados.', evidence: ['expediente:PF 2520-2026', 'oc:505288'],
+      artifactType: 'proforma', accountRef: 'Eguisa',
+    })
+    expect(again.supersedesItemId).toBe(item.id)
+    expect(again.id).not.toBe(item.id)
   })
 
   it('W-92 · keeps one writer tab and rejects a stale draft revision', async () => {
@@ -195,7 +207,8 @@ describe('FaberLoomBoard E10 commands', () => {
     expect(item.column).toBe('TU_CRITERIO')
     expect(item.runId).toBe('run-1')
     expect(item.idempotencyKey).toBe('idem-1')
-    expect(item.businessKey).toBe('bkey-1')
+    expect(item.sourceRef).toBe('bkey-1')
+    expect(item.businessKey).toMatch(/^[0-9a-f]{64}$/u)
   })
 
   it('W-10 · rejects edits and discard on an iterating or closed item', async () => {

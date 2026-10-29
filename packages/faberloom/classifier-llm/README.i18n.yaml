@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/faberloom/classifier-llm/README.md
+README.md: bd1006a22fa3fac038dada48163945a1c9d9f35d
+README.zh.md: 31c3aee2f8f11057b1b8494417549e3a65b72c90

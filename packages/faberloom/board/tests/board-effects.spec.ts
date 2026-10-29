@@ -297,21 +297,8 @@ describe('FaberLoomBoard E15 effect identity', () => {
 
   it('refuses an acceptance that cannot name the effect', async () => {
     const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
-    const created = await harness.board.create(ACTOR_A, {
-      title: 'Correo sin identidad de negocio',
-      summary: 'Correo sin identidad de negocio',
-      evidence: ['mail:thread-1'],
-      artifactType: 'proforma',
-    })
-    const withoutKey = await harness.board.setSeverity(ACTOR_A, created.id, 'MEDIUM', 'HUMAN')
-    await expect(harness.board.approveWithExecution(ACTOR_A, withoutKey.id, {
-      expectedRowVersion: withoutKey.rowVersion,
-      expectedArtifactVersion: withoutKey.version,
-      expectedArtifactHash: withoutKey.artifactHash ?? '',
-      executionId: 'exec-1',
-      actionType: 'mail.send',
-      destination: 'a@eguisa.com',
-    })).rejects.toThrow('EFFECT_IDENTITY_INCOMPLETE')
+    // The server derives the key, so the identity is present; what the
+    // acceptance must still name is the execution that owns the effect.
     const item = await effectItem(harness, { businessKey: 'bk-1' })
     await expect(harness.board.approveWithExecution(ACTOR_A, item.id, {
       expectedRowVersion: item.rowVersion,
@@ -926,11 +913,12 @@ describe('FaberLoomBoard E15 reconciliation and administrative close', () => {
     expect(created).toMatchObject({
       supersedesItemId: item.id,
       artifactHash: candidate?.hash,
-      businessKey: 'mail-eguisa-1',
+      sourceRef: 'mail-eguisa-1',
       companyId: COMPANY_A,
       state: 'PENDIENTE_CRITERIO',
       severity: 'MEDIUM',
     })
+    expect(created.businessKey).toMatch(/^[0-9a-f]{64}$/u)
     expect(created.id).not.toBe(item.id)
     expect((await harness.board.get(ACTOR_A, created.id)).id).toBe(created.id)
     expect((await harness.board.list(ACTOR_A, { state: 'PENDIENTE_CRITERIO' }))
@@ -1165,15 +1153,18 @@ describe('FaberLoomBoard E15 formula separator', () => {
   it('refuses an approval whose business key carries the separator', async () => {
     const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
     const created = await harness.board.create(ACTOR_A, {
-      title: 'Correo con clave partida',
-      summary: 'Correo con clave partida',
+      title: 'Correo con referencia partida',
+      summary: 'Correo con referencia partida',
       evidence: ['mail:thread-1'],
       artifactType: 'proforma',
-      businessKey: 'pf:2520',
+      sourceRef: 'pf:2520',
     })
+    expect(created.sourceRef).toBe('pf:2520')
+    expect(created.businessKey).toMatch(/^[0-9a-f]{64}$/u)
     const item = await harness.board.setSeverity(ACTOR_A, created.id, 'MEDIUM', 'HUMAN')
-    await expect(accept(harness.board, item)).rejects.toThrow('EFFECT_COMPONENT_INVALID')
-    expect(durableRows(harness.pool, 'effect_reservations').size).toBe(0)
+    const accepted = await accept(harness.board, item)
+    expect(accepted.item.effectKey).toMatch(/^[a-f0-9]{64}$/)
+    expect(durableRows(harness.pool, 'effect_reservations').size).toBe(1)
   })
 })
 

@@ -284,6 +284,8 @@
       "@deepseek-ai/dsh-faberloom-agents": ["./packages/faberloom/agents/src"],
       "@deepseek-ai/dsh-faberloom-board": ["./packages/faberloom/board/src"],
       "@deepseek-ai/dsh-faberloom-checks-mwt": ["./packages/faberloom/checks-mwt/src"],
+      "@deepseek-ai/dsh-faberloom-classifier-llm": ["./packages/faberloom/classifier-llm/src"],
+      "@deepseek-ai/dsh-faberloom-effects-mail": ["./packages/faberloom/effects-mail/src"],
       "@deepseek-ai/dsh-faberloom-connections": ["./packages/faberloom/connections/src"],
       "@deepseek-ai/dsh-faberloom-defaults": ["./packages/faberloom/defaults/src"],
       "@deepseek-ai/dsh-faberloom-handlers": ["./packages/faberloom/handlers/src"],

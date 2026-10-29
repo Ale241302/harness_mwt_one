@@ -1033,15 +1033,16 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_board_submit',
-      description: 'Crea un elemento desde una corrida: exige runId, idempotencyKey y businessKey; una clave repetida devuelve el existente.',
+      description: 'Crea un elemento desde una corrida: exige runId e idempotencyKey; la clave de negocio la deriva el servidor de sourceRef, businessKey o la primera evidencia, y una clave repetida devuelve el existente.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
-        required: ['runId', 'idempotencyKey', 'businessKey', 'summary', 'evidence'],
+        required: ['runId', 'idempotencyKey', 'summary', 'evidence'],
         properties: {
           runId: { type: 'string' },
           idempotencyKey: { type: 'string' },
-          businessKey: { type: 'string' },
+          sourceRef: { type: 'string', description: 'Referencia de origen que el servidor hashea: OC, hilo o pedido.' },
+          businessKey: { type: 'string', description: 'Identidad antigua del productor; se lee como referencia de origen si falta sourceRef.' },
           title: { type: 'string' },
           summary: { type: 'string' },
           evidence: { type: 'array', items: { type: 'string' } },
@@ -1079,9 +1080,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       const item = await context.faberloomBoard.submit(boardActor(ownerId, companyId), {
         runId: required(args, 'runId'),
         idempotencyKey: required(args, 'idempotencyKey'),
-        businessKey: required(args, 'businessKey'),
         summary: required(args, 'summary'),
         evidence: strings(args, 'evidence') ?? [],
+        ...optional(args, 'sourceRef') === undefined ? {} : { sourceRef: optional(args, 'sourceRef') },
+        ...optional(args, 'businessKey') === undefined ? {} : { businessKey: optional(args, 'businessKey') },
         ...title === undefined ? {} : { title },
         ...spaceId === undefined ? {} : { spaceId },
         ...accountRef === undefined ? {} : { accountRef },
@@ -1217,6 +1219,104 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       )
       return { id: String(item.id), state: item.state, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_approve_bulk',
+      description: 'Aprueba un lote LOW del mismo espacio, agente y tipo. Revalida cada ítem en el servidor y devuelve aprobados y rechazados con su razón (§6.4). Fuera del piloto (D-11): el tablero lo rechaza con BULK_DISABLED si el despliegue no lo habilitó.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['items'],
+        properties: {
+          items: {
+            type: 'array',
+            description: 'Ítems con la fila, la versión y el hash que el revisor vio.',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'rowVersion', 'artifactVersion', 'artifactHash'],
+              properties: {
+                id: { type: 'string' },
+                rowVersion: { type: 'number' },
+                artifactVersion: { type: 'number' },
+                artifactHash: { type: 'string' },
+              },
+            },
+          },
+          confirmations: { type: 'array', description: 'Controles confirmados por el revisor.', items: { type: 'string' } },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const raw = args['items']
+      if (!Array.isArray(raw) || raw.length === 0) throw new Error('items must be a non-empty array')
+      const items = raw.map((entry) => {
+        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) throw new Error('each item must be an object')
+        const row = entry as Record<string, unknown>
+        const id = required(row, 'id')
+        const rowVersion = num(row, 'rowVersion')
+        const artifactVersion = num(row, 'artifactVersion')
+        if (rowVersion === undefined || artifactVersion === undefined) throw new Error('each item needs rowVersion and artifactVersion')
+        return {
+          id,
+          expectedRowVersion: rowVersion,
+          expectedArtifactVersion: artifactVersion,
+          expectedArtifactHash: required(row, 'artifactHash'),
+        }
+      })
+      const result = await context.faberloomBoard.approveBulk(boardActor(ownerId, companyId), {
+        items,
+        ...strings(args, 'confirmations') === undefined ? {} : { confirmations: strings(args, 'confirmations') },
+      })
+      return result
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_rekey',
+      description: 'Recalcula la business_key canónica de §2.1 en todos los ítems del tenant. dryRun informa sin escribir. Debe ejecutarlo la identidad dueña de todos los ítems; una colisión se resuelve por §2.3.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          dryRun: { type: 'boolean', description: 'Informa lo que haría sin escribir.' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const dryRun = boolean(args, 'dryRun')
+      const report = await context.faberloomBoard.rekeyAll(
+        boardActor(ownerId, companyId),
+        dryRun === undefined ? {} : { dryRun },
+      )
+      return {
+        scanned: report.scanned,
+        rekeyed: report.rekeyed,
+        unchanged: report.unchanged,
+        collisions: report.collisions,
+        skipped: report.skipped,
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_shadow_report',      description: 'Reporta la evaluación en sombra contra la severidad humana (W-63): coincidencias, abstenciones, errores y críticos rebajados. La sombra nunca cambia la severidad del ítem.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          from: { type: 'string', description: 'ISO-8601 inclusive.' },
+          to: { type: 'string', description: 'ISO-8601 inclusive.' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      return await context.faberloomBoard.shadowReport(boardActor(ownerId, companyId), {
+        ...optional(args, 'from') === undefined ? {} : { from: optional(args, 'from') },
+        ...optional(args, 'to') === undefined ? {} : { to: optional(args, 'to') },
+      })
     },
   },
   {

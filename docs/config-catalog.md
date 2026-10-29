@@ -1029,10 +1029,15 @@ export interface Config {
   readonly effectDispatchBackoffMs?: number
   /** Milliseconds the classifier port may take before its answer is a timeout (W-37). */
   readonly classifierTimeoutMs?: number
+  /**
+   * Whether `approveBulk` is offered. D-11 keeps the batch outside the pilot;
+   * a deployment enables it explicitly when volume justifies it.
+   */
+  readonly bulkApprovalEnabled?: boolean
 }
 ```
 
-Source: [`packages/faberloom/board/src/index.ts:175`](../packages/faberloom/board/src/index.ts)
+Source: [`packages/faberloom/board/src/index.ts:191`](../packages/faberloom/board/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-checks-mwt"></a>
 
@@ -1065,7 +1070,29 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/checks-mwt/src/index.ts:48`](../packages/faberloom/checks-mwt/src/index.ts)
+Source: [`packages/faberloom/checks-mwt/src/index.ts:49`](../packages/faberloom/checks-mwt/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-classifier-llm"></a>
+
+## `@deepseek-ai/dsh-faberloom-classifier-llm`
+
+Requires: `llm`
+
+```ts config-catalog
+/** Deployment configuration of the classifier row. */
+export interface Config {
+  /** Provider route the classifier calls; defaults to the deployment's DeepSeek route. */
+  readonly provider?: string
+  /** Model id on that route. */
+  readonly model?: string
+  /** Milliseconds one classification may take; the board also caps it at 3 s. */
+  readonly timeoutMs?: number
+  /** Output tokens the answer may spend. */
+  readonly maxTokens?: number
+}
+```
+
+Source: [`packages/faberloom/classifier-llm/src/index.ts:41`](../packages/faberloom/classifier-llm/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-context"></a>
 
@@ -1132,6 +1159,22 @@ export interface Config {
 ```
 
 Source: [`packages/faberloom/defaults/src/index.ts:37`](../packages/faberloom/defaults/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-effects-mail"></a>
+
+## `@deepseek-ai/dsh-faberloom-effects-mail`
+
+Requires: `faberloomBoard` · `faberloomConnections`
+
+```ts config-catalog
+/** Deployment configuration of the mail adapter. */
+export interface Config {
+  /** Action type this row serves; the board's own set must accept it. */
+  readonly actionType?: string
+}
+```
+
+Source: [`packages/faberloom/effects-mail/src/index.ts:29`](../packages/faberloom/effects-mail/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-execution"></a>
 
@@ -1428,7 +1471,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/session-agent/src/index.ts:114`](../packages/faberloom/session-agent/src/index.ts)
+Source: [`packages/faberloom/session-agent/src/index.ts:115`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 
@@ -1538,7 +1581,7 @@ export interface Config {
 export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:403`](../packages/faberloom/view/src/index.ts)
+Source: [`packages/faberloom/view/src/index.ts:404`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 

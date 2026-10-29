@@ -233,6 +233,8 @@
     { "path": "./packages/faberloom/mcp-registry" },
     { "path": "./packages/faberloom/board" },
     { "path": "./packages/faberloom/checks-mwt" },
+    { "path": "./packages/faberloom/classifier-llm" },
+    { "path": "./packages/faberloom/effects-mail" },
     { "path": "./packages/faberloom/routines" },
     { "path": "./packages/faberloom/execution" },
     { "path": "./packages/faberloom/learning" },

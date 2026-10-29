@@ -206,6 +206,7 @@ export function rawBoardItem(overrides: Partial<BoardItemRecord> = {}): BoardIte
     runId: null,
     idempotencyKey: null,
     businessKey: null,
+    sourceRef: null,
     supersedesItemId: null,
     artifactType: 'proforma',
     accountRef: null,
