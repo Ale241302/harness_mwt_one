@@ -232,7 +232,7 @@ describe('web e2e: WorkLoom Mesa', () => {
 
     const editor = page.locator('textarea').first()
     await editor.fill('Revisado: precio DDP y crédito a 120 días confirmados.')
-    await page.getByRole('button', { name: 'Save' }).click()
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
     // Saving publishes a new version and rowVersion; wait until the editor
     // rehydrates from that version before approving it.
     await page.waitForFunction(() => {
