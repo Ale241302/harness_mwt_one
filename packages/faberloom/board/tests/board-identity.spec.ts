@@ -161,8 +161,8 @@ describe('business-key migration (§2.1)', () => {
     // A same-company identity may migrate the tenant's rows, including another owner's.
     await expect(harness.board.rekeyAll(ACTOR_A2)).resolves.toMatchObject({ scanned: 1, rekeyed: 1 })
     expect((await harness.board.get(ACTOR_A, legacy)).businessKey).toMatch(/^[0-9a-f]{64}$/u)
-    // Another company cannot cross the tenant boundary.
-    await expect(harness.board.rekeyAll(ACTOR_B)).rejects.toThrow('NO_ACCESS')
+    // Another company's row is reported, never migrated across the boundary.
+    await expect(harness.board.rekeyAll(ACTOR_B)).resolves.toMatchObject({ skipped: 1, rekeyed: 0 })
   })
 
   it('resolves a canonical collision through §2.3 and leaves one live item', async () => {

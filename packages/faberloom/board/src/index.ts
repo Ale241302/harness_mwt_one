@@ -2011,14 +2011,15 @@ export class FaberLoomBoard extends Service {
   async rekeyAll(actor: BoardActor, options: { readonly dryRun?: boolean } = {}): Promise<BoardRekeyReport> {
     const rows = [...(await this.items()).entries()]
       .sort((left, right) => left[1].updatedAt.localeCompare(right[1].updatedAt) || left[0].localeCompare(right[0]))
-    for (const [, record] of rows) {
-      // A company-less row belongs to the single-tenant board; a scoped row must
-      // match the actor's company. That is the same rule reads and writes use.
-      if (record.companyId === null || record.companyId === actor.companyId) continue
-      throw new Error('faberloom: NO_ACCESS — the key migration is tenant-wide and cannot cross companies')
-    }
     const report = { scanned: rows.length, rekeyed: 0, unchanged: 0, collisions: 0, skipped: 0, entries: [] as BoardRekeyEntry[] }
     for (const [id, record] of rows) {
+      // A row scoped to another company is another tenant's: the migration
+      // reports it as skipped instead of crossing the boundary.
+      if (record.companyId !== null && record.companyId !== actor.companyId) {
+        report.skipped += 1
+        report.entries.push({ id, from: record.businessKey, to: record.businessKey ?? '', sourceRef: '', action: 'skipped' })
+        continue
+      }
       const sourceRef = sourceRefOf(record)
       const to = sourceRef.length === 0
         ? record.businessKey ?? ''
