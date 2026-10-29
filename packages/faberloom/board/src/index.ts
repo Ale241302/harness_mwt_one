@@ -2012,7 +2012,9 @@ export class FaberLoomBoard extends Service {
     const rows = [...(await this.items()).entries()]
       .sort((left, right) => left[1].updatedAt.localeCompare(right[1].updatedAt) || left[0].localeCompare(right[0]))
     for (const [, record] of rows) {
-      if (record.companyId === (actor.companyId ?? null)) continue
+      // A company-less row belongs to the single-tenant board; a scoped row must
+      // match the actor's company. That is the same rule reads and writes use.
+      if (record.companyId === null || record.companyId === actor.companyId) continue
       throw new Error('faberloom: NO_ACCESS — the key migration is tenant-wide and cannot cross companies')
     }
     const report = { scanned: rows.length, rekeyed: 0, unchanged: 0, collisions: 0, skipped: 0, entries: [] as BoardRekeyEntry[] }
