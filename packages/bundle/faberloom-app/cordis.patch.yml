@@ -46,6 +46,14 @@
 
     - id: faberloom-board
       name: '@deepseek-ai/dsh-faberloom-board'
+      config:
+        # El piloto decide; no ejecuta. Un despliegue que quiera ejecución
+        # externa nombra sus tipos con FABERLOOM_EFFECT_ACTION_TYPES y monta el
+        # adaptador de cada uno: sin adaptador el consumidor alerta y no emite.
+        effectActionTypes: !!js (process.env.FABERLOOM_EFFECT_ACTION_TYPES ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        # El consumidor del outbox corre en proceso aunque esté ocioso, para que
+        # una ejecución aceptada no quede sin quien la emita.
+        effectDispatchIntervalMs: 15000
 
     - id: faberloom-routines
       name: '@deepseek-ai/dsh-faberloom-routines'
@@ -97,6 +105,17 @@
 
     - id: faberloom-access
       name: '@deepseek-ai/dsh-faberloom-access'
+      config:
+        # W-16: dinero, inventario y envíos exigen firma CEO sin excepción. La
+        # firma vale 24 h y la emiten las identidades que el despliegue nombre
+        # en FABERLOOM_CEO_SIGNERS; sin esa lista nadie firma y la aceptación
+        # externa se rechaza, que es el estado seguro mientras el piloto no ejecute.
+        protectedActionTypes: ['mail.send', 'inventory.reserve', 'shipment.create']
+        signatureValiditySeconds: 86400
+        signingAuthorities: !!js (process.env.FABERLOOM_CEO_SIGNERS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        revocationAuthorities: !!js (process.env.FABERLOOM_CEO_SIGNERS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        signerIdentityAudience: !!js (process.env.FABERLOOM_CEO_SIGNERS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        allowWildcardSignatures: false
 
     # Autonomy levels per unit (tenant, space, agent, action type): the §7.2
     # promotion report, the sampled review of delegated items, and the automatic

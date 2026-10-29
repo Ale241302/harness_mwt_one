@@ -29,7 +29,7 @@ import {
   type EffectOutboxRecord,
   type EffectReservationRecord,
 } from './spec.ts'
-import { submittedSeverity } from './classify.ts'
+import { submittedSeverity, classifyDataClass, resolveSeverity, DATA_CLASS_POLICY_VERSION, CLASSIFY_RULES_VERSION } from './classify.ts'
 import { orderBoardItems } from './order.ts'
 import { CHECKS_VERSION, artifactOf, checkClass, checkKey, declaredChecks } from './checks.ts'
 import { fieldOriginsOf, mergeOrigins, revisionContent } from './projection.ts'
@@ -94,9 +94,11 @@ import type {
   BoardCheckResult,
   BoardCheckSource,
   BoardCheckStatusEntry,
+  BoardClassifierPort,
+  BoardClassifierResult,
+  BoardClassificationCacheEntry,
   BoardColumn,
   BoardCreateInput,
-  BoardDataClass,
   BoardDiscardInput,
   BoardDispatchCode,
   BoardDispatchOutcome,
@@ -121,6 +123,7 @@ import type {
   BoardIterateInput,
   BoardIterateWithEditsInput,
   BoardIterationDraft,
+  BoardIterationContext,
   BoardIterationDraftInput,
   BoardIterationDraftOutcome,
   BoardIterationLockInput,
@@ -139,6 +142,7 @@ import type {
   BoardRevertInput,
   BoardReviewInput,
   BoardSeverity,
+  BoardSeverityDecision,
   BoardState,
   BoardStatus,
   BoardSubmitInput,
@@ -208,6 +212,16 @@ export interface Config {
    * one acceptance makes, so a row younger than the lease is never swept.
    */
   readonly effectReservationLeaseMs?: number
+  /**
+   * Milliseconds between outbox sweeps. Zero keeps the consumer idle, which is
+   * what a deployment with no effect adapter wants; the acceptance still records
+   * its intention and an operator can dispatch it by hand.
+   */
+  readonly effectDispatchIntervalMs?: number
+  /** Milliseconds a refused dispatch waits before the consumer retries it. */
+  readonly effectDispatchBackoffMs?: number
+  /** Milliseconds the classifier port may take before its answer is a timeout (W-37). */
+  readonly classifierTimeoutMs?: number
 }
 
 /** Validated board configuration. */
@@ -223,6 +237,9 @@ export const Config = z.object({
   effectRetentionDays: z.number().int().positive().default(90),
   effectDispatchTimeoutMs: z.number().int().positive().default(30_000),
   effectReservationLeaseMs: z.number().int().positive().default(300_000),
+  effectDispatchIntervalMs: z.number().int().min(0).default(0),
+  effectDispatchBackoffMs: z.number().int().positive().default(60_000),
+  classifierTimeoutMs: z.number().int().positive().default(3_000),
 })
 
 /** Discard reasons signed in the specification. */
@@ -231,6 +248,8 @@ export const DISCARD_REASONS = [
 ] as const
 
 const TERMINAL: readonly BoardState[] = ['APROBADO', 'EJECUTADO', 'DESCARTADO', 'SUSTITUIDO']
+/** Identity the outbox consumer writes into the audit and the alerts. */
+const EFFECT_CONSUMER = 'faberloom-effect-consumer'
 /**
  * States that accept a new artifact as a candidate instead of being replaced
  * (W-03, W-40, W-55, W-76). `DESCONOCIDO` belongs here: the effect may already
@@ -450,6 +469,12 @@ export class FaberLoomBoard extends Service {
   private readonly confidenceThreshold: number
   private readonly iterationConfig: IterationPolicy
   private readonly effectConfig: EffectPolicy
+  /** Milliseconds the classifier port may take before the answer counts as a timeout. */
+  private readonly classifierTimeoutMs: number
+  /** Outbox sweep cadence; zero keeps the consumer idle. */
+  private readonly dispatchIntervalMs: number
+  /** How long a refused dispatch waits before the consumer retries it. */
+  private readonly dispatchBackoffMs: number
   /** Action types this deployment accepts for an acceptance (D-12). */
   private readonly effectActionTypes: ReadonlySet<string>
   private readonly claims = new Map<string, Promise<unknown>>()
@@ -491,6 +516,26 @@ export class FaberLoomBoard extends Service {
       reservationLeaseMs: resolved.effectReservationLeaseMs,
     }
     this.effectActionTypes = new Set(resolved.effectActionTypes)
+    this.classifierTimeoutMs = resolved.classifierTimeoutMs
+    this.dispatchIntervalMs = resolved.effectDispatchIntervalMs
+    this.dispatchBackoffMs = resolved.effectDispatchBackoffMs
+    this.startEffectConsumer()
+  }
+
+  /**
+   * Run the outbox consumer on the configured cadence. The timer is part of the
+   * service fiber, so disposing the plugin stops it; `unref` keeps a host that
+   * forgot to dispose from being held open by it.
+   */
+  private startEffectConsumer(): void {
+    if (this.dispatchIntervalMs === 0) return
+    const timer: ReturnType<typeof setInterval> = setInterval(() => {
+      void this.sweepEffects().catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: outbox sweep failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }, this.dispatchIntervalMs)
+    if (typeof timer === 'object') timer.unref()
+    this.ctx.effect(() => () => clearInterval(timer), 'faberloom.boardEffectConsumer')
   }
 
   private domain(): Promise<Domain<typeof boardDomainSpec>> {
@@ -977,7 +1022,126 @@ export class FaberLoomBoard extends Service {
     }, options)
   }
 
-  private buildRecord(
+  /**
+   * Convert an amount to USD at the rate the producer names, and keep the rate,
+   * source, and date beside it (D-3). The board never invents a rate: an amount
+   * in another currency without one is refused, so the queue never orders by a
+   * converted value nobody can reproduce.
+   * @param input - amount, currency, and the rate the producer used.
+   * @returns the USD amount and the provenance to persist.
+   */
+  private convertAmount(input: {
+    valueAmount?: number | undefined
+    valueCurrency?: string | undefined
+    valueFxRate?: number | undefined
+    valueFxSource?: string | undefined
+    valueFxDate?: string | undefined
+  }): { usd: number | null; rate: number | null; source: string | null; date: string | null } {
+    if (input.valueAmount === undefined) return { usd: null, rate: null, source: null, date: null }
+    const currency = input.valueCurrency?.trim().toUpperCase()
+    if (currency === undefined || currency.length === 0) {
+      throw new Error('faberloom: CURRENCY_REQUIRED — an amount needs the currency it is quoted in')
+    }
+    if (currency === 'USD') {
+      return {
+        usd: Math.round(input.valueAmount * 100) / 100,
+        rate: 1,
+        source: input.valueFxSource ?? 'identity',
+        date: input.valueFxDate ?? new Date().toISOString().slice(0, 10),
+      }
+    }
+    const rate = input.valueFxRate
+    if (rate === undefined || !Number.isFinite(rate) || rate <= 0) {
+      throw new Error(
+        `faberloom: FX_RATE_REQUIRED — ${currency} needs the MWT ONE rate that converts it to USD (D-3)`,
+      )
+    }
+    if (input.valueFxSource === undefined || input.valueFxSource.trim().length === 0) {
+      throw new Error('faberloom: FX_SOURCE_REQUIRED — the rate must name the source it came from (D-3)')
+    }
+    if (input.valueFxDate === undefined || input.valueFxDate.trim().length === 0) {
+      throw new Error('faberloom: FX_DATE_REQUIRED — the rate must name the date it was quoted (D-3)')
+    }
+    return {
+      usd: Math.round(input.valueAmount * rate * 100) / 100,
+      rate,
+      source: input.valueFxSource,
+      date: input.valueFxDate,
+    }
+  }
+
+  /**
+   * Severity for an item whose run reported none: deterministic rules first,
+   * then the classifier port, with the answer cached under the full §5.1 key.
+   * Without a mounted port nothing resolves and the item stays unclassified
+   * (W-37), which is why the board imports no model.
+   * @param companyId - tenant that owns the item.
+   * @param spaceId - space of the item, or null.
+   * @param artifactType - type the rules match.
+   * @param accountRef - account the rules match.
+   * @param summary - text the classifier may read.
+   * @param contentHash - artifact hash, part of the cache key.
+   * @returns the severity to persist.
+   */
+  private async resolveEntrySeverity(
+    companyId: string | null,
+    spaceId: string | null,
+    artifactType: string,
+    accountRef: string | null,
+    summary: string,
+    contentHash: string,
+  ): Promise<BoardSeverityDecision> {
+    const rules = resolveSeverity({ artifactType, accountRef }, { confidenceThreshold: this.confidenceThreshold })
+    if (rules.severity !== null) return rules
+    const classifier = this.ctx.get('faberloomBoardClassifier') as BoardClassifierPort | undefined
+    const modelVersion = classifier?.modelVersion ?? ''
+    const key = [
+      companyId ?? 'sin-empresa', spaceId ?? 'sin-espacio', accountRef ?? 'sin-cuenta',
+      artifactType, 'severity', contentHash, CLASSIFY_RULES_VERSION, DATA_CLASS_POLICY_VERSION,
+      modelVersion.length === 0 ? 'sin-modelo' : modelVersion,
+    ].join('\u0000')
+    const table = await (await this.domain()).table('classification_cache')
+    const cached = table.get(key)
+    if (cached !== undefined) {
+      return { severity: cached.severity, source: cached.source, confidence: cached.confidence }
+    }
+    let result: BoardClassifierResult | undefined
+    if (classifier !== undefined) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), this.classifierTimeoutMs)
+      try {
+        result = await classifier.classifySeverity(
+          { artifactType, accountRef, contentHash, summary },
+          { signal: controller.signal, confidenceThreshold: this.confidenceThreshold },
+        )
+      } catch (error) {
+        // A port that throws is a timeout: the item still enters (W-37).
+        result = { status: 'invalid', detail: error instanceof Error ? error.message : String(error) }
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+    const decision = resolveSeverity(
+      { artifactType, accountRef },
+      {
+        confidenceThreshold: this.confidenceThreshold,
+        ...result === undefined ? {} : { classifier: result },
+      },
+    )
+    const entry: BoardClassificationCacheEntry = {
+      key,
+      field: 'severity',
+      companyId,
+      severity: decision.severity,
+      source: decision.source,
+      confidence: decision.confidence,
+      at: new Date().toISOString(),
+    }
+    await table.put(key, entry).catch(() => undefined)
+    return decision
+  }
+
+  private async buildRecord(
     actor: BoardActor,
     input: BoardCreateInput & {
       runId?: string
@@ -987,22 +1151,41 @@ export class FaberLoomBoard extends Service {
       supersedesItemId?: string | null
       valueAmount?: number
       valueCurrency?: string
+      valueFxRate?: number
+      valueFxSource?: string
+      valueFxDate?: string
       dueAt?: string
-      dataClass?: BoardDataClass
       severity?: BoardSeverity
       severityConfidence?: number
     },
-  ): BoardItemRecord {
+  ): Promise<BoardItemRecord> {
     const now = new Date().toISOString()
     const evidence = requireEvidence(input.evidence)
     const content = input.content === undefined ? null : { ...input.content }
     const fieldOrigins = input.fieldOrigins === undefined ? [] : [...input.fieldOrigins]
     const artifactHash = hashOf({ summary: input.summary, evidence, content })
-    const severity = submittedSeverity(
-      input.severity,
-      input.severityConfidence ?? null,
-      this.confidenceThreshold,
-    )
+    // A caller that names no artifact type submitted a task: there is no
+    // priced commitment behind it, and D-05 needs a deterministic type
+    // before any field may leave for a provider.
+    const artifactType = input.artifactType?.trim() || 'tarea'
+    const accountRef = input.accountRef ?? null
+    // The class is the server's: a caller describes the artifact, never its
+    // sensitivity (D-05, D-07).
+    const classification = classifyDataClass({ artifactType, accountRef })
+    const fx = this.convertAmount(input)
+    // A run that reports a severity is measured against the confidence floor;
+    // one that reports none falls to the deterministic rules and then, only if
+    // a deployment mounted the port, to the classifier (W-37, W-51).
+    const severity = input.severity === undefined
+      ? await this.resolveEntrySeverity(
+        input.companyId ?? actor.companyId ?? null,
+        input.spaceId ?? null,
+        artifactType,
+        accountRef,
+        input.summary,
+        artifactHash,
+      )
+      : submittedSeverity(input.severity, input.severityConfidence ?? null, this.confidenceThreshold)
     return {
       ownerId: actor.id,
       companyId: input.companyId ?? actor.companyId ?? null,
@@ -1018,18 +1201,18 @@ export class FaberLoomBoard extends Service {
       dueAt: input.dueAt ?? null,
       valueAmount: input.valueAmount ?? null,
       valueCurrency: input.valueCurrency ?? null,
-      valueUsd: input.valueCurrency === 'USD' ? input.valueAmount ?? null : null,
-      dataClass: input.dataClass ?? 'N2',
-      dataClassProvisional: input.dataClass === undefined,
+      valueUsd: fx.usd,
+      valueFxRate: fx.rate,
+      valueFxSource: fx.source,
+      valueFxDate: fx.date,
+      dataClass: classification.dataClass,
+      dataClassProvisional: classification.provisional,
       runId: input.runId ?? null,
       idempotencyKey: input.idempotencyKey ?? null,
       businessKey: input.businessKey ?? null,
       supersedesItemId: input.supersedesItemId ?? null,
-      // A caller that names no artifact type submitted a task: there is no
-      // priced commitment behind it, and D-05 needs a deterministic type
-      // before any field may leave for a provider.
-      artifactType: input.artifactType?.trim() || 'tarea',
-      accountRef: input.accountRef ?? null,
+      artifactType,
+      accountRef,
       artifactHash,
       fieldOrigins,
       pendingCandidate: null,
@@ -1080,7 +1263,7 @@ export class FaberLoomBoard extends Service {
       accountRef: input.accountRef,
     })
     const id = brandString<FaberLoomBoardItemId>(randomUUID())
-    const record = this.buildRecord(actor, input)
+    const record = await this.buildRecord(actor, input)
     await (await this.items()).put(id, record)
     await this.claimReferences(companyId, id, { executionId: input.executionId, accountRef: input.accountRef })
     return toItem(id, record)
@@ -1146,7 +1329,7 @@ export class FaberLoomBoard extends Service {
       }
 
       const id = brandString<FaberLoomBoardItemId>(randomUUID())
-      const record = this.buildRecord(actor, {
+      const record = await this.buildRecord(actor, {
         ...input,
         title: input.title ?? input.summary.slice(0, 80),
         companyId: companyId ?? undefined,
@@ -1751,6 +1934,39 @@ export class FaberLoomBoard extends Service {
     const record = await this.requireItem(id)
     this.authorizeRead(record, actor)
     return await this.statusOf(id, record)
+  }
+
+  /**
+   * What one iteration chat pins above the conversation, filtered by the
+   * item's class. The panel already holds this in memory; the chat agent reads
+   * it through the MCP tool so it never has to ask the user to repeat the item.
+   * @param actor - the authenticated reader.
+   * @param id - item id.
+   * @returns the pinned context, or undefined when the item is gone.
+   */
+  async iterationContext(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardIterationContext | undefined> {
+    const record = (await this.items()).get(id)
+    if (record === undefined) return undefined
+    this.authorizeRead(record, actor)
+    const item = toItem(id, record)
+    const restricted = item.dataClassProvisional || item.dataClass === 'N3' || item.dataClass === 'N4'
+    const revision = item.revisions[item.revisions.length - 1]
+    const draft = await this.getIterationDraft(actor, id).catch(() => undefined)
+    return {
+      itemId: item.id,
+      title: item.title,
+      accountRef: item.accountRef,
+      spaceId: item.spaceId,
+      version: item.version,
+      iterationId: item.iterationId,
+      generation: item.iterationLockGeneration,
+      holderSession: item.iterationLockBy,
+      baseVersion: item.iterationBaseVersion,
+      rounds: item.iterationRoundCount,
+      summary: restricted ? null : revision?.summary ?? '',
+      draftSummary: restricted ? null : draft?.summary ?? null,
+      evidence: restricted || revision === undefined ? [] : [...revision.evidence],
+    }
   }
 
   /**
@@ -2569,6 +2785,7 @@ export class FaberLoomBoard extends Service {
         status: 'PENDIENTE',
         dispatchable: true,
         attempts: previousMessage?.attempts ?? 0,
+        backoffUntil: null,
         reason: null,
         ref: null,
         createdAt: previousMessage?.createdAt ?? at,
@@ -2761,6 +2978,112 @@ export class FaberLoomBoard extends Service {
       pending.push(toMessage(row))
     }
     return pending.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+  }
+
+  /**
+   * One outbox pass: try every pending message the backoff allows, oldest
+   * first. A refusal raises one visible alert for a missing adapter and waits
+   * out the backoff, so a misconfigured deployment is visible instead of
+   * retrying in a hot loop. Emitting never crosses tenants: each message is
+   * dispatched under the tenant that owns it.
+   * @returns how many messages were attempted and how they ended.
+   */
+  async sweepEffects(): Promise<{ attempted: number; dispatched: number; refused: number }> {
+    const messages = await this.effectMessages()
+    const now = Date.now()
+    const result = { attempted: 0, dispatched: 0, refused: 0 }
+    for (const [, row] of messages.entries()) {
+      if (!messageIsDispatchable(row.status, row.dispatchable)) continue
+      // The first attempt is immediate. A row the consumer already refused keeps
+      // quiet until its backoff expires, so a missing adapter cannot spin.
+      if (row.backoffUntil !== null && Date.parse(row.backoffUntil) > now) continue
+      result.attempted += 1
+      const actor: BoardActor = { id: EFFECT_CONSUMER, companyId: row.companyId ?? undefined }
+      try {
+        const outcome = await this.dispatchEffect(actor, row.effectKey)
+        if (outcome.dispatched) {
+          result.dispatched += 1
+          continue
+        }
+        result.refused += 1
+        await this.recordRefusal(row, outcome)
+      } catch (error) {
+        result.refused += 1
+        await this.recordRefusal(row, {
+          dispatched: false,
+          code: 'NOT_AUTHORIZED',
+          item: null,
+          outcome: null,
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    return result
+  }
+
+  /**
+   * Keep a refused message pending but quiet for one backoff window, and make a
+   * missing adapter visible once.
+   * @param message - the outbox row that was refused.
+   * @param outcome - what the dispatch attempt answered.
+   */
+  private async recordRefusal(message: EffectOutboxRecord, outcome: BoardDispatchOutcome): Promise<void> {
+    if (outcome.code === 'EFFECT_NO_ADAPTER') {
+      await this.raiseAlert({
+        companyId: message.companyId,
+        effectKey: message.effectKey,
+        itemId: message.itemId,
+        executionId: message.executionId,
+        kind: 'DISPATCH_REFUSED',
+        outcome: null,
+        detail: outcome.detail ?? 'no adapter serves this action type',
+        actorId: EFFECT_CONSUMER,
+      }).catch(() => undefined)
+    }
+    const messages = await this.effectMessages()
+    await messages
+      .update(outboxKeyOf(message.companyId, message.effectKey), current => ({
+        ...current,
+        backoffUntil: new Date(Date.now() + this.dispatchBackoffMs).toISOString(),
+        updatedAt: new Date().toISOString(),
+      }))
+      .catch(() => undefined)
+  }
+
+  /**
+   * Record that an actor opened a restricted item (N3/N4). The audit trail is
+   * the requirement, but a panel re-reading the same item must not flood it, so
+   * one event per actor, item, and hour is kept. The row version does not move:
+   * a read is not a command, and moving it would make every open tab stale.
+   * @param actor - the authenticated reader.
+   * @param id - item id.
+   * @param detail - what the read was for (the panel's zone, if known).
+   */
+  async noteAccess(actor: BoardActor, id: FaberLoomBoardItemId, detail: string): Promise<void> {
+    const record = await this.requireItem(id)
+    this.authorizeRead(record, actor)
+    if (record.dataClass !== 'N3' && record.dataClass !== 'N4') return
+    const hourAgo = Date.now() - 3_600_000
+    const recent = record.events.some(event =>
+      event.command === 'access'
+      && event.actor === actor.id
+      && Date.parse(event.at) >= hourAgo,
+    )
+    if (recent) return
+    await this.serial(record.companyId, async () => {
+      await (await this.items()).update(id, (current) => {
+        const event = this.event({
+          command: 'access',
+          actor: actor.id,
+          fromState: stateOf(current),
+          toState: stateOf(current),
+          revision: current.version,
+          artifactHash: current.artifactHash,
+          data: { detail },
+        })
+        return { ...current, events: [...current.events, event].slice(-this.eventCap) }
+      })
+    })
   }
 
   /**
@@ -3026,6 +3349,7 @@ export class FaberLoomBoard extends Service {
           status: 'PENDIENTE',
           dispatchable: true,
           attempts: 0,
+          backoffUntil: null,
           reason: null,
           ref: null,
           createdAt: at,
@@ -3939,19 +4263,23 @@ export class FaberLoomBoard extends Service {
       ? [...candidate.evidence]
       : requireEvidence(closed.revisions[closed.revisions.length - 1]?.evidence)
     const id = brandString<FaberLoomBoardItemId>(randomUUID())
+    const base = await this.buildRecord(actor, {
+      title: candidate.summary.slice(0, 80),
+      summary: candidate.summary,
+      evidence,
+      artifactType: closed.artifactType,
+      supersedesItemId: closedId,
+      ...closed.companyId === null ? {} : { companyId: closed.companyId },
+      ...closed.spaceId === null ? {} : { spaceId: closed.spaceId },
+      ...closed.businessKey === null ? {} : { businessKey: closed.businessKey },
+      ...closed.accountRef === null ? {} : { accountRef: closed.accountRef },
+    })
+    // The successor is the same artifact, so it keeps the class settled for the
+    // closed item instead of re-deriving it from a type alone.
     const record: BoardItemRecord = {
-      ...this.buildRecord(actor, {
-        title: candidate.summary.slice(0, 80),
-        summary: candidate.summary,
-        evidence,
-        artifactType: closed.artifactType,
-        supersedesItemId: closedId,
-        dataClass: closed.dataClass,
-        ...closed.companyId === null ? {} : { companyId: closed.companyId },
-        ...closed.spaceId === null ? {} : { spaceId: closed.spaceId },
-        ...closed.businessKey === null ? {} : { businessKey: closed.businessKey },
-        ...closed.accountRef === null ? {} : { accountRef: closed.accountRef },
-      }),
+      ...base,
+      dataClass: closed.dataClass,
+      dataClassProvisional: closed.dataClassProvisional,
       severity: closed.severity,
       severitySource: closed.severitySource,
       severityConfidence: closed.severityConfidence,

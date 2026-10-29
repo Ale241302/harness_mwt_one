@@ -30,7 +30,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-fs` | `edit`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (image-tool registration)`, `ctx.llm + an image-capable route (image-tool execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | `ctx.tools`, `ctx.subprocess`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments. |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
-| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_context_approve`, `faberloom_context_create`, `faberloom_context_export`, `faberloom_context_import`, `faberloom_context_list`, `faberloom_context_reject`, `faberloom_context_remove`, `faberloom_context_restore`, `faberloom_context_update`, `faberloom_context_versions`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_files_create`, `faberloom_files_delete`, `faberloom_files_rename`, `faberloom_harness_install`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_mcp_add`, `faberloom_mcp_install`, `faberloom_mcp_list`, `faberloom_mcp_remove`, `faberloom_memory_retrieve`, `faberloom_memory_revoke`, `faberloom_memory_teach`, `faberloom_memory_teachings`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_skill_install`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_ask`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_followup`, `faberloom_spaces_forget`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_memory_list`, `faberloom_spaces_open_read`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_remember`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_scope`, `faberloom_spaces_update`, `faberloom_spaces_validate_source`, `faberloom_workflows_activate`, `faberloom_workflows_add_node`, `faberloom_workflows_connect`, `faberloom_workflows_create`, `faberloom_workflows_disconnect`, `faberloom_workflows_export`, `faberloom_workflows_from_template`, `faberloom_workflows_get`, `faberloom_workflows_import`, `faberloom_workflows_list`, `faberloom_workflows_pause`, `faberloom_workflows_permissions`, `faberloom_workflows_propose`, `faberloom_workflows_remove_node`, `faberloom_workflows_revoke`, `faberloom_workflows_run_now`, `faberloom_workflows_runs`, `faberloom_workflows_set_trigger`, `faberloom_workflows_share`, `faberloom_workflows_templates`, `faberloom_workflows_update_node`, `faberloom_workflows_validate` | `ctx.tools`, `ctx.faberloomSpaces`, `ctx.faberloomMcpRegistry` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
+| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_approve`, `faberloom_board_discard`, `faberloom_board_events`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_iteration_context`, `faberloom_board_iteration_propose`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_save_edits`, `faberloom_board_set_severity`, `faberloom_board_submit`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_context_approve`, `faberloom_context_create`, `faberloom_context_export`, `faberloom_context_import`, `faberloom_context_list`, `faberloom_context_reject`, `faberloom_context_remove`, `faberloom_context_restore`, `faberloom_context_update`, `faberloom_context_versions`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_files_create`, `faberloom_files_delete`, `faberloom_files_rename`, `faberloom_harness_install`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_mcp_add`, `faberloom_mcp_install`, `faberloom_mcp_list`, `faberloom_mcp_remove`, `faberloom_memory_retrieve`, `faberloom_memory_revoke`, `faberloom_memory_teach`, `faberloom_memory_teachings`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_skill_install`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_ask`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_followup`, `faberloom_spaces_forget`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_memory_list`, `faberloom_spaces_open_read`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_remember`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_scope`, `faberloom_spaces_update`, `faberloom_spaces_validate_source`, `faberloom_workflows_activate`, `faberloom_workflows_add_node`, `faberloom_workflows_connect`, `faberloom_workflows_create`, `faberloom_workflows_disconnect`, `faberloom_workflows_export`, `faberloom_workflows_from_template`, `faberloom_workflows_get`, `faberloom_workflows_import`, `faberloom_workflows_list`, `faberloom_workflows_pause`, `faberloom_workflows_permissions`, `faberloom_workflows_propose`, `faberloom_workflows_remove_node`, `faberloom_workflows_revoke`, `faberloom_workflows_run_now`, `faberloom_workflows_runs`, `faberloom_workflows_set_trigger`, `faberloom_workflows_share`, `faberloom_workflows_templates`, `faberloom_workflows_update_node`, `faberloom_workflows_validate` | `ctx.tools`, `ctx.faberloomSpaces`, `ctx.faberloomMcpRegistry` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
@@ -1986,42 +1986,99 @@ Edit a product agent: responsibility, skills, tools, subagents, lessons, and mod
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
-### `faberloom_board_create`
+### `faberloom_board_approve`
 
-Create a prepared board item awaiting review; evidence is required.
+Approve the exact artifact version the caller names. It never sends anything; a control in failure or a missing confirmation refuses it.
 
 ```json
 {
   "type": "object",
   "properties": {
-    "title": {
+    "id": {
       "type": "string",
-      "description": "Item title."
+      "description": "Target space id."
     },
-    "summary": {
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "version": {
+      "type": "integer",
+      "description": "Artifact version reviewed."
+    },
+    "hash": {
       "type": "string",
-      "description": "What the prepared result contains."
+      "description": "Artifact hash of that version."
     },
-    "evidence": {
+    "confirmations": {
       "type": "array",
-      "description": "Real evidence references.",
+      "description": "Ids of confirmation-class controls the human accepted.",
       "items": {
         "type": "string"
       }
-    },
-    "spaceId": {
-      "type": "string",
-      "description": "Owning space id."
-    },
-    "documentRef": {
-      "type": "string",
-      "description": "Opaque document reference."
     }
   },
   "required": [
-    "title",
-    "summary",
-    "evidence"
+    "id",
+    "rowVersion",
+    "version",
+    "hash"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_discard`
+
+Discard an item with a signed reason. OTRA needs a note.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "reason": {
+      "type": "string",
+      "description": "CLIENTE_CANCELO, DUPLICADO, ERROR_ORIGEN, NO_CORRESPONDE, RESUELTO_FUERA, or OTRA."
+    },
+    "note": {
+      "type": "string",
+      "description": "Required when the reason is OTRA."
+    }
+  },
+  "required": [
+    "id",
+    "rowVersion",
+    "reason"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_events`
+
+Read the audit history of one item.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
   ]
 }
 ```
@@ -2075,6 +2132,73 @@ Read one board item.
   },
   "required": [
     "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_iteration_context`
+
+Read the pinned context of an iteration: item, account, space, attempt and the content its data class allows. Use it instead of asking the user to repeat the item.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_iteration_propose`
+
+Write the working draft of the live iteration attempt. Every write carries the attempt id, its generation and the tab session that holds it; a stale write is refused with no effect.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "iterationId": {
+      "type": "string",
+      "description": "Attempt id the context reported."
+    },
+    "generation": {
+      "type": "integer",
+      "description": "Lock generation the context reported."
+    },
+    "actorSession": {
+      "type": "string",
+      "description": "Tab session that holds the attempt."
+    },
+    "baseVersion": {
+      "type": "integer",
+      "description": "Artifact version the attempt started from."
+    },
+    "summary": {
+      "type": "string",
+      "description": "The whole draft text the user should review."
+    }
+  },
+  "required": [
+    "id",
+    "iterationId",
+    "generation",
+    "actorSession",
+    "baseVersion",
+    "summary"
   ]
 }
 ```
@@ -2188,7 +2312,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_board_review`
 
-Approve or reject the exact revision. Approval never sends anything.
+Approve or reject the exact revision. Approval requires the artifact hash the caller saw and never sends anything.
 
 ```json
 {
@@ -2210,6 +2334,10 @@ Approve or reject the exact revision. Approval never sends anything.
       "type": "integer",
       "description": "The exact revision reviewed."
     },
+    "hash": {
+      "type": "string",
+      "description": "Artifact hash of that revision; required to approve."
+    },
     "note": {
       "type": "string",
       "description": "Review note."
@@ -2219,6 +2347,145 @@ Approve or reject the exact revision. Approval never sends anything.
     "id",
     "decision",
     "version"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_save_edits`
+
+Save inline edits as a new artifact version. The edit names the base version the user saw; an older base is refused.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "baseVersion": {
+      "type": "integer",
+      "description": "Artifact version the edits were made against."
+    },
+    "summary": {
+      "type": "string",
+      "description": "The edited text."
+    }
+  },
+  "required": [
+    "id",
+    "rowVersion",
+    "baseVersion",
+    "summary"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_set_severity`
+
+Confirm or correct the urgency of an item. Required before approving or discarding an unclassified item.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "severity": {
+      "type": "string",
+      "description": "LOW, MEDIUM, HIGH, or CRITICAL."
+    }
+  },
+  "required": [
+    "id",
+    "rowVersion",
+    "severity"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_submit`
+
+Submit one prepared result or one concrete missing-data task to the Mesa. Requires the business key (PF/OC/SAP), the account, real evidence, and a summary; a conversation prompt is not an item.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "businessKey": {
+      "type": "string",
+      "description": "Business identity: PF, OC, or SAP code."
+    },
+    "accountRef": {
+      "type": "string",
+      "description": "Customer or account the item belongs to."
+    },
+    "title": {
+      "type": "string",
+      "description": "Concrete title: artifact or missing data plus the PF/OC/SAP."
+    },
+    "summary": {
+      "type": "string",
+      "description": "What the prepared result contains, or what is missing and why."
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Readable evidence references; never raw tool dumps or UUIDs.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "artifactType": {
+      "type": "string",
+      "description": "proforma, respuesta, tarea, ..."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Owning space id."
+    },
+    "valueAmount": {
+      "type": "number",
+      "description": "Amount in the original currency."
+    },
+    "valueCurrency": {
+      "type": "string",
+      "description": "ISO currency, for example USD."
+    },
+    "dueAt": {
+      "type": "string",
+      "description": "Deadline in UTC."
+    },
+    "severity": {
+      "type": "string",
+      "description": "LOW, MEDIUM, HIGH, or CRITICAL."
+    },
+    "severityConfidence": {
+      "type": "number",
+      "description": "Classifier confidence from 0 to 1."
+    }
+  },
+  "required": [
+    "businessKey",
+    "accountRef",
+    "title",
+    "summary",
+    "evidence"
   ]
 }
 ```

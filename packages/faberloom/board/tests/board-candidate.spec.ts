@@ -54,7 +54,7 @@ describe('FaberLoomBoard assignWorkspace (W-45, W-59, W-87, W-88)', () => {
     expect((await harness.board.get(ACTOR_A, item.id)).spaceId).toBeNull()
   })
 
-  it('keeps the business key, supersedes a substitutable peer, and returns the live item', async () => {
+  it('W-45 · keeps the business key, supersedes a substitutable peer, and returns the live item', async () => {
     const pool = new MemoryMediaPool()
     const first = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-shared', title: 'A' }))
     const second = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-shared', title: 'B' }))
@@ -71,7 +71,7 @@ describe('FaberLoomBoard assignWorkspace (W-45, W-59, W-87, W-88)', () => {
     expect((await harness.board.get(ACTOR_A, second)).state).toBe('SUSTITUIDO')
   })
 
-  it('transfers the artifact as a candidate to a non-substitutable peer and opens that peer', async () => {
+  it('W-87 · transfers the artifact as a candidate to a non-substitutable peer and opens that peer', async () => {
     const pool = new MemoryMediaPool()
     const source = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-iter', title: 'A' }))
     const iterating = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-iter', title: 'B', state: 'ITERANDO' }))
@@ -89,7 +89,7 @@ describe('FaberLoomBoard assignWorkspace (W-45, W-59, W-87, W-88)', () => {
     expect(closed.events.at(-1)).toMatchObject({ command: 'superseded', reason: 'transferred-as-candidate' })
   })
 
-  it('leaves one non-terminal item and one key claim when two assignments race', async () => {
+  it('W-88 · leaves one non-terminal item and one key claim when two assignments race', async () => {
     const pool = new MemoryMediaPool()
     const left = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-race-ws', title: 'A' }))
     const right = await seedRawItem(pool, rawBoardItem({ businessKey: 'k-race-ws', title: 'B' }))
@@ -118,7 +118,7 @@ describe('FaberLoomBoard assignWorkspace (W-45, W-59, W-87, W-88)', () => {
     await expect(harness.board.assignWorkspace(ACTOR_A, closed, space)).rejects.toThrow('NO_ACCESS')
   })
 
-  it('refuses an assignment from another owner or another tenant', async () => {
+  it('W-59 · refuses an assignment from another owner or another tenant', async () => {
     const harness = await bootBoard()
     const item = await submitArtifact(harness.board, 'idem-own', 'k-own')
     const space = await seedSpace(harness, ACTOR_A, 'Proformas')
@@ -393,7 +393,7 @@ describe('FaberLoomBoard transferred draft recovery (W-68, W-98)', () => {
 })
 
 describe('FaberLoomBoard DESCONOCIDO and candidates (W-22, W-42, W-66, W-76)', () => {
-  it('stores a new artifact for an unknown result as a candidate instead of a new item', async () => {
+  it('W-55 · stores a new artifact for an unknown result as a candidate instead of a new item', async () => {
     const harness = await bootBoard()
     const item = await submitArtifact(harness.board, 'idem-unknown', 'k-unknown')
     const unknown = await harness.board.fail(ACTOR_A, item.id, 'DESCONOCIDO')
@@ -409,7 +409,7 @@ describe('FaberLoomBoard DESCONOCIDO and candidates (W-22, W-42, W-66, W-76)', (
     expect(await harness.board.list(ACTOR_A)).toHaveLength(1)
   })
 
-  it('refuses discard of an unknown result and leaves it in DESCONOCIDO', async () => {
+  it('W-76 · refuses discard of an unknown result and leaves it in DESCONOCIDO', async () => {
     const harness = await bootBoard()
     const item = await submitArtifact(harness.board, 'idem-u2', 'k-u2')
     const unknown = await harness.board.fail(ACTOR_A, item.id, 'DESCONOCIDO')
@@ -423,7 +423,7 @@ describe('FaberLoomBoard DESCONOCIDO and candidates (W-22, W-42, W-66, W-76)', (
     expect((await harness.board.get(ACTOR_A, item.id)).state).toBe('DESCONOCIDO')
   })
 
-  it('refuses approval and discard while a candidate is pending', async () => {
+  it('W-42 · refuses approval and discard while a candidate is pending', async () => {
     const harness = await bootBoard()
     const item = await submitArtifact(harness.board, 'idem-pend', 'k-pend')
     await harness.board.fail(ACTOR_A, item.id, 'DESCONOCIDO')
@@ -443,7 +443,7 @@ describe('FaberLoomBoard DESCONOCIDO and candidates (W-22, W-42, W-66, W-76)', (
     })).rejects.toThrow('CANDIDATE_PENDING')
   })
 
-  it('rejects a choice over a candidate that is no longer the last one', async () => {
+  it('W-66 · rejects a choice over a candidate that is no longer the last one', async () => {
     const harness = await bootBoard()
     const item = await submitArtifact(harness.board, 'idem-stale', 'k-stale')
     await harness.board.fail(ACTOR_A, item.id, 'DESCONOCIDO')

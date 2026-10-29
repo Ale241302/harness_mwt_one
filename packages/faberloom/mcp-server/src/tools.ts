@@ -909,10 +909,21 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args, companyId) => context.faberloomBoard.get(
-      boardActor(ownerId, companyId),
-      required(args, 'id') as FaberLoomBoardItemId,
-    ),
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.get(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+      )
+      // N3/N4 content stays home in every surface, not only the panel (§8.4).
+      if (item.dataClass !== 'N3' && item.dataClass !== 'N4') return item
+      return {
+        ...item,
+        content: {},
+        fieldOrigins: [],
+        pendingCandidate: null,
+        revisions: item.revisions.map(revision => ({ ...revision, summary: '', evidence: [], content: null })),
+      }
+    },
   },
   {
     definition: {
@@ -1068,8 +1079,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
           artifactType: { type: 'string' },
           valueAmount: { type: 'number' },
           valueCurrency: { type: 'string' },
+          valueFxRate: { type: 'number', description: 'Tasa MWT ONE usada para convertir valueAmount a USD (D-3). Obligatoria si la moneda no es USD.' },
+          valueFxSource: { type: 'string', description: 'Fuente de la tasa (D-3).' },
+          valueFxDate: { type: 'string', description: 'Fecha de la tasa, ISO-8601 (D-3).' },
           dueAt: { type: 'string' },
-          dataClass: { type: 'string' },
           severity: { type: 'string' },
           severityConfidence: { type: 'number' },
         },
@@ -1082,8 +1095,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       const title = optional(args, 'title')
       const valueAmount = num(args, 'valueAmount')
       const valueCurrency = optional(args, 'valueCurrency')
+      const valueFxRate = num(args, 'valueFxRate')
+      const valueFxSource = optional(args, 'valueFxSource')
+      const valueFxDate = optional(args, 'valueFxDate')
       const dueAt = optional(args, 'dueAt')
-      const dataClass = optional(args, 'dataClass')
       const severity = optional(args, 'severity')
       const severityConfidence = num(args, 'severityConfidence')
       const item = await context.faberloomBoard.submit(boardActor(ownerId, companyId), {
@@ -1098,12 +1113,21 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         ...artifactType === undefined ? {} : { artifactType },
         ...valueAmount === undefined ? {} : { valueAmount },
         ...valueCurrency === undefined ? {} : { valueCurrency },
+        ...valueFxRate === undefined ? {} : { valueFxRate },
+        ...valueFxSource === undefined ? {} : { valueFxSource },
+        ...valueFxDate === undefined ? {} : { valueFxDate },
         ...dueAt === undefined ? {} : { dueAt },
-        ...dataClass === undefined ? {} : { dataClass: dataClass as never },
         ...severity === undefined ? {} : { severity: severity as never },
         ...severityConfidence === undefined ? {} : { severityConfidence },
       })
-      return { id: String(item.id), state: item.state, column: item.column, version: item.version, rowVersion: item.rowVersion }
+      return {
+        id: String(item.id),
+        state: item.state,
+        column: item.column,
+        version: item.version,
+        rowVersion: item.rowVersion,
+        dataClass: item.dataClass,
+      }
     },
   },
   {
@@ -1319,6 +1343,200 @@ const CATALOGUE: readonly CatalogueEntry[] = [
     },
     run: async (context, ownerId, args, companyId) =>
       context.faberloomBoard.events(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId),
+  },
+  // ── Iteración (E14) ────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_board_iteration_context',
+      description: 'Lee el contexto fijado de una iteración: ítem, cuenta, espacio, intento y el contenido que la clase de datos permite. No repitas el ítem al usuario.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) =>
+      context.faberloomBoard.iterationContext(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId),
+  },
+  {
+    definition: {
+      name: 'faberloom_board_iteration_propose',
+      description: 'Escribe el borrador de trabajo del intento vivo. Cada escritura lleva iterationId, generación y la sesión que lo sostiene; una escritura vieja se rechaza sin efectos.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'iterationId', 'generation', 'actorSession', 'baseVersion', 'summary'],
+        properties: {
+          id: { type: 'string' },
+          iterationId: { type: 'string' },
+          generation: { type: 'number' },
+          actorSession: { type: 'string' },
+          baseVersion: { type: 'number' },
+          summary: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) =>
+      context.faberloomBoard.saveIterationDraft(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        iterationId: required(args, 'iterationId'),
+        generation: num(args, 'generation') ?? 0,
+        actorSession: required(args, 'actorSession'),
+        baseVersion: num(args, 'baseVersion') ?? 0,
+        summary: required(args, 'summary'),
+      }),
+  },
+  // ── Ejecución externa (E15) ────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_board_approve_with_execution',
+      description: 'Aprueba la versión exacta y acepta una ejecución externa: reserva el efecto y encola el mensaje en la misma operación. Exige la firma configurada para el tipo de acción.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'artifactVersion', 'artifactHash', 'executionId', 'actionType', 'destination'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          artifactVersion: { type: 'number' },
+          artifactHash: { type: 'string' },
+          executionId: { type: 'string' },
+          actionType: { type: 'string' },
+          destination: { type: 'string' },
+          authorization: { type: 'string' },
+          confirmations: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const authorization = optional(args, 'authorization')
+      const confirmations = strings(args, 'confirmations')
+      const accepted = await context.faberloomBoard.approveWithExecution(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        expectedRowVersion: num(args, 'rowVersion') ?? 0,
+        expectedArtifactVersion: num(args, 'artifactVersion') ?? 0,
+        expectedArtifactHash: required(args, 'artifactHash'),
+        executionId: required(args, 'executionId'),
+        actionType: required(args, 'actionType'),
+        destination: required(args, 'destination'),
+        ...authorization === undefined ? {} : { authorization },
+        ...confirmations === undefined ? {} : { confirmations },
+      })
+      return {
+        id: String(accepted.item.id),
+        state: accepted.item.state,
+        effectKey: accepted.reservation.effectKey,
+        message: accepted.message.status,
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_revert',
+      description: 'Revierte un ítem delegado antes del plazo: cancela el mensaje y libera la reserva. Después del plazo se rechaza.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' }, rowVersion: { type: 'number' }, reason: { type: 'string' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const rowVersion = num(args, 'rowVersion')
+      const reason = optional(args, 'reason')
+      const item = await context.faberloomBoard.revert(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        ...rowVersion === undefined ? {} : { expectedRowVersion: rowVersion },
+        ...reason === undefined ? {} : { reason },
+      })
+      return { id: String(item.id), state: item.state }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_reconcile',
+      description: 'Registra lo que el destino respondió sobre un efecto en duda: CONFIRMADO, FALLIDO o DESCONOCIDO.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'outcome'],
+        properties: {
+          id: { type: 'string' },
+          outcome: { type: 'string', enum: ['CONFIRMADO', 'FALLIDO', 'DESCONOCIDO'] },
+          rowVersion: { type: 'number' },
+          ref: { type: 'string' },
+          detail: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const rowVersion = num(args, 'rowVersion')
+      const ref = optional(args, 'ref')
+      const detail = optional(args, 'detail')
+      const item = await context.faberloomBoard.reconcile(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        outcome: required(args, 'outcome') as never,
+        ...rowVersion === undefined ? {} : { expectedRowVersion: rowVersion },
+        ...ref === undefined ? {} : { ref },
+        ...detail === undefined ? {} : { detail },
+      })
+      return { id: String(item.id), state: item.state, outcome: item.executionOutcome }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_retry',
+      description: 'Reintenta un efecto fallido conservando la ejecución y la clave de idempotencia. Con resultado DESCONOCIDO solo si el destino es idempotente.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' }, rowVersion: { type: 'number' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const rowVersion = num(args, 'rowVersion')
+      const item = await context.faberloomBoard.retry(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        ...rowVersion === undefined ? {} : { expectedRowVersion: rowVersion },
+      })
+      return { id: String(item.id), state: item.state }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_admin_close',
+      description: 'Cierra un ítem con resultado desconocido. Solo propietario o administrador del tenant, con razón; la reserva sigue abierta.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'reason'],
+        properties: { id: { type: 'string' }, reason: { type: 'string' }, rowVersion: { type: 'number' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const rowVersion = num(args, 'rowVersion')
+      const closed = await context.faberloomBoard.adminClose(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        reason: required(args, 'reason'),
+        ...rowVersion === undefined ? {} : { expectedRowVersion: rowVersion },
+      })
+      return { id: String(closed.item.id), state: closed.item.state, candidateId: closed.candidateId }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_dispatch_effect',
+      description: 'Pide al consumidor del outbox que emita un efecto pendiente de este tenant. Verifica reserva, autorización y controles antes de emitir.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['effectKey'],
+        properties: { effectKey: { type: 'string' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const outcome = await context.faberloomBoard.dispatchEffect(
+        boardActor(ownerId, companyId),
+        required(args, 'effectKey'),
+      )
+      return { dispatched: outcome.dispatched, code: outcome.code, detail: outcome.detail }
+    },
   },
   // ── Grants (autonomía) ─────────────────────────────────────────────
   {

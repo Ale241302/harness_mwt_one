@@ -27,7 +27,8 @@ import { BrandWordmark, Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-pr
 import { FileTypeIcon, IconCheckOutline16, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, IconTrashOutline16, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
-  AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomBoardDraftRow, FaberLoomConnection, FaberLoomExecutionRow,
+  AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomBoardDraftRow, FaberLoomBoardRow,
+  FaberLoomConnection, FaberLoomExecutionRow,
   FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomModelCatalog, FaberLoomOverview,
   FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
   FaberLoomCostSummary,
@@ -70,6 +71,34 @@ import styles from './faberloom.module.css'
 /** One Remote result, as the generated client returns it. */
 type Result<T> = { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
+
+/**
+ * The version one approval names, captured when its panel opens (G9). The
+ * approval never reads the item live, so a newer version under the panel cannot
+ * be approved by accident.
+ */
+interface Acceptance {
+  /** Board item the acceptance belongs to. */
+  readonly itemId: string
+  /** Artifact version the approval names. */
+  readonly version: number
+  /** Artifact hash that version carries. */
+  readonly hash: string
+  /** Row version the command expects. */
+  readonly rowVersion: number
+  /** True when the panel committed the pending edits before it opened. */
+  readonly saved: boolean
+}
+
+/** One Space group of already-ordered board rows (G7). */
+interface SpaceGroup {
+  /** Stable key of the group, unique within one board view. */
+  readonly key: string
+  /** Space the group belongs to, or null for the group without a space. */
+  readonly spaceId: string | null
+  /** Rows in the order the queue already had them. */
+  readonly rows: readonly FaberLoomBoardRow[]
+}
 
 /** Model providers an agent may use, each with its own API key. */
 const MODEL_PROVIDERS = ['anthropic', 'openai', 'kimi', 'deepseek'] as const
@@ -2699,6 +2728,16 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const [tick, setTick] = useState(0)
     const [spaceFilter, setSpaceFilter] = useState('')
     const [severityFilter, setSeverityFilter] = useState('')
+    const [accountFilter, setAccountFilter] = useState('')
+    const [dueFilter, setDueFilter] = useState<'all' | 'overdue' | 'none'>('all')
+    // Lista and Kanban group the filtered rows by Space (G7); Foco stays
+    // item-by-item and therefore hides the toggle.
+    const [groupBySpace, setGroupBySpace] = useState(false)
+    const [collapsedGroups, setCollapsedGroups] = useState<readonly string[]>([])
+    // Items Saltar and ArrowRight left behind in this round. Skipping never
+    // reorders the queue, it only moves the reader on (G7).
+    const [skipped, setSkipped] = useState<readonly string[]>([])
+    const [roundExhausted, setRoundExhausted] = useState(false)
     const [draft, setDraft] = useState<string | null>(null)
     const [draftRevision, setDraftRevision] = useState(0)
     const [showDiscard, setShowDiscard] = useState(false)
@@ -2728,6 +2767,9 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const [execAction, setExecAction] = useState('')
     const [execDestination, setExecDestination] = useState('')
     const [executionId, setExecutionId] = useState('')
+    // The version the open approval panel names; closing the panel drops it so
+    // no acceptance survives a later gesture (W-73, G9).
+    const [acceptance, setAcceptance] = useState<Acceptance | null>(null)
     // The clock the reversal countdown reads; one tick per second while a
     // delegated item is open.
     const [clock, setClock] = useState(() => Date.now())
@@ -2752,11 +2794,72 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     // control that opened them, like the approval dialog (§9.9).
     const effectPanelRef = useRef<HTMLElement>(null)
     const effectTriggerRef = useRef<HTMLButtonElement | null>(null)
+    // The board view an open item came from, remembered while the reader decides
+    // inside Foco. A resolved command returns there (W-79); nothing renders it,
+    // so it lives in a ref.
+    const originView = useRef<'kanban' | 'lista' | null>(null)
+
+    /** Switch views by an explicit gesture; a manual switch forgets the origin (W-79). */
+    const showView = (next: 'foco' | 'kanban' | 'lista'): void => {
+      originView.current = null
+      setView(next)
+    }
+
+    /**
+     * Open one row in Foco and remember the board view it came from, so the
+     * command that resolves it returns the reader there (W-79). Foco itself
+     * keeps walking the queue and stores no origin.
+     * @param id - the board item to open.
+     */
+    const openItem = (id: string): void => {
+      setSelected(id)
+      originView.current = view === 'foco' ? null : view
+      setView('foco')
+    }
+
+    /**
+     * Return to the view the item was opened from once a command settled it. The
+     * row keeps its selection until the queue no longer holds it (W-79).
+     * @param itemId - the item the settled command named.
+     */
+    const returnToOrigin = (itemId: string): void => {
+      const target = originView.current
+      if (target === null) return
+      originView.current = null
+      setView(target)
+      setSelected(itemId)
+    }
+
+    /**
+     * Close the approval panel and drop everything the acceptance minted, so no
+     * action type, destination, execution id, or confirmed check survives to a
+     * later gesture (W-73).
+     */
+    const resetApproval = (): void => {
+      setShowApprove(false)
+      setExecAction('')
+      setExecDestination('')
+      setExecutionId('')
+      setAcceptance(null)
+      setConfirmations([])
+    }
 
     const rows = (overview?.board ?? []).filter(row => row.column !== 'CERRADO')
-    const visible = rows.filter(row =>
+    /** Whether one row passes the selectors the filter bar shows (G7). */
+    const matchesFilters = (row: FaberLoomBoardRow): boolean =>
       (spaceFilter.length === 0 || row.spaceId === spaceFilter)
-      && (severityFilter.length === 0 || row.severity === severityFilter))
+      && (accountFilter.length === 0 || row.accountRef === accountFilter)
+      && (severityFilter.length === 0 || row.severity === severityFilter)
+      && (dueFilter === 'all'
+        || (dueFilter === 'overdue'
+          ? row.dueAt !== null && Date.parse(row.dueAt) < Date.now()
+          : row.dueAt === null))
+    const visible = rows.filter(matchesFilters)
+    const hidden = rows.filter(row => !matchesFilters(row))
+    const queueEmpty = visible.length === 0
+    // Identity of the visible queue, so a board view notices a row that left it
+    // without re-running on every render (W-79).
+    const visibleKey = visible.map(row => row.id).join('|')
     const detail = useLazy<FaberLoomBoardDetail | undefined>(
       () => selected === null ? Promise.resolve({ ok: true, value: undefined }) : boardDetail(selected),
       [selected, tick],
@@ -2906,7 +3009,53 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const unclassifiedCount = visible.filter(row => row.severity === null).length
     const criticalCount = visible.filter(row => row.severity === 'CRITICAL').length
     const overdueCount = visible.filter(row => row.dueAt !== null && Date.parse(row.dueAt) < Date.now()).length
-    const outsideCount = rows.length - visible.length
+    const outsideCount = hidden.length
+    // The scope bar names what a filter hides, so clearing it is a decision
+    // over the items that matter instead of a guess (G7).
+    const outsideUnclassified = hidden.filter(row => row.severity === null).length
+    const outsideNoSpace = hidden.filter(row => row.spaceId === null).length
+    const outsideCritical = hidden.filter(row => row.severity === 'CRITICAL').length
+    // W-52: only a really empty authorized queue says nothing awaits a decision.
+    // When a filter hides every item, the empty view names the counts instead, so
+    // clearing the filter looks like the decision it is.
+    const emptyTitle = rows.length === 0 ? t('mesa.empty') : t('mesa.noSelection')
+    const emptyText = rows.length === 0
+      ? t('mesa.emptyHint')
+      : `${t('mesa.scope.outside')}: ${String(outsideCount)} · ${t('mesa.queue')}: ${String(rows.length)}`
+    const emptyBlock = <StateBlock kind="empty" title={emptyTitle} text={emptyText} />
+    // Only the accounts the board actually shows belong in the filter.
+    const accountOptions = [...new Set(rows.map(row => row.accountRef).filter((account): account is string => account !== null))]
+      .sort((left, right) => left.localeCompare(right))
+
+    /** The highest severity a group carries; null when every row in it is unclassified. */
+    const highestSeverity = (input: readonly FaberLoomBoardRow[]): string | null =>
+      SEVERITIES.reduce<string | null>(
+        (top, severity) => input.some(row => row.severity === severity) ? severity : top,
+        null,
+      )
+    /**
+     * Split ordered rows into Space groups. The first item decides where a group
+     * sits and the rows inside keep the queue order they already had (G7).
+     */
+    const spaceGroups = (input: readonly FaberLoomBoardRow[]): readonly SpaceGroup[] => {
+      const groups: { key: string; spaceId: string | null; rows: FaberLoomBoardRow[] }[] = []
+      for (const row of input) {
+        const group = groups.find(entry => entry.spaceId === row.spaceId)
+        if (group === undefined) groups.push({ key: row.spaceId ?? 'none', spaceId: row.spaceId, rows: [row] })
+        else group.rows.push(row)
+      }
+      return groups
+    }
+    /** Space name a group header shows; no space is its own group. */
+    const groupLabel = (spaceId: string | null): string =>
+      spaceId === null ? t('mesa.group.noSpace') : spaceName(spaceId)
+    const groupCollapsed = (key: string): boolean => collapsedGroups.includes(key)
+    /** Fold or unfold one Space group; every group starts open. */
+    const toggleGroup = (key: string): void => {
+      setCollapsedGroups(current => current.includes(key)
+        ? current.filter(entry => entry !== key)
+        : [...current, key])
+    }
 
     /** The first condition that stops a decision, in the order the spec lists it. */
     const blockedReason = value === undefined ? null
@@ -2973,7 +3122,22 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       if (view !== 'foco') return
       if (selected !== null && visible.some(row => row.id === selected)) return
       setSelected(visible[0]?.id ?? null)
-    }, [view, spaceFilter, severityFilter, overview])
+    }, [view, spaceFilter, severityFilter, accountFilter, dueFilter, overview])
+
+    // A different filter set or an empty queue starts a fresh round (G7).
+    useEffect(() => {
+      setSkipped([])
+      setRoundExhausted(false)
+    }, [spaceFilter, severityFilter, accountFilter, dueFilter, queueEmpty])
+
+    // A board view keeps the row the reader came back to; when the queue no
+    // longer holds it (an approval closed the item), the selection goes with it
+    // (W-79). Foco keeps its own queue walk and is left alone.
+    useEffect(() => {
+      if (view === 'foco' || selected === null) return
+      if (visible.some(row => row.id === selected)) return
+      setSelected(null)
+    }, [view, selected, visibleKey])
 
     useEffect(() => {
       if (value === undefined) return
@@ -2998,24 +3162,36 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       setIterationDraft(attemptText)
       draftText.current = attemptText
       setDifferences([])
-      setShowApprove(false)
+      // An approval the save just opened names the version it committed, so
+      // reading that same version keeps its panel open (G9).
+      if (acceptance === null || acceptance.version !== value.version || acceptance.hash !== value.artifactHash) {
+        resetApproval()
+      }
       setShowDiscard(false)
       setShowRevert(false)
       setShowReconcile(false)
       setShowRetry(false)
       setShowClose(false)
       setCloseReason('')
-      setExecAction('')
-      setExecDestination('')
-      setExecutionId('')
       setExitMode(null)
       setCandidateChoice(null)
-      setConfirmations([])
       setMessage(null)
     }, [
       value?.id, value?.version, value?.editDraft?.writerSession,
       attempt?.iterationId, attempt?.phase, attempt?.draft?.updatedAt, residue,
     ])
+
+    // The acceptance names one version and hash: a newer version under the open
+    // panel closes it instead of approving work the reader did not see (W-73).
+    useEffect(() => {
+      if (acceptance === null || value === undefined) return
+      if (value.id !== acceptance.itemId) { resetApproval(); return }
+      // A live read older than the acceptance is the reload of the save this
+      // panel just committed, not a change of the item.
+      if (value.version < acceptance.version) return
+      if (value.version === acceptance.version && value.artifactHash === acceptance.hash) return
+      resetApproval()
+    }, [value?.id, value?.version, value?.artifactHash, acceptance])
 
     // The approval panel is a dialog: it takes focus when it opens and hands it
     // back to the button that opened it, so keyboard users never lose their place.
@@ -3116,9 +3292,31 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       return () => { clearInterval(timer) }
     }, [live, attempt?.iterationId, attempt?.generation, attempt?.lockBy, attempt?.renewalSeconds, value?.id])
 
+    /**
+     * Mark the current item skipped and move to the next one this round keeps.
+     * When every remaining item is skipped the panel offers a new round instead
+     * of cycling silently (G7); skipping never reorders the queue.
+     */
     const next = (): void => {
       const index = visible.findIndex(row => row.id === selected)
-      setSelected(visible[index + 1]?.id ?? visible[0]?.id ?? null)
+      const current = visible[index]
+      const left = current === undefined || skipped.includes(current.id) ? skipped : [...skipped, current.id]
+      const ahead = index < 0
+        ? visible
+        : [...visible.slice(index + 1), ...visible.slice(0, index + 1)]
+      const target = ahead.find(row => !left.includes(row.id))
+      if (left !== skipped) setSkipped(left)
+      if (target === undefined) { setRoundExhausted(true); return }
+      setSelected(target.id)
+      setRoundExhausted(false)
+      setTick(count => count + 1)
+    }
+
+    /** Walk every visible item again after a round left only skipped ones (G7). */
+    const restartRound = (): void => {
+      setSkipped([])
+      setRoundExhausted(false)
+      setSelected(visible[0]?.id ?? null)
       setTick(count => count + 1)
     }
 
@@ -3359,78 +3557,86 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       })
     }
 
+    /**
+     * Accept the version the open panel captured, or the live version when the
+     * shortcut approves without a panel. Edits the panel already committed are
+     * never sent twice (W-73, G9).
+     */
     const approve = (): void => {
       if (value === undefined || restricted) return
-      if (value.artifactHash === null) { setMessage(t('mesa.error')); return }
+      const held = acceptance !== null && acceptance.itemId === value.id ? acceptance : null
+      const target = held ?? (value.artifactHash === null
+        ? null
+        : {
+          itemId: value.id,
+          version: value.version,
+          hash: value.artifactHash,
+          rowVersion: value.rowVersion,
+          saved: false,
+        })
+      if (target === null) { setMessage(t('mesa.error')); return }
       if (!confirmedAll) return
+      const acceptedConfirmations = pendingConfirmations.length === 0
+        ? {}
+        : { confirmations: pendingConfirmations.map(check => check.id) }
       if (executing) {
         // The acceptance names a destination and, when the deployment protects
         // the action type, the signature that covers it (W-16).
         if (execDestination.trim().length === 0) { setMessage(t('mesa.approveEffect.destinationRequired')); return }
         if (!signatureReady) return
-        setShowApprove(false)
-        if (!draftChanged) { acceptExecution(value); return }
-        // The spec commits pending edits before the panel; the panel already
-        // showed them, so the save happens here and the acceptance follows on
-        // the version it committed (§9.8).
-        void boardSaveEdits(value.id, {
-          rowVersion: value.rowVersion,
-          baseVersion: value.version,
-          changes: { summary: draft ?? '' },
-        }).then((result) => {
-          if (!result.ok) { setMessage(result.error.message); return }
-          const saved = result.value.detail
-          if (saved === null) { setMessage(t('mesa.error')); return }
-          setTick(count => count + 1)
-          acceptExecution(saved)
-        })
+        acceptExecution(value, target)
+        resetApproval()
         return
       }
-      const accepted = pendingConfirmations.length === 0 ? {} : { confirmations: pendingConfirmations.map(check => check.id) }
-      apply(draftChanged
+      const run = draftChanged && !target.saved
         ? boardApproveWithEdits(value.id, {
-          rowVersion: value.rowVersion,
-          baseVersion: value.version,
-          artifactVersion: value.version,
-          artifactHash: value.artifactHash,
+          rowVersion: target.rowVersion,
+          baseVersion: target.version,
+          artifactVersion: target.version,
+          artifactHash: target.hash,
           changes: { summary: draft ?? '' },
-          ...accepted,
+          ...acceptedConfirmations,
         })
         : boardApprove(value.id, {
-          rowVersion: value.rowVersion,
-          artifactVersion: value.version,
-          artifactHash: value.artifactHash,
-          ...accepted,
-        }))
-      setShowApprove(false)
+          rowVersion: target.rowVersion,
+          artifactVersion: target.version,
+          artifactHash: target.hash,
+          ...acceptedConfirmations,
+        })
+      apply(run)
+      // The board settled the decision: a board view gets its row back (W-79).
+      void run.then((result) => { if (result.ok) returnToOrigin(target.itemId) })
+      resetApproval()
     }
 
     const discard = (): void => {
       if (value === undefined) return
-      apply(boardDiscard(value.id, {
+      const itemId = value.id
+      const run = boardDiscard(itemId, {
         rowVersion: value.rowVersion,
         reason: discardReason,
         ...discardReason === 'OTRA' ? { note: discardNote } : {},
-      }))
+      })
+      apply(run)
+      void run.then((result) => { if (result.ok) returnToOrigin(itemId) })
       setShowDiscard(false)
     }
 
     /**
-     * Accept the execution the confirmation panel describes, against the exact
-     * version and hash the board answered with. The acceptance carries the
-     * signature that covers its action type, so the audit names what allowed it
-     * (§10.1).
-     * @param current - the detail whose version and hash the acceptance names.
+     * Accept the execution the confirmation panel describes, against the version
+     * and hash the panel captured. The acceptance carries the signature that
+     * covers its action type, so the audit names what allowed it (§10.1).
+     * @param current - the detail whose id the command names.
+     * @param target - the captured version, hash, and row version.
      */
-    const acceptExecution = (current: FaberLoomBoardDetail): void => {
-      if (current.artifactHash === null) { setMessage(t('mesa.error')); return }
+    const acceptExecution = (current: FaberLoomBoardDetail, target: Acceptance): void => {
       const accepted = pendingConfirmations.length === 0
         ? {}
         : { confirmations: pendingConfirmations.map(check => check.id) }
-      apply(boardApproveWithExecution(current.id, {
-        expectedRowVersion: current.rowVersion,
-        expectedArtifactVersion: current.version,
-        expectedArtifactHash: current.artifactHash,
+      const run = boardApproveWithExecution(current.id, {
+        expectedRowVersion: target.rowVersion,
+        expectedArtifactVersion: target.version,
+        expectedArtifactHash: target.hash,
         executionId,
         actionType: execAction,
         destination: execDestination.trim(),
@@ -3438,19 +3644,67 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
           ? {}
           : { authorization: signature.signatureId },
         ...accepted,
-      }))
+      })
+      apply(run)
+      void run.then((result) => { if (result.ok) returnToOrigin(current.id) })
     }
 
-    /** Open the single confirmation panel and mint the acceptance it will name. */
+    /**
+     * Open the single confirmation panel and capture the version it names.
+     * Pending edits are committed first when the panel also needs confirmations,
+     * so the panel binds to the saved version instead of the one it replaces
+     * (G9); a failed save reports the error and leaves the panel closed.
+     */
     const openApprove = (): void => {
+      if (value === undefined || restricted) return
+      if (value.artifactHash === null) { setMessage(t('mesa.error')); return }
       setExecutionId(`exec-${writerSession}-${String(Date.now())}`)
-      setShowApprove(true)
+      const open = (target: Acceptance): void => {
+        setAcceptance(target)
+        setShowApprove(true)
+      }
+      if (!draftChanged || pendingConfirmations.length === 0) {
+        open({
+          itemId: value.id,
+          version: value.version,
+          hash: value.artifactHash,
+          rowVersion: value.rowVersion,
+          saved: false,
+        })
+        return
+      }
+      void boardSaveEdits(value.id, {
+        rowVersion: value.rowVersion,
+        baseVersion: value.version,
+        changes: { summary: draft ?? '' },
+      }).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        const saved = result.value.detail
+        if (saved === null || saved.artifactHash === null) { setMessage(t('mesa.error')); return }
+        open({
+          itemId: saved.id,
+          version: saved.version,
+          hash: saved.artifactHash,
+          rowVersion: saved.rowVersion,
+          saved: true,
+        })
+        setTick(count => count + 1)
+        // The version is committed: a correction that could not be recorded is
+        // reported on one line instead of undoing the save (W-34).
+        if (result.value.correctionError !== null) {
+          setMessage(`${t('mesa.correctionMissing')} ${result.value.correctionError}`)
+        }
+      })
     }
 
     /** Revert the delegated execution: the reason and the button are two steps (§9.8). */
     const revertExecution = (): void => {
       if (value === undefined) return
-      apply(boardEffectRevert(value.id, { expectedRowVersion: value.rowVersion, reason: revertReason }))
+      const itemId = value.id
+      const run = boardEffectRevert(itemId, { expectedRowVersion: value.rowVersion, reason: revertReason })
+      apply(run)
+      // Reverting from a delegated item opened in Kanban returns there (W-79).
+      void run.then((result) => { if (result.ok) returnToOrigin(itemId) })
       setShowRevert(false)
     }
 
@@ -3543,7 +3797,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       if (showRetry) { setShowRetry(false); return true }
       if (showClose) { setShowClose(false); return true }
       if (showSignatures) { setShowSignatures(false); return true }
-      if (showApprove) { setShowApprove(false); return true }
+      if (showApprove) { resetApproval(); return true }
       if (showDiscard) { setShowDiscard(false); return true }
       return false
     }
@@ -3618,7 +3872,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
           }
         }
         if (event.key === 'a' || event.key === 'A') {
-          if (pending !== null || value.stale || pendingConfirmations.length > 0) { setShowApprove(true); return }
+          // Approving directly is only right when no edit waits and nothing
+          // needs confirming; with either, A opens the panel like the button
+          // does, so no external effect starts from a shortcut alone (W-73).
+          if (pending !== null || value.stale || pendingConfirmations.length > 0 || draftChanged) {
+            openApprove()
+            return
+          }
           if (blockedReason !== null) { setMessage(blockedReason); return }
           approve()
           return
@@ -3628,7 +3888,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         if (event.key === 's' || event.key === 'S') { event.preventDefault(); severityRef.current?.focus(); return }
         if (event.key === 'd' || event.key === 'D') { event.preventDefault(); setShowDiscard(true); return }
         if (event.key === 'i' || event.key === 'I') { iterate(); return }
-        if (event.key === 'v' || event.key === 'V') { event.preventDefault(); setView(view === 'lista' ? 'foco' : 'lista'); return }
+        if (event.key === 'v' || event.key === 'V') { event.preventDefault(); showView(view === 'lista' ? 'foco' : 'lista'); return }
         if (event.key === 'r' || event.key === 'R') {
           event.preventDefault()
           if (!value.stale) { setMessage(t('mesa.notStale')); return }
@@ -3643,9 +3903,9 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
 
     const tabs = (
       <span className={styles.tools}>
-        <button className={view === 'foco' ? styles.primary : styles.secondary} type="button" onClick={() => setView('foco')}>{t('mesa.tab.foco')}</button>
-        <button className={view === 'kanban' ? styles.primary : styles.secondary} type="button" onClick={() => setView('kanban')}>{t('mesa.tab.kanban')}</button>
-        <button className={view === 'lista' ? styles.primary : styles.secondary} type="button" onClick={() => setView('lista')}>{t('mesa.tab.lista')}</button>
+        <button className={view === 'foco' ? styles.primary : styles.secondary} type="button" onClick={() => showView('foco')}>{t('mesa.tab.foco')}</button>
+        <button className={view === 'kanban' ? styles.primary : styles.secondary} type="button" onClick={() => showView('kanban')}>{t('mesa.tab.kanban')}</button>
+        <button className={view === 'lista' ? styles.primary : styles.secondary} type="button" onClick={() => showView('lista')}>{t('mesa.tab.lista')}</button>
       </span>
     )
 
@@ -3657,10 +3917,33 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
             <option key={space.id} value={space.id}>{`${'\u00a0\u00a0'.repeat(space.depth)}${space.title}`}</option>
           ))}
         </select>
+        <select value={accountFilter} aria-label={t('mesa.account')} onChange={event => setAccountFilter(event.target.value)}>
+          <option value="">{t('mesa.filter.accountAll')}</option>
+          {accountOptions.map(account => <option key={account} value={account}>{account}</option>)}
+        </select>
         <select value={severityFilter} aria-label={t('mesa.severity')} onChange={event => setSeverityFilter(event.target.value)}>
           <option value="">{t('mesa.allSeverities')}</option>
           {SEVERITIES.map(severity => <option key={severity} value={severity}>{t(severityKey(severity))}</option>)}
         </select>
+        <select
+          value={dueFilter}
+          aria-label={t('mesa.filter.due')}
+          onChange={event => setDueFilter(event.target.value as 'all' | 'overdue' | 'none')}
+        >
+          <option value="all">{t('mesa.filter.dueAll')}</option>
+          <option value="overdue">{t('mesa.filter.dueOverdue')}</option>
+          <option value="none">{t('mesa.filter.dueNone')}</option>
+        </select>
+        {view === 'foco' ? null : (
+          <label className={styles.mesaProperty}>
+            <input
+              type="checkbox"
+              checked={groupBySpace}
+              onChange={event => setGroupBySpace(event.target.checked)}
+            />
+            <span>{t('mesa.groupBySpace')}</span>
+          </label>
+        )}
       </span>
     )
 
@@ -3673,6 +3956,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         <span className={criticalCount > 0 ? styles.mesaScopeAlert : undefined}>{`${t('mesa.scope.critical')}: ${String(criticalCount)}`}</span>
         {overdueCount === 0 ? null : <span className={styles.mesaScopeAlert}>{`${t('mesa.scope.overdue')}: ${String(overdueCount)}`}</span>}
         {outsideCount === 0 ? null : <span>{`${t('mesa.scope.outside')}: ${String(outsideCount)}`}</span>}
+        {outsideUnclassified === 0 ? null : (
+          <span className={styles.mesaScopeAlert}>{`${t('mesa.scope.outsideUnclassified')}: ${String(outsideUnclassified)}`}</span>
+        )}
+        {outsideNoSpace === 0 ? null : <span>{`${t('mesa.scope.outsideNoSpace')}: ${String(outsideNoSpace)}`}</span>}
+        {outsideCritical === 0 ? null : (
+          <span className={styles.mesaScopeAlert}>{`${t('mesa.scope.outsideCritical')}: ${String(outsideCritical)}`}</span>
+        )}
       </div>
     )
 
@@ -3730,7 +4020,20 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         notices.push({
           title: t('mesa.iterationDraft'),
           body: t('mesa.iterationDraftText'),
-          action: <button className={styles.secondary} type="button" onClick={iterate}>{t('mesa.iterationOpen')}</button>,
+          // Resuming stays shut while a candidate waits: the choice is applied
+          // first, then the notices recalculate and the draft can be resumed
+          // (W-91). The title says why instead of leaving a dead button.
+          action: (
+            <button
+              className={styles.secondary}
+              type="button"
+              disabled={pending !== null}
+              title={pending === null ? undefined : t('mesa.blocked.candidate')}
+              onClick={iterate}
+            >
+              {t('mesa.iterationOpen')}
+            </button>
+          ),
         })
       }
       // Work a collision moved here from the item it closed is offered for
@@ -3889,6 +4192,12 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                   {remaining === null
                     ? t('mesa.iteration.live')
                     : `${t('mesa.iteration.live')} · ${t('mesa.iteration.remaining')} ${String(remaining)} ${t('mesa.iteration.minutes')}`}
+                </p>
+              ) : null}
+
+              {live && attempt !== undefined && attempt.rounds >= attempt.roundLimit ? (
+                <p className={styles.mesaHintLine}>
+                  {t('mesa.iteration.roundLimit').replace('{rounds}', String(attempt.rounds))}
                 </p>
               ) : null}
 
@@ -4285,7 +4594,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     >
                       {executing ? t('mesa.approveEffect.confirm') : t('action.confirm')}
                     </button>
-                    <button className={styles.ghost} type="button" onClick={() => setShowApprove(false)}>{t('action.cancel')}</button>
+                    <button className={styles.ghost} type="button" onClick={resetApproval}>{t('action.cancel')}</button>
                   </span>
                 </section>
               ) : null}
@@ -4578,10 +4887,36 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
             </article>
           )
 
+    // A card and a group header are shared by the flat and the grouped views, so
+    // the two read the same in Kanban and Lista (G7).
+    const cardOf = (row: FaberLoomBoardRow): ReactNode => (
+      <button className={styles.mesaCard} key={row.id} type="button"
+        onClick={() => openItem(row.id)}>
+        <span className={styles.mesaKicker}>{kickerOf(row.accountRef, row.spaceId)}</span>
+        <strong>{row.title}</strong>
+        <span className={styles.mesaCardFoot}>
+          <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span>
+          <span className={styles.mesaQueueMeta}>{row.dueAt === null ? t('mesa.noDue') : dayOf(row.dueAt)}</span>
+        </span>
+      </button>
+    )
+    // A group header names its Space, how many items it holds, and the highest
+    // severity inside, and folds the group when clicked.
+    const groupHeader = (group: SpaceGroup): ReactNode => (
+      <button
+        className={styles.ghost}
+        type="button"
+        aria-expanded={!groupCollapsed(group.key)}
+        onClick={() => toggleGroup(group.key)}
+      >
+        {`${groupLabel(group.spaceId)} · ${String(group.rows.length)} · ${t(severityKey(highestSeverity(group.rows)))}`}
+      </button>
+    )
+
     // An empty column hides instead of leaving a blank gutter (spec 9.2).
     const kanbanEmpty = !COLUMNS.some(([column]) => visible.some(row => row.column === column))
     const kanban = kanbanEmpty
-      ? <StateBlock kind="empty" title={t('mesa.empty')} text={rows.length === 0 ? t('mesa.emptyHint') : t('mesa.noSelection')} />
+      ? emptyBlock
       : (
         <div className={styles.mesaColumns}>
           {COLUMNS.map(([column, key]) => {
@@ -4590,17 +4925,14 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
             return (
               <section className={styles.mesaColumn} key={column}>
                 <h3>{t(key)} <span className={styles.mesaQueueMeta}>{String(cards.length)}</span></h3>
-                {cards.map(row => (
-                  <button className={styles.mesaCard} key={row.id} type="button"
-                    onClick={() => { setSelected(row.id); setView('foco') }}>
-                    <span className={styles.mesaKicker}>{kickerOf(row.accountRef, row.spaceId)}</span>
-                    <strong>{row.title}</strong>
-                    <span className={styles.mesaCardFoot}>
-                      <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span>
-                      <span className={styles.mesaQueueMeta}>{row.dueAt === null ? t('mesa.noDue') : dayOf(row.dueAt)}</span>
-                    </span>
-                  </button>
-                ))}
+                {groupBySpace
+                  ? spaceGroups(cards).map(group => (
+                    <div key={group.key}>
+                      {groupHeader(group)}
+                      {groupCollapsed(group.key) ? null : group.rows.map(cardOf)}
+                    </div>
+                  ))
+                  : cards.map(cardOf)}
               </section>
             )
           })}
@@ -4630,15 +4962,49 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       { key: 'column', header: t('mesa.column'), cell: row => <span className={styles.cellMuted}>{t(columnKey(row.column))}</span> },
     ]
 
+    // The List keeps one table; grouping wraps each Space in its own section
+    // with the header the Kanban groups use (G7). An empty queue keeps the
+    // table's own empty state instead of rendering no sections.
+    const list = groupBySpace && visible.length > 0
+      ? (
+        <div>
+          {spaceGroups(visible).map(group => (
+            <section key={group.key}>
+              {groupHeader(group)}
+              {groupCollapsed(group.key) ? null : (
+                <DataTable
+                  columns={columns}
+                  rows={group.rows}
+                  selectedId={selected ?? ''}
+                  onSelect={openItem}
+                  emptyTitle={emptyTitle}
+                  emptyText={emptyText}
+                  labels={tableLabels(t)}
+                />
+              )}
+            </section>
+          ))}
+        </div>
+      )
+      : <DataTable columns={columns} rows={visible} selectedId={selected ?? ''} onSelect={openItem} emptyTitle={emptyTitle} emptyText={emptyText} labels={tableLabels(t)} />
+
     return (
       <Screen title={t('panel.board.title')} subtitle={t('panel.board.intro')} trailing={tabs}>
         <Feedback t={t} message={error ?? message} />
         {filters}
         {scopeBar}
+        {roundExhausted && view === 'foco' ? (
+          <div className={styles.mesaNotice} role="status">
+            <div className={styles.mesaNoticeHead}><span>{t('mesa.skippedOnly')}</span></div>
+            <span className={styles.tools}>
+              <button className={styles.secondary} type="button" onClick={restartRound}>{t('mesa.restartRound')}</button>
+            </span>
+          </div>
+        ) : null}
         {alertBlock}
         {view === 'foco'
           ? (visible.length === 0
-            ? <StateBlock kind="empty" title={t('mesa.empty')} text={rows.length === 0 ? t('mesa.emptyHint') : t('mesa.noSelection')} />
+            ? emptyBlock
             : (
               <div className={styles.mesaFoco}>
                 {queue}
@@ -4647,7 +5013,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
             ))
           : view === 'kanban'
             ? kanban
-            : <DataTable columns={columns} rows={visible} selectedId={selected ?? ''} onSelect={(id) => { setSelected(id); setView('foco') }} emptyTitle={t('mesa.empty')} emptyText={t('mesa.noSelection')} labels={tableLabels(t)} />}
+            : list}
       </Screen>
     )
   }

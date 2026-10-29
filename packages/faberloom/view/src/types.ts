@@ -177,8 +177,10 @@ export interface FaberLoomBoardRow {
   readonly artifactType: string
   /** Deadline in UTC, or null. */
   readonly dueAt: string | null
-  /** Amount in USD, or null. */
+  /** Amount in USD, or null. An N3/N4 row reports none (W-54). */
   readonly valueUsd: number | null
+  /** Data class the row carries; the panel redacts what the class forbids. */
+  readonly dataClass: string
   /** Whether a candidate is waiting for a choice. */
   readonly hasCandidate: boolean
   /** Whether an unapplied edit draft exists. */
@@ -1256,6 +1258,14 @@ export interface FaberLoomBoardIterationContext {
   readonly draftSummary: string | null
   /** Rounds applied to this item so far; a counter, never artifact content. */
   readonly rounds: number
+  /** Live attempt id, or null when none holds the item. */
+  readonly iterationId: string | null
+  /** Lock generation of the attempt. */
+  readonly generation: number
+  /** Tab session that holds the attempt, so the agent writes through it. */
+  readonly holderSession: string | null
+  /** Artifact version the attempt started from, or null. */
+  readonly baseVersion: number | null
 }
 
 /** Editable fields of a new teaching; the author is the signed-in owner. */

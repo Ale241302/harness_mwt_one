@@ -255,6 +255,12 @@ export interface FaberLoomBoardItem {
   readonly valueCurrency: string | null
   /** Amount in USD at creation, or null. */
   readonly valueUsd: number | null
+  /** Exchange rate applied to reach `valueUsd`, or null for an unconverted amount (D-3). */
+  readonly valueFxRate: number | null
+  /** Source the exchange rate came from (D-3). */
+  readonly valueFxSource: string | null
+  /** Date the exchange rate was quoted (D-3). */
+  readonly valueFxDate: string | null
   /** Data classification. */
   readonly dataClass: BoardDataClass
   /** True while the classification is provisional (N2 by default). */
@@ -419,8 +425,15 @@ export interface BoardSubmitRequest extends BoardSubmitInput {
   readonly valueCurrency?: string
   /** Deadline in UTC. */
   readonly dueAt?: string
-  /** Data classification. */
-  readonly dataClass?: BoardDataClass
+  /**
+   * Exchange rate the producer used for `valueAmount` (D-3). Required for a
+   * non-USD amount: the board converts, and it never invents a rate.
+   */
+  readonly valueFxRate?: number
+  /** Source the rate came from (D-3). */
+  readonly valueFxSource?: string
+  /** Date the rate was quoted (D-3). */
+  readonly valueFxDate?: string
   /** Classifier severity. */
   readonly severity?: BoardSeverity
   /** Classifier confidence. */
@@ -541,6 +554,50 @@ export type BoardClassifierResult =
   | { readonly status: 'classified'; readonly severity: BoardSeverity; readonly confidence: number }
   | { readonly status: 'timeout' }
   | { readonly status: 'invalid'; readonly detail: string }
+
+/**
+ * The classification port: the one thing the board asks a model for. A
+ * deployment mounts `faberloomBoardClassifier` to answer it; without that
+ * service the rules are the only classifier and an unresolved field stays
+ * `null` (W-37), which is why no model runs inside the board.
+ */
+export interface BoardClassifierPort {
+  /**
+   * Classify one item that the deterministic rules did not resolve.
+   * @param request - artifact type, account, content hash, and the text the model may read.
+   * @param options - the caller's abort signal and the accepted confidence floor.
+   * @returns the proposal, a timeout, or an invalid answer.
+   */
+  classifySeverity(
+    request: {
+      readonly artifactType: string
+      readonly accountRef: string | null
+      readonly contentHash: string
+      readonly summary: string
+    },
+    options: { readonly signal: AbortSignal; readonly confidenceThreshold: number },
+  ): Promise<BoardClassifierResult>
+  /** Model identity, so the cache key changes when the model does (§5.1). */
+  readonly modelVersion: string
+}
+
+/** One cached classification, keyed by everything that can change the answer (§5.1). */
+export interface BoardClassificationCacheEntry {
+  /** The full §5.1 key. */
+  readonly key: string
+  /** Field the entry classifies (`severity` today). */
+  readonly field: string
+  /** Tenant the entry belongs to; a cache never crosses tenants. */
+  readonly companyId: string | null
+  /** Resolved severity; null is a cached "nothing resolved". */
+  readonly severity: BoardSeverity | null
+  /** Who produced it. */
+  readonly source: BoardClassifySource | null
+  /** Proposal confidence. */
+  readonly confidence: number | null
+  /** ISO-8601 instant the entry was written. */
+  readonly at: string
+}
 
 /** Severity with the provenance to persist beside it. */
 export interface BoardSeverityDecision {
@@ -1027,6 +1084,40 @@ export interface BoardIterationDraftOutcome {
   readonly code: 'LOCK_LOST' | 'ITERATION_STALE' | null
 }
 
+/**
+ * What one iteration chat pins above the conversation: the item's identity, the
+ * attempt it belongs to, and the content the class lets it read. A provisional
+ * or N3/N4 item returns no summary and no evidence (W-48, W-99).
+ */
+export interface BoardIterationContext {
+  /** Item the attempt is iterating. */
+  readonly itemId: string
+  /** Display title. */
+  readonly title: string
+  /** Account/client reference, or null. */
+  readonly accountRef: string | null
+  /** Owning space, or null. */
+  readonly spaceId: string | null
+  /** Current artifact version. */
+  readonly version: number
+  /** Live attempt id, or null when none holds the item. */
+  readonly iterationId: string | null
+  /** Lock generation of the attempt. */
+  readonly generation: number
+  /** Tab session that holds the attempt, or null. */
+  readonly holderSession: string | null
+  /** Version the attempt started from, or null. */
+  readonly baseVersion: number | null
+  /** Applied rounds of this item (D-10). */
+  readonly rounds: number
+  /** Summary the chat may read, or null when the class forbids it. */
+  readonly summary: string | null
+  /** Unapplied work of the attempt, or null. */
+  readonly draftSummary: string | null
+  /** Evidence references the chat may read; empty when the class forbids it. */
+  readonly evidence: readonly string[]
+}
+
 /** One field where a retained draft and the current version disagree (W-68). */
 export interface BoardIterationDifference {
   /** Top-level content key. */
@@ -1208,7 +1299,7 @@ export interface BoardEffectAlert {
 }
 
 /** Alert classes the board raises for one effect. */
-export type BoardEffectAlertKind = 'LATE_CONFIRMATION' | 'ORPHAN_RELEASED'
+export type BoardEffectAlertKind = 'LATE_CONFIRMATION' | 'ORPHAN_RELEASED' | 'DISPATCH_REFUSED'
 
 /**
  * One audit event of an effect no item can hold. Every other command audits

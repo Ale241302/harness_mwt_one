@@ -2888,6 +2888,190 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'faberloom_board_iteration_context',
+    description: 'Read the pinned context of an iteration: item, account, space, attempt and the content its data class allows. Use it instead of asking the user to repeat the item.',
+    parameters: { id: ID_PARAM },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          title: { type: 'string', required: true },
+          accountRef: { type: 'string', required: true },
+          spaceId: { type: 'string', required: true },
+          version: { type: 'integer', required: true },
+          iterationId: { type: 'string', required: true },
+          generation: { type: 'integer', required: true },
+          holderSession: { type: 'string', required: true },
+          baseVersion: { type: 'integer', required: true },
+          rounds: { type: 'integer', required: true },
+          summary: { type: 'string', required: true },
+          draftSummary: { type: 'string', required: true },
+          evidence: { type: 'array', required: true, items: { type: 'string' } },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Iterating “${value.title}” v${String(value.version)}.` }],
+    },
+    execute: async (args) => {
+      const context = await board(ctx).iterationContext(actor(config), args.id as FaberLoomBoardItemId)
+      if (context === undefined) throw new Error(`faberloom: NOT_FOUND — board item ${args.id} is gone`)
+      return {
+        title: context.title,
+        accountRef: context.accountRef ?? '',
+        spaceId: context.spaceId ?? '',
+        version: context.version,
+        iterationId: context.iterationId ?? '',
+        generation: context.generation,
+        holderSession: context.holderSession ?? '',
+        baseVersion: context.baseVersion ?? context.version,
+        rounds: context.rounds,
+        summary: context.summary ?? '',
+        draftSummary: context.draftSummary ?? '',
+        evidence: [...context.evidence],
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Read iteration context', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_iteration_propose',
+    description: 'Write the working draft of the live iteration attempt. Every write carries the attempt id, its generation and the tab session that holds it; a stale write is refused with no effect.',
+    parameters: {
+      id: ID_PARAM,
+      iterationId: { type: 'string', required: true, description: 'Attempt id the context reported.' },
+      generation: { type: 'integer', required: true, description: 'Lock generation the context reported.' },
+      actorSession: { type: 'string', required: true, description: 'Tab session that holds the attempt.' },
+      baseVersion: { type: 'integer', required: true, description: 'Artifact version the attempt started from.' },
+      summary: { type: 'string', required: true, description: 'The whole draft text the user should review.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: { linked: { type: 'boolean', required: true }, baseVersion: { type: 'integer', required: true } },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.linked ? `Draft saved over v${String(value.baseVersion)}.` : 'The attempt ended; the draft was archived.' }],
+    },
+    execute: async (args) => {
+      const draft = await board(ctx).saveIterationDraft(actor(config), args.id as FaberLoomBoardItemId, {
+        iterationId: args.iterationId,
+        generation: args.generation,
+        actorSession: args.actorSession,
+        baseVersion: args.baseVersion,
+        summary: args.summary,
+      })
+      return { linked: draft.linked, baseVersion: draft.draft.baseVersion }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Propose iteration draft', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_set_severity',
+    description: 'Confirm or correct the urgency of an item. Required before approving or discarding an unclassified item.',
+    parameters: {
+      id: ID_PARAM,
+      rowVersion: { type: 'integer', required: true, description: 'Optimistic token the item reported.' },
+      severity: { type: 'string', required: true, description: 'LOW, MEDIUM, HIGH, or CRITICAL.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { severity: { type: 'string', required: true }, rowVersion: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Severity ${value.severity}.` }],
+    },
+    execute: async (args) => {
+      const item = await board(ctx).setSeverity(actor(config), args.id as FaberLoomBoardItemId, args.severity as never, 'HUMAN', null, args.rowVersion)
+      return { severity: item.severity ?? '', rowVersion: item.rowVersion }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Set severity', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_save_edits',
+    description: 'Save inline edits as a new artifact version. The edit names the base version the user saw; an older base is refused.',
+    parameters: {
+      id: ID_PARAM,
+      rowVersion: { type: 'integer', required: true, description: 'Optimistic token the item reported.' },
+      baseVersion: { type: 'integer', required: true, description: 'Artifact version the edits were made against.' },
+      summary: { type: 'string', required: true, description: 'The edited text.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { version: { type: 'integer', required: true }, rowVersion: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Saved as v${String(value.version)}.` }],
+    },
+    execute: async (args) => {
+      const item = await board(ctx).saveEdits(actor(config), args.id as FaberLoomBoardItemId, {
+        expectedRowVersion: args.rowVersion,
+        baseVersion: args.baseVersion,
+        changes: { summary: args.summary },
+      })
+      return { version: item.version, rowVersion: item.rowVersion }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Save edits', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_approve',
+    description: 'Approve the exact artifact version the caller names. It never sends anything; a control in failure or a missing confirmation refuses it.',
+    parameters: {
+      id: ID_PARAM,
+      rowVersion: { type: 'integer', required: true, description: 'Optimistic token the item reported.' },
+      version: { type: 'integer', required: true, description: 'Artifact version reviewed.' },
+      hash: { type: 'string', required: true, description: 'Artifact hash of that version.' },
+      confirmations: { type: 'array', description: 'Ids of confirmation-class controls the human accepted.', items: { type: 'string' } },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { state: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Item ${value.state} at v${String(value.version)}.` }],
+    },
+    execute: async (args) => {
+      const item = await board(ctx).approve(actor(config), args.id as FaberLoomBoardItemId, {
+        expectedRowVersion: args.rowVersion,
+        expectedArtifactVersion: args.version,
+        expectedArtifactHash: args.hash,
+        ...args.confirmations === undefined ? {} : { confirmations: args.confirmations },
+      })
+      return { state: item.state, version: item.version }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Approve item', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_discard',
+    description: 'Discard an item with a signed reason. OTRA needs a note.',
+    parameters: {
+      id: ID_PARAM,
+      rowVersion: { type: 'integer', required: true, description: 'Optimistic token the item reported.' },
+      reason: { type: 'string', required: true, description: 'CLIENTE_CANCELO, DUPLICADO, ERROR_ORIGEN, NO_CORRESPONDE, RESUELTO_FUERA, or OTRA.' },
+      note: { type: 'string', description: 'Required when the reason is OTRA.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { state: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Item ${value.state}.` }],
+    },
+    execute: async (args) => {
+      const item = await board(ctx).discard(actor(config), args.id as FaberLoomBoardItemId, {
+        expectedRowVersion: args.rowVersion,
+        reason: args.reason,
+        ...args.note === undefined ? {} : { note: args.note },
+      })
+      return { state: item.state }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Discard item', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_events',
+    description: 'Read the audit history of one item.',
+    parameters: { id: ID_PARAM },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { events: { type: 'array', required: true, items: { type: 'string' } } } },
+      render: (_args, value) => [{ type: 'text', text: `${String(value.events.length)} events.` }],
+    },
+    execute: async (args) => {
+      const events = await board(ctx).events(actor(config), args.id as FaberLoomBoardItemId)
+      return { events: events.map(event => `${event.command} ${event.at}`) }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Read audit', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'faberloom_board_get',
     description: 'Read one board item.',
     parameters: { id: ID_PARAM },

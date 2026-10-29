@@ -385,7 +385,7 @@ async function bench(
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
     deleteBoardItem, boardDetail, boardSaveEdits, boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
-    boardSaveDraft, boardAssignWorkspace,
+    boardSetSeverity, boardSaveDraft, boardAssignWorkspace, boardDiscard, boardResolveCandidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
     boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationRecover,
     boardIterationDraft,
@@ -804,7 +804,7 @@ describe('faberloom surface', () => {
     expect(boardIterationStart).not.toHaveBeenCalled()
   })
 
-  it('starts the iteration over the shown version and pins the chat context', async () => {
+  it('W-32 · starts the iteration over the shown version and pins the chat context', async () => {
     const { runtime, view, boardDetail, boardIterationStart, boardIterationContext } = await bench()
     boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, spaceId: 'space-1' } } as never)
     boardIterationContext.mockResolvedValue({
@@ -887,7 +887,7 @@ describe('faberloom surface', () => {
     })
   })
 
-  it('keeps the draft when saving and exiting', async () => {
+  it('W-33 · keeps the draft when saving and exiting', async () => {
     const { runtime, view, boardDetail, boardIteration, boardIterationPause, boardIterationCancel, boardIterationApply } = await bench()
     boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
     boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
@@ -902,7 +902,7 @@ describe('faberloom surface', () => {
     expect(boardIterationApply).not.toHaveBeenCalled()
   })
 
-  it('discards the changes without applying them', async () => {
+  it('W-11 · discards the changes without applying them', async () => {
     const { runtime, view, boardDetail, boardIteration, boardIterationCancel, boardIterationApply, boardIterationPause } = await bench()
     boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
     boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
@@ -944,7 +944,7 @@ describe('faberloom surface', () => {
     expect(boardIterationResume).not.toHaveBeenCalled()
   })
 
-  it('keeps the Ctrl shortcuts inert inside the draft field', async () => {
+  it('W-71 · keeps the Ctrl shortcuts inert inside the draft field', async () => {
     const { runtime, view, boardDetail, boardSaveEdits, boardIteration } = await bench()
     boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
     boardIteration.mockResolvedValue({ ok: true, value: undefined } as never)
@@ -1207,7 +1207,7 @@ describe('faberloom surface', () => {
     })
   })
 
-  it('closes the approval dialog with Escape while focus is inside it', async () => {
+  it('W-72 · closes the approval dialog with Escape while focus is inside it', async () => {
     const { runtime, view, boardDetail } = await bench()
     boardDetail.mockResolvedValue({
       ok: true,
@@ -2259,7 +2259,7 @@ describe('mesa effect states', () => {
     })
   })
 
-  it('keeps the approval disabled until a CEO signature covers the action type', async () => {
+  it('W-16 · keeps the approval disabled until a CEO signature covers the action type', async () => {
     const { runtime, view, boardDetail, boardSignatureStatus, boardApproveWithExecution } = await bench()
     boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
     boardSignatureStatus.mockResolvedValue({ ok: true, value: signature('MISSING') } as never)
@@ -2353,5 +2353,462 @@ describe('mesa effect states', () => {
     expect(view.getByText(faberloomEn['mesa.effect.alert.lateText'])).toBeTruthy()
     // The alert names the closed item and never opens it.
     expect(boardDetail).toHaveBeenCalledWith('item-1')
+  })
+})
+
+describe('mesa decision safety, filters, rounds, and grouping', () => {
+  const CONFIRMATION = {
+    id: 'proforma.stock', class: 'confirmacion', status: 'warning', source: 'mwt.stock',
+    sourceVersion: '3', checkedAt: '2026-10-28T10:00:00Z', fields: [], reason: null,
+  }
+  const BASE = OVERVIEW.board[0]
+  const BOARD_ROWS = [
+    { ...BASE, id: 'item-1', title: 'PF 1000', accountRef: 'eguisa', spaceId: null, severity: null, dueAt: '2020-01-01T00:00:00.000Z' },
+    { ...BASE, id: 'item-2', title: 'PF 2000', accountRef: 'eguisa', spaceId: 'space-1', severity: 'CRITICAL', dueAt: null },
+    { ...BASE, id: 'item-3', title: 'PF 3000', accountRef: 'otra', spaceId: 'space-1', severity: 'MEDIUM', dueAt: null },
+  ]
+
+  it('W-73 · opens the approval panel from A instead of approving over pending edits', async () => {
+    const { runtime, view, boardDetail, boardApprove } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
+    fireEvent.keyDown(window, { key: 'a' })
+    expect(await view.findByRole('dialog')).toBeTruthy()
+    expect(boardApprove).not.toHaveBeenCalled()
+  })
+
+  it('W-73 · never approves with the action a closed panel chose', async () => {
+    const { runtime, view, boardDetail, boardApprove, boardApproveWithExecution } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'mail.send' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['action.cancel'] }))
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+
+    // A approves the item, and the action the cancelled panel chose is gone.
+    fireEvent.keyDown(window, { key: 'a' })
+    await waitFor(() => {
+      expect(boardApprove).toHaveBeenCalledWith('item-1', expect.objectContaining({
+        expectedArtifactVersion: 1,
+        expectedArtifactHash: 'h1',
+      }))
+    })
+    expect(boardApproveWithExecution).not.toHaveBeenCalled()
+  })
+
+  it('W-83 · commits pending edits before a panel that needs a confirmation opens', async () => {
+    const { runtime, view, boardDetail, boardSaveEdits, boardApprove, boardApproveWithEdits } = await bench()
+    const saved = { ...DETAIL, version: 2, artifactHash: 'h2', rowVersion: 3, checks: [CONFIRMATION] }
+    // The re-read after the save returns the version the save committed, and the
+    // open panel stays bound to it (G9).
+    boardDetail.mockResolvedValueOnce({ ok: true, value: { ...DETAIL, checks: [CONFIRMATION] } } as never)
+      .mockResolvedValue({ ok: true, value: saved } as never)
+    boardSaveEdits.mockResolvedValue({ ok: true, value: { detail: saved, correctionError: null } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.approve'] }))
+    await waitFor(() => {
+      expect(boardSaveEdits).toHaveBeenCalledWith('item-1', expect.objectContaining({ changes: { summary: 'Corregido' } }))
+    })
+
+    const dialog = await view.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('checkbox'))
+    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    await waitFor(() => {
+      expect(boardApprove).toHaveBeenCalledWith('item-1', expect.objectContaining({
+        expectedRowVersion: 3,
+        expectedArtifactVersion: 2,
+        expectedArtifactHash: 'h2',
+        confirmations: ['proforma.stock'],
+      }))
+    })
+    expect(boardApproveWithEdits).not.toHaveBeenCalled()
+  })
+
+  it('W-27 · filters by account and due date and names what stays outside', async () => {
+    const { runtime, view } = await bench({ ok: true, value: { ...OVERVIEW, board: BOARD_ROWS } })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText('PF 1000')).toBeTruthy()
+
+    fireEvent.change(view.getByRole('combobox', { name: faberloomEn['mesa.account'] }), { target: { value: 'otra' } })
+    await waitFor(() => { expect(view.queryByText('PF 1000')).toBeNull() })
+    expect(view.getByText(`${faberloomEn['mesa.scope.outside']}: 2`)).toBeTruthy()
+    expect(view.getByText('unclassified: 1')).toBeTruthy()
+    expect(view.getByText('no space: 1')).toBeTruthy()
+    expect(view.getByText('critical: 1')).toBeTruthy()
+
+    fireEvent.change(view.getByRole('combobox', { name: faberloomEn['mesa.account'] }), { target: { value: '' } })
+    fireEvent.change(view.getByRole('combobox', { name: 'Due' }), { target: { value: 'overdue' } })
+    await waitFor(() => { expect(view.queryByText('PF 2000')).toBeNull() })
+    expect(view.getByText('PF 1000')).toBeTruthy()
+  })
+
+  it('groups the Kanban and the List by space and folds one group', async () => {
+    const { runtime, view } = await bench({ ok: true, value: { ...OVERVIEW, board: BOARD_ROWS } })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+
+    fireEvent.click(view.getByRole('checkbox', { name: 'Group by space' }))
+    const group = await view.findByRole('button', { name: 'Marluvas · 2 · Critical' })
+    expect(view.getByRole('button', { name: 'No space · 1 · Unclassified' })).toBeTruthy()
+
+    fireEvent.click(group)
+    expect(group.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByText('PF 2000')).toBeNull()
+
+    // The List keeps the same groups: the folded one stays folded.
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.tab.lista'] }))
+    expect(await view.findByRole('button', { name: 'No space · 1 · Unclassified' })).toBeTruthy()
+    expect(view.getByText('PF 1000')).toBeTruthy()
+    expect(view.queryByText('PF 2000')).toBeNull()
+  })
+
+  it('W-29 · offers a new round when every item was skipped', async () => {
+    const { runtime, view, boardDetail } = await bench({ ok: true, value: { ...OVERVIEW, board: BOARD_ROWS } })
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, severity: null } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText('PF 1000')).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.skip'] }))
+    await waitFor(() => { expect(boardDetail).toHaveBeenLastCalledWith('item-2') })
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.skip'] }))
+    await waitFor(() => { expect(boardDetail).toHaveBeenLastCalledWith('item-3') })
+    // Every remaining item was skipped: the panel offers a new round instead
+    // of cycling silently over the same three.
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.skip'] }))
+    expect(await view.findByText('Only skipped items remain')).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: 'Walk them again' }))
+    await waitFor(() => { expect(view.queryByText('Only skipped items remain')).toBeNull() })
+    expect(boardDetail).toHaveBeenLastCalledWith('item-1')
+  })
+
+  it('D-10 · suggests discarding once the iteration reached its round limit', async () => {
+    const { runtime, view, boardDetail, boardIteration } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: { ...LIVE_ATTEMPT, rounds: 5, roundLimit: 5 } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    const hint = '5 rounds so far; consider discarding or redoing'
+    expect(await view.findByText(hint)).toBeTruthy()
+  })
+})
+
+describe('mesa traceability (W criteria)', () => {
+  const BASE = OVERVIEW.board[0]
+  const CONFIRMATION = {
+    id: 'proforma.stock', class: 'confirmacion', status: 'warning', source: 'mwt.stock',
+    sourceVersion: '3', checkedAt: '2026-10-28T10:00:00Z', fields: [], reason: null,
+  }
+  const TWO_ROWS = [
+    { ...BASE, id: 'item-1', title: 'PF 1000', accountRef: 'eguisa', severity: 'MEDIUM', dueAt: null },
+    { ...BASE, id: 'item-2', title: 'PF 2000', accountRef: 'eguisa', severity: 'HIGH', dueAt: null },
+  ]
+
+  it('W-52 · an empty queue names what a filter hides instead of claiming nothing awaits', async () => {
+    const filtered = await bench({ ok: true, value: { ...OVERVIEW, board: TWO_ROWS } })
+    act(() => { filtered.runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await filtered.view.findByText('PF 1000')).toBeTruthy()
+
+    // No row is overdue, so this filter hides the whole authorized queue.
+    fireEvent.change(filtered.view.getByRole('combobox', { name: faberloomEn['mesa.due'] }), { target: { value: 'overdue' } })
+    await waitFor(() => { expect(filtered.view.queryByText('PF 1000')).toBeNull() })
+    expect(filtered.view.queryByText(faberloomEn['mesa.empty'])).toBeNull()
+    expect(filtered.view.getByText('outside the filter: 2 · Queue: 2')).toBeTruthy()
+
+    // Only a really empty authorized queue says nothing awaits the reader.
+    const empty = await bench({ ok: true, value: EMPTY })
+    act(() => { empty.runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await empty.view.findByText(faberloomEn['mesa.empty'])).toBeTruthy()
+  })
+
+  it('W-62 · severity, edit, and approval stay on one item with a single submit', async () => {
+    const { runtime, view, boardDetail, boardSetSeverity, boardSaveEdits, boardApproveWithEdits } = await bench({
+      ok: true,
+      value: { ...OVERVIEW, board: TWO_ROWS },
+    })
+    boardDetail.mockImplementation((async (id: string) => ({
+      ok: true,
+      value: { ...DETAIL, id, title: id === 'item-1' ? 'PF 1000' : 'PF 2000' },
+    })) as never)
+    let resolveApprove: (value: unknown) => void = () => {}
+    boardApproveWithEdits.mockImplementation((() => new Promise((resolve) => { resolveApprove = resolve })) as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    fireEvent.change(
+      within(view.getByRole('article')).getByRole('combobox', { name: faberloomEn['mesa.severity'] }),
+      { target: { value: 'HIGH' } },
+    )
+    await waitFor(() => { expect(boardSetSeverity).toHaveBeenCalledWith('item-1', 'HIGH', 2, 'HUMAN', null) })
+
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    await waitFor(() => {
+      expect(boardSaveEdits).toHaveBeenCalledWith('item-1', expect.objectContaining({ changes: { summary: 'Corregido' } }))
+    })
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.approve'] }))
+    fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    // The panel goes with its one submission, so there is no second surface to
+    // press and the reader is still on the item while the server answers.
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+    expect(boardApproveWithEdits).toHaveBeenCalledTimes(1)
+    expect(boardDetail).toHaveBeenLastCalledWith('item-1')
+    expect(view.getAllByText('PF 1000').length).toBeGreaterThan(0)
+
+    await act(async () => { resolveApprove({ ok: true, value: undefined }) })
+    expect(boardApproveWithEdits).toHaveBeenCalledTimes(1)
+    expect(view.getAllByText('PF 1000').length).toBeGreaterThan(0)
+  })
+
+  it('W-74 · one panel carries the action and its confirmation, and a version change drops it', async () => {
+    const { runtime, view, boardDetail, boardSetSeverity, boardApprove, boardApproveWithEdits, boardApproveWithExecution } = await bench()
+    boardDetail.mockResolvedValueOnce({ ok: true, value: { ...DETAIL, checks: [CONFIRMATION] } } as never)
+      .mockResolvedValue({
+        ok: true,
+        value: { ...DETAIL, version: 2, artifactHash: 'h2', rowVersion: 3, checks: [CONFIRMATION] },
+      } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.approve'] }))
+    const dialog = view.getByRole('dialog')
+    // One panel holds both controls: the effect action and the failing check.
+    expect(view.getAllByRole('dialog')).toHaveLength(1)
+    expect(within(dialog).getByRole('combobox')).toBeTruthy()
+    expect(within(dialog).getByRole('checkbox')).toBeTruthy()
+
+    // The item moves to another version while the panel is still open.
+    fireEvent.change(
+      within(view.getByRole('article')).getByRole('combobox', { name: faberloomEn['mesa.severity'] }),
+      { target: { value: 'HIGH' } },
+    )
+    await waitFor(() => { expect(boardSetSeverity).toHaveBeenCalled() })
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+    expect(boardApprove).not.toHaveBeenCalled()
+    expect(boardApproveWithEdits).not.toHaveBeenCalled()
+    expect(boardApproveWithExecution).not.toHaveBeenCalled()
+  })
+
+  it('W-78 · a refused approval keeps the item and its actions; a confirmed one advances', async () => {
+    const { runtime, view, overview, boardDetail, boardApprove } = await bench({
+      ok: true,
+      value: { ...OVERVIEW, board: TWO_ROWS },
+    })
+    boardDetail.mockImplementation((async (id: string) => ({
+      ok: true,
+      value: { ...DETAIL, id, title: id === 'item-1' ? 'PF 1000' : 'PF 2000' },
+    })) as never)
+    boardApprove.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'CONFLICT', message: 'No se pudo aprobar' },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
+    fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    expect(await view.findByText('No se pudo aprobar')).toBeTruthy()
+    expect(view.getAllByText('PF 1000').length).toBeGreaterThan(0)
+    expect(boardDetail).toHaveBeenLastCalledWith('item-1')
+    expect((view.getByRole('button', { name: faberloomEn['action.approve'] }) as HTMLButtonElement).disabled).toBe(false)
+    expect((view.getByRole('button', { name: faberloomEn['action.discard'] }) as HTMLButtonElement).disabled).toBe(false)
+
+    // The board confirms and no longer lists the item: the panel moves on.
+    overview.mockResolvedValue({ ok: true, value: { ...OVERVIEW, board: [TWO_ROWS[1]] } } as never)
+    boardApprove.mockResolvedValue({ ok: true, value: undefined } as never)
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.approve'] }))
+    fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    await waitFor(() => { expect(boardDetail).toHaveBeenLastCalledWith('item-2') })
+  })
+
+  it('W-81 · choosing a discard reason never sends the command', async () => {
+    const { runtime, view, boardDetail, boardDiscard } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.discard'] }))
+    const select = view.getByRole('combobox', { name: faberloomEn['mesa.discardReason'] })
+    fireEvent.change(select, { target: { value: 'OTRA' } })
+    expect(boardDiscard).not.toHaveBeenCalled()
+
+    const panel = select.closest('section') as HTMLElement
+    fireEvent.click(within(panel).getByRole('button', { name: faberloomEn['action.discard'] }))
+    await waitFor(() => { expect(boardDiscard).toHaveBeenCalledTimes(1) })
+  })
+
+  it('W-90 · Enter over a discard reason selects it and never executes', async () => {
+    const { runtime, view, boardDetail, boardDiscard } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.discard'] }))
+    const select = view.getByRole('combobox', { name: faberloomEn['mesa.discardReason'] }) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'ERROR_ORIGEN' } })
+    fireEvent.keyDown(select, { key: 'Enter' })
+
+    expect(select.value).toBe('ERROR_ORIGEN')
+    expect(boardDiscard).not.toHaveBeenCalled()
+    // The command button is a native, enabled button, which is what puts it in
+    // the tab order after the reason.
+    const button = within(select.closest('section') as HTMLElement)
+      .getByRole('button', { name: faberloomEn['action.discard'] }) as HTMLButtonElement
+    expect(button.disabled).toBe(false)
+    expect(button.tabIndex).toBe(0)
+  })
+
+  it('W-91 · adopting a candidate recalculates the notices before approval opens', async () => {
+    const { runtime, view, boardDetail, boardResolveCandidate, boardIteration } = await bench()
+    boardDetail.mockResolvedValueOnce({
+      ok: true,
+      value: { ...DETAIL, pendingCandidate: { id: 'cand-1', hash: 'h2', summary: 'nueva', at: '2026-10-28T10:00:00Z' } },
+    } as never)
+      .mockResolvedValue({ ok: true, value: DETAIL } as never)
+    // A retained draft offers Resumir in the same notice stack.
+    boardIteration.mockResolvedValue({
+      ok: true,
+      value: {
+        ...IDLE_ATTEMPT,
+        draft: {
+          iterationId: 'iter-1', baseVersion: 1, summary: 'Retomable', evidence: [], outdated: false,
+          archived: false, superseded: false, retained: true, updatedAt: '2026-10-28T10:00:00Z',
+        },
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    // The resume button lives in the folded notice, so it is read by its copy.
+    const resume = (): HTMLButtonElement =>
+      view.getByText(faberloomEn['mesa.iterationOpen']).closest('button') as HTMLButtonElement
+
+    expect(await view.findByText(faberloomEn['mesa.candidate'])).toBeTruthy()
+    expect((view.getByRole('button', { name: faberloomEn['action.approve'] }) as HTMLButtonElement).disabled).toBe(true)
+    // A waiting candidate keeps Resumir shut, and says why.
+    expect(resume().disabled).toBe(true)
+    expect(resume().title).toBe(faberloomEn['mesa.blocked.candidate'])
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.adopt'] }))
+    await waitFor(() => {
+      expect(boardResolveCandidate).toHaveBeenCalledWith('item-1', 'cand-1', 'h2', 'adopt')
+    })
+    // The notice and the action come from the same re-read: the candidate notice
+    // is gone before Approve and Resumir become available again.
+    await waitFor(() => { expect(view.queryByText(faberloomEn['mesa.candidate'])).toBeNull() })
+    expect((view.getByRole('button', { name: faberloomEn['action.approve'] }) as HTMLButtonElement).disabled).toBe(false)
+    expect(resume().disabled).toBe(false)
+    expect(resume().title).toBe('')
+  })
+
+  it('W-101 · the approval panel names no version, hash, or internal state token', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
+    const text = view.getByRole('dialog').textContent ?? ''
+    // Business language only: no version or hash vocabulary, no identifiers and
+    // none of the values behind them.
+    expect(text).not.toMatch(/version|versión|hash/iu)
+    for (const token of ['rowVersion', 'artifactHash', 'artifactVersion', 'PENDIENTE_CRITERIO', 'h1', 'v1']) {
+      expect(text).not.toContain(token)
+    }
+    // The same rule holds in the three dictionaries the panel can read.
+    for (const copy of [faberloomEs['mesa.approvePanel'], faberloomEn['mesa.approvePanel'], faberloomZh['mesa.approvePanel']]) {
+      expect(copy).not.toMatch(/version|versión|hash/iu)
+    }
+    expect(faberloomZh['mesa.approvePanel']).not.toContain('版本')
+
+    // And once the panel names an effect to execute, which adds its own lines.
+    const dialog = view.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'mail.send' } })
+    expect(dialog.textContent ?? '').not.toMatch(/version|versión|hash/iu)
+  })
+
+  it('W-79 · approving from the List returns to the List, and reverting from Kanban returns to Kanban', async () => {
+    // Approving an item opened from the List hands the reader back to the List.
+    const list = await bench({ ok: true, value: { ...OVERVIEW, board: TWO_ROWS } })
+    list.boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    const listScreen = within(list.view.container)
+    act(() => { list.runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await listScreen.findByRole('button', { name: faberloomEn['mesa.tab.lista'] }))
+    expect(listScreen.getByRole('table')).toBeTruthy()
+
+    fireEvent.click((await listScreen.findByText('PF 1000')).closest('tr') as HTMLElement)
+    expect(await listScreen.findByText('③ Draft')).toBeTruthy()
+
+    // A refused approval keeps the reader on the item and restores nothing.
+    list.boardApprove.mockResolvedValueOnce({ ok: false, error: { code: 'CONFLICT', message: 'No se pudo aprobar' } } as never)
+    fireEvent.click(listScreen.getByRole('button', { name: faberloomEn['action.approve'] }))
+    fireEvent.click(within(listScreen.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    expect(await listScreen.findByText('No se pudo aprobar')).toBeTruthy()
+    expect(listScreen.queryByRole('table')).toBeNull()
+
+    // A confirmed approval hands the reader back to the List, on the same row.
+    fireEvent.click(listScreen.getByRole('button', { name: faberloomEn['action.approve'] }))
+    fireEvent.click(within(listScreen.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+
+    await waitFor(() => { expect(listScreen.getByRole('table')).toBeTruthy() })
+    expect(listScreen.queryByText('③ Draft')).toBeNull()
+    // The row the reader came from keeps the selection.
+    expect((listScreen.getByText('PF 1000').closest('tr') as HTMLElement).getAttribute('aria-selected')).toBe('true')
+
+    // Reverting a delegated item opened from the Kanban returns to the Kanban.
+    const kanban = await bench({ ok: true, value: { ...OVERVIEW, board: [{ ...BASE, id: 'item-1', title: 'PF 1000', column: 'DELEGADO' }] } })
+    const deadline = new Date(Date.now() + 90_000).toISOString()
+    kanban.boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, column: 'DELEGADO', state: 'DELEGADO_EN_VENTANA' },
+    } as never)
+    kanban.boardEffectStatus.mockResolvedValue({ ok: true, value: effectStatus({ reversalDeadline: deadline }) } as never)
+    const kanbanScreen = within(kanban.view.container)
+    act(() => { kanban.runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await kanbanScreen.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+    fireEvent.click(kanbanScreen.getByRole('button', { name: /PF 1000/u }))
+    expect(await kanbanScreen.findByText('③ Draft')).toBeTruthy()
+
+    fireEvent.click(await kanbanScreen.findByRole('button', { name: faberloomEn['mesa.effect.revert'] }))
+    const panel = await kanbanScreen.findByRole('region', { name: faberloomEn['mesa.effect.revertTitle'] })
+    fireEvent.click(within(panel).getByRole('button', { name: faberloomEn['mesa.effect.revert'] }))
+
+    await waitFor(() => {
+      expect(kanbanScreen.getByRole('heading', { name: new RegExp(faberloomEn['mesa.column.delegado'], 'u') })).toBeTruthy()
+    })
+    expect(kanbanScreen.queryByText('③ Draft')).toBeNull()
+  })
+
+  it('W-30 · a delegated item opened from Kanban offers Revert, and only its button reverts', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectRevert } = await bench({
+      ok: true,
+      value: { ...OVERVIEW, board: [{ ...BASE, id: 'item-1', title: 'PF 1000', column: 'DELEGADO' }] },
+    })
+    const deadline = new Date(Date.now() + 90_000).toISOString()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, column: 'DELEGADO', state: 'DELEGADO_EN_VENTANA' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({ ok: true, value: effectStatus({ reversalDeadline: deadline }) } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+    const column = view.getByRole('heading', { name: new RegExp(faberloomEn['mesa.column.delegado'], 'u') }).closest('section') as HTMLElement
+    fireEvent.click(within(column).getByRole('button', { name: /PF 1000/u }))
+
+    expect(await view.findByRole('button', { name: faberloomEn['mesa.effect.revert'] })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.effect.revert'] }))
+    const panel = await view.findByRole('region', { name: faberloomEn['mesa.effect.revertTitle'] })
+    fireEvent.change(within(panel).getByRole('combobox'), { target: { value: 'ERROR_ORIGEN' } })
+    expect(boardEffectRevert).not.toHaveBeenCalled()
+
+    fireEvent.click(within(panel).getByRole('button', { name: faberloomEn['mesa.effect.revert'] }))
+    await waitFor(() => {
+      expect(boardEffectRevert).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2, reason: 'ERROR_ORIGEN' })
+    })
   })
 })

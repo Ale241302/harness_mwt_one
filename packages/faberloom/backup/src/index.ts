@@ -55,6 +55,11 @@ const BOARD_LEGACY_STATE: Readonly<Record<string, string>> = {
   needs_review: 'PENDIENTE_CRITERIO',
 }
 
+/**
+ * The data migrations the product ships, in order. Each one is idempotent and
+ * records its id per owner, so running the registry twice applies nothing the
+ * second time; a new row appends instead of editing an applied one.
+ */
 export const FABERLOOM_DATA_MIGRATIONS: readonly FaberLoomDataMigration[] = [
   {
     id: '2026-10-27-board-state-v1',

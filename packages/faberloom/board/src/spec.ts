@@ -93,6 +93,10 @@ export const boardItemRecord = z.object({
   valueAmount: z.number().nullable().default(null),
   valueCurrency: z.string().nullable().default(null),
   valueUsd: z.number().nullable().default(null),
+  /** Rate, source, and date used to reach `valueUsd` (D-3). */
+  valueFxRate: z.number().nullable().default(null),
+  valueFxSource: z.string().nullable().default(null),
+  valueFxDate: z.string().nullable().default(null),
   dataClass: z.union([z.literal('N0'), z.literal('N1'), z.literal('N2'), z.literal('N3'), z.literal('N4')]).default('N2'),
   dataClassProvisional: z.boolean().default(true),
   runId: z.string().nullable().default(null),
@@ -324,6 +328,8 @@ export const effectOutboxRecord = z.object({
   dispatchable: z.boolean().default(true),
   /** Dispatch attempts so far. */
   attempts: z.number().default(0),
+  /** Instant before which the consumer leaves a refused message alone, or null. */
+  backoffUntil: z.string().nullable().default(null),
   /** Stable reason the message stopped being dispatchable, or null. */
   reason: z.string().nullable().default(null),
   /** Destination reference the adapter reported, or null. */
@@ -358,7 +364,7 @@ export const effectAlertRecord = z.object({
   /** Execution that reported the outcome or held the reservation. */
   executionId: z.string(),
   /** Alert class: a late confirmation, or a reservation no item reached. */
-  kind: z.union([z.literal('LATE_CONFIRMATION'), z.literal('ORPHAN_RELEASED')]),
+  kind: z.union([z.literal('LATE_CONFIRMATION'), z.literal('ORPHAN_RELEASED'), z.literal('DISPATCH_REFUSED')]),
   /** Outcome the destination reported, or null when the alert is not about one. */
   outcome: outcomeRecord.nullable().default(null),
   /** Optional detail from the reconciliation or the sweep. */
@@ -401,9 +407,35 @@ export const effectEventRecord = z.object({
 export type EffectEventRecord = z.infer<typeof effectEventRecord>
 
 /**
+ * One cached classification. The key carries every input that can change the
+ * answer, including the rules and policy versions and the model version, so an
+ * entry written under other rules is never reused (§5.1, W-51).
+ */
+export const classificationCacheRecord = z.object({
+  /** The full §5.1 key. */
+  key: z.string(),
+  /** Field the entry classifies. */
+  field: z.string(),
+  /** Tenant the entry belongs to. */
+  companyId: z.string().nullable(),
+  /** Resolved severity; null records that nothing resolved. */
+  severity: z.union([z.literal('LOW'), z.literal('MEDIUM'), z.literal('HIGH'), z.literal('CRITICAL')]).nullable(),
+  /** Who produced it. */
+  source: z.union([z.literal('RULE'), z.literal('LLM')]).nullable(),
+  /** Proposal confidence. */
+  confidence: z.number().nullable(),
+  /** ISO-8601 instant the entry was written. */
+  at: z.string(),
+})
+
+/** One stored classification cache entry. */
+export type ClassificationCacheRecord = z.infer<typeof classificationCacheRecord>
+
+/**
  * The board domain spec: item aggregates, the key-claim table, the edit-draft
- * table, the iteration-draft table, the tenant claims on opaque references, and
- * the external-effect reservation, outbox, alert, and audit tables.
+ * table, the iteration-draft table, the tenant claims on opaque references, the
+ * external-effect reservation, outbox, alert, and audit tables, and the
+ * per-tenant classification cache.
  */
 export const boardDomainSpec = defineDomain({
   name: 'faberloom_board',
@@ -418,5 +450,6 @@ export const boardDomainSpec = defineDomain({
     effect_outbox: domainTable<string, EffectOutboxRecord>(effectOutboxRecord),
     effect_alerts: domainTable<string, EffectAlertRecord>(effectAlertRecord),
     effect_events: domainTable<string, EffectEventRecord>(effectEventRecord),
+    classification_cache: domainTable<string, ClassificationCacheRecord>(classificationCacheRecord),
   },
 })

@@ -144,6 +144,7 @@ function manualMessage(effectKey: string, overrides: Partial<EffectOutboxRecord>
     status: 'PENDIENTE',
     dispatchable: true,
     attempts: 0,
+    backoffUntil: null,
     reason: null,
     ref: null,
     createdAt: at,
@@ -359,7 +360,7 @@ describe('FaberLoomBoard E15 reservation', () => {
     expect(loserItem.effectKey).toBeNull()
   })
 
-  it('W-84 / case 2: the owner retry keeps the key, the reservation, and the idempotency key', async () => {
+  it('W-20 / W-77 / W-84 / case 2: the owner retry keeps the key, the reservation, and the idempotency key', async () => {
     const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
     const adapter = mutableAdapter()
     mountAdapter(harness, 'inventory.reserve', adapter.port)
@@ -558,7 +559,7 @@ describe('FaberLoomBoard E15 reversal window', () => {
 })
 
 describe('FaberLoomBoard E15 outbox consumer', () => {
-  it('W-95 / case 6: a failed revalidation releases the effect and accepts a new approval', async () => {
+  it('W-75 / W-95 / case 6: a failed revalidation releases the effect and accepts a new approval', async () => {
     const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
     const control = { fail: false }
     mountPriceControl(harness, control)
@@ -1331,5 +1332,42 @@ describe('FaberLoomBoard E15 CEO signature', () => {
     })
     expect(accepted.reservation).toMatchObject({ status: 'RESERVADA', actionType: 'inventory.reserve' })
     expect(messageRows(harness)).toHaveLength(1)
+  })
+})
+
+describe('FaberLoomBoard outbox consumer', () => {
+  it('W-102 - the sweep emits one pending message and confirms the item', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    const adapter = mutableAdapter()
+    mountAdapter(harness, 'shipment.create', adapter.port)
+    const item = await effectItem(harness, { businessKey: 'oc-505300' })
+    await accept(harness.board, item, { actionType: 'shipment.create', destination: 'mwt-ship-1' })
+
+    expect(await harness.board.sweepEffects()).toEqual({ attempted: 1, dispatched: 1, refused: 0 })
+    expect(adapter.calls).toHaveLength(1)
+    expect((await harness.board.get(ACTOR_A, item.id)).state).toBe('EJECUTADO')
+  })
+
+  it('W-102 - a missing adapter alerts, keeps the message and waits out the backoff', async () => {
+    const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
+    const item = await effectItem(harness, { businessKey: 'oc-505301' })
+    await accept(harness.board, item, { actionType: 'shipment.create', destination: 'mwt-ship-2' })
+
+    expect(await harness.board.sweepEffects()).toEqual({ attempted: 1, dispatched: 0, refused: 1 })
+    const status = await harness.board.effectStatus(ACTOR_A, item.id)
+    expect(status?.message?.status).toBe('PENDIENTE')
+    expect(status?.alerts.map(alert => alert.kind)).toContain('DISPATCH_REFUSED')
+    expect((await harness.board.sweepEffects()).attempted).toBe(0)
+  })
+
+  it('W-19 - the sweep leaves a delegated message inside its window alone', async () => {
+    const harness = await bootBoard()
+    const adapter = mutableAdapter()
+    mountAdapter(harness, 'mail.send', adapter.port)
+    const item = await effectItem(harness, { businessKey: 'oc-505302' })
+    await accept(harness.board, item, { actionType: 'mail.send', destination: 'cliente@example.com' })
+
+    expect(await harness.board.sweepEffects()).toEqual({ attempted: 1, dispatched: 0, refused: 1 })
+    expect(adapter.calls).toHaveLength(0)
   })
 })

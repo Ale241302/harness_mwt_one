@@ -63,6 +63,9 @@ function taskBody(input: TaskChatInput): string {
       `Cuenta: ${pinned.accountRef ?? 'sin cuenta'}`,
       `Espacio: ${pinned.spaceTitle ?? 'sin espacio'}`,
       `Versión: v${String(pinned.version)}`,
+      ...pinned.iterationId === null || pinned.holderSession === null
+        ? []
+        : [`Intento: ${pinned.iterationId} · generación ${String(pinned.generation)} · sesión ${pinned.holderSession}`],
       ...pinned.summary === null ? [] : [`Resumen vigente: ${pinned.summary}`],
       ...pinned.draftSummary === null ? [] : ['', `Trabajo sin terminar: ${pinned.draftSummary}`],
       ...withheld
@@ -72,6 +75,10 @@ function taskBody(input: TaskChatInput): string {
       '',
       'El ítem queda fijado: partimos de esa cuenta, ese espacio y esa versión, '
         + 'y no inventamos datos que no estén en el contexto cargado.',
+      ...withheld || pinned.iterationId === null || pinned.holderSession === null
+        ? []
+        : ['Cuando acordemos un cambio, escribí el borrador completo con `faberloom_board_iteration_propose` '
+          + 'usando ese intento, su generación y su sesión, y mostrame el diff campo por campo.'],
       'Propón el cambio campo por campo; cada respuesta que cambie el borrador se muestra como diff y las verificaciones se recalculan.',
     ].join('\n')
   }

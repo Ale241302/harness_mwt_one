@@ -388,6 +388,17 @@ function unquoteHarnessScalar(value: string): string {
 /** Data classes, lowest first: the order the provider ceiling compares on. */
 const DATA_CLASSES = ['N0', 'N1', 'N2', 'N3', 'N4'] as const
 
+/**
+ * Whether a class keeps its content and amount home. N3 and N4 are the two
+ * levels POL_DATA_CLASSIFICATION forbids projecting to a card or an API caller
+ * without an audited open (§8.4, W-26, W-54).
+ * @param dataClass - class of the item.
+ * @returns true when the projection must omit summary and amount.
+ */
+function restrictedClass(dataClass: string): boolean {
+  return dataClass === 'N3' || dataClass === 'N4'
+}
+
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
 export interface Config {
   /** The gateway injects the logged-in user's email here, per dsh process. */
@@ -1590,7 +1601,10 @@ export class FaberLoomViewService extends TypertRemoteService {
         accountRef: item.accountRef,
         artifactType: item.artifactType,
         dueAt: item.dueAt,
-        valueUsd: item.valueUsd,
+        dataClass: item.dataClass,
+        // N3/N4 keeps its amount home: the row is a card, and a card of a
+        // restricted item may not carry the number (W-54).
+        valueUsd: restrictedClass(item.dataClass) ? null : item.valueUsd,
         hasCandidate: item.pendingCandidate !== null,
         hasDraft: false,
       })),
@@ -6508,6 +6522,12 @@ export class FaberLoomViewService extends TypertRemoteService {
   async boardDetail(id: string): Promise<FaberLoomBoardDetail | undefined> {
     const item = (await this.ctx.faberloomBoard.list(this.actor())).find(entry => entry.id === id)
     if (item === undefined) return undefined
+    // A restricted item is audited on open, once per hour and reader, and its
+    // summary and amount stay out of the payload (W-26, §8.4).
+    const restricted = restrictedClass(item.dataClass)
+    if (restricted) {
+      await this.ctx.faberloomBoard.noteAccess(this.actor(), item.id, 'boardDetail').catch(() => undefined)
+    }
     const revision = item.revisions[item.revisions.length - 1]
     const draft = await this.ctx.faberloomBoard.getEditDraft(this.actor(), item.id)
     // Work a collision moved here from the item it closed is listed beside the
@@ -6549,8 +6569,8 @@ export class FaberLoomViewService extends TypertRemoteService {
       column: item.column,
       version: item.version,
       rowVersion: item.rowVersion,
-      summary: revision?.summary ?? '',
-      evidence: revision === undefined ? [] : [...revision.evidence],
+      summary: restricted ? '' : revision?.summary ?? '',
+      evidence: restricted ? [] : revision === undefined ? [] : [...revision.evidence],
       approvedRevision: item.approvedRevision,
       stale: item.stale,
       staleReason: item.staleReason,
@@ -6558,7 +6578,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       severitySource: item.severitySource,
       severityConfidence: item.severityConfidence,
       dueAt: item.dueAt,
-      valueUsd: item.valueUsd,
+      valueUsd: restricted ? null : item.valueUsd,
       dataClass: item.dataClass,
       dataClassProvisional: item.dataClassProvisional,
       artifactType: item.artifactType,
@@ -6571,7 +6591,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         : {
           id: item.pendingCandidate.id,
           hash: item.pendingCandidate.hash,
-          summary: item.pendingCandidate.summary,
+          summary: restricted ? '' : item.pendingCandidate.summary,
           at: item.pendingCandidate.at,
         },
       spaceId: item.spaceId,
@@ -6579,7 +6599,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       iterationDraftKey: item.iterationDraftKey,
       editDraft: draft === undefined
         ? null
-        : { revision: draft.revision, writerSession: draft.writerSession, changes: draft.changes },
+        : { revision: draft.revision, writerSession: draft.writerSession, changes: restricted ? {} : draft.changes },
       events: item.events.map(event => ({ command: event.command, at: event.at, reason: event.reason })),
       effects: item.effects.map(effect => ({ ref: effect.ref, detail: effect.detail, at: effect.at })),
       routineId: item.routineId,
@@ -6803,6 +6823,10 @@ export class FaberLoomViewService extends TypertRemoteService {
       summary: content ? revision?.summary ?? '' : null,
       draftSummary: draft === undefined ? null : draft.summary,
       rounds: item.iterationRoundCount,
+      iterationId: item.iterationId,
+      generation: item.iterationLockGeneration,
+      holderSession: item.iterationLockBy,
+      baseVersion: item.iterationBaseVersion,
     }
   }
 

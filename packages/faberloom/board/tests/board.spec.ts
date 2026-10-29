@@ -23,7 +23,7 @@ const ACTOR = { id: OWNER }
 const OTHER = { id: 'otro@sonepar.com' }
 
 describe('FaberLoomBoard', () => {
-  it('F16 · approving prepares nothing; an effect needs an explicit authorization', async () => {
+  it('W-13 / F16 · approving prepares nothing; an effect needs an explicit authorization', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'Proforma Eguisa', summary: 'borrador', evidence: ['mw:price:701414'] })
     expect(item).toMatchObject({ status: 'waiting_approval', version: 1 })

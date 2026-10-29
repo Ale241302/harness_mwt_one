@@ -1019,10 +1019,20 @@ export interface Config {
    * one acceptance makes, so a row younger than the lease is never swept.
    */
   readonly effectReservationLeaseMs?: number
+  /**
+   * Milliseconds between outbox sweeps. Zero keeps the consumer idle, which is
+   * what a deployment with no effect adapter wants; the acceptance still records
+   * its intention and an operator can dispatch it by hand.
+   */
+  readonly effectDispatchIntervalMs?: number
+  /** Milliseconds a refused dispatch waits before the consumer retries it. */
+  readonly effectDispatchBackoffMs?: number
+  /** Milliseconds the classifier port may take before its answer is a timeout (W-37). */
+  readonly classifierTimeoutMs?: number
 }
 ```
 
-Source: [`packages/faberloom/board/src/index.ts:165`](../packages/faberloom/board/src/index.ts)
+Source: [`packages/faberloom/board/src/index.ts:171`](../packages/faberloom/board/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-checks-mwt"></a>
 
@@ -1523,7 +1533,7 @@ export interface Config {
 export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:387`](../packages/faberloom/view/src/index.ts)
+Source: [`packages/faberloom/view/src/index.ts:403`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 

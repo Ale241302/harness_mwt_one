@@ -11,13 +11,13 @@ async function submitOne(board: Awaited<ReturnType<typeof bootBoard>>['board'], 
     title: 'Proforma Eguisa',
     summary: 'borrador',
     evidence: ['oc:505288'],
-    artifactType: 'proforma',
+    artifactType: overrides['artifactType'] ?? 'proforma',
     accountRef: 'eguisa',
   })
 }
 
 describe('FaberLoomBoard E10 commands', () => {
-  it('rejects an item without a run, and dedupes by idempotency key', async () => {
+  it('W-01 / W-02 · rejects an item without a run, and dedupes by idempotency key', async () => {
     const { board } = await bootBoard()
     await expect(board.submit(ACTOR_A, {
       runId: '', idempotencyKey: 'i', businessKey: 'b', summary: 's', evidence: ['e'],
@@ -29,7 +29,7 @@ describe('FaberLoomBoard E10 commands', () => {
     expect(second.events).toHaveLength(1)
   })
 
-  it('supersedes the existing non-terminal item with the same business key', async () => {
+  it('W-03 · supersedes the existing non-terminal item with the same business key', async () => {
     const { board } = await bootBoard()
     const first = await submitOne(board)
     const second = await submitOne(board, { idempotencyKey: 'idem-2' })
@@ -38,20 +38,20 @@ describe('FaberLoomBoard E10 commands', () => {
     expect((await board.get(ACTOR_A, first.id)).state).toBe('SUSTITUIDO')
   })
 
-  it('records severity provenance and an audit event', async () => {
+  it('W-08 · records severity provenance and an audit event', async () => {
     const { board } = await bootBoard()
     const item = await submitOne(board)
     const updated = await board.setSeverity(ACTOR_A, item.id, 'HIGH', 'LLM', 0.91, item.rowVersion)
     expect(updated).toMatchObject({ severity: 'HIGH', severitySource: 'LLM', severityConfidence: 0.91, rowVersion: 2 })
     expect(updated.events.at(-1)).toMatchObject({
       command: 'set_severity', fromState: 'PENDIENTE_CRITERIO', toState: 'PENDIENTE_CRITERIO',
-      data: { previous: null, source: 'LLM', confidence: 0.91 },
+      data: { previous: 'HIGH', source: 'LLM', confidence: 0.91 },
     })
   })
 
-  it('refuses approval without severity, with a stale row, or with a stale hash', async () => {
+  it('W-07 / W-28 · refuses approval without severity, with a stale row, or with a stale hash', async () => {
     const { board } = await bootBoard()
-    const item = await submitOne(board)
+    const item = await submitOne(board, { artifactType: 'desconocido' })
     await expect(board.approve(ACTOR_A, item.id, {
       expectedRowVersion: item.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
     })).rejects.toThrow('SEVERITY_REQUIRED')
@@ -93,7 +93,7 @@ describe('FaberLoomBoard E10 commands', () => {
     expect(approved.events.at(-1)?.command).toBe('approve_with_edits')
   })
 
-  it('enforces the closed discard list and the OTRA note', async () => {
+  it('W-12 / W-100 · enforces the closed discard list and the OTRA note', async () => {
     const { board } = await bootBoard()
     const item = await submitOne(board)
     const withSeverity = await board.setSeverity(ACTOR_A, item.id, 'MEDIUM', 'HUMAN')
@@ -139,7 +139,7 @@ describe('FaberLoomBoard E10 commands', () => {
     })
   })
 
-  it('keeps one writer tab and rejects a stale draft revision', async () => {
+  it('W-92 · keeps one writer tab and rejects a stale draft revision', async () => {
     const { board } = await bootBoard()
     const item = await submitOne(board)
     const first = await board.saveEditDraft(ACTOR_A, item.id, {
@@ -162,7 +162,7 @@ describe('FaberLoomBoard E10 commands', () => {
     expect((await board.getEditDraft(ACTOR_A, item.id))?.changes['summary']).toBe('desde b')
   })
 
-  it('clears the draft when the edits are saved or approved', async () => {
+  it('W-70 · clears the draft when the edits are saved or approved', async () => {
     const { board } = await bootBoard()
     const item = await submitOne(board)
     await board.saveEditDraft(ACTOR_A, item.id, {
@@ -223,7 +223,7 @@ describe('FaberLoomBoard E10 commands', () => {
 
   it('W-07 · rejects discard while the severity is null', async () => {
     const { board } = await bootBoard()
-    const item = await submitOne(board)
+    const item = await submitOne(board, { artifactType: 'desconocido' })
 
     await expect(board.discard(ACTOR_A, item.id, {
       expectedRowVersion: item.rowVersion, reason: 'DUPLICADO',
@@ -282,7 +282,7 @@ describe('FaberLoomBoard E10 commands', () => {
 
   it('W-82 · rejects approveWithEdits when a precondition of approve is missing', async () => {
     const { board } = await bootBoard()
-    const item = await submitOne(board)
+    const item = await submitOne(board, { artifactType: 'desconocido' })
 
     await expect(board.approveWithEdits(ACTOR_A, item.id, {
       expectedRowVersion: item.rowVersion,

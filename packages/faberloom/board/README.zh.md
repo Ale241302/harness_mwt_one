@@ -37,7 +37,9 @@ kind: "package-reference"
 
 `runId` 与 `businessKey` 在写入条目记录之前先认领到 `keys` 表；记录写入失败时释放认领，因此崩溃只会留下没有条目的键，而不会留下两个同键的活跃条目。唯一性按租户计算：同一公司内另一个所有者的活跃条目持有该键时返回 `DUPLICATE`。
 
-对话提示不是条目。条目是运行准备的结果，或带 PF/OC/SAP、账户与证据的具体缺数据任务；`artifactType` 区分 `proforma` 与 `tarea`。未声明类型的提交是一条 `tarea`：它不承载计价承诺，而无类型的记录没有确定性类别来放行其内容。`submit` 接受 `accountRef`、`valueAmount`、`valueCurrency`、`dueAt`、`dataClass`、`severity` 与 `severityConfidence`，让工作台一次写入就能显示金额、期限与分类。
+对话提示不是条目。条目是运行准备的结果，或带 PF/OC/SAP、账户与证据的具体缺数据任务；`artifactType` 区分 `proforma` 与 `tarea`。未声明类型的提交是一条 `tarea`：它不承载计价承诺，而无类型的记录没有确定性类别来放行其内容。`submit` 接受 `accountRef`、`valueAmount`、`valueCurrency`、`dueAt`、`severity` 与 `severityConfidence`，让工作台一次写入就能显示金额、期限与分类。
+
+数据类别由服务端决定：`submit` 用 `classifyDataClass` 从产物类型与账户推导，调用方即使声明 `dataClass` 也无法降低自己条目的敏感度（D-05、D-07）。非 USD 金额需要生产者使用的汇率：`valueFxRate`、`valueFxSource` 与 `valueFxDate` 必填，`valueUsd` 是按该汇率四舍五入到两位的换算值（D-03），缺任何一项都以 `FX_RATE_REQUIRED`、`FX_SOURCE_REQUIRED` 或 `FX_DATE_REQUIRED` 拒绝条目，而不是编造汇率。运行未报告严重度时先走确定性规则，只有部署挂载 `faberloomBoardClassifier` 端口时才走分类器；端口超时则条目保持未分类且仍然进入（W-37）。分类结果按租户、空间、账户、产物类型、字段、内容哈希、规则版本、策略版本与模型版本缓存（§5.1、W-51）。
 
 `list` 返回规范队列顺序：优先级等级降序，未分类或无空间的条目排在所有 `CRITICAL` 之前，其后依次是到期日、USD 金额、创建时刻与 id。严重程度与数据分类来自 `classify.ts`：先跑确定性规则，规则无法判定的产物保持未分类，而不是猜测。临时分类的条目不开放任何字段，因此在分类前既不建立索引，也不发送给供应商。
 
@@ -103,7 +105,7 @@ kind: "package-reference"
 
 `applyIteration(writer, id, { iterationId, generation, actorSession, baseVersion, scope, summary?, evidence?, candidate? })` 依据草稿与调用者的覆盖写入下一个版本与哈希，把 `scope` 记录在审计事件中供学习侧使用，释放锁、删除草稿，并把条目返回 `PENDIENTE_CRITERIO`。待处理候选仍是条目的候选（W-40），必须在同一次调用中指定：`adopt` 使其成为生效版本，而且这是唯一的版本递增；`keep` 将其丢弃。只有当前尝试可以应用，且只能来自其持有者的会话（W-57）。
 
-`iterationRoundCount` 保存在条目上。达到 `iterationRoundLimit` 后 `iterationStatus().suggestRewrite` 变为 true；没有任何操作被阻塞，因为 D-10 只是建议重写或丢弃。
+`iterationRoundCount` 保存在条目上。达到 `iterationRoundLimit` 后 `iterationStatus().suggestRewrite` 变为 true；没有任何操作被阻塞，因为 D-10 只是建议重写或丢弃。`iterationContext(actor, id)` 是聊天通过 MCP 工具读取的固定上下文：条目、账户、空间、尝试 id、代数、持有会话、基础版本、轮数、摘要、草稿与证据。临时分类或 N3/N4 条目返回空摘要、空草稿与空证据，聊天无法读取类别禁止的内容（W-48、W-99）。
 
 | 配置字段 | 默认值 | 含义 |
 |---|---|---|
@@ -143,8 +145,11 @@ kind: "package-reference"
 | `effectRetentionDays` | 90 | 已了结的预留与消息在 `pruneEffects` 可删除前保存的天数 |
 | `effectDispatchTimeoutMs` | 30000 | 一次派发尝试在结果变为 `DESCONOCIDO` 前可用的毫秒数 |
 | `effectReservationLeaseMs` | 300000 | `RESERVADA` 行在被 `recoverOrphanedReservations` 释放前可无条目可达的毫秒数；必须长于一次接受的三次写入 |
+| `effectDispatchIntervalMs` | 0 | 两次 outbox 清扫之间的毫秒数。正值启动进程内消费者，其定时器归服务 fiber 所有；零表示只由显式 `dispatchEffect` 派发 |
+| `effectDispatchBackoffMs` | 60000 | 被拒消息在消费者重试前等待的毫秒数。没有适配器服务该动作类型时，拒绝还会抛出一条 `DISPATCH_REFUSED` 告警 |
+| `classifierTimeoutMs` | 3000 | 分类器端口在被视为超时前可用的毫秒数（W-37） |
 
-`effectPolicy()` 返回解析后的值，包括接受的动作类型，因此客户端读取 board 的列表而不必自己保留一份。`pruneEffects(actor)` 删除超出保留窗口的已了结行——也包括没有条目记录其键的效应的审计事件——从不触碰活跃预留或未了结消息；没有任务自动调用这两个清扫。
+`effectPolicy()` 返回解析后的值，包括接受的动作类型，因此客户端读取 board 的列表而不必自己保留一份。`pruneEffects(actor)` 删除超出保留窗口的已了结行——也包括没有条目记录其键的效应的审计事件——从不触碰活跃预留或未了结消息。`sweepEffects()` 是消费者的一轮：对退避允许的每条待发消息做一次尝试，在其所属租户下派发；动作类型没有适配器时抛出一条 `DISPATCH_REFUSED` 告警，并给该行写入 `backoffUntil` 保持待发，使配置错误不会空转。正的 `effectDispatchIntervalMs` 让这一轮由 fiber 持有的定时器运行；`pruneEffects` 仍为手动。
 
 此表面的稳定错误：`EFFECT_IDENTITY_INCOMPLETE`（缺动作类型、执行 id、目的地、业务键或产物哈希）、`EFFECT_COMPONENT_INVALID`（某个分量包含公式分隔符）、`EFFECT_ACTION_UNKNOWN`（部署不接受的动作类型）、`EFFECT_TAKEN`（另一个活跃执行持有该键）、`EFFECT_NOT_CONCILIATED`（对预留未了结的条目调用 `complete`）、`EFFECT_VIA_OUTBOX`（对带有有效果键的条目调用 `recordEffect`）、`NOT_DELEGATED`、`EFFECT_NO_DEADLINE`、`WINDOW_OPEN`、`WINDOW_EXPIRED`、`EFFECT_DISPATCHED`、`NO_EFFECT`、`NOT_RETRYABLE`、`OUTCOME_UNKNOWN`、`OUTCOME_KNOWN`、`REASON_REQUIRED`、`EFFECT_NO_ADAPTER`、`OUTBOX_NOT_PENDING` 与 `NOT_FOUND`。
 

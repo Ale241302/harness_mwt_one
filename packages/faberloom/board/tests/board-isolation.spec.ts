@@ -13,7 +13,7 @@ import {
 } from './helpers/harness.ts'
 
 describe('FaberLoomBoard isolation', () => {
-  it('refuses a read from another owner', async () => {
+  it('W-23 · refuses a read from another owner', async () => {
     const { board } = await bootBoard()
     const item = await seedProforma(board, OWNER_A, COMPANY_A)
 
@@ -22,7 +22,7 @@ describe('FaberLoomBoard isolation', () => {
     expect(await board.list(ACTOR_B)).toEqual([])
   })
 
-  it('refuses a read from another company even when the owner matches', async () => {
+  it('W-23 · refuses a read from another company even when the owner matches', async () => {
     const { board } = await bootBoard()
     const item = await seedProforma(board, OWNER_A, COMPANY_A)
 

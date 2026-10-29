@@ -164,7 +164,7 @@ describe('canonical queue order', () => {
       ...submitted, idempotencyKey: 'idem-c', businessKey: 'bkey-c', summary: 'crítico', severity: 'CRITICAL',
     })
     const unclassified = await board.submit(ACTOR_A, {
-      ...submitted, idempotencyKey: 'idem-u', businessKey: 'bkey-u', summary: 'sin clasificar',
+      ...submitted, artifactType: 'desconocido', idempotencyKey: 'idem-u', businessKey: 'bkey-u', summary: 'sin clasificar',
     })
     const low = await board.submit(ACTOR_A, {
       ...submitted, idempotencyKey: 'idem-l', businessKey: 'bkey-l', summary: 'bajo', severity: 'LOW',

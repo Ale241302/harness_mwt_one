@@ -68,6 +68,8 @@ function item(overrides: Partial<{
   content: Record<string, unknown>
   summary: string
   rounds: number
+  dataClass: string
+  valueUsd: number | null
 }> = {}) {
   return {
     id: 'b1',
@@ -81,8 +83,9 @@ function item(overrides: Partial<{
     rowVersion: 7,
     artifactType: 'proforma',
     accountRef: 'Cuenta Demo',
-    dataClass: 'N2',
+    dataClass: overrides.dataClass ?? 'N2',
     dataClassProvisional: false,
+    valueUsd: overrides.valueUsd === undefined ? null : overrides.valueUsd,
     spaceId: overrides.spaceId === undefined ? 'sp-1' : overrides.spaceId,
     iterationId: 'iter-1',
     iterationDraftKey: 'b1:iter-1',
@@ -136,6 +139,7 @@ function harness(options: {
     getIterationDraft: vi.fn(async () => records.draft),
     transferredDrafts: vi.fn(async (): Promise<readonly unknown[]> => []),
     assignWorkspace: vi.fn(async (): Promise<unknown> => ({ item: item(), transferredDrafts: [] })),
+    noteAccess: vi.fn(async () => undefined),
   }
   const spaces = {
     get: vi.fn(async () => ({ id: 'sp-1', title: 'Marluvas', parentId: null, agentId: 'agent-1' })),
@@ -183,6 +187,20 @@ describe('FaberLoomViewService board iteration', () => {
       updatedAt: '2026-10-28T10:00:00Z',
     })
     expect(attempt?.draftLinked).toBe(true)
+  })
+
+  it('W-26 / W-54 · a restricted item hides its summary and amount and audits the open', async () => {
+    const { view, board } = harness()
+    board.list.mockResolvedValue([item({ dataClass: 'N3', valueUsd: 900, summary: 'secreto del cliente' })])
+    const restricted = await view.boardDetail('b1')
+    expect(restricted).toMatchObject({ summary: '', valueUsd: null })
+    expect(JSON.stringify(restricted)).not.toContain('secreto del cliente')
+    expect(board.noteAccess).toHaveBeenCalledWith(ACTOR, 'b1', 'boardDetail')
+
+    board.list.mockResolvedValue([item({ dataClass: 'N2', valueUsd: 900, summary: 'visible' })])
+    const open = await view.boardDetail('b1')
+    expect(open).toMatchObject({ summary: 'visible', valueUsd: 900 })
+    expect(board.noteAccess).toHaveBeenCalledTimes(1)
   })
 
   it('answers undefined for an item the actor does not hold', async () => {
@@ -401,6 +419,10 @@ describe('FaberLoomViewService board iteration', () => {
       summary: 'Proforma DDP 100 pares',
       draftSummary: 'Precio revisado',
       rounds: 2,
+      iterationId: 'iter-1',
+      generation: 4,
+      holderSession: 'tab-1',
+      baseVersion: 3,
     })
     expect(spaces.get).toHaveBeenCalledWith(ACTOR, 'sp-1')
   })
@@ -414,7 +436,7 @@ describe('FaberLoomViewService board iteration', () => {
     expect(await view.boardIterationContext('other', '')).toBeUndefined()
   })
 
-  it('sends the summary to a cleared provider and to an undeclared one at the N2 baseline', async () => {
+  it('W-48 · sends the summary to a cleared provider and to an undeclared one at the N2 baseline', async () => {
     const { view } = harness({ ceilings: { deepseek: 'N2' } })
     expect(await view.boardIterationContext('b1', 'deepseek')).toMatchObject({
       summary: 'Proforma DDP 100 pares',
@@ -426,7 +448,7 @@ describe('FaberLoomViewService board iteration', () => {
     })
   })
 
-  it('drops the content a lower ceiling forbids and keeps what a higher one allows', async () => {
+  it('W-48 · drops the content a lower ceiling forbids and keeps what a higher one allows', async () => {
     const lower = harness({ ceilings: { deepseek: 'N1' } })
     expect((await lower.view.boardIterationContext('b1', 'deepseek'))?.summary).toBeNull()
     expect(lower.records.draft).toEqual(expect.objectContaining({ summary: 'Precio revisado' }))
