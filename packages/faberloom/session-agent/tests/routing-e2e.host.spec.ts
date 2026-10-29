@@ -210,4 +210,30 @@ describe('per-agent provider and credential routing', () => {
     expect(failure?.error?.message).toContain(`(provider "${ALPHA_PROVIDER}")`)
     expect(JSON.stringify(failure)).not.toContain(ALPHA_KEY)
   })
+
+  it('answers a field instruction from the chat without calling any provider', async () => {
+    const { ctx, create, stubs } = await boot([{ kind: 'text', text: 'deployment-ok' }])
+    const applyIterationInstruction = vi.fn(async () => ({
+      applied: true,
+      changes: [{ field: 'summary', value: 'Listo' }],
+    }))
+    ;(ctx.provide as (name: string, value: unknown) => void)('faberloomBoard', { applyIterationInstruction })
+
+    const agent = await create('instruction-chat', { provider: DEPLOYMENT_PROVIDER, model: 'deepseek-chat' })
+    await driveTurn(agent, '@summary = Listo')
+
+    expect(applyIterationInstruction).toHaveBeenCalledWith('instruction-chat', '@summary = Listo')
+    // The deterministic answer owns the turn: no provider request at all.
+    expect(stubs.deployment.requests).toHaveLength(0)
+    const replies = agent.session.snapshotEvents()
+      .filter(event => event.type === 'assistant/message')
+    expect(replies).toHaveLength(1)
+    expect(JSON.stringify(replies)).toContain('router determinista')
+    expect(turnEnds(agent).at(-1)?.kind).toBe('completed')
+
+    // A sentence the board does not route reaches the model as usual.
+    applyIterationInstruction.mockResolvedValueOnce(undefined as never)
+    await driveTurn(agent, 'resumí la cuenta')
+    expect(stubs.deployment.requests).toHaveLength(1)
+  })
 })

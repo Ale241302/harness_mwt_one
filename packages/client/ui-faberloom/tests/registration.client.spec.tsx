@@ -130,6 +130,9 @@ async function bench(
   }))
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
   const boardViews = vi.fn(async () => ({ ok: true, value: [] }))
+  const boardRouteInstruction = vi.fn(async (_id: string, text: string) => text.startsWith('@summary')
+    ? { ok: true, value: [{ field: 'summary', value: text.split('=')[1]?.trim() ?? '' }] }
+    : { ok: true, value: null })
   const boardSaveView = vi.fn(async () => ({ ok: true, value: [] }))
   const boardRemoveView = vi.fn(async () => ({ ok: true, value: [] }))
   const boardSetSeverity = vi.fn(async () => ({ ok: true, value: undefined }))
@@ -283,7 +286,7 @@ async function bench(
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
-    boardSaveView, boardRemoveView, setBoardRoutine, prepareHarness,
+    boardSaveView, boardRemoveView, boardRouteInstruction, setBoardRoutine, prepareHarness,
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
     boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
@@ -388,7 +391,7 @@ async function bench(
   const view = runtime.renderRoot()
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
-    deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardSaveEdits,
+    deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction, boardSaveEdits,
     boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
     boardSetSeverity, boardSaveDraft, boardAssignWorkspace, boardDiscard, boardResolveCandidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
@@ -2942,6 +2945,7 @@ it('§9.7 · applies a deterministic field instruction without the agent', async
   })
 
   // A sentence the router does not own is not written; it stays for the agent.
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.router.label'] }))
   fireEvent.change(view.getByRole('textbox', { name: faberloomEn['mesa.router.label'] }), {
     target: { value: 'hacé lo que puedas' },
   })

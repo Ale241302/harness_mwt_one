@@ -29,6 +29,8 @@ Every Space session also gets a `faberloom:space-scope` prompt section: the curr
 
 For every live agent the service also registers a per-turn `@Name` route. It reads the mention from the messages a step claims (the request waterfall itself carries none), applies the named agent's provider, model, and credential reference to that turn's request alone, and restores the session's own route on the next turn without a mention. A mention wins over the session's own route for that turn, including the Space agent's route a composed session starts from. The `@` picker inserts `@Name` followed by a space, and the name must match a catalog agent's exact name; an unknown name, a missing catalog or plane, or an agent without all of a provider, a model, and a key leaves the request untouched, so a mention never fails a turn.
 
+The same per-agent listeners serve the iteration chat's deterministic router (§9.7). When `faberloomBoard` is mounted, the first step of a turn reads the instruction `applyIterationInstruction` from the board: an instruction the panel attached to a live attempt is written to that attempt's draft and answered in the log by the host itself, with the user's message, the reply, and the step that contains them — the step then enters with no messages, so the turn closes without a model call. Any sentence the router does not own, a chat with no attachment, and a failed write all delegate to the agent unchanged. The reply declares `faberloom`/`iteration-router` as its producer, so no reader mistakes it for a model answer.
+
 -----
 
 <a id="model-experience"></a>

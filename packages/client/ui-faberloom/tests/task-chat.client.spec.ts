@@ -9,11 +9,13 @@ function fakeCtx() {
   const create = vi.fn(async () => 'session-1')
   const open = vi.fn()
   const selectPanel = vi.fn()
+  const attach = vi.fn(async () => {})
   const ctx = {
     sessions: { create, binding: vi.fn(() => ({ session: { prompt } })), open },
     layout: { selectPanel },
+    remote: { faberloomView: { boardAttachIterationChat: attach } },
   } as unknown as Context
-  return { ctx, create, prompt, open, selectPanel }
+  return { ctx, create, prompt, open, selectPanel, attach }
 }
 
 describe('runTaskChat', () => {
@@ -83,6 +85,18 @@ describe('runTaskChat', () => {
     expect(content[0]?.text).toContain('no se carga en este proveedor')
   })
 
+  it('attaches an iteration chat to the exact attempt it works', async () => {
+    const { ctx, attach } = fakeCtx()
+    runTaskChat(ctx, { setError: vi.fn() }, { kind: 'iteration', title: 'PF 9001-2026', detail: 'v3', iteration: PINNED })
+    await vi.waitFor(() => { expect(attach).toHaveBeenCalledWith('b1', 'session-1') })
+  })
+
+  it('leaves a chat that works no attempt unattached', async () => {
+    const { ctx, attach, prompt } = fakeCtx()
+    runTaskChat(ctx, { setError: vi.fn() }, { kind: 'board', title: 'Preparar', detail: 'waiting' })
+    await vi.waitFor(() => { expect(prompt).toHaveBeenCalledOnce() })
+    expect(attach).not.toHaveBeenCalled()
+  })
   it('reports a failed session create to the store', async () => {
     const { ctx } = fakeCtx()
     ;(ctx.sessions.create as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('nope'))

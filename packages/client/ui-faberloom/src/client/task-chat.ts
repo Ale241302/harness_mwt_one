@@ -7,8 +7,9 @@
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { FaberLoomBoardIterationContext } from '@deepseek-ai/dsh-faberloom-view/types'
-// Type-only: pulls ctx.sessions (create / binding / open).
+// Type-only: pulls ctx.sessions (create / binding / open) and ctx.remote.
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls ctx.layout.selectPanel.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 
@@ -125,6 +126,13 @@ export function runTaskChat(ctx: ClientContext, bound: TaskChatBound, input: Tas
     // conversation appears in the sidebar where the work lives; a task with no
     // Space still opens a global session instead of refusing the gesture.
     const sessionId = await ctx.sessions.create(input.cwd === undefined ? {} : { cwd: input.cwd })
+    // An iteration chat is attached to the exact attempt it works, so a typed
+    // field instruction is applied by the deterministic router instead of the
+    // model (§9.7). A failed attach leaves an ordinary chat behind.
+    if (input.iteration !== undefined) {
+      await ctx.remote.faberloomView.boardAttachIterationChat(input.iteration.itemId, sessionId)
+        .catch(() => undefined)
+    }
     const session = ctx.sessions.binding(sessionId)?.session
     if (session !== undefined) {
       await session.prompt([{ type: 'text', text: promptFor(input) }], 'queue')

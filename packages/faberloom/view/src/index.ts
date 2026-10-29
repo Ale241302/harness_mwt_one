@@ -68,7 +68,7 @@ import type {
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
   FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardView, FaberLoomBoardViewFilters,
-  FaberLoomBoardCheckRow, FaberLoomExecutionRow,
+  FaberLoomBoardFieldChange, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
   FaberLoomBoardDataClass,
   FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
   FaberLoomBoardSeverity, FaberLoomBoardEventRow, FaberLoomBoardDraftInput, FaberLoomBoardDraftRow,
@@ -6848,6 +6848,31 @@ export class FaberLoomViewService extends TypertRemoteService {
     const item = (await this.ctx.faberloomBoard.list(actor)).find(entry => entry.id === id)
     if (item === undefined) return undefined
     return iterationOf(await this.ctx.faberloomBoard.iterationStatus(actor, id as FaberLoomBoardItemId))
+  }
+
+  /**
+   * Route one instruction against the fields the item declares (§9.7). The
+   * panel writes the changes through `boardSaveEdits`; the parser lives on the
+   * board so the iteration chat and the detail cannot disagree.
+   * @param id - board item id.
+   * @param text - the instruction the user typed.
+   * @returns the changes, or null when the router does not own the sentence.
+   */
+  @Remote('boardRouteInstruction')
+  async boardRouteInstruction(id: string, text: string): Promise<readonly FaberLoomBoardFieldChange[] | null> {
+    return await this.ctx.faberloomBoard.routeInstruction(this.actor(), id as FaberLoomBoardItemId, text)
+  }
+
+  /**
+   * Attach the chat session the panel just opened to the item's live attempt,
+   * so a typed field instruction is applied without a model (§9.7).
+   * @param id - board item id.
+   * @param sessionId - chat session the host reads the attachment by.
+   */
+  @Remote('boardAttachIterationChat')
+  async boardAttachIterationChat(id: string, sessionId: string): Promise<void> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    await this.ctx.faberloomBoard.attachIterationChat(this.actor(), id as FaberLoomBoardItemId, sessionId)
   }
 
   /**

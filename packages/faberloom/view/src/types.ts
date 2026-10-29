@@ -1281,6 +1281,14 @@ export interface FaberLoomBoardIterationContext {
 /** A value one inline edit may write: a JSON scalar. */
 export type FaberLoomBoardEditValue = string | number | boolean | null
 
+/** One field change the deterministic router recognized (§9.7). */
+export interface FaberLoomBoardFieldChange {
+  /** Field name as the item declares it. */
+  readonly field: string
+  /** Parsed value. */
+  readonly value: FaberLoomBoardEditValue
+}
+
 /** The filters a saved board view restores (§9.4). */
 export interface FaberLoomBoardViewFilters {
   /** Space filter, or null for all. */

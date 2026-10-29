@@ -29,7 +29,9 @@ import {
   type EffectEventRecord,
   type EffectOutboxRecord,
   type EffectReservationRecord,
+  type IterationChatRecord,
 } from './spec.ts'
+import { routeFieldInstruction, type BoardFieldChange } from './router.ts'
 import { submittedSeverity, classifyDataClass, resolveSeverity, DATA_CLASS_POLICY_VERSION, CLASSIFY_RULES_VERSION } from './classify.ts'
 import { orderBoardItems } from './order.ts'
 import { CHECKS_VERSION, artifactOf, checkClass, checkKey, declaredChecks } from './checks.ts'
@@ -124,10 +126,12 @@ import type {
   BoardEvent,
   BoardExecutionInput,
   BoardFieldOriginEntry,
+  BoardInstructionOutcome,
   BoardIterateInput,
   BoardIterateWithEditsInput,
   BoardIterationDraft,
   BoardIterationContext,
+  BoardIterationChat,
   BoardIterationDraftInput,
   BoardIterationDraftOutcome,
   BoardIterationLockInput,
@@ -159,6 +163,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export * from './router.ts'
 export * from './checks.ts'
 export * from './projection.ts'
 export * from './classify.ts'
@@ -443,7 +448,18 @@ function refusal(code: BoardDispatchCode, item: FaberLoomBoardItem | null, detai
   return { dispatched: false, code, item, outcome: null, detail }
 }
 
+/** The fields one item declares: its summary, its artifact content, and its origins. */
+function declaredItemFields(record: BoardItemRecord): readonly string[] {
+  const last = record.revisions[record.revisions.length - 1]
+  return [...new Set([
+    'summary',
+    ...Object.keys(last?.content ?? {}),
+    ...record.fieldOrigins.map(origin => origin.field),
+  ])]
+}
+
 /** Map one durable record to the consumer-facing item. */
+
 /** Storage key of one saved view, scoped to its owner. */
 function viewKeyOf(ownerId: string, name: string): string {
   return `${ownerId}\u0000${name}`
@@ -611,6 +627,11 @@ export class FaberLoomBoard extends Service {
   /** The saved-view table of this domain. */
   private async views(): Promise<KvTable<string, BoardViewRecord>> {
     return (await this.domain()).table('views')
+  }
+
+  /** The iteration-chat attachments, keyed by session id. */
+  private async iterationChats(): Promise<KvTable<string, IterationChatRecord>> {
+    return (await this.domain()).table('iteration_chats')
   }
 
   private draftId(itemId: FaberLoomBoardItemId | string, userId: string): string {
@@ -2195,6 +2216,105 @@ export class FaberLoomBoard extends Service {
       return storedRow === undefined || !draftIsRetained(storedRow, now) ? undefined : draftOf(key, storedRow, now)
     }
     return (await this.offeredDraft(id, record, now)) ?? undefined
+  }
+
+  /**
+   * Route one instruction against the fields an item declares, without writing
+   * anything. The detail's instruction box and the iteration chat share this
+   * parser, so an instruction that works in one works in the other (§9.7).
+   * @param actor - the authenticated reader.
+   * @param id - item id.
+   * @param text - the instruction the user typed.
+   * @returns the changes, or null when the router does not own the sentence.
+   */
+  async routeInstruction(
+    actor: BoardActor,
+    id: FaberLoomBoardItemId,
+    text: string,
+  ): Promise<readonly BoardFieldChange[] | null> {
+    const record = await this.requireItem(id)
+    this.authorizeRead(record, actor)
+    return routeFieldInstruction(text, declaredItemFields(record))
+  }
+
+  /**
+   * Attach one chat session to the item's live attempt. The panel calls this
+   * when it opens the iteration chat, so the host reaches this exact attempt
+   * instead of inferring it from the conversation text (§9.7).
+   * @param writer - the acting identity that opened the chat.
+   * @param id - item id.
+   * @param sessionId - chat session the host reads the attachment by.
+   * @returns the attachment written.
+   */
+  async attachIterationChat(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    sessionId: string,
+  ): Promise<BoardIterationChat> {
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    if (current.iterationId === null
+      || current.iterationLockBy === null
+      || current.iterationLockUntil === null
+      || current.iterationBaseVersion === null) {
+      throw new Error('faberloom: NO_ITERATION — the item has no live attempt to attach a chat to')
+    }
+    if (Date.parse(current.iterationLockUntil) <= Date.now()) {
+      throw new Error('faberloom: NO_ITERATION — the attempt lock already expired')
+    }
+    const actor = this.actorOf(writer)
+    const chat: BoardIterationChat = {
+      ownerId: actor.id,
+      companyId: actor.companyId ?? null,
+      itemId: id,
+      iterationId: current.iterationId,
+      generation: current.iterationLockGeneration,
+      holderSession: current.iterationLockBy,
+      baseVersion: current.iterationBaseVersion,
+    }
+    await (await this.iterationChats()).put(sessionId, { ...chat, createdAt: new Date().toISOString() })
+    return chat
+  }
+
+  /**
+   * Apply one deterministic field instruction to the draft of the attempt a
+   * chat session is attached to. The host calls this before a model step, so a
+   * recognized instruction never reaches the provider.
+   * @param sessionId - chat session that typed the instruction.
+   * @param text - the instruction.
+   * @returns what changed, or undefined when the session holds no attempt or the
+   * router does not own the sentence.
+   */
+  async applyIterationInstruction(sessionId: string, text: string): Promise<BoardInstructionOutcome | undefined> {
+    const chat = (await this.iterationChats()).get(sessionId)
+    if (chat === undefined) return undefined
+    const id = chat.itemId as FaberLoomBoardItemId
+    const current = await this.requireItem(id)
+    // The attempt moved on (applied, cancelled, or replaced): the attachment no
+    // longer names a live draft, so the sentence belongs to the agent.
+    if (current.iterationId !== chat.iterationId) return undefined
+    const writer: BoardActor = chat.companyId === null
+      ? { id: chat.ownerId }
+      : { id: chat.ownerId, companyId: chat.companyId }
+    this.authorizeWrite(current, writer)
+    const draft = await this.getIterationDraft(writer, id, chat.iterationId)
+    const fields = ['summary', ...Object.keys(draft?.content ?? {})]
+    const changes = routeFieldInstruction(text, fields)
+    if (changes === null) return undefined
+    const summary = changes.find(change => change.field === 'summary')
+    if (summary !== undefined && typeof summary.value !== 'string') return undefined
+    const content = Object.fromEntries(
+      changes.filter(change => change.field !== 'summary').map(change => [change.field, change.value]),
+    )
+    const outcome = await this.saveIterationDraft(writer, id, {
+      iterationId: chat.iterationId,
+      generation: chat.generation,
+      actorSession: chat.holderSession,
+      baseVersion: chat.baseVersion,
+      ...summary === undefined ? {} : { summary: summary.value as string },
+      ...Object.keys(content).length === 0 ? {} : { content },
+    })
+    return { changes, applied: outcome.linked }
   }
 
   /**

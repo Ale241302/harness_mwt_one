@@ -45,6 +45,7 @@ import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import { latestUserText, matchMentionedAgent } from './mention.ts'
+import { appendInstructionExchange, instructionReply, type IterationInstructionBoard } from './instruction.ts'
 import {
   isUnderFolder,
   readSpaceNode,
@@ -216,6 +217,8 @@ export class FaberLoomSessionAgent extends Service {
   private readonly mentionListeners = new Map<Agent, () => void>()
   /** The disposers of the per-step scope refresh listeners. */
   private readonly scopeListeners = new Map<Agent, () => void>()
+  /** The disposers of the iteration-chat instruction listeners. */
+  private readonly instructionListeners = new Map<Agent, () => void>()
 
   /**
    * @param ctx - Cordis context owning the service fiber.
@@ -289,6 +292,7 @@ export class FaberLoomSessionAgent extends Service {
     }
     const attach = (agent: Agent): void => {
       this.attachMentionRoute(agent)
+      this.attachIterationInstruction(agent)
       void install(agent).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: no se pudo instalar la composición de la sesión: ${String(error)}`)
       })
@@ -296,6 +300,7 @@ export class FaberLoomSessionAgent extends Service {
     for (const agent of ctx.agents.list()) attach(agent)
     ctx.on('agent/created', async ({ agent }) => {
       this.attachMentionRoute(agent)
+      this.attachIterationInstruction(agent)
       await install(agent)
     })
     ctx.on('agent/disposed', ({ agent }) => {
@@ -308,6 +313,8 @@ export class FaberLoomSessionAgent extends Service {
       this.mentionListeners.delete(agent)
       this.scopeListeners.get(agent)?.()
       this.scopeListeners.delete(agent)
+      this.instructionListeners.get(agent)?.()
+      this.instructionListeners.delete(agent)
       void fiber?.dispose()
     })
     ctx.effect(() => async () => {
@@ -316,9 +323,10 @@ export class FaberLoomSessionAgent extends Service {
       this.routes.clear()
       this.resolved.clear()
       this.scopes.clear()
-      const listeners = [...this.mentionListeners.values(), ...this.scopeListeners.values()]
+      const listeners = [...this.mentionListeners.values(), ...this.scopeListeners.values(), ...this.instructionListeners.values()]
       this.mentionListeners.clear()
       this.scopeListeners.clear()
+      this.instructionListeners.clear()
       for (const off of listeners) off()
       await Promise.all(fibers.map(fiber => fiber.dispose()))
     }, 'faberloom-session-agent: compositions')
@@ -387,6 +395,36 @@ export class FaberLoomSessionAgent extends Service {
       return withRoute(resolved, previous.base)
     }, { prepend: true })
     this.mentionListeners.set(agent, () => { offPreStep(); offRequest() })
+  }
+
+  /**
+   * Register the deterministic field router for one live agent (§9.7). A chat
+   * the panel attached to an iteration writes a recognized instruction to the
+   * attempt's draft and answers in the log; the turn then closes without a
+   * model call, because the step is entered with no messages. A sentence the
+   * router does not own, a session with no attachment, or a failed write all
+   * delegate to the agent unchanged.
+   * @param agent - the live agent the router applies to.
+   */
+  private attachIterationInstruction(agent: Agent): void {
+    if (this.instructionListeners.has(agent)) return
+    const off = agent.ctx.on('agent/pre-step', async ({ messages, turn, step }, next) => {
+      if (step !== 1) return next()
+      const text = latestUserText(messages)
+      if (text === undefined) return next()
+      const board = this.ctx.get('faberloomBoard') as IterationInstructionBoard | undefined
+      if (board === undefined) return next()
+      const outcome = await board.applyIterationInstruction(agent.session.id, text).catch((error: unknown) => {
+        // A failed deterministic write never fails the turn: the agent takes over.
+        this.ctx.logger.warn(`faberloom: no se pudo aplicar la instrucción de campo: ${String(error)}`)
+        return undefined
+      })
+      if (outcome === undefined) return next()
+      appendInstructionExchange(agent.session, messages, turn, step, instructionReply(outcome))
+      // The instruction is answered: the loop closes the turn without a model call.
+      return { kind: 'enter', messages: [] }
+    })
+    this.instructionListeners.set(agent, off)
   }
 
   /**

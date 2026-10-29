@@ -462,10 +462,38 @@ export const classificationCacheRecord = z.object({
 export type ClassificationCacheRecord = z.infer<typeof classificationCacheRecord>
 
 /**
+ * The attempt one iteration chat writes to, keyed by the chat's session id. The
+ * panel creates the mapping when it opens the chat from the item, so the host
+ * reaches the exact attempt instead of inferring it from the conversation text
+ * (§9.7).
+ */
+export const iterationChatRecord = z.object({
+  /** Owner that opened the chat. */
+  ownerId: z.string(),
+  /** Company scope carried by the owner, or null. */
+  companyId: z.string().nullable(),
+  /** Item the attempt iterates. */
+  itemId: z.string(),
+  /** Live attempt id at attach time. */
+  iterationId: z.string(),
+  /** Lock generation at attach time. */
+  generation: z.number(),
+  /** Tab session that held the attempt at attach time. */
+  holderSession: z.string(),
+  /** Artifact version the attempt started from. */
+  baseVersion: z.number(),
+  /** ISO-8601 instant. */
+  createdAt: z.string(),
+})
+
+/** One stored iteration-chat attachment. */
+export type IterationChatRecord = z.infer<typeof iterationChatRecord>
+
+/**
  * The board domain spec: item aggregates, the key-claim table, the edit-draft
- * table, the iteration-draft table, the tenant claims on opaque references, the
- * external-effect reservation, outbox, alert, and audit tables, and the
- * per-tenant classification cache.
+ * table, the iteration-draft and iteration-chat tables, the tenant claims on
+ * opaque references, the external-effect reservation, outbox, alert, and audit
+ * tables, and the per-tenant classification cache.
  */
 export const boardDomainSpec = defineDomain({
   name: 'faberloom_board',
@@ -482,5 +510,6 @@ export const boardDomainSpec = defineDomain({
     effect_events: domainTable<string, EffectEventRecord>(effectEventRecord),
     classification_cache: domainTable<string, ClassificationCacheRecord>(classificationCacheRecord),
     views: domainTable<string, BoardViewRecord>(boardViewRecord),
+    iteration_chats: domainTable<string, IterationChatRecord>(iterationChatRecord),
   },
 })

@@ -7,6 +7,7 @@
  */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { BoardFieldChange } from './router.ts'
 
 /** Identifies one board item. */
 export type FaberLoomBoardItemId = Branded<'FaberLoomBoardItemId'>
@@ -162,6 +163,36 @@ export interface BoardViewFilters {
 
 /** A value one inline edit may write: a JSON scalar. */
 export type BoardEditValue = string | number | boolean | null
+
+/**
+ * The attempt one iteration chat writes to. The host reads it by the session id
+ * the panel attached, so the deterministic router reaches the exact attempt and
+ * never parses the conversation text (§9.7).
+ */
+export interface BoardIterationChat {
+  /** Owner that opened the chat. */
+  readonly ownerId: string
+  /** Company scope carried by the owner, or null. */
+  readonly companyId: string | null
+  /** Item the attempt iterates. */
+  readonly itemId: string
+  /** Live attempt id at attach time. */
+  readonly iterationId: string
+  /** Lock generation at attach time. */
+  readonly generation: number
+  /** Tab session that held the attempt at attach time. */
+  readonly holderSession: string
+  /** Artifact version the attempt started from. */
+  readonly baseVersion: number
+}
+
+/** What one deterministic instruction did to the iteration draft. */
+export interface BoardInstructionOutcome {
+  /** Changes the router recognized, in the order they were written. */
+  readonly changes: readonly BoardFieldChange[]
+  /** Whether the attempt was live and the draft now carries the changes. */
+  readonly applied: boolean
+}
 
 /** One in-progress inline edit, owned by one browser tab. */
 export interface BoardEditDraft {

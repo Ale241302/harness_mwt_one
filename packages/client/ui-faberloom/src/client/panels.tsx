@@ -58,14 +58,13 @@ import type {
   FaberLoomBoardExecutionInput, FaberLoomBoardRevertInput, FaberLoomBoardRetryInput,
   FaberLoomBoardReconcileInput, FaberLoomBoardAdminCloseInput, FaberLoomBoardAdminCloseResult,
   FaberLoomBoardEffectOutcome, FaberLoomSignatureRow, SignatureIssueInput,
-  FaberLoomBoardView, FaberLoomBoardViewFilters,
+  FaberLoomBoardView, FaberLoomBoardViewFilters, FaberLoomBoardFieldChange,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { isDesktopApplication } from './desktop-app.ts'
 import { HarnessInstallWizard } from './harness-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import { uniqueSpaces } from './space-options.ts'
-import { routeIteration } from './iteration-router.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -488,6 +487,11 @@ export interface FaberloomPanelInjected {
   boardDetail: (id: string) => Promise<Result<FaberLoomBoardDetail | undefined>>
   /** The saved views of the signed-in owner. */
   boardViews: () => Promise<Result<readonly FaberLoomBoardView[]>>
+  /** Route one field instruction against the item's declared fields (§9.7). */
+  boardRouteInstruction: (
+    id: string,
+    text: string,
+  ) => Promise<Result<readonly FaberLoomBoardFieldChange[] | null>>
   /** Save or replace one named view. */
   boardSaveView: (name: string, filters: FaberLoomBoardViewFilters) => Promise<Result<readonly FaberLoomBoardView[]>>
   /** Remove one named view. */
@@ -2727,7 +2731,8 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
 
   return function FaberloomMesa(props: ScreenProps) {
     const {
-      t, boardDetail, boardViews, boardSaveView, boardRemoveView, boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits,
+      t, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction,
+      boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits,
       boardDiscard, boardResolveCandidate, boardAssignWorkspace, boardTakeDraft, boardRevalidate,
       boardSaveDraft, openTaskChat, goToWorkspace,
       boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft,
@@ -3624,17 +3629,23 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
      */
     const applyInstruction = (): void => {
       if (value === undefined) return
-      const changes = routeIteration(instruction, routedFields)
-      if (changes === null) { setMessage(t('mesa.router.unmatched')); return }
-      const payload = Object.fromEntries(changes.map(change => [change.field, change.value]))
-      void boardSaveEdits(value.id, {
-        rowVersion: value.rowVersion,
-        baseVersion: value.version,
-        changes: payload,
-      }).then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
-        setInstruction('')
-        setTick(count => count + 1)
+      // The board owns the parser, so the detail and the iteration chat cannot
+      // disagree about what an instruction means (§9.7).
+      void boardRouteInstruction(value.id, instruction).then((routed) => {
+        if (!routed.ok) { setMessage(routed.error.message); return }
+        const changes = routed.value
+        if (changes === null) { setMessage(t('mesa.router.unmatched')); return }
+        const payload = Object.fromEntries(changes.map(change => [change.field, change.value]))
+        return boardSaveEdits(value.id, {
+          rowVersion: value.rowVersion,
+          baseVersion: value.version,
+          changes: payload,
+        }).then((result) => {
+          if (!result.ok) { setMessage(result.error.message); return }
+          setInstruction('')
+          setRouting(false)
+          setTick(count => count + 1)
+        })
       })
     }
 
