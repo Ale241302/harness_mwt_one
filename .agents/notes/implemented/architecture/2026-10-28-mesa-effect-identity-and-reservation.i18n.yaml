@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-28-mesa-effect-identity-and-reservation.md
+2026-10-28-mesa-effect-identity-and-reservation.md: 210910909c6debf7d95b28571595241b920af787
+2026-10-28-mesa-effect-identity-and-reservation.zh.md: 5a40a9b0f99fdecd6fcbefb46735a077dab911b8
