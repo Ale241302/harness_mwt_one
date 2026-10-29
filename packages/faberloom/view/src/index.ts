@@ -67,7 +67,8 @@ import type {
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
-  FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
+  FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardView, FaberLoomBoardViewFilters,
+  FaberLoomBoardCheckRow, FaberLoomExecutionRow,
   FaberLoomBoardDataClass,
   FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
   FaberLoomBoardSeverity, FaberLoomBoardEventRow, FaberLoomBoardDraftInput, FaberLoomBoardDraftRow,
@@ -1599,6 +1600,8 @@ export class FaberLoomViewService extends TypertRemoteService {
         routineId: item.routineId,
         spaceId: item.spaceId,
         accountRef: item.accountRef,
+        assigneeId: item.assigneeId,
+        actionType: item.actionType,
         artifactType: item.artifactType,
         dueAt: item.dueAt,
         dataClass: item.dataClass,
@@ -6514,6 +6517,34 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * The autonomy level of the unit an item belongs to. Without the autonomy
+   * service, or without a space and an agent, the product default is `SHADOW`
+   * (§7.1): the item is still learning, which is what showing nothing would hide.
+   * @param item - the item whose unit is read.
+   * @returns the level the panel shows.
+   */
+  private async autonomyLevelOf(item: {
+    readonly spaceId: string | null
+    readonly assigneeId: string | null
+    readonly actionType: string
+  }): Promise<string> {
+    const service = this.ctx.get('faberloomAutonomy') as {
+      getUnit(
+        actor: { readonly id: string; readonly companyId?: string },
+        ref: { readonly tenantId: string; readonly spaceId: string; readonly agentId: string; readonly actionType: string },
+      ): Promise<{ readonly level: string } | undefined>
+    } | undefined
+    const actor = this.actor()
+    if (service === undefined || item.spaceId === null || item.assigneeId === null) return 'SHADOW'
+    if (actor.companyId === undefined || actor.companyId.length === 0) return 'SHADOW'
+    const unit = await service.getUnit(
+      { id: actor.id, companyId: actor.companyId },
+      { tenantId: actor.companyId, spaceId: item.spaceId, agentId: item.assigneeId, actionType: item.actionType },
+    ).catch(() => undefined)
+    return unit?.level ?? 'SHADOW'
+  }
+
+  /**
    * Read one board item with its review state.
    * @param id - board item id.
    * @returns the board detail, or undefined when it is gone.
@@ -6525,6 +6556,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     // A restricted item is audited on open, once per hour and reader, and its
     // summary and amount stay out of the payload (W-26, §8.4).
     const restricted = restrictedClass(item.dataClass)
+    const autonomyLevel = await this.autonomyLevelOf(item)
     if (restricted) {
       await this.ctx.faberloomBoard.noteAccess(this.actor(), item.id, 'boardDetail').catch(() => undefined)
     }
@@ -6583,6 +6615,9 @@ export class FaberLoomViewService extends TypertRemoteService {
       dataClassProvisional: item.dataClassProvisional,
       artifactType: item.artifactType,
       accountRef: item.accountRef,
+      assigneeId: item.assigneeId,
+      actionType: item.actionType,
+      autonomyLevel,
       artifactHash: item.artifactHash,
       runId: item.runId,
       supersedesItemId: item.supersedesItemId,
@@ -6766,6 +6801,38 @@ export class FaberLoomViewService extends TypertRemoteService {
   async boardEvents(id: string): Promise<readonly FaberLoomBoardEventRow[]> {
     const events = await this.ctx.faberloomBoard.events(this.actor(), id as FaberLoomBoardItemId)
     return events.map(event => ({ command: event.command, at: event.at, reason: event.reason }))
+  }
+
+  /**
+   * The saved views of the signed-in owner (§9.4).
+   * @returns the views, sorted by name.
+   */
+  @Remote('boardViews')
+  async boardViews(): Promise<readonly FaberLoomBoardView[]> {
+    return await this.ctx.faberloomBoard.listViews(this.actor())
+  }
+
+  /**
+   * Save or replace one named view of the signed-in owner.
+   * @param name - name the owner chose.
+   * @param filters - filters the view restores.
+   * @returns the owner's views after the write.
+   */
+  @Remote('boardSaveView')
+  async boardSaveView(name: string, filters: FaberLoomBoardViewFilters): Promise<readonly FaberLoomBoardView[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot save a view')
+    return await this.ctx.faberloomBoard.saveView(this.actor(), name, filters)
+  }
+
+  /**
+   * Remove one named view of the signed-in owner.
+   * @param name - name to remove.
+   * @returns the owner's views after the write.
+   */
+  @Remote('boardRemoveView')
+  async boardRemoveView(name: string): Promise<readonly FaberLoomBoardView[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove a view')
+    return await this.ctx.faberloomBoard.removeView(this.actor(), name)
   }
 
   /**
@@ -7598,28 +7665,6 @@ export class FaberLoomViewService extends TypertRemoteService {
   async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview> {
     await this.requireManageableAgent(id)
     await this.ctx.faberloomAgents.updateAgent(id as FaberLoomAgentId, { responsibility })
-    return await this.overview()
-  }
-
-  /**
-   * Approve or reject the current revision of one board item.
-   * @param id - board item id.
-   * @param approve - true approves, false rejects.
-   * @param note - optional review note.
-   * @returns the refreshed overview.
-   */
-  @Remote('reviewBoardItem')
-  async reviewBoardItem(id: string, approve: boolean, note?: string): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot review board items')
-    const item = await this.ctx.faberloomBoard.get(this.actor(), id as FaberLoomBoardItemId)
-    await this.ctx.faberloomBoard.review(this.actor(), item.id, {
-      decision: approve ? 'approve' : 'reject',
-      version: item.version,
-      // The approval names the artifact this read returned, so a concurrent
-      // version cannot be approved on the caller's behalf.
-      ...item.artifactHash === null ? {} : { hash: item.artifactHash },
-      ...note === undefined || note.trim().length === 0 ? {} : { note: note.trim() },
-    })
     return await this.overview()
   }
 

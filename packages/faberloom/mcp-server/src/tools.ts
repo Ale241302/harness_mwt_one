@@ -953,35 +953,6 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   },
   {
     definition: {
-      name: 'faberloom_board_review',
-      description: 'Aprueba o rechaza una revisión exacta. Aprobar exige el hash visto y no envía ni concede autonomía.',
-      inputSchema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['id', 'decision', 'version'],
-        properties: {
-          id: { type: 'string' },
-          decision: { type: 'string', description: 'approve o reject.' },
-          version: { type: 'number', description: 'Revisión exacta revisada.' },
-          hash: { type: 'string', description: 'Hash del artefacto revisado; obligatorio al aprobar.' },
-          note: { type: 'string' },
-        },
-      },
-    },
-    run: async (context, ownerId, args, companyId) => {
-      const note = optional(args, 'note')
-      const hash = optional(args, 'hash')
-      const item = await context.faberloomBoard.review(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
-        decision: required(args, 'decision') === 'approve' ? 'approve' : 'reject',
-        version: num(args, 'version') ?? 0,
-        ...hash === undefined ? {} : { hash },
-        ...note === undefined ? {} : { note },
-      })
-      return { id: String(item.id), status: item.status, approvedRevision: item.approvedRevision, version: item.version }
-    },
-  },
-  {
-    definition: {
       name: 'faberloom_board_reopen',
       description: 'Reabre un elemento para corregirlo conservando su historia.',
       inputSchema: {
@@ -1076,6 +1047,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
           evidence: { type: 'array', items: { type: 'string' } },
           spaceId: { type: 'string' },
           accountRef: { type: 'string' },
+          assigneeId: { type: 'string', description: 'Agente del catálogo responsable del ítem.' },
+          actionType: { type: 'string', description: 'Tipo de acción que el ítem decide; por defecto mesa.decide.' },
           artifactType: { type: 'string' },
           valueAmount: { type: 'number' },
           valueCurrency: { type: 'string' },
@@ -1092,6 +1065,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       const spaceId = optional(args, 'spaceId')
       const accountRef = optional(args, 'accountRef')
       const artifactType = optional(args, 'artifactType')
+      const assigneeId = optional(args, 'assigneeId')
+      const actionType = optional(args, 'actionType')
       const title = optional(args, 'title')
       const valueAmount = num(args, 'valueAmount')
       const valueCurrency = optional(args, 'valueCurrency')
@@ -1111,6 +1086,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         ...spaceId === undefined ? {} : { spaceId },
         ...accountRef === undefined ? {} : { accountRef },
         ...artifactType === undefined ? {} : { artifactType },
+        ...assigneeId === undefined ? {} : { assigneeId },
+        ...actionType === undefined ? {} : { actionType },
         ...valueAmount === undefined ? {} : { valueAmount },
         ...valueCurrency === undefined ? {} : { valueCurrency },
         ...valueFxRate === undefined ? {} : { valueFxRate },
@@ -1159,6 +1136,29 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         num(args, 'rowVersion'),
       )
       return { id: String(item.id), severity: item.severity, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_reclassify',
+      description: 'Asienta la clase de datos definitiva de un elemento. Subirla invalida la caché de clasificación del tenant (W-94).',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'dataClass'],
+        properties: {
+          id: { type: 'string' },
+          dataClass: { type: 'string', enum: ['N0', 'N1', 'N2', 'N3', 'N4'] },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.reclassify(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        required(args, 'dataClass') as never,
+      )
+      return { id: String(item.id), dataClass: item.dataClass, provisional: item.dataClassProvisional }
     },
   },
   {

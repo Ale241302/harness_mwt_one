@@ -185,6 +185,8 @@ export function rawBoardItem(overrides: Partial<BoardItemRecord> = {}): BoardIte
     companyId: COMPANY_A,
     spaceId: null,
     routineId: null,
+    assigneeId: null,
+    actionType: 'mesa.decide',
     title: 'Proforma heredada',
     status: 'waiting_approval',
     state: 'PENDIENTE_CRITERIO',

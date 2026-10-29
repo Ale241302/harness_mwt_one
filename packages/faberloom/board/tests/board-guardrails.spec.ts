@@ -190,4 +190,71 @@ describe('Mesa guardrails', () => {
     })
     expect(item).toMatchObject({ severity: null, state: 'PENDIENTE_CRITERIO' })
   })
+
+  it('W-25 · the artifact reference is opaque and no signed URL is stored', async () => {
+    const { board } = await bootBoard()
+    const item = await board.submit(ACTOR_A, {
+      runId: 'run-url',
+      idempotencyKey: 'idem-url',
+      businessKey: 'bkey-url',
+      summary: 'documento listo',
+      evidence: ['documento:OC-1 (kind=OC)'],
+      artifactType: 'tarea',
+      documentRef: 'artifact:9f2c',
+    })
+    expect(item.revisions.at(-1)?.documentRef).toBe('artifact:9f2c')
+    // The item and its audit never carry a URL: the reference is opaque (W-25).
+    expect(JSON.stringify(item)).not.toMatch(/https?:\/\//u)
+  })
+
+  it('W-94 · raising the class invalidates the cached classifications of the tenant', async () => {
+    const harness = await bootBoard()
+    const fake = classifier()
+    harness.ctx.provide('faberloomBoardClassifier', fake.port)
+
+    const submit = async (suffix: string) => await harness.board.submit(ACTOR_A, {
+      runId: `run-${suffix}`,
+      idempotencyKey: `idem-${suffix}`,
+      businessKey: `bkey-${suffix}`,
+      summary: 'sin regla determinista',
+      evidence: ['oc:9'],
+      artifactType: 'desconocido',
+    })
+
+    const first = await submit('r1')
+    await submit('r2')
+    expect(fake.calls).toHaveLength(1)
+
+    const raised = await harness.board.reclassify(ACTOR_A, first.id, 'N3')
+    expect(raised).toMatchObject({ dataClass: 'N3', dataClassProvisional: false })
+    expect(raised.events.at(-1)).toMatchObject({ command: 'reclassify' })
+
+    // The cached answer was computed under the old context: it must be gone.
+    await submit('r3')
+    expect(fake.calls).toHaveLength(2)
+  })
+})
+
+describe('Mesa exchange-rate port', () => {
+  it('D-3 - an unquoted currency asks the deployment port, and an unquoted one is refused', async () => {
+    const harness = await bootBoard()
+    harness.ctx.provide('faberloomBoardFx', {
+      usdRate: async (currency: string) =>
+        currency === 'CRC' ? { rate: 0.002, source: 'MWT ONE', date: '2026-10-29' } : undefined,
+    })
+    const converted = await harness.board.submit(ACTOR_A, {
+      runId: 'run-fx-port', idempotencyKey: 'idem-fx-port', businessKey: 'bkey-fx-port',
+      summary: 'pedido en colones', evidence: ['oc:10'], artifactType: 'tarea',
+      valueAmount: 1000, valueCurrency: 'CRC',
+    })
+    expect(converted).toMatchObject({
+      valueUsd: 2, valueFxRate: 0.002, valueFxSource: 'MWT ONE', valueFxDate: '2026-10-29',
+    })
+
+    await expect(harness.board.submit(ACTOR_A, {
+      runId: 'run-fx-eur', idempotencyKey: 'idem-fx-eur', businessKey: 'bkey-fx-eur',
+      summary: 'pedido en euros', evidence: ['oc:11'], artifactType: 'tarea',
+      valueAmount: 100, valueCurrency: 'EUR',
+    })).rejects.toThrow('FX_RATE_REQUIRED')
+  })
 })

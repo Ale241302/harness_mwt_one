@@ -282,3 +282,18 @@ describe('faberloom-checks-mwt plugin', () => {
     expect(price?.result).toMatchObject({ status: 'fail', reason: 'SOURCE_UNAVAILABLE', source: 'unavailable' })
   })
 })
+
+describe('MWT ONE exchange rate', () => {
+  it('maps only the quoted pairs and turns units-per-USD into a USD multiplier', () => {
+    expect(plugin.fxPair('CRC')).toBe('usd-crc')
+    expect(plugin.fxPair('BRL')).toBe('usd-brl')
+    expect(plugin.fxPair('EUR')).toBeUndefined()
+
+    expect(plugin.usdRateOf('CRC', { rate: 460, source: 'BCCR', timestamp: '2026-10-29T12:00:00Z' }))
+      .toEqual({ rate: 1 / 460, source: 'BCCR', date: '2026-10-29' })
+    expect(plugin.usdRateOf('BRL', { rate: 5.2 })).toMatchObject({ rate: 1 / 5.2, source: 'MWT ONE' })
+    expect(plugin.usdRateOf('EUR', { rate: 1.1 })).toBeUndefined()
+    expect(plugin.usdRateOf('CRC', { rate: 0 })).toBeUndefined()
+    expect(plugin.usdRateOf('CRC', { rate: 'nope' })).toBeUndefined()
+  })
+})

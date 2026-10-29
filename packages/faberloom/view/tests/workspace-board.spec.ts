@@ -896,7 +896,7 @@ describe('FaberLoomViewService space lifecycle', () => {
 })
 
 describe('FaberLoomViewService board actions', () => {
-  it('submits a revision, moves exceptions, and reviews with a note', async () => {
+  it('submits a revision and moves exceptions', async () => {
     const { view, board } = harness()
     await view.submitBoardRevision('b1', { summary: 'proforma lista', evidence: ['doc-1'] })
     expect(board.submitRevision).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { summary: 'proforma lista', evidence: ['doc-1'] })
@@ -907,20 +907,13 @@ describe('FaberLoomViewService board actions', () => {
     expect(board.fail).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1')
     await view.boardException('b1', 'complete')
     expect(board.complete).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1')
-
-    await view.reviewBoardItem('b1', true, 'revisado contra MWT')
-    expect(board.review).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { decision: 'approve', version: 3, hash: 'h1', note: 'revisado contra MWT' })
-    await view.reviewBoardItem('b1', false)
-    expect(board.review).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { decision: 'reject', version: 3, hash: 'h1' })
   })
 
   it('refuses every board write for a read-only identity', async () => {
     const { view, board } = harness({ readOnly: true })
     await expect(view.submitBoardRevision('b1', { summary: 's', evidence: ['e'] })).rejects.toThrow('read-only')
     await expect(view.boardException('b1', 'fail')).rejects.toThrow('read-only')
-    await expect(view.reviewBoardItem('b1', true)).rejects.toThrow('read-only')
     expect(board.submitRevision).not.toHaveBeenCalled()
-    expect(board.review).not.toHaveBeenCalled()
   })
 
   it('imports a shared Space with its workspace', async () => {

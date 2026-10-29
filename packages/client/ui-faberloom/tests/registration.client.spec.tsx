@@ -34,6 +34,7 @@ const OVERVIEW = {
   board: [{
     id: 'item-1', title: 'Preparar proforma', status: 'waiting_approval', state: 'PENDIENTE_CRITERIO',
     column: 'TU_CRITERIO', severity: 'MEDIUM', routineId: null, spaceId: null, accountRef: 'eguisa',
+    assigneeId: 'agent-1', actionType: 'mesa.decide',
     artifactType: 'proforma', dueAt: null, valueUsd: null, hasCandidate: false, hasDraft: false,
   }],
   routines: [{ id: 'routine-1', name: 'Pedido a proforma', status: 'active' }],
@@ -48,7 +49,7 @@ const DETAIL = {
   column: 'TU_CRITERIO', version: 1, rowVersion: 2, summary: 'Borrador', evidence: ['oc:505288'],
   approvedRevision: null, stale: false, staleReason: null, severity: 'MEDIUM', severitySource: 'HUMAN',
   severityConfidence: null, dueAt: null, valueUsd: 1200, dataClass: 'N2', dataClassProvisional: true,
-  artifactType: 'proforma', accountRef: 'eguisa', artifactHash: 'h1', runId: 'run-1', supersedesItemId: null,
+  artifactType: 'proforma', accountRef: 'eguisa', assigneeId: 'agent-1', actionType: 'mesa.decide', autonomyLevel: 'SUPERVISADO', artifactHash: 'h1', runId: 'run-1', supersedesItemId: null,
   pendingCandidate: null, spaceId: null, iterationId: null, iterationDraftKey: null, editDraft: null,
   events: [], effects: [], routineId: null,
   checks: [], missingChecks: [], checksError: null, fieldOrigins: [], transferredDrafts: [], checksDeclared: [],
@@ -101,7 +102,6 @@ async function bench(
   const createAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const renameAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const deactivateAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
-  const reviewBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const deleteBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const createRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const setRoutineActive = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
@@ -129,6 +129,9 @@ async function bench(
     },
   }))
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardViews = vi.fn(async () => ({ ok: true, value: [] }))
+  const boardSaveView = vi.fn(async () => ({ ok: true, value: [] }))
+  const boardRemoveView = vi.fn(async () => ({ ok: true, value: [] }))
   const boardSetSeverity = vi.fn(async () => ({ ok: true, value: undefined }))
   const boardSaveEdits = vi.fn(async (): Promise<unknown> => ({
     ok: true, value: { detail: null, correctionError: null },
@@ -278,8 +281,9 @@ async function bench(
   const probeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { ok: true, tools: [] } }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
-    deactivateAgent, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
-    spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, setBoardRoutine, prepareHarness,
+    deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
+    spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
+    boardSaveView, boardRemoveView, setBoardRoutine, prepareHarness,
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
     boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
@@ -384,7 +388,8 @@ async function bench(
   const view = runtime.renderRoot()
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
-    deleteBoardItem, boardDetail, boardSaveEdits, boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
+    deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardSaveEdits,
+    boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
     boardSetSeverity, boardSaveDraft, boardAssignWorkspace, boardDiscard, boardResolveCandidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
     boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationRecover,
@@ -1110,6 +1115,7 @@ describe('faberloom surface', () => {
     })
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     await view.findByText('③ Draft')
+    ;(view.getByRole('article') as HTMLElement).focus()
     fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
     fireEvent.keyDown(window, { key: 's', ctrlKey: true })
     expect(await view.findByText(/NO_ACCESS/u)).toBeTruthy()
@@ -1121,6 +1127,7 @@ describe('faberloom surface', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     await view.findByText('③ Draft')
 
+    ;(view.getByRole('article') as HTMLElement).focus()
     fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
     fireEvent.keyDown(window, { key: 's', ctrlKey: true })
     await waitFor(() => {
@@ -1130,6 +1137,11 @@ describe('faberloom surface', () => {
     fireEvent.keyDown(window, { key: 'v' })
     expect(await view.findByText(faberloomEn['mesa.account'])).toBeTruthy()
 
+    // Shortcuts are card commands: the List offers no card, so R waits until the
+    // reader is back in Foco with the card focused (§9.9).
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.tab.foco'] }))
+    await view.findByText('③ Draft')
+    ;(view.getByRole('article') as HTMLElement).focus()
     fireEvent.keyDown(window, { key: 'r' })
     expect(await view.findByText(faberloomEn['mesa.notStale'])).toBeTruthy()
   })
@@ -2374,6 +2386,7 @@ describe('mesa decision safety, filters, rounds, and grouping', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     await view.findByText('③ Draft')
 
+    ;(view.getByRole('article') as HTMLElement).focus()
     fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
     fireEvent.keyDown(window, { key: 'a' })
     expect(await view.findByRole('dialog')).toBeTruthy()
@@ -2550,6 +2563,7 @@ describe('mesa traceability (W criteria)', () => {
     )
     await waitFor(() => { expect(boardSetSeverity).toHaveBeenCalledWith('item-1', 'HIGH', 2, 'HUMAN', null) })
 
+    ;(view.getByRole('article') as HTMLElement).focus()
     fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
     fireEvent.keyDown(window, { key: 's', ctrlKey: true })
     await waitFor(() => {
@@ -2783,6 +2797,41 @@ describe('mesa traceability (W criteria)', () => {
     expect(kanbanScreen.queryByText('③ Draft')).toBeNull()
   })
 
+  it('W-90 / §9.9 · the detail exposes its zones in the order the keyboard walks them', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+    const zones = [...view.container.querySelectorAll('[data-zone]')].map(node => node.getAttribute('data-zone'))
+    expect(zones).toEqual(['1', '2', '3', '4', '5', '6', '7'])
+  })
+
+  it('W-71 / §9.9 · a shortcut acts only inside the card and never behind a dialog', async () => {
+    const { runtime, view, boardDetail, boardApprove } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    const article = await waitFor(() => {
+      const node = view.container.querySelector('article')
+      if (node === null) throw new Error('detail not rendered')
+      return node as HTMLElement
+    })
+
+    // Outside the card the letter command does nothing.
+    ;(document.body as HTMLElement).focus()
+    fireEvent.keyDown(document.body, { key: 'd' })
+    expect(view.queryByRole('dialog')).toBeNull()
+
+    // Inside the card it opens its own panel.
+    article.focus()
+    fireEvent.keyDown(article, { key: 'd' })
+    const dialog = await view.findByRole('dialog')
+
+    // With the panel open, no letter command runs behind it.
+    fireEvent.keyDown(dialog, { key: 'a' })
+    expect(boardApprove).not.toHaveBeenCalled()
+    expect(view.getAllByRole('dialog')).toHaveLength(1)
+  })
+
   it('W-30 · a delegated item opened from Kanban offers Revert, and only its button reverts', async () => {
     const { runtime, view, boardDetail, boardEffectStatus, boardEffectRevert } = await bench({
       ok: true,
@@ -2810,5 +2859,69 @@ describe('mesa traceability (W criteria)', () => {
     await waitFor(() => {
       expect(boardEffectRevert).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2, reason: 'ERROR_ORIGEN' })
     })
+  })
+})
+
+it('§9.6 / §7.1 · the detail names the agent and the autonomy level of its unit', async () => {
+  const { runtime, view, boardDetail } = await bench()
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+  expect(view.getByText('Agent: agent-1')).toBeTruthy()
+  expect(view.getByText('Autonomy: Supervised')).toBeTruthy()
+})
+
+it('§9.4 · saves, applies, and removes a named view', async () => {
+  const { runtime, view, boardDetail, boardViews, boardSaveView, boardRemoveView } = await bench()
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  const saved = {
+    name: 'Eguisa alta', filters: { spaceId: null, accountRef: 'eguisa', assigneeId: null, severity: 'HIGH', due: 'all' as const },
+    createdAt: '2026-10-29T00:00:00Z', updatedAt: '2026-10-29T00:00:00Z',
+  }
+  boardViews.mockResolvedValue({ ok: true, value: [saved] } as never)
+  boardSaveView.mockResolvedValue({ ok: true, value: [saved] } as never)
+  boardRemoveView.mockResolvedValue({ ok: true, value: [] } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+
+  const viewSelect = await view.findByRole('combobox', { name: faberloomEn['mesa.views'] })
+  await waitFor(() => { expect(within(viewSelect).getByRole('option', { name: 'Eguisa alta' })).toBeTruthy() })
+  fireEvent.change(viewSelect, { target: { value: 'Eguisa alta' } })
+  expect((view.getByRole('combobox', { name: faberloomEn['mesa.account'] }) as HTMLSelectElement).value).toBe('eguisa')
+  expect((view.getByRole('combobox', { name: faberloomEn['mesa.severity'] }) as HTMLSelectElement).value).toBe('HIGH')
+
+  // Saving takes the current filters and the typed name.
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.views.save'] }))
+  fireEvent.change(view.getByRole('textbox', { name: faberloomEn['mesa.views.name'] }), { target: { value: 'Mi vista' } })
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.views.save'] }))
+  await waitFor(() => {
+    expect(boardSaveView).toHaveBeenCalledWith('Mi vista', {
+      spaceId: null, accountRef: 'eguisa', assigneeId: null, severity: 'HIGH', due: 'all',
+    })
+  })
+
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.views.remove'] }))
+  await waitFor(() => { expect(boardRemoveView).toHaveBeenCalledWith('Mi vista') })
+})
+
+it('§9.4 · filters the queue by the agent responsible', async () => {
+  const row = OVERVIEW.board[0]
+  const overview = {
+    ...OVERVIEW,
+    board: [
+      { ...row, id: 'item-a', title: 'PF 1000', assigneeId: 'agent-1' },
+      { ...row, id: 'item-b', title: 'PF 2000', assigneeId: 'agent-2' },
+    ],
+  }
+  const { runtime, view, boardDetail } = await bench({ ok: true, value: overview })
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+
+  const agent = view.getByRole('combobox', { name: faberloomEn['mesa.agent'] })
+  fireEvent.change(agent, { target: { value: 'agent-2' } })
+  await waitFor(() => {
+    expect(view.queryAllByRole('button', { name: /PF 1000/u })).toHaveLength(0)
+    expect(view.getAllByRole('button', { name: /PF 2000/u }).length).toBeGreaterThan(0)
   })
 })

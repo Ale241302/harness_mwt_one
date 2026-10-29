@@ -77,6 +77,10 @@ export const boardItemRecord = z.object({
   spaceId: z.string().nullable(),
   /** Routine this task feeds, or null when it is standalone. */
   routineId: z.string().nullable().default(null),
+  /** Catalog agent responsible for the item, or null when none is assigned (D-1). */
+  assigneeId: z.string().nullable().default(null),
+  /** Action type the item decides or executes; the autonomy unit reads it. */
+  actionType: z.string().default('mesa.decide'),
   title: z.string(),
   status: z.union([
     z.literal('in_progress'), z.literal('waiting_data'), z.literal('waiting_approval'), z.literal('approved'),
@@ -407,6 +411,32 @@ export const effectEventRecord = z.object({
 export type EffectEventRecord = z.infer<typeof effectEventRecord>
 
 /**
+ * One saved board view: a name and the filters it restores, owned by one
+ * identity. Saving the same name again replaces the filters (§9.4).
+ */
+export const boardViewRecord = z.object({
+  /** Owner the view belongs to. */
+  ownerId: z.string(),
+  /** Name the owner chose. */
+  name: z.string(),
+  /** Filters the view restores. */
+  filters: z.object({
+    spaceId: z.string().nullable(),
+    accountRef: z.string().nullable(),
+    assigneeId: z.string().nullable(),
+    severity: z.string().nullable(),
+    due: z.string(),
+  }),
+  /** ISO-8601 creation instant. */
+  createdAt: z.string(),
+  /** ISO-8601 last write. */
+  updatedAt: z.string(),
+})
+
+/** One stored saved view. */
+export type BoardViewRecord = z.infer<typeof boardViewRecord>
+
+/**
  * One cached classification. The key carries every input that can change the
  * answer, including the rules and policy versions and the model version, so an
  * entry written under other rules is never reused (§5.1, W-51).
@@ -451,5 +481,6 @@ export const boardDomainSpec = defineDomain({
     effect_alerts: domainTable<string, EffectAlertRecord>(effectAlertRecord),
     effect_events: domainTable<string, EffectEventRecord>(effectEventRecord),
     classification_cache: domainTable<string, ClassificationCacheRecord>(classificationCacheRecord),
+    views: domainTable<string, BoardViewRecord>(boardViewRecord),
   },
 })

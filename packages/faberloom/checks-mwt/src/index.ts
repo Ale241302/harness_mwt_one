@@ -58,13 +58,52 @@ export interface Config {
    * control reports failure instead of waiting (ADR-003).
    */
   readonly toolTimeoutMs?: number
+  /**
+   * Whether this row also provides `faberloomBoardFx`, the MWT ONE rate port
+   * the board converts non-USD amounts with (D-3). Defaults to true.
+   */
+  readonly fx?: boolean
 }
 
 /** Validated configuration; both fields are deployment choices. */
 export const Config: z<Config> = z.object({
   serverName: z.string().pattern(SERVER_NAME).default(DEFAULT_SERVER_NAME),
   toolTimeoutMs: z.natural().min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_TOOL_TIMEOUT_MS),
+  fx: z.boolean().default(true),
 })
+
+/**
+ * The MWT ONE pair that quotes one currency. Only the pairs the console serves
+ * are mapped; anything else has no quote and the board refuses the amount.
+ * @param currency - ISO code the producer billed in.
+ * @returns the pair, or undefined when MWT does not quote it.
+ */
+export function fxPair(currency: string): string | undefined {
+  if (currency === 'CRC') return 'usd-crc'
+  if (currency === 'BRL') return 'usd-brl'
+  return undefined
+}
+
+/**
+ * Turn one `tipo_cambio` answer into the amount-to-USD multiplier. MWT reports
+ * units of the second currency per USD, so the multiplier is its reciprocal.
+ * @param currency - ISO code the producer billed in.
+ * @param payload - the tool answer.
+ * @returns the multiplier with its source and date, or undefined when invalid.
+ */
+export function usdRateOf(
+  currency: string,
+  payload: unknown,
+): { readonly rate: number; readonly source: string; readonly date: string } | undefined {
+  if (fxPair(currency) === undefined) return undefined
+  const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+  const quoted = Number(record['rate'])
+  if (!Number.isFinite(quoted) || quoted <= 0) return undefined
+  const source = typeof record['source'] === 'string' && record['source'].trim().length > 0 ? record['source'] : 'MWT ONE'
+  const stamp = typeof record['timestamp'] === 'string' ? Date.parse(record['timestamp']) : Number.NaN
+  const date = Number.isNaN(stamp) ? new Date().toISOString().slice(0, 10) : new Date(stamp).toISOString().slice(0, 10)
+  return { rate: 1 / quoted, source, date }
+}
 
 /**
  * Mount the six proforma controls on the board service.
@@ -88,4 +127,22 @@ export function apply(ctx: Context, config: Config = {}): void {
     return result.value
   })
   ctx.effect(() => registerProformaChecks(ctx.faberloomBoard, client), 'faberloom.proformaChecks')
+  if (config.fx !== false) {
+    ctx.provide('faberloomBoardFx', {
+      usdRate: async (currency: string) => {
+        const pair = fxPair(currency)
+        if (pair === undefined) return undefined
+        calls += 1
+        const toolName = `mcp__${serverName}__tipo_cambio`
+        const result = await ctx.tools.execute({
+          callId: ToolCallId(`faberloom-fx-mwt-${String(calls)}`),
+          name: toolName,
+          arguments: { par: pair },
+          signal: AbortSignal.timeout(toolTimeoutMs),
+        }).catch(() => undefined)
+        if (result === undefined || result.isError) return undefined
+        return usdRateOf(currency, result.value)
+      },
+    })
+  }
 }

@@ -236,21 +236,23 @@ describe('FaberLoomBoard E10 commands', () => {
     const item = await submitOne(board)
     const withSeverity = await board.setSeverity(ACTOR_A, item.id, 'MEDIUM', 'HUMAN')
 
-    await expect(board.review(ACTOR_A, item.id, { decision: 'approve', version: 1 }))
-      .rejects.toThrow('STALE_REVISION')
-    await expect(board.review(ACTOR_A, item.id, { decision: 'approve', version: 1, hash: 'hash-que-nadie-vio' }))
-      .rejects.toThrow('STALE_REVISION')
+    await expect(board.approve(ACTOR_A, item.id, {
+      expectedRowVersion: withSeverity.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: '',
+    })).rejects.toThrow('STALE_REVISION')
+    await expect(board.approve(ACTOR_A, item.id, {
+      expectedRowVersion: withSeverity.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: 'hash-que-nadie-vio',
+    })).rejects.toThrow('STALE_REVISION')
     expect((await board.get(ACTOR_A, item.id)).state).toBe('PENDIENTE_CRITERIO')
 
     const edited = await board.saveEdits(ACTOR_A, item.id, {
       expectedRowVersion: withSeverity.rowVersion, baseVersion: 1, changes: { summary: 'v2' },
     })
-    await expect(board.review(ACTOR_A, item.id, {
-      decision: 'approve', version: 2, hash: item.artifactHash ?? '',
+    await expect(board.approve(ACTOR_A, item.id, {
+      expectedRowVersion: edited.rowVersion, expectedArtifactVersion: 2, expectedArtifactHash: item.artifactHash ?? '',
     })).rejects.toThrow('STALE_REVISION')
 
-    const approved = await board.review(ACTOR_A, item.id, {
-      decision: 'approve', version: 2, hash: edited.artifactHash ?? '',
+    const approved = await board.approve(ACTOR_A, item.id, {
+      expectedRowVersion: edited.rowVersion, expectedArtifactVersion: 2, expectedArtifactHash: edited.artifactHash ?? '',
     })
     expect(approved).toMatchObject({ state: 'APROBADO', approvedRevision: 2 })
   })

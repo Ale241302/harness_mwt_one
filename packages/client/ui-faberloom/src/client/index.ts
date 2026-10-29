@@ -163,11 +163,6 @@ export function apply(ctx: ClientContext): void {
       },
       deactivateAgent: (id) => { write(() => ctx.remote.faberloomView.deleteAgent(id)) },
       purgeAgent: (id) => { write(() => ctx.remote.faberloomView.purgeAgent(id)) },
-      reviewBoardItem: (id, approve, note) => {
-        const run = ctx.remote.faberloomView.reviewBoardItem(id, approve, note)
-        write(() => run)
-        return run
-      },
       reopenBoardItem: (id) => { const run = ctx.remote.faberloomView.reopenBoardItem(id); write(() => run); return run },
       submitBoardRevision: (id, input) => {
         const run = ctx.remote.faberloomView.submitBoardRevision(id, input)
@@ -427,6 +422,9 @@ export function apply(ctx: ClientContext): void {
         return run
       },
       boardDetail: id => ctx.remote.faberloomView.boardDetail(id),
+      boardViews: () => ctx.remote.faberloomView.boardViews(),
+      boardSaveView: (name, filters) => ctx.remote.faberloomView.boardSaveView(name, filters),
+      boardRemoveView: name => ctx.remote.faberloomView.boardRemoveView(name),
       deleteBoardItem: (id) => {
         const run = ctx.remote.faberloomView.deleteBoardItem(id)
         write(() => run)

@@ -28,7 +28,10 @@ describe('FaberLoomBoard', () => {
     const item = await board.create(OWNER, { title: 'Proforma Eguisa', summary: 'borrador', evidence: ['mw:price:701414'] })
     expect(item).toMatchObject({ status: 'waiting_approval', version: 1 })
     await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
-    const approved = await board.review(OWNER, item.id, { decision: 'approve', version: 1, hash: item.artifactHash ?? '' })
+    const current = await board.get(ACTOR, item.id)
+    const approved = await board.approve(OWNER, item.id, {
+      expectedRowVersion: current.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })
     expect(approved.status).toBe('approved')
     expect(approved.approvedRevision).toBe(1)
     expect(approved.effects).toEqual([])
@@ -51,27 +54,39 @@ describe('FaberLoomBoard', () => {
   it('F05 · approval binds to the exact revision and survives a correction as history', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'x', summary: 'v1', evidence: ['ev'] })
-    await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
-    await board.review(OWNER, item.id, { decision: 'approve', version: 1, hash: item.artifactHash ?? '' })
+    const withSeverity = await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
+    await board.approve(OWNER, item.id, {
+      expectedRowVersion: withSeverity.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })
     const corrected = await board.submitRevision(OWNER, item.id, { summary: 'v2', evidence: ['ev2'] })
     expect(corrected).toMatchObject({ version: 2, status: 'waiting_approval', approvedRevision: 1 })
-    await expect(board.review(OWNER, item.id, { decision: 'approve', version: 1, hash: item.artifactHash ?? '' })).rejects.toThrow('STALE_REVISION')
-    const approved = await board.review(OWNER, item.id, { decision: 'approve', version: 2, hash: corrected.artifactHash ?? '' })
+    await expect(board.approve(OWNER, item.id, {
+      expectedRowVersion: corrected.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })).rejects.toThrow('STALE_REVISION')
+    const approved = await board.approve(OWNER, item.id, {
+      expectedRowVersion: corrected.rowVersion, expectedArtifactVersion: 2, expectedArtifactHash: corrected.artifactHash ?? '',
+    })
     expect(approved.approvedRevision).toBe(2)
   })
 
   it('F09 · a change after approval goes stale and blocks approval and effects until revalidated', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'x', summary: 'v1', evidence: ['ev'] })
-    await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
-    await board.review(OWNER, item.id, { decision: 'approve', version: 1, hash: item.artifactHash ?? '' })
+    const withSeverity = await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
+    await board.approve(OWNER, item.id, {
+      expectedRowVersion: withSeverity.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })
     const stale = await board.markStale(OWNER, item.id, 'price changed')
     expect(stale).toMatchObject({ stale: true, status: 'needs_review', approvedRevision: null })
-    await expect(board.review(OWNER, item.id, { decision: 'approve', version: 1, hash: item.artifactHash ?? '' })).rejects.toThrow('REVALIDATION_REQUIRED')
+    await expect(board.approve(OWNER, item.id, {
+      expectedRowVersion: stale.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })).rejects.toThrow('REVALIDATION_REQUIRED')
     await expect(board.recordEffect(OWNER, item.id, { ref: 'mail:1', authorization: 'a' })).rejects.toThrow('REVALIDATION_REQUIRED')
     const revalidated = await board.revalidate(OWNER, item.id, false)
     expect(revalidated).toMatchObject({ stale: false, staleReason: null, status: 'needs_review' })
-    const approved = await board.review(OWNER, item.id, { decision: 'approve', version: 1, hash: item.artifactHash ?? '' })
+    const approved = await board.approve(OWNER, item.id, {
+      expectedRowVersion: revalidated.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })
     expect(approved.status).toBe('approved')
   })
 
@@ -81,9 +96,8 @@ describe('FaberLoomBoard', () => {
     expect((await board.requestData(OWNER, item.id)).status).toBe('waiting_data')
     expect((await board.fail(OWNER, item.id)).status).toBe('failed')
     expect((await board.reopen(OWNER, item.id)).status).toBe('reopened')
-    expect((await board.review(OWNER, item.id, { decision: 'reject', version: 1 })).status).toBe('reopened')
 
-    await expect(board.review('otro', item.id, { decision: 'approve', version: 1, hash: item.artifactHash ?? '' })).rejects.toThrow('NO_ACCESS')
+    await expect(board.approve('otro', item.id, { expectedRowVersion: item.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '' })).rejects.toThrow('NO_ACCESS')
     await expect(board.submitRevision('otro', item.id, { summary: 's', evidence: ['e'] })).rejects.toThrow('NO_ACCESS')
     await expect(board.recordEffect('otro', item.id, { ref: 'r', authorization: 'a' })).rejects.toThrow('NO_ACCESS')
     await expect(board.markStale('otro', item.id, 'x')).rejects.toThrow('NO_ACCESS')

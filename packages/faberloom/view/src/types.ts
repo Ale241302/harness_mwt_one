@@ -173,6 +173,10 @@ export interface FaberLoomBoardRow {
   readonly spaceId: string | null
   /** Account/client reference, or null. */
   readonly accountRef: string | null
+  /** Catalog agent responsible for the item, or null. */
+  readonly assigneeId: string | null
+  /** Action type the item decides or executes. */
+  readonly actionType: string
   /** Artifact type. */
   readonly artifactType: string
   /** Deadline in UTC, or null. */
@@ -687,6 +691,12 @@ export interface FaberLoomBoardDetail {
   readonly artifactType: string
   /** Account/client reference, or null. */
   readonly accountRef: string | null
+  /** Catalog agent responsible for the item, or null. */
+  readonly assigneeId: string | null
+  /** Action type the item decides or executes. */
+  readonly actionType: string
+  /** Autonomy level of the item's unit; `SHADOW` when no unit is registered. */
+  readonly autonomyLevel: string
   /** Artifact hash, or null. */
   readonly artifactHash: string | null
   /** Run that created the item, or null. */
@@ -1268,6 +1278,31 @@ export interface FaberLoomBoardIterationContext {
   readonly baseVersion: number | null
 }
 
+/** The filters a saved board view restores (§9.4). */
+export interface FaberLoomBoardViewFilters {
+  /** Space filter, or null for all. */
+  readonly spaceId: string | null
+  /** Account filter, or null for all. */
+  readonly accountRef: string | null
+  /** Assignee filter, or null for all. */
+  readonly assigneeId: string | null
+  /** Severity filter, or null for all. */
+  readonly severity: string | null
+  /** Deadline filter. */
+  readonly due: 'all' | 'overdue' | 'none'
+}
+
+/** One saved board view of the signed-in owner. */
+export interface FaberLoomBoardView {
+  /** Name the owner chose. */
+  readonly name: string
+  /** Filters the view restores. */
+  readonly filters: FaberLoomBoardViewFilters
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+  /** ISO-8601 last write. */
+  readonly updatedAt: string
+}
 /** Editable fields of a new teaching; the author is the signed-in owner. */
 export interface TeachingSaveInput {
   /** Application scope. */

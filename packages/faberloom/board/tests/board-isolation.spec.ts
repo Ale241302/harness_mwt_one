@@ -38,8 +38,8 @@ describe('FaberLoomBoard isolation', () => {
 
     await expect(board.get(noCompany, item.id)).rejects.toThrow('NO_ACCESS')
     expect(await board.list(noCompany)).toEqual([])
-    await expect(board.review(noCompany, item.id, { decision: 'approve', version: 1 })).rejects.toThrow('NO_ACCESS')
-    await expect(board.review({ id: OWNER_A, companyId: COMPANY_B }, item.id, { decision: 'approve', version: 1 })).rejects.toThrow('NO_ACCESS')
+    await expect(board.approve(noCompany, item.id, { expectedRowVersion: item.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '' })).rejects.toThrow('NO_ACCESS')
+    await expect(board.approve({ id: OWNER_A, companyId: COMPANY_B }, item.id, { expectedRowVersion: item.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '' })).rejects.toThrow('NO_ACCESS')
     await expect(board.recordEffect(noCompany, item.id, { ref: 'mail:1', authorization: 'x' })).rejects.toThrow('NO_ACCESS')
   })
 

@@ -1032,7 +1032,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/board/src/index.ts:171`](../packages/faberloom/board/src/index.ts)
+Source: [`packages/faberloom/board/src/index.ts:175`](../packages/faberloom/board/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-checks-mwt"></a>
 
@@ -1057,6 +1057,11 @@ export interface Config {
    * control reports failure instead of waiting (ADR-003).
    */
   readonly toolTimeoutMs?: number
+  /**
+   * Whether this row also provides `faberloomBoardFx`, the MWT ONE rate port
+   * the board converts non-USD amounts with (D-3). Defaults to true.
+   */
+  readonly fx?: boolean
 }
 ```
 

@@ -2712,6 +2712,8 @@ export function apply(ctx: Context, config: Config): void {
       evidence: { type: 'array', required: true, description: 'Readable evidence references; never raw tool dumps or UUIDs.', items: { type: 'string' } },
       artifactType: { type: 'string', description: 'proforma, respuesta, tarea, ...' },
       spaceId: { type: 'string', description: 'Owning space id.' },
+      assigneeId: { type: 'string', description: 'Catalog agent responsible for the item.' },
+      actionType: { type: 'string', description: 'Action type the item decides; defaults to mesa.decide.' },
       valueAmount: { type: 'number', description: 'Amount in the original currency.' },
       valueCurrency: { type: 'string', description: 'ISO currency, for example USD.' },
       dueAt: { type: 'string', description: 'Deadline in UTC.' },
@@ -2734,6 +2736,8 @@ export function apply(ctx: Context, config: Config): void {
         evidence: args.evidence,
         artifactType: args.artifactType ?? 'tarea',
         ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
+        ...args.assigneeId === undefined ? {} : { assigneeId: args.assigneeId },
+        ...args.actionType === undefined ? {} : { actionType: args.actionType },
         ...args.valueAmount === undefined ? {} : { valueAmount: args.valueAmount },
         ...args.valueCurrency === undefined ? {} : { valueCurrency: args.valueCurrency },
         ...args.dueAt === undefined ? {} : { dueAt: args.dueAt },
@@ -2743,59 +2747,6 @@ export function apply(ctx: Context, config: Config): void {
       return { id: item.id, state: item.state, column: item.column, version: item.version }
     },
     presentCall: args => ({ card: 'generic', title: 'Submit Mesa item', kind: 'other', rawInput: args }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'faberloom_board_submit_revision',
-    description: 'Submit a correction as the next revision, awaiting a fresh review.',
-    parameters: {
-      id: ID_PARAM,
-      summary: { type: 'string', required: true, description: 'What the revision contains.' },
-      evidence: { type: 'array', required: true, description: 'Real evidence references.', items: { type: 'string' } },
-      documentRef: { type: 'string', description: 'Opaque document reference.' },
-    },
-    output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} now v${String(value.version)}.` }],
-    },
-    execute: async (args) => {
-      const item = await board(ctx).submitRevision(actor(config), args.id as FaberLoomBoardItemId, {
-        summary: args.summary,
-        evidence: args.evidence,
-        ...args.documentRef === undefined ? {} : { documentRef: args.documentRef },
-      })
-      return { id: item.id, version: item.version }
-    },
-    presentCall: args => ({ card: 'generic', title: 'Submit board revision', kind: 'other', rawInput: args }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'faberloom_board_review',
-    description: 'Approve or reject the exact revision. Approval requires the artifact hash the caller saw and never sends anything.',
-    parameters: {
-      id: ID_PARAM,
-      decision: { type: 'string', required: true, enum: ['approve', 'reject'], description: 'Decision.' },
-      version: { type: 'integer', required: true, description: 'The exact revision reviewed.' },
-      hash: { type: 'string', description: 'Artifact hash of that revision; required to approve.' },
-      note: { type: 'string', description: 'Review note.' },
-    },
-    /* jscpd:ignore-start -- the board id/status output repeats across tools; each owns its execute and render text */
-    output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, status: { type: 'string', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} ${value.status}.` }],
-    },
-    /* jscpd:ignore-end */
-    execute: async (args) => {
-      await authorize(ctx, config, 'faberloom.board.review', args.id)
-      const item = await board(ctx).review(actor(config), args.id as FaberLoomBoardItemId, {
-        decision: args.decision,
-        version: args.version,
-        ...args.hash === undefined ? {} : { hash: args.hash },
-        ...args.note === undefined ? {} : { note: args.note },
-      })
-      return { id: item.id, status: item.status }
-    },
-    presentCall: args => ({ card: 'generic', title: 'Review board item', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({
@@ -2834,57 +2785,6 @@ export function apply(ctx: Context, config: Config): void {
       return { id: item.id, status: item.status }
     },
     presentCall: args => ({ card: 'generic', title: 'Revalidate board item', kind: 'other', rawInput: args }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'faberloom_board_record_effect',
-    description: 'Record an external effect. Approval never sends: an explicit authorization is required.',
-    parameters: {
-      id: ID_PARAM,
-      ref: { type: 'string', required: true, description: 'External reference the effect created.' },
-      authorization: { type: 'string', required: true, description: 'Explicit authorization for this effect.' },
-      detail: { type: 'string', description: 'Effect detail.' },
-    },
-    output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, effects: { type: 'integer', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} effects=${String(value.effects)}.` }],
-    },
-    execute: async (args) => {
-      const item = await board(ctx).recordEffect(actor(config), args.id as FaberLoomBoardItemId, {
-        ref: args.ref,
-        authorization: args.authorization,
-        ...args.detail === undefined ? {} : { detail: args.detail },
-      })
-      return { id: item.id, effects: item.effects.length }
-    },
-    presentCall: args => ({ card: 'generic', title: 'Record board effect', kind: 'other', rawInput: args }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'faberloom_board_exception',
-    description: 'Move a board item into an exception state: request_data, fail, reopen, or complete.',
-    parameters: {
-      id: ID_PARAM,
-      action: { type: 'string', required: true, enum: ['request_data', 'fail', 'reopen', 'complete'], description: 'Exception action.' },
-    },
-    output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, status: { type: 'string', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} ${value.status}.` }],
-    },
-    execute: async (args) => {
-      const service = board(ctx)
-      const id = args.id as FaberLoomBoardItemId
-      const owner = actor(config)
-      const item = args.action === 'request_data'
-        ? await service.requestData(owner, id)
-        : args.action === 'fail'
-          ? await service.fail(owner, id)
-          : args.action === 'reopen'
-            ? await service.reopen(owner, id)
-            : await service.complete(owner, id)
-      return { id: item.id, status: item.status }
-    },
-    presentCall: args => ({ card: 'generic', title: 'Board exception', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({
@@ -3054,6 +2954,67 @@ export function apply(ctx: Context, config: Config): void {
       return { state: item.state }
     },
     presentCall: args => ({ card: 'generic', title: 'Discard item', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_resolve_candidate',
+    description: 'Resolve the version that arrived while the item could not be replaced: adopt it or keep the current one, naming the id and hash the user saw.',
+    parameters: {
+      id: ID_PARAM,
+      candidateId: { type: 'string', required: true, description: 'Candidate id the item reported.' },
+      candidateHash: { type: 'string', required: true, description: 'Candidate hash shown with that id.' },
+      decision: { type: 'string', required: true, enum: ['adopt', 'keep'], description: 'Adopt the new version or keep the current one.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { state: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Item ${value.state} at v${String(value.version)}.` }],
+    },
+    execute: async (args) => {
+      const item = await board(ctx).resolveCandidate(
+        actor(config),
+        args.id as FaberLoomBoardItemId,
+        args.candidateId,
+        args.candidateHash,
+        args.decision,
+      )
+      return { state: item.state, version: item.version }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Resolve candidate', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_assign_workspace',
+    description: 'Assign the item to a Space. A collision follows the substitution rules and returns the live item plus the drafts it moved.',
+    parameters: {
+      id: ID_PARAM,
+      workspaceId: { type: 'string', required: true, description: 'Space id the item is assigned to.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          state: { type: 'string', required: true },
+          spaceId: { type: 'string', required: true },
+          transferred: { type: 'integer', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Item ${value.id} in ${value.spaceId} (${String(value.transferred)} drafts moved).` }],
+    },
+    execute: async (args) => {
+      const assignment = await board(ctx).assignWorkspace(
+        actor(config),
+        args.id as FaberLoomBoardItemId,
+        args.workspaceId,
+      )
+      return {
+        id: assignment.item.id,
+        state: assignment.item.state,
+        spaceId: assignment.item.spaceId ?? '',
+        transferred: assignment.transferredDrafts.length,
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Assign space', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({

@@ -58,6 +58,7 @@ import type {
   FaberLoomBoardExecutionInput, FaberLoomBoardRevertInput, FaberLoomBoardRetryInput,
   FaberLoomBoardReconcileInput, FaberLoomBoardAdminCloseInput, FaberLoomBoardAdminCloseResult,
   FaberLoomBoardEffectOutcome, FaberLoomSignatureRow, SignatureIssueInput,
+  FaberLoomBoardView, FaberLoomBoardViewFilters,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { isDesktopApplication } from './desktop-app.ts'
@@ -141,7 +142,6 @@ export interface FaberloomPanelInjected {
   /** Remove one agent from the catalog permanently. */
   purgeAgent: (id: string) => void
   /** Approve or reject the current board revision, with an optional review note. */
-  reviewBoardItem: (id: string, approve: boolean, note?: string) => Promise<Result<FaberLoomOverview>>
   /** Reopen one reviewed board item for correction. */
   reopenBoardItem: (id: string) => Promise<Result<FaberLoomOverview>>
   /** Submit a prepared result as a new revision awaiting review. */
@@ -485,6 +485,12 @@ export interface FaberloomPanelInjected {
   removeRoutine: (id: string) => Promise<Result<FaberLoomOverview>>
   /** Read one board item's review state. */
   boardDetail: (id: string) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** The saved views of the signed-in owner. */
+  boardViews: () => Promise<Result<readonly FaberLoomBoardView[]>>
+  /** Save or replace one named view. */
+  boardSaveView: (name: string, filters: FaberLoomBoardViewFilters) => Promise<Result<readonly FaberLoomBoardView[]>>
+  /** Remove one named view. */
+  boardRemoveView: (name: string) => Promise<Result<readonly FaberLoomBoardView[]>>
   /** Permanently remove one board item from the work table. */
   deleteBoardItem: (id: string) => Promise<Result<FaberLoomOverview>>
   /** Link one board task to the routine that runs it, or unlink it with null. */
@@ -2575,6 +2581,15 @@ function columnKey(column: string): FaberloomKey {
   }
 }
 
+/** Screen copy for the autonomy level of an item's unit (§7.1). */
+function autonomyKey(level: string): FaberloomKey {
+  switch (level) {
+    case 'DELEGADO': return 'mesa.autonomy.delegado'
+    case 'SUPERVISADO': return 'mesa.autonomy.supervisado'
+    default: return 'mesa.autonomy.shadow'
+  }
+}
+
 /** Calendar day of an ISO instant; the queue never prints a raw timestamp. */
 function dayOf(iso: string): string {
   return iso.slice(0, 10)
@@ -2711,7 +2726,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
 
   return function FaberloomMesa(props: ScreenProps) {
     const {
-      t, boardDetail, boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits,
+      t, boardDetail, boardViews, boardSaveView, boardRemoveView, boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits,
       boardDiscard, boardResolveCandidate, boardAssignWorkspace, boardTakeDraft, boardRevalidate,
       boardSaveDraft, openTaskChat, goToWorkspace,
       boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft,
@@ -2729,6 +2744,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const [spaceFilter, setSpaceFilter] = useState('')
     const [severityFilter, setSeverityFilter] = useState('')
     const [accountFilter, setAccountFilter] = useState('')
+    const [assigneeFilter, setAssigneeFilter] = useState('')
     const [dueFilter, setDueFilter] = useState<'all' | 'overdue' | 'none'>('all')
     // Lista and Kanban group the filtered rows by Space (G7); Foco stays
     // item-by-item and therefore hides the toggle.
@@ -2798,6 +2814,11 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     // inside Foco. A resolved command returns there (W-79); nothing renders it,
     // so it lives in a ref.
     const originView = useRef<'kanban' | 'lista' | null>(null)
+    // The detail card and the Foco container scope the decision shortcuts: they
+    // only act with the reader inside the card, and never while a dialog is open
+    // (§9.9, W-71/W-73).
+    const detailRef = useRef<HTMLElement | null>(null)
+    const cardRef = useRef<HTMLDivElement | null>(null)
 
     /** Switch views by an explicit gesture; a manual switch forgets the origin (W-79). */
     const showView = (next: 'foco' | 'kanban' | 'lista'): void => {
@@ -2849,6 +2870,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const matchesFilters = (row: FaberLoomBoardRow): boolean =>
       (spaceFilter.length === 0 || row.spaceId === spaceFilter)
       && (accountFilter.length === 0 || row.accountRef === accountFilter)
+      && (assigneeFilter.length === 0 || row.assigneeId === assigneeFilter)
       && (severityFilter.length === 0 || row.severity === severityFilter)
       && (dueFilter === 'all'
         || (dueFilter === 'overdue'
@@ -3026,6 +3048,56 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     // Only the accounts the board actually shows belong in the filter.
     const accountOptions = [...new Set(rows.map(row => row.accountRef).filter((account): account is string => account !== null))]
       .sort((left, right) => left.localeCompare(right))
+    // Only the agents the board shows belong in the filter; an item without an
+    // assignee is a normal state, not a missing value (D-1).
+    const assigneeOptions = [...new Set(rows.map(row => row.assigneeId).filter((agent): agent is string => agent !== null))]
+      .sort((left, right) => left.localeCompare(right))
+    // Saved views are the owner's named filters (§9.4); they store no items.
+    const [savedViews, setSavedViews] = useState<readonly FaberLoomBoardView[]>([])
+    const [activeView, setActiveView] = useState('')
+    const [viewName, setViewName] = useState('')
+    const [namingView, setNamingView] = useState(false)
+    useEffect(() => {
+      void boardViews().then((result) => { if (result.ok) setSavedViews(result.value) })
+    }, [])
+    /** Restore the filters one saved view names. */
+    const applySavedView = (name: string): void => {
+      setActiveView(name)
+      const view = savedViews.find(entry => entry.name === name)
+      if (view === undefined) return
+      setSpaceFilter(view.filters.spaceId ?? '')
+      setAccountFilter(view.filters.accountRef ?? '')
+      setAssigneeFilter(view.filters.assigneeId ?? '')
+      setSeverityFilter(view.filters.severity ?? '')
+      setDueFilter(view.filters.due)
+      setSelected(null)
+    }
+    /** Save the current filters under the typed name, replacing that name. */
+    const saveCurrentView = (): void => {
+      const filters: FaberLoomBoardViewFilters = {
+        spaceId: spaceFilter.length === 0 ? null : spaceFilter,
+        accountRef: accountFilter.length === 0 ? null : accountFilter,
+        assigneeId: assigneeFilter.length === 0 ? null : assigneeFilter,
+        severity: severityFilter.length === 0 ? null : severityFilter,
+        due: dueFilter,
+      }
+      void boardSaveView(viewName, filters).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setSavedViews(result.value)
+        setActiveView(viewName.trim())
+        setNamingView(false)
+        setMessage(t('mesa.views.saved'))
+      })
+    }
+    /** Remove the view the selector names. */
+    const removeCurrentView = (): void => {
+      if (activeView.length === 0) return
+      void boardRemoveView(activeView).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setSavedViews(result.value)
+        setActiveView('')
+      })
+    }
 
     /** The highest severity a group carries; null when every row in it is unclassified. */
     const highestSeverity = (input: readonly FaberLoomBoardRow[]): string | null =>
@@ -3122,13 +3194,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       if (view !== 'foco') return
       if (selected !== null && visible.some(row => row.id === selected)) return
       setSelected(visible[0]?.id ?? null)
-    }, [view, spaceFilter, severityFilter, accountFilter, dueFilter, overview])
+    }, [view, spaceFilter, severityFilter, accountFilter, assigneeFilter, dueFilter, overview])
 
     // A different filter set or an empty queue starts a fresh round (G7).
     useEffect(() => {
       setSkipped([])
       setRoundExhausted(false)
-    }, [spaceFilter, severityFilter, accountFilter, dueFilter, queueEmpty])
+    }, [spaceFilter, severityFilter, accountFilter, assigneeFilter, dueFilter, queueEmpty])
 
     // A board view keeps the row the reader came back to; when the queue no
     // longer holds it (an approval closed the item), the selection goes with it
@@ -3802,6 +3874,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       return false
     }
 
+    // Opening an item moves focus into its card, so the decision shortcuts work
+    // without a click and are scoped to the card from the first keystroke.
+    useEffect(() => {
+      if (view !== 'foco' || selected === null) return
+      detailRef.current?.focus()
+    }, [selected, view])
+
     useEffect(() => {
       const onKey = (event: KeyboardEvent): void => {
         if (value === undefined) return
@@ -3819,6 +3898,18 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         // Every other shortcut stays inert inside a field, modifiers included,
         // so typing a draft never leaves the item.
         if (inField) return
+        // A dialog owns the decision while it is open: its own buttons and
+        // Escape handle it, and no letter command can run behind it (§9.9).
+        const dialogOpen = showApprove || showDiscard || showRevert || showReconcile
+          || showRetry || showClose || showSignatures || exitMode !== null
+        if (dialogOpen) return
+        // Shortcuts are card commands: with focus outside the card they do nothing,
+        // so typing in another panel or on the shell never decides an item.
+        const card = cardRef.current
+        const origin = event.target as Node | null
+        const focused = document.activeElement
+        const inside = (node: Node | null): boolean => node !== null && node instanceof Node && card !== null && card.contains(node)
+        if (!inside(origin) && !inside(focused)) return
         // Another tab owns the attempt: its exits stay shut here, keyboard
         // included, so this tab can never finish or save work it does not hold.
         if (command && event.key === 'Enter') {
@@ -3911,29 +4002,65 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
 
     const filters = (
       <span className={`${styles.tools} ${styles.mesaFilters}`}>
-        <select value={spaceFilter} aria-label={t('mesa.space')} onChange={event => setSpaceFilter(event.target.value)}>
+        <select value={spaceFilter} aria-label={t('mesa.space')} onChange={(event) => { setSpaceFilter(event.target.value); setActiveView('') }}>
           <option value="">{t('mesa.allSpaces')}</option>
           {spaceOptions.map(space => (
             <option key={space.id} value={space.id}>{`${'\u00a0\u00a0'.repeat(space.depth)}${space.title}`}</option>
           ))}
         </select>
-        <select value={accountFilter} aria-label={t('mesa.account')} onChange={event => setAccountFilter(event.target.value)}>
+        <select value={accountFilter} aria-label={t('mesa.account')} onChange={(event) => { setAccountFilter(event.target.value); setActiveView('') }}>
           <option value="">{t('mesa.filter.accountAll')}</option>
           {accountOptions.map(account => <option key={account} value={account}>{account}</option>)}
         </select>
-        <select value={severityFilter} aria-label={t('mesa.severity')} onChange={event => setSeverityFilter(event.target.value)}>
+        <select value={assigneeFilter} aria-label={t('mesa.agent')} onChange={(event) => { setAssigneeFilter(event.target.value); setActiveView('') }}>
+          <option value="">{t('mesa.filter.agentAll')}</option>
+          {assigneeOptions.map(agent => <option key={agent} value={agent}>{agent}</option>)}
+        </select>
+        <select value={severityFilter} aria-label={t('mesa.severity')} onChange={(event) => { setSeverityFilter(event.target.value); setActiveView('') }}>
           <option value="">{t('mesa.allSeverities')}</option>
           {SEVERITIES.map(severity => <option key={severity} value={severity}>{t(severityKey(severity))}</option>)}
         </select>
         <select
           value={dueFilter}
           aria-label={t('mesa.filter.due')}
-          onChange={event => setDueFilter(event.target.value as 'all' | 'overdue' | 'none')}
+          onChange={(event) => { setDueFilter(event.target.value as 'all' | 'overdue' | 'none'); setActiveView('') }}
         >
           <option value="all">{t('mesa.filter.dueAll')}</option>
           <option value="overdue">{t('mesa.filter.dueOverdue')}</option>
           <option value="none">{t('mesa.filter.dueNone')}</option>
         </select>
+        <span className={styles.tools}>
+          <select value={activeView} aria-label={t('mesa.views')} onChange={event => applySavedView(event.target.value)}>
+            <option value="">{t('mesa.views.none')}</option>
+            {savedViews.map(view => <option key={view.name} value={view.name}>{view.name}</option>)}
+          </select>
+          {namingView ? (
+            <>
+              <input
+                type="text"
+                value={viewName}
+                placeholder={t('mesa.views.name')}
+                aria-label={t('mesa.views.name')}
+                onChange={event => setViewName(event.target.value)}
+              />
+              <button
+                className={styles.secondary}
+                type="button"
+                onClick={saveCurrentView}
+                disabled={viewName.trim().length === 0}
+              >
+                {t('mesa.views.save')}
+              </button>
+            </>
+          ) : (
+            <button className={styles.secondary} type="button" onClick={() => setNamingView(true)}>
+              {t('mesa.views.save')}
+            </button>
+          )}
+          {activeView.length === 0 ? null : (
+            <button className={styles.ghost} type="button" onClick={removeCurrentView}>{t('mesa.views.remove')}</button>
+          )}
+        </span>
         {view === 'foco' ? null : (
           <label className={styles.mesaProperty}>
             <input
@@ -4131,8 +4258,9 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         : value === undefined
           ? <StateBlock kind="empty" title={t('mesa.empty')} text={rows.length === 0 ? t('mesa.emptyHint') : t('mesa.noSelection')} />
           : (
-            <article className={styles.mesaMain}>
-              <header className={styles.mesaIdentity}>
+            <article className={styles.mesaMain} ref={detailRef} tabIndex={-1}>
+              {noticeBlock}
+              <header className={styles.mesaIdentity} data-zone="1">
                 <div className={styles.mesaKicker}>
                   <span>{value.artifactType.length === 0 ? t('mesa.detail.draft') : value.artifactType}</span>
                   <span aria-hidden="true">·</span>
@@ -4147,6 +4275,10 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                   <button className={styles.ghost} type="button" onClick={() => setShowSignatures(true)}>
                     {t('mesa.signature.title')}
                   </button>
+                </div>
+                <div className={styles.mesaMeta}>
+                  <span>{`${t('mesa.agent')}: ${value.assigneeId ?? t('mesa.none')}`}</span>
+                  <span>{`${t('mesa.autonomy')}: ${t(autonomyKey(value.autonomyLevel))}`}</span>
                 </div>
                 <div className={styles.mesaProperties}>
                   <label className={styles.mesaProperty}>
@@ -4185,6 +4317,23 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                   </label>
                 </div>
               </header>
+
+              <details className={styles.mesaCollapse} data-zone="2">
+                <summary>{t('mesa.detail.origin')}</summary>
+                <div className={styles.mesaCollapseBody}>
+                  <dl className={styles.mesaFacts}>
+                    <div><dt>{t('mesa.evidence')}</dt><dd>{value.evidence.length === 0 ? t('cell.none') : value.evidence.join(', ')}</dd></div>
+                  </dl>
+                  {value.fieldOrigins.length === 0 ? null : (
+                    <dl className={styles.mesaFacts}>
+                      <div>
+                        <dt>{t('mesa.detail.origins')}</dt>
+                        <dd>{value.fieldOrigins.map(origin => `${origin.field} ${origin.source === null ? t('mesa.origins.none') : `← ${origin.source}`}`).join(' · ')}</dd>
+                      </div>
+                    </dl>
+                  )}
+                </div>
+              </details>
 
               {live && attempt !== undefined ? (
                 <p className={styles.mesaAttempt} role="status">
@@ -4269,9 +4418,8 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 </section>
               ) : null}
 
-              {noticeBlock}
 
-              <section className={styles.mesaDraftZone}>
+              <section className={styles.mesaDraftZone} data-zone="3">
                 <div className={styles.mesaZoneHead}>
                   <h3>{t('mesa.detail.draft')}</h3>
                   {live
@@ -4318,7 +4466,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 </section>
               )}
 
-              <section className={styles.mesaChecksZone}>
+              <section className={styles.mesaChecksZone} data-zone="4">
                 <h3>{t('mesa.detail.checks')}</h3>
                 {checksError === null ? null : <p className={styles.mesaHintLine}>{`${t('mesa.checks.error')} ${checksError}`}</p>}
                 {missingChecks.length === 0 ? null : <p className={styles.mesaBlocked}>{t('mesa.checks.missing')}</p>}
@@ -4333,34 +4481,25 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                   ))}
               </section>
 
-              <dl className={styles.mesaFacts}>
+              <dl className={styles.mesaFacts} data-zone="5">
                 <div>
                   <dt>{t('mesa.detail.doubts')}</dt>
                   <dd>{t('mesa.noDoubts')}</dd>
                 </div>
               </dl>
 
-              <details className={styles.mesaCollapse}>
+              <details className={styles.mesaCollapse} data-zone="6">
                 <summary>{t('mesa.originContext')}</summary>
                 <div className={styles.mesaCollapseBody}>
                   <dl className={styles.mesaFacts}>
                     <div><dt>{t('mesa.account')}</dt><dd>{value.accountRef ?? t('mesa.noAccount')}</dd></div>
                     <div><dt>{t('mesa.space')}</dt><dd>{spaceName(value.spaceId)}</dd></div>
-                    <div><dt>{t('mesa.evidence')}</dt><dd>{value.evidence.length === 0 ? t('cell.none') : value.evidence.join(', ')}</dd></div>
                     <div><dt>{t('mesa.detail.context')}</dt><dd>{value.events.length === 0 ? t('cell.none') : value.events.slice(-3).map(event => `${event.command} · ${event.at}`).join(' · ')}</dd></div>
                   </dl>
-                  {value.fieldOrigins.length === 0 ? null : (
-                    <dl className={styles.mesaFacts}>
-                      <div>
-                        <dt>{t('mesa.detail.origins')}</dt>
-                        <dd>{value.fieldOrigins.map(origin => `${origin.field} ${origin.source === null ? t('mesa.origins.none') : `← ${origin.source}`}`).join(' · ')}</dd>
-                      </div>
-                    </dl>
-                  )}
                 </div>
               </details>
 
-              <footer className={styles.mesaActionBar}>
+              <footer className={styles.mesaActionBar} data-zone="7">
                 <div className={styles.mesaActions}>
                   {live && otherTabHolds ? (
                     <button className={styles.ghost} type="button" onClick={next}>{t('mesa.skip')}</button>
@@ -4600,7 +4739,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
               ) : null}
 
               {showDiscard ? (
-                <section className={styles.mesaNotice}>
+                <section className={styles.mesaNotice} role="dialog" aria-modal="true" aria-label={t('mesa.discardReason')}>
                   <Field label={t('mesa.discardReason')}>
                     <select value={discardReason} onChange={event => setDiscardReason(event.target.value)}>
                       {REASONS.map(reason => <option key={reason} value={reason}>{t(`mesa.reason.${reason.toLowerCase()}` as FaberloomKey)}</option>)}
@@ -4944,6 +5083,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       title: string
       spaceId: string | null
       accountRef: string | null
+      assigneeId: string | null
       severity: string | null
       dueAt: string | null
       valueUsd: number | null
@@ -4955,6 +5095,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         cell: row => <span className={styles.cellName}>{row.title}</span>,
       },
       { key: 'account', header: t('mesa.account'), cell: row => <span className={styles.cellMuted}>{row.accountRef ?? t('mesa.none')}</span> },
+      { key: 'agent', header: t('mesa.agent'), cell: row => <span className={styles.cellMuted}>{row.assigneeId ?? t('mesa.none')}</span> },
       { key: 'space', header: t('mesa.space'), cell: row => <span className={styles.cellMuted}>{row.spaceId === null ? t('mesa.none') : spaceName(row.spaceId)}</span> },
       { key: 'severity', header: t('mesa.severity'), cell: row => <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span> },
       { key: 'due', header: t('mesa.due'), cell: row => <span className={styles.cellMuted}>{row.dueAt === null ? t('mesa.none') : dayOf(row.dueAt)}</span> },
@@ -5006,7 +5147,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
           ? (visible.length === 0
             ? emptyBlock
             : (
-              <div className={styles.mesaFoco}>
+              <div className={styles.mesaFoco} ref={cardRef}>
                 {queue}
                 {detailBody}
               </div>

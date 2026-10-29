@@ -124,7 +124,6 @@ describe('FaberLoomMcpServer', () => {
     // G3 · the same operations the panels use are reachable over MCP.
     expect(tools).toContain('faberloom_space_create')
     expect(tools).toContain('faberloom_agent_policy')
-    expect(tools).toContain('faberloom_board_review')
     expect(tools).toContain('faberloom_grant')
     expect(tools).toContain('faberloom_backup_create')
     expect(tools).toContain('faberloom_migrations_run')
@@ -334,7 +333,7 @@ describe('FaberLoomMcpServer', () => {
 
     const denied = await post(endpoint.port, {
       jsonrpc: '2.0', id: 2, method: 'tools/call',
-      params: { name: 'faberloom_board_review', arguments: { id: String(item.id), decision: 'approve', version: 1 } },
+      params: { name: 'faberloom_board_approve', arguments: { id: String(item.id), rowVersion: 1, artifactVersion: 1, artifactHash: 'x' } },
     }, foreign)
     expect((JSON.parse(denied.text) as { result: { isError?: boolean; content: { text: string }[] } }).result.content[0]!.text)
       .toContain('NO_ACCESS')

@@ -134,6 +134,32 @@ export interface BoardAssignment {
   readonly transferredDrafts: readonly BoardTransferredDraft[]
 }
 
+/** One saved view: a name and the filters it restores (§9.4). */
+export interface BoardView {
+  /** Name the owner chose. */
+  readonly name: string
+  /** Filters the view restores. */
+  readonly filters: BoardViewFilters
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+  /** ISO-8601 last write. */
+  readonly updatedAt: string
+}
+
+/** The filters a saved view stores. */
+export interface BoardViewFilters {
+  /** Space filter, or null for all. */
+  readonly spaceId: string | null
+  /** Account filter, or null for all. */
+  readonly accountRef: string | null
+  /** Assignee filter, or null for all. */
+  readonly assigneeId: string | null
+  /** Severity filter, or null for all. */
+  readonly severity: string | null
+  /** Deadline filter. */
+  readonly due: 'all' | 'overdue' | 'none'
+}
+
 /** One in-progress inline edit, owned by one browser tab. */
 export interface BoardEditDraft {
   /** Item the draft edits. */
@@ -229,6 +255,10 @@ export interface FaberLoomBoardItem {
   readonly spaceId: string | null
   /** Routine this task feeds, or null when it is standalone. */
   readonly routineId: string | null
+  /** Catalog agent responsible for the item, or null when none is assigned (D-1). */
+  readonly assigneeId: string | null
+  /** Action type the item decides or executes; the autonomy unit reads it. */
+  readonly actionType: string
   /** Display title. */
   readonly title: string
   /** Current status. */
@@ -372,6 +402,10 @@ export interface BoardCreateInput extends BoardSubmitInput {
   readonly spaceId?: string
   /** Optional routine this task feeds. */
   readonly routineId?: string
+  /** Catalog agent responsible for the item. */
+  readonly assigneeId?: string
+  /** Action type the item decides; defaults to mesa.decide. */
+  readonly actionType?: string
   /** Originating execution id. */
   readonly executionId?: string
   /** Artifact type. */
@@ -444,6 +478,10 @@ export interface BoardSubmitRequest extends BoardSubmitInput {
   readonly companyId?: string
   /** Originating execution id. */
   readonly executionId?: string
+  /** Catalog agent responsible for the item. */
+  readonly assigneeId?: string
+  /** Action type the item decides; defaults to mesa.decide. */
+  readonly actionType?: string
   /** Human-readable title. */
   readonly title?: string
 }
@@ -556,6 +594,21 @@ export type BoardClassifierResult =
   | { readonly status: 'invalid'; readonly detail: string }
 
 /**
+ * The exchange-rate port: a deployment mounts `faberloomBoardFx` to quote the
+ * rate the board converts with (D-3). `rate` is the multiplier that turns one
+ * unit of `currency` into USD. Without the port a non-USD amount must bring its
+ * own rate or the item is refused.
+ */
+export interface BoardFxPort {
+  /**
+   * Quote the USD rate of one currency.
+   * @param currency - ISO code the producer billed in.
+   * @returns the multiplier and its provenance, or undefined when unquoted.
+   */
+  usdRate(currency: string): Promise<{ readonly rate: number; readonly source: string; readonly date: string } | undefined>
+}
+
+/**
  * The classification port: the one thing the board asks a model for. A
  * deployment mounts `faberloomBoardClassifier` to answer it; without that
  * service the rules are the only classifier and an unresolved field stays
@@ -581,8 +634,7 @@ export interface BoardClassifierPort {
   readonly modelVersion: string
 }
 
-/** One cached classification, keyed by everything that can change the answer (§5.1). */
-export interface BoardClassificationCacheEntry {
+/** One cached classification, keyed by everything that can change the answer (§5.1). */export interface BoardClassificationCacheEntry {
   /** The full §5.1 key. */
   readonly key: string
   /** Field the entry classifies (`severity` today). */

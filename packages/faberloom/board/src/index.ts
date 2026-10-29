@@ -24,6 +24,7 @@ import {
   type BoardItemRecord,
   type BoardKeyRecord,
   type BoardReferenceRecord,
+  type BoardViewRecord,
   type EffectAlertRecord,
   type EffectEventRecord,
   type EffectOutboxRecord,
@@ -99,11 +100,13 @@ import type {
   BoardClassificationCacheEntry,
   BoardColumn,
   BoardCreateInput,
+  BoardDataClass,
   BoardDiscardInput,
   BoardDispatchCode,
   BoardDispatchOutcome,
   BoardEditDraft,
   BoardEditsInput,
+  BoardFxPort,
   BoardEffectAdapter,
   BoardEffectAdapterStatus,
   BoardEffectAlert,
@@ -140,7 +143,6 @@ import type {
   BoardResumeIterationResult,
   BoardRetryInput,
   BoardRevertInput,
-  BoardReviewInput,
   BoardSeverity,
   BoardSeverityDecision,
   BoardState,
@@ -148,6 +150,8 @@ import type {
   BoardSubmitInput,
   BoardSubmitRequest,
   BoardTransferredDraft,
+  BoardView,
+  BoardViewFilters,
   BoardWriter,
   FaberLoomBoardItem,
   FaberLoomBoardItemId,
@@ -439,6 +443,26 @@ function refusal(code: BoardDispatchCode, item: FaberLoomBoardItem | null, detai
 }
 
 /** Map one durable record to the consumer-facing item. */
+/** Storage key of one saved view, scoped to its owner. */
+function viewKeyOf(ownerId: string, name: string): string {
+  return `${ownerId}\u0000${name}`
+}
+
+/** Project one stored view into the surface the panel reads. */
+function toView(record: BoardViewRecord): BoardView {
+  return {
+    name: record.name,
+    filters: {
+      spaceId: record.filters.spaceId,
+      accountRef: record.filters.accountRef,
+      assigneeId: record.filters.assigneeId,
+      severity: record.filters.severity,
+      due: record.filters.due === 'overdue' || record.filters.due === 'none' ? record.filters.due : 'all',
+    },
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  }
+}
 function toItem(id: FaberLoomBoardItemId, record: BoardItemRecord): FaberLoomBoardItem {
   const state = stateOf(record)
   const content = revisionContent(record.revisions[record.revisions.length - 1])
@@ -581,6 +605,11 @@ export class FaberLoomBoard extends Service {
 
   private async effectEvents(): Promise<KvTable<string, EffectEventRecord>> {
     return (await this.domain()).table('effect_events')
+  }
+
+  /** The saved-view table of this domain. */
+  private async views(): Promise<KvTable<string, BoardViewRecord>> {
+    return (await this.domain()).table('views')
   }
 
   private draftId(itemId: FaberLoomBoardItemId | string, userId: string): string {
@@ -1030,13 +1059,13 @@ export class FaberLoomBoard extends Service {
    * @param input - amount, currency, and the rate the producer used.
    * @returns the USD amount and the provenance to persist.
    */
-  private convertAmount(input: {
+  private async convertAmount(input: {
     valueAmount?: number | undefined
     valueCurrency?: string | undefined
     valueFxRate?: number | undefined
     valueFxSource?: string | undefined
     valueFxDate?: string | undefined
-  }): { usd: number | null; rate: number | null; source: string | null; date: string | null } {
+  }): Promise<{ usd: number | null; rate: number | null; source: string | null; date: string | null }> {
     if (input.valueAmount === undefined) return { usd: null, rate: null, source: null, date: null }
     const currency = input.valueCurrency?.trim().toUpperCase()
     if (currency === undefined || currency.length === 0) {
@@ -1050,23 +1079,37 @@ export class FaberLoomBoard extends Service {
         date: input.valueFxDate ?? new Date().toISOString().slice(0, 10),
       }
     }
-    const rate = input.valueFxRate
+    // The deployment may quote the rate itself (MWT ONE); the producer's rate
+    // still wins, and an unquoted currency is refused instead of converted at
+    // an invented value (D-3).
+    let rate = input.valueFxRate
+    let source = input.valueFxSource
+    let date = input.valueFxDate
+    if (rate === undefined) {
+      const fx = this.ctx.get('faberloomBoardFx') as BoardFxPort | undefined
+      const quote = fx === undefined ? undefined : await fx.usdRate(currency).catch(() => undefined)
+      if (quote !== undefined) {
+        rate = quote.rate
+        source = quote.source
+        date = quote.date
+      }
+    }
     if (rate === undefined || !Number.isFinite(rate) || rate <= 0) {
       throw new Error(
         `faberloom: FX_RATE_REQUIRED — ${currency} needs the MWT ONE rate that converts it to USD (D-3)`,
       )
     }
-    if (input.valueFxSource === undefined || input.valueFxSource.trim().length === 0) {
+    if (source === undefined || source.trim().length === 0) {
       throw new Error('faberloom: FX_SOURCE_REQUIRED — the rate must name the source it came from (D-3)')
     }
-    if (input.valueFxDate === undefined || input.valueFxDate.trim().length === 0) {
+    if (date === undefined || date.trim().length === 0) {
       throw new Error('faberloom: FX_DATE_REQUIRED — the rate must name the date it was quoted (D-3)')
     }
     return {
       usd: Math.round(input.valueAmount * rate * 100) / 100,
       rate,
-      source: input.valueFxSource,
-      date: input.valueFxDate,
+      source,
+      date,
     }
   }
 
@@ -1157,6 +1200,8 @@ export class FaberLoomBoard extends Service {
       dueAt?: string
       severity?: BoardSeverity
       severityConfidence?: number
+      assigneeId?: string
+      actionType?: string
     },
   ): Promise<BoardItemRecord> {
     const now = new Date().toISOString()
@@ -1172,7 +1217,7 @@ export class FaberLoomBoard extends Service {
     // The class is the server's: a caller describes the artifact, never its
     // sensitivity (D-05, D-07).
     const classification = classifyDataClass({ artifactType, accountRef })
-    const fx = this.convertAmount(input)
+    const fx = await this.convertAmount(input)
     // A run that reports a severity is measured against the confidence floor;
     // one that reports none falls to the deterministic rules and then, only if
     // a deployment mounted the port, to the classifier (W-37, W-51).
@@ -1191,6 +1236,8 @@ export class FaberLoomBoard extends Service {
       companyId: input.companyId ?? actor.companyId ?? null,
       spaceId: input.spaceId ?? null,
       routineId: input.routineId ?? null,
+      assigneeId: input.assigneeId ?? null,
+      actionType: input.actionType?.trim() || 'mesa.decide',
       title: input.title,
       status: 'waiting_approval',
       state: input.state ?? 'PENDIENTE_CRITERIO',
@@ -2809,6 +2856,7 @@ export class FaberLoomBoard extends Service {
             staleReason: null,
             executionId: identity.executionId,
             effectKey: identity.effectKey,
+            actionType: identity.actionType,
             reversalDeadline: deadline,
             executionOutcome: null,
           }
@@ -3084,6 +3132,64 @@ export class FaberLoomBoard extends Service {
         return { ...current, events: [...current.events, event].slice(-this.eventCap) }
       })
     })
+  }
+
+  /**
+   * The saved views of one identity, by name. A view stores only filters: it
+   * never stores items or counts, so a shared item cannot leak through it.
+   * @param actor - the owner whose views are read.
+   * @returns the views, sorted by name.
+   */
+  async listViews(actor: BoardActor): Promise<readonly BoardView[]> {
+    const table = await this.views()
+    const views: BoardView[] = []
+    for (const [, record] of table.entries()) {
+      if (record.ownerId !== actor.id) continue
+      views.push(toView(record))
+    }
+    return views.sort((left, right) => left.name.localeCompare(right.name))
+  }
+
+  /**
+   * Save or replace one named view of the identity.
+   * @param actor - the owner saving the view.
+   * @param name - name the owner chose; empty names are refused.
+   * @param filters - filters the view restores.
+   * @returns the owner's views after the write.
+   */
+  async saveView(actor: BoardActor, name: string, filters: BoardViewFilters): Promise<readonly BoardView[]> {
+    const trimmed = name.trim()
+    if (trimmed.length === 0) throw new Error('faberloom: NAME_REQUIRED — a saved view needs a name')
+    if (trimmed.length > 64) throw new Error('faberloom: NAME_INVALID — a saved view name is at most 64 characters')
+    const table = await this.views()
+    const key = viewKeyOf(actor.id, trimmed)
+    const previous = table.get(key)
+    const at = new Date().toISOString()
+    await table.put(key, {
+      ownerId: actor.id,
+      name: trimmed,
+      filters: {
+        spaceId: filters.spaceId,
+        accountRef: filters.accountRef,
+        assigneeId: filters.assigneeId,
+        severity: filters.severity,
+        due: filters.due,
+      },
+      createdAt: previous?.createdAt ?? at,
+      updatedAt: at,
+    })
+    return await this.listViews(actor)
+  }
+
+  /**
+   * Remove one named view of the identity.
+   * @param actor - the owner removing the view.
+   * @param name - name to remove.
+   * @returns the owner's views after the write.
+   */
+  async removeView(actor: BoardActor, name: string): Promise<readonly BoardView[]> {
+    await (await this.views()).delete(viewKeyOf(actor.id, name.trim()))
+    return await this.listViews(actor)
   }
 
   /**
@@ -4451,31 +4557,47 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Approve or reject the exact revision. A reject returns the item to the
-   * pending column; an approve follows the WorkLoom preconditions and binds to
-   * the hash the caller names, never to whatever is current (W-09).
+   * Set the definitive data class of an item, for governance. Raising the class
+   * invalidates the tenant's classification cache, because an answer computed
+   * under the old class context must not be reused (W-94); the projections are
+   * derived live, so they redact on the next read without another write.
    * @param writer - the acting identity.
    * @param id - item id.
-   * @param input - decision, exact revision, artifact hash, and optional note.
-   * @returns the updated item.
+   * @param dataClass - class to settle.
+   * @returns the item with its definitive class.
    */
-  async review(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem> {
-    const record = await this.requireItem(id)
-    this.authorizeWrite(record, writer)
-    if (input.decision === 'approve') {
-      if (input.hash === undefined || input.hash.trim().length === 0) {
-        throw new Error('faberloom: STALE_REVISION — an approval must name the artifact hash it reviewed')
-      }
-      return await this.approve(writer, id, {
-        expectedRowVersion: record.rowVersion,
-        expectedArtifactVersion: input.version,
-        expectedArtifactHash: input.hash,
-      })
+  async reclassify(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    dataClass: BoardDataClass,
+  ): Promise<FaberLoomBoardItem> {
+    const current = await this.requireItem(id)
+    this.authorizeWrite(current, writer)
+    if (TERMINAL.includes(stateOf(current))) {
+      throw new Error('faberloom: NO_ACCESS — a closed item cannot be reclassified')
     }
-    return await this.mutate(writer, id, 'reject', (current) => {
-      if (input.version !== current.version) throw new Error('faberloom: STALE_REVISION — the reviewed revision is not current')
-      return { ...current, state: 'PENDIENTE_CRITERIO', status: 'reopened' }
-    })
+    const order: readonly BoardDataClass[] = ['N0', 'N1', 'N2', 'N3', 'N4']
+    const raised = order.indexOf(dataClass) > order.indexOf(current.dataClass)
+    const item = await this.mutate(writer, id, 'reclassify', record => ({
+      ...record,
+      dataClass,
+      dataClassProvisional: false,
+    }), { data: { from: current.dataClass, to: dataClass, raised } })
+    if (raised) await this.purgeClassificationCache(current.companyId)
+    return item
+  }
+
+  /**
+   * Drop the classification answers of one tenant. Used when a definitive class
+   * changes the context an answer was computed in (W-94).
+   * @param companyId - tenant whose entries go, or null for the single-tenant store.
+   */
+  private async purgeClassificationCache(companyId: string | null): Promise<void> {
+    const table = await (await this.domain()).table('classification_cache')
+    for (const [key, entry] of [...table.entries()]) {
+      if (entry.companyId !== companyId) continue
+      await table.delete(key)
+    }
   }
 
   /**
