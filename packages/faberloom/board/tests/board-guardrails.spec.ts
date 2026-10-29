@@ -156,4 +156,38 @@ describe('Mesa guardrails', () => {
     await board.noteAccess(ACTOR_A, open, 'boardDetail')
     expect((await board.get(ACTOR_A, open)).events).toHaveLength(0)
   })
+
+  it('W-48 · the pinned iteration context withholds what a restricted class forbids', async () => {
+    const pool = new MemoryMediaPool()
+    const restricted = await seedRawItem(pool, rawBoardItem({ dataClass: 'N3', dataClassProvisional: false }))
+    const open = await seedRawItem(pool, rawBoardItem({ dataClass: 'N2', dataClassProvisional: false }))
+    const { board } = await bootBoard({ pool })
+
+    const hidden = await board.iterationContext(ACTOR_A, restricted)
+    expect(hidden).toMatchObject({ itemId: restricted, summary: null, draftSummary: null, evidence: [] })
+    const visible = await board.iterationContext(ACTOR_A, open)
+    expect(visible).toMatchObject({ itemId: open, summary: 'borrador' })
+    expect(visible?.evidence).toEqual(['oc:505288'])
+
+    // A missing item answers undefined instead of an empty context.
+    expect(await board.iterationContext(ACTOR_A, 'no-existe' as never)).toBeUndefined()
+  })
+
+  it('W-37 · a classifier that throws counts as an invalid answer, not as a pass', async () => {
+    const harness = await bootBoard()
+    harness.ctx.provide('faberloomBoardClassifier', {
+      modelVersion: 'test-model-2',
+      async classifySeverity() { throw new Error('provider down') },
+    })
+
+    const item = await harness.board.submit(ACTOR_A, {
+      runId: 'run-throw',
+      idempotencyKey: 'idem-throw',
+      businessKey: 'bkey-throw',
+      summary: 'sin clasificar',
+      evidence: ['oc:8'],
+      artifactType: 'desconocido',
+    })
+    expect(item).toMatchObject({ severity: null, state: 'PENDIENTE_CRITERIO' })
+  })
 })
