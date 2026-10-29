@@ -1028,6 +1028,20 @@ describe('FaberLoomBoard E15 adapter declaration and destination probe', () => {
     })
   })
 
+  it('lists the mounted adapters so an operator sees whether a type can dispatch', async () => {
+    const harness = await bootBoard({ board: { effectActionTypes: ['custom.notify', 'custom.probe'], effectReversalWindowMs: {} } })
+    mountAdapter(harness, 'custom.notify', mutableAdapter().port)
+    mountAdapter(harness, 'custom.probe', {
+      idempotent: true,
+      async send() { return { status: 'CONFIRMADO' } },
+      async probe() { return { status: 'CONFIRMADO' } },
+    })
+    expect(harness.board.effectAdapters()).toEqual([
+      { actionType: 'custom.notify', idempotent: false, probe: false },
+      { actionType: 'custom.probe', idempotent: true, probe: true },
+    ])
+  })
+
   it('settles a dispatched effect with the answer the destination gave (§9.8)', async () => {
     const harness = await bootBoard({ board: { effectReversalWindowMs: {} } })
     const probed: BoardEffectDispatch[] = []

@@ -969,6 +969,23 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   },
   {
     definition: {
+      name: 'faberloom_board_effect_policy',
+      description: 'Política de efectos del despliegue: tipos aceptados, ventana de reversión y adaptadores montados. Un tipo aceptado sin adaptador no puede despachar.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    run: async (context) => {
+      return {
+        ...context.faberloomBoard.effectPolicy(),
+        adapters: context.faberloomBoard.effectAdapters(),
+      }
+    },
+  },
+  {
+    definition: {
       name: 'faberloom_board_effect',
       description: 'Registra un efecto externo con su autorización explícita.',
       inputSchema: {

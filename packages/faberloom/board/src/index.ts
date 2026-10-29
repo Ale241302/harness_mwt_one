@@ -3157,6 +3157,21 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
+   * The adapters this deployment mounted, one per accepted action type, so an
+   * operator can see whether execution is operable before accepting an effect.
+   * @returns the registered adapters with their declaration.
+   */
+  effectAdapters(): readonly { actionType: string; idempotent: boolean; probe: boolean }[] {
+    return [...this.adapters.entries()]
+      .map(([actionType, adapter]) => ({
+        actionType,
+        idempotent: adapter.idempotent,
+        probe: adapter.probe !== undefined,
+      }))
+      .sort((left, right) => left.actionType.localeCompare(right.actionType))
+  }
+
+  /**
    * Register the adapter of one action type. The registry is mounted from
    * outside the board, the way `registerCheck` mounts a control: a deployment
    * owns the mail, inventory, or shipment client, and the board only decides
