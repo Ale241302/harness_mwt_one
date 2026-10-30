@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-spaces",
   "description": "Native product spaces (ctx.faberloomSpaces): durable thematic spaces, sub-spaces, configurable inheritance with exclusions, personal scope, and opaque work-directory references",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.7-alpha.1",
   "publishConfig": {
     "access": "public"
   },

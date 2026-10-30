@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-faberloom",
   "description": "FaberLoom workspace surface: identity tokens, the brand name, and the global panels (Conversar, Mesa de trabajo, Espacios, Agentes, Rutinas, Memoria, Conexiones) that the faberloom profile serves",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.7-alpha.1",
   "publishConfig": {
     "access": "public"
   },

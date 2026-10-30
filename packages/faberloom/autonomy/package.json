@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-autonomy",
   "description": "Native product autonomy (ctx.faberloomAutonomy): the SHADOW, SUPERVISADO, and DELEGADO level of each (tenant, space, agent, actionType) unit, its promotion report, the sampled review of delegated items, and the automatic suspension of §7.3",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.7-alpha.1",
   "publishConfig": {
     "access": "public"
   },

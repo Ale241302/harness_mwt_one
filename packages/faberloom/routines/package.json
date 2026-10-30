@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-routines",
   "description": "Native product routines (ctx.faberloomRoutines): versioned definitions with validation, persistent executions that keep their starting version, a dispatcher for waits, idempotent starts with cross-channel evidence, an effect ledger with reconciliation, per-user event sources, and migration",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.7-alpha.1",
   "publishConfig": {
     "access": "public"
   },

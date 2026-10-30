@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-agent-runtime",
   "description": "Native product agent runtime (ctx.faberloomAgentRuntime): the durable consultations between a caller session and a Space agent, keyed per owner, Space, and caller session",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.7-alpha.1",
   "publishConfig": {
     "access": "public"
   },

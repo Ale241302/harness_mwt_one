@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-session-shares",
   "description": "Shared Session catalog (ctx.faberloomSessionShares): a Space's Sessions captured on each member's host, published to and imported from the MWT.ONE console",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.7-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-agents",
   "description": "Native product agents (ctx.faberloomAgents): model pool, versioned agent catalog, versioned model policy, shared resolver and recommender, selection records, outcome evidence, and subagent delegation under a shared budget",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.7-alpha.1",
   "publishConfig": {
     "access": "public"
   },

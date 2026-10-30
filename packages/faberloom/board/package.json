@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-board",
   "description": "Native product board (ctx.faberloomBoard): the work table of prepared results and exceptions with versioned revisions, evidence-gated submits, version-bound approvals, revalidation, and authorization-gated effects",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.7-alpha.1",
   "publishConfig": {
     "access": "public"
   },

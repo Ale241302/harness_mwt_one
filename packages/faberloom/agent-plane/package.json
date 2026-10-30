@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-agent-plane",
   "description": "Native product agent capability plane (ctx.faberloomAgentPlane): resolves one catalog agent's enforced tool mask (MWT/SICOP MCP and open-web) and its delegation allowlist",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.7-alpha.1",
   "publishConfig": {
     "access": "public"
   },
