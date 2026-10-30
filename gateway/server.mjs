@@ -17,6 +17,7 @@ import express from 'express'
 import httpProxy from 'http-proxy'
 
 import { installMirrorRoute } from './mirror-route.mjs'
+import { installLlmProxy } from './llm-proxy.mjs'
 import { installDesktopMcpBridge } from './desktop-mcp-route.mjs'
 import { repairWorkspaceOrder } from './workspace-registry.mjs'
 
@@ -2018,6 +2019,15 @@ installMirrorRoute(app, {
     if (!stored) throw new Error('la cuenta no tiene sesión guardada; entra una vez por la web')
     await ensureInstance({ ...stored, legalEntityIds: stored.legalEntityIds || [] })
   },
+})
+
+// Proxy de modelo: la llave del despliegue se queda en el servidor. Va antes del
+// catch-all porque el escritorio llega con un token de consola, no con la cookie
+// de sesión del sitio; sin estas rutas un build sin llave no tendría modelo.
+installLlmProxy(app, {
+  consolaApi: cfg.consolaApi,
+  apiKey: cfg.deepseekKey,
+  upstream: (process.env.DEEPSEEK_UPSTREAM || 'https://api.deepseek.com').replace(/\/+$/, ''),
 })
 
 // Catch-all: exige sesión y proxya al dsh del usuario. M3 · si la sesión firmada
