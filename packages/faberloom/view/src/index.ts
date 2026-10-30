@@ -153,6 +153,21 @@ function parseConfigJson(json: string): Record<string, unknown> {
   return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
 }
 
+/**
+ * Read one MCP answer as a list of rows: an array, a `{ results }` envelope, or
+ * one record. A null or scalar answer yields no rows.
+ * @param parsed - decoded MCP body.
+ * @returns the rows the answer carries.
+ */
+function asRows(parsed: unknown): readonly unknown[] {
+  if (Array.isArray(parsed)) return parsed
+  if (parsed !== null && typeof parsed === 'object') {
+    const results = (parsed as { results?: unknown }).results
+    return Array.isArray(results) ? results : [parsed]
+  }
+  return []
+}
+
 /** HTML entity table for the five significant characters. */
 const HTML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 
@@ -4252,12 +4267,20 @@ export class FaberLoomViewService extends TypertRemoteService {
       })
       if (result.isError) return []
       const value = result.value as { structuredContent?: unknown; content?: readonly { type?: string; text?: string }[] }
-      const text = (value.content ?? [])
-        .filter(block => block.type === 'text' && typeof block.text === 'string')
-        .map(block => block.text ?? '')
-        .join('\n')
-      const parsed = value.structuredContent ?? (text.length === 0 ? [] : JSON.parse(text) as unknown)
-      const rows = Array.isArray(parsed) ? parsed : (parsed as { results?: unknown[] }).results ?? []
+      // The MWT server answers one text block per client, each holding its own
+      // JSON object, so the blocks are read one by one instead of joined.
+      const rows = value.structuredContent !== undefined
+        ? asRows(value.structuredContent)
+        : (value.content ?? [])
+          .filter(block => block.type === 'text' && typeof block.text === 'string')
+          .flatMap((block) => {
+            try {
+              return asRows(JSON.parse(block.text ?? 'null') as unknown)
+            } catch {
+              // A human-readable block, such as a server note, carries no row.
+              return []
+            }
+          })
       const names = rows.flatMap((row) => {
         if (typeof row !== 'object' || row === null) return []
         const record = row as Record<string, unknown>
