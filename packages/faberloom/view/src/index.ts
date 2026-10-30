@@ -4224,6 +4224,60 @@ export class FaberLoomViewService extends TypertRemoteService {
     return tools.schemas().some(schema => /^mcp__mwt__/.test(schema.name))
   }
 
+  /**
+   * The client names the MWT.ONE catalog exposes, so the account filter offers
+   * the whole book instead of only the accounts that already have items. The
+   * list is cached for five minutes; a deployment without the MWT tools returns
+   * an empty list and the panel falls back to the accounts the board shows.
+   * @returns the distinct client names, sorted.
+   */
+  @Remote('boardAccounts')
+  async boardAccounts(): Promise<readonly string[]> {
+    if (this.accountsCache !== undefined && Date.now() - this.accountsCache.at < 300_000) {
+      return this.accountsCache.names
+    }
+    const tools = this.ctx.get('tools')
+    if (tools === undefined) return []
+    const toolName = tools.schemas()
+      .map(schema => schema.name)
+      .find(name => /^mcp__[A-Za-z0-9_-]{1,32}__cliente_listar$/u.test(name))
+    if (toolName === undefined) return []
+    try {
+      const result = await tools.execute({
+        // Locally minted uuid; the branded constructor needs a policy entry.
+        callId: randomUUID() as never,
+        name: toolName,
+        arguments: { is_parent: 'all' },
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (result.isError) return []
+      const value = result.value as { structuredContent?: unknown; content?: readonly { type?: string; text?: string }[] }
+      const text = (value.content ?? [])
+        .filter(block => block.type === 'text' && typeof block.text === 'string')
+        .map(block => block.text ?? '')
+        .join('\n')
+      const parsed = value.structuredContent ?? (text.length === 0 ? [] : JSON.parse(text) as unknown)
+      const rows = Array.isArray(parsed) ? parsed : (parsed as { results?: unknown[] }).results ?? []
+      const names = rows.flatMap((row) => {
+        if (typeof row !== 'object' || row === null) return []
+        const record = row as Record<string, unknown>
+        const name = typeof record['razon_social'] === 'string'
+          ? record['razon_social']
+          : typeof record['nombre_comercial'] === 'string' ? record['nombre_comercial'] : ''
+        return name.trim().length === 0 ? [] : [name.trim()]
+      })
+      const unique = [...new Set(names)].sort((left, right) => left.localeCompare(right))
+      this.accountsCache = { at: Date.now(), names: unique }
+      return unique
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: no se pudo leer el catálogo de clientes: ${String(error)}`)
+      return []
+    }
+  }
+
+  /** Client names read from the MWT.ONE catalog, with the instant they were read. */
+  private accountsCache: { at: number; names: readonly string[] } | undefined
+
   /** Set once per process so the read path pulls shared resources a single time. */
   private sharesSynced = false
 

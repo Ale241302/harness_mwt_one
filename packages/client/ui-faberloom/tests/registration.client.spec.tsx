@@ -131,6 +131,7 @@ async function bench(
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
   const boardViews = vi.fn(async () => ({ ok: true, value: [] }))
   const boardClassify = vi.fn(async () => ({ ok: true, value: { classified: 3, failed: 0, remaining: 1 } }))
+  const boardAccounts = vi.fn(async () => ({ ok: true, value: ['COMERCIALIZADORA UMMIE, S.A.', 'Sondel S.A.'] }))
   const boardRouteInstruction = vi.fn(async (_id: string, text: string) => text.startsWith('@summary')
     ? { ok: true, value: [{ field: 'summary', value: text.split('=')[1]?.trim() ?? '' }] }
     : { ok: true, value: null })
@@ -287,7 +288,7 @@ async function bench(
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
-    boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, setBoardRoutine, prepareHarness,
+    boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts, setBoardRoutine, prepareHarness,
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
     boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
@@ -2911,13 +2912,13 @@ it('§9.4 · saves, applies, and removes a named view', async () => {
   await waitFor(() => { expect(boardRemoveView).toHaveBeenCalledWith('Mi vista') })
 })
 
-it('§9.4 · filters the queue by the agent responsible', async () => {
+it('§9.4 · filters the queue by the account', async () => {
   const row = OVERVIEW.board[0]
   const overview = {
     ...OVERVIEW,
     board: [
-      { ...row, id: 'item-a', title: 'PF 1000', assigneeId: 'agent-1' },
-      { ...row, id: 'item-b', title: 'PF 2000', assigneeId: 'agent-2' },
+      { ...row, id: 'item-a', title: 'PF 1000', accountRef: 'Sondel S.A.' },
+      { ...row, id: 'item-b', title: 'PF 2000', accountRef: 'SONEPAR COLOMBIA S.A.S.' },
     ],
   }
   const { runtime, view, boardDetail } = await bench({ ok: true, value: overview })
@@ -2925,11 +2926,11 @@ it('§9.4 · filters the queue by the agent responsible', async () => {
   act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
   await view.findByText('③ Draft')
 
-  const agent = view.getByRole('combobox', { name: faberloomEn['mesa.agent'] })
-  fireEvent.change(agent, { target: { value: 'agent-2' } })
+  const account = view.getByRole('combobox', { name: faberloomEn['mesa.account'] })
+  fireEvent.change(account, { target: { value: 'Sondel S.A.' } })
   await waitFor(() => {
-    expect(view.queryAllByRole('button', { name: /PF 1000/u })).toHaveLength(0)
-    expect(view.getAllByRole('button', { name: /PF 2000/u }).length).toBeGreaterThan(0)
+    expect(view.queryAllByRole('button', { name: /PF 2000/u })).toHaveLength(0)
+    expect(view.getAllByRole('button', { name: /PF 1000/u }).length).toBeGreaterThan(0)
   })
 })
 
@@ -2976,4 +2977,22 @@ it('offers to classify the pending items and calls the classifier', async () => 
 
   fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.classify.pending'] }))
   await waitFor(() => { expect(boardClassify).toHaveBeenCalledWith(50) })
+})
+
+it('offers the MWT client book in the account filter, not only the accounts with items', async () => {
+  const { runtime, view, boardDetail } = await bench()
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  const accounts = await view.findByRole('combobox', { name: faberloomEn['mesa.account'] })
+  await waitFor(() => { expect(within(accounts).getByRole('option', { name: 'COMERCIALIZADORA UMMIE, S.A.' })).toBeTruthy() })
+  // An account the queue already names stays selectable next to the catalog.
+  expect(within(accounts).getByRole('option', { name: 'eguisa' })).toBeTruthy()
+})
+
+it('no longer offers the agent filter', async () => {
+  const { runtime, view, boardDetail } = await bench()
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByRole('combobox', { name: faberloomEn['mesa.account'] })
+  expect(view.queryByRole('combobox', { name: faberloomEn['mesa.agent'] })).toBeNull()
 })

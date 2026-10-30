@@ -495,6 +495,8 @@ export interface FaberloomPanelInjected {
   ) => Promise<Result<readonly FaberLoomBoardFieldChange[] | null>>
   /** Classify the items that carry no severity. */
   boardClassify: (limit: number) => Promise<Result<{ classified: number; failed: number; remaining: number }>>
+  /** Client names from the MWT.ONE catalog, for the account filter. */
+  boardAccounts: () => Promise<Result<readonly string[]>>
   /** Save or replace one named view. */
   boardSaveView: (name: string, filters: FaberLoomBoardViewFilters) => Promise<Result<readonly FaberLoomBoardView[]>>
   /** Remove one named view. */
@@ -2743,7 +2745,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
 
   return function FaberloomMesa(props: ScreenProps) {
     const {
-      t, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify,
+      t, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts,
       boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits,
       boardDiscard, boardResolveCandidate, boardAssignWorkspace, boardTakeDraft, boardRevalidate,
       boardSaveDraft, openTaskChat, goToWorkspace,
@@ -2760,10 +2762,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const [message, setMessage] = useState<string | null>(null)
     const [tick, setTick] = useState(0)
     const [classifying, setClassifying] = useState(false)
+    const [catalogAccounts, setCatalogAccounts] = useState<readonly string[]>([])
+    useEffect(() => {
+      void boardAccounts().then((result) => { if (result.ok) setCatalogAccounts(result.value) })
+    }, [])
     const [spaceFilter, setSpaceFilter] = useState('')
     const [severityFilter, setSeverityFilter] = useState('')
     const [accountFilter, setAccountFilter] = useState('')
-    const [assigneeFilter, setAssigneeFilter] = useState('')
     const [dueFilter, setDueFilter] = useState<'all' | 'overdue' | 'none'>('all')
     // Lista and Kanban group the filtered rows by Space (G7); Foco stays
     // item-by-item and therefore hides the toggle.
@@ -2889,7 +2894,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const matchesFilters = (row: FaberLoomBoardRow): boolean =>
       (spaceFilter.length === 0 || row.spaceId === spaceFilter)
       && (accountFilter.length === 0 || row.accountRef === accountFilter)
-      && (assigneeFilter.length === 0 || row.assigneeId === assigneeFilter)
       && (severityFilter.length === 0 || row.severity === severityFilter)
       && (dueFilter === 'all'
         || (dueFilter === 'overdue'
@@ -3030,8 +3034,16 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         }
         return depth
       }
+      const seenTitles = new Set<string>()
       return rows
         .map(space => ({ id: space.id, title: space.title, depth: depthOf(space.id) }))
+        .filter((space) => {
+          // The projection can repeat one Space; the picker shows it once.
+          const key = space.title.trim().toLocaleLowerCase()
+          if (seenTitles.has(key)) return false
+          seenTitles.add(key)
+          return true
+        })
         .sort((left, right) => left.depth - right.depth || left.title.localeCompare(right.title))
     })()
 
@@ -3076,13 +3088,12 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       ? t('mesa.emptyHint')
       : `${t('mesa.scope.outside')}: ${String(outsideCount)} · ${t('mesa.queue')}: ${String(rows.length)}`
     const emptyBlock = <StateBlock kind="empty" title={emptyTitle} text={emptyText} />
-    // Only the accounts the board actually shows belong in the filter.
-    const accountOptions = [...new Set(rows.map(row => row.accountRef).filter((account): account is string => account !== null))]
-      .sort((left, right) => left.localeCompare(right))
-    // Only the agents the board shows belong in the filter; an item without an
-    // assignee is a normal state, not a missing value (D-1).
-    const assigneeOptions = [...new Set(rows.map(row => row.assigneeId).filter((agent): agent is string => agent !== null))]
-      .sort((left, right) => left.localeCompare(right))
+    // The account filter offers the MWT.ONE client book plus any account an item
+    // already names, so a client with no queue yet is still selectable.
+    const accountOptions = [...new Set([
+      ...catalogAccounts,
+      ...rows.map(row => row.accountRef).filter((account): account is string => account !== null),
+    ])].sort((left, right) => left.localeCompare(right))
     // Saved views are the owner's named filters (§9.4); they store no items.
     const [savedViews, setSavedViews] = useState<readonly FaberLoomBoardView[]>([])
     const [activeView, setActiveView] = useState('')
@@ -3098,7 +3109,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       if (view === undefined) return
       setSpaceFilter(view.filters.spaceId ?? '')
       setAccountFilter(view.filters.accountRef ?? '')
-      setAssigneeFilter(view.filters.assigneeId ?? '')
       setSeverityFilter(view.filters.severity ?? '')
       setDueFilter(view.filters.due)
       setSelected(null)
@@ -3108,7 +3118,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       const filters: FaberLoomBoardViewFilters = {
         spaceId: spaceFilter.length === 0 ? null : spaceFilter,
         accountRef: accountFilter.length === 0 ? null : accountFilter,
-        assigneeId: assigneeFilter.length === 0 ? null : assigneeFilter,
+        assigneeId: null,
         severity: severityFilter.length === 0 ? null : severityFilter,
         due: dueFilter,
       }
@@ -3225,13 +3235,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       if (view !== 'foco') return
       if (selected !== null && visible.some(row => row.id === selected)) return
       setSelected(visible[0]?.id ?? null)
-    }, [view, spaceFilter, severityFilter, accountFilter, assigneeFilter, dueFilter, overview])
+    }, [view, spaceFilter, severityFilter, accountFilter, dueFilter, overview])
 
     // A different filter set or an empty queue starts a fresh round (G7).
     useEffect(() => {
       setSkipped([])
       setRoundExhausted(false)
-    }, [spaceFilter, severityFilter, accountFilter, assigneeFilter, dueFilter, queueEmpty])
+    }, [spaceFilter, severityFilter, accountFilter, dueFilter, queueEmpty])
 
     // A board view keeps the row the reader came back to; when the queue no
     // longer holds it (an approval closed the item), the selection goes with it
@@ -4073,10 +4083,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         <select value={accountFilter} aria-label={t('mesa.account')} onChange={(event) => { setAccountFilter(event.target.value); setActiveView('') }}>
           <option value="">{t('mesa.filter.accountAll')}</option>
           {accountOptions.map(account => <option key={account} value={account}>{account}</option>)}
-        </select>
-        <select value={assigneeFilter} aria-label={t('mesa.agent')} onChange={(event) => { setAssigneeFilter(event.target.value); setActiveView('') }}>
-          <option value="">{t('mesa.filter.agentAll')}</option>
-          {assigneeOptions.map(agent => <option key={agent} value={agent}>{agent}</option>)}
         </select>
         <select value={severityFilter} aria-label={t('mesa.severity')} onChange={(event) => { setSeverityFilter(event.target.value); setActiveView('') }}>
           <option value="">{t('mesa.allSeverities')}</option>

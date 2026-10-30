@@ -2057,7 +2057,14 @@
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
+  color-scheme: dark;
   font: var(--dsw-font-caption);
+}
+
+.mesaFilters option,
+.mesaProperties option {
+  background-color: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
 }
 
 .mesaFilters select:focus-visible {
@@ -2231,25 +2238,32 @@
 .mesaProperties {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 18px;
-  align-items: baseline;
+  gap: 8px 18px;
+  align-items: center;
   font: var(--dsw-font-caption);
 }
 
 .mesaProperty {
   display: inline-flex;
   gap: 6px;
-  align-items: baseline;
+  align-items: center;
   color: var(--dsw-alias-label-tertiary);
 }
 
 .mesaProperty select {
-  padding: 0;
-  border: 0;
-  background: none;
+  padding: 4px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
+  color-scheme: dark;
   font: inherit;
   cursor: pointer;
+}
+
+.mesaProperty select:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-accent);
+  outline-offset: 1px;
 }
 
 .mesaProperty select:disabled {
