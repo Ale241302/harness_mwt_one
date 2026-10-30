@@ -15,7 +15,7 @@ B2B 账户使用部署提供的 DeepSeek 密钥登录。该密钥可以回答 MW
 - 没有负责代理的 Space 组合产品 persona 与 MWT.ONE、SICOP、邮件工具，而不是回退到部署组合。
 - 每个组合会话限制在 `allowedToolPrefixes`（MWT、SICOP 与 `faberloom_` 产品工具）以及读取工具、`skill` 与 `ask_user`。
 - `llm/stream` 监听器在调用供应商之前拒绝个人首轮；`tools/pre-execute` 拒绝仍使用共享密钥的会话执行产品之外的工具。工具结果后的工作续接、带 purpose 的辅助调用以及没有会话的内部调用会绕过守卫，因此分类、压缩与标题生成继续工作。
-- 守卫读取凭据层：来源不是 `env` 的值属于账户自己的密钥，不受限制；因此配置 Gemini、Claude、OpenAI 或自己的 DeepSeek 密钥的用户可以用它处理个人工作。
+- 守卫读取凭据层：可写凭据存储（`file`）中的值属于账户自己的密钥，不受限制；因此配置 Gemini、Claude、OpenAI 或自己的 DeepSeek 密钥的用户可以用它处理个人工作。
 
 拒绝以一个可见的助手文本块返回，并指向“设置 → 模型”以配置个人密钥。策略文本同时作为 `faberloom:usage-policy` 安装，使模型看到与守卫执行的相同范围。
 

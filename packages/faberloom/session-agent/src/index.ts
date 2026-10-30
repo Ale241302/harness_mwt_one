@@ -808,9 +808,9 @@ export class FaberLoomSessionAgent extends Service {
 
   /**
    * Whether the request authenticates with a credential the user stored. The
-   * deployment's key is inherited from the environment; a value in the
-   * credential store belongs to the account and takes the request outside the
-   * shared-key policy.
+   * deployment's key comes from the environment or the Harness-home `.env`
+   * layer; only a value in the writable credential store belongs to the account
+   * and takes the request outside the shared-key policy.
    * @param options - the request the loop assembled.
    * @returns true when the user owns the credential.
    */
@@ -823,7 +823,9 @@ export class FaberLoomSessionAgent extends Service {
     const credentials = this.ctx.get('credentials') as CredentialsView | undefined
     if (credentials === undefined) return false
     const resolved = await credentials.resolve(target as CredentialRef)
-    return resolved !== undefined && resolved.source !== 'env'
+    // The writable credential store (`file`) is the account's own key; the
+    // deployment defaults and the Harness-home `.env` layer are not.
+    return resolved !== undefined && resolved.source === 'file'
   }
 }
 

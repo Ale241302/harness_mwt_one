@@ -15,7 +15,7 @@ B2B accounts sign in with a deployment-owned DeepSeek key. That key may answer q
 - A Space without a responsible agent composes a product persona with the MWT.ONE, SICOP, and mail tools instead of falling back to the deployment composition.
 - Every composed session is restricted to `allowedToolPrefixes` (MWT, SICOP, and the `faberloom_` product tools) plus the read tools, `skill`, and `ask_user`.
 - An `llm/stream` listener refuses a personal first turn before the provider is called, and `tools/pre-execute` denies a product-external tool for a session still on the shared key. Continuing a work turn after a tool result, auxiliary calls with a purpose, and internal calls without a session bypass the guard, so classification, compaction, and titles keep working.
-- The guard reads the credential seam: a value whose source is not `env` is the account's own key and is never limited, so a user who configures Gemini, Claude, OpenAI, or their own DeepSeek key can use it for personal work.
+- The guard reads the credential seam: a value in the writable credential store (`file`) is the account's own key and is never limited, so a user who configures Gemini, Claude, OpenAI, or their own DeepSeek key can use it for personal work.
 
 The refusal is one visible assistant text block that points to Settings → Models for a personal key. The policy text is also installed as `faberloom:usage-policy` so the model sees the same scope the guard enforces.
 
