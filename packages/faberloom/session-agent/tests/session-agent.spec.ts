@@ -173,6 +173,7 @@ describe('FaberLoomSessionAgent composition', () => {
     expect(sectionText(installed, 'faberloom:space-directive')).toBe('Mantén el foco en SICOP.')
     expect(sectionText(installed, 'faberloom:session-agent')).toContain('Skills asignadas: docx')
     expect(installed.sections.find(section => section.name === 'faberloom:usage-policy')).toMatchObject({ order: 8 })
+    expect(sectionText(installed, 'faberloom:usage-policy')).toContain('SICOP es solo contratación pública')
     expect(installed.restrict).toHaveBeenCalledWith({ allow: ['mcp__sicop__x'], deny: ['mcp__sicop__x'] })
   })
 
@@ -618,14 +619,21 @@ describe('shared-key usage guard', () => {
 
   it('denies a non-product tool for a shared-key session and allows it with the account key', async () => {
     const credentials = { resolve: async () => ({ value: 'shared', source: 'env' }) }
-    const { ctx } = await harness(
+    const { ctx, agent } = await harness(
       { ownerId: 'owner@test', role: 'client_b2b' },
       { credentials, launchEnvironment: deploymentEnvironment() },
-      '/home/SICOP',
+      '/home/CR',
     )
     const next = vi.fn(async () => ({ kind: 'allow' }))
-    const agent = { session: { id: 'session-1' } }
     await expect(ctx.waterfall('tools/pre-execute', { name: 'bash', agent } as never, next as never)).resolves.toMatchObject({ kind: 'deny' })
+    // Search tools read inside the session's readable roots without a shell.
+    await expect(ctx.waterfall('tools/pre-execute', { name: 'grep', agent, arguments: { path: '/home/CR' } } as never, next as never))
+      .resolves.toEqual({ kind: 'allow' })
+    await expect(ctx.waterfall('tools/pre-execute', { name: 'glob', agent, arguments: { path: '/home/CR' } } as never, next as never))
+      .resolves.toEqual({ kind: 'allow' })
+    // A sibling Space stays refused until the session records a read grant.
+    await expect(ctx.waterfall('tools/pre-execute', { name: 'grep', agent, arguments: { path: '/home/CO' } } as never, next as never))
+      .resolves.toMatchObject({ kind: 'deny' })
     await expect(ctx.waterfall('tools/pre-execute', { name: 'mcp__mwt__expediente_listar', agent } as never, next as never))
       .resolves.toEqual({ kind: 'allow' })
 

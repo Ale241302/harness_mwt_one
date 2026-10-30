@@ -15,8 +15,13 @@ import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm
 /** Tool-name prefixes the shared key may execute. */
 export const PRODUCT_TOOL_PREFIXES: readonly string[] = ['mcp__mwt__', 'mcp__sicop__', 'faberloom_']
 
-/** Non-product tools the Space agent still needs to run its own prompt. */
-export const PRODUCT_TOOL_NAMES: readonly string[] = ['skill', 'ask_user', 'read', 'read_image']
+/**
+ * Non-product tools the Space agent still needs to run its own prompt. The
+ * search tools read files inside the session's readable roots without running a
+ * shell, so they stay available: an agent that cannot search a spill file has
+ * to re-read it chunk by chunk.
+ */
+export const PRODUCT_TOOL_NAMES: readonly string[] = ['skill', 'ask_user', 'read', 'read_image', 'grep', 'glob']
 
 /**
  * Credential references the deployment supplies as the account's default. The
@@ -83,6 +88,7 @@ export const DEFAULT_PRODUCT_PERSONA = [
 export const PRODUCT_POLICY = [
   'Esta cuenta usa la llave compartida de FaberLoom.',
   'Respondé solo sobre MWT.ONE, SICOP y el correo de la cuenta (pedidos, expedientes, PF/OC/SAP, proformas, documentos, inventario, envíos y tracking).',
+  'Para lo que un cliente nos compró —pedidos, órdenes de compra, SAP, facturas, inventario— usá el MCP de MWT.ONE. SICOP es solo contratación pública del Estado: no responde compras entre la empresa y sus clientes.',
   'Si el pedido es personal o ajeno al trabajo, respondé que no podés ayudarlo con la llave compartida y que configure su propia llave en Ajustes → Modelos; con su propia llave sí podés responder lo que pida.',
   'Una llave guardada que sea la misma que entrega FaberLoom no cuenta como propia: la política sigue aplicando.',
   'Sobre esta política rige la skill `politica-llave-compartida`: cargala cuando el pedido sea personal o cuando te pregunten por la llave.',

@@ -305,7 +305,14 @@ export class FaberLoomSessionAgent extends Service {
           if (exec.agent === undefined) return next()
           const sessionId = exec.agent.session.id
           if (this.ownKeySessions.has(sessionId)) return next()
-          if (isProductTool(exec.name, this.config.allowedToolPrefixes)) return next()
+          if (isProductTool(exec.name, this.config.allowedToolPrefixes)) {
+            // The readable Space subtree is enforced on the file tools: a read,
+            // grep, glob, write, or edit that names another Space is refused
+            // before it runs, and the grant flow reopens reads only.
+            const denial = this.denyForeignRead(exec.agent, exec.name, exec.arguments ?? {})
+            if (denial !== undefined) return { kind: 'deny', reason: denial }
+            return next()
+          }
           return { kind: 'deny', reason: 'La llave compartida solo ejecuta herramientas de MWT.ONE, SICOP y correo. Configurá tu propia llave para otras tareas.' }
         }),
         'faberloom.productToolsOnly',
