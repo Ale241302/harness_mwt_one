@@ -175,6 +175,12 @@ export function apply(ctx: ClientContext): void {
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
+      boardAssignAgent: (id, agentId, rowVersion) => {
+        const run = ctx.remote.faberloomView.boardAssignAgent(id, agentId, rowVersion)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      boardArtifactUrl: key => ctx.remote.faberloomView.boardArtifactUrl(key),
       boardSaveEdits: (id, input) => {
         const run = ctx.remote.faberloomView.boardSaveEdits(id, {
           expectedRowVersion: input.rowVersion, baseVersion: input.baseVersion, changes: input.changes,

@@ -50,9 +50,9 @@ captura pegada.
 
 ## Qué extraes
 
-Por cada correo relevante anota, con la fuente (archivo o correo + fecha):
+Por cada correo relevante anota, con la fuente legible (asunto del correo y fecha, o documento):
 
-- Remitente, fecha, asunto y `uid`.
+- Remitente, fecha y asunto. El `uid` es transporte: nunca se escribe en la evidencia.
 - PF / proforma, OC / PO, SAP, pedido o remesa.
 - Cliente final y razón social alterna si la hay.
 - Operador: Muito Work Limitada o el cliente.
@@ -69,6 +69,15 @@ Por cada correo relevante anota, con la fuente (archivo o correo + fecha):
 - Documentos: packing list, romaneiro, factura comercial, certificado de
   origen, BL/AWB, booking, DUA, SAP, OC, PF, seguro.
 
+## Cómo se escribe la evidencia del ítem
+
+Cada referencia va en su propia línea y se entiende sin abrir el correo:
+
+- Correo: `Correo «<asunto completo>» de <remitente> (<fecha>)`.
+- Adjunto: `Adjunto «<nombre original>» guardado en <ruta del workspace> y en el almacén (key documento/<...>)`.
+- Expediente: `Expediente <código> (PF <código>, PO <código>, SAP <código>) en estado <ESTADO>`.
+- Nunca uses el `uid`, un UUID suelto ni una clave de almacenamiento como única referencia.
+- Al crear el ítem manda `documentRef` con la `key documento/...` del adjunto principal: la Mesa la firma y la abre en otra pestaña.
 ## Reglas de extracción
 
 - Un dato que no está, no se inventa. Se marca `[PENDIENTE]` con dónde se

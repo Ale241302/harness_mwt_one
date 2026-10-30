@@ -19,28 +19,27 @@ async function task(harness: Awaited<ReturnType<typeof bootBoard>>, accountRef: 
   })
 }
 
-describe('severity learning (human correction)', () => {
-  it('applies the severity a human chose to the next item of the same type and account', async () => {
-    const harness = await bootBoard()
-    const first = await task(harness, 'Eguisa')
-    expect(first.severity).toBe('LOW')
-    await harness.board.setSeverity(ACTOR_A, first.id, 'HIGH', 'HUMAN')
+describe('severity learning (human correction)', () => {  it('applies the severity a human chose to the next item of the same type and account', async () => {
+  const harness = await bootBoard()
+  const first = await task(harness, 'Eguisa')
+  expect(first.severity).toBe('LOW')
+  await harness.board.setSeverity(ACTOR_A, first.id, 'HIGH', 'HUMAN')
 
-    const next = await task(harness, 'Eguisa')
-    expect(next).toMatchObject({ severity: 'HIGH', severitySource: 'HUMAN' })
+  const next = await task(harness, 'Eguisa')
+  expect(next).toMatchObject({ severity: 'HIGH', severitySource: 'HUMAN' })
 
-    // Another account keeps the shipped rule.
-    const other = await task(harness, 'Sonepar')
-    expect(other).toMatchObject({ severity: 'LOW', severitySource: 'RULE' })
-  })
+  // Another account keeps the shipped rule.
+  const other = await task(harness, 'Sonepar')
+  expect(other).toMatchObject({ severity: 'LOW', severitySource: 'RULE' })
+})
 
-  it('does not learn from a rule or a model proposal', async () => {
-    const harness = await bootBoard()
-    const first = await task(harness, 'Eguisa')
-    await harness.board.setSeverity(ACTOR_A, first.id, 'CRITICAL', 'LLM')
-    const next = await task(harness, 'Eguisa')
-    expect(next).toMatchObject({ severity: 'LOW', severitySource: 'RULE' })
-  })
+it('does not learn from a rule or a model proposal', async () => {
+  const harness = await bootBoard()
+  const first = await task(harness, 'Eguisa')
+  await harness.board.setSeverity(ACTOR_A, first.id, 'CRITICAL', 'LLM')
+  const next = await task(harness, 'Eguisa')
+  expect(next).toMatchObject({ severity: 'LOW', severitySource: 'RULE' })
+})
 })
 
 describe('classify pending items', () => {
@@ -97,5 +96,54 @@ describe('classify pending items', () => {
     const result = await harness.board.classifyUnclassified(ACTOR_A)
     expect(result).toMatchObject({ classified: 0, failed: 1, remaining: 1 })
     expect((await harness.board.get(ACTOR_A, id)).severity).toBeNull()
+  })
+
+  it('records the question the classifier could not answer', async () => {
+    const pool = new MemoryMediaPool()
+    const id = await seedRawItem(pool, rawBoardItem({ artifactType: 'tarea', severity: null }), 'item-doubt')
+    const harness = await bootBoard({ pool })
+    harness.ctx.provide('faberloomBoardClassifier', {
+      modelVersion: 'test-model-1',
+      async classifySeverity() {
+        return { status: 'invalid', detail: 'no answer' }
+      },
+    })
+    await harness.board.classifyUnclassified(ACTOR_A)
+    const item = await harness.board.get(ACTOR_A, id)
+    expect(item.severity).toBe('LOW')
+    expect(item.doubts).toEqual(['El agente no pudo justificar la prioridad; salió de las reglas.'])
+    // A human decision answers the question.
+    await harness.board.setSeverity(ACTOR_A, id, 'HIGH', 'HUMAN')
+    expect((await harness.board.get(ACTOR_A, id)).doubts).toEqual([])
+  })
+})
+
+describe('live classification sweep', () => {
+  it('reapplies a human lesson to the items it already classified', async () => {
+    const harness = await bootBoard()
+    const first = await task(harness, 'Eguisa')
+    const second = await task(harness, 'Eguisa')
+    expect(second.severitySource).toBe('RULE')
+
+    await harness.board.setSeverity(ACTOR_A, first.id, 'HIGH', 'HUMAN')
+    const swept = await harness.board.sweepClassifications()
+    expect(swept).toMatchObject({ reclassified: 1, remaining: 0 })
+    expect(await harness.board.get(ACTOR_A, second.id)).toMatchObject({
+      severity: 'HIGH',
+      severitySource: 'HUMAN',
+      doubts: [],
+    })
+
+    // A second sweep changes nothing: the lesson is already applied.
+    expect(await harness.board.sweepClassifications()).toMatchObject({ reclassified: 0 })
+  })
+
+  it('assigns the catalog agent responsible for an item', async () => {
+    const harness = await bootBoard()
+    const item = await task(harness, 'Eguisa')
+    const assigned = await harness.board.assignAgent(ACTOR_A, item.id, 'agent-operaciones')
+    expect(assigned.assigneeId).toBe('agent-operaciones')
+    const cleared = await harness.board.assignAgent(ACTOR_A, item.id, null)
+    expect(cleared.assigneeId).toBeNull()
   })
 })

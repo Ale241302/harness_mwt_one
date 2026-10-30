@@ -458,6 +458,8 @@ export interface FaberLoomBoardItem {
    * or an explicit no-origin mark (W-36).
    */
   readonly fieldOrigins: readonly BoardFieldOriginEntry[]
+  /** Questions the classifier left open; a human correction clears them. */
+  readonly doubts: readonly string[]
   /** Candidate waiting for an explicit choice, or null. */
   readonly pendingCandidate: BoardCandidate | null
   /** Audit events, oldest first. */

@@ -1337,6 +1337,19 @@ describe('FaberLoomBoard E15 single route to EJECUTADO', () => {
 })
 
 describe('FaberLoomBoard E15 CEO signature', () => {
+  it('approves a protected action without a signature when the deployment does not require one', async () => {
+    const harness = await bootBoard({
+      board: { effectReversalWindowMs: {}, ceoSignatureRequired: false },
+      access: { protectedActionTypes: ['inventory.reserve'], signingAuthorities: ['ceo@sondelsa.com'] },
+    })
+    mountAdapter(harness, 'inventory.reserve', mutableAdapter().port)
+    const item = await effectItem(harness, { businessKey: 'oc-505289' })
+    const accepted = await accept(harness.board, item, {
+      actionType: 'inventory.reserve', destination: 'mwt-warehouse-1',
+    })
+    expect(accepted.reservation).toMatchObject({ status: 'RESERVADA', actionType: 'inventory.reserve' })
+  })
+
   it('W-16: a protected action type needs an active signature before the reservation', async () => {
     const ceo = 'ceo@sondelsa.com'
     const harness = await bootBoard({

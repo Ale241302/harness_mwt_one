@@ -165,6 +165,8 @@ export interface FaberLoomBoardRow {
   readonly state: string
   /** Visible column. */
   readonly column: string
+  /** Optimistic token the row was read with. */
+  readonly rowVersion: number
   /** Severity, or null while unclassified. */
   readonly severity: string | null
   /** Routine this task feeds, or null when it is standalone. */
@@ -667,6 +669,10 @@ export interface FaberLoomBoardDetail {
   readonly summary: string
   /** Evidence references. */
   readonly evidence: readonly string[]
+  /** Document reference the artifact names (a storage key or a URL), or null. */
+  readonly documentRef: string | null
+  /** Questions the classifier left open; empty once a human decides. */
+  readonly doubts: readonly string[]
   /** Approved revision number, or null. */
   readonly approvedRevision: number | null
   /** Whether the prepared result went stale. */

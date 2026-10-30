@@ -95,4 +95,26 @@ describe('board accounts from the MWT catalog', () => {
     })
     expect(await view.boardAccounts()).toEqual(['PRO CUSTOMER CORP.'])
   })
+
+  it('resolves a stored document key into the signed URL the storage tool returns', async () => {
+    const execute = vi.fn(async () => ({
+      isError: false,
+      value: {
+        content: [{ type: 'text', text: JSON.stringify({ url: 'http://storage.test/bl.pdf?X-Amz-Signature=x' }) }],
+      },
+    }))
+    const view = harness({ schemas: () => [{ name: 'mcp__mwt__artefacto_archivo_descargar' }], execute })
+    expect(await view.boardArtifactUrl('documento/a9/bl.pdf')).toEqual({
+      url: 'http://storage.test/bl.pdf?X-Amz-Signature=x',
+    })
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'mcp__mwt__artefacto_archivo_descargar',
+      arguments: { key: 'documento/a9/bl.pdf', ttl_minutes: 15 },
+    }))
+  })
+
+  it('returns null when the deployment mounts no storage tool', async () => {
+    const view = harness({ schemas: () => [], execute: vi.fn() })
+    expect(await view.boardArtifactUrl('documento/a9/bl.pdf')).toBeNull()
+  })
 })

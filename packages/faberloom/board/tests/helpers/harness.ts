@@ -212,6 +212,7 @@ export function rawBoardItem(overrides: Partial<BoardItemRecord> = {}): BoardIte
     accountRef: null,
     artifactHash: 'hash-heredado',
     fieldOrigins: [],
+    doubts: [],
     pendingCandidate: null,
     events: [],
     discardReason: null,

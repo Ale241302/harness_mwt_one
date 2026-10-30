@@ -1363,7 +1363,6 @@ export class FaberLoomViewService extends TypertRemoteService {
     const actor = this.actor()
     const space = await this.spaceForWorkspace(String(workspace.id), workspace.title)
     if (space === undefined) return
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const text = sessionTurnMemory(session.snapshotEvents())
     if (text.length === 0) return
     // A member without `create-memory` on the Space leaves no record here: the
@@ -1611,6 +1610,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         status: item.status,
         state: item.state,
         column: item.column,
+        rowVersion: item.rowVersion,
         severity: item.severity,
         routineId: item.routineId,
         spaceId: item.spaceId,
@@ -6680,6 +6680,8 @@ export class FaberLoomViewService extends TypertRemoteService {
       rowVersion: item.rowVersion,
       summary: restricted ? '' : revision?.summary ?? '',
       evidence: restricted ? [] : revision === undefined ? [] : [...revision.evidence],
+      documentRef: restricted ? null : revision?.documentRef ?? null,
+      doubts: restricted ? [] : [...item.doubts ?? []],
       approvedRevision: item.approvedRevision,
       stale: item.stale,
       staleReason: item.staleReason,
@@ -6867,6 +6869,56 @@ export class FaberLoomViewService extends TypertRemoteService {
       this.actor(), id as FaberLoomBoardItemId, workspaceId,
     )
     return await this.boardDetail(String(assignment.item.id))
+  }
+
+  /**
+   * Assign the catalog agent responsible for one item.
+   * @param id - board item id.
+   * @param agentId - catalog agent id, or null to leave it unassigned.
+   * @param rowVersion - expected optimistic token.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardAssignAgent')
+  async boardAssignAgent(id: string, agentId: string | null, rowVersion: number): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot assign agents')
+    await this.ctx.faberloomBoard.assignAgent(this.actor(), id as FaberLoomBoardItemId, agentId, rowVersion)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Resolve a stored document reference into a temporary URL the browser can
+   * open. The MWT.ONE storage tool signs it for a few minutes, so the panel
+   * never handles a credential or a bucket address of its own.
+   * @param key - storage key the item declares (`documento/...`).
+   * @returns the signed URL, or null when the deployment has no storage tool.
+   */
+  @Remote('boardArtifactUrl')
+  async boardArtifactUrl(key: string): Promise<{ readonly url: string } | null> {
+    const tools = this.ctx.get('tools')
+    if (tools === undefined) return null
+    const toolName = tools.schemas()
+      .map(schema => schema.name)
+      .find(name => /^mcp__[A-Za-z0-9_-]{1,32}__artefacto_archivo_descargar$/u.test(name))
+    if (toolName === undefined) return null
+    try {
+      const result = await tools.execute({
+        callId: randomUUID() as never,
+        name: toolName,
+        arguments: { key, ttl_minutes: 15 },
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (result.isError) return null
+      const value = result.value as { content?: readonly { type?: string; text?: string }[] }
+      const text = (value.content ?? [])
+        .filter(block => block.type === 'text' && typeof block.text === 'string')
+        .map(block => block.text ?? '')
+        .join('\n')
+      const parsed = JSON.parse(text) as { url?: unknown }
+      return typeof parsed.url === 'string' && parsed.url.length > 0 ? { url: parsed.url } : null
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: no se pudo firmar el documento: ${String(error)}`)
+      return null
+    }
   }
 
   /**

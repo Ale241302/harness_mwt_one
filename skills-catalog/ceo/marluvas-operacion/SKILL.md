@@ -108,8 +108,11 @@ Puedes escribir solo cuando se cumplen estas tres condiciones:
    una recepción o un movimiento.
 
 Si falta cualquiera de las tres, no escribas a ciegas: crea una tarea con
-`faberloom_board_create` que diga qué falta, qué buscaste y qué fuente lo
-respalda. Si el expediente no se puede identificar, no lo crees.
+`faberloom_board_submit` que diga qué falta, qué buscaste y qué fuente lo
+respalda. La evidencia cita el asunto del correo, el documento y el expediente;
+nunca el `uid` ni un UUID. Si el adjunto está en el almacén, mándalo también en
+`documentRef` con su `key documento/...` para que la Mesa lo abra. Si el
+expediente no se puede identificar, no lo crees.
 
 Nunca cambies un precio, una comisión o un plazo sin una fuente explícita
 (OC, proforma, factura o instrucción del usuario). Si el precio de la OC y el

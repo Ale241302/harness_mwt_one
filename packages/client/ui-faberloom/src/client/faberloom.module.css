@@ -2583,6 +2583,11 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  border-radius: 8px;
+}
+
+.mesaColumn:hover {
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .mesaRouterToggle {
@@ -2619,6 +2624,28 @@
   margin: 0;
   padding-left: 16px;
 }
+
+.mesaEvidenceList li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.linkButton:hover,
+.linkButton:focus-visible {
+  color: var(--dsw-alias-label-primary);
+}
 .mesaColumn h3 {
   display: flex;
   gap: 8px;
@@ -2640,7 +2667,11 @@
   background: var(--dsw-alias-bg-layer-1);
   color: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: grab;
+}
+
+.mesaCard:active {
+  cursor: grabbing;
 }
 
 .mesaCard:hover,

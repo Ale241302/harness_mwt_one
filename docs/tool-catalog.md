@@ -2407,6 +2407,10 @@ Submit one prepared result or one concrete missing-data task to the Mesa. Requir
         "type": "string"
       }
     },
+    "documentRef": {
+      "type": "string",
+      "description": "Storage key (documento/...) or URL of the item document; the Mesa opens it in a new tab."
+    },
     "artifactType": {
       "type": "string",
       "description": "proforma, respuesta, tarea, ..."

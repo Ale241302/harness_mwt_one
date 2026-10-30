@@ -248,6 +248,20 @@ export interface Config {
    * a deployment enables it explicitly when volume justifies it.
    */
   readonly bulkApprovalEnabled?: boolean
+  /**
+   * Milliseconds between live classification sweeps. Zero keeps the sweep idle;
+   * a deployment sets it so the agent reapplies human corrections and picks up
+   * items without priority while nobody is looking at them.
+   */
+  readonly reclassifyIntervalMs?: number
+  /** Items one sweep classifies before it stops, so a large backlog stays bounded. */
+  readonly reclassifyBatchSize?: number
+  /**
+   * Whether an acceptance of a protected action type needs a CEO signature
+   * (W-16). The default keeps the obligation; a deployment that does not
+   * require signatures turns it off here instead of hiding the refusal in the UI.
+   */
+  readonly ceoSignatureRequired?: boolean
 }
 
 /** Validated board configuration. */
@@ -271,6 +285,9 @@ export const Config = z.object({
    * the default is false; W-15's behavior is implemented and tested behind it.
    */
   bulkApprovalEnabled: z.boolean().default(false),
+  reclassifyIntervalMs: z.number().int().min(0).default(0),
+  reclassifyBatchSize: z.number().int().positive().default(25),
+  ceoSignatureRequired: z.boolean().default(true),
 })
 
 /** Discard reasons signed in the specification. */
@@ -517,6 +534,38 @@ function severityLessonKey(companyId: string | null, artifactType: string, accou
   return [companyId ?? 'sin-empresa', artifactType, accountRef ?? 'sin-cuenta'].join('\u0000')
 }
 
+/**
+ * The questions the classifier left open. A confident answer leaves none; a
+ * failure, a low confidence, or no answer at all becomes one visible doubt the
+ * panel shows next to the item, so the human knows what the agent could not
+ * decide instead of reading a bare severity token.
+ * @param result - the classifier answer, or undefined when no port was mounted.
+ * @param decision - what the rules and the answer resolved.
+ * @param threshold - the confidence floor the deployment accepts.
+ * @returns the doubts to record on the item.
+ */
+function doubtsOf(
+  result: BoardClassifierResult | undefined,
+  decision: BoardSeverityDecision,
+  threshold: number,
+): readonly string[] {
+  if (result?.status === 'timeout') {
+    return ['El agente no respondió a tiempo; la prioridad salió de las reglas.']
+  }
+  if (result?.status === 'invalid') {
+    return ['El agente no pudo justificar la prioridad; salió de las reglas.']
+  }
+  if (result?.status === 'classified' && result.confidence < threshold) {
+    return [`El agente dudó (confianza ${result.confidence.toFixed(2)}); la prioridad salió de las reglas.`]
+  }
+  if (decision.severity === null) {
+    return [result === undefined
+      ? 'No hay regla ni agente para este tipo de artefacto; asigná una prioridad.'
+      : 'El agente no pudo clasificar este tipo de artefacto; asigná una prioridad.']
+  }
+  return []
+}
+
 /** The fields one item declares: its summary, its artifact content, and its origins. */
 function declaredItemFields(record: BoardItemRecord): readonly string[] {  const last = record.revisions[record.revisions.length - 1]
   return [...new Set([
@@ -581,6 +630,12 @@ export class FaberLoomBoard extends Service {
   /** Milliseconds the classifier port may take before the answer counts as a timeout. */
   private readonly classifierTimeoutMs: number
   private readonly bulkApprovalEnabled: boolean
+  /** Live classification sweep cadence; zero keeps it idle. */
+  private readonly reclassifyIntervalMs: number
+  /** Items one sweep classifies. */
+  private readonly reclassifyBatchSize: number
+  /** Whether a protected acceptance needs a CEO signature. */
+  private readonly ceoSignatureRequired: boolean
   /** Outbox sweep cadence; zero keeps the consumer idle. */
   private readonly dispatchIntervalMs: number
   /** How long a refused dispatch waits before the consumer retries it. */
@@ -628,9 +683,13 @@ export class FaberLoomBoard extends Service {
     this.effectActionTypes = new Set(resolved.effectActionTypes)
     this.classifierTimeoutMs = resolved.classifierTimeoutMs
     this.bulkApprovalEnabled = resolved.bulkApprovalEnabled
+    this.reclassifyIntervalMs = resolved.reclassifyIntervalMs
+    this.reclassifyBatchSize = resolved.reclassifyBatchSize
+    this.ceoSignatureRequired = resolved.ceoSignatureRequired
     this.dispatchIntervalMs = resolved.effectDispatchIntervalMs
     this.dispatchBackoffMs = resolved.effectDispatchBackoffMs
     this.startEffectConsumer()
+    this.startClassificationSweep()
   }
 
   /**
@@ -649,13 +708,28 @@ export class FaberLoomBoard extends Service {
     this.ctx.effect(() => () => clearInterval(timer), 'faberloom.boardEffectConsumer')
   }
 
-  private domain(): Promise<Domain<typeof boardDomainSpec>> {
-    this.domainPromise ??= (async () => {
-      const domain = await this.ctx.storageDomain.open(boardDomainSpec)
-      this.ctx.effect(() => () => domain.close(), 'faberloom.boardDomainClose')
-      return domain
-    })()
-    return this.domainPromise
+  /**
+   * Run the live classification sweep on the configured cadence. The timer
+   * belongs to the service fiber, so disposing the plugin stops it, and `unref`
+   * keeps a forgot-to-dispose host from being held open.
+   */
+  private startClassificationSweep(): void {
+    if (this.reclassifyIntervalMs === 0) return
+    const timer: ReturnType<typeof setInterval> = setInterval(() => {
+      void this.sweepClassifications().catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: classification sweep failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }, this.reclassifyIntervalMs)
+    if (typeof timer === 'object') timer.unref()
+    this.ctx.effect(() => () => clearInterval(timer), 'faberloom.classificationSweep')
+  }
+
+  private domain(): Promise<Domain<typeof boardDomainSpec>> {    this.domainPromise ??= (async () => {
+    const domain = await this.ctx.storageDomain.open(boardDomainSpec)
+    this.ctx.effect(() => () => domain.close(), 'faberloom.boardDomainClose')
+    return domain
+  })()
+  return this.domainPromise
   }
 
   private async items(): Promise<KvTable<FaberLoomBoardItemId, BoardItemRecord>> {
@@ -1236,15 +1310,15 @@ export class FaberLoomBoard extends Service {
     summary: string,
     contentHash: string,
     maySendSummary: boolean,
-  ): Promise<BoardSeverityDecision> {
+  ): Promise<BoardSeverityDecision & { readonly doubts: readonly string[] }> {
     // A human correction outranks the shipped rule: the next item of this type
     // and account starts from what the human taught.
     const lesson = (await this.severityLearning()).get(severityLessonKey(companyId, artifactType, accountRef))
     if (lesson !== undefined) {
-      return { severity: lesson.severity as BoardSeverity, source: 'HUMAN', confidence: 1 }
+      return { severity: lesson.severity as BoardSeverity, source: 'HUMAN', confidence: 1, doubts: [] }
     }
     const rules = resolveSeverity({ artifactType, accountRef }, { confidenceThreshold: this.confidenceThreshold })
-    if (rules.severity !== null) return rules
+    if (rules.severity !== null) return { ...rules, doubts: [] }
     // A provisional class permits no field to leave (D-05): the port still
     // receives the type, account, and hash, but an empty summary.
     const readable = maySendSummary ? summary : ''
@@ -1258,7 +1332,14 @@ export class FaberLoomBoard extends Service {
     const table = await (await this.domain()).table('classification_cache')
     const cached = table.get(key)
     if (cached !== undefined) {
-      return { severity: cached.severity, source: cached.source, confidence: cached.confidence }
+      return {
+        severity: cached.severity,
+        source: cached.source,
+        confidence: cached.confidence,
+        doubts: cached.severity === null
+          ? ['El agente no pudo clasificar este tipo de artefacto; asigná una prioridad.']
+          : [],
+      }
     }
     let result: BoardClassifierResult | undefined
     if (classifier !== undefined) {
@@ -1301,7 +1382,7 @@ export class FaberLoomBoard extends Service {
         this.ctx.logger.warn(`faberloom: classification cache write failed: ${String(error)}`)
       })
     }
-    return decision
+    return { ...decision, doubts: doubtsOf(result, decision, this.confidenceThreshold) }
   }
 
   private async buildRecord(
@@ -1342,7 +1423,7 @@ export class FaberLoomBoard extends Service {
     // A run that reports a severity is measured against the confidence floor;
     // one that reports none falls to the deterministic rules and then, only if
     // a deployment mounted the port, to the classifier (W-37, W-51).
-    const severity = input.severity === undefined
+    const severity: BoardSeverityDecision & { readonly doubts?: readonly string[] } = input.severity === undefined
       ? await this.resolveEntrySeverity(
         input.companyId ?? actor.companyId ?? null,
         input.spaceId ?? null,
@@ -1367,6 +1448,7 @@ export class FaberLoomBoard extends Service {
       severity: severity.severity,
       severitySource: severity.source,
       severityConfidence: severity.confidence,
+      doubts: [...severity.doubts ?? []],
       dueAt: input.dueAt ?? null,
       valueAmount: input.valueAmount ?? null,
       valueCurrency: input.valueCurrency ?? null,
@@ -1607,6 +1689,7 @@ export class FaberLoomBoard extends Service {
    * @param source - who assigned it.
    * @param confidence - original classifier confidence, when known.
    * @param expectedRowVersion - optimistic token.
+   * @param doubts - questions the machine proposal left open; a human correction clears them.
    * @returns the updated item.
    */
   async setSeverity(
@@ -1616,10 +1699,17 @@ export class FaberLoomBoard extends Service {
     source: 'RULE' | 'LLM' | 'HUMAN' = 'HUMAN',
     confidence: number | null = null,
     expectedRowVersion?: number,
+    doubts?: readonly string[],
   ): Promise<FaberLoomBoardItem> {
     const previous = (await this.requireItem(id)).severity
     const updated = await this.mutate(writer, id, 'set_severity', current => ({
-      ...current, severity, severitySource: source, severityConfidence: confidence,
+      ...current,
+      severity,
+      severitySource: source,
+      severityConfidence: confidence,
+      // A human decision answers the agent's question; a machine proposal
+      // carries the doubts it could not settle.
+      doubts: source === 'HUMAN' ? [] : [...doubts ?? current.doubts],
     }), {
       expectedRowVersion,
       data: { previous, source, confidence },
@@ -1630,6 +1720,36 @@ export class FaberLoomBoard extends Service {
       await this.evaluateShadow(updated)
       await this.learnSeverity(updated)
     }
+    return updated
+  }
+
+  /**
+   * Assign the catalog agent responsible for one item. The item's agent is who
+   * the panel names, not who classified it: classification belongs to the
+   * deployment's live classifier, and this write only changes responsibility.
+   * @param writer - the acting identity.
+   * @param id - item id.
+   * @param agentId - catalog agent id, or null to leave the item unassigned.
+   * @param expectedRowVersion - optimistic token.
+   * @returns the updated item.
+   */
+  async assignAgent(
+    writer: BoardWriter,
+    id: FaberLoomBoardItemId,
+    agentId: string | null,
+    expectedRowVersion?: number,
+  ): Promise<FaberLoomBoardItem> {
+    const record = await this.requireItem(id)
+    this.authorizeWrite(record, writer)
+    if (TERMINAL.includes(stateOf(record))) {
+      throw new Error('faberloom: NO_ACCESS — a closed item cannot change its agent')
+    }
+    const updated = await this.mutate(writer, id, 'assign_agent', current => ({
+      ...current, assigneeId: agentId,
+    }), {
+      expectedRowVersion,
+      data: { assigneeId: agentId },
+    })
     return updated
   }
 
@@ -1672,57 +1792,123 @@ export class FaberLoomBoard extends Service {
       .filter(([, record]) => (record.companyId === null || record.companyId === actor.companyId))
       .filter(([, record]) => record.severity === null && !TERMINAL.includes(stateOf(record)))
       .slice(0, limit)
-    const classifier = this.ctx.get('faberloomBoardClassifier') as BoardClassifierPort | undefined
     let classified = 0
     let failed = 0
     for (const [id, record] of pending) {
-      try {
-        const classification = classifyDataClass({ artifactType: record.artifactType, accountRef: record.accountRef })
-        const last = record.revisions[record.revisions.length - 1]
-        const summary = classification.permittedFields.includes('summary') ? last?.summary ?? '' : ''
-        let decision: BoardSeverityDecision | undefined
-        if (classifier !== undefined) {
-          const controller = new AbortController()
-          const timer = setTimeout(() => controller.abort(), this.classifierTimeoutMs)
-          try {
-            const answer = await classifier.classifySeverity(
-              { artifactType: record.artifactType, accountRef: record.accountRef, contentHash: record.artifactHash ?? '', summary },
-              { signal: controller.signal, confidenceThreshold: this.confidenceThreshold },
-            )
-            if (answer.status === 'classified' && answer.confidence >= this.confidenceThreshold) {
-              decision = { severity: answer.severity, source: 'LLM', confidence: answer.confidence }
-            }
-          } catch {
-            // A provider failure falls back to the deterministic rules below.
-          } finally {
-            clearTimeout(timer)
-          }
-        }
-        decision ??= resolveSeverity(
-          { artifactType: record.artifactType, accountRef: record.accountRef },
-          { confidenceThreshold: this.confidenceThreshold },
-        )
-        if (decision.severity === null) {
-          failed += 1
-          continue
-        }
-        // The backfill is tenant-wide: an item of another identity in the same
-        // board is classified as its owner, so the write passes the owner rule.
-        const writer: BoardActor = record.companyId === null
-          ? { id: record.ownerId }
-          : { id: record.ownerId, companyId: record.companyId }
-        await this.setSeverity(writer, id, decision.severity, decision.source ?? 'RULE', decision.confidence)
-        classified += 1
-      } catch (error: unknown) {
-        failed += 1
-        this.ctx.logger.warn(`faberloom: classification failed for ${id}: ${String(error)}`)
-      }
+      if (await this.classifyOne(id, record)) classified += 1
+      else failed += 1
     }
     const remaining = [...(await this.items()).entries()]
       .filter(([, record]) => record.companyId === null || record.companyId === actor.companyId)
       .filter(([, record]) => record.severity === null && !TERMINAL.includes(stateOf(record)))
       .length
     return { classified, failed, remaining }
+  }
+
+  /**
+   * Ask the classifier (and then the rules) for one item without severity and
+   * record the answer with the doubts it left. The write runs as the row's own
+   * owner, so a tenant-wide sweep passes the owner rule.
+   * @param id - item id.
+   * @param record - the stored item.
+   * @returns whether the item left the pending set.
+   */
+  private async classifyOne(id: FaberLoomBoardItemId, record: BoardItemRecord): Promise<boolean> {
+    const classifier = this.ctx.get('faberloomBoardClassifier') as BoardClassifierPort | undefined
+    try {
+      const classification = classifyDataClass({ artifactType: record.artifactType, accountRef: record.accountRef })
+      const last = record.revisions[record.revisions.length - 1]
+      const summary = classification.permittedFields.includes('summary') ? last?.summary ?? '' : ''
+      let decision: BoardSeverityDecision | undefined
+      let answer: BoardClassifierResult | undefined
+      if (classifier !== undefined) {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), this.classifierTimeoutMs)
+        try {
+          answer = await classifier.classifySeverity(
+            { artifactType: record.artifactType, accountRef: record.accountRef, contentHash: record.artifactHash ?? '', summary },
+            { signal: controller.signal, confidenceThreshold: this.confidenceThreshold },
+          )
+          if (answer.status === 'classified' && answer.confidence >= this.confidenceThreshold) {
+            decision = { severity: answer.severity, source: 'LLM', confidence: answer.confidence }
+          }
+        } catch {
+          // A provider failure falls back to the deterministic rules below.
+          answer = controller.signal.aborted ? { status: 'timeout' } : undefined
+        } finally {
+          clearTimeout(timer)
+        }
+      }
+      decision ??= resolveSeverity(
+        { artifactType: record.artifactType, accountRef: record.accountRef },
+        { confidenceThreshold: this.confidenceThreshold },
+      )
+      if (decision.severity === null) return false
+      const writer: BoardActor = record.companyId === null
+        ? { id: record.ownerId }
+        : { id: record.ownerId, companyId: record.companyId }
+      await this.setSeverity(
+        writer, id, decision.severity, decision.source ?? 'RULE', decision.confidence, undefined,
+        doubtsOf(answer, decision, this.confidenceThreshold),
+      )
+      return true
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: classification failed for ${id}: ${String(error)}`)
+      return false
+    }
+  }
+
+  /**
+   * Run one classification pass without a reader: classify the items that still
+   * carry no priority and apply every lesson a human taught to the items still
+   * classified by a rule or a model. This is what makes the live agent learn
+   * from a correction instead of only from the next item.
+   * @returns how many lessons were applied, how many items were classified, and how many remain pending.
+   */
+  async sweepClassifications(): Promise<{ readonly reclassified: number; readonly classified: number; readonly remaining: number }> {
+    const reclassified = await this.reapplyLessons()
+    const pending = [...(await this.items()).entries()]
+      .filter(([, record]) => record.severity === null && !TERMINAL.includes(stateOf(record)))
+      .slice(0, this.reclassifyBatchSize)
+    let classified = 0
+    for (const [id, record] of pending) {
+      if (await this.classifyOne(id, record)) classified += 1
+    }
+    const remaining = [...(await this.items()).entries()]
+      .filter(([, record]) => record.severity === null && !TERMINAL.includes(stateOf(record)))
+      .length
+    return { reclassified, classified, remaining }
+  }
+
+  /**
+   * Apply every human lesson to the open items of its artifact type and account
+   * that a rule or a model classified. The lesson is written as `HUMAN` without
+   * counting as a new correction, so repeating the sweep changes nothing.
+   * @returns how many items the lessons changed.
+   */
+  private async reapplyLessons(): Promise<number> {
+    const lessons = new Map<string, SeverityLearningRecord>()
+    for (const [key, lesson] of (await this.severityLearning()).entries()) lessons.set(key, lesson)
+    if (lessons.size === 0) return 0
+    let changed = 0
+    for (const [id, record] of (await this.items()).entries()) {
+      if (TERMINAL.includes(stateOf(record))) continue
+      if (record.severitySource === 'HUMAN') continue
+      const lesson = lessons.get(severityLessonKey(record.companyId, record.artifactType, record.accountRef))
+      if (lesson === undefined || lesson.severity === record.severity) continue
+      const writer: BoardActor = record.companyId === null
+        ? { id: record.ownerId }
+        : { id: record.ownerId, companyId: record.companyId }
+      await this.mutate(writer, id, 'reclassify', current => ({
+        ...current,
+        severity: lesson.severity as BoardSeverity,
+        severitySource: 'HUMAN',
+        severityConfidence: 1,
+        doubts: [],
+      }), { data: { previous: record.severity, lesson: lesson.severity } })
+      changed += 1
+    }
+    return changed
   }
 
   /**
@@ -3458,6 +3644,9 @@ export class FaberLoomBoard extends Service {
    * @param actionType - the action type the acceptance names.
    */
   private async requireActionSignature(writer: BoardWriter, actionType: string): Promise<void> {
+    // A deployment that does not require signatures says so here: the board
+    // still records who approved, and the UI offers no signature controls.
+    if (!this.ceoSignatureRequired) return
     const access = this.ctx.get('faberloomAccess') as BoardAccess | undefined
     if (access === undefined) return
     const actor = this.actorOf(writer)

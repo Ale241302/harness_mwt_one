@@ -1063,6 +1063,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
           title: { type: 'string' },
           summary: { type: 'string' },
           evidence: { type: 'array', items: { type: 'string' } },
+          documentRef: { type: 'string', description: 'Clave del documento en el almacén (documento/...) o URL; la Mesa la abre desde el ítem.' },
           spaceId: { type: 'string' },
           accountRef: { type: 'string' },
           assigneeId: { type: 'string', description: 'Agente del catálogo responsable del ítem.' },
@@ -1096,6 +1097,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       const severityConfidence = num(args, 'severityConfidence')
       const sourceRef = optional(args, 'sourceRef')
       const businessKey = optional(args, 'businessKey')
+      const documentRef = optional(args, 'documentRef')
       const item = await context.faberloomBoard.submit(boardActor(ownerId, companyId), {
         runId: required(args, 'runId'),
         idempotencyKey: required(args, 'idempotencyKey'),
@@ -1103,6 +1105,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         evidence: strings(args, 'evidence') ?? [],
         ...sourceRef === undefined ? {} : { sourceRef },
         ...businessKey === undefined ? {} : { businessKey },
+        ...documentRef === undefined ? {} : { documentRef },
         ...title === undefined ? {} : { title },
         ...spaceId === undefined ? {} : { spaceId },
         ...accountRef === undefined ? {} : { accountRef },

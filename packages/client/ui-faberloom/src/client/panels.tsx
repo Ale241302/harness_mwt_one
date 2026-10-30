@@ -92,16 +92,6 @@ interface Acceptance {
   readonly saved: boolean
 }
 
-/** One Space group of already-ordered board rows (G7). */
-interface SpaceGroup {
-  /** Stable key of the group, unique within one board view. */
-  readonly key: string
-  /** Space the group belongs to, or null for the group without a space. */
-  readonly spaceId: string | null
-  /** Rows in the order the queue already had them. */
-  readonly rows: readonly FaberLoomBoardRow[]
-}
-
 /** Model providers an agent may use, each with its own API key. */
 const MODEL_PROVIDERS = ['anthropic', 'openai', 'kimi', 'deepseek'] as const
 
@@ -151,6 +141,10 @@ export interface FaberloomPanelInjected {
   boardException: (id: string, action: 'request_data' | 'fail' | 'complete') => Promise<Result<FaberLoomOverview>>
   /** Set or correct the human severity. */
   boardSetSeverity: (id: string, severity: string, rowVersion: number, source?: 'RULE' | 'LLM' | 'HUMAN', confidence?: number | null) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Assign the catalog agent responsible for one item. */
+  boardAssignAgent: (id: string, agentId: string | null, rowVersion: number) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  /** Resolve a stored document key into a temporary URL. */
+  boardArtifactUrl: (key: string) => Promise<Result<{ url: string } | null>>
   /** Save inline edits as a new version and report a correction that could not be recorded. */
   boardSaveEdits: (
     id: string,
@@ -2703,12 +2697,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
 }
 
 /** The WorkLoom Mesa: Foco, Kanban, Lista, and the detail zones. */function mesaScreen() {
-  const COLUMNS = [
-    ['TU_CRITERIO', 'mesa.column.tu'],
-    ['ESPERANDO_CRITERIO', 'mesa.column.esperando'],
-    ['DELEGADO', 'mesa.column.delegado'],
-    ['ERROR_ACCIONABLE', 'mesa.column.error'],
-  ] as const
   const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const
   const REASONS = ['CLIENTE_CANCELO', 'DUPLICADO', 'ERROR_ORIGEN', 'NO_CORRESPONDE', 'RESUELTO_FUERA', 'OTRA'] as const
   // Scope of the correction an applied iteration teaches. `puntual` is the
@@ -2734,18 +2722,10 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     FALLIDO: 'mesa.effect.probe.fallido',
     DESCONOCIDO: 'mesa.effect.probe.desconocido',
   }
-  // One label per signature state; the panel never prints the token itself.
-  const SIGNATURE_STATE_KEYS: Readonly<Record<FaberLoomSignatureRow['state'], FaberloomKey>> = {
-    NOT_REQUIRED: 'mesa.signature.state.notRequired',
-    ACTIVE: 'mesa.signature.state.active',
-    MISSING: 'mesa.signature.state.missing',
-    REVOKED: 'mesa.signature.state.revoked',
-    EXPIRED: 'mesa.signature.state.expired',
-  }
 
   return function FaberloomMesa(props: ScreenProps) {
     const {
-      t, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts,
+      t, boardDetail, boardRouteInstruction, boardClassify, boardAccounts, boardAssignAgent, boardArtifactUrl,
       boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits,
       boardDiscard, boardResolveCandidate, boardAssignWorkspace, boardTakeDraft, boardRevalidate,
       boardSaveDraft, openTaskChat, goToWorkspace,
@@ -2754,7 +2734,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       boardIterationRecover, boardIterationDraft,
       boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
       boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
-      boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     } = props
     const { overview, error } = useOverview(props)
     const [view, setView] = useState<'foco' | 'kanban' | 'lista'>('foco')
@@ -2766,14 +2745,16 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     useEffect(() => {
       void boardAccounts().then((result) => { if (result.ok) setCatalogAccounts(result.value) })
     }, [])
+    // The Mesa is shared: a priority, agent, or approval another reader saved
+    // must reach this tab without a reload. The overview already polls; this
+    // refreshes the open detail on the same order of magnitude.
+    useEffect(() => {
+      const timer = setInterval(() => setTick(count => count + 1), 15_000)
+      return () => clearInterval(timer)
+    }, [])
     const [spaceFilter, setSpaceFilter] = useState('')
     const [severityFilter, setSeverityFilter] = useState('')
     const [accountFilter, setAccountFilter] = useState('')
-    const [dueFilter, setDueFilter] = useState<'all' | 'overdue' | 'none'>('all')
-    // Lista and Kanban group the filtered rows by Space (G7); Foco stays
-    // item-by-item and therefore hides the toggle.
-    const [groupBySpace, setGroupBySpace] = useState(false)
-    const [collapsedGroups, setCollapsedGroups] = useState<readonly string[]>([])
     // Items Saltar and ArrowRight left behind in this round. Skipping never
     // reorders the queue, it only moves the reader on (G7).
     const [skipped, setSkipped] = useState<readonly string[]>([])
@@ -2801,7 +2782,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const [showRetry, setShowRetry] = useState(false)
     const [showClose, setShowClose] = useState(false)
     const [closeReason, setCloseReason] = useState('')
-    const [showSignatures, setShowSignatures] = useState(false)
     // Action the approval executes, its destination, and the acceptance it
     // belongs to. An empty action approves without executing anything.
     const [execAction, setExecAction] = useState('')
@@ -2895,10 +2875,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       (spaceFilter.length === 0 || row.spaceId === spaceFilter)
       && (accountFilter.length === 0 || row.accountRef === accountFilter)
       && (severityFilter.length === 0 || row.severity === severityFilter)
-      && (dueFilter === 'all'
-        || (dueFilter === 'overdue'
-          ? row.dueAt !== null && Date.parse(row.dueAt) < Date.now()
-          : row.dueAt === null))
     const visible = rows.filter(matchesFilters)
     const hidden = rows.filter(row => !matchesFilters(row))
     const queueEmpty = visible.length === 0
@@ -2957,21 +2933,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const effectStatus = effect.kind === 'ready' ? effect.value : null
     const alerts = useLazy<readonly FaberLoomBoardEffectAlertRow[]>(() => boardEffectAlerts(), [tick])
     const policy = useLazy<FaberLoomBoardEffectPolicy>(() => boardEffectPolicy(), [])
-    const protectedSignatures = useLazy<readonly FaberLoomSignatureRow[]>(
-      () => boardSignatures(),
-      [tick, showSignatures],
-    )
-    // The signature covering the action this approval would execute, read
-    // against the reader's tenant before the panel enables its button (W-16).
-    const coveringSignature = useLazy<FaberLoomSignatureRow | null>(
-      () => execAction.length === 0
-        ? Promise.resolve({ ok: true, value: null })
-        : boardSignatureStatus(execAction),
-      [execAction, tick, showSignatures],
-    )
-    const signature = coveringSignature.kind === 'ready' ? coveringSignature.value : null
     const actionTypes = policy.kind === 'ready' ? policy.value.actionTypes : []
-    const signatureRows = protectedSignatures.kind === 'ready' ? protectedSignatures.value : []
     // The board states the reversal window per action type; the panel says what
     // will happen from it and never keeps a window of its own (D-12).
     const windowMsOf = (actionType: string): number | null =>
@@ -2996,8 +2958,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const effectDeadline = delegated ? effectStatus?.reversalDeadline ?? null : null
     const remainingMs = effectDeadline === null ? 0 : Math.max(0, Date.parse(effectDeadline) - clock)
     const windowOpen = delegated && remainingMs > 0
-    const signatureNeeded = signature !== null && signature.protected
-    const signatureReady = signature === null || !signature.protected || signature.state === 'ACTIVE'
     const executing = execAction.length > 0
     const effectActionLabel = effectStatus?.actionType === null || effectStatus?.actionType === undefined
       ? t('mesa.none')
@@ -3058,7 +3018,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const selectedIndex = visible.findIndex(row => row.id === selected)
     const railStart = selectedIndex < RAIL_LIMIT ? 0 : Math.max(0, selectedIndex - 10)
     const railRows = visible.slice(railStart, railStart + RAIL_LIMIT)
-    const position = selectedIndex < 0 ? 0 : selectedIndex + 1
     const unclassifiedCount = visible.filter(row => row.severity === null).length
     /** Ask the classifier for the pending items and refresh the overview. */
     const classifyPending = (): void => {
@@ -3094,82 +3053,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       ...catalogAccounts,
       ...rows.map(row => row.accountRef).filter((account): account is string => account !== null),
     ])].sort((left, right) => left.localeCompare(right))
-    // Saved views are the owner's named filters (§9.4); they store no items.
-    const [savedViews, setSavedViews] = useState<readonly FaberLoomBoardView[]>([])
-    const [activeView, setActiveView] = useState('')
-    const [viewName, setViewName] = useState('')
-    const [namingView, setNamingView] = useState(false)
-    useEffect(() => {
-      void boardViews().then((result) => { if (result.ok) setSavedViews(result.value) })
-    }, [])
-    /** Restore the filters one saved view names. */
-    const applySavedView = (name: string): void => {
-      setActiveView(name)
-      const view = savedViews.find(entry => entry.name === name)
-      if (view === undefined) return
-      setSpaceFilter(view.filters.spaceId ?? '')
-      setAccountFilter(view.filters.accountRef ?? '')
-      setSeverityFilter(view.filters.severity ?? '')
-      setDueFilter(view.filters.due)
-      setSelected(null)
-    }
-    /** Save the current filters under the typed name, replacing that name. */
-    const saveCurrentView = (): void => {
-      const filters: FaberLoomBoardViewFilters = {
-        spaceId: spaceFilter.length === 0 ? null : spaceFilter,
-        accountRef: accountFilter.length === 0 ? null : accountFilter,
-        assigneeId: null,
-        severity: severityFilter.length === 0 ? null : severityFilter,
-        due: dueFilter,
-      }
-      void boardSaveView(viewName, filters).then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
-        setSavedViews(result.value)
-        setActiveView(viewName.trim())
-        setNamingView(false)
-        setMessage(t('mesa.views.saved'))
-      })
-    }
-    /** Remove the view the selector names. */
-    const removeCurrentView = (): void => {
-      if (activeView.length === 0) return
-      void boardRemoveView(activeView).then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
-        setSavedViews(result.value)
-        setActiveView('')
-      })
-    }
-
-    /** The highest severity a group carries; null when every row in it is unclassified. */
-    const highestSeverity = (input: readonly FaberLoomBoardRow[]): string | null =>
-      SEVERITIES.reduce<string | null>(
-        (top, severity) => input.some(row => row.severity === severity) ? severity : top,
-        null,
-      )
-    /**
-     * Split ordered rows into Space groups. The first item decides where a group
-     * sits and the rows inside keep the queue order they already had (G7).
-     */
-    const spaceGroups = (input: readonly FaberLoomBoardRow[]): readonly SpaceGroup[] => {
-      const groups: { key: string; spaceId: string | null; rows: FaberLoomBoardRow[] }[] = []
-      for (const row of input) {
-        const group = groups.find(entry => entry.spaceId === row.spaceId)
-        if (group === undefined) groups.push({ key: row.spaceId ?? 'none', spaceId: row.spaceId, rows: [row] })
-        else group.rows.push(row)
-      }
-      return groups
-    }
-    /** Space name a group header shows; no space is its own group. */
-    const groupLabel = (spaceId: string | null): string =>
-      spaceId === null ? t('mesa.group.noSpace') : spaceName(spaceId)
-    const groupCollapsed = (key: string): boolean => collapsedGroups.includes(key)
-    /** Fold or unfold one Space group; every group starts open. */
-    const toggleGroup = (key: string): void => {
-      setCollapsedGroups(current => current.includes(key)
-        ? current.filter(entry => entry !== key)
-        : [...current, key])
-    }
-
     /** The first condition that stops a decision, in the order the spec lists it. */
     const blockedReason = value === undefined ? null
       : pending !== null ? t('mesa.blocked.candidate')
@@ -3235,13 +3118,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       if (view !== 'foco') return
       if (selected !== null && visible.some(row => row.id === selected)) return
       setSelected(visible[0]?.id ?? null)
-    }, [view, spaceFilter, severityFilter, accountFilter, dueFilter, overview])
+    }, [view, spaceFilter, severityFilter, accountFilter, overview])
 
     // A different filter set or an empty queue starts a fresh round (G7).
     useEffect(() => {
       setSkipped([])
       setRoundExhausted(false)
-    }, [spaceFilter, severityFilter, accountFilter, dueFilter, queueEmpty])
+    }, [spaceFilter, severityFilter, accountFilter, queueEmpty])
 
     // A board view keeps the row the reader came back to; when the queue no
     // longer holds it (an approval closed the item), the selection goes with it
@@ -3316,7 +3199,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
 
     // One effect control is open at a time; it takes focus when it opens and
     // returns it to the control that opened it (§9.9).
-    const effectPanelOpen = showRevert || showReconcile || showRetry || showClose || showSignatures
+    const effectPanelOpen = showRevert || showReconcile || showRetry || showClose
     useEffect(() => {
       if (!effectPanelOpen) return
       effectPanelRef.current?.focus()
@@ -3594,6 +3477,35 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     }
 
     /**
+     * Open one stored document in a new tab. A URL is opened as it is; a storage
+     * key is signed by the deployment's storage tool first, so the panel never
+     * holds a credential or a bucket address of its own.
+     * @param ref - document URL or storage key.
+     */
+    const openDocument = (ref: string | null): void => {
+      if (ref === null || ref.length === 0) { setMessage(t('mesa.document.none')); return }
+      if (/^https?:\/\//u.test(ref)) { window.open(ref, '_blank', 'noopener,noreferrer'); return }
+      void boardArtifactUrl(ref).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        if (result.value === null) { setMessage(t('mesa.document.none')); return }
+        window.open(result.value.url, '_blank', 'noopener,noreferrer')
+      })
+    }
+
+    /** The storage key one evidence reference names, or null. */
+    const storageKeyOf = (entry: string): string | null => {
+      const match = /key\s+([\w./-]+)/iu.exec(entry)
+      return match?.[1] ?? null
+    }
+
+    /** The first match of a code pattern in the item's own text, or null. */
+    const codeOf = (pattern: RegExp): string | null => {
+      if (value === undefined) return null
+      const text = [value.title, value.summary, ...value.evidence].join(' ')
+      return new RegExp(pattern.source, pattern.flags.replace('g', '')).exec(text)?.[0] ?? null
+    }
+
+    /**
      * The first iteration draft a collision moved to this item, which is the one
      * Compare and Recover act on (§2.3, W-98). An edit draft has no attempt, so
      * it is never this entry.
@@ -3724,10 +3636,9 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         ? {}
         : { confirmations: pendingConfirmations.map(check => check.id) }
       if (executing) {
-        // The acceptance names a destination and, when the deployment protects
-        // the action type, the signature that covers it (W-16).
+        // The acceptance names the effect and its destination. The board decides
+        // whether that action type needs anything else; this panel adds nothing.
         if (execDestination.trim().length === 0) { setMessage(t('mesa.approveEffect.destinationRequired')); return }
-        if (!signatureReady) return
         acceptExecution(value, target)
         resetApproval()
         return
@@ -3784,9 +3695,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         executionId,
         actionType: execAction,
         destination: execDestination.trim(),
-        ...signature?.signatureId === null || signature?.signatureId === undefined
-          ? {}
-          : { authorization: signature.signatureId },
         ...accepted,
       })
       apply(run)
@@ -3915,24 +3823,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       })
     }
 
-    /** Issue one CEO signature for a protected action type (W-16). */
-    const signAction = (actionType: string): void => {
-      const run = boardSignatureIssue({ actionTypes: [actionType] })
-      void run.then((result) => {
-        if (result.ok) setTick(count => count + 1)
-        else setMessage(result.error.message)
-      })
-    }
-
-    /** Revoke one CEO signature; the next approval of its action type refuses. */
-    const revokeSignature = (signatureId: string): void => {
-      const run = boardSignatureRevoke(signatureId)
-      void run.then((result) => {
-        if (result.ok) setTick(count => count + 1)
-        else setMessage(result.error.message)
-      })
-    }
-
     /** Close the innermost open control; false when none is open (§9.9). */
     const closeTopControl = (): boolean => {
       if (exitMode !== null) { setExitMode(null); return true }
@@ -3940,7 +3830,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       if (showReconcile) { setShowReconcile(false); return true }
       if (showRetry) { setShowRetry(false); return true }
       if (showClose) { setShowClose(false); return true }
-      if (showSignatures) { setShowSignatures(false); return true }
       if (showApprove) { resetApproval(); return true }
       if (showDiscard) { setShowDiscard(false); return true }
       return false
@@ -3973,7 +3862,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         // A dialog owns the decision while it is open: its own buttons and
         // Escape handle it, and no letter command can run behind it (§9.9).
         const dialogOpen = showApprove || showDiscard || showRevert || showReconcile
-          || showRetry || showClose || showSignatures || exitMode !== null
+          || showRetry || showClose || exitMode !== null
         if (dialogOpen) return
         // Shortcuts are card commands: with focus outside the card they do nothing,
         // so typing in another panel or on the shell never decides an item.
@@ -4074,71 +3963,20 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
 
     const filters = (
       <span className={`${styles.tools} ${styles.mesaFilters}`}>
-        <select value={spaceFilter} aria-label={t('mesa.space')} onChange={(event) => { setSpaceFilter(event.target.value); setActiveView('') }}>
+        <select value={spaceFilter} aria-label={t('mesa.space')} onChange={event => setSpaceFilter(event.target.value)}>
           <option value="">{t('mesa.allSpaces')}</option>
           {spaceOptions.map(space => (
             <option key={space.id} value={space.id}>{`${'\u00a0\u00a0'.repeat(space.depth)}${space.title}`}</option>
           ))}
         </select>
-        <select value={accountFilter} aria-label={t('mesa.account')} onChange={(event) => { setAccountFilter(event.target.value); setActiveView('') }}>
+        <select value={accountFilter} aria-label={t('mesa.account')} onChange={event => setAccountFilter(event.target.value)}>
           <option value="">{t('mesa.filter.accountAll')}</option>
           {accountOptions.map(account => <option key={account} value={account}>{account}</option>)}
         </select>
-        <select value={severityFilter} aria-label={t('mesa.severity')} onChange={(event) => { setSeverityFilter(event.target.value); setActiveView('') }}>
+        <select value={severityFilter} aria-label={t('mesa.severity')} onChange={event => setSeverityFilter(event.target.value)}>
           <option value="">{t('mesa.allSeverities')}</option>
           {SEVERITIES.map(severity => <option key={severity} value={severity}>{t(severityKey(severity))}</option>)}
         </select>
-        <select
-          value={dueFilter}
-          aria-label={t('mesa.filter.due')}
-          onChange={(event) => { setDueFilter(event.target.value as 'all' | 'overdue' | 'none'); setActiveView('') }}
-        >
-          <option value="all">{t('mesa.filter.dueAll')}</option>
-          <option value="overdue">{t('mesa.filter.dueOverdue')}</option>
-          <option value="none">{t('mesa.filter.dueNone')}</option>
-        </select>
-        <span className={styles.tools}>
-          <select value={activeView} aria-label={t('mesa.views')} onChange={event => applySavedView(event.target.value)}>
-            <option value="">{t('mesa.views.none')}</option>
-            {savedViews.map(view => <option key={view.name} value={view.name}>{view.name}</option>)}
-          </select>
-          {namingView ? (
-            <>
-              <input
-                type="text"
-                value={viewName}
-                placeholder={t('mesa.views.name')}
-                aria-label={t('mesa.views.name')}
-                onChange={event => setViewName(event.target.value)}
-              />
-              <button
-                className={styles.secondary}
-                type="button"
-                onClick={saveCurrentView}
-                disabled={viewName.trim().length === 0}
-              >
-                {t('mesa.views.save')}
-              </button>
-            </>
-          ) : (
-            <button className={styles.secondary} type="button" onClick={() => setNamingView(true)}>
-              {t('mesa.views.save')}
-            </button>
-          )}
-          {activeView.length === 0 ? null : (
-            <button className={styles.ghost} type="button" onClick={removeCurrentView}>{t('mesa.views.remove')}</button>
-          )}
-        </span>
-        {view === 'foco' ? null : (
-          <label className={styles.mesaProperty}>
-            <input
-              type="checkbox"
-              checked={groupBySpace}
-              onChange={event => setGroupBySpace(event.target.checked)}
-            />
-            <span>{t('mesa.groupBySpace')}</span>
-          </label>
-        )}
       </span>
     )
 
@@ -4344,13 +4182,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                   {value.column === 'TU_CRITERIO' ? null : <span>{t(columnKey(value.column))}</span>}
                   <span>{value.dueAt === null ? t('mesa.noDue') : dayOf(value.dueAt)}</span>
                   {restricted || value.valueUsd === null ? null : <span>{`${money.format(value.valueUsd)} ${t('mesa.usd')}`}</span>}
-                  <span>{`${String(position)} ${t('mesa.of')} ${String(visible.length)}`}</span>
-                  <button className={styles.ghost} type="button" onClick={() => setShowSignatures(true)}>
-                    {t('mesa.signature.title')}
-                  </button>
-                </div>
-                <div className={styles.mesaMeta}>
-                  <span>{`${t('mesa.agent')}: ${value.assigneeId ?? t('mesa.none')}`}</span>
                   <span>{`${t('mesa.autonomy')}: ${t(autonomyKey(value.autonomyLevel))}`}</span>
                 </div>
                 <div className={styles.mesaProperties}>
@@ -4373,6 +4204,22 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     {value.severitySource === null ? null : (
                       <span className={styles.mesaHintLine}>{t(severitySourceKey(value.severitySource))}</span>
                     )}
+                  </label>
+                  <label className={styles.mesaProperty}>
+                    <span>{t('mesa.agent')}</span>
+                    <select
+                      value={value.assigneeId ?? ''}
+                      disabled={!editable}
+                      aria-label={t('mesa.agent')}
+                      onChange={(event) => {
+                        apply(boardAssignAgent(value.id, event.target.value.length === 0 ? null : event.target.value, value.rowVersion))
+                      }}
+                    >
+                      <option value="">{t('mesa.agent.none')}</option>
+                      {(overview?.agents ?? []).map(agent => (
+                        <option key={agent.id} value={agent.id}>{agent.name}</option>
+                      ))}
+                    </select>
                   </label>
                   <label className={styles.mesaProperty}>
                     <span>{t('mesa.space')}</span>
@@ -4405,9 +4252,19 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                           ? t('cell.none')
                           : (
                             <ul className={styles.mesaEvidenceList}>
-                              {value.evidence.map((entry, index) => (
-                                <li key={`${index}-${entry.slice(0, 24)}`}>{evidenceLabel(entry)}</li>
-                              ))}
+                              {value.evidence.map((entry, index) => {
+                                const key = storageKeyOf(entry)
+                                return (
+                                  <li key={`${index}-${entry.slice(0, 24)}`}>
+                                    <span>{evidenceLabel(entry)}</span>
+                                    {key === null ? null : (
+                                      <button className={styles.linkButton} type="button" onClick={() => openDocument(key)}>
+                                        {t('mesa.document.link')}
+                                      </button>
+                                    )}
+                                  </li>
+                                )
+                              })}
                             </ul>
                           )}
                       </dd>
@@ -4417,7 +4274,14 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     <dl className={styles.mesaFacts}>
                       <div>
                         <dt>{t('mesa.detail.origins')}</dt>
-                        <dd>{value.fieldOrigins.map(origin => `${origin.field} ${origin.source === null ? t('mesa.origins.none') : `← ${origin.source}`}`).join(' · ')}</dd>
+                        <dd>
+                          {value.fieldOrigins.every(origin => origin.source === null)
+                            ? t('mesa.origins.noneDeclared')
+                            : value.fieldOrigins
+                              .filter(origin => origin.source !== null)
+                              .map(origin => `${origin.field} ← ${origin.source ?? ''}`)
+                              .join(' · ')}
+                        </dd>
                       </div>
                     </dl>
                   )}
@@ -4610,7 +4474,24 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
               <dl className={styles.mesaFacts} data-zone="5">
                 <div>
                   <dt>{t('mesa.detail.doubts')}</dt>
-                  <dd>{t('mesa.noDoubts')}</dd>
+                  <dd>
+                    {value.doubts.length === 0
+                      ? (
+                        <>
+                          <span>{t('mesa.doubts.reviewed')}</span>
+                          {value.severitySource === null ? null : (
+                            <span className={styles.mesaHintLine}>
+                              {t('mesa.doubts.source').replace('{source}', t(severitySourceKey(value.severitySource)))}
+                            </span>
+                          )}
+                        </>
+                      )
+                      : (
+                        <ul className={styles.mesaEvidenceList}>
+                          {value.doubts.map((doubt, index) => <li key={`${index}-${doubt.slice(0, 24)}`}>{doubt}</li>)}
+                        </ul>
+                      )}
+                  </dd>
                 </div>
               </dl>
 
@@ -4618,9 +4499,36 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 <summary>{t('mesa.originContext')}</summary>
                 <div className={styles.mesaCollapseBody}>
                   <dl className={styles.mesaFacts}>
-                    <div><dt>{t('mesa.account')}</dt><dd>{value.accountRef ?? t('mesa.noAccount')}</dd></div>
+                    <div>
+                      <dt>{t('mesa.origin.source')}</dt>
+                      <dd>{value.runId === null ? t('mesa.origin.manual') : t('mesa.origin.mcp')}</dd>
+                    </div>
+                    <div><dt>{t('mesa.origin.client')}</dt><dd>{value.accountRef ?? t('mesa.noAccount')}</dd></div>
+                    {codeOf(/PF\s*\d{4}-\d{4}/iu) === null ? null : (
+                      <div><dt>{t('mesa.origin.proforma')}</dt><dd>{codeOf(/PF\s*\d{4}-\d{4}/iu)}</dd></div>
+                    )}
+                    {codeOf(/(?:PO|OC)\s*\d{4,}/iu) === null ? null : (
+                      <div><dt>{t('mesa.origin.order')}</dt><dd>{codeOf(/(?:PO|OC)\s*\d{4,}/iu)}</dd></div>
+                    )}
+                    {codeOf(/Expediente\s+[\w-]+/iu) === null ? null : (
+                      <div>
+                        <dt>{t('mesa.origin.expediente')}</dt>
+                        <dd>{(codeOf(/Expediente\s+[\w-]+/iu) ?? '').replace(/^Expediente\s+/iu, '')}</dd>
+                      </div>
+                    )}
                     <div><dt>{t('mesa.space')}</dt><dd>{spaceName(value.spaceId)}</dd></div>
-                    <div><dt>{t('mesa.detail.context')}</dt><dd>{value.events.length === 0 ? t('cell.none') : value.events.slice(-3).map(event => `${event.command} · ${event.at}`).join(' · ')}</dd></div>
+                    <div>
+                      <dt>{t('mesa.origin.documents')}</dt>
+                      <dd>
+                        {value.documentRef === null
+                          ? t('mesa.document.none')
+                          : (
+                            <button className={styles.linkButton} type="button" onClick={() => openDocument(value.documentRef)}>
+                              {t('mesa.document.open')}
+                            </button>
+                          )}
+                      </dd>
+                    </div>
                   </dl>
                 </div>
               </details>
@@ -4807,22 +4715,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                           </dd>
                         </div>
                       </dl>
-                      {signatureNeeded ? (
-                        <p className={signatureReady ? styles.mesaHintLine : styles.mesaBlocked}>
-                          {signatureReady
-                            ? t('mesa.approveEffect.signatureActive').replace('{action}', actionLabel(execAction))
-                            : t('mesa.approveEffect.signatureMissing').replace('{action}', actionLabel(execAction))}
-                        </p>
-                      ) : null}
-                      {signatureNeeded && !signatureReady ? (
-                        <button
-                          className={styles.secondary}
-                          type="button"
-                          onClick={() => setShowSignatures(true)}
-                        >
-                          {t('mesa.approveEffect.openSignatures')}
-                        </button>
-                      ) : null}
                       {windowMsOf(execAction) === null ? null : (
                         <p className={styles.mesaHintLine}>
                           {t('mesa.approveEffect.window')
@@ -4854,7 +4746,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     <button
                       className={styles.primary}
                       type="button"
-                      disabled={!confirmedAll || (executing && (execDestination.trim().length === 0 || !signatureReady))}
+                      disabled={!confirmedAll || (executing && execDestination.trim().length === 0)}
                       onClick={approve}
                     >
                       {executing ? t('mesa.approveEffect.confirm') : t('action.confirm')}
@@ -5027,57 +4919,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 </section>
               ) : null}
 
-              {showSignatures ? (
-                <section
-                  className={`${styles.mesaNotice} ${styles.mesaDialog}`}
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="mesa-signatures-title"
-                  tabIndex={-1}
-                  ref={effectPanelRef}
-                  onKeyDown={trapDialogTab}
-                >
-                  <strong id="mesa-signatures-title">{t('mesa.signature.title')}</strong>
-                  <span>{t('mesa.signature.intro')}</span>
-                  {signatureRows.length === 0 ? (
-                    <p className={styles.mesaHintLine}>{t('mesa.signature.none')}</p>
-                  ) : (
-                    <dl className={styles.mesaFacts}>
-                      {signatureRows.map(row => (
-                        <div key={row.actionType}>
-                          <dt>{actionLabel(row.actionType)}</dt>
-                          <dd>
-                            <span>{t(SIGNATURE_STATE_KEYS[row.state])}</span>
-                            {row.state === 'ACTIVE' && row.signatureId !== null ? (
-                              <button
-                                className={styles.secondary}
-                                type="button"
-                                onClick={() => revokeSignature(row.signatureId ?? '')}
-                              >
-                                {t('mesa.signature.revoke')}
-                              </button>
-                            ) : (
-                              <button
-                                className={styles.secondary}
-                                type="button"
-                                onClick={() => signAction(row.actionType)}
-                              >
-                                {t('mesa.signature.issue')}
-                              </button>
-                            )}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                  <span className={styles.tools}>
-                    <button className={styles.ghost} type="button" onClick={() => setShowSignatures(false)}>
-                      {t('action.cancel')}
-                    </button>
-                  </span>
-                </section>
-              ) : null}
-
               {exitMode === null ? null : (
                 <section
                   className={`${styles.mesaNotice} ${styles.mesaDialog}`}
@@ -5152,53 +4993,72 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
             </article>
           )
 
-    // A card and a group header are shared by the flat and the grouped views, so
-    // the two read the same in Kanban and Lista (G7).
+    /** Catalog agent name for one id; an absent agent is its own state. */
+    const agentName = (id: string | null): string =>
+      id === null ? t('mesa.agent.none') : overview?.agents.find(agent => agent.id === id)?.name ?? id
+
+    // A card is also the drag handle: dropping it on another priority column
+    // states the human's priority for that item, which the board learns from.
     const cardOf = (row: FaberLoomBoardRow): ReactNode => (
-      <button className={styles.mesaCard} key={row.id} type="button"
-        onClick={() => openItem(row.id)}>
+      <button
+        className={styles.mesaCard}
+        key={row.id}
+        type="button"
+        draggable
+        title={t('mesa.card.drag')}
+        onDragStart={(event) => {
+          event.dataTransfer.setData('text/plain', row.id)
+          event.dataTransfer.effectAllowed = 'move'
+        }}
+        onClick={() => openItem(row.id)}
+      >
         <span className={styles.mesaKicker}>{kickerOf(row.accountRef, row.spaceId)}</span>
         <strong>{row.title}</strong>
         <span className={styles.mesaCardFoot}>
           <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span>
-          <span className={styles.mesaQueueMeta}>{row.dueAt === null ? t('mesa.noDue') : dayOf(row.dueAt)}</span>
+          <span className={styles.mesaQueueMeta}>{agentName(row.assigneeId)}</span>
         </span>
       </button>
     )
-    // A group header names its Space, how many items it holds, and the highest
-    // severity inside, and folds the group when clicked.
-    const groupHeader = (group: SpaceGroup): ReactNode => (
-      <button
-        className={styles.ghost}
-        type="button"
-        aria-expanded={!groupCollapsed(group.key)}
-        onClick={() => toggleGroup(group.key)}
-      >
-        {`${groupLabel(group.spaceId)} · ${String(group.rows.length)} · ${t(severityKey(highestSeverity(group.rows)))}`}
-      </button>
-    )
 
-    // An empty column hides instead of leaving a blank gutter (spec 9.2).
-    const kanbanEmpty = !COLUMNS.some(([column]) => visible.some(row => row.column === column))
-    const kanban = kanbanEmpty
+    /**
+     * Move one card to another priority. The drop is the human's decision, so it
+     * writes the priority as `HUMAN` and the board teaches the pair from it.
+     * @param itemId - card that was dropped.
+     * @param severity - priority of the column it landed in.
+     */
+    const dropOnPriority = (itemId: string, severity: string): void => {
+      const row = rows.find(entry => entry.id === itemId)
+      if (row === undefined || row.severity === severity) return
+      apply(boardSetSeverity(row.id, severity, row.rowVersion))
+    }
+
+    // Kanban columns are the priority itself: moving a card is how the human
+    // states what matters, and the live agent learns that pair from the move.
+    const kanban = visible.length === 0
       ? emptyBlock
       : (
         <div className={styles.mesaColumns}>
-          {COLUMNS.map(([column, key]) => {
-            const cards = visible.filter(row => row.column === column)
+          {SEVERITIES.map((severity) => {
+            const cards = visible.filter(row => row.severity === severity)
             return (
-              <section className={styles.mesaColumn} key={column}>
-                <h3>{t(key)} <span className={styles.mesaQueueMeta}>{String(cards.length)}</span></h3>
+              <section
+                className={styles.mesaColumn}
+                key={severity}
+                data-severity={severity}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  dropOnPriority(event.dataTransfer.getData('text/plain'), severity)
+                }}
+              >
+                <h3>{t(severityKey(severity))} <span className={styles.mesaQueueMeta}>{String(cards.length)}</span></h3>
                 {cards.length === 0
                   ? <p className={styles.mesaColumnEmpty}>{t('mesa.column.empty')}</p>
-                  : groupBySpace
-                    ? spaceGroups(cards).map(group => (
-                      <div key={group.key}>
-                        {groupHeader(group)}
-                        {groupCollapsed(group.key) ? null : group.rows.map(cardOf)}
-                      </div>
-                    ))
-                    : cards.map(cardOf)}
+                  : cards.map(cardOf)}
               </section>
             )
           })}
@@ -5214,7 +5074,6 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       severity: string | null
       dueAt: string | null
       valueUsd: number | null
-      column: string
     }>[] = [
       {
         key: 'title',
@@ -5222,39 +5081,14 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         cell: row => <span className={styles.cellName}>{row.title}</span>,
       },
       { key: 'account', header: t('mesa.account'), cell: row => <span className={styles.cellMuted}>{row.accountRef ?? t('mesa.none')}</span> },
-      { key: 'agent', header: t('mesa.agent'), cell: row => <span className={styles.cellMuted}>{row.assigneeId ?? t('mesa.none')}</span> },
+      { key: 'agent', header: t('mesa.agent'), cell: row => <span className={styles.cellMuted}>{agentName(row.assigneeId)}</span> },
       { key: 'space', header: t('mesa.space'), cell: row => <span className={styles.cellMuted}>{row.spaceId === null ? t('mesa.none') : spaceName(row.spaceId)}</span> },
       { key: 'severity', header: t('mesa.severity'), cell: row => <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span> },
       { key: 'due', header: t('mesa.due'), cell: row => <span className={styles.cellMuted}>{row.dueAt === null ? t('mesa.none') : dayOf(row.dueAt)}</span> },
       { key: 'amount', header: t('mesa.amount'), align: 'end', cell: row => <span className={styles.cellMuted}>{row.valueUsd === null || row.valueUsd === undefined ? t('mesa.none') : money.format(row.valueUsd)}</span> },
-      { key: 'column', header: t('mesa.column'), cell: row => <span className={styles.cellMuted}>{t(columnKey(row.column))}</span> },
     ]
 
-    // The List keeps one table; grouping wraps each Space in its own section
-    // with the header the Kanban groups use (G7). An empty queue keeps the
-    // table's own empty state instead of rendering no sections.
-    const list = groupBySpace && visible.length > 0
-      ? (
-        <div>
-          {spaceGroups(visible).map(group => (
-            <section key={group.key}>
-              {groupHeader(group)}
-              {groupCollapsed(group.key) ? null : (
-                <DataTable
-                  columns={columns}
-                  rows={group.rows}
-                  selectedId={selected ?? ''}
-                  onSelect={openItem}
-                  emptyTitle={emptyTitle}
-                  emptyText={emptyText}
-                  labels={tableLabels(t)}
-                />
-              )}
-            </section>
-          ))}
-        </div>
-      )
-      : <DataTable columns={columns} rows={visible} selectedId={selected ?? ''} onSelect={openItem} emptyTitle={emptyTitle} emptyText={emptyText} labels={tableLabels(t)} />
+    const list = <DataTable columns={columns} rows={visible} selectedId={selected ?? ''} onSelect={openItem} emptyTitle={emptyTitle} emptyText={emptyText} labels={tableLabels(t)} />
 
     return (
       <Screen title={t('panel.board.title')} subtitle={t('panel.board.intro')} trailing={tabs}>

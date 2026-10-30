@@ -20,6 +20,7 @@ export function evidenceLabel(ref: string): string {
     .replace(/\s*,\s*/gu, ', ')
     .replace(/,\s*\)/gu, ')')
     .replace(/\(\s*\)/gu, '')
+    .replace(/\(\s*$/u, '')
     .replace(/\s{2,}/gu, ' ')
     .replace(/^[\s,;·-]+|[\s,;·-]+$/gu, '')
   return cleaned.length === 0 ? ref : cleaned

@@ -33,7 +33,7 @@ const OVERVIEW = {
   agents: [{ id: 'agent-1', name: 'Proformas', spaceIds: ['space-1'], detached: false, active: true }],
   board: [{
     id: 'item-1', title: 'Preparar proforma', status: 'waiting_approval', state: 'PENDIENTE_CRITERIO',
-    column: 'TU_CRITERIO', severity: 'MEDIUM', routineId: null, spaceId: null, accountRef: 'eguisa',
+    column: 'TU_CRITERIO', rowVersion: 2, severity: 'MEDIUM', routineId: null, spaceId: null, accountRef: 'eguisa',
     assigneeId: 'agent-1', actionType: 'mesa.decide',
     artifactType: 'proforma', dueAt: null, valueUsd: null, hasCandidate: false, hasDraft: false,
   }],
@@ -46,7 +46,7 @@ const EMPTY = { spaces: [], agents: [], board: [], routines: [], memory: [], can
 
 const DETAIL = {
   id: 'item-1', title: 'Preparar proforma', status: 'waiting_approval', state: 'PENDIENTE_CRITERIO',
-  column: 'TU_CRITERIO', version: 1, rowVersion: 2, summary: 'Borrador', evidence: ['oc:505288'],
+  column: 'TU_CRITERIO', version: 1, rowVersion: 2, summary: 'Borrador', evidence: ['oc:505288'], documentRef: null, doubts: [],
   approvedRevision: null, stale: false, staleReason: null, severity: 'MEDIUM', severitySource: 'HUMAN',
   severityConfidence: null, dueAt: null, valueUsd: 1200, dataClass: 'N2', dataClassProvisional: true,
   artifactType: 'proforma', accountRef: 'eguisa', assigneeId: 'agent-1', actionType: 'mesa.decide', autonomyLevel: 'SUPERVISADO', artifactHash: 'h1', runId: 'run-1', supersedesItemId: null,
@@ -132,6 +132,8 @@ async function bench(
   const boardViews = vi.fn(async () => ({ ok: true, value: [] }))
   const boardClassify = vi.fn(async () => ({ ok: true, value: { classified: 3, failed: 0, remaining: 1 } }))
   const boardAccounts = vi.fn(async () => ({ ok: true, value: ['COMERCIALIZADORA UMMIE, S.A.', 'Sondel S.A.'] }))
+  const boardAssignAgent = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardArtifactUrl = vi.fn(async () => ({ ok: true, value: { url: 'https://example.test/bl.pdf' } }))
   const boardRouteInstruction = vi.fn(async (_id: string, text: string) => text.startsWith('@summary')
     ? { ok: true, value: [{ field: 'summary', value: text.split('=')[1]?.trim() ?? '' }] }
     : { ok: true, value: null })
@@ -288,7 +290,8 @@ async function bench(
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
-    boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts, setBoardRoutine, prepareHarness,
+    boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts, boardAssignAgent,
+    boardArtifactUrl, setBoardRoutine, prepareHarness,
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
     boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
@@ -393,7 +396,8 @@ async function bench(
   const view = runtime.renderRoot()
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
-    deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardSaveEdits,
+    deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction,
+    boardClassify, boardAccounts, boardAssignAgent, boardArtifactUrl, boardSaveEdits,
     boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
     boardSetSeverity, boardSaveDraft, boardAssignWorkspace, boardDiscard, boardResolveCandidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
@@ -1151,7 +1155,7 @@ describe('faberloom surface', () => {
     expect(await view.findByText(faberloomEn['mesa.notStale'])).toBeTruthy()
   })
 
-  it('queues the visible items with a localized severity and a position', async () => {
+  it('queues the visible items with a localized priority', async () => {
     const row = OVERVIEW.board[0]
     const overview = {
       ...OVERVIEW,
@@ -1165,7 +1169,6 @@ describe('faberloom surface', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     expect((await view.findAllByText('PF 2520-2026')).length).toBeGreaterThan(0)
     expect(view.getAllByText(faberloomEn['mesa.severity.critical']).length).toBeGreaterThan(0)
-    expect(await view.findByText('1 of 2')).toBeTruthy()
     expect(view.getByText(faberloomEn['mesa.queue'])).toBeTruthy()
   })
 
@@ -1244,14 +1247,13 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
   })
 
-  it('keeps a Kanban column with no cards and explains it', async () => {
+  it('keeps a priority column with no cards and explains it', async () => {
     const { runtime, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
-    expect(await view.findByText(faberloomEn['mesa.column.tu'])).toBeTruthy()
-    expect(view.getByText(faberloomEn['mesa.column.esperando'])).toBeTruthy()
-    expect(view.getByText(faberloomEn['mesa.column.delegado'])).toBeTruthy()
-    expect(view.getByText(faberloomEn['mesa.column.error'])).toBeTruthy()
+    for (const key of ['mesa.severity.low', 'mesa.severity.medium', 'mesa.severity.high', 'mesa.severity.critical'] as const) {
+      expect(await view.findByRole('heading', { name: new RegExp(faberloomEn[key], 'u') })).toBeTruthy()
+    }
     expect(view.getAllByText(faberloomEn['mesa.column.empty'])).toHaveLength(3)
   })
 
@@ -2050,19 +2052,6 @@ function effectStatus(overrides: Record<string, unknown> = {}) {
   }
 }
 
-/** One signature state the host reads for an action type. */
-function signature(state: 'ACTIVE' | 'MISSING') {
-  return {
-    actionType: 'mail.send',
-    protected: true,
-    state,
-    signatureId: state === 'ACTIVE' ? 'sig-1' : null,
-    signedAt: state === 'ACTIVE' ? '2026-10-28T09:00:00.000Z' : null,
-    expiresAt: null,
-    signedBy: state === 'ACTIVE' ? 'ceo@muitowork.com' : null,
-  }
-}
-
 describe('mesa effect states', () => {
   it('counts down the reversal window and reverts from its own selector', async () => {
     const { runtime, view, boardDetail, boardEffectStatus, boardEffectRevert } = await bench()
@@ -2279,36 +2268,35 @@ describe('mesa effect states', () => {
     })
   })
 
-  it('W-16 · keeps the approval disabled until a CEO signature covers the action type', async () => {
-    const { runtime, view, boardDetail, boardSignatureStatus, boardApproveWithExecution } = await bench()
+  it('approves a protected action without a CEO signature', async () => {
+    const { runtime, view, boardDetail, boardApproveWithExecution } = await bench()
     boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
-    boardSignatureStatus.mockResolvedValue({ ok: true, value: signature('MISSING') } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
 
     fireEvent.click(await view.findByRole('button', { name: 'Approve' }))
     const dialog = view.getByRole('dialog')
     fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'mail.send' } })
-    const missing = faberloomEn['mesa.approveEffect.signatureMissing'].replace('{action}', 'Send email')
-    expect(await within(dialog).findByText(missing)).toBeTruthy()
-    expect((within(dialog).getByRole('button', { name: faberloomEn['mesa.approveEffect.confirm'] }) as HTMLButtonElement).disabled).toBe(true)
-    expect(boardApproveWithExecution).not.toHaveBeenCalled()
-
-    // The panel points to the signature panel, which lists every protected type.
-    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['mesa.approveEffect.openSignatures'] }))
-    expect(await view.findByRole('dialog', { name: faberloomEn['mesa.signature.title'] })).toBeTruthy()
+    // No signature control is offered: the board no longer asks for one.
+    expect(within(dialog).queryByRole('button', { name: faberloomEn['mesa.approveEffect.openSignatures'] })).toBeNull()
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'cliente@demo.test' } })
+    const confirm = within(dialog).getByRole('button', { name: faberloomEn['mesa.approveEffect.confirm'] }) as HTMLButtonElement
+    await waitFor(() => { expect(confirm.disabled).toBe(false) })
+    fireEvent.click(confirm)
+    await waitFor(() => {
+      expect(boardApproveWithExecution).toHaveBeenCalledWith('item-1', expect.not.objectContaining({
+        authorization: expect.anything(),
+      }))
+    })
   })
 
   it('approves with execution naming the action, the destination, and the amount', async () => {
-    const { runtime, view, boardDetail, boardSignatureStatus, boardApproveWithExecution } = await bench()
+    const { runtime, view, boardDetail, boardApproveWithExecution } = await bench()
     boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
-    boardSignatureStatus.mockResolvedValue({ ok: true, value: signature('ACTIVE') } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
 
     fireEvent.click(await view.findByRole('button', { name: 'Approve' }))
     const dialog = view.getByRole('dialog')
     fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'mail.send' } })
-    const active = faberloomEn['mesa.approveEffect.signatureActive'].replace('{action}', 'Send email')
-    expect(await within(dialog).findByText(active)).toBeTruthy()
     // The amount the operator is approving is named on the panel.
     const amount = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(1200)
     expect(within(dialog).getByText(new RegExp(amount.replace('.', '\\.')))).toBeTruthy()
@@ -2327,29 +2315,8 @@ describe('mesa effect states', () => {
         executionId: expect.stringMatching(/^exec-tab-/),
         actionType: 'mail.send',
         destination: 'cliente@demo.test',
-        authorization: 'sig-1',
       }))
     })
-  })
-
-  it('lists protected action types and issues or revokes one signature', async () => {
-    const { runtime, view, boardDetail, boardSignatures, boardSignatureIssue, boardSignatureRevoke } = await bench()
-    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
-    boardSignatures.mockResolvedValue({
-      ok: true,
-      value: [signature('MISSING'), { ...signature('ACTIVE'), actionType: 'shipment.create' }],
-    } as never)
-    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
-
-    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.signature.title'] }))
-    const dialog = await view.findByRole('dialog', { name: faberloomEn['mesa.signature.title'] })
-    expect(within(dialog).getByText('Create shipment')).toBeTruthy()
-
-    fireEvent.click(within(dialog).getAllByRole('button', { name: faberloomEn['mesa.signature.issue'] })[0] as HTMLElement)
-    await waitFor(() => { expect(boardSignatureIssue).toHaveBeenCalledWith({ actionTypes: ['mail.send'] }) })
-
-    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['mesa.signature.revoke'] }))
-    await waitFor(() => { expect(boardSignatureRevoke).toHaveBeenCalledWith('sig-1') })
   })
 
   it('shows one visible alert for a late confirmation without reopening the item', async () => {
@@ -2454,7 +2421,7 @@ describe('mesa decision safety, filters, rounds, and grouping', () => {
     expect(boardApproveWithEdits).not.toHaveBeenCalled()
   })
 
-  it('W-27 · filters by account and due date and names what stays outside', async () => {
+  it('W-27 · filters by account and priority and names what stays outside', async () => {
     const { runtime, view } = await bench({ ok: true, value: { ...OVERVIEW, board: BOARD_ROWS } })
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     expect(await view.findByText('PF 1000')).toBeTruthy()
@@ -2467,29 +2434,9 @@ describe('mesa decision safety, filters, rounds, and grouping', () => {
     expect(view.getByText('critical: 1')).toBeTruthy()
 
     fireEvent.change(view.getByRole('combobox', { name: faberloomEn['mesa.account'] }), { target: { value: '' } })
-    fireEvent.change(view.getByRole('combobox', { name: 'Due' }), { target: { value: 'overdue' } })
-    await waitFor(() => { expect(view.queryByText('PF 2000')).toBeNull() })
-    expect(view.getByText('PF 1000')).toBeTruthy()
-  })
-
-  it('groups the Kanban and the List by space and folds one group', async () => {
-    const { runtime, view } = await bench({ ok: true, value: { ...OVERVIEW, board: BOARD_ROWS } })
-    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
-    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
-
-    fireEvent.click(view.getByRole('checkbox', { name: 'Group by space' }))
-    const group = await view.findByRole('button', { name: 'Marluvas · 2 · Critical' })
-    expect(view.getByRole('button', { name: 'No space · 1 · Unclassified' })).toBeTruthy()
-
-    fireEvent.click(group)
-    expect(group.getAttribute('aria-expanded')).toBe('false')
-    expect(view.queryByText('PF 2000')).toBeNull()
-
-    // The List keeps the same groups: the folded one stays folded.
-    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.tab.lista'] }))
-    expect(await view.findByRole('button', { name: 'No space · 1 · Unclassified' })).toBeTruthy()
-    expect(view.getByText('PF 1000')).toBeTruthy()
-    expect(view.queryByText('PF 2000')).toBeNull()
+    fireEvent.change(view.getByRole('combobox', { name: faberloomEn['mesa.severity'] }), { target: { value: 'MEDIUM' } })
+    await waitFor(() => { expect(view.queryByText('PF 1000')).toBeNull() })
+    expect(await view.findByText('PF 3000')).toBeTruthy()
   })
 
   it('W-29 · offers a new round when every item was skipped', async () => {
@@ -2539,8 +2486,8 @@ describe('mesa traceability (W criteria)', () => {
     act(() => { filtered.runtime.panelInfo.set({ activePanelId: BOARD }) })
     expect(await filtered.view.findByText('PF 1000')).toBeTruthy()
 
-    // No row is overdue, so this filter hides the whole authorized queue.
-    fireEvent.change(filtered.view.getByRole('combobox', { name: faberloomEn['mesa.due'] }), { target: { value: 'overdue' } })
+    // Only CRITICAL passes, so a HIGH filter hides the whole authorized queue.
+    fireEvent.change(filtered.view.getByRole('combobox', { name: faberloomEn['mesa.severity'] }), { target: { value: 'CRITICAL' } })
     await waitFor(() => { expect(filtered.view.queryByText('PF 1000')).toBeNull() })
     expect(filtered.view.queryByText(faberloomEn['mesa.empty'])).toBeNull()
     expect(filtered.view.getByText('outside the filter: 2 · Queue: 2')).toBeTruthy()
@@ -2800,7 +2747,7 @@ describe('mesa traceability (W criteria)', () => {
     fireEvent.click(within(panel).getByRole('button', { name: faberloomEn['mesa.effect.revert'] }))
 
     await waitFor(() => {
-      expect(kanbanScreen.getByRole('heading', { name: new RegExp(faberloomEn['mesa.column.delegado'], 'u') })).toBeTruthy()
+      expect(kanbanScreen.getByRole('heading', { name: new RegExp(faberloomEn['mesa.severity.medium'], 'u') })).toBeTruthy()
     })
     expect(kanbanScreen.queryByText('③ Draft')).toBeNull()
   })
@@ -2854,7 +2801,7 @@ describe('mesa traceability (W criteria)', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
 
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
-    const column = view.getByRole('heading', { name: new RegExp(faberloomEn['mesa.column.delegado'], 'u') }).closest('section') as HTMLElement
+    const column = view.getByRole('heading', { name: new RegExp(faberloomEn['mesa.severity.medium'], 'u') }).closest('section') as HTMLElement
     fireEvent.click(within(column).getByRole('button', { name: /PF 1000/u }))
 
     expect(await view.findByRole('button', { name: faberloomEn['mesa.effect.revert'] })).toBeTruthy()
@@ -2870,46 +2817,16 @@ describe('mesa traceability (W criteria)', () => {
   })
 })
 
-it('§9.6 / §7.1 · the detail names the agent and the autonomy level of its unit', async () => {
-  const { runtime, view, boardDetail } = await bench()
+it('§9.6 / §7.1 · the detail assigns the agent and names the autonomy level', async () => {
+  const { runtime, view, boardDetail, boardAssignAgent } = await bench()
   boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
   act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
   await view.findByText('③ Draft')
-  expect(view.getByText('Agent: agent-1')).toBeTruthy()
+  const agent = view.getByRole('combobox', { name: faberloomEn['mesa.agent'] }) as HTMLSelectElement
+  expect(agent.value).toBe('agent-1')
+  fireEvent.change(agent, { target: { value: '' } })
+  await waitFor(() => { expect(boardAssignAgent).toHaveBeenCalledWith('item-1', null, 2) })
   expect(view.getByText('Autonomy: Supervised')).toBeTruthy()
-})
-
-it('§9.4 · saves, applies, and removes a named view', async () => {
-  const { runtime, view, boardDetail, boardViews, boardSaveView, boardRemoveView } = await bench()
-  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
-  const saved = {
-    name: 'Eguisa alta', filters: { spaceId: null, accountRef: 'eguisa', assigneeId: null, severity: 'HIGH', due: 'all' as const },
-    createdAt: '2026-10-29T00:00:00Z', updatedAt: '2026-10-29T00:00:00Z',
-  }
-  boardViews.mockResolvedValue({ ok: true, value: [saved] } as never)
-  boardSaveView.mockResolvedValue({ ok: true, value: [saved] } as never)
-  boardRemoveView.mockResolvedValue({ ok: true, value: [] } as never)
-  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
-  await view.findByText('③ Draft')
-
-  const viewSelect = await view.findByRole('combobox', { name: faberloomEn['mesa.views'] })
-  await waitFor(() => { expect(within(viewSelect).getByRole('option', { name: 'Eguisa alta' })).toBeTruthy() })
-  fireEvent.change(viewSelect, { target: { value: 'Eguisa alta' } })
-  expect((view.getByRole('combobox', { name: faberloomEn['mesa.account'] }) as HTMLSelectElement).value).toBe('eguisa')
-  expect((view.getByRole('combobox', { name: faberloomEn['mesa.severity'] }) as HTMLSelectElement).value).toBe('HIGH')
-
-  // Saving takes the current filters and the typed name.
-  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.views.save'] }))
-  fireEvent.change(view.getByRole('textbox', { name: faberloomEn['mesa.views.name'] }), { target: { value: 'Mi vista' } })
-  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.views.save'] }))
-  await waitFor(() => {
-    expect(boardSaveView).toHaveBeenCalledWith('Mi vista', {
-      spaceId: null, accountRef: 'eguisa', assigneeId: null, severity: 'HIGH', due: 'all',
-    })
-  })
-
-  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.views.remove'] }))
-  await waitFor(() => { expect(boardRemoveView).toHaveBeenCalledWith('Mi vista') })
 })
 
 it('§9.4 · filters the queue by the account', async () => {
@@ -2958,14 +2875,25 @@ it('§9.7 · applies a deterministic field instruction without the agent', async
   expect(await view.findByText(faberloomEn['mesa.router.unmatched'])).toBeTruthy()
 })
 
-it('§9.2 · Kanban keeps the four columns even when a column is empty', async () => {
+it('§9.2 · Kanban shows the four priorities even when a column is empty', async () => {
   const { runtime, view } = await bench()
   act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
   fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
-  for (const key of ['mesa.column.tu', 'mesa.column.esperando', 'mesa.column.delegado', 'mesa.column.error'] as const) {
+  for (const key of ['mesa.severity.low', 'mesa.severity.medium', 'mesa.severity.high', 'mesa.severity.critical'] as const) {
     expect(await view.findByRole('heading', { name: new RegExp(faberloomEn[key], 'u') })).toBeTruthy()
   }
   expect(view.getAllByText(faberloomEn['mesa.column.empty']).length).toBeGreaterThan(0)
+})
+
+it('moves a card to another priority and writes the human priority', async () => {
+  const { runtime, view, boardSetSeverity } = await bench()
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+  const card = await view.findByRole('button', { name: /Preparar proforma/u })
+  const critical = view.getByRole('heading', { name: new RegExp(faberloomEn['mesa.severity.critical'], 'u') }).closest('section') as HTMLElement
+  fireEvent.dragStart(card, { dataTransfer: { setData: () => {}, effectAllowed: '' } })
+  fireEvent.drop(critical, { dataTransfer: { getData: () => 'item-1' } })
+  await waitFor(() => { expect(boardSetSeverity).toHaveBeenCalledWith('item-1', 'CRITICAL', 2, 'HUMAN', null) })
 })
 
 it('offers to classify the pending items and calls the classifier', async () => {
@@ -2989,10 +2917,11 @@ it('offers the MWT client book in the account filter, not only the accounts with
   expect(within(accounts).getByRole('option', { name: 'eguisa' })).toBeTruthy()
 })
 
-it('no longer offers the agent filter', async () => {
+it('offers no agent filter, only the item agent field', async () => {
   const { runtime, view, boardDetail } = await bench()
   boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
   act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
   await view.findByRole('combobox', { name: faberloomEn['mesa.account'] })
-  expect(view.queryByRole('combobox', { name: faberloomEn['mesa.agent'] })).toBeNull()
+  // The only agent combobox is the detail's responsibility field.
+  expect(view.getAllByRole('combobox', { name: faberloomEn['mesa.agent'] })).toHaveLength(1)
 })

@@ -114,6 +114,11 @@ export const boardItemRecord = z.object({
   artifactHash: z.string().nullable().default(null),
   /** Origins the run declared for the fields of its content; the item projects one entry per field. */
   fieldOrigins: z.array(fieldOriginRecord).default([]),
+  /**
+   * Questions the classifier left open when it could not decide confidently.
+   * A human correction clears them; the panel shows them as the agent's doubts.
+   */
+  doubts: z.array(z.string()).default([]),
   pendingCandidate: candidateRecord.nullable().default(null),
   events: z.array(eventRecord).default([]),
   discardReason: z.string().nullable().default(null),

@@ -54,6 +54,12 @@
         # El consumidor del outbox corre en proceso aunque esté ocioso, para que
         # una ejecución aceptada no quede sin quien la emita.
         effectDispatchIntervalMs: 15000
+        # El agente vivo revisa la Mesa aunque nadie la abra: vuelve a clasificar
+        # lo pendiente y reaplica lo que un humano enseñó al mover una prioridad.
+        reclassifyIntervalMs: !!js (Number(process.env.FABERLOOM_RECLASSIFY_MINUTES ?? '15') || 0) * 60_000
+        # Aprobar, iterar, cambiar prioridad, descartar y guardar no piden firma
+        # del CEO en este despliegue (A-31); el board sigue registrando quién aprobó.
+        ceoSignatureRequired: !!js process.env.FABERLOOM_CEO_SIGNATURE !== '1'
 
     - id: faberloom-routines
       name: '@deepseek-ai/dsh-faberloom-routines'

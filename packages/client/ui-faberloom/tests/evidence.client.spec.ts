@@ -14,6 +14,7 @@ describe('evidence labels', () => {
     expect(label).toContain('BL 2488.pdf')
     expect(label).toContain('Expediente 2488-2026')
     expect(label).toContain('PO 505244')
+    expect(label).not.toMatch(/\(\s*$/u)
   })
 
   it('keeps an ordinary reference untouched and never returns empty', () => {
