@@ -5062,6 +5062,15 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
               </section>
             )
           })}
+          {visible.some(row => row.severity === null) ? (
+            <section className={styles.mesaColumn} data-severity="none">
+              <h3>
+                {t('mesa.unclassified')}
+                <span className={styles.mesaQueueMeta}>{String(visible.filter(row => row.severity === null).length)}</span>
+              </h3>
+              {visible.filter(row => row.severity === null).map(cardOf)}
+            </section>
+          ) : null}
         </div>
       )
 
