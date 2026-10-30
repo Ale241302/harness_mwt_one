@@ -102,6 +102,22 @@ it('omits every MCP entry when the operator blanks their URLs', () => {
   expect(patch).not.toContain('dsh-mcp-client')
 })
 
+it('routes the model through the gateway when a proxy URL is configured', () => {
+  const patch = renderIdentityPatch(identity, 'C:/home/.dsh', {
+    FABERLOOM_LLM_PROXY_URL: 'https://harness.mwt.one/llm/',
+  })
+  expect(patch).toContain('- id: llm-deepseek')
+  expect(patch).toContain('protocol: chat-completions')
+  expect(patch).toContain('baseURL: "https://harness.mwt.one/llm"')
+  expect(patch).toContain("apiKeyEnv: 'CONSOLA_TOKEN'")
+  expect(patch).toContain('agentApiKeyEnv: "CONSOLA_TOKEN"')
+})
+
+it('leaves the model route untouched without a proxy URL', () => {
+  const patch = renderIdentityPatch(identity, 'C:/home/.dsh', {})
+  expect(patch).not.toContain('- id: llm-deepseek')
+})
+
 it('writes the env layer, the patch, and the identity record', () => {
   const home = fixture()
   writeFileSync(join(home, '.env'), 'DEEPSEEK_API_KEY=sk-keep\n')
