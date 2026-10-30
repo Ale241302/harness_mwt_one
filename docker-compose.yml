@@ -28,6 +28,10 @@ services:
       # directorio antes de arrancar, así /healthz compara el SHA construido con el
       # manifiesto realmente desplegado y no con el que quedó cocido en la imagen.
       MANIFEST_FILE: /opt/mwt/harness-manifest/MANIFEST.md
+      # Predicción (MiroFish): vacío = la ruta /prediccion no existe. Con el
+      # sidecar levantado (perfil `prediccion`), apunta a él para publicarlo.
+      PREDICCION_URL: ${PREDICCION_URL:-}
+      PREDICCION_ADMIN_ONLY: ${PREDICCION_ADMIN_ONLY:-1}
     volumes:
       - harness_users:/data
       # M9 · estado del último backup, escrito por scripts/backup-harness.sh en el
@@ -53,7 +57,38 @@ services:
       retries: 5
       start_period: 20s
 
+  # Predicción (MiroFish): motor de simulación multiagente. El gateway lo
+  # publica en /prediccion y es el único que autentica; el contenedor no abre
+  # puertos al host. Arranca solo con el perfil `prediccion`:
+  #   docker compose --profile prediccion up -d
+  prediccion:
+    profiles: ["prediccion"]
+    image: ${PREDICCION_IMAGE:-mwt-one-harness/prediccion:latest}
+    container_name: mwt-one-harness-prediccion
+    restart: unless-stopped
+    # Cada simulación abre subprocesos Python y carga torch: el techo es real.
+    mem_limit: ${PREDICCION_MEM_LIMIT:-4g}
+    memswap_limit: ${PREDICCION_MEM_LIMIT:-4g}
+    cpus: ${PREDICCION_CPUS:-2.0}
+    env_file:
+      - ./prediccion.env
+    environment:
+      MIROFISH_BASE: /prediccion/
+    volumes:
+      - prediccion_uploads:/app/backend/uploads
+    networks:
+      - harness-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5001/api/graph/project/list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
 volumes:
+  # Subidas y simulaciones de MiroFish (PDF/Markdown, perfiles, resultados).
+  prediccion_uploads:
+    name: harness-prediccion-uploads
   # Volumen persistente del harness (DSH_HOME por usuario). Es el mismo que
   # usaba el stack anterior, así que las sesiones/datos no se pierden.
   harness_users:
