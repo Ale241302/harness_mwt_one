@@ -236,6 +236,22 @@
 - id: web-fetch-http
   disabled: true
 
+# El proveedor de credenciales entrega por entorno la llave que paga el
+# despliegue. Para estas referencias el almacén del usuario (Ajustes → Modelos)
+# resuelve primero: sin él, la cuenta usa la llave compartida y la política de
+# producto la limita; con una llave propia distinta, la cuenta paga su consumo y
+# no tiene límite. Guardar el mismo valor que entrega el entorno se rechaza, así
+# que copiar la llave compartida no la convierte en propia.
+- id: credentials
+  config:
+    storedOverridesEnvironment:
+      - DEEPSEEK_API_KEY
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+      - GOOGLE_API_KEY
+      - KIMI_API_KEY
+      - MOONSHOT_API_KEY
+
 # Rutas multi-proveedor por defecto del producto. El adaptador pi-ai ya viene
 # montado (dormido) en el bundle base; aquí se le dan los perfiles para que
 # OpenAI, Anthropic, Google, Kimi (plan de código) y Moonshot (plataforma)

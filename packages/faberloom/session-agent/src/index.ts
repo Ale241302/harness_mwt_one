@@ -37,6 +37,7 @@ import type { FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
 import { toolSourcesOf, type AgentToolSources } from '@deepseek-ai/dsh-faberloom-agent-plane'
 import type { FaberLoomSpace, FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type { LlmCallConfig, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
@@ -64,6 +65,8 @@ import {
   PRODUCT_POLICY,
   PRODUCT_TOOL_PREFIXES,
   SHARED_CREDENTIAL_REFS,
+  credentialFingerprint,
+  deploymentCredentialFingerprints,
   isProductTool,
   refusalStream,
   usageAllowed,
@@ -145,7 +148,7 @@ export interface Config {
   productOnly?: boolean
   /** Tool-name prefixes the shared key may execute. */
   allowedToolPrefixes?: string[]
-  /** Credential references the deployment supplies; a stored value is the user's own. */
+  /** Credential references the deployment supplies; a stored value whose fingerprint differs is the account's own. */
   sharedCredentialRefs?: string[]
   /** Answer a refused request receives. */
   refusal?: string
@@ -234,6 +237,8 @@ export class FaberLoomSessionAgent extends Service {
 
   /** Whether this identity's shared key is limited to product work. */
   private readonly restricted: boolean
+  /** Fingerprints of every key value the deployment supplies for the shared references. */
+  private readonly deploymentFingerprints: ReadonlySet<string>
   /** Sessions whose current route authenticates with the account's own credential. */
   private readonly ownKeySessions = new Set<string>()
   private readonly fibers = new Map<Agent, ReturnType<Context['inject']>>()
@@ -261,6 +266,10 @@ export class FaberLoomSessionAgent extends Service {
     super(ctx, 'faberloomSessionAgent')
     const restrictedRoles = config.restrictedRoles ?? ['client_b2b']
     this.restricted = config.productOnly !== false && restrictedRoles.includes(config.role ?? 'client_b2b')
+    this.deploymentFingerprints = deploymentCredentialFingerprints(
+      launchEnvironmentOf(ctx),
+      config.sharedCredentialRefs ?? SHARED_CREDENTIAL_REFS,
+    )
     ctx.inject(['sessionProjections'], (scope: Context) => {
       scope.sessionProjections.register(spaceReadGrantsProjection)
     })
@@ -776,10 +785,10 @@ export class FaberLoomSessionAgent extends Service {
 
   /**
    * Decide whether one assembled request may use the shared key. A credential
-   * stored by the user (the credential seam reports a source other than `env`)
-   * is that user's own key and is never limited; the deployment's inherited key
-   * follows the product policy. A refusal is one visible text block, so the
-   * client renders it as the assistant's answer.
+   * the account stored itself (`file`) whose value is not one the deployment
+   * supplies is that account's own key and is never limited; every other
+   * credential follows the product policy. A refusal is one visible text block,
+   * so the client renders it as the assistant's answer.
    * @param options - the request the loop assembled.
    * @param next - the provider stream.
    * @returns the provider stream, or the refusal.
@@ -807,25 +816,31 @@ export class FaberLoomSessionAgent extends Service {
   }
 
   /**
-   * Whether the request authenticates with a credential the user stored. The
-   * deployment's key comes from the environment or the Harness-home `.env`
-   * layer; only a value in the writable credential store belongs to the account
-   * and takes the request outside the shared-key policy.
+   * Whether the request authenticates with a credential the account stored.
+   *
+   * Provenance alone is not enough: a stored value could be a copy of the
+   * deployment's own key, and the account would then get personal use on the
+   * deployment's bill. The value is the account's only when it came from the
+   * writable store (`file`) *and* its fingerprint is not one the deployment
+   * supplies. Deployment layers are fingerprinted at construction, so a key an
+   * operator adds to the environment later still counts by source.
    * @param options - the request the loop assembled.
    * @returns true when the user owns the credential.
    */
   private async usesOwnCredential(options: GenerateOptions): Promise<boolean> {
     const shared = this.config.sharedCredentialRefs ?? SHARED_CREDENTIAL_REFS
-    const ref = options.credentialRef
-    if (ref !== undefined && !shared.includes(ref)) return true
-    const target = ref ?? shared[0]
+    const target = options.credentialRef ?? shared[0]
     if (target === undefined) return false
     const credentials = this.ctx.get('credentials') as CredentialsView | undefined
     if (credentials === undefined) return false
+    // Every reference is resolved, including a provider the deployment never
+    // supplies: a route name is not evidence that the account paid for the key.
     const resolved = await credentials.resolve(target as CredentialRef)
+    if (resolved === undefined) return false
+    if (this.deploymentFingerprints.has(credentialFingerprint(resolved.value))) return false
     // The writable credential store (`file`) is the account's own key; the
     // deployment defaults and the Harness-home `.env` layer are not.
-    return resolved !== undefined && resolved.source === 'file'
+    return resolved.source === 'file'
   }
 }
 

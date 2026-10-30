@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import FaberLoomSessionAgent from '../src/index.ts'
 
 /** The install callback the fake agent captures, plus the service and agent under test. */
@@ -444,6 +445,14 @@ describe('FaberLoomSessionAgent Space scope', () => {
 })
 
 describe('shared-key usage guard', () => {
+  /** The key value the deployment supplies in these cases. */
+  const DEPLOYMENT_KEY = 'sk-deployment-owned'
+
+  /** One launch environment carrying a deployment key in the inherited layer. */
+  function deploymentEnvironment(values: Record<string, string> = { DEEPSEEK_API_KEY: DEPLOYMENT_KEY }): never {
+    return createLaunchEnvironmentSnapshot([{ source: 'process', values }]) as never
+  }
+
   /** One human message as the loop assembles it. */
   function human(text: string): never {
     return {
@@ -455,10 +464,11 @@ describe('shared-key usage guard', () => {
   }
 
   /** One request the agent loop would send. */
-  function request(text: string): never {
+  function request(text: string, credentialRef?: string): never {
     return {
       provider: 'deepseek', model: 'deepseek-chat', sessionId: 'session-1',
       messages: [human(text)],
+      ...credentialRef === undefined ? {} : { credentialRef },
     } as never
   }
 
@@ -469,13 +479,23 @@ describe('shared-key usage guard', () => {
     return chunks
   }
 
+  /** The text of the first chunk of a drained answer. */
+  function firstText(chunks: unknown[]): string {
+    const first = chunks[0] as { text?: string } | undefined
+    return first?.text ?? ''
+  }
+
   it('refuses a personal request and lets a work request through', async () => {
-    const { ctx } = await harness({ ownerId: 'owner@test', role: 'client_b2b' }, {}, '/home/SICOP')
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
     const next = vi.fn(async function* () {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
     const refused = await drain(ctx.waterfall('llm/stream', request('resumime esta presentación y hacé un resumen'), next as never))
-    expect(refused[0]).toMatchObject({ type: 'text-delta', text: expect.stringContaining('llave compartida') })
+    expect(firstText(refused)).toContain('llave compartida')
     expect(next).not.toHaveBeenCalled()
 
     const allowed = await drain(ctx.waterfall('llm/stream', request('decime en qué estado está el pedido 505244'), next as never))
@@ -484,8 +504,12 @@ describe('shared-key usage guard', () => {
   })
 
   it('lets a personal request through when the account stored its own key', async () => {
-    const credentials = { resolve: async () => ({ value: 'own-key', source: 'file' }) }
-    const { ctx } = await harness({ ownerId: 'owner@test', role: 'client_b2b' }, { credentials }, '/home/SICOP')
+    const credentials = { resolve: async () => ({ value: 'sk-account-owned', source: 'file' }) }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { credentials, launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
     const next = vi.fn(async function* () {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
@@ -493,9 +517,63 @@ describe('shared-key usage guard', () => {
     expect(next).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the policy when the store holds a copy of the deployment key', async () => {
+    const credentials = { resolve: async () => ({ value: DEPLOYMENT_KEY, source: 'file' }) }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { credentials, launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal'), next as never))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it('keeps the policy for a provider the deployment supplies', async () => {
+    const credentials = { resolve: async () => ({ value: 'sk-deployment-openai', source: 'env' }) }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      {
+        credentials,
+        launchEnvironment: deploymentEnvironment({ DEEPSEEK_API_KEY: DEPLOYMENT_KEY, OPENAI_API_KEY: 'sk-deployment-openai' }),
+      },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal', 'OPENAI_API_KEY'), next as never))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it('lets another provider through when the account stored its own key there', async () => {
+    const credentials = { resolve: async () => ({ value: 'sk-account-anthropic', source: 'file' }) }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      {
+        credentials,
+        launchEnvironment: deploymentEnvironment({ DEEPSEEK_API_KEY: DEPLOYMENT_KEY, ANTHROPIC_API_KEY: 'sk-deployment-anthropic' }),
+      },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal', 'ANTHROPIC_API_KEY'), next as never))
+    expect(next).toHaveBeenCalledTimes(1)
+  })
+
   it('denies a non-product tool for a shared-key session and allows it with the account key', async () => {
     const credentials = { resolve: async () => ({ value: 'shared', source: 'env' }) }
-    const { ctx } = await harness({ ownerId: 'owner@test', role: 'client_b2b' }, { credentials }, '/home/SICOP')
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { credentials, launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
     const next = vi.fn(async () => ({ kind: 'allow' }))
     const agent = { session: { id: 'session-1' } }
     await expect(ctx.waterfall('tools/pre-execute', { name: 'bash', agent } as never, next as never)).resolves.toMatchObject({ kind: 'deny' })
@@ -510,7 +588,11 @@ describe('shared-key usage guard', () => {
   })
 
   it('continues a work turn after a tool result and never limits internal calls', async () => {
-    const { ctx } = await harness({ ownerId: 'owner@test', role: 'client_b2b' }, {}, '/home/SICOP')
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
     const next = vi.fn(async function* () {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })

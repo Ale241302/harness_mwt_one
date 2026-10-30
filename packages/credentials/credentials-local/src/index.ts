@@ -70,6 +70,13 @@ export interface Config {
   watch?: boolean
   /** Watcher write-settle window in milliseconds; defaults to 100. */
   debounceMs?: number
+  /**
+   * References where a stored value ranks above the inherited environment, for
+   * a deployment that supplies a default credential to accounts that may bring
+   * their own. Every other reference keeps the seam's trust order, where the
+   * inherited environment wins and a write to it is refused.
+   */
+  storedOverridesEnvironment?: string[]
 }
 
 /** Fully resolved provider parameters; defaulting happens here, never inline. */
@@ -77,6 +84,8 @@ interface ResolvedSpec {
   filename: string
   watch: boolean
   debounceMs: number
+  /** References whose stored value outranks the inherited environment. */
+  storedOverridesEnvironment: ReadonlySet<string>
 }
 
 /**
@@ -90,6 +99,7 @@ export function resolveSpec(config: Config): ResolvedSpec {
     filename: resolve(config.path ?? join(resolveDshHome(config.dshHome), CREDENTIALS_FILENAME)),
     watch: config.watch ?? true,
     debounceMs: config.debounceMs ?? 100,
+    storedOverridesEnvironment: new Set(config.storedOverridesEnvironment ?? []),
   }
 }
 
@@ -519,6 +529,7 @@ export class LocalCredentialProvider extends CredentialProvider {
     dshHome: z.string(),
     watch: z.boolean().default(true),
     debounceMs: z.number().min(0).default(100),
+    storedOverridesEnvironment: z.array(z.string()).default([]),
   })
 
   private readonly spec: ResolvedSpec
@@ -615,9 +626,12 @@ export class LocalCredentialProvider extends CredentialProvider {
   }
 
   override resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
+    const stored = this.values.get(ref)
+    if (stored !== undefined && this.spec.storedOverridesEnvironment.has(ref)) {
+      return Promise.resolve({ value: stored, source: 'file' })
+    }
     const inherited = this.inherited(ref)
     if (inherited !== undefined) return Promise.resolve({ value: inherited, source: 'env' })
-    const stored = this.values.get(ref)
     if (stored !== undefined) return Promise.resolve({ value: stored, source: 'file' })
     const fallback = this.dotenvFallback(ref)
     if (fallback !== undefined) return Promise.resolve({ value: fallback.value, source: fallback.source })
@@ -627,11 +641,17 @@ export class LocalCredentialProvider extends CredentialProvider {
   override describe(ref: CredentialRef): Promise<CredentialInfo> {
     // Only the inherited environment is unwritable: it is the one layer this
     // process cannot edit. A user `.env` value is writable in the sense that
-    // matters — storing a key replaces it as the effective one.
-    if (this.inherited(ref) !== undefined) {
-      return Promise.resolve({ configured: true, source: 'env', writable: false })
-    }
+    // matters — storing a key replaces it as the effective one. A reference in
+    // `storedOverridesEnvironment` keeps its store writable even over an
+    // inherited value, because there the store is the more specific choice.
     const stored = this.values.get(ref)
+    const overrides = this.spec.storedOverridesEnvironment.has(ref)
+    if (stored !== undefined && overrides) {
+      return Promise.resolve({ configured: true, source: 'file', writable: true })
+    }
+    if (this.inherited(ref) !== undefined) {
+      return Promise.resolve({ configured: true, source: 'env', writable: overrides })
+    }
     if (stored !== undefined) return Promise.resolve({ configured: true, source: 'file', writable: true })
     const fallback = this.dotenvFallback(ref)
     if (fallback !== undefined) return Promise.resolve({ configured: true, source: fallback.source, writable: true })
@@ -756,12 +776,14 @@ export class LocalCredentialProvider extends CredentialProvider {
       throw new Error(`credentials-local is disposed: cannot ${verb} "${ref}"`)
     }
     this.assertUnshadowed(ref, verb)
+    this.assertNotSuppliedValue(ref, value)
     return this.enqueue(async () => {
       if (this.isClosed()) {
         throw new Error(`credentials-local was disposed before the queued "${ref}" ${verb} ran`)
       }
       // Re-judged at run time: the environment may have changed while queued.
       this.assertUnshadowed(ref, verb)
+      this.assertNotSuppliedValue(ref, value)
       // The writer lock's exclusive create needs the parent to exist; 0700
       // because the harness home holds user-private data.
       await mkdir(dirname(this.spec.filename), { recursive: true, mode: 0o700 })
@@ -789,15 +811,38 @@ export class LocalCredentialProvider extends CredentialProvider {
   /**
    * Reject a write the inherited environment would shadow into apparent
    * no-effect. Only that layer can shadow a write: everything else this
-   * provider resolves ranks below the document being written.
+   * provider resolves ranks below the document being written — except a
+   * reference the deployment marked as overridable by the store, where the
+   * store is precisely the more specific choice.
    */
   private assertUnshadowed(ref: CredentialRef, verb: 'set' | 'unset'): void {
+    if (this.spec.storedOverridesEnvironment.has(ref)) return
     if (this.inherited(ref) !== undefined) {
       throw new Error(
         `credentials-local: "${ref}" is supplied read-only by the launching environment, so ${verb} would be`
         + ' shadowed; unset it in the shell you start dsh from instead',
       )
     }
+  }
+
+  /**
+   * Reject storing a value a lower layer already supplies for the same
+   * reference. The write would succeed and change nothing about the secret,
+   * but it would relabel the source from the supplying layer to `file` — a
+   * claim that the account provided a credential of its own. Consumers that
+   * separate the account's key from the deployment's read that source, so the
+   * value, not only the layer, has to be the account's.
+   * @param ref - the reference being written.
+   * @param value - the value being stored, or `undefined` for an unset.
+   */
+  private assertNotSuppliedValue(ref: CredentialRef, value: string | undefined): void {
+    if (value === undefined) return
+    const supplied = this.inherited(ref) ?? this.dotenvFallback(ref)?.value
+    if (supplied !== value) return
+    throw new Error(
+      `credentials-local: "${ref}" already resolves to that value from a deployment-supplied layer, so storing it`
+      + ' would report a key of your own that you did not provide; store a different key or leave it unset',
+    )
   }
 
   /**

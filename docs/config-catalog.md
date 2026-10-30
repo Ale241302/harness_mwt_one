@@ -559,6 +559,13 @@ export interface Config {
   watch?: boolean
   /** Watcher write-settle window in milliseconds; defaults to 100. */
   debounceMs?: number
+  /**
+   * References where a stored value ranks above the inherited environment, for
+   * a deployment that supplies a default credential to accounts that may bring
+   * their own. Every other reference keeps the seam's trust order, where the
+   * inherited environment wins and a write to it is refused.
+   */
+  storedOverridesEnvironment?: string[]
 }
 ```
 
@@ -1034,10 +1041,24 @@ export interface Config {
    * a deployment enables it explicitly when volume justifies it.
    */
   readonly bulkApprovalEnabled?: boolean
+  /**
+   * Milliseconds between live classification sweeps. Zero keeps the sweep idle;
+   * a deployment sets it so the agent reapplies human corrections and picks up
+   * items without priority while nobody is looking at them.
+   */
+  readonly reclassifyIntervalMs?: number
+  /** Items one sweep classifies before it stops, so a large backlog stays bounded. */
+  readonly reclassifyBatchSize?: number
+  /**
+   * Whether an acceptance of a protected action type needs a CEO signature
+   * (W-16). The default keeps the obligation; a deployment that does not
+   * require signatures turns it off here instead of hiding the refusal in the UI.
+   */
+  readonly ceoSignatureRequired?: boolean
 }
 ```
 
-Source: [`packages/faberloom/board/src/index.ts:191`](../packages/faberloom/board/src/index.ts)
+Source: [`packages/faberloom/board/src/index.ts:192`](../packages/faberloom/board/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-checks-mwt"></a>
 
@@ -1468,10 +1489,23 @@ export interface Config {
   maxScopeChars?: number
   /** Ceiling on the Spaces one session scope lists, including sub-Spaces. */
   maxScopeSpaces?: number
+  /**
+   * Roles whose shared key is limited to product work. A Space without a
+   * responsible agent still gets a product composition under these roles.
+   */
+  restrictedRoles?: string[]
+  /** Whether the restriction is enforced; a deployment turns it off explicitly. */
+  productOnly?: boolean
+  /** Tool-name prefixes the shared key may execute. */
+  allowedToolPrefixes?: string[]
+  /** Credential references the deployment supplies; a stored value whose fingerprint differs is the account's own. */
+  sharedCredentialRefs?: string[]
+  /** Answer a refused request receives. */
+  refusal?: string
 }
 ```
 
-Source: [`packages/faberloom/session-agent/src/index.ts:115`](../packages/faberloom/session-agent/src/index.ts)
+Source: [`packages/faberloom/session-agent/src/index.ts:129`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 
@@ -1581,7 +1615,7 @@ export interface Config {
 export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:404`](../packages/faberloom/view/src/index.ts)
+Source: [`packages/faberloom/view/src/index.ts:419`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
