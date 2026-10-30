@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-mcp-registry",
   "description": "Native MCP server registry (ctx.faberloomMcpRegistry): durable per-owner MCP server configuration, header/env secrets through the credential seam, an isolated connection probe, and process-global mounting of every enabled server",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

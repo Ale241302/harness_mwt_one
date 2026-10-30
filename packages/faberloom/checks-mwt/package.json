@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-checks-mwt",
   "description": "Native product proforma checks over MWT.ONE: the six D-8 controls of the board filled from the MWT MCP reads (D-01, D-02)",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

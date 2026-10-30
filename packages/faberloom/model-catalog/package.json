@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-model-catalog",
   "description": "Native model catalog (ctx.faberloomModelCatalog): the fixed provider protocol table, dynamic model discovery through each provider's models endpoint authenticating with a caller-named credential, and a credential probe answering whether a reference works and whether its account is out of quota",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

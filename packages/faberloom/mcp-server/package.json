@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-mcp-server",
   "description": "FaberLoom MCP server (ctx.faberloomMcpServer): JSON-RPC over an MCP Streamable HTTP endpoint on a per-owner socket, with bearer tokens and the product's own autonomy guard",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

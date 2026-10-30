@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-app",
   "description": "The native product-module bundle: mounts the FaberLoom service rows and their model tools as a patch layer over the Web surface",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

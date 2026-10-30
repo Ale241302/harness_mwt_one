@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-learning",
   "description": "Native product memory (ctx.faberloomMemory): versioned teachings with scope, source, and usage; contextual performance that separates agent errors from requirement changes; late errors; and a portable knowledge snapshot",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

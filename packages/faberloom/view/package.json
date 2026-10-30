@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-view",
   "description": "FaberLoom workspace view for the browser: one Remote read of the signed-in owner's spaces, agents, board, routines, memory, and Work Flow graphs, plus create, rename, graph-edit, run, topology, and export writes",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

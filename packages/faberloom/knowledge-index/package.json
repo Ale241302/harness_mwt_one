@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-knowledge-index",
   "description": "Native product knowledge index (ctx.spaceIndex): ranks the actor's spaces by an embeddings endpoint, the Knowledge Hub corpus, and a lexical fallback over each space's title, context, curated entries, memory, and attached-file text",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

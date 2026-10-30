@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-workflows",
   "description": "Native product work flows (ctx.faberloomWorkflows): versioned graphs of triggers and actions scoped to a Space or personal scope, validated and compiled to routines",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-effects-mail",
   "description": "The Mesa mail effect adapter: sends an approved item through its owner's SMTP connection and registers mail.send on the board's effect machine",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

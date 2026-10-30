@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-inbound",
   "description": "Native product inbound receiver (ctx.faberloomInbound): polls the owner's configured IMAP mailbox and turns new messages into routine events",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },
