@@ -10,13 +10,13 @@ The harness exposed only the role's MCP business skills (`<skillsCatalogRoot>/<r
 
 ## Decision
 
-The gateway exposes a second skill root, `<skillsSharedRoot>` (`/opt/skills-shared`), alongside the role catalog, so every user gets the same shared skills regardless of role. `skills-shared/` vendors the ECC skill and command catalog (MIT) plus the owner's `interview-me` and `grill-me-lite`, and the email→Space seed applies `grill-me-lite` on the first turn.
+The gateway exposes a second skill root, `<skillsSharedRoot>` (`/opt/skills-shared`), alongside the role catalog, so every user gets the same shared skills regardless of role. `skills-shared/` vendors the ECC skill and command catalog (MIT), the owner's `interview-me` and `grill-me-lite`, and four external MIT sources (`landing-page-design`, `scroll-world`, the six `antislop*` skills, and `find-skills`); the email→Space seed applies `grill-me-lite` on the first turn.
 
-- Import scope: 165 ECC skills copied verbatim and 71 ECC commands rewritten as user-invocable skills named `cmd-<command>`, after pruning the stack-specific ECC material (languages, frameworks, cloud, homelab, media, health, crypto, Apple/mobile). ECC agents are not skills here; they ship as native presets ([note](2026-09-24-faberloom-native-agent-presets.md)).
-- Model visibility is the token lever: only the 25 curated skills — including `interview-me`, `grill-me-lite`, and the requested `security-scan`, `production-audit`, `plan-orchestrate`, `code-tour`, `skill-scout` — are model-invocable and enter the durable skill catalog. Every other skill and command carries `disable-model-invocation: true`, so the catalog stays near 25 entries while the whole set stays reachable through `/name`.
+- Import scope: 165 ECC skills copied verbatim and 71 ECC commands rewritten as user-invocable skills named `cmd-<command>`, after pruning the stack-specific ECC material (languages, frameworks, cloud, homelab, media, health, crypto, Apple/mobile). ECC agents are not skills here; they ship as native presets ([note](2026-09-24-faberloom-native-agent-presets.md)). Four external MIT sources vendor beside ECC: `landing-page-design` (elayadesign/ai-design-skills), `scroll-world` (oso95/scroll-world), the six `antislop*` skills (miqdadbadjuber/anti-slop), and `find-skills` (vercel-labs/skills).
+- Model visibility is the token lever: only the 35 curated skills — including `interview-me`, `grill-me-lite`, the requested `security-scan`, `production-audit`, `plan-orchestrate`, `code-tour`, `skill-scout`, and the design and anti-slop set (`landing-page-design` and the six `antislop*` skills) — are model-invocable and enter the durable skill catalog. Every other skill and command carries `disable-model-invocation: true`, so the catalog stays near 35 entries while the whole set stays reachable through `/name`.
 - `renderPatch` adds `skillsSharedRoot` to the `faberloom-skills` (`dsh-skill-filesystem`) source's `customSkillDirs` when the directory exists, even for a user with no role directory.
 - The FaberLoom Skills panel lists the shared root as a third origin (`shared`) beside the role catalog and the owner's uploads, so the whole catalog is visible there.
-- The files ship in the repo (`skills-shared/**`, copied to `/opt/skills-shared` by the Dockerfile and pushed by `push-to-vps.ps1`); ECC is MIT and `skills-shared/ECC-LICENSE.txt` records the source, counts, and license.
+- The files ship in the repo (`skills-shared/**`, copied to `/opt/skills-shared` by the Dockerfile and pushed by `push-to-vps.ps1`); ECC is MIT and `skills-shared/ECC-LICENSE.txt` records its source, counts, and license, while `skills-shared/THIRD-PARTY-SKILLS-LICENSE.txt` records the four external MIT sources (ai-design-skills, scroll-world, anti-slop, vercel-labs/skills).
 
 ## Alternatives considered
 
@@ -28,7 +28,7 @@ The gateway exposes a second skill root, `<skillsSharedRoot>` (`/opt/skills-shar
 
 ## Consequences
 
-- Only the 24 curated skills consume catalog tokens; the remaining skills and commands (`/cmd-<name>`) are reachable by name at no catalog cost.
+- Only the 35 curated skills consume catalog tokens; the remaining skills and commands (`/cmd-<name>`) are reachable by name at no catalog cost.
 - The role catalog still shadows a shared skill of the same name, and the owner's upload shadows both.
 - Vendored skills are not npm dependencies, so they carry their own license file rather than a `THIRD_PARTY_NOTICES` entry.
 

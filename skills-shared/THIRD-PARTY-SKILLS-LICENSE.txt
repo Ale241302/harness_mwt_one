@@ -1,0 +1,49 @@
+Additional third-party skills in this directory
+===============================================
+
+Alongside the ECC catalog recorded in ECC-LICENSE.txt, this directory vendors
+skills from four external repositories, all under the MIT License:
+
+  - `landing-page-design/` — from elayadesign/ai-design-skills
+    (https://github.com/elayadesign/ai-design-skills). Copied verbatim;
+    model-invocable.
+  - `scroll-world/` — from oso95/scroll-world
+    (https://github.com/oso95/scroll-world). Copied with one change:
+    `disable-model-invocation: true` was added so the heavy asset-generation
+    skill stays user-invocable via `/scroll-world` and out of the model catalog.
+  - `antislop/`, `antislop-ui/`, `antislop-copywriting/`, `antislop-human/`,
+    `antislop-layoutmobile/`, `antislop-code/` — from miqdadbadjuber/anti-slop
+    (https://github.com/miqdadbadjuber/anti-slop). Copied verbatim;
+    model-invocable.
+  - `find-skills/` — from vercel-labs/skills
+    (https://github.com/vercel-labs/skills). Copied with one change:
+    `disable-model-invocation: true` was added so the discovery helper stays
+    user-invocable via `/find-skills` and out of the model catalog.
+
+The model-invocation policy (the curated set versus `disable-model-invocation:
+true`) is the only adaptation applied to the vendored skills.
+
+MIT License
+
+Copyright (c) 2026 Elaya (ai-design-skills)
+Copyright (c) 2026 cyw (scroll-world)
+Copyright (c) 2026 Miqdad Badjuber (antislop)
+Copyright (c) 2026 Vercel, Inc. (vercel-labs/skills)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

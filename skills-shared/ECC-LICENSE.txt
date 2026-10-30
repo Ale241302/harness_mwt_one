@@ -2,7 +2,8 @@ Third-party content in this directory
 =====================================
 
 Everything under `skills-shared/` except the workspace owner's own skills
-(`interview-me/`, `grill-me-lite/`, `pptx-deck/`) is vendored from ECC
+(`interview-me/`, `grill-me-lite/`, `pptx-deck/`) and the skills recorded in
+`THIRD-PARTY-SKILLS-LICENSE.txt` is vendored from ECC
 (https://github.com/affaan-m/ECC), version 2.2.2, by Affaan Mustafa, under the
 MIT License:
 

@@ -10,13 +10,13 @@ harness 只暴露角色的 MCP 业务技能（`<skillsCatalogRoot>/<role>/<skill
 
 ## 决定
 
-网关在角色目录之外再暴露第二个技能根 `<skillsSharedRoot>`（`/opt/skills-shared`），使每个用户无论角色如何都获得同一套共享技能。`skills-shared/` 引入 ECC 的技能与命令目录（MIT）加上所有者自己的 `interview-me` 与 `grill-me-lite`；邮件→Space 的种子在第一轮就应用 `grill-me-lite`。
+网关在角色目录之外再暴露第二个技能根 `<skillsSharedRoot>`（`/opt/skills-shared`），使每个用户无论角色如何都获得同一套共享技能。`skills-shared/` 引入 ECC 的技能与命令目录（MIT）、所有者自己的 `interview-me` 与 `grill-me-lite`，以及四套外部 MIT 来源（`landing-page-design`、`scroll-world`、六个 `antislop*` 技能和 `find-skills`）；邮件→Space 的种子在第一轮就应用 `grill-me-lite`。
 
-- 导入范围：逐字复制 165 个 ECC 技能，把 71 个 ECC 命令改写为名为 `cmd-<command>` 的用户可调用技能；此前已剪除与具体技术栈相关的 ECC 内容（语言、框架、云、homelab、媒体、医疗、加密、Apple/移动端）。ECC 智能体在这里不是技能；它们作为原生 preset 发布（见[说明](2026-09-24-faberloom-native-agent-presets.zh.md)）。
-- 模型可见性就是 token 杠杆：只有 25 个精选技能——包括 `interview-me`、`grill-me-lite` 以及应请求加入的 `security-scan`、`production-audit`、`plan-orchestrate`、`code-tour`、`skill-scout`——是模型可调用的，进入持久技能目录。其余每个技能与命令都带 `disable-model-invocation: true`，因此目录保持在约 25 条，而整套仍可经 `/name` 触达。
+- 导入范围：逐字复制 165 个 ECC 技能，把 71 个 ECC 命令改写为名为 `cmd-<command>` 的用户可调用技能；此前已剪除与具体技术栈相关的 ECC 内容（语言、框架、云、homelab、媒体、医疗、加密、Apple/移动端）。ECC 智能体在这里不是技能；它们作为原生 preset 发布（见[说明](2026-09-24-faberloom-native-agent-presets.zh.md)）。在 ECC 之外还引入四处外部 MIT 来源：`landing-page-design`（elayadesign/ai-design-skills）、`scroll-world`（oso95/scroll-world）、六个 `antislop*` 技能（miqdadbadjuber/anti-slop）以及 `find-skills`（vercel-labs/skills）。
+- 模型可见性就是 token 杠杆：只有 35 个精选技能——包括 `interview-me`、`grill-me-lite`、应请求加入的 `security-scan`、`production-audit`、`plan-orchestrate`、`code-tour`、`skill-scout`，以及设计与反 slop 集合（`landing-page-design` 与六个 `antislop*` 技能）——是模型可调用的，进入持久技能目录。其余每个技能与命令都带 `disable-model-invocation: true`，因此目录保持在约 35 条，而整套仍可经 `/name` 触达。
 - 当该目录存在时，`renderPatch` 把 `skillsSharedRoot` 加入 `faberloom-skills`（`dsh-skill-filesystem`）来源的 `customSkillDirs`，即使该用户没有角色目录也一样。
 - FaberLoom 的 Skills 面板把共享根列为第三种来源（`shared`），与角色目录和用户上传并列，因此整个目录都能在那里看到。
-- 这些文件随仓库发布（`skills-shared/**`，由 Dockerfile 复制到 `/opt/skills-shared`，并由 `push-to-vps.ps1` 上传）；ECC 采用 MIT 许可，`skills-shared/ECC-LICENSE.txt` 记录来源、数量与许可证。
+- 这些文件随仓库发布（`skills-shared/**`，由 Dockerfile 复制到 `/opt/skills-shared`，并由 `push-to-vps.ps1` 上传）；ECC 采用 MIT 许可，`skills-shared/ECC-LICENSE.txt` 记录其来源、数量与许可证；`skills-shared/THIRD-PARTY-SKILLS-LICENSE.txt` 记录四处外部 MIT 来源（ai-design-skills、scroll-world、anti-slop、vercel-labs/skills）。
 
 ## 考虑过的替代方案
 
@@ -28,7 +28,7 @@ harness 只暴露角色的 MCP 业务技能（`<skillsCatalogRoot>/<role>/<skill
 
 ## 后果
 
-- 只有 24 个精选技能消耗目录 token；其余技能与命令（`/cmd-<name>`）都能按名触达且不消耗目录。
+- 只有 35 个精选技能消耗目录 token；其余技能与命令（`/cmd-<name>`）都能按名触达且不消耗目录。
 - 同名时角色目录仍覆盖共享技能，用户上传再覆盖两者。
 - 引入的技能不是 npm 依赖，因此它们自带许可证文件，而不是记入 `THIRD_PARTY_NOTICES`。
 
