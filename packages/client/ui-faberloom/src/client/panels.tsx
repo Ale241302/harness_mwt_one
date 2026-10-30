@@ -4270,17 +4270,15 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                       </dd>
                     </div>
                   </dl>
-                  {value.fieldOrigins.length === 0 ? null : (
+                  {value.fieldOrigins.length === 0 || value.fieldOrigins.every(origin => origin.source === null) ? null : (
                     <dl className={styles.mesaFacts}>
                       <div>
                         <dt>{t('mesa.detail.origins')}</dt>
                         <dd>
-                          {value.fieldOrigins.every(origin => origin.source === null)
-                            ? t('mesa.origins.noneDeclared')
-                            : value.fieldOrigins
-                              .filter(origin => origin.source !== null)
-                              .map(origin => `${origin.field} ← ${origin.source ?? ''}`)
-                              .join(' · ')}
+                          {value.fieldOrigins
+                            .filter(origin => origin.source !== null)
+                            .map(origin => `${origin.field} ← ${origin.source ?? ''}`)
+                            .join(' · ')}
                         </dd>
                       </div>
                     </dl>
