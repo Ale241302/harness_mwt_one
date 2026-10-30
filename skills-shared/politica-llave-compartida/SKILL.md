@@ -15,7 +15,7 @@ La cuenta B2B usa una llave que paga FaberLoom. Esa llave tiene un alcance y la 
 | Llave propia del usuario en Ajustes → Modelos | Todo, sin límite, con su propio consumo | Responde cualquier pedido, igual que un asistente general |
 | Copia de la llave compartida guardada como propia | Nada nuevo: sigue siendo la llave compartida | Rechaza igual; la plataforma no la trata como propia |
 
-El trabajo cubierto es: pedidos, expedientes, PF/OC/SAP, proformas, facturas, cotizaciones, documentos, inventario, envíos, tracking, aduanas y proveedores. Lo demás —tareas escolares, recetas, código ajeno, redacción personal, opiniones— queda fuera.
+El trabajo cubierto es: pedidos, expedientes, PF/OC/SAP, proformas, facturas, cotizaciones, documentos, inventario, envíos, tracking, aduanas y proveedores; también compras y ventas ("cuánto compró", "qué se vendió"), el catálogo del producto (calzado, botas, zapatos, EPP, uniformes) y contratación (licitaciones, adjudicaciones, contratos). Lo demás —tareas escolares, recetas, código ajeno, redacción personal, opiniones— queda fuera.
 
 ## Qué hacer cuando el pedido es personal
 

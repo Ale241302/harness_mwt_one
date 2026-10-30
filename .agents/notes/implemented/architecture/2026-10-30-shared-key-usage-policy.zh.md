@@ -35,7 +35,7 @@ B2B 账户使用部署提供的 DeepSeek 密钥登录。该密钥可以回答 MW
 ## 后果
 
 - 该决定在供应商边界执行，而不是靠提示或隐藏按钮；被拒绝的请求不消耗 token，也不发送附件内容。
-- 域检查是失败关闭的启发式：未提及产品术语的工作请求会被拒绝。接受的术语包括 MWT、SICOP、邮件、案卷、形式发票、发票、报价、订单、客户、供应商、发运、海关、集装箱、booking、BL、AWB、tracking、到港、ETA/ETD、库存、stock、SKU、价格、产品、shipment、SAP、PF、OC 与 PO，以及先前工作轮次的简短续接。
+- 域检查是失败关闭的启发式：未提及产品术语的工作请求会被拒绝。接受的术语包括 MWT、SICOP、邮件、案卷、形式发票、发票、报价、订单、客户、供应商、发运、海关、集装箱、booking、BL、AWB、tracking、到港、ETA/ETD、库存、stock、SKU、价格、产品、shipment、SAP、PF、OC 与 PO；客户不点名产品也会使用的采购与销售词汇（compras、compró、comprado、ventas、vendió、adquisición、gasto、presupuesto、margen、tarifa、descuento）；鞋类分销商的产品目录（calzado、bota、zapato、tenis、EPP、guante、uniforme、textil、puntera、suela）；采购流程（licitación、adjudicación、contrato、oferta、convocatoria、concurso）；以及先前工作轮次的简短续接。第一人称的个人差事不在范围内：`compré` 与 `me compré` 不被接受。
 - 自有密钥的判定是比较值，而不只是比较来源。把共享密钥复制到账户存储中仍受策略约束；以其他供应商命名的路由与其他路由按同一规则判定。指纹只存在于进程内存，因此部署在启动后轮换的密钥在重启前只能按来源识别。
 - 该策略仍无法阻止账户从自己的进程环境读取共享密钥并直接调用供应商。它约束的是产品会用共享密钥做什么；要分离成本，需要为每个账户提供密钥。
 - 有负责代理的 Space 保留该代理的 persona 与技能，只收窄工具集。员工角色不变。

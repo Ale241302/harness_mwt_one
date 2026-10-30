@@ -95,14 +95,31 @@ export const DEFAULT_REFUSAL = [
   'Si querés usar la IA para otra cosa, configurá tu propia llave en Ajustes → Modelos.',
 ].join(' ')
 
-/** Work domains the shared key may answer. */
+/**
+ * Work domains the shared key may answer. The list is deliberately wide on the
+ * business vocabulary a B2B account uses without naming the product: a client
+ * of a footwear distributor asks for "el calzado que más compró Sondel" and
+ * names neither MWT.ONE nor SICOP. Purchasing and sales verbs are the noun
+ * forms and the third person, never the first person of a personal errand
+ * ("compré", "me compré"), which stays outside the scope.
+ */
 const WORK_DOMAIN = new RegExp([
   '\\bmwt\\b', '\\bsicop\\b', '\\bimap\\b', '\\bsmtp\\b', '\\bcorreos?\\b', '\\bemails?\\b', '\\be-mails?\\b',
-  '\\bexpedientes?\\b', '\\bproformas?\\b', '\\bfacturas?\\b', '\\bcotizaci[oó]n\\b', '\\bpedidos?\\b',
+  '\\bexpedientes?\\b', '\\bproformas?\\b', '\\bfacturas?\\b', '\\bcotizaci[oó]n(?:es)?\\b', '\\bpedidos?\\b',
   '\\bclientes?\\b', '\\bproveedores?\\b', '\\bdespachos?\\b', '\\baduanas?\\b', '\\bcontenedores?\\b',
   '\\bbooking\\b', '\\bbl\\b', '\\bawb\\b', '\\btracking\\b', '\\barribos?\\b', '\\beta\\b', '\\betd\\b',
   '\\binventario\\b', '\\bstock\\b', '\\bsku\\b', '\\bprecios?\\b', '\\bproductos?\\b', '\\benv[ií]os?\\b',
   '\\bsap\\b', '\\bpf\\b', '\\boc\\b', '\\bpo\\b', '\\borden(?:es)? de compra\\b',
+  // Compras y ventas.
+  '\\bcompras?\\b', '\\bcompr(?:ó|ado|ada|ados|adas|aron)\\b', '\\bventas?\\b', '\\bvend(?:ió|ido|ida)\\b',
+  '\\badquisi(?:ción|ciones)\\b', '\\bgastos?\\b', '\\bpresupuestos?\\b', '\\bm[aá]rgen(?:es)?\\b',
+  '\\btarifas?\\b', '\\bdescuentos?\\b',
+  // Catálogo del producto: calzado de seguridad y protección.
+  '\\bcalzados?\\b', '\\bbotas?\\b', '\\bzapatos?\\b', '\\btenis\\b', '\\bepp\\b', '\\bguantes?\\b',
+  '\\buniformes?\\b', '\\btextiles?\\b', '\\bpunteras?\\b', '\\bsuelas?\\b',
+  // Contratación y comercio.
+  '\\blicitaci(?:ón|ones)\\b', '\\badjudicaci(?:ón|ones)\\b', '\\bcontratos?\\b', '\\bofertas?\\b',
+  '\\bconvocatorias?\\b', '\\bconcurso?s?\\b',
 ].join('|'), 'iu')
 
 /** A short answer that continues the work of the previous turn. */

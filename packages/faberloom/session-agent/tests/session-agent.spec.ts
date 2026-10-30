@@ -517,6 +517,43 @@ describe('shared-key usage guard', () => {
     expect(next).toHaveBeenCalledTimes(1)
   })
 
+  it('lets a business question that names the product instead of the tool', async () => {
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    // The exact turn a client sent: no product name, no tool name, and still a
+    // work request about a supplier's purchases.
+    await drain(ctx.waterfall(
+      'llm/stream',
+      request('Dime cual es el calzado que más ha comprado Sondel este año 2026.'),
+      next as never,
+    ))
+    expect(next).toHaveBeenCalledTimes(1)
+  })
+
+  it('still refuses a personal errand phrased as a purchase', async () => {
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall(
+      'llm/stream',
+      request('compré un regalo para mi mamá y quiero ideas'),
+      next as never,
+    ))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
+  })
+
   it('keeps the policy when the store holds a copy of the deployment key', async () => {
     const credentials = { resolve: async () => ({ value: DEPLOYMENT_KEY, source: 'file' }) }
     const { ctx } = await harness(
